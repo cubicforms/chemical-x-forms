@@ -1,10 +1,9 @@
 import _ from "lodash"
 import z from "zod"
-
-import { PATH_SEPARATOR } from "../../lib/utils/constants"
-import { isPrimitive } from "../../lib/utils/helpers"
-import type { AbstractSchema, FormKey, ValidationError } from "../../lib/utils/types-api"
-import type { NestedType } from "../../lib/utils/types-core"
+import { PATH_SEPARATOR } from "../../../lib/core/utils/constants"
+import { isPrimitive } from "../../../lib/core/utils/helpers"
+import type { AbstractSchema, FormKey, ValidationError } from "../../../lib/core/utils/types-api"
+import type { NestedType } from "../../../lib/core/utils/types-core"
 import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from "./types"
 
 export function zodAdapter<

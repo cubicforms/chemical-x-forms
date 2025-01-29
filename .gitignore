@@ -3,6 +3,10 @@ node_modules
 
 # Logs
 *.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # Temp directories
 .temp
@@ -16,6 +20,14 @@ node_modules
 # Generated dirs
 dist
 
+# TypeScript
+/*.tsbuildinfo
+*.d.ts.map
+
+# Vite
+/vite.*
+/.vite
+
 # Nuxt
 .nuxt
 .output
@@ -26,12 +38,15 @@ dist
 
 # Env
 .env
+*.env.local
+*.local
 
 # Testing
 reports
 coverage
 *.lcov
 .nyc_output
+/.husky/_
 
 # VSCode
 .vscode/*
@@ -54,3 +69,23 @@ coverage
 Network Trash Folder
 Temporary Items
 .apdisk
+Thumbs.db
+*.swp
+
+# Tarball files
+package
+*.tgz
+
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Temp files
+/tmp
+*.tmp
+*.temp
+*.pid
+*.seed
+*.pid.lock

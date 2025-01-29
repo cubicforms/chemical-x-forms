@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "strict": true,
+    "esModuleInterop": true,
+    "declaration": true,
+    "declarationDir": "./dist/types",
+    "outDir": "./dist",
+    "skipLibCheck": false,
+    "baseUrl": ".",
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "#app": [
+        "./types/app.d.ts"
+      ]
+    },
+    "types": [
+      "vue"
+    ]
+  },
+  "include": [
+    "src",
+    "types"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "playground",
+    ".nuxt"
+  ]
+}

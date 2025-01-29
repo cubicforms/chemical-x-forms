@@ -5,6 +5,7 @@
     "moduleResolution": "Node",
     "strict": true,
     "esModuleInterop": true,
+    "emitDeclarationOnly": true,
     "declaration": true,
     "declarationDir": "./dist/types",
     "outDir": "./dist",

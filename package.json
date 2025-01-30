@@ -1,8 +1,11 @@
 {
   "name": "@chemical-x/forms",
   "version": "0.0.1",
-  "description": "A fully type-safe, schema-driven form library that gives you superpowers. Chemical X included.",
-  "author": "Oswald Chisala",
+  "main": "./dist/nuxt-module/module.cjs",
+  "types": "./dist/nuxt-module/types.d.ts",
+  "files": [
+    "dist"
+  ],
   "publishConfig": {
     "access": "public",
     "provenance": true,
@@ -13,11 +16,27 @@
     "type": "git",
     "url": "https://github.com/cubicforms/chemical-x-forms"
   },
+  "scripts": {
+    "build:nuxt-module": "nuxt-module-build build --outDir dist/nuxt-module",
+    "build:vite": "vite build",
+    "clean": "rimraf dist",
+    "dev": "nuxi dev playground",
+    "dev:build": "nuxi build playground",
+    "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxi prepare playground",
+    "lint": "eslint .",
+    "prepack": "pnpm clean && pnpm prepare-intermediate-dist && pnpm process-dist",
+    "prepare-intermediate-dist": "run-p build:vite build:nuxt-module",
+    "process-dist": "node process-dist.js",
+    "release": "pnpm lint && pnpm test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
+    "test": "vitest run",
+    "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
+    "test:watch": "vitest watch"
+  },
+  "description": "A fully type-safe, schema-driven form library that gives you superpowers. Chemical X included.",
+  "author": "Oswald Chisala",
   "bugs": {
     "url": "https://github.com/cubicforms/chemical-x-forms/issues"
   },
-  "license": "MIT",
-  "type": "module",
   "exports": {
     ".": {
       "types": "./dist/nuxt-module/types.d.ts",
@@ -30,51 +49,6 @@
       "require": "./dist/nuxt-module/runtime/adapters/*/index.cjs"
     }
   },
-  "main": "./dist/nuxt-module/module.cjs",
-  "types": "./dist/nuxt-module/types.d.ts",
-  "files": [
-    "dist"
-  ],
-  "scripts": {
-    "prepack": "pnpm clean && pnpm prepare-intermediate-dist && pnpm process-dist",
-    "clean": "rimraf dist",
-    "prepare-intermediate-dist": "run-p build:vite build:nuxt-module",
-    "process-dist": "node process-dist.js",
-    "build:vite": "vite build",
-    "build:nuxt-module": "nuxt-module-build build --outDir dist/nuxt-module",
-    "dev": "nuxi dev playground",
-    "dev:build": "nuxi build playground",
-    "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxi prepare playground",
-    "release": "pnpm lint && pnpm test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
-    "lint": "eslint .",
-    "test": "vitest run",
-    "test:watch": "vitest watch",
-    "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit"
-  },
-  "devDependencies": {
-    "@nuxt/devtools": "^1.7.0",
-    "vite-plugin-dts": "^4.5.0",
-    "@types/fs-extra": "^11.0.4",
-    "@types/lodash": "^4.17.14",
-    "@nuxt/eslint-config": "^0.7.5",
-    "@nuxt/kit": "^3.15.3",
-    "@nuxt/module-builder": "^0.8.4",
-    "@nuxt/schema": "^3.15.3",
-    "@nuxt/test-utils": "^3.15.4",
-    "@types/node": "latest",
-    "changelogen": "^0.5.7",
-    "eslint": "^9.19.0",
-    "fs-extra": "^11.3.0",
-    "npm-run-all": "^4.1.5",
-    "nuxt": "^3.15.3",
-    "typescript": "5.7.3",
-    "vitest": "^3.0.4",
-    "vue-tsc": "^2.2.0",
-    "rimraf": "^6.0.1",
-    "zod": "^3.24.1",
-    "immer": "^10.1.1",
-    "lodash": "^4.17.0"
-  },
   "keywords": [
     "vue3",
     "nuxt3",
@@ -83,13 +57,41 @@
     "cubic-forms",
     "form manager"
   ],
-  "peerDependencies": {
-    "nuxt": ">=3.0.0 <4.0.0"
-  },
+  "license": "MIT",
+  "packageManager": "pnpm@8.9.0+sha1.01c55344d677f3b481c6bb6ffba9a6b3c6dbd91d",
+  "type": "module",
   "dependencies": {
     "immer": "^10.0.0",
     "lodash": ">=4.17.0",
     "zod": ">=3.0.0 <4.0.0"
   },
-  "packageManager": "pnpm@8.9.0+sha1.01c55344d677f3b481c6bb6ffba9a6b3c6dbd91d"
+  "devDependencies": {
+    "@nuxt/devtools": "^1.7.0",
+    "@nuxt/eslint-config": "^0.7.5",
+    "@nuxt/kit": "^3.15.3",
+    "@nuxt/module-builder": "^0.8.4",
+    "@nuxt/schema": "^3.15.3",
+    "@nuxt/test-utils": "^3.15.4",
+    "@types/fs-extra": "^11.0.4",
+    "@types/lodash": "^4.17.14",
+    "@types/node": "latest",
+    "changelogen": "^0.5.7",
+    "eslint": "^9.19.0",
+    "fs-extra": "^11.3.0",
+    "immer": "^10.1.1",
+    "lodash": "^4.17.0",
+    "npm-run-all": "^4.1.5",
+    "nuxt": "^3.15.3",
+    "rimraf": "^6.0.1",
+    "typescript": "5.7.3",
+    "vite-plugin-dts": "^4.5.0",
+    "vitest": "^3.0.4",
+    "vue": "^3.0.0",
+    "vue-tsc": "^2.1.10",
+    "zod": "^3.24.1"
+  },
+  "peerDependencies": {
+    "nuxt": ">=3.0.0 <4.0.0",
+    "vue": ">=3.0.0"
+  }
 }

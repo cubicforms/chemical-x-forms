@@ -45,23 +45,32 @@ jobs:
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
       - name: Bump version
+        id: version_bump
         run: |
-          # If 'version_type' wasn't provided (like on a push event),
-          # default to patch. If it was provided (manual dispatch),
-          # use that instead.
           if [ -z "${{ github.event.inputs.version_type }}" ]; then
             pnpm version patch
           else
             pnpm version ${{ github.event.inputs.version_type }}
           fi
 
-      - name: Push version bump
-        run: git push --follow-tags
+      - name: Stash version bump (for rollback)
+        run: git stash push -m "Stash version bump"
+        if: always()  # Always stash after the version bump, even if it fails
 
       - name: Build
-        run: pnpm build
+        run: pnpm prepack
 
       - name: Publish to npm
         run: pnpm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Push version bump
+        run: git push --follow-tags
+        if: success()
+
+      - name: Rollback version bump if failed
+        if: failure()
+        run: |
+          echo "Rolling back version bump due to failure..."
+          git reset --hard HEAD~1  # Reset to the previous commit

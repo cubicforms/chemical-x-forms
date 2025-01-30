@@ -5,7 +5,8 @@
   "author": "Oswald Chisala",
   "publishConfig": {
     "access": "public",
-    "registry": "https://registry.npmjs.org/",
+    "provenance": true,
+    "registry": "https: //registry.npmjs.org/",
     "tag": "latest"
   },
   "repository": {
@@ -52,26 +53,27 @@
   },
   "devDependencies": {
     "@nuxt/devtools": "^1.7.0",
+    "vite-plugin-dts": "^4.5.0",
+    "@types/fs-extra": "^11.0.4",
+    "@types/lodash": "^4.17.14",
     "@nuxt/eslint-config": "^0.7.5",
     "@nuxt/kit": "^3.15.3",
     "@nuxt/module-builder": "^0.8.4",
     "@nuxt/schema": "^3.15.3",
     "@nuxt/test-utils": "^3.15.4",
-    "@types/fs-extra": "^11.0.4",
-    "@types/lodash": "^4.17.14",
     "@types/node": "latest",
     "changelogen": "^0.5.7",
     "eslint": "^9.19.0",
     "fs-extra": "^11.3.0",
-    "immer": "^10.1.1",
-    "lodash": "^4.17.21",
     "npm-run-all": "^4.1.5",
     "nuxt": "^3.15.3",
-    "rimraf": "^6.0.1",
-    "typescript": "~5.7.3",
+    "typescript": "5.7.3",
     "vitest": "^3.0.4",
     "vue-tsc": "^2.2.0",
-    "zod": "^3.24.1"
+    "rimraf": "^6.0.1",
+    "zod": "^3.24.1",
+    "immer": "^10.1.1",
+    "lodash": "^4.17.0"
   },
   "keywords": [
     "vue3",
@@ -82,15 +84,12 @@
     "form manager"
   ],
   "peerDependencies": {
-    "@types/lodash": "^4.0.0",
-    "immer": "^10.0.0",
-    "lodash": "^4.0.0",
-    "nuxt": "^3.0.0",
-    "vue": "^3.0.0",
-    "zod": "^3.0.0"
+    "nuxt": ">=3.0.0 <4.0.0"
   },
-  "packageManager": "pnpm@8.9.0+sha1.01c55344d677f3b481c6bb6ffba9a6b3c6dbd91d",
   "dependencies": {
-    "vite-plugin-dts": "^4.5.0"
-  }
+    "immer": "^10.0.0",
+    "lodash": ">=4.17.0",
+    "zod": ">=3.0.0 <4.0.0"
+  },
+  "packageManager": "pnpm@8.9.0+sha1.01c55344d677f3b481c6bb6ffba9a6b3c6dbd91d"
 }

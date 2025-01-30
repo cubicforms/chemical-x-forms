@@ -6,6 +6,16 @@ import type { AbstractSchema, FormKey, ValidationError } from "../../../lib/core
 import type { NestedType } from "../../../lib/core/utils/types-core"
 import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from "./types"
 
+// Used to check for Zod schemas in the useForm implementation
+export function isZodType(value: unknown): value is z.ZodType {
+  if (typeof value !== "object" || value === null) return false
+
+  // ChatGPT says this avoids random ZodType version mismatches in monorepo setups
+  // Umm, sure.
+  const zodTypeClass = (z as Record<string, unknown>)?.ZodType
+  return typeof zodTypeClass === "function" && value instanceof zodTypeClass
+}
+
 export function zodAdapter<
   FormSchema extends z.ZodSchema,
   Form extends z.infer<FormSchema>,

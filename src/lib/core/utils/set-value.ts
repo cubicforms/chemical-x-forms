@@ -1,5 +1,5 @@
 import { produce } from "immer"
-import _ from "lodash"
+import { get, isFunction, isObjectLike, set, unset } from "lodash-es"
 import type { Ref } from "vue"
 import { toRaw } from "vue"
 
@@ -42,11 +42,11 @@ export function setValueFactory<Form extends GenericForm>(
 
         // We're operating at the root, so clear draft manually
         for (const key of Object.keys(draft)) {
-          _.unset(draft, key)
+          unset(draft, key)
         }
 
         for (const [key, value] of Object.entries(newForm)) {
-          _.set(draft, key, value)
+          set(draft, key, value)
         }
       }
       catch (error) {
@@ -94,7 +94,7 @@ export function setValueFactory<Form extends GenericForm>(
     for (const nestedSchema of nestedSchemas) {
       const updatedValue = produce(toRaw(form), (draftForm) => {
         let defaultValue: unknown
-        const valueAtPath = _.get(draftForm, path, NOT_FOUND)
+        const valueAtPath = get(draftForm, path, NOT_FOUND)
         if (valueAtPath === NOT_FOUND) {
           try {
             const { data } = nestedSchema.getInitialState({
@@ -128,7 +128,7 @@ export function setValueFactory<Form extends GenericForm>(
             validationMode: "lax", // always relax the schema validation during setValue calls (reason: assume user's not done updating value)
           })
 
-          _.set(draftForm, path, newState)
+          set(draftForm, path, newState)
           updateSuccess(true)
           return
         }
@@ -178,7 +178,7 @@ export function setValueFactory<Form extends GenericForm>(
     NestedValue extends SetValuePayload<NestedType<Form, Path>>,
   >(pathOrValue: Path | RootValue, value?: NestedValue) {
     const ensureFunction = <T>(val: T) => {
-      if (_.isFunction(val)) return val as SetValueCallback<T>
+      if (isFunction(val)) return val as SetValueCallback<T>
       return (() => val) as SetValueCallback<T>
     }
 
@@ -189,12 +189,12 @@ export function setValueFactory<Form extends GenericForm>(
     }
 
     // root callback update
-    if (_.isFunction(pathOrValue)) {
+    if (isFunction(pathOrValue)) {
       return setValueWithCallbackAtRoot(pathOrValue)
     }
 
     // root callback update
-    if (_.isObjectLike(pathOrValue)) {
+    if (isObjectLike(pathOrValue)) {
       const callback = ensureFunction(pathOrValue as unknown as Form)
       return setValueWithCallbackAtRoot(callback)
     }

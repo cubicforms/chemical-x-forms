@@ -1,5 +1,5 @@
-import _ from "lodash"
-import z from "zod"
+import { cloneDeep, isFunction, merge, set } from "lodash-es"
+import { z } from "zod"
 import { PATH_SEPARATOR } from "../../../lib/core/utils/constants"
 import { isPrimitive } from "../../../lib/core/utils/helpers"
 import type { AbstractSchema, FormKey, ValidationError } from "../../../lib/core/utils/types-api"
@@ -9,11 +9,7 @@ import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from "./types"
 // Used to check for Zod schemas in the useForm implementation
 export function isZodType(value: unknown): value is z.ZodType {
   if (typeof value !== "object" || value === null) return false
-
-  // ChatGPT says this avoids random ZodType version mismatches in monorepo setups
-  // Umm, sure.
-  const zodTypeClass = (z as Record<string, unknown>)?.ZodType
-  return typeof zodTypeClass === "function" && value instanceof zodTypeClass
+  return value instanceof z.ZodType
 }
 
 export function zodAdapter<
@@ -75,7 +71,7 @@ export function zodAdapter<
 
         let rawInitialState = initialStateWithoutConstraints
         if (!isPrimitive(rawInitialState)) {
-          rawInitialState = _.merge(
+          rawInitialState = merge(
             initialStateWithoutConstraints,
             config.constraints,
           )
@@ -136,18 +132,18 @@ export function zodAdapter<
                   issue.expected,
                   defaultValueContext,
                 )
-                _.set(fixedData, path, defaultValue)
+                set(fixedData, path, defaultValue)
                 continue
               }
 
               if (issue.code === "invalid_enum_value") {
                 const [defaultValue, found] = unwrapDefault(schemaAtPath)
-                _.set(fixedData, path, found ? defaultValue : issue.options[0])
+                set(fixedData, path, found ? defaultValue : issue.options[0])
                 continue
               }
 
               if (issue.code === "invalid_literal") {
-                _.set(fixedData, path, issue.expected)
+                set(fixedData, path, issue.expected)
                 continue
               }
 
@@ -158,7 +154,7 @@ export function zodAdapter<
               }
             }
           }
-          fixedData = _.merge(rawInitialState, fixedData)
+          fixedData = merge(rawInitialState, fixedData)
         }
 
         // yes, throw if we genuinely can't construct the initial state!
@@ -794,7 +790,7 @@ const getStripInstruction = (
 ): boolean => {
   if (!stripValueOrCallback) return false
 
-  return _.isFunction(stripValueOrCallback)
+  return isFunction(stripValueOrCallback)
     ? stripValueOrCallback(schema)
     : stripValueOrCallback
 }
@@ -836,7 +832,7 @@ export function getSlimSchema<
         if (!slimmedSchema) continue
 
         // slimmedSchema will be a structurally deep object, so break pointer refs to prevent recursion bugs
-        const deepCloneSlimmedSchema = _.cloneDeep(slimmedSchema)
+        const deepCloneSlimmedSchema = cloneDeep(slimmedSchema)
         slimmedSchemas.push(deepCloneSlimmedSchema)
       }
 

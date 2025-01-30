@@ -67,7 +67,7 @@ export default defineConfig({
     },
     outDir: outputDir,
     rollupOptions: {
-      external: ["#app", "vue", "lodash", "zod", "immer"],
+      external: ["#app", "vue", "zod"],
       plugins: [commonjs()],
       output: {
         preserveModules: true,

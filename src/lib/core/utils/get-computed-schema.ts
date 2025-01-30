@@ -1,4 +1,4 @@
-import _ from "lodash"
+import { isFunction } from "lodash-es"
 
 import type { AbstractSchema, FormKey } from "./types-api"
 import type { GenericForm } from "./types-core"
@@ -10,7 +10,7 @@ export const getComputedSchema = <Form extends GenericForm, GetValueFormType>(
     | ((formKey: FormKey) => AbstractSchema<Form, GetValueFormType>),
 ) => {
   try {
-    if (_.isFunction(schemaOrCallback)) {
+    if (isFunction(schemaOrCallback)) {
       return schemaOrCallback(formKey)
     }
 

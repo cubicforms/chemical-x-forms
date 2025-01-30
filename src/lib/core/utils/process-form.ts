@@ -1,4 +1,4 @@
-import _ from "lodash"
+import { get } from "lodash-es"
 import type { ComputedRef, Ref } from "vue"
 import { toRaw, toRef } from "vue"
 
@@ -33,7 +33,7 @@ export function getValidateFactory<Form extends GenericForm>(
     }
 
     return toRef(() => {
-      const data = _.get(form.value, safePath, NOT_FOUND)
+      const data = get(form.value, safePath, NOT_FOUND)
       if (data === NOT_FOUND) {
         const NOT_FOUND_ERROR: ValidationError = {
           message: `Path '${safePath}' was not found in form with key '${formKey}'.`,

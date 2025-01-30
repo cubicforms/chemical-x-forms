@@ -24,10 +24,6 @@ dist
 /*.tsbuildinfo
 *.d.ts.map
 
-# Vite
-/vite.*
-/.vite
-
 # Nuxt
 .nuxt
 .output

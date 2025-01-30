@@ -1,5 +1,5 @@
 {
-  "name": "chemical-x-forms",
+  "name": "@chemical-x/forms",
   "version": "0.0.1",
   "description": "A fully type-safe, schema-driven form library that gives you superpowers. Chemical X included.",
   "author": "Oswald Chisala",

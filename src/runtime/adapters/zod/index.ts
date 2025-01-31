@@ -45,13 +45,17 @@ export function zodAdapter<
           = actualUnwrappedSchemaName ?? actualOriginalSchemaName
         const unwrappedMessage = actualUnwrappedSchemaName ? "unwrapped" : ""
 
-        const expectedUnwrappedMessage = stripped ? "unwrapped" : ""
+        if (actualSchemaName === "ZodObject") {
+          throw new Error(`Programming Error: ${unwrappedMessage ? "An unwrapped" : "A"} schema of type '${actualSchemaName}' was provided, but zodAdapter's \`instanceof z.ZodObject\` failed.\nYour app may be running a different version of zod from useForm's zodAdapter. Please try \`pnpm dedupe zod --check\` to inspect this.`)
+        }
+
+        const expectedUnwrappedMessage = stripped ? " unwrapped " : " "
         const actualSchemaMessage = actualSchemaName
           ? `, got ${unwrappedMessage} schema of type '${actualSchemaName}' instead.`
           : "."
 
         throw new Error(
-          `Programming error: ZodAdapter expected ${expectedUnwrappedMessage} schema of type 'ZodObject'${actualSchemaMessage}`,
+          `Programming error: ZodAdapter expected${expectedUnwrappedMessage}schema of type 'ZodObject'${actualSchemaMessage}`,
         )
       }
     }

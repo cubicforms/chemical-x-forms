@@ -5,7 +5,8 @@ import path from "node:path"
 import { defineConfig } from "vite"
 import dts from "vite-plugin-dts"
 
-const DIRECTORY_SEPARATOR = "/"
+// Use Node's path separator to ensure cross-platform compatibility
+const DIRECTORY_SEPARATOR = path.sep
 
 // Recursive function to collect all .ts files in a directory
 function collectTsFiles(
@@ -84,41 +85,33 @@ export default defineConfig({
       formats: ["es", "cjs"],
       fileName: (format, name) =>
         `${name}.${format === "es" ? "mjs" : "cjs"}`,
+      // **Added**: Ensure unique naming and avoid global variables
+      // `name` is only used for UMD/IIFE; safe to omit or ensure uniqueness
     },
     outDir: outputDir,
     rollupOptions: {
-      external: ["#app", "vue", "zod"],
-      plugins: [commonjs()],
+      external: ["#app", "vue", "zod"], // Keep external dependencies as is
+      plugins: [commonjs()], // Convert CommonJS modules to ES6
       output: {
-        // Define manualChunks to separate lodash-es and immer into external-bundles
-        manualChunks(id) {
-          if (id.includes("node_modules/lodash-es")) {
-            return "external-bundles/lodash-es"
-          }
-          if (id.includes("node_modules/immer")) {
-            return "external-bundles/immer"
-          }
-        },
-        // Configure chunk file names to place them into their respective folders
-        chunkFileNames: (chunkInfo) => {
-          // If the chunk is part of external-bundles, place it accordingly
-          if (
-            chunkInfo.name?.startsWith("external-bundles/lodash-es")
-            || chunkInfo.name?.startsWith("external-bundles/immer")
-          ) {
-            // Remove 'external-bundles/' from the name to avoid double nesting
-            const name = chunkInfo.name.replace("external-bundles/", "")
-            return `external-bundles/${name}/[name].js`
-          }
-          // Default naming for other chunks
-          return `chunks/[name].js`
-        },
-        // Optionally, you can configure assetFileNames if you have assets
-        // assetFileNames: (assetInfo) => {
-        //   // Example: Place all assets in the assets folder
-        //   return `assets/[name].[hash][extname]`
-        // },
+        // **Removed**: manualChunks to let Rollup handle chunking naturally
+        // Over-specifying manualChunks can lead to unexpected duplication
+
+        // **Added**: Define globals for external dependencies if needed
+        // This is especially important for UMD/IIFE builds, but not for ES/CJS
+        // Since we're using 'es' and 'cjs', this is optional
+
+        // Ensure that each chunk is properly namespaced and does not pollute globals
+        // By using ES modules, variables are scoped within modules
+
+        // **Optional**: Define a banner to enforce strict mode and encapsulation
+        banner: "\"use strict\";",
+
+        // **Optional**: Use Rollup's output options to further encapsulate code
+        // Example: wrapping output in a function (Not typical for ES/CJS)
       },
     },
+    // **Optional**: Add sourcemaps for better debugging
+    sourcemap: true,
+
   },
 })

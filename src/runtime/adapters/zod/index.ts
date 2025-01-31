@@ -5,9 +5,9 @@ import set from "lodash-es/set"
 import { z } from "zod"
 import { PATH_SEPARATOR } from "../../../lib/core/utils/constants"
 import { isPrimitive } from "../../../lib/core/utils/helpers"
-import type { AbstractSchema, FormKey, ValidationError } from "../../../lib/core/utils/types-api"
-import type { NestedType } from "../../../lib/core/utils/types-core"
-import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from "./types"
+import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from "../../../types/types"
+import type { AbstractSchema, FormKey, ValidationError } from "../../../types/types-api"
+import type { NestedType } from "../../../types/types-core"
 
 // Used to check for Zod schemas in the useForm implementation
 export function isZodType(value: unknown): value is z.ZodType {

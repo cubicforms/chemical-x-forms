@@ -2,9 +2,9 @@ import type { z } from "zod"
 import { useFormKey } from "../../lib/core/composables/use-form-key"
 import { useFormStore } from "../../lib/core/composables/use-form-store"
 import { getComputedSchema } from "../../lib/core/utils/get-computed-schema"
-import type { UnwrapZodObject, UseFormConfigurationWithZod } from "../../lib/core/utils/types-adapters"
-import type { AbstractSchema, UseFormConfiguration } from "../../lib/core/utils/types-api"
-import type { DeepPartial, GenericForm } from "../../lib/core/utils/types-core"
+import type { UnwrapZodObject, UseFormConfigurationWithZod } from "../../types/types-adapters"
+import type { AbstractSchema, UseFormConfiguration } from "../../types/types-api"
+import type { DeepPartial, GenericForm } from "../../types/types-core"
 import { zodAdapter } from "../adapters/zod"
 
 function useAbstractForm<

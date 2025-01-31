@@ -1,7 +1,6 @@
 import isFunction from "lodash-es/isFunction"
-
-import type { AbstractSchema, FormKey } from "./types-api"
-import type { GenericForm } from "./types-core"
+import type { AbstractSchema, FormKey } from "../../../types/types-api"
+import type { GenericForm } from "../../../types/types-core"
 
 export const getComputedSchema = <Form extends GenericForm, GetValueFormType>(
   formKey: FormKey,

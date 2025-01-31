@@ -1,7 +1,7 @@
 import { useId } from "vue"
 
 import { useState } from "#app"
-import type { FormKey } from "../utils/types-api"
+import type { FormKey } from "../../../types/types-api"
 
 export const useFormKey = (key?: FormKey) => {
   const warningRaised = useState("use-form-key/warning-raised", () => false)

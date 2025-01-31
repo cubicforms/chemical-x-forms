@@ -3,10 +3,10 @@ import { computed } from "vue"
 import { getForm, getValueFactory } from "../utils/get-value"
 import { getHandleSubmitFactory, getValidateFactory } from "../utils/process-form"
 import { setValueFactory } from "../utils/set-value"
-import type { FormKey, FormStore } from "../utils/types-api"
-import type { GenericForm } from "../utils/types-core"
 
 import { useState } from "#app"
+import type { FormKey, FormStore } from "../../../types/types-api"
+import type { GenericForm } from "../../../types/types-core"
 
 export const useFormStore = <Form extends GenericForm>(formKey: FormKey) => {
   const formStore = useState<FormStore<Form>>("useform/store", () => new Map())

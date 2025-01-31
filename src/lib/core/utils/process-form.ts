@@ -2,9 +2,9 @@ import get from "lodash-es/get"
 import type { ComputedRef, Ref } from "vue"
 import { toRaw, toRef } from "vue"
 
+import type { AbstractSchema, FormKey, HandleSubmit, ValidationError, ValidationResponseWithoutValue } from "../../../types/types-api"
+import type { FlatPath, GenericForm } from "../../../types/types-core"
 import { PATH_SEPARATOR } from "./constants"
-import type { AbstractSchema, FormKey, HandleSubmit, ValidationError, ValidationResponseWithoutValue } from "./types-api"
-import type { FlatPath, GenericForm } from "./types-core"
 
 export function getValidateFactory<Form extends GenericForm>(
   form: ComputedRef<Form>,

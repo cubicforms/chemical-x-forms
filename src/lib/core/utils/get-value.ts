@@ -1,10 +1,10 @@
 import type { ComputedRef, Ref } from "vue"
 import { toRef } from "vue"
 
+import type { FormKey, FormStore } from "../../../types/types-api"
+import type { FlatPath, GenericForm, NestedType } from "../../../types/types-core"
 import { PATH_SEPARATOR } from "./constants"
 import { isArrayOrRecord } from "./helpers"
-import type { FormKey, FormStore } from "./types-api"
-import type { FlatPath, GenericForm, NestedType } from "./types-core"
 
 export function getForm<Form extends GenericForm>(
   formStore: Ref<FormStore<Form>>,
@@ -22,7 +22,7 @@ export function getForm<Form extends GenericForm>(
 export function getValueFactory<
   Form extends GenericForm,
   GetValueFormType extends GenericForm = Form,
->(form: Ref<Form>) {
+>(form: ComputedRef<Form>) {
   function _getValueInternalLogic<Path extends FlatPath<Form>>(path: Path) {
     const valueAsRef = toRef(() => {
       const keys = path.split(PATH_SEPARATOR).map(k => k.trim())

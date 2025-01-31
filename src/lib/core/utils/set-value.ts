@@ -7,9 +7,9 @@ import unset from "lodash-es/unset"
 import type { Ref } from "vue"
 import { toRaw } from "vue"
 
+import type { AbstractSchema, FormKey, FormStore } from "../../../types/types-api"
+import type { DeepPartial, FlatPath, GenericForm, NestedType } from "../../../types/types-core"
 import { getForm } from "./get-value"
-import type { AbstractSchema, FormKey, FormStore } from "./types-api"
-import type { DeepPartial, FlatPath, GenericForm, NestedType } from "./types-core"
 
 type SetValueCallback<Payload> = (
   value: DeepPartial<Payload>,

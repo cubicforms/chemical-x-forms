@@ -82,7 +82,7 @@ export default defineConfig({
         toplevel: true,
       },
       compress: {
-        drop_console: true, // Optional: remove console statements
+        drop_console: false, // Optional: remove console statements
       },
       format: {
         comments: false, // Remove all comments
@@ -96,7 +96,7 @@ export default defineConfig({
     },
     outDir: outputDir,
     rollupOptions: {
-      external: ["#app", "vue", "zod", "immer", "lodash-es",
+      external: ["#app", "vue", "zod", "immer", "lodash-es", /lodash-es\/.*/,
         // /.*\.d\.ts$/, // regex to match any .d.ts file in the source
       ],
       output: {

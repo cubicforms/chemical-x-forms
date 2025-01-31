@@ -1,4 +1,7 @@
-import { cloneDeep, isFunction, merge, set } from "lodash-es"
+import cloneDeep from "lodash-es/cloneDeep"
+import isFunction from "lodash-es/isFunction"
+import merge from "lodash-es/merge"
+import set from "lodash-es/set"
 import { z } from "zod"
 import { PATH_SEPARATOR } from "../../../lib/core/utils/constants"
 import { isPrimitive } from "../../../lib/core/utils/helpers"

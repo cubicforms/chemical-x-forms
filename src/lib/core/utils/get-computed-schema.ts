@@ -1,4 +1,4 @@
-import { isFunction } from "lodash-es"
+import isFunction from "lodash-es/isFunction"
 
 import type { AbstractSchema, FormKey } from "./types-api"
 import type { GenericForm } from "./types-core"

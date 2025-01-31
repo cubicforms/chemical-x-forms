@@ -1,5 +1,9 @@
 import { produce } from "immer"
-import { get, isFunction, isObjectLike, set, unset } from "lodash-es"
+import get from "lodash-es/get"
+import isFunction from "lodash-es/isFunction"
+import isObjectLike from "lodash-es/isObjectLike"
+import set from "lodash-es/set"
+import unset from "lodash-es/unset"
 import type { Ref } from "vue"
 import { toRaw } from "vue"
 

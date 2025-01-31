@@ -1,4 +1,4 @@
-import { get } from "lodash-es"
+import get from "lodash-es/get"
 import type { ComputedRef, Ref } from "vue"
 import { toRaw, toRef } from "vue"
 

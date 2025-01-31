@@ -1,3 +1,4 @@
+import { babel } from "@rollup/plugin-babel"
 import commonjs from "@rollup/plugin-commonjs"
 import fs from "node:fs"
 import path from "node:path"
@@ -55,6 +56,13 @@ const entrypoints = {
 
 export default defineConfig({
   plugins: [
+    // Babel plugin to optimize lodash-es imports
+    babel({
+      babelHelpers: "bundled",
+      plugins: ["lodash"],
+      extensions: [".js", ".ts"],
+      include: ["src/**/*"],
+    }),
     // Generate TypeScript declaration files
     dts({
       include: [
@@ -82,7 +90,34 @@ export default defineConfig({
       external: ["#app", "vue", "zod"],
       plugins: [commonjs()],
       output: {
-        preserveModules: true,
+        // Define manualChunks to separate lodash-es and immer into external-bundles
+        manualChunks(id) {
+          if (id.includes("node_modules/lodash-es")) {
+            return "external-bundles/lodash-es"
+          }
+          if (id.includes("node_modules/immer")) {
+            return "external-bundles/immer"
+          }
+        },
+        // Configure chunk file names to place them into their respective folders
+        chunkFileNames: (chunkInfo) => {
+          // If the chunk is part of external-bundles, place it accordingly
+          if (
+            chunkInfo.name?.startsWith("external-bundles/lodash-es")
+            || chunkInfo.name?.startsWith("external-bundles/immer")
+          ) {
+            // Remove 'external-bundles/' from the name to avoid double nesting
+            const name = chunkInfo.name.replace("external-bundles/", "")
+            return `external-bundles/${name}/[name].js`
+          }
+          // Default naming for other chunks
+          return `chunks/[name].js`
+        },
+        // Optionally, you can configure assetFileNames if you have assets
+        // assetFileNames: (assetInfo) => {
+        //   // Example: Place all assets in the assets folder
+        //   return `assets/[name].[hash][extname]`
+        // },
       },
     },
   },

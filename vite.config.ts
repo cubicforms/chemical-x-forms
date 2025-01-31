@@ -107,7 +107,7 @@ export default defineConfig({
       // plugins: [commonjs()], // Removed
     },
     // Optional: Enable source maps for debugging
-    sourcemap: true,
+    sourcemap: false,
     // Optional: Disable minification temporarily to debug
     // minify: false,
   },

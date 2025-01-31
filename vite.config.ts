@@ -95,7 +95,7 @@ export default defineConfig({
     },
     outDir: outputDir,
     rollupOptions: {
-      external: ["#app", "vue", "zod"],
+      external: ["#app", "vue", "zod", "immer", "lodash-es"],
       output: {
         // Allow Rollup to handle chunking automatically without manualChunks
         chunkFileNames: "chunks/[name]-[hash].js",

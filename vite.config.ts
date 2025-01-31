@@ -100,6 +100,7 @@ export default defineConfig({
         // /.*\.d\.ts$/, // regex to match any .d.ts file in the source
       ],
       output: {
+        exports: "named", // This ensures named exports are used exclusively
         // Allow Rollup to handle chunking automatically without manualChunks
         chunkFileNames: "chunks/[name]-[hash].js",
         // Optionally, set entryFileNames and assetFileNames if needed

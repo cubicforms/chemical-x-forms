@@ -10,7 +10,7 @@ export default createConfigForNuxt({
       arrowParens: false,
       blockSpacing: true,
       braceStyle: "stroustrup",
-      commaDangle: "always-multiline",
+      commaDangle: "only-multiline",
       flat: true,
       indent: 2,
       jsx: true,

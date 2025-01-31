@@ -9,12 +9,6 @@ import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from "../../..
 import type { AbstractSchema, FormKey, ValidationError } from "../../../types/types-api"
 import type { NestedType } from "../../../types/types-core"
 
-// Used to check for Zod schemas in the useForm implementation
-export function isZodType(value: unknown): value is z.ZodType {
-  if (typeof value !== "object" || value === null) return false
-  return value instanceof z.ZodType
-}
-
 export function zodAdapter<
   FormSchema extends z.ZodSchema,
   Form extends z.infer<FormSchema>,
@@ -303,7 +297,7 @@ export function zodAdapter<
   return (formKey: FormKey) => getAbstractSchema(formKey, zodSchema, true)
 }
 
-export function zodIssuesToValidationErrors(
+function zodIssuesToValidationErrors(
   issues: z.ZodIssue[],
   formKey: FormKey,
 ): ValidationError[] {
@@ -332,7 +326,7 @@ const NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA = (
   ] satisfies ValidationError[]
 
 // Note: this function assumes a sufficiently stripped schema
-export function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
+function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
   zodSchema: Schema,
   path: string,
 ): z.ZodType<unknown, z.ZodTypeDef, unknown>[] {
@@ -491,7 +485,7 @@ function getDefaultValue(
   return undefined
 }
 
-export function unwrapDefault(schema: z.ZodTypeAny): [unknown, boolean] {
+function unwrapDefault(schema: z.ZodTypeAny): [unknown, boolean] {
   // If it's a ZodDefault, return its default value
   if (schema instanceof z.ZodDefault) {
     const defaultValue = schema._def.defaultValue()
@@ -519,7 +513,7 @@ export function unwrapDefault(schema: z.ZodTypeAny): [unknown, boolean] {
   return [null, false]
 }
 
-export function getInitialStateFromZodSchema<
+function getInitialStateFromZodSchema<
   FormSchema extends z.ZodSchema,
   Form extends z.infer<FormSchema>,
 >(
@@ -804,7 +798,7 @@ const getStripInstruction = (
 
 // make the schema more relaxed so we can construct a initial form state
 // schema is based on ZodType in case we ever work with nested schemas
-export function getSlimSchema<
+function getSlimSchema<
   RS extends z.ZodRawShape,
   Schema extends z.ZodSchema,
 >(config: SlimSchemaConfig<Schema>) {

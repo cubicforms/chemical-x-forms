@@ -1,6 +1,6 @@
 {
   "name": "@chemical-x/forms",
-  "version": "0.0.13",
+  "version": "0.0.12",
   "main": "./dist/nuxt-module/module.cjs",
   "types": "./dist/nuxt-module/types.d.ts",
   "files": [
@@ -62,10 +62,10 @@
   "type": "module",
   "devDependencies": {
     "@nuxt/devtools": "^1.7.0",
-    "@nuxt/eslint-config": "^0.7.5",
-    "@nuxt/kit": "^3.15.3",
+    "@nuxt/eslint-config": "^0.7.6",
+    "@nuxt/kit": "^3.15.4",
     "@nuxt/module-builder": "^0.8.4",
-    "@nuxt/schema": "^3.15.3",
+    "@nuxt/schema": "^3.15.4",
     "@nuxt/test-utils": "^3.15.4",
     "@types/fs-extra": "^11.0.4",
     "@types/lodash-es": "^4.17.12",
@@ -77,17 +77,19 @@
     "immer": "^10.1.1",
     "lodash-es": "^4.17.21",
     "npm-run-all": "^4.1.5",
-    "nuxt": "^3.15.3",
+    "nuxt": "^3.15.4",
     "rimraf": "^6.0.1",
     "typescript": "5.7.3",
     "vite": "^6.0.11",
     "vite-plugin-dts": "^4.5.0",
     "vitest": "^3.0.4",
-    "vue": "^3.0.0",
-    "vue-tsc": "^2.1.10",
+    "vue": "^3.5.13",
+    "vue-tsc": "^2.2.0",
     "zod": "^3.24.1"
   },
   "peerDependencies": {
+    "immer": ">=10.0.0",
+    "lodash-es": ">= 4.0.0",
     "nuxt": ">=3.0.0 <4.0.0",
     "vue": ">=3.5.0",
     "zod": ">=3.0.0 <4.0.0"

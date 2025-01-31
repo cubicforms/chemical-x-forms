@@ -1,11 +1,9 @@
-import { babel } from "@rollup/plugin-babel"
-import commonjs from "@rollup/plugin-commonjs"
 import fs from "node:fs"
 import path from "node:path"
 import { defineConfig } from "vite"
 import dts from "vite-plugin-dts"
 
-// Use Node's path separator to ensure cross-platform compatibility
+// Define the directory separator for cross-platform compatibility
 const DIRECTORY_SEPARATOR = path.sep
 
 // Recursive function to collect all .ts files in a directory
@@ -57,13 +55,8 @@ const entrypoints = {
 
 export default defineConfig({
   plugins: [
-    // Babel plugin to optimize lodash-es imports
-    babel({
-      babelHelpers: "bundled",
-      plugins: ["lodash"],
-      extensions: [".js", ".ts"],
-      include: ["src/**/*"],
-    }),
+    // Removed Babel and babel-plugin-lodash to prevent deprecated transformations
+    // If Babel is necessary for your project, ensure it's configured without the lodash plugin
     // Generate TypeScript declaration files
     dts({
       include: [
@@ -77,41 +70,45 @@ export default defineConfig({
     }),
   ],
   optimizeDeps: {
-    // No need to include lodash-es explicitly; Vite handles ES modules well
+    // Let Vite handle ES module optimizations
   },
   build: {
+    // Switch minifier to 'terser' for better variable mangling
+    minify: "terser",
+    terserOptions: {
+      mangle: {
+        // Enable top-level variable mangling to prevent name collisions
+        toplevel: true,
+      },
+      compress: {
+        drop_console: true, // Optional: remove console statements
+      },
+      format: {
+        comments: false, // Remove all comments
+      },
+    },
     lib: {
       entry: entrypoints,
       formats: ["es", "cjs"],
       fileName: (format, name) =>
         `${name}.${format === "es" ? "mjs" : "cjs"}`,
-      // **Added**: Ensure unique naming and avoid global variables
-      // `name` is only used for UMD/IIFE; safe to omit or ensure uniqueness
     },
     outDir: outputDir,
     rollupOptions: {
-      external: ["#app", "vue", "zod"], // Keep external dependencies as is
-      plugins: [commonjs()], // Convert CommonJS modules to ES6
+      external: ["#app", "vue", "zod"],
       output: {
-        // **Removed**: manualChunks to let Rollup handle chunking naturally
-        // Over-specifying manualChunks can lead to unexpected duplication
-
-        // **Added**: Define globals for external dependencies if needed
-        // This is especially important for UMD/IIFE builds, but not for ES/CJS
-        // Since we're using 'es' and 'cjs', this is optional
-
-        // Ensure that each chunk is properly namespaced and does not pollute globals
-        // By using ES modules, variables are scoped within modules
-
-        // **Optional**: Define a banner to enforce strict mode and encapsulation
-        banner: "\"use strict\";",
-
-        // **Optional**: Use Rollup's output options to further encapsulate code
-        // Example: wrapping output in a function (Not typical for ES/CJS)
+        // Allow Rollup to handle chunking automatically without manualChunks
+        chunkFileNames: "chunks/[name]-[hash].js",
+        // Optionally, set entryFileNames and assetFileNames if needed
+        // entryFileNames: 'entry/[name].js',
+        // assetFileNames: 'assets/[name].[hash][extname]',
       },
+      // Remove the commonjs plugin as Vite handles CommonJS internally
+      // plugins: [commonjs()], // Removed
     },
-    // **Optional**: Add sourcemaps for better debugging
+    // Optional: Enable source maps for debugging
     sourcemap: true,
-
+    // Optional: Disable minification temporarily to debug
+    // minify: false,
   },
 })

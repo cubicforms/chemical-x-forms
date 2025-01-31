@@ -9,14 +9,17 @@ const __dirname = path.dirname(__filename)
 /**
  * Processes the dist folder by performing the following:
  * 1. Replaces dist/nuxt-module/runtime with dist/vite/runtime.
- * 2. Copies dist/vite/lib to dist/nuxt-module (replacing if necessary).
- * 3. Deletes the dist/vite folder in the dist directory.
+ * 2. Copies everything else from dist/vite to dist/nuxt-module, excluding runtime, replacing if necessary.
+ * 3. Deletes the dist/vite folder.
  */
 async function processDist() {
   try {
     const distDir = path.resolve(__dirname, "dist")
     const viteDir = path.join(distDir, "vite")
     const nuxtModuleDir = path.join(distDir, "nuxt-module")
+
+    // Ensure nuxt-module directory exists
+    await fs.ensureDir(nuxtModuleDir)
 
     // 1. Replace dist/nuxt-module/runtime with dist/vite/runtime
     const viteRuntimeDir = path.join(viteDir, "runtime")
@@ -39,20 +42,17 @@ async function processDist() {
     await fs.copy(viteRuntimeDir, nuxtRuntimeDir)
     console.log(`Copied Vite runtime from ${viteRuntimeDir} to ${nuxtRuntimeDir}`)
 
-    // 2. Copy dist/vite/lib to dist/nuxt-module/lib (replace if necessary)
-    const viteLibDir = path.join(viteDir, "lib")
-    const nuxtLibDir = path.join(nuxtModuleDir, "lib")
+    // 2. Copy everything else from vite to nuxt-module, excluding runtime
+    const copyFilter = (src) => {
+      // Exclude the 'runtime' directory
+      if (src === viteRuntimeDir || src.startsWith(viteRuntimeDir + path.sep)) {
+        return false
+      }
+      return true
+    }
 
-    // Check if vite/lib exists
-    const viteLibExists = await fs.pathExists(viteLibDir)
-    if (viteLibExists) {
-      // Copy vite/lib to nuxt-module/lib, replacing if necessary
-      await fs.copy(viteLibDir, nuxtLibDir, { overwrite: true })
-      console.log(`Copied Vite lib from ${viteLibDir} to ${nuxtLibDir}`)
-    }
-    else {
-      console.warn(`Vite lib directory does not exist at ${viteLibDir}, skipping copy.`)
-    }
+    await fs.copy(viteDir, nuxtModuleDir, { overwrite: true, filter: copyFilter })
+    console.log(`Copied all other Vite files to Nuxt module, excluding runtime`)
 
     // 3. Delete the dist/vite folder
     await fs.remove(viteDir)

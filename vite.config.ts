@@ -7,7 +7,11 @@ import dts from "vite-plugin-dts"
 const DIRECTORY_SEPARATOR = "/"
 
 // Recursive function to collect all .ts files in a directory
-function collectTsFiles(dir: string, baseDir: string = dir, entrypoints: Record<string, string> = {}): Record<string, string> {
+function collectTsFiles(
+  dir: string,
+  baseDir: string = dir,
+  entrypoints: Record<string, string> = {},
+): Record<string, string> {
   const files = fs.readdirSync(dir)
   for (const file of files) {
     const fullPath = path.join(dir, file)
@@ -29,15 +33,18 @@ const runtimeDir = path.resolve(__dirname, "src/runtime")
 const libDir = path.resolve(__dirname, "src/lib")
 const outputDir = path.resolve(__dirname, "dist/vite")
 
-function addBaseDirToEntrypoints(entrypoints: Record<string, string>, basePath: string) {
-  const newentrypoints: Record<string, string> = {}
+function addBaseDirToEntrypoints(
+  entrypoints: Record<string, string>,
+  basePath: string,
+) {
+  const newEntrypoints: Record<string, string> = {}
 
   for (const [key, value] of Object.entries(entrypoints)) {
     const updatedKey = `${basePath}/${key}`
-    newentrypoints[updatedKey] = value
+    newEntrypoints[updatedKey] = value
   }
 
-  return newentrypoints
+  return newEntrypoints
 }
 
 // Dynamically create entry points for both runtime and lib
@@ -48,6 +55,7 @@ const entrypoints = {
 
 export default defineConfig({
   plugins: [
+    // Generate TypeScript declaration files
     dts({
       include: [
         "src/runtime/**/*.ts",
@@ -59,11 +67,15 @@ export default defineConfig({
       tsconfigPath: path.resolve(__dirname, "tsconfig.json"),
     }),
   ],
+  optimizeDeps: {
+    // No need to include lodash-es explicitly; Vite handles ES modules well
+  },
   build: {
     lib: {
       entry: entrypoints,
       formats: ["es", "cjs"],
-      fileName: (format, name) => `${name}.${format === "es" ? "mjs" : "cjs"}`,
+      fileName: (format, name) =>
+        `${name}.${format === "es" ? "mjs" : "cjs"}`,
     },
     outDir: outputDir,
     rollupOptions: {

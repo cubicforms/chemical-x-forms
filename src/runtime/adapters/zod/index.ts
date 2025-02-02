@@ -5,21 +5,28 @@ import set from "lodash-es/set"
 import { z } from "zod"
 import { PATH_SEPARATOR } from "../../../lib/core/utils/constants"
 import { isPrimitive } from "../../../lib/core/utils/helpers"
-import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from "../../../types/types"
-import type { AbstractSchema, FormKey, ValidationError } from "../../../types/types-api"
+import type {
+  TypeWithNullableDynamicKeys,
+  ZodTypeWithInnerType,
+} from "../../../types/types"
+import type {
+  AbstractSchema,
+  FormKey,
+  ValidationError,
+} from "../../../types/types-api"
 import type { NestedType } from "../../../types/types-core"
 
 export function zodAdapter<
   FormSchema extends z.ZodSchema,
   Form extends z.infer<FormSchema>,
-  GetValueFormType extends TypeWithNullableDynamicKeys<FormSchema>,
+  GetValueFormType extends TypeWithNullableDynamicKeys<FormSchema>
 >(
-  zodSchema: FormSchema,
+  zodSchema: FormSchema
 ): (formKey: FormKey) => AbstractSchema<Form, GetValueFormType> {
   function getAbstractSchema(
     _formKey: FormKey,
     _zodSchema: FormSchema,
-    _isRootSchema: boolean,
+    _isRootSchema: boolean
   ): AbstractSchema<Form, GetValueFormType> {
     if (_isRootSchema) {
       const [_schema, stripped] = stripRootSchema(_zodSchema, {
@@ -40,7 +47,20 @@ export function zodAdapter<
         const unwrappedMessage = actualUnwrappedSchemaName ? "unwrapped" : ""
 
         if (actualSchemaName === "ZodObject") {
-          throw new Error(`Programming Error: ${unwrappedMessage ? "An unwrapped" : "A"} schema of type '${actualSchemaName}' was provided, but zodAdapter's \`instanceof z.ZodObject\` failed.\nYour app may be running a different version of zod from useForm's zodAdapter. Please try \`pnpm dedupe zod --check\` to inspect this.`)
+          throw new Error(
+            `Programming Error: ${
+              unwrappedMessage ? "An unwrapped" : "A"
+            } schema of type '${actualSchemaName}' was provided, but zodAdapter's \`instanceof z.ZodObject\` check failed.
+  
+  This usually means multiple copies or versions of Zod are loaded in memory.
+  Please ensure Zod is only installed once (it is a peer dependency for your useForm library).
+  
+  Some commands that may help:
+    - pnpm list zod
+    - pnpm dedupe zod --check
+  Also consider checking for local symlinks or bundling issues that might duplicate the Zod runtime.
+  `
+          )
         }
 
         const expectedUnwrappedMessage = stripped ? " unwrapped " : " "
@@ -49,7 +69,7 @@ export function zodAdapter<
           : "."
 
         throw new Error(
-          `Programming error: ZodAdapter expected${expectedUnwrappedMessage}schema of type 'ZodObject'${actualSchemaMessage}`,
+          `Programming error: ZodAdapter expected${expectedUnwrappedMessage}schema of type 'ZodObject'${actualSchemaMessage}`
         )
       }
     }
@@ -58,7 +78,7 @@ export function zodAdapter<
         const initialStateWithoutConstraints = getInitialStateFromZodSchema(
           _zodSchema,
           config.useDefaultSchemaValues,
-          _formKey,
+          _formKey
         )
 
         const slimSchema = getSlimSchema({
@@ -74,7 +94,7 @@ export function zodAdapter<
         if (!isPrimitive(rawInitialState)) {
           rawInitialState = merge(
             initialStateWithoutConstraints,
-            config.constraints,
+            config.constraints
           )
         }
         else if (slimSchema.safeParse(config.constraints).success) {
@@ -102,7 +122,7 @@ export function zodAdapter<
             const schemasAtPath = getNestedZodSchemasAtPath(slimSchema, path)
             if (!schemasAtPath.length) {
               console.error(
-                `Could not find any nested schemas belonging to form with key '${_formKey}' at path '${path}'`,
+                `Could not find any nested schemas belonging to form with key '${_formKey}' at path '${path}'`
               )
               continue
             }
@@ -131,7 +151,7 @@ export function zodAdapter<
                       }
                 const defaultValue = getDefaultValue(
                   issue.expected,
-                  defaultValueContext,
+                  defaultValueContext
                 )
                 set(fixedData, path, defaultValue)
                 continue
@@ -190,17 +210,13 @@ export function zodAdapter<
 
         if (!nestedZodSchemas.length) {
           console.error(
-            `Programming Error: Could not calculate nested schema at path '${path}' for form with key '${_formKey}'`,
+            `Programming Error: Could not calculate nested schema at path '${path}' for form with key '${_formKey}'`
           )
           return []
         }
 
         return nestedZodSchemas.map(n =>
-          getAbstractSchema(
-            _formKey,
-            n as NestedType<Form, typeof path>,
-            false,
-          ),
+          getAbstractSchema(_formKey, n as NestedType<Form, typeof path>, false)
         )
       },
       validateAtPath(data, path) {
@@ -242,14 +258,14 @@ export function zodAdapter<
 
         if (!nestedZodSchemas.length) {
           console.error(
-            `Programming Error: Could not calculate nested schema at path '${path}' for form with key '${_formKey}'`,
+            `Programming Error: Could not calculate nested schema at path '${path}' for form with key '${_formKey}'`
           )
 
           return {
             data: undefined,
             errors: NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA(
               path.split(PATH_SEPARATOR),
-              _formKey,
+              _formKey
             ),
             success: false,
             formKey: _formKey,
@@ -280,7 +296,7 @@ export function zodAdapter<
         // no nested schemas matched, this is a failure mode
         const allIssues = accumulatedErrors.reduce<z.ZodIssue[]>(
           (accumulator, _error) => [...accumulator, ..._error.issues],
-          [],
+          []
         )
         return {
           data: undefined,
@@ -299,7 +315,7 @@ export function zodAdapter<
 
 function zodIssuesToValidationErrors(
   issues: z.ZodIssue[],
-  formKey: FormKey,
+  formKey: FormKey
 ): ValidationError[] {
   const validationErrors: ValidationError[] = []
   for (const issue of issues) {
@@ -315,7 +331,7 @@ function zodIssuesToValidationErrors(
 
 const NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA = (
   path: (string | number)[],
-  formKey: FormKey,
+  formKey: FormKey
 ) =>
   [
     {
@@ -328,13 +344,13 @@ const NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA = (
 // Note: this function assumes a sufficiently stripped schema
 function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
   zodSchema: Schema,
-  path: string,
+  path: string
 ): z.ZodType<unknown, z.ZodTypeDef, unknown>[] {
   // ZodDiscriminator has multiple schemas in the options array
   // Check all of them for the key, and probe all possibilities
   function getOptionSchemasFromDiscriminatorByArbitraryKey<
     Discriminator extends string,
-    Options extends readonly z.ZodDiscriminatedUnionOption<Discriminator>[],
+    Options extends readonly z.ZodDiscriminatedUnionOption<Discriminator>[]
   >(schema: z.ZodDiscriminatedUnion<Discriminator, Options>, key: string) {
     const successfulOptions = []
     const options = schema._def.options
@@ -364,7 +380,7 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
     else if (currentSchema instanceof z.ZodDiscriminatedUnion) {
       const optionalSchemas = getOptionSchemasFromDiscriminatorByArbitraryKey(
         currentSchema,
-        key,
+        key
       )
 
       const remainingKeys = keys.slice(index)
@@ -377,7 +393,7 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
         getNestedZodSchemasAtPath(optionSchema, remainingPath).forEach(
           (schema) => {
             foundSchemas.push(schema)
-          },
+          }
         )
       }
 
@@ -390,8 +406,13 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
 }
 
 function unwrapToDiscriminatedUnion(
-  schema: z.ZodTypeAny,
-): z.ZodDiscriminatedUnion<string, readonly z.ZodDiscriminatedUnionOption<string>[]> | undefined {
+  schema: z.ZodTypeAny
+):
+  | z.ZodDiscriminatedUnion<
+    string,
+    readonly z.ZodDiscriminatedUnionOption<string>[]
+  >
+  | undefined {
   let currentSchema: z.ZodTypeAny | undefined = schema
 
   while (currentSchema) {
@@ -421,45 +442,50 @@ type DefaultValueContext = {
   formKey: FormKey
   discriminator: { useDefaultSchemaValues: boolean } & {
     isDiscriminatorKey: boolean
-    schema: z.ZodDiscriminatedUnion<string, readonly z.ZodDiscriminatedUnionOption<string>[]> | undefined
+    schema:
+      | z.ZodDiscriminatedUnion<
+        string,
+        readonly z.ZodDiscriminatedUnionOption<string>[]
+      >
+      | undefined
   }
 }
 
 function getDefaultValue(
   expected: z.ZodInvalidTypeIssue["expected"],
-  context: DefaultValueContext,
+  context: DefaultValueContext
 ) {
   // special default value for discriminated unions:
   const discriminatorContext = context.discriminator
   if (discriminatorContext.isDiscriminatorKey) {
     if (!discriminatorContext.schema) {
       throw new Error(
-        "Programming error: discriminatorContext.schema is unspecified.",
+        "Programming error: discriminatorContext.schema is unspecified."
       )
     }
 
     if (!(discriminatorContext.schema instanceof z.ZodDiscriminatedUnion)) {
       throw new TypeError(
-        "Programming error: discriminatorContext.schema is not a ZodDiscriminatedUnion schema.",
+        "Programming error: discriminatorContext.schema is not a ZodDiscriminatedUnion schema."
       )
     }
 
     const defaultDiscriminatorKey = undefined
     const optionDiscriminator = getSchemaByDiscriminatorKey(
       discriminatorContext.schema,
-      defaultDiscriminatorKey,
+      defaultDiscriminatorKey
     )
 
     if (!optionDiscriminator) {
       throw new Error(
-        "Programming error: ZodDiscriminatedUnion default option schema not found.",
+        "Programming error: ZodDiscriminatedUnion default option schema not found."
       )
     }
 
     return getInitialStateFromZodSchema(
       optionDiscriminator,
       discriminatorContext.useDefaultSchemaValues,
-      context.formKey,
+      context.formKey
     )
   }
 
@@ -515,11 +541,11 @@ function unwrapDefault(schema: z.ZodTypeAny): [unknown, boolean] {
 
 function getInitialStateFromZodSchema<
   FormSchema extends z.ZodSchema,
-  Form extends z.infer<FormSchema>,
+  Form extends z.infer<FormSchema>
 >(
   formSchema: FormSchema,
   useDefaultSchemaValues: boolean,
-  formKey: FormKey,
+  formKey: FormKey
 ): Form {
   // Recursive function to generate the initial value based on schema type
   function generateValue(schema: z.ZodTypeAny): unknown {
@@ -620,13 +646,13 @@ function getInitialStateFromZodSchema<
       const discriminantKey = undefined // select default option schema
       const discriminantSchema = getSchemaByDiscriminatorKey(
         schema,
-        discriminantKey,
+        discriminantKey
       )
       return generateValue(discriminantSchema as z.ZodTypeAny)
     }
 
     console.warn(
-      `Unsupported schema type: ${schema.constructor.name}. Check form schema with key '${formKey}'.`,
+      `Unsupported schema type: ${schema.constructor.name}. Check form schema with key '${formKey}'.`
     )
     return null
   }
@@ -636,7 +662,7 @@ function getInitialStateFromZodSchema<
 // helpful tip: discriminator option schemas are always zod objects (because of discriminant key)
 function getSchemaByDiscriminatorKey(
   unionSchema: z.ZodTypeAny | z.ZodSchema,
-  key: string | undefined,
+  key: string | undefined
 ): z.ZodObject<z.ZodRawShape> | undefined {
   // Check if the schema is a discriminated union
   if (!(unionSchema instanceof z.ZodDiscriminatedUnion)) {
@@ -702,7 +728,7 @@ function stripRefinements<T extends z.ZodTypeAny>(schema: T) {
         Object.entries(shape).map(([key, value]) => [
           key,
           _stripRefinements(value as z.ZodTypeAny),
-        ]),
+        ])
       )
       return z.object(strippedShape)
     }
@@ -732,7 +758,7 @@ function stripRefinements<T extends z.ZodTypeAny>(schema: T) {
 function stripRootSchema(schema: z.ZodSchema, stripConfig: StripConfig) {
   function recursion(
     _schema: z.ZodSchema,
-    _stripped = false,
+    _stripped = false
   ): [z.ZodSchema, boolean] {
     if (
       getStripInstruction(stripConfig.stripNullable, _schema)
@@ -771,7 +797,7 @@ function stripRootSchema(schema: z.ZodSchema, stripConfig: StripConfig) {
 
     if (!_schema) {
       throw new Error(
-        "Form schema is falsy after attempting to remove ZodNullable, ZodNullish, and/or ZodEffects classes recursively in the 'recursion' function, called by 'stripRootSchema'. Is your schema valid?",
+        "Form schema is falsy after attempting to remove ZodNullable, ZodNullish, and/or ZodEffects classes recursively in the 'recursion' function, called by 'stripRootSchema'. Is your schema valid?"
       )
     }
     return [_schema, _stripped]
@@ -787,7 +813,7 @@ type SlimSchemaConfig<Schema> = {
 
 const getStripInstruction = (
   stripValueOrCallback: boolean | StripConfigCallback | undefined,
-  schema: z.ZodTypeAny | z.ZodSchema,
+  schema: z.ZodTypeAny | z.ZodSchema
 ): boolean => {
   if (!stripValueOrCallback) return false
 
@@ -798,10 +824,9 @@ const getStripInstruction = (
 
 // make the schema more relaxed so we can construct a initial form state
 // schema is based on ZodType in case we ever work with nested schemas
-function getSlimSchema<
-  RS extends z.ZodRawShape,
-  Schema extends z.ZodSchema,
->(config: SlimSchemaConfig<Schema>) {
+function getSlimSchema<RS extends z.ZodRawShape, Schema extends z.ZodSchema>(
+  config: SlimSchemaConfig<Schema>
+) {
   function _getSlimSchema(_schema: z.ZodSchema): z.ZodSchema {
     if (_schema instanceof z.ZodObject) {
       const newShape: z.ZodRawShape = {}
@@ -841,8 +866,8 @@ function getSlimSchema<
         _schema._def.discriminator,
         slimmedSchemas as unknown as readonly [
           z.ZodDiscriminatedUnionOption<string>,
-          ...z.ZodDiscriminatedUnionOption<string>[],
-        ],
+          ...z.ZodDiscriminatedUnionOption<string>[]
+        ]
       )
     }
 
@@ -895,7 +920,7 @@ function getSlimSchema<
 
   const processedRootSchema = stripRootSchema(
     config.schema,
-    config.stripConfig,
+    config.stripConfig
   )[0]
   return _getSlimSchema(processedRootSchema) as unknown as z.ZodObject<RS>
 }

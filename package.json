@@ -24,6 +24,7 @@
     "dev:build": "nuxi build playground",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxi prepare playground",
     "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "prepack": "pnpm clean && pnpm prepare-intermediate-dist && pnpm process-dist",
     "prepare-intermediate-dist": "run-p build:vite build:nuxt-module",
     "process-dist": "node process-dist.js",

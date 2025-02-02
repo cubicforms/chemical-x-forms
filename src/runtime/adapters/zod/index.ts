@@ -6,15 +6,15 @@ import { z } from "zod"
 import { PATH_SEPARATOR } from "../../../lib/core/utils/constants"
 import { isPrimitive } from "../../../lib/core/utils/helpers"
 import type {
-  TypeWithNullableDynamicKeys,
-  ZodTypeWithInnerType,
-} from "../../../types/types"
-import type {
   AbstractSchema,
   FormKey,
   ValidationError,
 } from "../../../types/types-api"
 import type { NestedType } from "../../../types/types-core"
+import type {
+  TypeWithNullableDynamicKeys,
+  ZodTypeWithInnerType,
+} from "../../../types/types-zod"
 
 export function zodAdapter<
   FormSchema extends z.ZodSchema,

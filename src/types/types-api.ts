@@ -78,8 +78,9 @@ export type UseFormConfiguration<
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>
 
-// unknown value because we cannot predict user input type, in general
-export type FormInputStore = Map<FormKey, unknown>
+// values are user driven (hence the `unknown` type annotation)
+export type InputTracker<V = unknown> = Record<string, V>
+export type InputTrackerStore = Map<FormKey, InputTracker>
 
 type OnSubmit<Form extends GenericForm> = (form: Form) => void | Promise<void>
 type OnError = (error: ValidationError[]) => void | Promise<void>

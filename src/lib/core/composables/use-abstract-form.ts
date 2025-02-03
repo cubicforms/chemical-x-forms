@@ -3,6 +3,7 @@ import type { DeepPartial, GenericForm } from "../../../types/types-core"
 import { getComputedSchema } from "../utils/get-computed-schema"
 import { useFormKey } from "./use-form-key"
 import { useFormStore } from "./use-form-store"
+import { useInputTrackerStore } from "./use-input-tracker-store"
 
 export function useAbstractForm<
   Form extends GenericForm,
@@ -35,8 +36,10 @@ export function useAbstractForm<
   } = useFormStore<Form>(key)
   registerForm(initialStateResponse.data)
 
+  const { getInputTracker } = useInputTrackerStore(key)
+  const inputTracker = getInputTracker()
   const getValue = getValueFactory<Form, GetValueFormType>(form)
-  const setValue = setValueFactory(formStore, key, computedSchema)
+  const setValue = setValueFactory(formStore, key, computedSchema, inputTracker)
   const validate = getValidateFactory(form, key, computedSchema)
   const handleSubmit = getHandleSubmitFactory(form, validate)
 
@@ -46,5 +49,6 @@ export function useAbstractForm<
     setValue,
     validate,
     key,
+    inputTracker,
   }
 }

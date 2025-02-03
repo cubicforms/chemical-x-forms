@@ -3,7 +3,7 @@
 import { z } from "zod";
 
 const schema = z.object({ count: z.number() })
-const { getValue, setValue } = useForm({ schema })
+const { getValue, setValue, inputTracker } = useForm({ schema, key: "test" })
 const value = getValue()
 </script>
 
@@ -19,6 +19,17 @@ const value = getValue()
       type="text"
       @input="(e) => setValue('count', (e.target as any)?.value)"
     >
+    <button @click="() => setValue({ peace: 'please', 9: [6] })">
+      Update at root (1)
+    </button>
+    <button @click="() => setValue({ hello: 'world' })">
+      Update at root (2)
+    </button>
+    <button @click="() => setValue({ peace: 'please!!!' })">
+      Update at root (1, update peace)
+    </button>
+    <hr>
+    <pre>{{ JSON.stringify(inputTracker, null, 2) }}</pre>
   </div>
 </template>
 

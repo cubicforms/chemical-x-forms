@@ -1,8 +1,8 @@
 name: Publish to NPM and Version Bump
 
 on:
-  # push:
-  #   branches: [main]
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       version_type:
@@ -21,7 +21,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0 # Ensure full git history so we can push commits and tags
+          fetch-depth: 0 # Full git history so we can push commits/tags
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
@@ -43,6 +43,12 @@ jobs:
 
       - name: Run tests
         run: pnpm test
+
+      - name: \[Debug\] Check git status before version bump
+        run: |
+          echo "DEBUG: Checking for uncommitted changes before bump..."
+          git status
+          git diff --name-only
 
       - name: Configure Git identity
         run: |
@@ -66,7 +72,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Push version bump
-        if: success() # only push if everything so far succeeded
+        if: success()
         run: git push --follow-tags
 
       - name: Rollback version bump if failed

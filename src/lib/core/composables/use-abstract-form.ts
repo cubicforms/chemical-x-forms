@@ -3,7 +3,7 @@ import type { DeepPartial, GenericForm } from "../../../types/types-core"
 import { getComputedSchema } from "../utils/get-computed-schema"
 import { useFormKey } from "./use-form-key"
 import { useFormStore } from "./use-form-store"
-import { useInputTrackerStore } from "./use-input-tracker-store"
+import { useMetaTrackerStore } from "./use-meta-tracker-store"
 
 export function useAbstractForm<
   Form extends GenericForm,
@@ -19,6 +19,8 @@ export function useAbstractForm<
   const { schema } = configuration
   const key = useFormKey(configuration.key)
   const computedSchema = getComputedSchema(key, schema)
+  const { getMetaTracker } = useMetaTrackerStore(key, configuration.initialState ?? {})
+  const metaTracker = getMetaTracker()
   const initialStateResponse = computedSchema.getInitialState({
     useDefaultSchemaValues: true,
     constraints: configuration.initialState,
@@ -31,15 +33,13 @@ export function useAbstractForm<
     getValueFactory,
     setValueFactory,
     registerForm,
-    form,
     formStore,
+    form,
   } = useFormStore<Form>(key)
   registerForm(initialStateResponse.data)
 
-  const { getInputTracker } = useInputTrackerStore(key)
-  const inputTracker = getInputTracker()
-  const getValue = getValueFactory<Form, GetValueFormType>(form)
-  const setValue = setValueFactory(formStore, key, computedSchema, inputTracker)
+  const getValue = getValueFactory<Form, GetValueFormType>(form, metaTracker)
+  const setValue = setValueFactory(formStore, key, computedSchema, metaTracker)
   const validate = getValidateFactory(form, key, computedSchema)
   const handleSubmit = getHandleSubmitFactory(form, validate)
 
@@ -49,6 +49,6 @@ export function useAbstractForm<
     setValue,
     validate,
     key,
-    inputTracker,
+    metaTracker,
   }
 }

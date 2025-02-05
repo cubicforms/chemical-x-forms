@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// eslint-disable-next-line @stylistic/semi
-import { z } from "zod";
+import { z } from "zod"
 
 const schema = z.object({ address: z.object({ line1: z.string(), line2: z.string() }), count: z.number(), optional: z.record(z.string()) })
 const { getValue, setValue } = useForm({ schema: zodAdapter(schema), key: "test", initialState: { count: 4 } })

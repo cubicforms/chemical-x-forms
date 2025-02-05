@@ -31,7 +31,7 @@ jobs:
           always-auth: true
 
       - name: Install pnpm
-        run: npm install -g pnpm
+        run: npm install -g pnpm@8.9.0
 
       - name: Install dependencies
         run: pnpm install

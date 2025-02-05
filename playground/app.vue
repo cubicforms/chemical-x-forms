@@ -16,13 +16,13 @@ const { currentValue, meta } = getValue("address", { withMeta: true })
     <input
       type="text"
       placeholder="Enter line 1"
-      @input="(e) => setValue('address.line1', e.target.value)"
+      @input="(e) => setValue('address.line1', e.target?.value)"
     >
     <label for="line2">Line2</label>
     <input
       type="text"
       placeholder="Enter line 2"
-      @input="(e) => setValue('address.line2', e.target.value)"
+      @input="(e) => setValue('address.line2', e.target?.value)"
     >
   </div>
 </template>

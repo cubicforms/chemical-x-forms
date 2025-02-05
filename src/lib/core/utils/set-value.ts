@@ -7,8 +7,9 @@ import unset from "lodash-es/unset"
 import type { Ref } from "vue"
 import { toRaw } from "vue"
 
-import type { AbstractSchema, FormKey, FormStore } from "../../../types/types-api"
+import type { AbstractSchema, FormKey, FormStore, MetaTracker } from "../../../types/types-api"
 import type { DeepPartial, FlatPath, GenericForm, NestedType } from "../../../types/types-core"
+import { updateMetaTracker } from "../composables/use-meta-tracker-store"
 import { getForm } from "./get-value"
 
 type SetValueCallback<Payload> = (
@@ -21,6 +22,7 @@ export function setValueFactory<Form extends GenericForm>(
   formStore: Ref<FormStore<Form>>,
   formKey: FormKey,
   schema: AbstractSchema<Form, Form>,
+  metaTracker: Readonly<Ref<MetaTracker>>,
 ) {
   function setValueWithCallbackAtRoot<Callback extends SetValueCallback<Form>>(
     callback: Callback,
@@ -36,6 +38,11 @@ export function setValueFactory<Form extends GenericForm>(
     const updatedFormValue = produce(toRaw(form), (draft) => {
       try {
         const rawValue = callback(draft as DeepPartial<Form>)
+        updateMetaTracker({
+          metaTracker: metaTracker.value,
+          rawValue,
+          basePath: undefined,
+        })
         const { data: newForm, success } = schema.getInitialState({
           useDefaultSchemaValues: false,
           constraints: rawValue,
@@ -126,6 +133,11 @@ export function setValueFactory<Form extends GenericForm>(
 
         try {
           const constraints = callback(arg)
+          updateMetaTracker({
+            metaTracker: metaTracker.value,
+            rawValue: constraints,
+            basePath: path,
+          })
           const { data: newState } = nestedSchema.getInitialState({
             useDefaultSchemaValues: false,
             constraints,

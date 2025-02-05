@@ -1,3 +1,4 @@
+import type { Ref } from "vue"
 import type { DeepPartial, GenericForm, NestedType } from "./types-core"
 
 export type ValidationError = {
@@ -85,3 +86,21 @@ export type HandleSubmit<Form extends GenericForm> = (
   onSubmit: OnSubmit<Form>,
   onError?: OnError,
 ) => Promise<void>
+
+type MetaTrackerValue = {
+  updatedAt: string | null
+  rawValue: unknown
+}
+export type MetaTracker = Record<string, MetaTrackerValue>
+export type MetaTrackerStore = Map<FormKey, MetaTracker>
+
+export type CurrentValueContext<WithMeta extends boolean = false> = {
+  withMeta?: WithMeta
+}
+
+type RemapLeafNodes<T, V, Q = NonNullable<T>> = Q extends Record<string, unknown> ? { [K in keyof Q]: RemapLeafNodes<Q[K], V> } : (Q extends Array<infer U> ? Array<RemapLeafNodes<U, V>> : V)
+
+export type CurrentValueWithContext<Value, FormSubtree = Value> = {
+  currentValue: Readonly<Ref<Value>>
+  meta: Readonly<Ref<DeepPartial<RemapLeafNodes<FormSubtree, MetaTrackerValue>>>>
+}

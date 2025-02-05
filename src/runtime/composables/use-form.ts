@@ -1,56 +1,10 @@
 import type { z } from "zod"
-import { useFormKey } from "../../lib/core/composables/use-form-key"
-import { useFormStore } from "../../lib/core/composables/use-form-store"
-import { getComputedSchema } from "../../lib/core/utils/get-computed-schema"
-import type { UnwrapZodObject, UseFormConfigurationWithZod } from "../../types/types-adapters"
+import { useAbstractForm } from "../../lib/core/composables/use-abstract-form"
 import type { AbstractSchema, UseFormConfiguration } from "../../types/types-api"
 import type { DeepPartial, GenericForm } from "../../types/types-core"
+import type { TypeWithNullableDynamicKeys } from "../../types/types-zod"
+import type { UnwrapZodObject, UseFormConfigurationWithZod } from "../../types/types-zod-adapter"
 import { zodAdapter } from "../adapters/zod"
-
-function useAbstractForm<
-  Form extends GenericForm,
-  GetValueFormType extends GenericForm = Form,
->(
-  configuration: UseFormConfiguration<
-    Form,
-    GetValueFormType,
-    AbstractSchema<Form, GetValueFormType>,
-    DeepPartial<Form>
-  >,
-) {
-  const { schema } = configuration
-  const key = useFormKey(configuration.key)
-  const computedSchema = getComputedSchema(key, schema)
-  const initialStateResponse = computedSchema.getInitialState({
-    useDefaultSchemaValues: true,
-    constraints: configuration.initialState,
-    validationMode: configuration.validationMode ?? "lax",
-  })
-
-  const {
-    getHandleSubmitFactory,
-    getValidateFactory,
-    getValueFactory,
-    setValueFactory,
-    registerForm,
-    form,
-    formStore,
-  } = useFormStore<Form>(key)
-  registerForm(initialStateResponse.data)
-
-  const getValue = getValueFactory<Form, GetValueFormType>(form)
-  const setValue = setValueFactory(formStore, key, computedSchema)
-  const validate = getValidateFactory(form, key, computedSchema)
-  const handleSubmit = getHandleSubmitFactory(form, validate)
-
-  return {
-    handleSubmit,
-    getValue,
-    setValue,
-    validate,
-    key,
-  }
-}
 
 type UseFormReturnType<Form extends GenericForm, GetValueFormType extends GenericForm = Form> = ReturnType<typeof useAbstractForm<
   Form,
@@ -70,18 +24,16 @@ export function useForm<
   >,
 ): UseFormReturnType<Form, GetValueFormType>
 export function useForm<
-  Schema extends z.ZodType<unknown>,
-  Form extends GenericForm = z.infer<UnwrapZodObject<Schema>>,
-  GetValueFormType extends GenericForm = Form,
+  Schema extends z.ZodObject<z.ZodRawShape>,
+  GetValueFormType extends GenericForm = TypeWithNullableDynamicKeys<Schema>
 >(
   configuration: UseFormConfigurationWithZod<
     Schema,
-    Form,
-    DeepPartial<Form>
+    DeepPartial<z.infer<UnwrapZodObject<Schema>>>
   >,
-): UseFormReturnType<Form, GetValueFormType>
+): UseFormReturnType<z.infer<UnwrapZodObject<Schema>>, GetValueFormType>
 export function useForm<
-  Schema extends z.ZodType<unknown>,
+  Schema extends z.ZodSchema<unknown>,
   Form extends GenericForm = z.infer<UnwrapZodObject<Schema>>,
   GetValueFormType extends GenericForm = Form,
 >(
@@ -92,8 +44,7 @@ export function useForm<
     DeepPartial<Form>
   > | UseFormConfigurationWithZod<
     Schema,
-    Form,
-    DeepPartial<Form>
+    DeepPartial<z.infer<UnwrapZodObject<Schema>>>
   >,
 ): UseFormReturnType<Form, GetValueFormType> {
   function isZodType(value: unknown): value is z.ZodType {
@@ -101,23 +52,17 @@ export function useForm<
   }
 
   const { schema } = configuration
-
-  if (isZodType(schema)) {
-    // Explicitly cast the output of zodAdapter to match the expected type
-    const abstractSchema = zodAdapter(schema) as unknown as AbstractSchema<Form, GetValueFormType>
-
-    const useFormResponse = useAbstractForm<Form, GetValueFormType>({
-      schema: abstractSchema,
-      initialState: configuration.initialState,
-      key: configuration.key,
-      validationMode: configuration.validationMode,
-    })
-    return useFormResponse
-  }
+  const abstractSchema = isZodType(schema)
+    ? zodAdapter<
+        Schema,
+        Form,
+        TypeWithNullableDynamicKeys<typeof schema>
+      >(schema)
+    : schema
 
   return useAbstractForm<Form, GetValueFormType>({
-    schema: schema,
-    initialState: configuration.initialState,
+    schema: abstractSchema,
+    initialState: configuration.initialState as DeepPartial<Form>,
     key: configuration.key,
     validationMode: configuration.validationMode,
   })

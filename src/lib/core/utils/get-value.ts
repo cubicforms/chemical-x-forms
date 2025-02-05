@@ -1,9 +1,9 @@
-import type { ComputedRef, Ref } from "vue"
-import { toRef } from "vue"
+import { toRef, type ComputedRef, type Ref } from "vue"
 
-import type { FormKey, FormStore } from "../../../types/types-api"
+import type { CurrentValueContext, CurrentValueWithContext, FormKey, FormStore, MetaTracker } from "../../../types/types-api"
 import type { FlatPath, GenericForm, NestedType } from "../../../types/types-core"
 import { PATH_SEPARATOR } from "./constants"
+import { reconstructFlattenedObjectAtKey } from "./flatten-object"
 import { isArrayOrRecord } from "./helpers"
 
 export function getForm<Form extends GenericForm>(
@@ -22,7 +22,7 @@ export function getForm<Form extends GenericForm>(
 export function getValueFactory<
   Form extends GenericForm,
   GetValueFormType extends GenericForm = Form,
->(form: ComputedRef<Form>) {
+>(form: ComputedRef<Form>, metaTrackerRef: Readonly<Ref<MetaTracker>>) {
   function _getValueInternalLogic<Path extends FlatPath<Form>>(path: Path) {
     const valueAsRef = toRef(() => {
       const keys = path.split(PATH_SEPARATOR).map(k => k.trim())
@@ -48,14 +48,41 @@ export function getValueFactory<
     return valueAsRef as Ref<NestedType<GetValueFormType, Path>>
   }
 
-  function getValue(): ComputedRef<GetValueFormType>
+  function getValue(): Readonly<Ref<GetValueFormType>>
   function getValue<Path extends FlatPath<Form>>(
     path: Path,
   ): Readonly<Ref<NestedType<GetValueFormType, Path>>>
-  function getValue<Path extends FlatPath<Form>>(path?: Path) {
-    if (path === undefined) return form as unknown as Ref<GetValueFormType>
+  function getValue<WithMeta extends boolean>(context: CurrentValueContext<WithMeta>): WithMeta extends true ? CurrentValueWithContext<GetValueFormType> : Readonly<Ref<GetValueFormType>>
+  function getValue<Path extends FlatPath<Form>, WithMeta extends boolean>(
+    path: Path,
+    context: CurrentValueContext<WithMeta>,
+  ): WithMeta extends true ? CurrentValueWithContext<NestedType<GetValueFormType, Path>> : Readonly<Ref<NestedType<GetValueFormType, Path>>>
+  function getValue<Path extends FlatPath<Form>>(pathOrContext?: Path | CurrentValueContext, context?: CurrentValueContext) {
+    if (pathOrContext === undefined) return form as unknown as Ref<GetValueFormType>
 
-    return _getValueInternalLogic(path)
+    if (typeof pathOrContext === "object") {
+      const withMeta = pathOrContext.withMeta ?? false
+      if (!withMeta) return form as unknown as Ref<GetValueFormType>
+
+      const reconstructedMetaGraph = toRef(() => reconstructFlattenedObjectAtKey(metaTrackerRef.value, undefined))
+
+      console.log({ reconstructedMetaGraph: reconstructedMetaGraph.value, orig: [metaTrackerRef.value, undefined] })
+
+      return {
+        currentValue: form,
+        // meta: reconstructedMetaGraph,
+        meta: reconstructedMetaGraph,
+      } as unknown as CurrentValueWithContext<GetValueFormType>
+    }
+
+    const withMeta = context?.withMeta ?? false
+    if (!withMeta) return _getValueInternalLogic(pathOrContext)
+
+    const reconstructedMetaGraph = toRef(() => reconstructFlattenedObjectAtKey(metaTrackerRef.value, pathOrContext))
+    return {
+      currentValue: _getValueInternalLogic(pathOrContext),
+      meta: reconstructedMetaGraph,
+    } as unknown as CurrentValueWithContext<NestedType<GetValueFormType, Path>>
   }
 
   return getValue

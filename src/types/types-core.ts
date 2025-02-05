@@ -55,7 +55,7 @@ export type DeepPartial<T> = T extends Primitive // Base case for primitive type
       ? {
           [Key in keyof T]?: DeepPartial<T[Key]>
         }
-      : never
+      : T
 
 export type NestedType<
   RootValue,

@@ -1,11 +1,9 @@
 import type { z } from "zod"
 import type { FormKey, ValidationMode } from "./types-api"
-import type { DeepPartial, GenericForm } from "./types-core"
 
 export type UseFormConfigurationWithZod<
   Schema extends z.ZodType<unknown>,
-  Form extends GenericForm,
-  InitialState extends DeepPartial<Form>,
+  InitialState,
 > = {
   schema: Schema extends z.ZodType<unknown>
     ? UnwrapZodObject<Schema> extends z.ZodObject<z.ZodRawShape>

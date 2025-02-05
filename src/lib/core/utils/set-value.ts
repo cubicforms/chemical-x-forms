@@ -2,15 +2,14 @@ import { produce } from "immer"
 import get from "lodash-es/get"
 import isFunction from "lodash-es/isFunction"
 import isObjectLike from "lodash-es/isObjectLike"
-import merge from "lodash-es/merge"
 import set from "lodash-es/set"
 import unset from "lodash-es/unset"
 import type { Ref } from "vue"
 import { toRaw } from "vue"
 
-import type { AbstractSchema, FormKey, FormStore, InputTracker } from "../../../types/types-api"
+import type { AbstractSchema, FormKey, FormStore, MetaTracker } from "../../../types/types-api"
 import type { DeepPartial, FlatPath, GenericForm, NestedType } from "../../../types/types-core"
-import { flattenObjectWithBaseKey } from "./flatten-object"
+import { updateMetaTracker } from "../composables/use-meta-tracker-store"
 import { getForm } from "./get-value"
 
 type SetValueCallback<Payload> = (
@@ -23,7 +22,7 @@ export function setValueFactory<Form extends GenericForm>(
   formStore: Ref<FormStore<Form>>,
   formKey: FormKey,
   schema: AbstractSchema<Form, Form>,
-  inputTracker: InputTracker,
+  metaTracker: Readonly<Ref<MetaTracker>>,
 ) {
   function setValueWithCallbackAtRoot<Callback extends SetValueCallback<Form>>(
     callback: Callback,
@@ -39,8 +38,11 @@ export function setValueFactory<Form extends GenericForm>(
     const updatedFormValue = produce(toRaw(form), (draft) => {
       try {
         const rawValue = callback(draft as DeepPartial<Form>)
-        const userInput = flattenObjectWithBaseKey(rawValue, undefined)
-        merge(inputTracker, userInput)
+        updateMetaTracker({
+          metaTracker: metaTracker.value,
+          rawValue,
+          basePath: undefined,
+        })
         const { data: newForm, success } = schema.getInitialState({
           useDefaultSchemaValues: false,
           constraints: rawValue,
@@ -131,8 +133,11 @@ export function setValueFactory<Form extends GenericForm>(
 
         try {
           const constraints = callback(arg)
-          const userInput = flattenObjectWithBaseKey(constraints, path)
-          merge(inputTracker, userInput)
+          updateMetaTracker({
+            metaTracker: metaTracker.value,
+            rawValue: constraints,
+            basePath: path,
+          })
           const { data: newState } = nestedSchema.getInitialState({
             useDefaultSchemaValues: false,
             constraints,

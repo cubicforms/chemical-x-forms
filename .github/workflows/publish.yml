@@ -1,8 +1,8 @@
 name: Publish to NPM and Version Bump
 
 on:
-  push:
-    branches: [main]
+  # push:
+  #   branches: [main]
   workflow_dispatch:
     inputs:
       version_type:
@@ -43,12 +43,6 @@ jobs:
 
       - name: Run tests
         run: pnpm test
-
-      - name: \[Debug\] Check git status before version bump
-        run: |
-          echo "DEBUG: Checking for uncommitted changes before bump..."
-          git status
-          git diff --name-only
 
       - name: Configure Git identity
         run: |

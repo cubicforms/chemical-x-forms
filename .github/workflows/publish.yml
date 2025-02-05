@@ -1,8 +1,8 @@
 name: Publish to NPM and Version Bump
 
 on:
-  push:
-    branches: [main]
+  # push:
+  #   branches: [main]
   workflow_dispatch:
     inputs:
       version_type:

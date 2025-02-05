@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Ensure full git history so we can push commits and tags
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
@@ -48,17 +50,12 @@ jobs:
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
       - name: Bump version
-        id: version_bump
         run: |
           if [ -z "${{ github.event.inputs.version_type }}" ]; then
             pnpm version patch
           else
             pnpm version ${{ github.event.inputs.version_type }}
           fi
-
-      - name: Stash version bump (for rollback)
-        run: git stash push -m "Stash version bump"
-        if: always() # Always stash after the version bump, even if it fails
 
       - name: Build
         run: pnpm prepack
@@ -69,11 +66,11 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Push version bump
+        if: success() # only push if everything so far succeeded
         run: git push --follow-tags
-        if: success()
 
       - name: Rollback version bump if failed
         if: failure()
         run: |
           echo "Rolling back version bump due to failure..."
-          git reset --hard HEAD~1  # Reset to the previous commit
+          git reset --hard HEAD~1

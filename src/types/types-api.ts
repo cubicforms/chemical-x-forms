@@ -75,8 +75,10 @@ export type UseFormConfiguration<
   key?: FormKey
   initialState?: InitialState
   validationMode?: ValidationMode
-  useTransformation?: boolean
+  useFieldTransformer?: boolean
 }
+
+export type FieldTransformer<Input, Output> = (input: Input) => Output
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>
 

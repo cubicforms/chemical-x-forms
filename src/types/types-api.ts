@@ -75,6 +75,7 @@ export type UseFormConfiguration<
   key?: FormKey
   initialState?: InitialState
   validationMode?: ValidationMode
+  useTransformation?: boolean
 }
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>

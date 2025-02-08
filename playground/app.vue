@@ -1,36 +1,59 @@
 <script setup lang="ts">
-import { z } from "zod"
+import type { VNode } from "vue"
+import { getCurrentInstance, onMounted } from "vue"
 
-const schema = z.object({ address: z.object({ line1: z.string(), line2: z.string() }), count: z.number(), optional: z.record(z.string()) })
-const { getValue, setValue } = useForm({ schema: zodAdapter(schema), key: "test", initialState: { count: 4 } })
-const { currentValue, meta } = getValue("address", { withMeta: true })
+onMounted(() => {
+  const instance = getCurrentInstance()
+  if (instance) {
+    console.log("VNode Tree:")
+    const treeGraph = traverseVNodeTree(instance.subTree)
+    console.log(treeGraph)
+  }
+})
+
+// Recursive function to traverse and build the VNode tree graph
+function traverseVNodeTree(vnode: VNode, depth = 0): string {
+  if (!vnode) return ""
+
+  // Format current node information
+  const indent = "  ".repeat(depth)
+  let output = `${indent}- ${getNodeDescription(vnode)}\n`
+
+  // Recursively traverse children if they exist
+  if (Array.isArray(vnode.children)) {
+    for (const child of vnode.children) {
+      if (typeof child === "object") {
+        output += traverseVNodeTree(child, depth + 1)
+      }
+    }
+  }
+
+  return output
+}
+
+// Helper to format the VNode description
+function getNodeDescription(vnode: VNode): string {
+  const tag = vnode.type && typeof vnode.type === "object"
+    ? "Component"
+    : vnode.type ?? "Unknown"
+
+  // Extract key props for visibility (if present)
+  const props = vnode.props ? JSON.stringify(vnode.props) : ""
+  console.log(tag, Object.keys(vnode), vnode.ref, vnode.el, vnode.target, vnode.appContext, (vnode as unknown as { ctx: unknown }).ctx)
+
+  return `${tag.toString()}${props ? ` - Props: ${props}` : ""}`
+}
+
+const val = ref("hello")
 </script>
 
 <template>
   <div>
-    <h1>Nuxt module playground!</h1>
-    <hr>
-    <pre>{{ currentValue }}</pre>
-    <pre>{{ meta }}</pre>
-    <label for="line1">Line1</label>
+    <h1>Hello Vue!</h1>
+    <p>A paragraph of text.</p>
     <input
-      type="text"
-      placeholder="Enter line 1"
-      @input="(e) => setValue('address.line1', e.target?.value)"
-    >
-    <label for="line2">Line2</label>
-    <input
-      type="text"
-      placeholder="Enter line 2"
-      @input="(e) => setValue('address.line2', e.target?.value)"
+      v-model="val"
+      placeholder="input is here"
     >
   </div>
 </template>
-
-<style>
-body {
-  background-color: rgb(10, 0, 36);
-  color: rgb(255, 255, 255);
-  font-family: Arial, Helvetica, sans-serif;
-}
-</style>

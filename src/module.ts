@@ -1,5 +1,4 @@
 import { addImportsDir, createResolver, defineNuxtModule } from "@nuxt/kit"
-import { vmodelAutoAttrTransform } from "./lib/core/plugins/vmodelAutoAttrTransform"
 
 // Module options TypeScript interface definition
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -24,9 +23,6 @@ export default defineNuxtModule<ModuleOptions>({
       if (!config.vue.template.compilerOptions.nodeTransforms) {
         config.vue.template.compilerOptions.nodeTransforms = []
       }
-
-      // Push our transform so it runs on every .vue template
-      config.vue.template.compilerOptions.nodeTransforms.push(vmodelAutoAttrTransform)
     })
 
     const resolver = createResolver(import.meta.url)

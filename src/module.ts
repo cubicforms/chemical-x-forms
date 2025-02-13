@@ -1,4 +1,4 @@
-import { addImportsDir, createResolver, defineNuxtModule } from "@nuxt/kit"
+import { addImportsDir, addPlugin, createResolver, defineNuxtModule } from "@nuxt/kit"
 
 // Module options TypeScript interface definition
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -28,5 +28,7 @@ export default defineNuxtModule<ModuleOptions>({
     const resolver = createResolver(import.meta.url)
     addImportsDir(resolver.resolve("./runtime/composables"))
     addImportsDir(resolver.resolve("./runtime/adapters/zod"))
+
+    addPlugin(resolver.resolve("./lib/core/plugins/v-supermodel"))
   },
 })

@@ -1,24 +1,38 @@
 <script lang="ts" setup>
-const element = ref(null)
-const innerValue = ref("b")
-const supermodel = {
-  innerValue,
-  element,
+const innerRef = ref("Two")
+const elementRef = ref(null)
+
+const picked = {
+  innerRef,
+  elementRef,
+}
+
+function handleSwitchSelectedRadioInput() {
+  innerRef.value = innerRef.value === "One" ? "Two" : "One"
 }
 </script>
 
 <template>
-  <select
-    v-supermodel="supermodel"
+  <div>Picked: <pre>{{ JSON.stringify(innerRef) }}</pre></div>
+
+  <input
+    id="one"
+    v-xmodel="picked"
+    type="radio"
+    value="One"
   >
-    <option value="a">
-      first option
-    </option>
-    <option value="b">
-      second option
-    </option>
-    <option value="c">
-      third option
-    </option>
-  </select>
+  <label for="one">One</label>
+
+  <input
+    id="two"
+    v-xmodel="picked"
+    type="radio"
+    value="Two"
+  >
+  <label for="two">Two</label>
+  <hr>
+
+  <button @click="handleSwitchSelectedRadioInput">
+    switch selected radio button
+  </button>
 </template>

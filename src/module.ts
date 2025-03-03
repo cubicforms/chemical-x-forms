@@ -1,4 +1,5 @@
 import { addImportsDir, addPlugin, createResolver, defineNuxtModule } from "@nuxt/kit"
+import { selectNodeTransform } from "./lib/core/transforms/select-transform"
 
 // Module options TypeScript interface definition
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -12,16 +13,21 @@ export default defineNuxtModule<ModuleOptions>({
   defaults: {
   },
   setup(_options, _nuxt) {
-    // Hook into Nuxt's Vite config extension
+    _nuxt.options.vue = _nuxt.options.vue || {}
+    _nuxt.options.vue.compilerOptions = _nuxt.options.vue.compilerOptions || {}
+
+    _nuxt.options.vue.compilerOptions.nodeTransforms = [
+      ...(_nuxt.options.vue.compilerOptions.nodeTransforms || []),
+      selectNodeTransform
+    ]
+
     _nuxt.hook("vite:extendConfig", (config) => {
-      // Make sure nested objects exist
-      if (!config.vue) config.vue = {}
-      if (!config.vue.template) config.vue.template = {}
-      if (!config.vue.template.compilerOptions) {
-        config.vue.template.compilerOptions = {}
-      }
-      if (!config.vue.template.compilerOptions.nodeTransforms) {
-        config.vue.template.compilerOptions.nodeTransforms = []
+      config.build = config.build || {}
+      config.build.rollupOptions = config.build.rollupOptions || {}
+      config.build.rollupOptions.external = config.build.rollupOptions.external || []
+
+      if (Array.isArray(config.build.rollupOptions.external)) {
+        config.build.rollupOptions.external.push("@vue/compiler-core", "@vue/shared", "@vue/runtime-core", "nuxt", "zod")
       }
     })
 
@@ -29,6 +35,6 @@ export default defineNuxtModule<ModuleOptions>({
     addImportsDir(resolver.resolve("./runtime/composables"))
     addImportsDir(resolver.resolve("./runtime/adapters/zod"))
 
-    addPlugin(resolver.resolve("./lib/core/plugins/v-supermodel"))
+    addPlugin(resolver.resolve("./lib/core/plugins/xmodel"))
   },
 })

@@ -42,7 +42,7 @@ export function useAbstractForm<
   const setValue = setValueFactory(formStore, key, computedSchema, metaTracker)
   const validate = getValidateFactory(form, key, computedSchema)
   const handleSubmit = getHandleSubmitFactory(form, validate)
-  const register = registerFactory(key, computedSchema)
+  const register = registerFactory(formStore, key, computedSchema, metaTracker, setValue)
 
   return {
     handleSubmit,

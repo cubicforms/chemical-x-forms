@@ -20,9 +20,10 @@ import {
   looseToNumber
 } from "@vue/shared"
 
-type XModelValue<Value = unknown> = {
-  innerRef: Ref<Value>
-  elementRef: Ref<HTMLElement | null>
+export type XModelValue<Value = unknown> = {
+  innerRef: Readonly<Ref<Value>>
+  registerElement: (el: HTMLElement) => void
+  setValueWithInternalPath: (value: unknown) => boolean
 }
 
 type AssignerFn = (value: unknown) => void
@@ -31,10 +32,11 @@ function isXModelPayload<Value = unknown>(val: unknown): val is XModelValue<Valu
   if (!val) return false
   if (typeof val !== "object") return false
   if (!("innerRef" in val)) return false
-  if (!("elementRef" in val)) return false
   if (!isRef(val.innerRef)) return false
-  if (!isRef(val.elementRef)) return false
-  if (val.elementRef.value !== null && !(val.elementRef.value instanceof HTMLElement)) return false
+  if (!("registerElement" in val)) return false
+  if (typeof val.registerElement !== "function") return false
+  if (!("setValueWithInternalPath" in val)) return false
+  if (typeof val.setValueWithInternalPath !== "function") return false
   return true
 }
 
@@ -62,7 +64,8 @@ const getModelAssigner = (vnode: VNode, xmodelValue: XModelValue): AssignerFn =>
       = vnode.props?.["onUpdate:xmodelValue"] // this is a developer escape hatch
   if (!fn) {
     return (value) => {
-      xmodelValue.innerRef.value = value
+      // xmodelValue.innerRef.value = value
+      xmodelValue.setValueWithInternalPath(value)
       return undefined
     }
   }
@@ -114,7 +117,7 @@ export const vModelText: ModelDirective<
     const castToNumber
         = number || (vnode.props && vnode.props.type === "number")
     if (isXModelPayload(value)) {
-      value.elementRef.value = el
+      value.registerElement(el)
       setAssignFunction(el, vnode, value)
     }
     addEventListener(el, lazy ? "change" : "input", (e) => {
@@ -192,17 +195,16 @@ export const vModelCheckbox: ModelDirective<HTMLInputElement> = {
   created(el, { value }, vnode) {
     if (!isXModelPayload(value)) return
 
-    value.elementRef.value = el
+    value.registerElement(el)
     setAssignFunction(el, vnode, value)
     addEventListener(el, "change", () => {
-      const modelValue = "_xmodelValue" in el ? (el)._xmodelValue : []
+      const modelValue = value.innerRef.value ?? []
 
       // this side-steps subtle 2-way binding bugs where ref updates but input cannot be tracked by value
       const explicitValueRequired = true
       const elementValue = getValue(el, explicitValueRequired)
 
-      const baseRefEl = value.elementRef.value
-      const checked = baseRefEl instanceof HTMLInputElement ? baseRefEl?.checked : el.checked
+      const checked = el.checked
       const assign = el[assignKey]
       if (isArray(modelValue)) {
         if (elementValue === undefined) {
@@ -222,7 +224,7 @@ export const vModelCheckbox: ModelDirective<HTMLInputElement> = {
       }
       else if (isSet(modelValue)) {
         if (elementValue === undefined) {
-          warn("Please add `value` to checkbox or pass XModelValue of primitive value to xmodel.")
+          warn("Please add `value` prop to checkbox or pass XModelValue of primitive value to xmodel.")
           return
         }
         const cloned = new Set(modelValue)
@@ -232,7 +234,7 @@ export const vModelCheckbox: ModelDirective<HTMLInputElement> = {
         else {
           cloned.delete(elementValue)
         }
-        assign(cloned) // WHERE THINGS GO WRONG WITH "ON"
+        assign(cloned)
       }
       else {
         assign(getCheckboxValue(el, checked))
@@ -254,11 +256,9 @@ function setChecked(
 ) {
   // store the v-xmodel value on the element so it can be accessed by the
   // change listener.
-  type ElementWithModelValue = HTMLInputElement & { _xmodelValue: unknown }
   if (!isXModelPayload(value)) return
 
   const originalValue = value.innerRef.value
-  ;(el as ElementWithModelValue)._xmodelValue = originalValue
   let checked: boolean
 
   if (isArray(originalValue)) {
@@ -268,13 +268,16 @@ function setChecked(
     checked = originalValue.has(vnode.props?.value)
   }
   else {
-    if (originalValue === oldValue) return
+    if (originalValue === oldValue) {
+      return
+    }
     checked = looseEqual(originalValue, getCheckboxValue(el, true))
   }
 
   // Only update if the checked state has changed
-  const elFromRef = value.elementRef.value ?? {}
-  const elChecked = "checked" in elFromRef ? elFromRef.checked : el.checked
+  const elChecked = el.checked
+
+  // BUG: I think the issue is that we're using one ref for multiple elements (use value type to identify and mitigate)
   if (elChecked !== checked) {
     el.checked = checked
   }
@@ -284,7 +287,7 @@ export const vModelRadio: ModelDirective<HTMLInputElement> = {
   created(el, { value }, vnode) {
     if (!isXModelPayload(value)) return
 
-    value.elementRef.value = el
+    value.registerElement(el)
     // setAssignFunction(el, vnode, value)
     el.checked = looseEqual(value.innerRef.value, vnode.props!.value)
     setAssignFunction(el, vnode, value)
@@ -308,7 +311,7 @@ export const vModelSelect: ModelDirective<HTMLSelectElement, "number"> = {
   created(el, { value, modifiers: { number } }, vnode) {
     if (!isXModelPayload(value)) return
 
-    value.elementRef.value = el
+    value.registerElement(el)
     setAssignFunction(el, vnode, value)
     const isSetModel = isSet(value.innerRef.value)
     addEventListener(el, "change", () => {

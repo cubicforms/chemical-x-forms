@@ -73,7 +73,7 @@ export function zodAdapter<
         )
       }
     }
-    const abstractSchema = {
+    const abstractSchema: AbstractSchema<Form, GetValueFormType> = {
       getInitialState(config) {
         const initialStateWithoutConstraints = getInitialStateFromZodSchema(
           _zodSchema,
@@ -305,7 +305,7 @@ export function zodAdapter<
           formKey: _formKey,
         }
       },
-    } satisfies AbstractSchema<Form, GetValueFormType>
+    }
 
     return abstractSchema
   }

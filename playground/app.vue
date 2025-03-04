@@ -1,38 +1,35 @@
 <script lang="ts" setup>
-const innerRef = ref("Two")
-const elementRef = ref(null)
+import { z } from "zod"
 
-const picked = {
-  innerRef,
-  elementRef,
-}
-
-function handleSwitchSelectedRadioInput() {
-  innerRef.value = innerRef.value === "One" ? "Two" : "One"
-}
+const schema = z.object({ name: z.string().default("ozzy") })
+const { register, getValue, setValue } = useForm({ schema, key: "test-form" })
+const reg = register("name")
+const inn = reg.innerRef
 </script>
 
 <template>
-  <div>Picked: <pre>{{ JSON.stringify(innerRef) }}</pre></div>
-
-  <input
-    id="one"
-    v-xmodel="picked"
-    type="radio"
-    value="One"
-  >
-  <label for="one">One</label>
-
-  <input
-    id="two"
-    v-xmodel="picked"
-    type="radio"
-    value="Two"
-  >
-  <label for="two">Two</label>
-  <hr>
-
-  <button @click="handleSwitchSelectedRadioInput">
-    switch selected radio button
+  form state:
+  <pre>{{ JSON.stringify(getValue().value, null, 2) }}</pre>
+  field state:
+  <pre>{{ JSON.stringify(inn, null, 2) }}</pre>
+  <button @click="() => { setValue('name', 'ayra') }">
+    update name to ayra
   </button>
+  <hr>
+  <button @click="() => { reg.setValueWithInternalPath('yes') }">
+    update innerRef to yes
+  </button>
+  <input
+    v-xmodel="register('name')"
+    type="text"
+  >
+  <textarea v-xmodel="register('name')" />
 </template>
+
+<style>
+body {
+  background-color: rgb(0, 0, 54);
+  color: white;
+  font-family: Arial, Helvetica, sans-serif;
+}
+</style>

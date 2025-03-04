@@ -90,12 +90,12 @@ function generateEqualityExpression(
       return acc
     }, [])
 
-    const selectValueArr = Array.isArray(selectValue)
-      ? selectValue
-      : [selectValue]
-    const optionValueArr = Array.isArray(optionValue)
-      ? optionValue
-      : [optionValue]
+    const selectValueArr = Array.isArray(_selectValue)
+      ? _selectValue
+      : [_selectValue]
+    const optionValueArr = Array.isArray(_optionValue)
+      ? _optionValue
+      : [_optionValue]
 
     function getImplicitTrueMultipleExpression(expression: CompoundExpressionNode["children"]) {
       // Identify user passing in `multiple` as an implied truthy prop

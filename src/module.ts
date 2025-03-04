@@ -1,4 +1,5 @@
 import { addImportsDir, addPlugin, createResolver, defineNuxtModule } from "@nuxt/kit"
+import { inputTextAreaNodeTransform } from "./lib/core/transforms/input-text-area-transform"
 import { selectNodeTransform } from "./lib/core/transforms/select-transform"
 
 // Module options TypeScript interface definition
@@ -18,7 +19,8 @@ export default defineNuxtModule<ModuleOptions>({
 
     _nuxt.options.vue.compilerOptions.nodeTransforms = [
       ...(_nuxt.options.vue.compilerOptions.nodeTransforms || []),
-      selectNodeTransform
+      selectNodeTransform,
+      inputTextAreaNodeTransform,
     ]
 
     _nuxt.hook("vite:extendConfig", (config) => {

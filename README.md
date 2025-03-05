@@ -23,7 +23,7 @@
 **Install with Nuxi:**
 
 ```bash
-npx nuxi module add chemical-x-forms
+npx nuxi module add @chemical-x/forms
 ```
 
 That's it! You can now use Chemical X Forms in your Nuxt app ✨<br><br>

@@ -7,7 +7,7 @@
 
 A fully type-safe, schema-driven form library that gives you superpowers.
 Comes with a minimal composition API that prioritizes developer experience and form correctness.
-Note: this library is not production ready (yet). If you find any bugs, please create an issue and we'll resolve them.
+Note: this library is not production ready (yet). If you find a bug, please create an issue and we'll resolve it.
 
 ## Features
 

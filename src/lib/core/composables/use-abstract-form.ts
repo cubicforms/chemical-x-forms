@@ -3,6 +3,7 @@ import type {
   UseFormConfiguration,
 } from "../../../types/types-api"
 import type { DeepPartial, GenericForm } from "../../../types/types-core"
+import { elementStateFactory } from "../utils/element-state-api"
 import { getComputedSchema } from "../utils/get-computed-schema"
 import { registerFactory } from "../utils/register"
 import { useElementStore } from "./use-element-store"
@@ -49,18 +50,19 @@ export function useAbstractForm<
   const setValue = setValueFactory(formStore, key, computedSchema, metaTracker)
   const validate = getValidateFactory(form, key, computedSchema)
   const handleSubmit = getHandleSubmitFactory(form, validate)
-  const { registerElement, deregisterElement } = useElementStore()
+  const { getElementHelpers, elementDOMStateStoreRef } = useElementStore()
   const register = registerFactory(
     formStore,
     key,
     computedSchema,
     metaTracker,
-    registerElement,
-    deregisterElement,
-    setValue
+    setValue,
+    getElementHelpers,
   )
+  const getElementState = elementStateFactory(form, metaTracker, elementDOMStateStoreRef)
 
   return {
+    getElementState,
     handleSubmit,
     getValue,
     setValue,

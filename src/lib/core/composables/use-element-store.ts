@@ -58,25 +58,20 @@ export function useElementStore(): UseElementStoreRefReturnValue {
       }
 
     // stable function reference for adding and removing event listeners during the element existence lifecycle
-    function handleFocus(event: FocusEvent) {
-      console.log("element is focused, this is the focus event!", event)
+    function handleFocus(_event: FocusEvent) {
       _setKnownFocusState(path, true)
     }
 
-    function handleBlur(event: FocusEvent) {
-      // the DOM will always trigger this before we can handle the state, so identify unmounted elements manually
-      console.log("element is blurred!", event.target)
+    function handleBlur(_event: FocusEvent) {
       _setKnownFocusState(path, false)
     }
 
     function addEventListenerHelper(element: HTMLElement) {
-      console.log("adding event listeners for", element)
       element.addEventListener("focus", handleFocus)
       element.addEventListener("blur", handleBlur)
     }
 
     function removeEventListenerHelper(element: HTMLElement) {
-      console.log("removing event listeners for", element)
       element.removeEventListener("focus", handleFocus)
       element.removeEventListener("blur", handleBlur)
     }
@@ -121,12 +116,6 @@ export function useElementStore(): UseElementStoreRefReturnValue {
           omit(deletedElementState, path) // remove the state reference (no longer tracking element state)
         }
       }
-
-      //   _setKnownFocusState(
-      //     (elementStore?.[path]?.size ?? 0), // plus 1 because we're about to add the newly received element
-      //     path,
-      //     import.meta.client && document.activeElement === element
-      //   )
 
       return existingElementCount
     }

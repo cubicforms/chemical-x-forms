@@ -278,7 +278,6 @@ function setChecked(
   // Only update if the checked state has changed
   const elChecked = el.checked
 
-  // BUG: I think the issue is that we're using one ref for multiple elements (use value type to identify and mitigate)
   if (elChecked !== checked) {
     el.checked = checked
   }

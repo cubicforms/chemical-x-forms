@@ -23,8 +23,7 @@ export function registerFactory<Form extends GenericForm>(
   const form = getForm(formStore, formKey)
   const elementHelperCache: Record<string, ReturnType<GetElementHelpers>> = {}
   // TODO: use context
-  function registerLogic<Input, Output>(path: string, context?: RegisterContext<Input, Output>): XModelValue {
-    console.log({ context })
+  function registerLogic<Input, Output>(path: string, _context?: RegisterContext<Input, Output>): XModelValue {
     if (metaTracker.value?.[path] === undefined) {
       updateMetaTracker({
         basePath: path,
@@ -35,14 +34,12 @@ export function registerFactory<Form extends GenericForm>(
     return {
       innerRef: toRef(() => metaTracker.value?.[path]?.rawValue),
       registerElement: (el) => {
-        console.log("NOW WE CAN BUILD ELEMENT API\n\t>>\treceived an element from the xmodel directive!", el)
         if (!(path in elementHelperCache)) {
           elementHelperCache[path] = getElementHelpers(path)
         }
         elementHelperCache[path].registerElement(el)
       },
       deregisterElement: (el) => {
-        console.log("NOW WE CAN **DISCARD** ELEMENT FROM TRACKER\n\t>>\treceived an element from the xmodel directive!", el)
         if (!(path in elementHelperCache)) {
           elementHelperCache[path] = getElementHelpers(path)
         }
@@ -56,12 +53,3 @@ export function registerFactory<Form extends GenericForm>(
 
   return registerLogic
 }
-
-// type FullElementState<Value = unknown> = {
-//   currentValue: Value
-//   meta: MetaTrackerValue
-// } & ElementDOMStateStore
-
-// function elementStateApiFactory() {
-
-// }

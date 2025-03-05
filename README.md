@@ -5,9 +5,9 @@
 [![License][license-src]][license-href]
 [![Nuxt][nuxt-src]][nuxt-href]
 
-A fully type-safe, schema-driven form library that gives you superpowers.<br><br>
-Comes with a minimal composition API that prioritizes developer experience and form correctness.<br><br>
+**A fully type-safe, schema-driven form library that gives you superpowers**. Comes with a minimal composition API that prioritizes developer experience and form correctness.<br><br>
 🚧 this library is not production ready _yet_.
+<br><br>
 
 ## 🏔️ Features
 
@@ -16,6 +16,7 @@ Comes with a minimal composition API that prioritizes developer experience and f
 - **v-xmodel Directive** – One SSR-safe directive that automatically tracks everything.
 - **Full State Tracking** – Automatically tracks field states (value, touched, dirty status, validation errors, etc).
 - **TypeScript Friendly** – Fully type-safe, with advanced form type inference from you schema.
+  <br><br>
 
 ## 🪩 Installation
 
@@ -50,6 +51,8 @@ export default defineNuxtConfig({
   modules: ["@chemical-x/forms"],
 });
 ```
+
+<br><br>
 
 ## 🪄 Usage
 
@@ -93,6 +96,7 @@ _**note**: detailed documentation coming soon_
 `setValue(name: string, value: any)` – Updates a field programmatically.
 
 `getElementState(name: string)` – Returns field state (value, touched, errors, etc.).
+<br><br>
 
 ## 🥇 Advanced Features
 
@@ -101,6 +105,8 @@ _**note**: detailed documentation coming soon_
 - **Validation Handling** – Displays schema validation errors automatically.
 
 - **Performance Optimizations** – Efficient reactive updates for optimal performance.
+
+<br><br>
 
 ## 🪪 License
 

@@ -5,11 +5,9 @@
 [![License][license-src]][license-href]
 [![Nuxt][nuxt-src]][nuxt-href]
 
-**Chemical X Forms** (`@chemical-x/forms`) is a fully type-safe, schema-driven form library that gives you superpowers.
-
-We offer a minimal composition API that prioritizes developer experience and correctness.
-
-**Note:** this library is not production ready (yet). If you find _any_ bugs, please create an issue and we'll resolve them.
+A fully type-safe, schema-driven form library that gives you superpowers.
+Comes with a minimal composition API that prioritizes developer experience and form correctness.
+Note: this library is not production ready (yet). If you find any bugs, please create an issue and we'll resolve them.
 
 ## Features
 

@@ -1,6 +1,6 @@
 {
   "name": "@chemical-x/forms",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "main": "./dist/nuxt-module/module.cjs",
   "types": "./dist/nuxt-module/types.d.ts",
   "files": [

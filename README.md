@@ -15,7 +15,7 @@
 - **Abstract Schema Support** – Integrates with validation libraries like Zod for type-safe schemas and automatic validation.
 - **v-xmodel Directive** – One SSR-safe directive that automatically tracks everything.
 - **Full State Tracking** – Automatically tracks field states (value, touched, dirty status, validation errors, etc).
-- **TypeScript Friendly** – Fully type-safe, with advanced form type inference from you schema.
+- **TypeScript Friendly** – Fully type-safe, with advanced form type inference from your schema.
   <br><br>
 
 ## 🪩 Installation
@@ -28,7 +28,7 @@ npx nuxi module add chemical-x-forms
 
 That's it! You can now use Chemical X Forms in your Nuxt app ✨<br><br>
 
-**Alternatively, install manually:**
+**Install manually:**
 
 ```bash
 # Using pnpm
@@ -85,7 +85,7 @@ _**note**: detailed documentation coming soon_
 
 `useForm(options?)` – Initializes form state. Abstract schema required.
 
-`v-xmodel` -Custom, SSR-safe directive for registering components with Chemical X
+`v-xmodel` – Custom, SSR-safe directive for registering components with Chemical X
 
 `register(name: string)` – Binds a field to form state.
 

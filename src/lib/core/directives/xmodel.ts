@@ -23,6 +23,7 @@ import {
 export type XModelValue<Value = unknown> = {
   innerRef: Readonly<Ref<Value>>
   registerElement: (el: HTMLElement) => void
+  deregisterElement: (el: HTMLElement) => void
   setValueWithInternalPath: (value: unknown) => boolean
 }
 
@@ -421,6 +422,11 @@ export const vModelDynamic: ObjectDirective<
   updated(el, binding, vnode, prevVNode) {
     callModelHook(el, binding, vnode, prevVNode, "updated")
   },
+  beforeUnmount(el, { value }) {
+    if (!isXModelPayload(value) || !el) return
+
+    value.deregisterElement(el)
+  }
 }
 
 function resolveDynamicModel(tagName: string, type: string | undefined) {

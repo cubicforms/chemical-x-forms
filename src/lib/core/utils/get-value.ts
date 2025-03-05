@@ -66,8 +66,6 @@ export function getValueFactory<
 
       const reconstructedMetaGraph = toRef(() => reconstructFlattenedObjectAtKey(metaTrackerRef.value, undefined))
 
-      console.log({ reconstructedMetaGraph: reconstructedMetaGraph.value, orig: [metaTrackerRef.value, undefined] })
-
       return {
         currentValue: form,
         // meta: reconstructedMetaGraph,

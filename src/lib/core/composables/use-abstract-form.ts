@@ -1,32 +1,40 @@
-import type { AbstractSchema, UseFormConfiguration } from "../../../types/types-api"
+import type {
+  AbstractSchema,
+  UseFormConfiguration,
+} from "../../../types/types-api"
 import type { DeepPartial, GenericForm } from "../../../types/types-core"
+import { elementStateFactory } from "../utils/element-state-api"
 import { getComputedSchema } from "../utils/get-computed-schema"
+import { registerFactory } from "../utils/register"
+import { useElementStore } from "./use-element-store"
 import { useFormKey } from "./use-form-key"
 import { useFormStore } from "./use-form-store"
 import { useMetaTrackerStore } from "./use-meta-tracker-store"
 
 export function useAbstractForm<
   Form extends GenericForm,
-  GetValueFormType extends GenericForm = Form,
+  GetValueFormType extends GenericForm = Form
 >(
   configuration: UseFormConfiguration<
     Form,
     GetValueFormType,
     AbstractSchema<Form, GetValueFormType>,
     DeepPartial<Form>
-  >,
+  >
 ) {
   const { schema } = configuration
   const key = useFormKey(configuration.key)
   const computedSchema = getComputedSchema(key, schema)
-  const { getMetaTracker } = useMetaTrackerStore(key, configuration.initialState ?? {})
+  const { getMetaTracker } = useMetaTrackerStore(
+    key,
+    configuration.initialState ?? {}
+  )
   const metaTracker = getMetaTracker()
   const initialStateResponse = computedSchema.getInitialState({
     useDefaultSchemaValues: true,
     constraints: configuration.initialState,
     validationMode: configuration.validationMode ?? "lax",
   })
-
   const {
     getHandleSubmitFactory,
     getValidateFactory,
@@ -42,13 +50,24 @@ export function useAbstractForm<
   const setValue = setValueFactory(formStore, key, computedSchema, metaTracker)
   const validate = getValidateFactory(form, key, computedSchema)
   const handleSubmit = getHandleSubmitFactory(form, validate)
+  const { getElementHelpers, elementDOMStateStoreRef } = useElementStore()
+  const register = registerFactory(
+    formStore,
+    key,
+    computedSchema,
+    metaTracker,
+    setValue,
+    getElementHelpers,
+  )
+  const getElementState = elementStateFactory(form, metaTracker, elementDOMStateStoreRef)
 
   return {
+    getElementState,
     handleSubmit,
     getValue,
     setValue,
     validate,
+    register,
     key,
-    metaTracker,
   }
 }

@@ -1,36 +1,53 @@
-<script setup lang="ts">
+<script lang="ts" setup>
 import { z } from "zod"
 
-const schema = z.object({ address: z.object({ line1: z.string(), line2: z.string() }), count: z.number(), optional: z.record(z.string()) })
-const { getValue, setValue } = useForm({ schema: zodAdapter(schema), key: "test", initialState: { count: 4 } })
-const { currentValue, meta } = getValue("address", { withMeta: true })
+const schema = z.object({ name: z.string().default("ozzy"), age: z.number() })
+const { register, getValue, setValue, getElementState } = useForm({ schema, key: "test-form" })
+const reg = register("name")
+const inn = reg.innerRef
+
+const mountTextArea = ref(true)
+const x = getElementState("name")
 </script>
 
 <template>
-  <div>
-    <h1>Nuxt module playground!</h1>
-    <hr>
-    <pre>{{ currentValue }}</pre>
-    <pre>{{ meta }}</pre>
-    <label for="line1">Line1</label>
-    <input
-      type="text"
-      placeholder="Enter line 1"
-      @input="(e) => setValue('address.line1', e.target?.value)"
-    >
-    <label for="line2">Line2</label>
-    <input
-      type="text"
-      placeholder="Enter line 2"
-      @input="(e) => setValue('address.line2', e.target?.value)"
-    >
-  </div>
+  form state:
+  <pre>{{ JSON.stringify(getValue().value, null, 2) }}</pre>
+  field state:
+  <pre>{{ JSON.stringify(inn, null, 2) }}</pre>
+  total element state:
+  <pre>{{ JSON.stringify(x, null, 2) }}</pre>
+  <button @click="() => { setValue('name', 'ayra') }">
+    update name to ayra
+  </button>
+  <hr>
+  <button @click="() => { reg.setValueWithInternalPath('yes') }">
+    update innerRef to yes
+  </button>
+  <input
+    v-xmodel.number="register('age')"
+    type="number"
+  >
+  <hr>
+  <input
+    v-xmodel.number="register('name')"
+  >
+  <hr>
+  <button @click="mountTextArea = !mountTextArea">
+    Toggle the textarea (currently {{ mountTextArea ? 'mounted' : 'not mounted' }})
+  </button>
+  <hr>
+  <textarea
+    v-if="mountTextArea"
+    v-xmodel="register('name')"
+    autofocus
+  />
 </template>
 
 <style>
 body {
-  background-color: rgb(10, 0, 36);
-  color: rgb(255, 255, 255);
+  background-color: rgb(0, 0, 54);
+  color: white;
   font-family: Arial, Helvetica, sans-serif;
 }
 </style>

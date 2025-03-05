@@ -13,6 +13,7 @@ export type UseFormConfigurationWithZod<
   key?: FormKey
   initialState?: InitialState
   validationMode?: ValidationMode
+  useFieldTransformer?: boolean
 }
 
 // Recursively unwraps Zod types like ZodDefault, ZodOptional, ZodNullable, etc.

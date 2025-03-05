@@ -75,7 +75,10 @@ export type UseFormConfiguration<
   key?: FormKey
   initialState?: InitialState
   validationMode?: ValidationMode
+  useFieldTransformer?: boolean
 }
+
+export type FieldTransformer<Input, Output> = (input: Input) => Output
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>
 
@@ -87,7 +90,7 @@ export type HandleSubmit<Form extends GenericForm> = (
   onError?: OnError,
 ) => Promise<void>
 
-type MetaTrackerValue = {
+export type MetaTrackerValue = {
   updatedAt: string | null
   rawValue: unknown
 }

@@ -33,7 +33,6 @@ export function flattenObjectWithBaseKey(obj: unknown, basePath?: string) {
   return recordedPaths
 }
 
-// Todo: Return to type this properly when time allows
 export function reconstructFlattenedObjectAtKey(obj: Record<string, unknown>, basePath: string | undefined) {
   if (!isRecord(obj)) return {}
   const paths = Object.keys(toRaw(obj))

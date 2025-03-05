@@ -50,6 +50,5 @@ export function updateMetaTracker(config: UpdateMetaTrackerConfig) {
   const flattenedObject = flattenObjectWithBaseKey(rawValue, basePath)
   const metaTrackerPatch = Object.entries(flattenedObject).reduce<MetaTracker>((acc, [key, value]) => ({ ...acc, [key]: { updatedAt, rawValue: value } }), {})
 
-  console.log("internal metatracker", metaTracker, metaTrackerPatch)
   return merge(metaTracker, metaTrackerPatch)
 }

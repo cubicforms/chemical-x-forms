@@ -55,8 +55,6 @@ const entrypoints = {
 
 export default defineConfig({
   plugins: [
-    // Removed Babel and babel-plugin-lodash to prevent deprecated transformations
-    // If Babel is necessary for your project, ensure it's configured without the lodash plugin
     // Generate TypeScript declaration files
     dts({
       include: [
@@ -103,26 +101,11 @@ export default defineConfig({
         exports: "named", // This ensures named exports are used exclusively
         // Allow Rollup to handle chunking automatically without manualChunks
         chunkFileNames: "chunks/[name]-[hash].js",
-        // Optionally, set entryFileNames and assetFileNames if needed
-        // entryFileNames: 'entry/[name].js',
-        // assetFileNames: 'assets/[name].[hash][extname]',
-        // assetFileNames: (assetInfo) => {
-        //   // Exclude .d.ts files from being processed
-        //   const name = assetInfo.names[0]
-        //   if (!name) return ""
-
-        //   if (name.endsWith(".d.ts")) {
-        //     return "" // Don't include .d.ts files in the output
-        //   }
-        //   return "[name]" // For other files, use the default output name
-        // },
       },
-      // Remove the commonjs plugin as Vite handles CommonJS internally
-      // plugins: [commonjs()], // Removed
     },
     // Optional: Enable source maps for debugging
     sourcemap: false,
     // Optional: Disable minification temporarily to debug
-    // minify: false,
+    // minify: false
   },
 })

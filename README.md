@@ -53,7 +53,7 @@ export default defineNuxtConfig({
 
 ## 🪄 Usage
 
-### Basic Example
+**Basic Example**
 
 ```vue
 <script setup lang="ts">
@@ -76,7 +76,7 @@ const submit = handleSubmit((data) => {
 </template>
 ```
 
-### 💡 Core API Functions
+**Core API Functions**
 
 _**note**: detailed documentation coming soon_
 

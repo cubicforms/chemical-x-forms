@@ -6,8 +6,8 @@
 [![Nuxt][nuxt-src]][nuxt-href]
 
 A fully type-safe, schema-driven form library that gives you superpowers.<br>
-Comes with a minimal composition API that prioritizes developer experience and form correctness.<br>
-🚧 this library is not yet production ready.
+Comes with a minimal composition API that prioritizes developer experience and form correctness.<br><br>
+🚧 this library is not production ready _yet_.
 
 ## 🏔️ Features
 

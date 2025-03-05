@@ -5,11 +5,11 @@
 [![License][license-src]][license-href]
 [![Nuxt][nuxt-src]][nuxt-href]
 
-A fully type-safe, schema-driven form library that gives you superpowers.
-Comes with a minimal composition API that prioritizes developer experience and form correctness.
-Note: this library is not production ready (yet). If you find a bug, please create an issue and we'll resolve it.
+A fully type-safe, schema-driven form library that gives you superpowers.<br>
+Comes with a minimal composition API that prioritizes developer experience and form correctness.<br>
+🚧 this library is not yet production ready.
 
-## Features
+## 🏔️ Features
 
 - **Compact API** – Minimal yet expressive API surface with core functions like `useForm`, `register`, and `handleSubmit` to reduce boilerplate.
 - **Abstract Schema Support** – Integrates with validation libraries like Zod for type-safe schemas and automatic validation.
@@ -17,7 +17,7 @@ Note: this library is not production ready (yet). If you find a bug, please crea
 - **Full State Tracking** – Automatically tracks field states (value, touched, dirty status, validation errors, etc).
 - **TypeScript Friendly** – Fully type-safe, with advanced form type inference from you schema.
 
-## Installation
+## 🪩 Installation
 
 **Install with Nuxi:**
 
@@ -51,7 +51,7 @@ export default defineNuxtConfig({
 });
 ```
 
-## Usage
+## 🪄 Usage
 
 ### Basic Example
 
@@ -76,7 +76,9 @@ const submit = handleSubmit((data) => {
 </template>
 ```
 
-### Core API Functions
+### 💡 Core API Functions
+
+_**note**: detailed documentation coming soon_
 
 `useForm(options?)` – Initializes form state. Abstract schema required.
 
@@ -92,25 +94,25 @@ const submit = handleSubmit((data) => {
 
 `getElementState(name: string)` – Returns field state (value, touched, errors, etc.).
 
-## Advanced Features
+## 🥇 Advanced Features
 
-- **Fully SSR Compatible** – Fully Nuxt 3-compatible with hydration-safe bindings.
+- **Fully SSR Safe** – Fully Nuxt 3-compatible with hydration-safe bindings.
 
 - **Validation Handling** – Displays schema validation errors automatically.
 
 - **Performance Optimizations** – Efficient reactive updates for optimal performance.
 
-## License
+## 🪪 License
 
-`@chemical-x/forms` is released under the MIT License. See the LICENSE file for details.
+`@chemical-x/forms` is released under the MIT License. See the [LICENSE](https://github.com/cubicforms/chemical-x-forms/blob/main/LICENSE) file for details.
 
 <!-- Badges -->
 
-[npm-version-src]: https://img.shields.io/npm/v/chemical-x-forms/latest.svg?style=flat&colorA=020420&colorB=00DC82
+[npm-version-src]: https://img.shields.io/npm/v/@chemical-x/forms/latest.svg?style=flat&colorA=020420&colorB=00DC82
 [npm-version-href]: https://npmjs.com/package/@chemical-x/forms
-[npm-downloads-src]: https://img.shields.io/npm/dm/chemical-x-forms.svg?style=flat&colorA=020420&colorB=00DC82
+[npm-downloads-src]: https://img.shields.io/npm/dm/@chemical-x/forms.svg?style=flat&colorA=020420&colorB=00DC82
 [npm-downloads-href]: https://npm.chart.dev/@chemical-x/forms
-[license-src]: https://img.shields.io/npm/l/chemical-x-forms.svg?style=flat&colorA=020420&colorB=00DC82
+[license-src]: https://img.shields.io/npm/l/@chemical-x/forms.svg?style=flat&colorA=020420&colorB=00DC82
 [license-href]: https://npmjs.com/package/@chemical-x/forms
 [nuxt-src]: https://img.shields.io/badge/Nuxt-020420?logo=nuxt.js
 [nuxt-href]: https://nuxt.com

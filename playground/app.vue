@@ -5,6 +5,8 @@ const schema = z.object({ name: z.string().default("ozzy") })
 const { register, getValue, setValue } = useForm({ schema, key: "test-form" })
 const reg = register("name")
 const inn = reg.innerRef
+
+const mountTextArea = ref(true)
 </script>
 
 <template>
@@ -23,7 +25,15 @@ const inn = reg.innerRef
     v-xmodel="register('name')"
     type="text"
   >
-  <textarea v-xmodel="register('name')" />
+  <hr>
+  <button @click="mountTextArea = !mountTextArea">
+    Toggle the textarea (currently {{ mountTextArea ? 'mounted' : 'not mounted' }} )
+  </button>
+  <hr>
+  <textarea
+    v-if="mountTextArea"
+    v-xmodel="register('name')"
+  />
 </template>
 
 <style>

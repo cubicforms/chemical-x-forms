@@ -52,7 +52,7 @@ export default defineNuxtConfig({
 });
 ```
 
-<br><br>
+<br>
 
 ## 🪄 Usage
 
@@ -106,7 +106,7 @@ _**note**: detailed documentation coming soon_
 
 - **Performance Optimizations** – Efficient reactive updates for optimal performance.
 
-<br><br>
+<br>
 
 ## 🪪 License
 

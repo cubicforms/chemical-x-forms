@@ -5,7 +5,7 @@ import type { MetaTracker, MetaTrackerValue } from "../../../types/types-api"
 import type { GenericForm } from "../../../types/types-core"
 import type { ElementDOMState, ElementDOMStateStore } from "../composables/use-element-store"
 
-type ElementState<Value = unknown> = ElementDOMState & { currentValue: Value | undefined, meta: MetaTrackerValue }
+type ElementState<Value = unknown> = ElementDOMState & { value: Value | undefined, meta: MetaTrackerValue }
 
 export function elementStateFactory<
   Form extends GenericForm
@@ -18,7 +18,7 @@ export function elementStateFactory<
       return {
         ...elementDomState,
         meta: metaTrackerValue,
-        currentValue: formValue,
+        value: formValue,
       }
     })
   }

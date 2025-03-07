@@ -82,6 +82,16 @@ export type FieldTransformer<Input, Output> = (input: Input) => Output
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>
 
+export type FormSummaryValue = {
+  originalValue?: unknown
+  previousValue?: unknown
+  currentValue?: unknown
+  pristine: boolean
+  dirty?: boolean
+}
+export type FormSummaryValueRecord = Record<string, FormSummaryValue>
+export type FormSummaryStore = Map<FormKey, FormSummaryValueRecord>
+
 type OnSubmit<Form extends GenericForm> = (form: Form) => void | Promise<void>
 type OnError = (error: ValidationError[]) => void | Promise<void>
 
@@ -93,6 +103,7 @@ export type HandleSubmit<Form extends GenericForm> = (
 export type MetaTrackerValue = {
   updatedAt: string | null
   rawValue: unknown
+  isConnected: boolean
 }
 export type MetaTracker = Record<string, MetaTrackerValue>
 export type MetaTrackerStore = Map<FormKey, MetaTracker>

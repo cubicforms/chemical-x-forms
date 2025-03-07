@@ -1,38 +1,32 @@
 import { useState } from "#app"
 import merge from "lodash-es/merge"
-import { ref } from "vue"
-import type { FormKey, MetaTracker, MetaTrackerStore } from "../../../types/types-api"
-import type { DeepPartial, GenericForm } from "../../../types/types-core"
+import { computed } from "vue"
+import type {
+  FormKey,
+  MetaTracker,
+  MetaTrackerStore,
+} from "../../../types/types-api"
 import { flattenObjectWithBaseKey } from "../utils/flatten-object"
 
-export function useMetaTrackerStore<Form extends GenericForm>(formKey: FormKey, initialState: DeepPartial<Form>) {
-  const formmetaTrackerStore = useState<MetaTrackerStore>("useform/inputstore", () => new Map())
+export function useMetaTrackerStore(
+  formKey: FormKey
+) {
+  const metaTrackerStore = useState<MetaTrackerStore>("useform/meta-tracker-store", () => {
+    // const metaTracker = updateMetaTracker({
+    //   rawValue: initialState,
+    //   metaTracker: {},
+    //   basePath: undefined,
+    //   updateTime: false,
+    //   isConnected: import.meta.server ? false : undefined, // default
+    // })
+    // return new Map([[formKey, metaTracker]]) satisfies MetaTrackerStore
+    return new Map([[formKey, {}]])
+  })
 
-  function registermetaTracker() {
-    if (formmetaTrackerStore.value.has(formKey)) return
-
-    const metaTracker = updateMetaTracker({
-      rawValue: initialState,
-      metaTracker: {},
-      basePath: undefined,
-      updateTime: false,
-    })
-    formmetaTrackerStore.value.set(formKey, metaTracker)
-  }
-
-  registermetaTracker()
-
-  function getMetaTracker() {
-    const metaTracker = formmetaTrackerStore.value.get(formKey)
-    if (!metaTracker) {
-      throw new Error(`Could not find a meta tracker with form key '${formKey}'. Was it registered?`)
-    }
-
-    return ref(metaTracker)
-  }
+  const metaTracker = computed(() => metaTrackerStore.value.get(formKey)!)
 
   return {
-    getMetaTracker,
+    metaTracker,
   }
 }
 
@@ -40,15 +34,29 @@ type UpdateMetaTrackerConfig = {
   metaTracker: MetaTracker
   rawValue: unknown
   basePath: string | undefined
+  isConnected?: boolean
   updateTime?: boolean
 }
 
 export function updateMetaTracker(config: UpdateMetaTrackerConfig) {
-  const { metaTracker, rawValue, basePath, updateTime } = config
-  const updatedAt = (updateTime ?? true) ? (new Date()).toISOString() : null
+  const { metaTracker, rawValue, basePath, updateTime, isConnected } = config
+  const lastKnownTime
+    = typeof basePath === "string"
+      ? metaTracker[basePath]?.updatedAt ?? null
+      : null
+  const updatedAt
+    = updateTime ?? true ? new Date().toISOString() : lastKnownTime
 
   const flattenedObject = flattenObjectWithBaseKey(rawValue, basePath)
-  const metaTrackerPatch = Object.entries(flattenedObject).reduce<MetaTracker>((acc, [key, value]) => ({ ...acc, [key]: { updatedAt, rawValue: value } }), {})
+  const lastKnownIsConnectedValue = typeof basePath === "string" ? metaTracker[basePath]?.isConnected : false
+
+  const metaTrackerPatch = Object.entries(flattenedObject).reduce<MetaTracker>(
+    (acc, [key, value]) => ({
+      ...acc,
+      [key]: { updatedAt, rawValue: value, isConnected: isConnected ?? lastKnownIsConnectedValue },
+    }),
+    {}
+  )
 
   return merge(metaTracker, metaTrackerPatch)
 }

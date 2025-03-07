@@ -1,25 +1,35 @@
-import { get } from "lodash-es"
-import type { ComputedRef, Ref } from "vue"
-import { toRef } from "vue"
-import type { MetaTracker, MetaTrackerValue } from "../../../types/types-api"
-import type { GenericForm } from "../../../types/types-core"
+import type { Ref } from "vue"
+import { computed } from "vue"
+import type { FormSummaryValue, FormSummaryValueRecord, MetaTracker, MetaTrackerValue } from "../../../types/types-api"
 import type { ElementDOMState, ElementDOMStateStore } from "../composables/use-element-store"
 
-type ElementState<Value = unknown> = ElementDOMState & { value: Value | undefined, meta: MetaTrackerValue }
+type ElementState = ElementDOMState & { meta: MetaTrackerValue } & FormSummaryValue
 
-export function elementStateFactory<
-  Form extends GenericForm
->(form: ComputedRef<Form>, metaTracker: Ref<MetaTracker>, elementDOMStateStoreRef: Ref<ElementDOMStateStore, ElementDOMStateStore>) {
-  function getElementState<Value = unknown>(path: string): Ref<ElementState<Value>> {
-    return toRef(() => {
-      const elementDomState = elementDOMStateStoreRef.value[path] ?? { focused: null, blurred: null }
-      const metaTrackerValue = metaTracker.value[path] ?? { rawValue: null, updatedAt: undefined }
-      const formValue = get(form.value, path) as Value | undefined
+export function elementStateFactory(formSummaryRecord: Readonly<FormSummaryValueRecord>, metaTracker: Ref<MetaTracker>, elementDOMStateStoreRef: Ref<ElementDOMStateStore, ElementDOMStateStore>) {
+  function getElementState(path: string) {
+    return computed(() => {
+      const metaTrackerValue = metaTracker.value[path] ?? {
+        rawValue: null,
+        updatedAt: undefined,
+      }
+      const _elementDomState = elementDOMStateStoreRef.value[path]
+      const clientFocused = _elementDomState?.focused ?? false
+      const clientBlurred = _elementDomState?.blurred ?? true
+      const clientTouched = _elementDomState?.touched ?? false
+
+      const elementDomState = {
+        focused: metaTrackerValue.isConnected ? clientFocused : null,
+        blurred: metaTrackerValue.isConnected ? clientBlurred : null,
+        touched: metaTrackerValue.isConnected ? clientTouched : null,
+      } satisfies ElementDOMState
+
+      const formSummary = formSummaryRecord[path] ?? {}
+
       return {
         ...elementDomState,
+        ...formSummary,
         meta: metaTrackerValue,
-        value: formValue,
-      }
+      } satisfies ElementState
     })
   }
 

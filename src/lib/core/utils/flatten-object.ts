@@ -36,7 +36,7 @@ export function flattenObjectWithBaseKey(obj: unknown, basePath?: string) {
 export function reconstructFlattenedObjectAtKey(obj: Record<string, unknown>, basePath: string | undefined) {
   if (!isRecord(obj)) return {}
   const paths = Object.keys(toRaw(obj))
-  const validPaths = paths.filter(path => path.includes(basePath ?? ""))
+  const validPaths = typeof basePath === "string" ? paths.filter(path => path.startsWith(basePath)) : paths
 
   if (!validPaths.length) return {}
 

@@ -25,27 +25,25 @@ export function useAbstractForm<
   const { schema } = configuration
   const key = useFormKey(configuration.key)
   const computedSchema = getComputedSchema(key, schema)
-  const { getMetaTracker } = useMetaTrackerStore(
-    key,
-    configuration.initialState ?? {}
-  )
-  const metaTracker = getMetaTracker()
   const initialStateResponse = computedSchema.getInitialState({
     useDefaultSchemaValues: true,
     constraints: configuration.initialState,
     validationMode: configuration.validationMode ?? "lax",
   })
+
   const {
     getHandleSubmitFactory,
     getValidateFactory,
+    formSummaryValues,
     getValueFactory,
     setValueFactory,
     registerForm,
     formStore,
     form,
-  } = useFormStore<Form>(key)
+  } = useFormStore<Form>(key, initialStateResponse)
   registerForm(initialStateResponse.data)
 
+  const { metaTracker } = useMetaTrackerStore(key)
   const getValue = getValueFactory<Form, GetValueFormType>(form, metaTracker)
   const setValue = setValueFactory(formStore, key, computedSchema, metaTracker)
   const validate = getValidateFactory(form, key, computedSchema)
@@ -59,11 +57,12 @@ export function useAbstractForm<
     setValue,
     getElementHelpers,
   )
-  const getElementState = elementStateFactory(form, metaTracker, elementDOMStateStoreRef)
+
+  const getState = elementStateFactory(formSummaryValues, metaTracker, elementDOMStateStoreRef)
 
   return {
-    getElementState,
     handleSubmit,
+    getState,
     getValue,
     setValue,
     validate,

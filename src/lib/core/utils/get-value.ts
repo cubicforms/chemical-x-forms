@@ -68,7 +68,6 @@ export function getValueFactory<
 
       return {
         currentValue: form,
-        // meta: reconstructedMetaGraph,
         meta: reconstructedMetaGraph,
       } as unknown as CurrentValueWithContext<GetValueFormType>
     }

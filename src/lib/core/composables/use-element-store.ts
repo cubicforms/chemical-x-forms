@@ -1,10 +1,10 @@
 import { useState } from "#app"
 import { omit } from "lodash-es"
-import type { Ref } from "vue"
+import { computed, ref, type Ref } from "vue"
 
 export type ElementSet = Set<HTMLElement>
 export type ElementStore = Record<string, ElementSet>
-export type RegisterElement = (element: HTMLElement) => void
+export type RegisterElement = (element: HTMLElement) => boolean
 export type DeregisterElement = (element: HTMLElement) => number // returns number of remaining elements for elements' related path
 export type GetElementHelpers = (path: string) => {
   registerElement: RegisterElement
@@ -19,6 +19,7 @@ export type ElementDOMState =
   | {
     focused: boolean | null
     blurred: boolean | null
+    touched: boolean | null
   }
 export type ElementDOMStateStore = Record<string, ElementDOMState | undefined>
 
@@ -34,12 +35,14 @@ export function useElementStore(): UseElementStoreRefReturnValue {
 
   function _setKnownFocusState(
     path: string,
-    focusedState: boolean
+    focusedState: boolean,
+    touched: boolean,
   ) {
     if (!elementDOMStateStoreRef.value[path]) {
       elementDOMStateStoreRef.value[path] = {
         focused: focusedState,
         blurred: !focusedState,
+        touched,
       }
       return
     }
@@ -47,23 +50,30 @@ export function useElementStore(): UseElementStoreRefReturnValue {
     const elementDOMState = elementDOMStateStoreRef.value[path]
     elementDOMState.focused = focusedState
     elementDOMState.blurred = !focusedState
+    elementDOMState.touched = touched
   }
+
+  const touchedStates = ref<Record<string, boolean | undefined>>({})
 
   const getElementHelpers: GetElementHelpers = (path: string) => {
     // just in case this function is accidentally executed in a server context
     if (import.meta.server)
       return {
-        registerElement: _ => ({}),
+        registerElement: _ => false,
         deregisterElement: _ => -1,
       }
 
+    const touchedState = computed(() => touchedStates.value[path] ?? false)
     // stable function reference for adding and removing event listeners during the element existence lifecycle
     function handleFocus(_event: FocusEvent) {
-      _setKnownFocusState(path, true)
+      const focusedState = true
+      _setKnownFocusState(path, focusedState, touchedState.value)
     }
 
     function handleBlur(_event: FocusEvent) {
-      _setKnownFocusState(path, false)
+      const focusedState = false
+      touchedStates.value[path] = true // always set `touched` on blur
+      _setKnownFocusState(path, focusedState, touchedState.value)
     }
 
     function addEventListenerHelper(element: HTMLElement) {
@@ -77,38 +87,35 @@ export function useElementStore(): UseElementStoreRefReturnValue {
     }
 
     function registerElement(element: HTMLElement) {
-      const elementSet = elementStoreRef.value[path]
+      const elementSet = elementStoreRef.value[path] as ElementSet | undefined
+      if (elementSet?.has(element)) return false
 
-      if (!elementSet?.has(element)) {
-        addEventListenerHelper(element)
-        // this lazy computation ensures that only existing elements are given states quickly
-        _setKnownFocusState(
-          path,
-          import.meta.client && document.activeElement === element
-        )
-      }
+      addEventListenerHelper(element)
+      _setKnownFocusState(
+        path,
+        import.meta.client && document.activeElement === element,
+        touchedState.value,
+
+      )
 
       if (!elementSet) {
         elementStoreRef.value[path] = new Set([element])
-        return
+        return true
       }
 
       elementStoreRef.value[path].add(element)
+      return true
     }
 
     function deregisterElement(element: HTMLElement) {
       const elementStore = elementStoreRef.value
-      const paths
-        = typeof path === "string" ? [path] : Object.keys(elementStore)
-      for (const _path of paths) {
-        const deleted = elementStore[_path]?.delete(element)
-        if (deleted) {
-          removeEventListenerHelper(element)
-        }
+      const deleted = elementStore[path]?.delete(element)
+      if (deleted) {
+        removeEventListenerHelper(element)
       }
 
       // this is a useful signal for dropping path references in other parts of the library
-      const existingElementCount = Object.keys(elementStore[path]).length
+      const existingElementCount = elementStore[path]?.size ?? 0
       if (existingElementCount === 0) {
         omit(elementStore, path) // free the path
         const deletedElementState = elementDOMStateStoreRef.value?.[path]

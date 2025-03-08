@@ -37,6 +37,6 @@ export default defineNuxtModule<ModuleOptions>({
     addImportsDir(resolver.resolve("./runtime/composables"))
     addImportsDir(resolver.resolve("./runtime/adapters/zod"))
 
-    addPlugin(resolver.resolve("./lib/core/plugins/xmodel"))
+    addPlugin(resolver.resolve("./runtime/plugins/xmodel"))
   },
 })

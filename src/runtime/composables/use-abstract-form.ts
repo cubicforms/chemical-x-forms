@@ -1,15 +1,15 @@
+import { useElementStore } from "../../lib/core/composables/use-element-store"
+import { useFormKey } from "../../lib/core/composables/use-form-key"
+import { useFormStore } from "../../lib/core/composables/use-form-store"
+import { useMetaTrackerStore } from "../../lib/core/composables/use-meta-tracker-store"
+import { elementStateFactory } from "../../lib/core/utils/element-state-api"
+import { getComputedSchema } from "../../lib/core/utils/get-computed-schema"
+import { registerFactory } from "../../lib/core/utils/register"
 import type {
   AbstractSchema,
   UseFormConfiguration,
-} from "../../../types/types-api"
-import type { DeepPartial, GenericForm } from "../../../types/types-core"
-import { elementStateFactory } from "../utils/element-state-api"
-import { getComputedSchema } from "../utils/get-computed-schema"
-import { registerFactory } from "../utils/register"
-import { useElementStore } from "./use-element-store"
-import { useFormKey } from "./use-form-key"
-import { useFormStore } from "./use-form-store"
-import { useMetaTrackerStore } from "./use-meta-tracker-store"
+} from "../../types/types-api"
+import type { DeepPartial, GenericForm } from "../../types/types-core"
 
 export function useAbstractForm<
   Form extends GenericForm,
@@ -70,3 +70,8 @@ export function useAbstractForm<
     key,
   }
 }
+
+export type UseAbstractFormReturnType<Form extends GenericForm, GetValueFormType extends GenericForm = Form> = ReturnType<typeof useAbstractForm<
+  Form,
+  GetValueFormType
+>>

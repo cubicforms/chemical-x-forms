@@ -62,18 +62,31 @@ export default defineNuxtConfig({
 <script setup lang="ts">
 import { z } from "zod";
 
-const schema = z.object({ name: z.string(), age: z.age() });
-const { register, handleSubmit } = useForm({ schema });
-
-const submit = handleSubmit((data) => {
-  console.log("Form submitted with values:", data);
+const schema = z.object({
+  name: z.string().min(6, { message: "Think of a longer name!" }),
 });
+const { register, handleSubmit, getState } = useForm({
+  schema,
+  initialState: { name: "Ozzy" },
+  key: "quick-start-form",
+});
+
+const onSuccess = (data) => {
+  console.log("Form submitted with values:", data);
+};
+
+const onError = (validationError) => {
+  console.log("Oops! something went wrong:", validationError);
+};
+
+const nameState = getState("name");
 </script>
 
 <template>
-  <form @submit.prevent="submit">
+  <form @submit.prevent="handleSubmit(onSuccess, onError)">
+    <pre>{{ JSON.stringify({ nameState }, null, 2) }}</pre>
+    <hr />
     <input v-xmodel="register('name')" placeholder="Name" />
-    <input v-xmodel="register('age')" type="number" placeholder="Age" />
     <button>Submit</button>
   </form>
 </template>

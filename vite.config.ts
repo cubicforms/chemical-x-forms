@@ -10,7 +10,7 @@ const DIRECTORY_SEPARATOR = path.sep
 function collectTsFiles(
   dir: string,
   baseDir: string = dir,
-  entrypoints: Record<string, string> = {},
+  entrypoints: Record<string, string> = {}
 ): Record<string, string> {
   const files = fs.readdirSync(dir)
   for (const file of files) {
@@ -21,7 +21,9 @@ function collectTsFiles(
     }
     else if (file.endsWith(".ts")) {
       // Create a unique name for each entry by replacing path separators with hyphens
-      const relativePath = path.relative(baseDir, fullPath).replace(/\.ts$/, "")
+      const relativePath = path
+        .relative(baseDir, fullPath)
+        .replace(/\.ts$/, "")
       const name = relativePath.split(path.sep).join(DIRECTORY_SEPARATOR)
       entrypoints[name] = fullPath
     }
@@ -35,7 +37,7 @@ const outputDir = path.resolve(__dirname, "dist/vite")
 
 function addBaseDirToEntrypoints(
   entrypoints: Record<string, string>,
-  basePath: string,
+  basePath: string
 ) {
   const newEntrypoints: Record<string, string> = {}
 
@@ -89,12 +91,24 @@ export default defineConfig({
     lib: {
       entry: entrypoints,
       formats: ["es", "cjs"],
-      fileName: (format, name) =>
-        `${name}.${format === "es" ? "mjs" : "cjs"}`,
+      fileName: (format, name) => `${name}.${format === "es" ? "mjs" : "cjs"}`,
     },
     outDir: outputDir,
     rollupOptions: {
-      external: ["#app", "vue", "zod", "immer", "lodash-es", /lodash-es\/.*/,
+      external: [
+        "#app",
+        "#app-manifest",
+        "vue",
+        "zod",
+        "immer",
+        "lodash-es",
+        "@vue/compiler-core",
+        "@vue/runtime-core",
+        "@vue/shared",
+        /lodash-es\/.*/,
+        /#build\/.*/,
+        /#internal\/.*/,
+        /#internal\/.*/,
         // /.*\.d\.ts$/, // regex to match any .d.ts file in the source
       ],
       output: {

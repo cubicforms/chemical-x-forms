@@ -118,3 +118,10 @@ export type CurrentValueWithContext<Value, FormSubtree = Value> = {
   currentValue: Readonly<Ref<Value>>
   meta: Readonly<Ref<DeepPartial<RemapLeafNodes<FormSubtree, MetaTrackerValue>>>>
 }
+
+export type XModelValue<Value = unknown> = {
+  innerRef: Readonly<Ref<Value>>
+  registerElement: (el: HTMLElement) => void
+  deregisterElement: (el: HTMLElement) => void
+  setValueWithInternalPath: (value: unknown) => boolean
+}

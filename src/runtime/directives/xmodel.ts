@@ -2,7 +2,6 @@ import type {
   DirectiveBinding,
   DirectiveHook,
   ObjectDirective,
-  Ref,
   VNode
 } from "@vue/runtime-core"
 import {
@@ -19,13 +18,7 @@ import {
   looseIndexOf,
   looseToNumber
 } from "@vue/shared"
-
-export type XModelValue<Value = unknown> = {
-  innerRef: Readonly<Ref<Value>>
-  registerElement: (el: HTMLElement) => void
-  deregisterElement: (el: HTMLElement) => void
-  setValueWithInternalPath: (value: unknown) => boolean
-}
+import type { XModelValue } from "../../types/types-api"
 
 type AssignerFn = (value: unknown) => void
 

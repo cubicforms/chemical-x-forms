@@ -35,6 +35,7 @@ export default defineNuxtModule<ModuleOptions>({
 
     const resolver = createResolver(import.meta.url)
     addImportsDir(resolver.resolve("./runtime/composables"))
+    addImportsDir(resolver.resolve("./runtime/directives"))
     addImportsDir(resolver.resolve("./runtime/adapters/zod"))
 
     addPlugin(resolver.resolve("./runtime/plugins/xmodel"))

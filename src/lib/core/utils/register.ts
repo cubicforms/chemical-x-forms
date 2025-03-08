@@ -1,10 +1,9 @@
 import { get } from "lodash-es"
 import { toRef, type Ref } from "vue"
-import type { AbstractSchema, FieldTransformer, FormKey, FormStore, MetaTracker } from "../../../types/types-api"
+import type { AbstractSchema, FieldTransformer, FormKey, FormStore, MetaTracker, XModelValue } from "../../../types/types-api"
 import type { GenericForm } from "../../../types/types-core"
 import type { GetElementHelpers } from "../composables/use-element-store"
 import { updateMetaTracker } from "../composables/use-meta-tracker-store"
-import type { XModelValue } from "../directives/xmodel"
 import { getForm } from "./get-value"
 
 // undefined by default (defer to useForm global setting)

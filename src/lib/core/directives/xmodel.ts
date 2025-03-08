@@ -110,7 +110,7 @@ function setAssignFunction(el: { [assignKey]: AssignerFn }, vnode: VNode, value:
 
 // We are exporting the v-model runtime directly as vnode hooks so that it can
 // be tree-shaken in case v-model is never used.
-export const vModelText: ModelDirective<
+export const vXModelText: ModelDirective<
     HTMLInputElement | HTMLTextAreaElement,
     "trim" | "number" | "lazy"
 > = {
@@ -190,7 +190,7 @@ export const vModelText: ModelDirective<
   },
 }
 
-export const vModelCheckbox: ModelDirective<HTMLInputElement> = {
+export const vXModelCheckbox: ModelDirective<HTMLInputElement> = {
   // #4096 array checkboxes need to be deep traversed
   deep: true,
   created(el, { value }, vnode) {
@@ -283,7 +283,7 @@ function setChecked(
   }
 }
 
-export const vModelRadio: ModelDirective<HTMLInputElement> = {
+export const vXModelRadio: ModelDirective<HTMLInputElement> = {
   created(el, { value }, vnode) {
     if (!isXModelPayload(value)) return
 
@@ -305,7 +305,7 @@ export const vModelRadio: ModelDirective<HTMLInputElement> = {
   },
 }
 
-export const vModelSelect: ModelDirective<HTMLSelectElement, "number"> = {
+export const vXModelSelect: ModelDirective<HTMLSelectElement, "number"> = {
   // <select multiple> value need to be deep traversed
   deep: true,
   created(el, { value, modifiers: { number } }, vnode) {
@@ -406,7 +406,7 @@ function getCheckboxValue(
   return key in el ? el[key] : checked
 }
 
-export const vModelDynamic: ObjectDirective<
+export const vXModelDynamic: ObjectDirective<
     HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
 > = {
   created(el, binding, vnode) {
@@ -431,17 +431,17 @@ export const vModelDynamic: ObjectDirective<
 function resolveDynamicModel(tagName: string, type: string | undefined) {
   switch (tagName) {
     case "SELECT":
-      return vModelSelect
+      return vXModelSelect
     case "TEXTAREA":
-      return vModelText
+      return vXModelText
     default:
       switch (type) {
         case "checkbox":
-          return vModelCheckbox
+          return vXModelCheckbox
         case "radio":
-          return vModelRadio
+          return vXModelRadio
         default:
-          return vModelText
+          return vXModelText
       }
   }
 }
@@ -464,15 +464,15 @@ function callModelHook(
 // SSR vnode transforms, only used when user includes client-oriented render
 // function in SSR
 export function initVModelForSSR(): void {
-  vModelText.getSSRProps = ({ value }) => ({ value })
+  vXModelText.getSSRProps = ({ value }) => ({ value })
 
-  vModelRadio.getSSRProps = ({ value }, vnode) => {
+  vXModelRadio.getSSRProps = ({ value }, vnode) => {
     if (vnode.props && looseEqual(vnode.props.value, value)) {
       return { checked: true }
     }
   }
 
-  vModelCheckbox.getSSRProps = ({ value }, vnode) => {
+  vXModelCheckbox.getSSRProps = ({ value }, vnode) => {
     if (isArray(value)) {
       if (vnode.props && looseIndexOf(value, vnode.props.value) > -1) {
         return { checked: true }
@@ -490,7 +490,7 @@ export function initVModelForSSR(): void {
     return undefined
   }
 
-  vModelDynamic.getSSRProps = (binding, vnode) => {
+  vXModelDynamic.getSSRProps = (binding, vnode) => {
     if (typeof vnode.type !== "string") {
       return
     }
@@ -505,9 +505,9 @@ export function initVModelForSSR(): void {
   }
 }
 
-export type VModelDirective =
-  | typeof vModelText
-  | typeof vModelCheckbox
-  | typeof vModelSelect
-  | typeof vModelRadio
-  | typeof vModelDynamic
+export type VXModelDirective =
+  | typeof vXModelText
+  | typeof vXModelCheckbox
+  | typeof vXModelSelect
+  | typeof vXModelRadio
+  | typeof vXModelDynamic

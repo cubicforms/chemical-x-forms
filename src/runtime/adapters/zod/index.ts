@@ -52,13 +52,15 @@ export function zodAdapter<
               unwrappedMessage ? "An unwrapped" : "A"
             } schema of type '${actualSchemaName}' was provided, but zodAdapter's \`instanceof z.ZodObject\` check failed.
   
-  This usually means multiple copies or versions of Zod are loaded in memory.
-  Please ensure Zod is only installed once (it is a peer dependency for your useForm library).
+  This usually means multiple copies or versions of Zod are loaded in memory, even if they are semantically the same.
   
   Some commands that may help:
     - pnpm list zod
     - pnpm dedupe zod --check
+
   Also consider checking for local symlinks or bundling issues that might duplicate the Zod runtime.
+
+  If \`pmpm dedupe zod --check\` identifies any related version mismatches, run \`pnpm dedupe\` to resolve them.
   `
           )
         }

@@ -3,15 +3,12 @@ import isFunction from "lodash-es/isFunction"
 import merge from "lodash-es/merge"
 import set from "lodash-es/set"
 import { z } from "zod"
+import type { AbstractSchema, FormKey, ValidationError } from "../../@types/types-api"
+import type { NestedType } from "../../@types/types-core"
+import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from "../../@types/types-zod"
 import { PATH_SEPARATOR } from "../../lib/core/utils/constants"
 import { isPrimitive } from "../../lib/core/utils/helpers"
-import type { AbstractSchema, FormKey, ValidationError } from "../../types/types-api"
-import type { NestedType } from "../../types/types-core"
-import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from "../../types/types-zod"
 import { isZodSchemaType } from "./helpers"
-
-// import { createRequire } from "node:module"
-// import path from "node:path"
 
 export function zodAdapter<
   FormSchema extends z.ZodSchema,
@@ -43,32 +40,6 @@ export function zodAdapter<
           = actualUnwrappedSchemaName ?? actualOriginalSchemaName
         const unwrappedMessage = actualUnwrappedSchemaName ? "unwrapped" : ""
 
-        // if (import.meta.server) {
-        //   const require = createRequire(import.meta.url)
-        //   const zodPath = require.resolve("zod")
-        //   console.log("ZodAdapter's zod version is located at:", zodPath)
-        //   console.log("ZodApater zod directory:", path.dirname(zodPath))
-        // }
-
-        //       if (actualSchemaName === "ZodObject") {
-        //         throw new Error(
-        //           `Programming Error: ${
-        //             unwrappedMessage ? "An unwrapped" : "A"
-        //           } schema of type '${actualSchemaName}' was provided, but zodAdapter's \`instanceof z.ZodObject\` check failed.
-
-        // This usually means multiple copies or versions of Zod are loaded in memory, even if they are semantically the same.
-
-        // Some commands that may help:
-        //   - pnpm list zod
-        //   - pnpm dedupe zod --check
-
-        // Also consider checking for local symlinks or bundling issues that might duplicate the Zod runtime.
-
-        // If \`pmpm dedupe zod --check\` identifies any related version mismatches, run \`pnpm dedupe\` to resolve them.
-        // `
-        //         )
-        //       }
-
         const expectedUnwrappedMessage = stripped ? " unwrapped " : " "
         const actualSchemaMessage = actualSchemaName
           ? `, got ${unwrappedMessage} schema of type '${actualSchemaName}' instead.`
@@ -78,8 +49,6 @@ export function zodAdapter<
           `Programming error: ZodAdapter expected${expectedUnwrappedMessage}schema of type 'ZodObject'${actualSchemaMessage}`
         )
       }
-
-      console.log("nice, we detected an object schema!")
     }
     const abstractSchema: AbstractSchema<Form, GetValueFormType> = {
       getInitialState(config) {

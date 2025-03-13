@@ -7,8 +7,8 @@ import unset from "lodash-es/unset"
 import type { Ref } from "vue"
 import { toRaw } from "vue"
 
-import type { AbstractSchema, FormKey, FormStore, MetaTracker } from "../../../types/types-api"
-import type { DeepPartial, FlatPath, GenericForm, NestedType } from "../../../types/types-core"
+import type { AbstractSchema, FormKey, FormStore, MetaTracker } from "../../../@types/types-api"
+import type { DeepPartial, FlatPath, GenericForm, NestedType } from "../../../@types/types-core"
 import { updateMetaTracker } from "../composables/use-meta-tracker-store"
 import { getForm } from "./get-value"
 

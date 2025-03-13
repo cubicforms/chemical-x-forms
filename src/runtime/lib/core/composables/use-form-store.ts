@@ -7,8 +7,8 @@ import { setValueFactory } from "../utils/set-value"
 
 import { useState } from "#app"
 import { unset } from "lodash-es"
-import type { FormKey, FormStore, FormSummaryStore, InitialStateResponse } from "../../../types/types-api"
-import type { GenericForm } from "../../../types/types-core"
+import type { FormKey, FormStore, FormSummaryStore, InitialStateResponse } from "../../../@types/types-api"
+import type { GenericForm } from "../../../@types/types-core"
 import { flattenObjectWithBaseKey } from "../utils/flatten-object"
 
 export const useFormStore = <Form extends GenericForm>(formKey: FormKey, initialFormState: InitialStateResponse<Form>) => {

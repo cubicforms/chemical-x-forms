@@ -1,6 +1,6 @@
 import isFunction from "lodash-es/isFunction"
-import type { AbstractSchema, FormKey } from "../../../types/types-api"
-import type { GenericForm } from "../../../types/types-core"
+import type { AbstractSchema, FormKey } from "../../../@types/types-api"
+import type { GenericForm } from "../../../@types/types-core"
 
 export const getComputedSchema = <Form extends GenericForm, GetValueFormType>(
   formKey: FormKey,
@@ -17,7 +17,7 @@ export const getComputedSchema = <Form extends GenericForm, GetValueFormType>(
   }
   catch (error) {
     console.error(
-      `Programming Error: Failed to compute schema with formKey '${formKey}'.`,
+      `Programming Error: Failed to compute abstract schema with formKey '${formKey}'.`,
     )
     throw error
   }

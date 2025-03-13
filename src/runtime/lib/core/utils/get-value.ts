@@ -1,7 +1,6 @@
 import { toRef, type ComputedRef, type Ref } from "vue"
-
-import type { CurrentValueContext, CurrentValueWithContext, FormKey, FormStore, MetaTracker } from "../../../types/types-api"
-import type { FlatPath, GenericForm, NestedType } from "../../../types/types-core"
+import type { CurrentValueContext, CurrentValueWithContext, FormKey, FormStore, MetaTracker } from "../../../@types/types-api"
+import type { FlatPath, GenericForm, NestedType } from "../../../@types/types-core"
 import { PATH_SEPARATOR } from "./constants"
 import { reconstructFlattenedObjectAtKey } from "./flatten-object"
 import { isArrayOrRecord } from "./helpers"

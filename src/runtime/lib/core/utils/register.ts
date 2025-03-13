@@ -1,7 +1,7 @@
 import { get } from "lodash-es"
 import { toRef, type Ref } from "vue"
-import type { AbstractSchema, FieldTransformer, FormKey, FormStore, MetaTracker, XModelValue } from "../../../types/types-api"
-import type { GenericForm } from "../../../types/types-core"
+import type { AbstractSchema, FieldTransformer, FormKey, FormStore, MetaTracker, XModelValue } from "../../../@types/types-api"
+import type { GenericForm } from "../../../@types/types-core"
 import type { GetElementHelpers } from "../composables/use-element-store"
 import { updateMetaTracker } from "../composables/use-meta-tracker-store"
 import { getForm } from "./get-value"
@@ -24,9 +24,8 @@ export function registerFactory<Form extends GenericForm>(
   // TODO: use context
   function registerLogic<Input, Output>(path: string, _context?: RegisterContext<Input, Output>): XModelValue {
     return {
-      innerRef: toRef(() => metaTracker.value?.[path]?.rawValue),
+      innerRef: toRef(() => metaTracker.value?.[path]?.rawValue ?? get(form, path)),
       registerElement: (el) => {
-        // use the metaTracker to invalidate the cache automatically on remount
         if (!(path in elementHelperCache) || !metaTracker.value[path].isConnected) {
           elementHelperCache[path] = getElementHelpers(path)
         }
@@ -46,7 +45,6 @@ export function registerFactory<Form extends GenericForm>(
           elementHelperCache[path] = getElementHelpers(path)
         }
         const remainingElementCount = elementHelperCache[path].deregisterElement(el)
-        console.log("number of remaining elements", remainingElementCount)
         updateMetaTracker({
           basePath: path,
           metaTracker: metaTracker.value,

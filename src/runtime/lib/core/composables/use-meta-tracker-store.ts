@@ -1,25 +1,13 @@
 import { useState } from "#app"
 import merge from "lodash-es/merge"
 import { computed } from "vue"
-import type {
-  FormKey,
-  MetaTracker,
-  MetaTrackerStore,
-} from "../../../types/types-api"
+import type { FormKey, MetaTracker, MetaTrackerStore } from "../../../@types/types-api"
 import { flattenObjectWithBaseKey } from "../utils/flatten-object"
 
 export function useMetaTrackerStore(
   formKey: FormKey
 ) {
   const metaTrackerStore = useState<MetaTrackerStore>("useform/meta-tracker-store", () => {
-    // const metaTracker = updateMetaTracker({
-    //   rawValue: initialState,
-    //   metaTracker: {},
-    //   basePath: undefined,
-    //   updateTime: false,
-    //   isConnected: import.meta.server ? false : undefined, // default
-    // })
-    // return new Map([[formKey, metaTracker]]) satisfies MetaTrackerStore
     return new Map([[formKey, {}]])
   })
 

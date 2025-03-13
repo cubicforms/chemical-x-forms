@@ -1,0 +1,26 @@
+import { defineBuildConfig } from "unbuild"
+
+export default defineBuildConfig({
+  externals: [
+    "@vue/compiler-core",
+    "@vue/shared",
+    "@vue/runtime-core",
+    "nuxt",
+    "zod",
+    "immer",
+    /lodash-es.*/,
+  ],
+  declaration: true,
+  failOnWarn: true,
+  rollup: {
+    dts: {
+      respectExternal: true,
+    },
+    esbuild: {
+      format: "esm",
+      minify: true,
+      sourcemap: false,
+      treeShaking: true,
+    }
+  }
+})

@@ -1,8 +1,8 @@
 {
   "name": "@chemical-x/forms",
   "version": "0.3.3",
-  "main": "./dist/nuxt-module/module.cjs",
-  "types": "./dist/nuxt-module/types.d.ts",
+  "main": "./dist/module.cjs",
+  "types": "./dist/types.d.ts",
   "files": [
     "dist"
   ],
@@ -17,17 +17,12 @@
     "url": "https://github.com/cubicforms/chemical-x-forms"
   },
   "scripts": {
-    "build:nuxt-module": "nuxt-module-build build --outDir dist/nuxt-module",
-    "build:vite": "vite build",
-    "clean": "rimraf dist",
     "dev": "nuxi dev playground",
     "dev:build": "nuxi build playground",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxi prepare playground",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "prepack": "pnpm clean && pnpm prepare-intermediate-dist && pnpm process-dist",
-    "prepare-intermediate-dist": "run-p build:vite build:nuxt-module",
-    "process-dist": "node process-dist.js",
+    "prepack": "nuxt-module-build build",
     "release": "pnpm lint && pnpm test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
     "test": "vitest run",
     "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
@@ -40,14 +35,19 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/nuxt-module/types.d.ts",
-      "import": "./dist/nuxt-module/module.mjs",
-      "require": "./dist/nuxt-module/module.cjs"
+      "types": "./dist/types.d.ts",
+      "import": "./dist/module.mjs",
+      "require": "./dist/module.cjs"
+    },
+    "./nuxt": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/module.mjs",
+      "require": "./dist/module.cjs"
     },
     "./adapters/*": {
-      "types": "./dist/nuxt-module/runtime/adapters/*/index.d.ts",
-      "import": "./dist/nuxt-module/runtime/adapters/*/index.mjs",
-      "require": "./dist/nuxt-module/runtime/adapters/*/index.cjs"
+      "types": "./dist/runtime/adapters/*/index.d.ts",
+      "import": "./dist/runtime/adapters/*/index.mjs",
+      "require": "./dist/runtime/adapters/*/index.cjs"
     }
   },
   "keywords": [
@@ -84,7 +84,9 @@
     "npm-run-all": "^4.1.5",
     "nuxt": "^3.16.0",
     "rimraf": "^6.0.1",
+    "rollup-plugin-dts": "^6.1.1",
     "typescript": "5.7.3",
+    "unbuild": "^3.5.0",
     "vite": "^6.2.1",
     "vite-plugin-dts": "^4.5.3",
     "vitest": "^3.0.8",

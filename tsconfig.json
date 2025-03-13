@@ -5,7 +5,7 @@
     "moduleResolution": "Node",
     "strict": true,
     "esModuleInterop": true,
-    "emitDeclarationOnly": true,
+    "emitDeclarationOnly": false,
     "declaration": true,
     "declarationDir": "./dist/types",
     "outDir": "./dist",
@@ -17,10 +17,7 @@
       "#app": [
         "./types/app.d.ts"
       ]
-    },
-    "types": [
-      "vue"
-    ]
+    }
   },
   "include": [
     "src",

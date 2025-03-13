@@ -12,11 +12,7 @@ import type {
   TemplateChildNode,
   TemplateNode,
 } from "@vue/compiler-core"
-import {
-  createCompoundExpression,
-  createSimpleExpression,
-  NodeTypes
-} from "@vue/compiler-core"
+import { createCompoundExpression, NodeTypes } from "@vue/compiler-core"
 
 type SummarizedProp = {
   key: string
@@ -61,7 +57,7 @@ function getSummarizedPropValue(exp: ExpressionNode): SummarizedProp["value"] {
 
 function generateEqualityExpression(
   xmodelValue: SummarizedProp["value"],
-  elementValue: SummarizedProp["value"],
+  elementValue: SummarizedProp["value"]
 ): CompoundExpressionNode["children"] {
   const xmodelValueArr = Array.isArray(xmodelValue)
     ? xmodelValue
@@ -72,10 +68,26 @@ function generateEqualityExpression(
 
   // account for xmodel value being an array, set, or some other value
   return [
-    "Array.isArray((", ...xmodelValueArr, ")?.innerRef?.value) ? ",
-    "(", ...xmodelValueArr, ")?.innerRef?.value?.includes(", ...elementValueArr, ") : ",
-    "(", ...xmodelValueArr, ")?.innerRef?.value instanceof Set ? (", ...xmodelValueArr, ")?.innerRef?.value?.has(", ...elementValueArr, ") : ",
-    "((", ...xmodelValueArr, ")?.innerRef?.value === (", ...elementValueArr, "))",
+    "Array.isArray((",
+    ...xmodelValueArr,
+    ")?.innerRef?.value) ? ",
+    "(",
+    ...xmodelValueArr,
+    ")?.innerRef?.value?.includes(",
+    ...elementValueArr,
+    ") : ",
+    "(",
+    ...xmodelValueArr,
+    ")?.innerRef?.value instanceof Set ? (",
+    ...xmodelValueArr,
+    ")?.innerRef?.value?.has(",
+    ...elementValueArr,
+    ") : ",
+    "((",
+    ...xmodelValueArr,
+    ")?.innerRef?.value === (",
+    ...elementValueArr,
+    "))",
   ]
 }
 
@@ -111,45 +123,42 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
   if (!isInput && !isTextArea) return
 
   const elementProps = getSummarizedProps(node)
-  // if (elementProps.length === 0) return
 
   const xmodelIndex = elementProps.findIndex(p => p.key.includes("xmodel"))
   if (xmodelIndex < 0 || xmodelIndex >= elementProps.length) return // no return early if we don't find an xmodel directive
   const xmodelSummarizedProp = elementProps[xmodelIndex]
 
   const valueIndex = elementProps.findIndex(p => p.key.includes("value"))
-  // if (valueIndex < 0 || valueIndex >= elementProps.length) return
-
-  const elementValueSummarizedProp = elementProps?.[valueIndex] ?? { key: "value", value: "''" }
-  let elementSelectionLabelExpression = createCompoundExpression(["'value'"])
-
-  // TODO: implement similar for textarea (interpolation node, tho)
-  if (isInput) {
-    const inputTypeIndex = elementProps.findIndex(p =>
-      p.key.includes("type")
-    )
-    // if (inputTypeIndex < 0 || inputTypeIndex >= elementProps.length) return
-
-    const inputTypeSummarizedProp: SummarizedProp = inputTypeIndex === -1 ? { key: "type", value: "'text'" } : elementProps[inputTypeIndex]
-    const inputTypeExpressionArray
-      = typeof inputTypeSummarizedProp.value === "string"
-        ? [inputTypeSummarizedProp.value]
-        : inputTypeSummarizedProp.value
-
-    // this gets paired with `value` to get the [selectionLabel]=[label] prop for the given input
-    // checkbox and radio are marked as selected via `checked`, others typically use `value`
-    elementSelectionLabelExpression = createCompoundExpression([
-      "(",
-      "(",
-      ...inputTypeExpressionArray,
-      ")",
-      " === 'checkbox' || ",
-      "(",
-      ...inputTypeExpressionArray,
-      ") === 'radio'",
-      ") ? 'checked' : 'value'",
-    ])
+  const elementValueSummarizedProp = elementProps?.[valueIndex] ?? {
+    key: "value",
+    value: "''",
   }
+
+  const inputTypeIndex = elementProps.findIndex(p => p.key.includes("type"))
+  // if (inputTypeIndex < 0 || inputTypeIndex >= elementProps.length) return
+
+  const inputTypeSummarizedProp: SummarizedProp
+    = inputTypeIndex === -1
+      ? { key: "type", value: "'text'" }
+      : elementProps[inputTypeIndex]
+  const inputTypeExpressionArray
+    = typeof inputTypeSummarizedProp.value === "string"
+      ? [inputTypeSummarizedProp.value]
+      : inputTypeSummarizedProp.value
+
+  // this gets paired with `value` to get the [selectionLabel]=[label] prop for the given input
+  // checkbox and radio are marked as selected via `checked`, others typically use `value`
+  const elementSelectionLabelExpression = createCompoundExpression([
+    "(",
+    "(",
+    ...inputTypeExpressionArray,
+    ")",
+    " === 'checkbox' || ",
+    "(",
+    ...inputTypeExpressionArray,
+    ") === 'radio'",
+    ") ? 'checked' : 'value'",
+  ])
 
   function computeProps(
     _node: PlainElementNode | ComponentNode | SlotOutletNode | TemplateNode,
@@ -164,52 +173,39 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
 
     const props = _node.props
     removePropsByName(props, ["checked", "value"]) // (re)create the `value` prop further down
-
-    const isNotTextArea = node.type === 1 && node.tag !== "textarea"
-    if (isNotTextArea) {
-      const checkedProp: DirectiveNode = {
-        arg: createSimpleExpression("checked", true),
-        exp: createCompoundExpression(
-          [
-            "(", ...elementSelectionLabelExpression.children, ") === 'checked' && (",
-            // resolves to a boolean
-            ...generateEqualityExpression(
-              xmodelSummarizedProp.value,
-              elementValueSummarizedProp.value,
-            ),
-            ")"
-          ]
-        ),
-        name: "bind",
-        modifiers: [],
-        type: NodeTypes.DIRECTIVE,
-        loc: dummyLoc,
-      }
-      props.push(checkedProp)
-    }
-    const xmodelValueArr = Array.isArray(xmodelSummarizedProp.value) ? xmodelSummarizedProp.value : [xmodelSummarizedProp.value]
-    const valueProp: DirectiveNode = {
+    const xmodelValueArr = Array.isArray(xmodelSummarizedProp.value)
+      ? xmodelSummarizedProp.value
+      : [xmodelSummarizedProp.value]
+    const valueExpression = createCompoundExpression([
+      "(",
+      ...xmodelValueArr,
+      ")?.innerRef?.value",
+    ])
+    const valueOrCheckedProp: DirectiveNode = {
       // reconstruct the `value` attribute based on the provided v-xmodel, now that the computation is complete
-      arg: createSimpleExpression("value", true),
-      exp: createCompoundExpression(
-        [
-          "(",
-          ...xmodelValueArr,
-          ")?.innerRef?.value"
-        ]
-      ),
+      arg: elementSelectionLabelExpression,
+      exp: createCompoundExpression([
+        "(",
+        ...elementSelectionLabelExpression.children,
+        ") === 'checked' ? (",
+        // resolves to a boolean
+        ...generateEqualityExpression(
+          xmodelSummarizedProp.value,
+          elementValueSummarizedProp.value
+        ),
+        ") : (",
+        // resolves to the provided xmodel value
+        ...valueExpression.children,
+        ")",
+      ]),
       name: "bind",
       modifiers: [],
       type: NodeTypes.DIRECTIVE,
       loc: dummyLoc,
     }
 
-    props.push(valueProp)
+    props.push(valueOrCheckedProp)
   }
 
-  computeProps(
-    node,
-    xmodelSummarizedProp,
-    elementValueSummarizedProp
-  )
+  computeProps(node, xmodelSummarizedProp, elementValueSummarizedProp)
 }

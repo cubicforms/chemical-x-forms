@@ -38,9 +38,6 @@ importers:
       '@vue/compiler-core':
         specifier: ^3.5.13
         version: 3.5.13
-      '@vue/runtime-core':
-        specifier: ^3.5.13
-        version: 3.5.13
       '@vue/shared':
         specifier: ^3.5.13
         version: 3.5.13

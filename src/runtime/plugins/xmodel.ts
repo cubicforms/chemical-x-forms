@@ -1,18 +1,5 @@
-// import { defineNuxtPlugin } from "nuxt/app"
-
 import { defineNuxtPlugin } from "nuxt/app"
 
-import type {
-  DirectiveBinding,
-  DirectiveHook,
-  ObjectDirective,
-  VNode
-} from "@vue/runtime-core"
-import {
-  isRef,
-  nextTick,
-  warn
-} from "@vue/runtime-core"
 import {
   invokeArrayFns,
   isArray,
@@ -20,9 +7,20 @@ import {
   isSet,
   looseEqual,
   looseIndexOf,
-  looseToNumber
+  looseToNumber,
 } from "@vue/shared"
-import type { XModelValue } from "../@types/types-api"
+import type {
+  DirectiveBinding,
+  DirectiveHook,
+  ObjectDirective,
+  VNode
+} from "vue"
+import {
+  isRef,
+  nextTick,
+  warn,
+} from "vue"
+import type { XModelValue } from "../types/types-api"
 
 type AssignerFn = (value: unknown) => void
 

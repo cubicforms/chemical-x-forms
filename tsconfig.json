@@ -16,8 +16,7 @@
   },
   "include": [
     "src",
-    "types",
-    "process-dist.ts"
+    "types"
   ],
   "exclude": [
     "dist",

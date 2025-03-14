@@ -1,6 +1,6 @@
 import type { Ref } from "vue"
 import { computed } from "vue"
-import type { FormSummaryValue, FormSummaryValueRecord, MetaTracker, MetaTrackerValue } from "../../../@types/types-api"
+import type { FormSummaryValue, FormSummaryValueRecord, MetaTracker, MetaTrackerValue } from "../../../types/types-api"
 import type { ElementDOMState, ElementDOMStateStore } from "../composables/use-element-store"
 
 type ElementState = ElementDOMState & { meta: MetaTrackerValue } & FormSummaryValue

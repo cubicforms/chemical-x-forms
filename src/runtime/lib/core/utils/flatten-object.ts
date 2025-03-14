@@ -1,4 +1,4 @@
-import set from "lodash-es/set"
+import { set } from "lodash-es"
 import { toRaw } from "vue"
 import { isArrayOrRecord, isRecord } from "./helpers"
 

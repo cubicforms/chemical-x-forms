@@ -1,7 +1,8 @@
 import { useId } from "vue"
 
-import { useState } from "#app"
-import type { FormKey } from "../../../@types/types-api"
+import { useState } from "nuxt/app"
+// import { useState } from "nuxt/app"
+import type { FormKey } from "../../../types/types-api"
 
 export const useFormKey = (key?: FormKey) => {
   const warningRaised = useState("use-form-key/warning-raised", () => false)

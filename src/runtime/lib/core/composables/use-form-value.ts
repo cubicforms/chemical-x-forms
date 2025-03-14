@@ -1,4 +1,4 @@
-import type { FlatPath, GenericForm } from "../../../@types/types-core"
+import type { FlatPath, GenericForm } from "../../../types/types-core"
 
 export const useFormValue = <Form extends GenericForm>(_form: Form) => {
   return {

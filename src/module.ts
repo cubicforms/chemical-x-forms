@@ -25,48 +25,7 @@ export default defineNuxtModule<ModuleOptions>({
       inputTextAreaNodeTransform
     )
 
-    // _nuxt.hook("vite:extendConfig", (config) => {
-    // config.build ||= {}
-    // config.build.rollupOptions ||= {}
-    // config.build.rollupOptions.external
-    //   = config.build.rollupOptions.external || []
-
-    // if (Array.isArray(config.build.rollupOptions.external)) {
-    //   config.build.rollupOptions.external.push(
-    //     "@vue/compiler-core",
-    //     "@vue/shared",
-    //     "nuxt",
-    //     // "vue",
-    //     "zod",
-    //     "immer",
-    //     /lodash-es.*/,
-    //   )
-    // }
-
-    // const originalOnWarn = config.build.rollupOptions.onwarn
-    //   || ((warning, warn) => warn(warning))
-    // config.build.rollupOptions.onwarn = (warning, warn) => {
-    //   // Check if it's the "UNUSED_EXTERNAL_IMPORT" warning for
-    //   // "Text" / "createCommentVNode" in "runtime-dom.esm-bundler.js"
-    //   if (
-    //     warning.code === "UNUSED_EXTERNAL_IMPORT"
-    //     && /"Text" and "createCommentVNode" are imported from external module "@vue\/runtime-core"/.test(warning.message)
-    //     && /runtime-dom\.esm-bundler\.js/.test(warning.message)
-    //   ) {
-    //     // Skip it, do NOT call warn(warning)
-    //     return
-    //   }
-
-    //   // Otherwise, pass it to the default warning handler
-    //   originalOnWarn(warning, warn)
-    // }
-    // })
-
     const resolver = createResolver(import.meta.url)
-
-    // _nuxt.hook("app:created", () => {
-    //   addImportsDir(resolver.resolve("./runtime/composables"))
-    // })
     addImportsDir(resolver.resolve("./runtime/composables"))
 
     addPlugin({
@@ -95,11 +54,3 @@ export { }`,
     })
   },
 })
-
-// Used by nuxt/module-builder for `types.d.ts` generation
-// export * from "./runtime/types/types-api"
-// export * from "./runtime/types/types-core"
-// export * from "./runtime/types/types-zod"
-// export * from "./runtime/types/types-zod-adapter"
-
-// export type { AbstractSchema }

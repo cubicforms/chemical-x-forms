@@ -1,13 +1,10 @@
-import cloneDeep from "lodash-es/cloneDeep"
-import isFunction from "lodash-es/isFunction"
-import merge from "lodash-es/merge"
-import set from "lodash-es/set"
+import { cloneDeep, isFunction, merge, set } from "lodash-es"
 import { z } from "zod"
-import type { AbstractSchema, FormKey, ValidationError } from "../../@types/types-api"
-import type { NestedType } from "../../@types/types-core"
-import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from "../../@types/types-zod"
 import { PATH_SEPARATOR } from "../../lib/core/utils/constants"
 import { isPrimitive } from "../../lib/core/utils/helpers"
+import type { AbstractSchema, FormKey, ValidationError } from "../../types/types-api"
+import type { NestedType } from "../../types/types-core"
+import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from "../../types/types-zod"
 import { isZodSchemaType } from "./helpers"
 
 export function zodAdapter<

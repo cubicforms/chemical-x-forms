@@ -34,7 +34,7 @@ export default defineBuildConfig({
       minify: true,
       sourcemap: false,
       treeShaking: true,
-      legalComments: "none"
+      legalComments: "none",
     },
   },
   sourcemap: false,

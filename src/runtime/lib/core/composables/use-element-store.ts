@@ -94,7 +94,7 @@ export function useElementStore(): UseElementStoreRefReturnValue {
       addEventListenerHelper(element)
       _setKnownFocusState(
         path,
-        import.meta.client && document.activeElement === element,
+        !!import.meta.client && document.activeElement === element,
         touchedState.value,
 
       )

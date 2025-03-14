@@ -1,14 +1,10 @@
 import { produce } from "immer"
-import get from "lodash-es/get"
-import isFunction from "lodash-es/isFunction"
-import isObjectLike from "lodash-es/isObjectLike"
-import set from "lodash-es/set"
-import unset from "lodash-es/unset"
+import { get, isFunction, isObjectLike, set, unset } from "lodash-es"
 import type { Ref } from "vue"
 import { toRaw } from "vue"
 
-import type { AbstractSchema, FormKey, FormStore, MetaTracker } from "../../../@types/types-api"
-import type { DeepPartial, FlatPath, GenericForm, NestedType } from "../../../@types/types-core"
+import type { AbstractSchema, FormKey, FormStore, MetaTracker } from "../../../types/types-api"
+import type { DeepPartial, FlatPath, GenericForm, NestedType } from "../../../types/types-core"
 import { updateMetaTracker } from "../composables/use-meta-tracker-store"
 import { getForm } from "./get-value"
 

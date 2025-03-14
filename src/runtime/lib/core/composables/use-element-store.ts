@@ -1,5 +1,6 @@
-import { useState } from "#app"
 import { omit } from "lodash-es"
+import { useState } from "nuxt/app"
+// import { useState } from "nuxt/app"
 import { computed, ref, type Ref } from "vue"
 
 export type ElementSet = Set<HTMLElement>
@@ -93,7 +94,7 @@ export function useElementStore(): UseElementStoreRefReturnValue {
       addEventListenerHelper(element)
       _setKnownFocusState(
         path,
-        import.meta.client && document.activeElement === element,
+        !!import.meta.client && document.activeElement === element,
         touchedState.value,
 
       )

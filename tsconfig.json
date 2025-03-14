@@ -12,17 +12,11 @@
     "skipLibCheck": false,
     "baseUrl": ".",
     "isolatedModules": true,
-    "forceConsistentCasingInFileNames": true,
-    "paths": {
-      "#app": [
-        "./types/app.d.ts"
-      ]
-    }
+    "forceConsistentCasingInFileNames": true
   },
   "include": [
     "src",
-    "types",
-    "process-dist.ts"
+    "types"
   ],
   "exclude": [
     "dist",

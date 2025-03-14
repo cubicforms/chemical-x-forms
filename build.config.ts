@@ -4,8 +4,8 @@ export default defineBuildConfig({
   externals: [
     "@vue/compiler-core",
     "@vue/shared",
-    "@vue/runtime-core",
     "nuxt",
+    "vue",
     "zod",
     "immer",
     /lodash-es.*/,
@@ -15,12 +15,29 @@ export default defineBuildConfig({
   rollup: {
     dts: {
       respectExternal: true,
+      compilerOptions: {
+        declaration: true,
+        alwaysStrict: true,
+        allowImportingTsExtensions: true,
+        allowUnusedLabels: false,
+        esModuleInterop: true,
+        noImplicitAny: true,
+        allowArbitraryExtensions: false,
+        noEmit: true,
+        allowJs: true,
+        noUnusedLocals: true,
+        noUnusedParameters: true,
+      },
     },
     esbuild: {
       format: "esm",
       minify: true,
       sourcemap: false,
       treeShaking: true,
-    }
-  }
+      legalComments: "none",
+    },
+  },
+  sourcemap: false,
+  parallel: false,
+  name: "@chemical-x/forms",
 })

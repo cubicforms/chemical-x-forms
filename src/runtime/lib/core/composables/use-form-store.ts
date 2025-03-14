@@ -5,10 +5,11 @@ import { getForm, getValueFactory } from "../utils/get-value"
 import { getHandleSubmitFactory, getValidateFactory } from "../utils/process-form"
 import { setValueFactory } from "../utils/set-value"
 
-import { useState } from "#app"
+import { useState } from "nuxt/app"
+// import { useState } from "nuxt/app"
 import { unset } from "lodash-es"
-import type { FormKey, FormStore, FormSummaryStore, InitialStateResponse } from "../../../@types/types-api"
-import type { GenericForm } from "../../../@types/types-core"
+import type { FormKey, FormStore, FormSummaryStore, InitialStateResponse } from "../../../types/types-api"
+import type { GenericForm } from "../../../types/types-core"
 import { flattenObjectWithBaseKey } from "../utils/flatten-object"
 
 export const useFormStore = <Form extends GenericForm>(formKey: FormKey, initialFormState: InitialStateResponse<Form>) => {

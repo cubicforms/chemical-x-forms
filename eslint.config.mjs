@@ -28,6 +28,14 @@ export default createConfigForNuxt({
       rules: {
         "semi": "off",
         "import/order": "off",
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [
+              "lodash-es/*"
+            ]
+          }
+        ]
       },
     },
   )

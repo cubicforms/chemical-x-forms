@@ -154,6 +154,7 @@ type DeepFlatten<T> =
       }
     : T
 export type FieldState = DeepFlatten<DOMFieldState & { meta: MetaTrackerValue } & FormSummaryValue>
+export type DOMFieldStateStore = Record<string, DOMFieldState | undefined>
 
 export type UseAbstractFormReturnType<
   Form extends GenericForm,

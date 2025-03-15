@@ -1,5 +1,5 @@
 name: Publish to NPM and Version Bump
-run-name: Publish ${{ github.event.inputs.version_type }} release to NPM
+run-name: Publish ${{ github.event.inputs.version_type }} release to NPM and Version Bump
 on:
   workflow_dispatch:
     inputs:

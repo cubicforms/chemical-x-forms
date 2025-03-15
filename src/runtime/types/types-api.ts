@@ -92,8 +92,8 @@ export type FormSummaryValue = {
 export type FormSummaryValueRecord = Record<string, FormSummaryValue>
 export type FormSummaryStore = Map<FormKey, FormSummaryValueRecord>
 
-type OnSubmit<Form extends GenericForm> = (form: Form) => void | Promise<void>
-type OnError = (error: ValidationError[]) => void | Promise<void>
+export type OnSubmit<Form extends GenericForm> = (form: Form) => void | Promise<void>
+export type OnError = (error: ValidationError[]) => void | Promise<void>
 
 export type HandleSubmit<Form extends GenericForm> = (
   onSubmit: OnSubmit<Form>,

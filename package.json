@@ -24,6 +24,7 @@
     "lint:fix": "eslint . --fix",
     "prepack": "nuxt-module-build build",
     "release": "pnpm lint && pnpm test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
     "test:watch": "vitest watch"

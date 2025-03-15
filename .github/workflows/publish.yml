@@ -34,7 +34,7 @@ jobs:
           echo "next_version=$NEXT" >> $GITHUB_OUTPUT
           echo "WORKFLOW_TITLE=Publish ${{ github.event.inputs.version_type }} release to NPM (v. $NEXT)" >> $GITHUB_ENV
 
-      - name: Update workflow name
+      - name: Update version
         run: echo "::notice title=Version::Publishing version ${{ steps.calculate-next-version.outputs.next_version }}"
 
       - name: Setup Node.js

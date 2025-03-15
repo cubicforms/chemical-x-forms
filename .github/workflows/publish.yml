@@ -11,8 +11,17 @@ on:
         default: "patch"
 
 jobs:
+  set-title:
+    runs-on: ubuntu-latest
+    outputs:
+      title: ${{ steps.set-title.outputs.title }}
+    steps:
+      - id: set-title
+        run: echo "title=Publish to NPM (${{ github.ref_name }})" >> $GITHUB_OUTPUT
+
   publish:
-    name: Publish to NPM (${{ github.ref_name }})
+    needs: set-title
+    name: ${{ needs.set-title.outputs.title }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

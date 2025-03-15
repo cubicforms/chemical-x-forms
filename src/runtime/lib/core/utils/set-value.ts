@@ -32,7 +32,7 @@ export function setValueFactory<Form extends GenericForm>(
         updateMetaTracker({
           metaTracker: metaTracker.value,
           rawValue,
-          basePath: undefined,
+          basePath: null,
         })
         const { data: newForm, success } = schema.getInitialState({
           useDefaultSchemaValues: false,

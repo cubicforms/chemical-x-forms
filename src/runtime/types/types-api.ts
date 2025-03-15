@@ -1,6 +1,8 @@
 import type { Ref } from "vue"
 import type { DeepPartial, FlatPath, GenericForm, NestedType } from "./types-core"
 
+export type FormKey = string
+
 export type ValidationError = {
   message: string
   path: (string | number)[]
@@ -63,8 +65,6 @@ export type AbstractSchema<Form, GetValueFormType> = {
   ): ValidationResponse<Form>
 }
 
-export type FormKey = string
-
 export type UseFormConfiguration<
   Form extends GenericForm,
   GetValueFormType,
@@ -104,6 +104,8 @@ export type MetaTrackerValue = {
   updatedAt: string | null
   rawValue: unknown
   isConnected: boolean
+  formKey: FormKey
+  path: string | null
 }
 export type MetaTracker = Record<string, MetaTrackerValue>
 export type MetaTrackerStore = Map<FormKey, MetaTracker>

@@ -65,7 +65,8 @@ export function useAbstractForm<
   const getFieldState = fieldStateFactory<Form>(
     formSummaryValues,
     metaTracker,
-    fieldStateStore
+    fieldStateStore,
+    key
   )
 
   return {

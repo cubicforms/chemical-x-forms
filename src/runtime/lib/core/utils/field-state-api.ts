@@ -1,10 +1,9 @@
 import type { Ref } from "vue"
 import { computed } from "vue"
-import type { FieldState, FormKey, FormSummaryValueRecord, MetaTracker } from "../../../types/types-api"
+import type { DOMFieldStateStore, FieldState, FormKey, FormSummaryValueRecord, MetaTracker } from "../../../types/types-api"
 import type { CompleteFlatPath, GenericForm } from "../../../types/types-core"
-import type { FieldStateStore } from "../composables/use-field-store"
 
-export function fieldStateFactory<Form extends GenericForm>(formSummaryRecord: Readonly<FormSummaryValueRecord>, metaTracker: Ref<MetaTracker>, fieldStateStore: Ref<FieldStateStore, FieldStateStore>, formKey: FormKey) {
+export function fieldStateFactory<Form extends GenericForm>(formSummaryRecord: Readonly<FormSummaryValueRecord>, metaTracker: Ref<MetaTracker>, domFieldStateStore: Ref<DOMFieldStateStore, DOMFieldStateStore>, formKey: FormKey) {
   function getFieldState<Path extends CompleteFlatPath<Form>>(path: Path) {
     return computed(() => {
       const metaTrackerValue = metaTracker.value[path] ?? {
@@ -18,7 +17,7 @@ export function fieldStateFactory<Form extends GenericForm>(formSummaryRecord: R
       // make sure we have the correct path (defensive code, this is probably unnecessary)
       metaTrackerValue.path = path
 
-      const _elementDomState = fieldStateStore.value[path]
+      const _elementDomState = domFieldStateStore.value[path]
       const clientFocused = _elementDomState?.focused ?? false
       const clientBlurred = _elementDomState?.blurred ?? true
       const clientTouched = _elementDomState?.touched ?? false
@@ -26,6 +25,7 @@ export function fieldStateFactory<Form extends GenericForm>(formSummaryRecord: R
 
       return {
         ...formSummary,
+        previousValue: formSummary.previousValue ?? null, // form elements rarely emit null, so we're fine
         focused: metaTrackerValue.isConnected ? clientFocused : null,
         blurred: metaTrackerValue.isConnected ? clientBlurred : null,
         touched: metaTrackerValue.isConnected ? clientTouched : null,

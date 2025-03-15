@@ -28,6 +28,16 @@ export function registerFactory<Form extends GenericForm>(
     path: FlatPath<Form, keyof Form, true>,
     _context?: RegisterContext<typeof path, NestedType<Form, typeof path>>
   ): XModelValue<NestedType<Form, typeof path> | undefined> {
+    if (import.meta.server) {
+      updateMetaTracker({
+        formKey,
+        basePath: path,
+        metaTracker: metaTracker.value,
+        rawValue: get(form, path),
+        updateTime: false,
+        isConnected: true, // computing eagerly on the server
+      })
+    }
     return {
       innerRef: toRef(
         () => (metaTracker.value?.[path]?.rawValue ?? get(form, path)) as NestedType<Form, typeof path> | undefined
@@ -42,6 +52,7 @@ export function registerFactory<Form extends GenericForm>(
         const success = elementHelperCache[path]?.registerElement(el)
         if (success) {
           updateMetaTracker({
+            formKey,
             basePath: path,
             metaTracker: metaTracker.value,
             rawValue: metaTracker.value?.[path]?.rawValue ?? get(form, path),
@@ -57,6 +68,7 @@ export function registerFactory<Form extends GenericForm>(
         const remainingElementCount
           = elementHelperCache[path]?.deregisterElement(el)
         updateMetaTracker({
+          formKey,
           basePath: path,
           metaTracker: metaTracker.value,
           rawValue: metaTracker.value?.[path]?.rawValue ?? get(form, path),

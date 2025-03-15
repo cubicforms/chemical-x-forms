@@ -1,4 +1,4 @@
-import { useElementStore } from "../lib/core/composables/use-field-store"
+import { useFieldStateStore } from "../lib/core/composables/use-field-store"
 import { useFormKey } from "../lib/core/composables/use-form-key"
 import { useFormStore } from "../lib/core/composables/use-form-store"
 import { useMetaTrackerStore } from "../lib/core/composables/use-meta-tracker-store"
@@ -52,7 +52,7 @@ export function useAbstractForm<
   const setValue = setValueFactory(formStore, key, computedSchema, metaTracker)
   const validate = getValidateFactory(form, key, computedSchema)
   const handleSubmit = getHandleSubmitFactory(form, validate)
-  const { getElementHelpers, fieldStateStore } = useElementStore()
+  const { getElementHelpers, fieldStateStore } = useFieldStateStore()
   const register = registerFactory(
     formStore,
     key,

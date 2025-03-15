@@ -27,6 +27,7 @@ export function useMetaTrackerStore(formKey: FormKey) {
 
 type UpdateMetaTrackerConfig = {
   metaTracker: MetaTracker
+  formKey: FormKey
   rawValue: unknown
   basePath: string | null
   isConnected?: boolean
@@ -34,7 +35,8 @@ type UpdateMetaTrackerConfig = {
 }
 
 export function updateMetaTracker(config: UpdateMetaTrackerConfig) {
-  const { metaTracker, rawValue, basePath, updateTime, isConnected } = config
+  const { formKey, metaTracker, rawValue, basePath, updateTime, isConnected } = config
+
   const lastKnownTime
     = typeof basePath === "string"
       ? metaTracker[basePath]?.updatedAt ?? null
@@ -51,24 +53,15 @@ export function updateMetaTracker(config: UpdateMetaTrackerConfig) {
       ? metaTracker[basePath]?.isConnected ?? false
       : false
 
-  const formKey
-    = typeof basePath === "string"
-      ? metaTracker[basePath]?.formKey ?? null
-      : null
-  if (formKey === null) {
-    throw new Error(`Unexpected Error: formKey is not defined
-- metaTracker passed to \`updateMetaTracker\` at base '${basePath ?? ""}'`)
-  }
-
   const metaTrackerPatch = Object.entries(flattenedObject).reduce<MetaTracker>(
     (acc, [key, value]) => ({
       ...acc,
       [key]: {
-        updatedAt,
-        rawValue: value,
-        isConnected: isConnected ?? lastKnownIsConnectedValue,
         formKey,
         path: basePath,
+        rawValue: value,
+        updatedAt,
+        isConnected: isConnected ?? lastKnownIsConnectedValue,
       },
     }),
     {}

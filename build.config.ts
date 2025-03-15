@@ -15,19 +15,6 @@ export default defineBuildConfig({
   rollup: {
     dts: {
       respectExternal: true,
-      compilerOptions: {
-        declaration: true,
-        alwaysStrict: true,
-        allowImportingTsExtensions: true,
-        allowUnusedLabels: false,
-        esModuleInterop: true,
-        noImplicitAny: true,
-        allowArbitraryExtensions: false,
-        noEmit: true,
-        allowJs: true,
-        noUnusedLocals: true,
-        noUnusedParameters: true,
-      },
     },
     esbuild: {
       format: "esm",

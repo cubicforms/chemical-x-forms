@@ -9,7 +9,7 @@ import type {
   XModelValue
 } from "../../../types/types-api"
 import type { FlatPath, GenericForm, NestedType } from "../../../types/types-core"
-import type { GetElementHelpers } from "../composables/use-field-store"
+import type { GetElementHelpers } from "../composables/use-field-state-store"
 import { updateMetaTracker } from "../composables/use-meta-tracker-store"
 import { getForm } from "./get-value"
 

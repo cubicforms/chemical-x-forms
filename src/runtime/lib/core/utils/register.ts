@@ -42,6 +42,7 @@ export function registerFactory<Form extends GenericForm>(
         const success = elementHelperCache[path]?.registerElement(el)
         if (success) {
           updateMetaTracker({
+            formKey,
             basePath: path,
             metaTracker: metaTracker.value,
             rawValue: metaTracker.value?.[path]?.rawValue ?? get(form, path),
@@ -57,6 +58,7 @@ export function registerFactory<Form extends GenericForm>(
         const remainingElementCount
           = elementHelperCache[path]?.deregisterElement(el)
         updateMetaTracker({
+          formKey,
           basePath: path,
           metaTracker: metaTracker.value,
           rawValue: metaTracker.value?.[path]?.rawValue ?? get(form, path),

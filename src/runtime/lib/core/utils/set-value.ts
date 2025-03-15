@@ -30,6 +30,7 @@ export function setValueFactory<Form extends GenericForm>(
       try {
         const rawValue = callback(draft as DeepPartial<Form>)
         updateMetaTracker({
+          formKey,
           metaTracker: metaTracker.value,
           rawValue,
           basePath: null,
@@ -125,6 +126,7 @@ export function setValueFactory<Form extends GenericForm>(
         try {
           const constraints = callback(arg)
           updateMetaTracker({
+            formKey,
             metaTracker: metaTracker.value,
             rawValue: constraints,
             basePath: path,

@@ -3,15 +3,10 @@ import { get, isFunction, isObjectLike, set, unset } from "lodash-es"
 import type { Ref } from "vue"
 import { toRaw } from "vue"
 
-import type { AbstractSchema, FormKey, FormStore, MetaTracker } from "../../../types/types-api"
+import type { AbstractSchema, FormKey, FormStore, MetaTracker, SetValueCallback, SetValuePayload } from "../../../types/types-api"
 import type { DeepPartial, FlatPath, GenericForm, NestedType } from "../../../types/types-core"
 import { updateMetaTracker } from "../composables/use-meta-tracker-store"
 import { getForm } from "./get-value"
-
-type SetValueCallback<Payload> = (
-  value: DeepPartial<Payload>,
-) => DeepPartial<Payload>
-type SetValuePayload<Payload> = DeepPartial<Payload> | SetValueCallback<Payload>
 
 // setValue operations always REPLACE at the given path
 export function setValueFactory<Form extends GenericForm>(

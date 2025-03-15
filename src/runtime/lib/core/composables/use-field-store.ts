@@ -12,14 +12,14 @@ export type GetElementHelpers = (path: string) => {
   registerElement: RegisterElement
   deregisterElement: DeregisterElement
 }
-export type UseFieldStoreRefReturnValue = {
+export type UseFieldStateStoreRefReturnValue = {
   getElementHelpers: GetElementHelpers
   fieldStateStore: Ref<FieldStateStore, FieldStateStore>
 }
 
 export type FieldStateStore = Record<string, DOMFieldState | undefined>
 
-export function useElementStore(): UseFieldStoreRefReturnValue {
+export function useFieldStateStore(): UseFieldStateStoreRefReturnValue {
   const elementStoreRef = useState<ElementStore>(
     "chemical-x/element-store",
     () => ({})

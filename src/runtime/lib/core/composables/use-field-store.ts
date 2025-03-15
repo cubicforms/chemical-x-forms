@@ -99,7 +99,7 @@ export function useElementStore(): UseFieldStoreRefReturnValue {
         return true
       }
 
-      elementStoreRef.value[path].add(element)
+      elementStoreRef.value[path]?.add(element)
       return true
     }
 

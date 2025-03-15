@@ -30,6 +30,8 @@ export function getValueFactory<
 
       for (let index = 0; index < keys.length; index++) {
         const key = keys[index]
+        if (key === undefined) continue
+
         if (!isArrayOrRecord(foundValue)) return undefined
         if (!(key in foundValue)) return undefined
 

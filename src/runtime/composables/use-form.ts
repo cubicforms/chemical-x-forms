@@ -1,10 +1,10 @@
 import type { z } from "zod"
 import { zodAdapter } from "../adapters/zod"
-import type { AbstractSchema, UseFormConfiguration } from "../types/types-api"
+import type { AbstractSchema, UseAbstractFormReturnType, UseFormConfiguration } from "../types/types-api"
 import type { DeepPartial, GenericForm } from "../types/types-core"
 import type { TypeWithNullableDynamicKeys } from "../types/types-zod"
 import type { UnwrapZodObject, UseFormConfigurationWithZod } from "../types/types-zod-adapter"
-import { useAbstractForm, type UseAbstractFormReturnType } from "./use-abstract-form"
+import { useAbstractForm } from "./use-abstract-form"
 
 // Overload the useForm type definition to signal that zod schemas have 1st class support
 export function useForm<
@@ -58,7 +58,7 @@ export function useForm<
   return useAbstractForm<Form, GetValueFormType>({
     schema: abstractSchema,
     initialState: configuration.initialState as DeepPartial<Form>,
-    key: configuration.key,
-    validationMode: configuration.validationMode,
+    key: configuration.key ?? "",
+    validationMode: configuration.validationMode ?? "lax",
   })
 }

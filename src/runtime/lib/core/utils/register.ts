@@ -35,11 +35,11 @@ export function registerFactory<Form extends GenericForm>(
       registerElement: (el) => {
         if (
           !(path in elementHelperCache)
-          || !metaTracker.value[path].isConnected
+          || !metaTracker.value[path]?.isConnected
         ) {
           elementHelperCache[path] = getElementHelpers(path)
         }
-        const success = elementHelperCache[path].registerElement(el)
+        const success = elementHelperCache[path]?.registerElement(el)
         if (success) {
           updateMetaTracker({
             basePath: path,
@@ -55,7 +55,7 @@ export function registerFactory<Form extends GenericForm>(
           elementHelperCache[path] = getElementHelpers(path)
         }
         const remainingElementCount
-          = elementHelperCache[path].deregisterElement(el)
+          = elementHelperCache[path]?.deregisterElement(el)
         updateMetaTracker({
           basePath: path,
           metaTracker: metaTracker.value,

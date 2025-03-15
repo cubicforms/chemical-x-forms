@@ -58,6 +58,7 @@ Thumbs.db
 .env
 .env.*.local
 *.local
+*.tsbuildinfo
 
 # ---------------------------------------------
 # 7) Build, Cache, and Other Output

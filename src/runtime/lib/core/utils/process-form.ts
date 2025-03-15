@@ -67,8 +67,8 @@ export function getValidateFactory<Form extends GenericForm>(
     catch (error) {
       if (error instanceof Error) {
         console.error(`Unexpected Error: ${error.message}`)
-        throw error
       }
+      throw error
     }
   }
 

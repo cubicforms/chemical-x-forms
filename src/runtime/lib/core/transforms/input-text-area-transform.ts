@@ -98,6 +98,8 @@ function removePropsByName(
   const removePropIndices: number[] = []
   for (let index = 0; index < props.length; index++) {
     const prop = props[index]
+    if (!prop) continue
+
     if (
       propNames.includes(prop.name)
       || ("arg" in prop
@@ -125,8 +127,8 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
   const elementProps = getSummarizedProps(node)
 
   const xmodelIndex = elementProps.findIndex(p => p.key.includes("xmodel"))
-  if (xmodelIndex < 0 || xmodelIndex >= elementProps.length) return // no return early if we don't find an xmodel directive
   const xmodelSummarizedProp = elementProps[xmodelIndex]
+  if (!xmodelSummarizedProp) return // no return early if we don't find an xmodel directive
 
   const valueIndex = elementProps.findIndex(p => p.key.includes("value"))
   const elementValueSummarizedProp = elementProps?.[valueIndex] ?? {
@@ -137,10 +139,11 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
   const inputTypeIndex = elementProps.findIndex(p => p.key.includes("type"))
   // if (inputTypeIndex < 0 || inputTypeIndex >= elementProps.length) return
 
+  const defaultSummarizedTextProp = { key: "type", value: "'text'" }
   const inputTypeSummarizedProp: SummarizedProp
     = inputTypeIndex === -1
-      ? { key: "type", value: "'text'" }
-      : elementProps[inputTypeIndex]
+      ? defaultSummarizedTextProp
+      : (elementProps[inputTypeIndex] ?? defaultSummarizedTextProp)
   const inputTypeExpressionArray
     = typeof inputTypeSummarizedProp.value === "string"
       ? [inputTypeSummarizedProp.value]

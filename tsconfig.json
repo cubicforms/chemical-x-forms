@@ -27,7 +27,8 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "isolatedModules": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "incremental": false
   },
   "include": [
     "src",

@@ -38,7 +38,7 @@ export function updateMetaTracker(config: UpdateMetaTrackerConfig) {
     = updateTime ?? true ? new Date().toISOString() : lastKnownTime
 
   const flattenedObject = flattenObjectWithBaseKey(rawValue, basePath)
-  const lastKnownIsConnectedValue = typeof basePath === "string" ? metaTracker[basePath]?.isConnected : false
+  const lastKnownIsConnectedValue = typeof basePath === "string" ? (metaTracker[basePath]?.isConnected ?? false) : false
 
   const metaTrackerPatch = Object.entries(flattenedObject).reduce<MetaTracker>(
     (acc, [key, value]) => ({

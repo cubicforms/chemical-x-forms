@@ -83,11 +83,11 @@ export type FieldTransformer<Input, Output> = (input: Input) => Output
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>
 
 export type FormSummaryValue = {
-  originalValue?: unknown
-  previousValue?: unknown
-  currentValue?: unknown
+  originalValue: unknown
+  previousValue: unknown
+  currentValue: unknown
   pristine: boolean
-  dirty?: boolean
+  dirty: boolean
 }
 export type FormSummaryValueRecord = Record<string, FormSummaryValue>
 export type FormSummaryStore = Map<FormKey, FormSummaryValueRecord>

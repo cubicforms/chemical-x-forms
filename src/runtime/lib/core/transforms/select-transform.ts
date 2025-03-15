@@ -162,16 +162,19 @@ function extractMultipleFromSelectSummarizedProps(
         = multipleDirectiveIndex >= 0
           ? multipleDirectiveIndex
           : multipleAttributeIndex
-  const value = props[priorityIndex].value
+  const value = props[priorityIndex]?.value
 
   // attempt to convert expression within string into boolean
-  return typeof value === "string" ? value.replace(/'|"/g, "") : value
+  // if undefined, make value `true` because of `<input multiple />` usage
+  return typeof value === "string" ? value.replace(/'|"/g, "") : (value ?? "true")
 }
 
 function removePropsByName(props: (AttributeNode | DirectiveNode)[], propNames: string[]) {
   const removePropIndices: number[] = []
   for (let index = 0; index < props.length; index++) {
     const prop = props[index]
+    if (!prop) continue
+
     if ((propNames.includes(prop.name)) || ("arg" in prop && prop.arg && "content" in prop.arg && propNames.includes(prop.arg.content))) {
       removePropIndices.push(index) // store index to remove later, don't mutate variable while looping through it
     }
@@ -245,8 +248,8 @@ export const selectNodeTransform: NodeTransform = (node) => {
       arg: createSimpleExpression("selected", true),
       exp: createCompoundExpression(
         generateEqualityExpression(
-          xmodelSummarizedProp.value,
-          optionValueSummarizedProp.value,
+          xmodelSummarizedProp?.value ?? "undefined",
+          optionValueSummarizedProp?.value ?? "undefined",
           previousOptionExpressions,
         )
       ),

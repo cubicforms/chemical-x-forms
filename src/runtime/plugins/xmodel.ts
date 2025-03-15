@@ -100,7 +100,7 @@ const vXModelText: CustomDirective<
 > = {
   created(el, { value, modifiers: { lazy, trim, number } }, vnode) {
     const castToNumber
-        = number || (vnode.props && vnode.props.type === "number")
+        = number || (vnode.props && vnode.props["type"] === "number")
     if (isXModelPayload(value)) {
       value.registerElement(el)
       setAssignFunction(el, vnode, value)
@@ -246,10 +246,10 @@ function setChecked(
   let checked: boolean
 
   if (isArray(originalValue)) {
-    checked = looseIndexOf(originalValue, vnode.props!.value) > -1
+    checked = looseIndexOf(originalValue, vnode.props?.["value"]) > -1
   }
   else if (isSet(originalValue)) {
-    checked = originalValue.has(vnode.props?.value)
+    checked = originalValue.has(vnode.props?.["value"])
   }
   else {
     if (originalValue === oldValue) {
@@ -272,7 +272,7 @@ const vXModelRadio: CustomDirective<HTMLInputElement> = {
 
     value.registerElement(el)
     // setAssignFunction(el, vnode, value)
-    el.checked = looseEqual(value.innerRef.value, vnode.props!.value)
+    el.checked = looseEqual(value.innerRef.value, vnode.props?.["value"])
     setAssignFunction(el, vnode, value)
     addEventListener(el, "change", () => {
       el[assignKey](getValue(el))
@@ -283,7 +283,7 @@ const vXModelRadio: CustomDirective<HTMLInputElement> = {
 
     setAssignFunction(el, vnode, value)
     if (value.innerRef.value !== oldValue) {
-      el.checked = looseEqual(value.innerRef.value, vnode.props!.value)
+      el.checked = looseEqual(value.innerRef.value, vnode.props?.["value"])
     }
   },
 }
@@ -349,6 +349,8 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
 
   for (let i = 0, l = el.options.length; i < l; i++) {
     const option = el.options[i] // this select element method is very thoughtful!
+    if (!option) continue
+
     const optionValue = getValue(option)
     if (isMultiple) {
       if (isArrayValue) {
@@ -438,7 +440,7 @@ function callModelHook(
 ) {
   const modelToUse = resolveDynamicModel(
     el.tagName,
-    vnode.props && vnode.props.type,
+    vnode.props?.["type"],
   )
   const fn = modelToUse[hook] as DirectiveHook
   fn?.(el, binding, vnode, prevVNode)

@@ -2,7 +2,7 @@ import { omit } from "lodash-es"
 import { useState } from "nuxt/app"
 // import { useState } from "nuxt/app"
 import { computed, ref, type Ref } from "vue"
-import type { FormSummaryValue, MetaTrackerValue } from "../../../types/types-api"
+import type { DOMFieldState } from "../../../types/types-api"
 
 export type ElementSet = Set<HTMLElement>
 export type ElementStore = Record<string, ElementSet>
@@ -17,22 +17,6 @@ export type UseFieldStoreRefReturnValue = {
   fieldStateStore: Ref<FieldStateStore, FieldStateStore>
 }
 
-export type DOMFieldState =
-  | {
-    focused: boolean | null
-    blurred: boolean | null
-    touched: boolean | null
-  }
-
-type DeepFlatten<T> =
-  // If it's not an object, just leave it as-is
-  T extends object
-    ? {
-        // Re-map every property key of T
-        [K in keyof T]: DeepFlatten<T[K]>
-      }
-    : T
-export type FieldState = DeepFlatten<DOMFieldState & { meta: MetaTrackerValue } & FormSummaryValue>
 export type FieldStateStore = Record<string, DOMFieldState | undefined>
 
 export function useElementStore(): UseFieldStoreRefReturnValue {

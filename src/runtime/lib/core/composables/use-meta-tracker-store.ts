@@ -58,9 +58,9 @@ export function updateMetaTracker(config: UpdateMetaTrackerConfig) {
       ...acc,
       [key]: {
         formKey,
-        updatedAt,
         path: basePath,
         rawValue: value,
+        updatedAt,
         isConnected: isConnected ?? lastKnownIsConnectedValue,
       },
     }),

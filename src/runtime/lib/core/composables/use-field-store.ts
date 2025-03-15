@@ -1,8 +1,7 @@
 import { omit } from "lodash-es"
 import { useState } from "nuxt/app"
-// import { useState } from "nuxt/app"
 import { computed, ref, type Ref } from "vue"
-import type { DOMFieldState } from "../../../types/types-api"
+import type { DOMFieldStateStore } from "../../../types/types-api"
 
 export type ElementSet = Set<HTMLElement>
 export type ElementStore = Record<string, ElementSet>
@@ -14,17 +13,15 @@ export type GetElementHelpers = (path: string) => {
 }
 export type UseFieldStateStoreRefReturnValue = {
   getElementHelpers: GetElementHelpers
-  fieldStateStore: Ref<FieldStateStore, FieldStateStore>
+  fieldStateStore: Ref<DOMFieldStateStore, DOMFieldStateStore>
 }
-
-export type FieldStateStore = Record<string, DOMFieldState | undefined>
 
 export function useFieldStateStore(): UseFieldStateStoreRefReturnValue {
   const elementStoreRef = useState<ElementStore>(
     "chemical-x/element-store",
     () => ({})
   )
-  const fieldStateStore = useState<FieldStateStore>(
+  const fieldStateStore = useState<DOMFieldStateStore>(
     "chemical-x/element-state-store",
     () => ({})
   )

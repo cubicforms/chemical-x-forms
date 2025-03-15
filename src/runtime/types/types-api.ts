@@ -138,13 +138,6 @@ export type SetValueCallback<Payload> = (
 ) => DeepPartial<Payload>
 export type SetValuePayload<Payload> = DeepPartial<Payload> | SetValueCallback<Payload>
 
-export type DOMFieldState =
-  | {
-    focused: boolean | null
-    blurred: boolean | null
-    touched: boolean | null
-  }
-
 type DeepFlatten<T> =
   // If it's not an object, just leave it as-is
   T extends object
@@ -153,8 +146,14 @@ type DeepFlatten<T> =
         [K in keyof T]: DeepFlatten<T[K]>
       }
     : T
+export type DOMFieldState =
+  | {
+    focused: boolean | null
+    blurred: boolean | null
+    touched: boolean | null
+  }
 export type FieldState = DeepFlatten<DOMFieldState & { meta: MetaTrackerValue } & FormSummaryValue>
-export type DOMFieldStateStore = Record<string, DOMFieldState | undefined>
+export type DOMFieldStateStore = Map<string, DOMFieldState | undefined>
 
 export type UseAbstractFormReturnType<
   Form extends GenericForm,

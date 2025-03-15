@@ -1,29 +1,30 @@
-import { omit } from "lodash-es"
+import { get } from "lodash-es"
 import { useState } from "nuxt/app"
 import { computed, ref, type Ref } from "vue"
 import type { DOMFieldStateStore } from "../../../types/types-api"
+import type { GenericForm } from "../../../types/types-core"
 
 export type ElementSet = Set<HTMLElement>
-export type ElementStore = Record<string, ElementSet>
+export type ElementStore = Map<string, ElementSet>
 export type RegisterElement = (element: HTMLElement) => boolean
 export type DeregisterElement = (element: HTMLElement) => number // returns number of remaining elements for elements' related path
 export type GetElementHelpers = (path: string) => {
   registerElement: RegisterElement
   deregisterElement: DeregisterElement
 }
-export type UseFieldStateStoreRefReturnValue = {
+export type UseDOMFieldStateStoreRefReturnValue = {
   getElementHelpers: GetElementHelpers
-  fieldStateStore: Ref<DOMFieldStateStore, DOMFieldStateStore>
+  domFieldStateStore: Ref<DOMFieldStateStore, DOMFieldStateStore>
 }
 
-export function useFieldStateStore(): UseFieldStateStoreRefReturnValue {
+export function useDOMFieldStateStore<Form extends GenericForm>(form: Ref<Form>): UseDOMFieldStateStoreRefReturnValue {
   const elementStoreRef = useState<ElementStore>(
     "chemical-x/element-store",
-    () => ({})
+    () => new Map()
   )
-  const fieldStateStore = useState<DOMFieldStateStore>(
+  const domFieldStateStore = useState<DOMFieldStateStore>(
     "chemical-x/element-state-store",
-    () => ({})
+    () => new Map()
   )
 
   function _setKnownFocusState(
@@ -31,19 +32,11 @@ export function useFieldStateStore(): UseFieldStateStoreRefReturnValue {
     focusedState: boolean,
     touched: boolean,
   ) {
-    if (!fieldStateStore.value[path]) {
-      fieldStateStore.value[path] = {
-        focused: focusedState,
-        blurred: !focusedState,
-        touched,
-      }
-      return
-    }
-
-    const elementDOMState = fieldStateStore.value[path]
-    elementDOMState.focused = focusedState
-    elementDOMState.blurred = !focusedState
-    elementDOMState.touched = touched
+    domFieldStateStore.value.set(path, {
+      focused: focusedState,
+      blurred: !focusedState,
+      touched,
+    })
   }
 
   const touchedStates = ref<Record<string, boolean | undefined>>({})
@@ -80,7 +73,7 @@ export function useFieldStateStore(): UseFieldStateStoreRefReturnValue {
     }
 
     function registerElement(element: HTMLElement) {
-      const elementSet = elementStoreRef.value[path] as ElementSet | undefined
+      const elementSet = elementStoreRef.value.get(path)
       if (elementSet?.has(element)) return false
 
       addEventListenerHelper(element)
@@ -92,28 +85,32 @@ export function useFieldStateStore(): UseFieldStateStoreRefReturnValue {
       )
 
       if (!elementSet) {
-        elementStoreRef.value[path] = new Set([element])
+        elementStoreRef.value.set(path, new Set([element]))
         return true
       }
 
-      elementStoreRef.value[path]?.add(element)
-      return true
+      return !!elementStoreRef.value.get(path)?.add(element)
     }
 
     function deregisterElement(element: HTMLElement) {
       const elementStore = elementStoreRef.value
-      const deleted = elementStore[path]?.delete(element)
+      const deleted = elementStore.get(path)?.delete(element)
       if (deleted) {
         removeEventListenerHelper(element)
       }
 
-      // this is a useful signal for dropping path references in other parts of the library
-      const existingElementCount = elementStore[path]?.size ?? 0
+      const existingElementCount = elementStore.get(path)?.size ?? 0
       if (existingElementCount === 0) {
-        omit(elementStore, path) // free the path
-        const deletedElementState = fieldStateStore.value?.[path]
-        if (deletedElementState) {
-          omit(deletedElementState, path) // remove the state reference (no longer tracking element state)
+        elementStore.delete(path) // free the path
+        const domFieldStateExists = domFieldStateStore.value.has(path)
+        const NOT_FOUND = Symbol("FIELD_NOT_FOUND")
+        const fieldNotFoundOnForm = get(form.value, path, NOT_FOUND) === NOT_FOUND
+
+        // Only delete the dom field state if we are no longer tracking the field internally
+        const removeDomFieldState = fieldNotFoundOnForm && domFieldStateExists
+
+        if (removeDomFieldState) {
+          domFieldStateStore.value.delete(path)
         }
       }
 
@@ -128,6 +125,6 @@ export function useFieldStateStore(): UseFieldStateStoreRefReturnValue {
 
   return {
     getElementHelpers,
-    fieldStateStore,
+    domFieldStateStore,
   }
 }

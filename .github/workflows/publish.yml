@@ -1,4 +1,5 @@
 name: Publish to NPM and Version Bump
+run-name: Publish ${{ github.head_ref }}
 
 on:
   # push:

@@ -1,4 +1,5 @@
 name: Publish to NPM and Version Bump
+run-name: ${{ github.base_ref }} by @${{ github.actor }}
 
 on:
   # push:

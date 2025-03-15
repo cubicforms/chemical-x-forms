@@ -2,6 +2,7 @@ import { omit } from "lodash-es"
 import { useState } from "nuxt/app"
 // import { useState } from "nuxt/app"
 import { computed, ref, type Ref } from "vue"
+import type { DOMFieldState } from "../../../types/types-api"
 
 export type ElementSet = Set<HTMLElement>
 export type ElementStore = Record<string, ElementSet>
@@ -11,25 +12,19 @@ export type GetElementHelpers = (path: string) => {
   registerElement: RegisterElement
   deregisterElement: DeregisterElement
 }
-export type UseElementStoreRefReturnValue = {
+export type UseFieldStoreRefReturnValue = {
   getElementHelpers: GetElementHelpers
-  elementDOMStateStoreRef: Ref<ElementDOMStateStore, ElementDOMStateStore>
+  fieldStateStore: Ref<FieldStateStore, FieldStateStore>
 }
 
-export type ElementDOMState =
-  | {
-    focused: boolean | null
-    blurred: boolean | null
-    touched: boolean | null
-  }
-export type ElementDOMStateStore = Record<string, ElementDOMState | undefined>
+export type FieldStateStore = Record<string, DOMFieldState | undefined>
 
-export function useElementStore(): UseElementStoreRefReturnValue {
+export function useElementStore(): UseFieldStoreRefReturnValue {
   const elementStoreRef = useState<ElementStore>(
     "chemical-x/element-store",
     () => ({})
   )
-  const elementDOMStateStoreRef = useState<ElementDOMStateStore>(
+  const fieldStateStore = useState<FieldStateStore>(
     "chemical-x/element-state-store",
     () => ({})
   )
@@ -39,8 +34,8 @@ export function useElementStore(): UseElementStoreRefReturnValue {
     focusedState: boolean,
     touched: boolean,
   ) {
-    if (!elementDOMStateStoreRef.value[path]) {
-      elementDOMStateStoreRef.value[path] = {
+    if (!fieldStateStore.value[path]) {
+      fieldStateStore.value[path] = {
         focused: focusedState,
         blurred: !focusedState,
         touched,
@@ -48,7 +43,7 @@ export function useElementStore(): UseElementStoreRefReturnValue {
       return
     }
 
-    const elementDOMState = elementDOMStateStoreRef.value[path]
+    const elementDOMState = fieldStateStore.value[path]
     elementDOMState.focused = focusedState
     elementDOMState.blurred = !focusedState
     elementDOMState.touched = touched
@@ -104,7 +99,7 @@ export function useElementStore(): UseElementStoreRefReturnValue {
         return true
       }
 
-      elementStoreRef.value[path].add(element)
+      elementStoreRef.value[path]?.add(element)
       return true
     }
 
@@ -119,7 +114,7 @@ export function useElementStore(): UseElementStoreRefReturnValue {
       const existingElementCount = elementStore[path]?.size ?? 0
       if (existingElementCount === 0) {
         omit(elementStore, path) // free the path
-        const deletedElementState = elementDOMStateStoreRef.value?.[path]
+        const deletedElementState = fieldStateStore.value?.[path]
         if (deletedElementState) {
           omit(deletedElementState, path) // remove the state reference (no longer tracking element state)
         }
@@ -136,6 +131,6 @@ export function useElementStore(): UseElementStoreRefReturnValue {
 
   return {
     getElementHelpers,
-    elementDOMStateStoreRef,
+    fieldStateStore,
   }
 }

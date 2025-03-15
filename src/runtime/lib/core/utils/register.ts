@@ -1,15 +1,17 @@
 import { get } from "lodash-es"
 import { toRef, type Ref } from "vue"
-import type { AbstractSchema, FieldTransformer, FormKey, FormStore, MetaTracker, XModelValue } from "../../../types/types-api"
-import type { GenericForm } from "../../../types/types-core"
-import type { GetElementHelpers } from "../composables/use-element-store"
+import type {
+  AbstractSchema,
+  FormKey,
+  FormStore,
+  MetaTracker,
+  RegisterContext,
+  XModelValue
+} from "../../../types/types-api"
+import type { FlatPath, GenericForm, NestedType } from "../../../types/types-core"
+import type { GetElementHelpers } from "../composables/use-field-store"
 import { updateMetaTracker } from "../composables/use-meta-tracker-store"
 import { getForm } from "./get-value"
-
-// undefined by default (defer to useForm global setting)
-type RegisterContext<Input, Output> = {
-  fieldTransformer?: undefined | boolean | FieldTransformer<Input, Output>
-}
 
 export function registerFactory<Form extends GenericForm>(
   formStore: Ref<FormStore<Form>>,
@@ -17,19 +19,27 @@ export function registerFactory<Form extends GenericForm>(
   _schema: AbstractSchema<Form, Form>,
   metaTracker: Ref<MetaTracker>,
   setValue: (key: string, value: unknown) => boolean,
-  getElementHelpers: GetElementHelpers,
+  getElementHelpers: GetElementHelpers
 ) {
   const form = getForm(formStore, formKey)
   const elementHelperCache: Record<string, ReturnType<GetElementHelpers>> = {}
   // TODO: use context
-  function registerLogic<Input, Output>(path: string, _context?: RegisterContext<Input, Output>): XModelValue {
+  function registerLogic(
+    path: FlatPath<Form, keyof Form, true>,
+    _context?: RegisterContext<typeof path, NestedType<Form, typeof path>>
+  ): XModelValue<NestedType<Form, typeof path> | undefined> {
     return {
-      innerRef: toRef(() => metaTracker.value?.[path]?.rawValue ?? get(form, path)),
+      innerRef: toRef(
+        () => (metaTracker.value?.[path]?.rawValue ?? get(form, path)) as NestedType<Form, typeof path> | undefined
+      ),
       registerElement: (el) => {
-        if (!(path in elementHelperCache) || !metaTracker.value[path].isConnected) {
+        if (
+          !(path in elementHelperCache)
+          || !metaTracker.value[path]?.isConnected
+        ) {
           elementHelperCache[path] = getElementHelpers(path)
         }
-        const success = elementHelperCache[path].registerElement(el)
+        const success = elementHelperCache[path]?.registerElement(el)
         if (success) {
           updateMetaTracker({
             basePath: path,
@@ -44,7 +54,8 @@ export function registerFactory<Form extends GenericForm>(
         if (!(path in elementHelperCache)) {
           elementHelperCache[path] = getElementHelpers(path)
         }
-        const remainingElementCount = elementHelperCache[path].deregisterElement(el)
+        const remainingElementCount
+          = elementHelperCache[path]?.deregisterElement(el)
         updateMetaTracker({
           basePath: path,
           metaTracker: metaTracker.value,

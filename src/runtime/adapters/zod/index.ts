@@ -340,7 +340,7 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
   let currentSchema: z.ZodSchema | undefined = zodSchema
 
   for (let index = 0; index < keys.length; index++) {
-    const key = keys[index]
+    const key = keys[index] ?? ""
     if (isZodSchemaType(currentSchema, "ZodObject")) {
       const shape = currentSchema._def.shape() as z.ZodRawShape
       currentSchema = shape[key]

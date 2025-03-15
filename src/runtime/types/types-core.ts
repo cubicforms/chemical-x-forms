@@ -6,6 +6,59 @@ type IsObjectOrArray<T> = T extends GenericForm
     ? true
     : false
 
+type PartialFlatPath<
+  Form,
+  Key extends keyof Form = keyof Form,
+> = IsObjectOrArray<Form> extends true
+  ? Key extends string
+    ? Form[Key] extends infer Value
+      ? Value extends Array<infer ArrayItem>
+        ?
+        | `${Key}`
+        | `${Key}.${number}`
+        | `${Key}.${number}.${PartialFlatPath<ArrayItem>}`
+        : Value extends GenericForm
+          ? `${Key}` | `${Key}.${PartialFlatPath<Value>}`
+          : `${Key}`
+      : never
+    : Key extends number
+      ?
+      | `${Key}`
+      | (Form[Key] extends GenericForm
+        ? `${Key}.${PartialFlatPath<Form[Key]>}`
+        : Form[Key] extends Array<infer ArrayItem>
+          ? IsObjectOrArray<ArrayItem> extends true
+            ? `${Key}.${number}` | `${Key}.${number}.${PartialFlatPath<ArrayItem>}`
+            : `${Key}.${number}`
+          : never)
+      : never
+  : never
+
+export type CompleteFlatPath<
+  Form,
+  Key extends keyof Form = keyof Form,
+> = IsObjectOrArray<Form> extends true
+  ? Key extends string
+    ? Form[Key] extends infer Value
+      ? Value extends Array<infer ArrayItem>
+        ? `${Key}.${number}.${CompleteFlatPath<ArrayItem>}`
+        : Value extends GenericForm
+          ? `${Key}.${CompleteFlatPath<Value>}`
+          : `${Key}`
+      : never
+    : Key extends number
+      ?
+      | `${Key}`
+      | (Form[Key] extends GenericForm
+        ? `${Key}.${CompleteFlatPath<Form[Key]>}`
+        : Form[Key] extends Array<infer ArrayItem>
+          ? IsObjectOrArray<ArrayItem> extends true
+            ? `${Key}.${number}.${CompleteFlatPath<ArrayItem>}`
+            : `${Key}.${number}`
+          : never)
+      : never
+  : never
+
 // FlatPath Generic Gotchas:
 //
 // 1. Typescript collapses paths like `something.${string}` | `something.${string}.deeper`
@@ -22,30 +75,8 @@ type IsObjectOrArray<T> = T extends GenericForm
 export type FlatPath<
   Form,
   Key extends keyof Form = keyof Form,
-> = IsObjectOrArray<Form> extends true
-  ? Key extends string
-    ? Form[Key] extends infer Value
-      ? Value extends Array<infer ArrayItem>
-        ?
-        | `${Key}`
-        | `${Key}.${number}`
-        | `${Key}.${number}.${FlatPath<ArrayItem>}`
-        : Value extends GenericForm
-          ? `${Key}` | `${Key}.${FlatPath<Value>}`
-          : `${Key}`
-      : never
-    : Key extends number
-      ?
-      | `${Key}`
-      | (Form[Key] extends GenericForm
-        ? `${Key}.${FlatPath<Form[Key]>}`
-        : Form[Key] extends Array<infer ArrayItem>
-          ? IsObjectOrArray<ArrayItem> extends true
-            ? `${Key}.${number}` | `${Key}.${number}.${FlatPath<ArrayItem>}`
-            : `${Key}.${number}`
-          : never)
-      : never
-  : never
+  ForceFullPath extends boolean = false,
+> = ForceFullPath extends true ? CompleteFlatPath<Form, Key> : PartialFlatPath<Form, Key>
 
 export type DeepPartial<T> = T extends Primitive // Base case for primitive types
   ? T

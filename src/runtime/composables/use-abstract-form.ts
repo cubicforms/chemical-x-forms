@@ -1,12 +1,19 @@
-import { useElementStore } from "../lib/core/composables/use-element-store"
+import { useElementStore } from "../lib/core/composables/use-field-store"
 import { useFormKey } from "../lib/core/composables/use-form-key"
 import { useFormStore } from "../lib/core/composables/use-form-store"
 import { useMetaTrackerStore } from "../lib/core/composables/use-meta-tracker-store"
-import { elementStateFactory } from "../lib/core/utils/element-state-api"
+import { fieldStateFactory } from "../lib/core/utils/field-state-api"
 import { getComputedSchema } from "../lib/core/utils/get-computed-schema"
 import { registerFactory } from "../lib/core/utils/register"
-import type { AbstractSchema, UseFormConfiguration } from "../types/types-api"
-import type { DeepPartial, GenericForm } from "../types/types-core"
+import type {
+  AbstractSchema,
+  UseAbstractFormReturnType,
+  UseFormConfiguration
+} from "../types/types-api"
+import type {
+  DeepPartial,
+  GenericForm
+} from "../types/types-core"
 
 export function useAbstractForm<
   Form extends GenericForm,
@@ -18,7 +25,7 @@ export function useAbstractForm<
     AbstractSchema<Form, GetValueFormType>,
     DeepPartial<Form>
   >
-) {
+): UseAbstractFormReturnType<Form, GetValueFormType> {
   const { schema } = configuration
   const key = useFormKey(configuration.key)
   const computedSchema = getComputedSchema(key, schema)
@@ -45,30 +52,30 @@ export function useAbstractForm<
   const setValue = setValueFactory(formStore, key, computedSchema, metaTracker)
   const validate = getValidateFactory(form, key, computedSchema)
   const handleSubmit = getHandleSubmitFactory(form, validate)
-  const { getElementHelpers, elementDOMStateStoreRef } = useElementStore()
+  const { getElementHelpers, fieldStateStore } = useElementStore()
   const register = registerFactory(
     formStore,
     key,
     computedSchema,
     metaTracker,
     setValue,
-    getElementHelpers,
+    getElementHelpers
   )
 
-  const getState = elementStateFactory(formSummaryValues, metaTracker, elementDOMStateStoreRef)
+  const getFieldState = fieldStateFactory<Form>(
+    formSummaryValues,
+    metaTracker,
+    fieldStateStore,
+    key
+  )
 
   return {
+    getFieldState,
     handleSubmit,
-    getState,
     getValue,
     setValue,
     validate,
     register,
     key,
-  }
+  } satisfies UseAbstractFormReturnType<Form, GetValueFormType>
 }
-
-export type UseAbstractFormReturnType<Form extends GenericForm, GetValueFormType extends GenericForm = Form> = ReturnType<typeof useAbstractForm<
-  Form,
-  GetValueFormType
->>

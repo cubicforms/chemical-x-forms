@@ -1,5 +1,4 @@
 name: Publish to NPM and Version Bump
-run-name: ${{ github.base_ref }} by @${{ github.actor }}
 
 on:
   # push:
@@ -13,6 +12,7 @@ on:
 
 jobs:
   publish:
+    name: Publish ${{ github.head_ref }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

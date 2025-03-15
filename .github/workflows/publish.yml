@@ -1,37 +1,41 @@
 name: Publish to NPM and Version Bump
-
+run-name: Publish ${{ github.event.inputs.version_type }} release to NPM
 on:
-  # push:
-  #   branches: [main]
   workflow_dispatch:
     inputs:
       version_type:
         description: "Version type (major, minor, patch)"
         required: true
         default: "patch"
-
 jobs:
-  set-title:
-    runs-on: ubuntu-latest
-    outputs:
-      title: ${{ steps.set-title.outputs.title }}
-    steps:
-      - id: set-title
-        run: echo "title=Publish to NPM (${{ github.ref_name }})" >> $GITHUB_OUTPUT
-
   publish:
-    needs: set-title
-    name: ${{ needs.set-title.outputs.title }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0 # Full git history so we can push commits/tags
+          fetch-depth: 0
+
+      - name: Calculate next version
+        id: calculate-next-version
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          # Using semver.org compliant version incrementing
+          if [ "${{ github.event.inputs.version_type }}" = "major" ]; then
+            NEXT=$(echo $CURRENT | awk -F. '{print $1+1".0.0"}')
+          elif [ "${{ github.event.inputs.version_type }}" = "minor" ]; then
+            NEXT=$(echo $CURRENT | awk -F. '{print $1"."$2+1".0"}')
+          else
+            NEXT=$(echo $CURRENT | awk -F. '{print $1"."$2"."$3+1}')
+          fi
+          echo "next_version=$NEXT" >> $GITHUB_OUTPUT
+          echo "WORKFLOW_TITLE=Publish ${{ github.event.inputs.version_type }} release to NPM (v. $NEXT)" >> $GITHUB_ENV
+
+      - name: Update workflow name
+        run: echo "::notice title=Version::Publishing version ${{ steps.calculate-next-version.outputs.next_version }}"
 
       - name: Setup Node.js
         uses: actions/setup-node@v3

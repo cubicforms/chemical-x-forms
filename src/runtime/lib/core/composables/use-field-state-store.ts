@@ -102,7 +102,7 @@ export function useDOMFieldStateStore<Form extends GenericForm>(form: Ref<Form>)
       const existingElementCount = elementStore.get(path)?.size ?? 0
       if (existingElementCount === 0) {
         elementStore.delete(path) // free the path
-        const domFieldStateExists = domFieldStateStore.value.get(path)
+        const domFieldStateExists = domFieldStateStore.value.has(path)
         const NOT_FOUND = Symbol("FIELD_NOT_FOUND")
         const fieldNotFoundOnForm = get(form.value, path, NOT_FOUND) === NOT_FOUND
 

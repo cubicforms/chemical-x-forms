@@ -1,3 +1,10 @@
 {
-  "extends": "./.nuxt/tsconfig.json"
+  "extends": "./.nuxt/tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@chemical-x/forms/types": [
+        "../src/runtime/types/types-api.ts"
+      ]
+    }
+  }
 }

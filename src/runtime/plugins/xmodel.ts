@@ -20,10 +20,9 @@ import {
   nextTick,
   warn,
 } from "vue"
-import type { XModelValue } from "../types/types-api"
+import type { CustomDirectiveRegisterAssignerFn, RegisterCheckboxCustomDirective, RegisterModelDynamicCustomDirective, RegisterRadioCustomDirective, RegisterSelectCustomDirective, RegisterTextCustomDirective, XModelValue } from "../types/types-api"
 
-type AssignerFn = (value: unknown) => void
-
+export const assignKey: unique symbol = Symbol("_assign")
 function isXModelPayload<Value = unknown>(val: unknown): val is XModelValue<Value> {
   if (!val) return false
   if (typeof val !== "object") return false
@@ -46,7 +45,7 @@ function addEventListener(
   el.addEventListener(event, handler, options)
 }
 
-const getModelAssigner = (vnode: VNode, xmodelValue: XModelValue): AssignerFn => {
+const getModelAssigner = (vnode: VNode, xmodelValue: XModelValue): CustomDirectiveRegisterAssignerFn => {
   const fn
       = vnode.props?.["onUpdate:xmodelValue"] // this is a developer escape hatch
   if (!fn) {
@@ -73,9 +72,7 @@ function onCompositionEnd(e: Event) {
   }
 }
 
-const assignKey: unique symbol = Symbol("_assign")
-
-function setAssignFunction(el: { [assignKey]: AssignerFn }, vnode: VNode, value: unknown) {
+function setAssignFunction(el: { [AssignKey: symbol]: CustomDirectiveRegisterAssignerFn }, vnode: VNode, value: unknown) {
   if (!isXModelPayload(value)) {
     warn(`vmodel expected value of type XModelValue, got value of type ${typeof value} instead. Please check your v-xmodel value.`)
     el[assignKey] = _ => undefined
@@ -87,17 +84,9 @@ function setAssignFunction(el: { [assignKey]: AssignerFn }, vnode: VNode, value:
   }
 }
 
-type CustomDirective<T, Modifiers extends string = string> = ObjectDirective<T & {
-  _assigning?: boolean
-  [assignKey]: AssignerFn
-}, XModelValue, Modifiers, string>
-
 // We are exporting the v-model runtime directly as vnode hooks so that it can
 // be tree-shaken in case v-model is never used.
-const vXModelText: CustomDirective<
-    HTMLInputElement | HTMLTextAreaElement,
-    "trim" | "number" | "lazy"
-> = {
+const vXModelText: RegisterTextCustomDirective = {
   created(el, { value, modifiers: { lazy, trim, number } }, vnode) {
     const castToNumber
         = number || (vnode.props && vnode.props["type"] === "number")
@@ -115,7 +104,7 @@ const vXModelText: CustomDirective<
       if (castToNumber) {
         domValue = looseToNumber(domValue)
       }
-      el[assignKey](domValue)
+      el[assignKey]?.(domValue)
     })
     if (trim) {
       addEventListener(el, "change", () => {
@@ -173,7 +162,7 @@ const vXModelText: CustomDirective<
   },
 }
 
-const vXModelCheckbox: CustomDirective<HTMLInputElement> = {
+const vXModelCheckbox: RegisterCheckboxCustomDirective = {
   // #4096 array checkboxes need to be deep traversed
   deep: true,
   created(el, { value }, vnode) {
@@ -198,12 +187,12 @@ const vXModelCheckbox: CustomDirective<HTMLInputElement> = {
         const index = looseIndexOf(modelValue, elementValue)
         const found = index !== -1
         if (checked && !found) {
-          assign(modelValue.concat(elementValue))
+          assign?.(modelValue.concat(elementValue))
         }
         else if (!checked && found) {
           const filtered = [...modelValue]
           filtered.splice(index, 1)
-          assign(filtered)
+          assign?.(filtered)
         }
       }
       else if (isSet(modelValue)) {
@@ -218,10 +207,10 @@ const vXModelCheckbox: CustomDirective<HTMLInputElement> = {
         else {
           cloned.delete(elementValue)
         }
-        assign(cloned)
+        assign?.(cloned)
       }
       else {
-        assign(getCheckboxValue(el, checked))
+        assign?.(getCheckboxValue(el, checked))
       }
     })
   },
@@ -266,7 +255,7 @@ function setChecked(
   }
 }
 
-const vXModelRadio: CustomDirective<HTMLInputElement> = {
+const vXModelRadio: RegisterRadioCustomDirective = {
   created(el, { value }, vnode) {
     if (!isXModelPayload(value)) return
 
@@ -275,7 +264,7 @@ const vXModelRadio: CustomDirective<HTMLInputElement> = {
     el.checked = looseEqual(value.innerRef.value, vnode.props?.["value"])
     setAssignFunction(el, vnode, value)
     addEventListener(el, "change", () => {
-      el[assignKey](getValue(el))
+      el[assignKey]?.(getValue(el))
     })
   },
   beforeUpdate(el, { value, oldValue }, vnode) {
@@ -288,7 +277,7 @@ const vXModelRadio: CustomDirective<HTMLInputElement> = {
   },
 }
 
-const vXModelSelect: CustomDirective<HTMLSelectElement, "number"> = {
+const vXModelSelect: RegisterSelectCustomDirective = {
   // <select multiple> value need to be deep traversed
   deep: true,
   created(el, { value, modifiers: { number } }, vnode) {
@@ -303,7 +292,7 @@ const vXModelSelect: CustomDirective<HTMLSelectElement, "number"> = {
         .map((o: HTMLOptionElement) =>
           number ? looseToNumber(getValue(o)) : getValue(o),
         )
-      el[assignKey](
+      el[assignKey]?.(
         el.multiple
           ? isSetModel
             ? new Set(selectedVal)
@@ -391,9 +380,7 @@ function getCheckboxValue(
   return key in el ? el[key] : checked
 }
 
-const vXModelDynamic: ObjectDirective<
-    HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, XModelValue, "trim" | "number" | "lazy"
-> = {
+const vXModelDynamic: RegisterModelDynamicCustomDirective = {
   created(el, binding, vnode) {
     callModelHook(el, binding, vnode, null, "created")
   },

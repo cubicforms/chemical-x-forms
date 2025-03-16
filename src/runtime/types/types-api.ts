@@ -1,4 +1,4 @@
-import type { Ref } from "vue"
+import type { ObjectDirective, Ref } from "vue"
 import type { DeepPartial, FlatPath, GenericForm, NestedType } from "./types-core"
 
 export type FormKey = string
@@ -127,6 +127,30 @@ export type XModelValue<Value = unknown> = {
   deregisterElement: (el: HTMLElement) => void
   setValueWithInternalPath: (value: unknown) => boolean
 }
+
+export type CustomDirectiveRegisterAssignerFn = (value: unknown) => void
+export type CustomRegisterDirective<T, Modifiers extends string = string> = ObjectDirective<T & {
+  _assigning?: boolean
+  [S: symbol]: CustomDirectiveRegisterAssignerFn
+}, XModelValue, Modifiers, string>
+
+export type RegisterTextCustomDirective = CustomRegisterDirective<
+HTMLInputElement | HTMLTextAreaElement,
+"trim" | "number" | "lazy"
+>
+
+export type RegisterCheckboxCustomDirective = CustomRegisterDirective<HTMLInputElement>
+export type RegisterRadioCustomDirective = CustomRegisterDirective<HTMLInputElement>
+export type RegisterSelectCustomDirective = CustomRegisterDirective<HTMLSelectElement, "number">
+export type RegisterModelDynamicCustomDirective = ObjectDirective<
+HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, XModelValue, "trim" | "number" | "lazy"
+>
+export type RegisterDirective =
+  | RegisterTextCustomDirective
+  | RegisterCheckboxCustomDirective
+  | RegisterSelectCustomDirective
+  | RegisterRadioCustomDirective
+  | RegisterModelDynamicCustomDirective
 
 // undefined by default (defer to useForm global setting)
 export type RegisterContext<Input, Output> = {

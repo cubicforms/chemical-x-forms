@@ -24,7 +24,6 @@
     "lint:fix": "eslint . --fix",
     "prepack": "nuxt-module-build build",
     "release": "pnpm lint && pnpm test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
-    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
     "test:watch": "vitest watch"
@@ -49,6 +48,13 @@
       "types": "./dist/runtime/adapters/*/index.d.ts",
       "import": "./dist/runtime/adapters/*/index.mjs",
       "require": "./dist/runtime/adapters/*/index.cjs"
+    },
+    "./types": {
+      "types": "./dist/runtime/types/types-api.d.ts",
+      "import": null,
+      "require": null,
+      "default": "./dist/runtime/types/types-api.d.ts",
+      "node": "./dist/runtime/types/types-api.d.ts"
     }
   },
   "keywords": [

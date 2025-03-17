@@ -34,7 +34,7 @@ const planetValidationResponse = validate("address.planet")
     <h1>Fancy Form '{{ key }}'</h1>
 
     <input
-      v-xmodel="register('address.planet')"
+      v-xmodel.lazy.trim="register('address.planet')"
       placeholder="Enter your favorite planet"
     >
 

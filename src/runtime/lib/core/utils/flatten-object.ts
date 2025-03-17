@@ -1,5 +1,5 @@
 import { set } from "lodash-es"
-import { toRaw } from "vue"
+import { isProxy, isRef, toRaw } from "vue"
 import { isArrayOrRecord, isRecord } from "./helpers"
 
 const NO_KEY = "___USEFORM_INTERNAL_ERROR__NO_PATH_KEY_FOUND_FOR_FLATTEN___"
@@ -29,7 +29,9 @@ export function flattenObjectWithBaseKey(obj: unknown, basePath?: string) {
     }
   }
 
-  logic(obj, basePath)
+  const unwrappedObj = isRef(obj) ? obj.value : obj
+  const nonProxyObj = isProxy(unwrappedObj) ? toRaw(unwrappedObj) : unwrappedObj
+  logic(nonProxyObj, basePath) // no not pass in refs or proxies
   return recordedPaths
 }
 

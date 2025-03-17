@@ -1,30 +1,64 @@
 <script setup lang="ts">
+import type { OnError, OnSubmit } from "@chemical-x/forms/types"
 import { z } from "zod"
-import { zodAdapter } from "../src/runtime/adapters/zod"
 
-const schema = z.object({
-  name: z.string().default("larry"),
-  age: z.number(),
-  address: z.object({ line1: z.string().default("123 main street") }),
-})
-const { register, getFieldState } = useAbstractForm({
-  schema: zodAdapter(schema),
-  key: "user-form",
+const planetSchema = z.object({
+  address: z.object({
+    planet: z
+      .string()
+      .refine(x => x.toLowerCase() !== "moon", {
+        message: "the moon ain't no planet",
+        path: ["address.planet"],
+      })
+      .default("Moon"),
+  }),
 })
 
-const state = getFieldState("address.line1")
-const mounted = ref(true)
+type Bio = z.infer<typeof planetSchema>
+
+const { getFieldState, register, handleSubmit, key, validate } = useForm({
+  schema: planetSchema,
+  key: "planet-form-key",
+})
+
+const planetState = getFieldState("address.planet")
+
+const onSubmit: OnSubmit<Bio> = async data => console.log("nice!", data)
+const onError: OnError = async error => console.log("oopsies!", error)
+
+const planetValidationResponse = validate("address.planet")
 </script>
 
 <template>
-  <div>
+  <form @submit.prevent="handleSubmit(onSubmit, onError)">
+    <h1>Fancy Form '{{ key }}'</h1>
+
     <input
-      v-if="mounted"
-      v-xmodel="register('address.line1')"
+      v-xmodel="register('address.planet')"
+      placeholder="Enter your favorite planet"
     >
-    <button @click="mounted = !mounted">
-      {{ mounted ? "unmounted input" : "mounted input" }}
-    </button>
-    <pre>{{ JSON.stringify(state, null, 2) }}</pre>
-  </div>
+
+    <hr>
+
+    <p>Favorite Planet field state:</p>
+
+    <pre>
+      {{ JSON.stringify(planetState, null, 2) }}
+    </pre>
+    <hr>
+
+    <p>Realtime path validation, if you need it:</p>
+
+    <pre>
+      {{ JSON.stringify(planetValidationResponse, null, 2) }}
+    </pre>
+
+    <button>Submit (check your console)</button>
+  </form>
 </template>
+
+<style>
+body {
+  font-family: Arial, Helvetica, sans-serif;
+}
+</style>

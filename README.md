@@ -60,36 +60,69 @@ export default defineNuxtConfig({
 
 ```vue
 <script setup lang="ts">
+import type { OnError, OnSubmit } from "@chemical-x/forms/types";
 import { z } from "zod";
 
-const schema = z.object({
-  name: z.string().min(6, { message: "Think of a longer name!" }),
+const planetSchema = z.object({
+  address: z.object({
+    planet: z
+      .string()
+      .refine((x) => x.toLowerCase() !== "moon", {
+        message: "the moon ain't no planet",
+        path: ["address.planet"],
+      })
+      .default("Moon"),
+  }),
 });
-const { register, handleSubmit, getState } = useForm({
-  schema,
-  initialState: { name: "Ozzy" },
-  key: "quick-start-form",
+
+type Bio = z.infer<typeof planetSchema>;
+
+const { getFieldState, register, handleSubmit, key, validate } = useForm({
+  schema: planetSchema,
+  key: "planet-form-key",
 });
 
-const onSuccess = (data) => {
-  console.log("Form submitted with values:", data);
-};
+const planetState = getFieldState("address.planet");
 
-const onError = (validationError) => {
-  console.log("Oops! something went wrong:", validationError);
-};
+const onSubmit: OnSubmit<Bio> = async (data) => console.log("nice!", data);
+const onError: OnError = async (error) => console.log("oopsies!", error);
 
-const nameState = getState("name");
+const planetValidationResponse = validate("address.planet");
 </script>
 
 <template>
-  <form @submit.prevent="handleSubmit(onSuccess, onError)">
-    <pre>{{ JSON.stringify({ nameState }, null, 2) }}</pre>
+  <form @submit.prevent="handleSubmit(onSubmit, onError)">
+    <h1>Fancy Form '{{ key }}'</h1>
+
+    <input
+      v-xmodel="register('address.planet')"
+      placeholder="Enter your favorite planet"
+    />
+
     <hr />
-    <input v-xmodel="register('name')" placeholder="Name" />
-    <button>Submit</button>
+
+    <p>Favorite Planet field state:</p>
+
+    <pre>
+      {{ JSON.stringify(planetState, null, 2) }}
+    </pre>
+    <hr />
+
+    <p>Realtime path validation, if you need it:</p>
+
+    <pre>
+      {{ JSON.stringify(planetValidationResponse, null, 2) }}
+    </pre>
+
+    <button>Submit (check your console)</button>
   </form>
 </template>
+
+<style>
+body {
+  font-family: Arial, Helvetica, sans-serif;
+}
+</style>
 ```
 
 **Core API Functions**
@@ -104,11 +137,11 @@ _**note**: detailed documentation coming soon_
 
 `handleSubmit(onSubmit, onError?)` – Handles submission with validation.
 
-`getValue(name: string)` – Retrieves field value.
+`getValue(name: string)` – Retrieves a field value.
 
 `setValue(name: string, value: any)` – Updates a field programmatically.
 
-`getElementState(name: string)` – Returns field state (value, touched, errors, etc.).
+`getFieldState(name: string)` – Returns field state (value, touched, errors, etc.).
 <br><br>
 
 ## 🥇 Advanced Features

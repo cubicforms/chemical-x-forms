@@ -79,3 +79,6 @@ export function useAbstractForm<
     key,
   } satisfies UseAbstractFormReturnType<Form, GetValueFormType>
 }
+
+// create an alias for conditional import in the consumer app
+export { useAbstractForm as useForm }

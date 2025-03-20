@@ -5,7 +5,7 @@
 [![License][license-src]][license-href]
 [![Nuxt][nuxt-src]][nuxt-href]
 
-**A fully type-safe, schema-driven form library that gives you superpowers**. Comes with a minimal composition API that prioritizes developer experience and form correctness.<br><br>
+**A fully type-safe, schema-driven form library that gives you superpowers**.<br>Comes with a minimal composition API that prioritizes developer experience and form correctness.<br><br>
 🚧 this library is not production ready _yet_.
 <br><br>
 
@@ -60,69 +60,32 @@ export default defineNuxtConfig({
 
 ```vue
 <script setup lang="ts">
-import type { OnError, OnSubmit } from "@chemical-x/forms/types";
 import { z } from "zod";
 
-const planetSchema = z.object({
-  address: z.object({
-    planet: z
-      .string()
-      .refine((x) => x.toLowerCase() !== "moon", {
-        message: "the moon ain't no planet",
-        path: ["address.planet"],
-      })
-      .default("Moon"),
-  }),
-});
+// Define your schema
+const schema = z.object({ planet: z.string() });
 
-type Bio = z.infer<typeof planetSchema>;
+// Create your form
+const { getFieldState, register, key } = useForm({ schema });
 
-const { getFieldState, register, handleSubmit, key, validate } = useForm({
-  schema: planetSchema,
-  key: "planet-form-key",
-});
-
-const planetState = getFieldState("address.planet");
-
-const onSubmit: OnSubmit<Bio> = async (data) => console.log("nice!", data);
-const onError: OnError = async (error) => console.log("oopsies!", error);
-
-const planetValidationResponse = validate("address.planet");
+// Get the state of the 'planet' field
+const planetState = getFieldState("planet");
 </script>
 
 <template>
-  <form @submit.prevent="handleSubmit(onSubmit, onError)">
-    <h1>Fancy Form '{{ key }}'</h1>
+  <div>
+    <h1>Planet Form</h1>
 
     <input
-      v-xmodel="register('address.planet')"
+      v-xmodel="register('planet')"
       placeholder="Enter your favorite planet"
     />
 
+    <p>Planet field State:</p>
+    <pre>{{ JSON.stringify(planetState, null, 2) }}</pre>
     <hr />
-
-    <p>Favorite Planet field state:</p>
-
-    <pre>
-      {{ JSON.stringify(planetState, null, 2) }}
-    </pre>
-    <hr />
-
-    <p>Realtime path validation, if you need it:</p>
-
-    <pre>
-      {{ JSON.stringify(planetValidationResponse, null, 2) }}
-    </pre>
-
-    <button>Submit (check your console)</button>
-  </form>
+  </div>
 </template>
-
-<style>
-body {
-  font-family: Arial, Helvetica, sans-serif;
-}
-</style>
 ```
 
 **Core API Functions**

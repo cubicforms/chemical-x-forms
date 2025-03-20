@@ -46,15 +46,14 @@
     },
     "./adapters/*": {
       "types": "./dist/runtime/adapters/*/index.d.ts",
-      "import": "./dist/runtime/adapters/*/index.mjs",
-      "require": "./dist/runtime/adapters/*/index.cjs"
+      "import": "./dist/runtime/adapters/*/index",
+      "require": null
     },
     "./types": {
       "types": "./dist/runtime/types/types-api.d.ts",
       "import": null,
       "require": null,
-      "default": "./dist/runtime/types/types-api.d.ts",
-      "node": "./dist/runtime/types/types-api.d.ts"
+      "default": "./dist/runtime/types/types-api.d.ts"
     }
   },
   "keywords": [

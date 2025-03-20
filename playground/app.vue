@@ -1,64 +1,30 @@
 <script setup lang="ts">
-import type { OnError, OnSubmit } from "@chemical-x/forms/types"
 import { z } from "zod"
 
-const planetSchema = z.object({
-  address: z.object({
-    planet: z
-      .string()
-      .refine(x => x.toLowerCase() !== "moon", {
-        message: "the moon ain't no planet",
-        path: ["address.planet"],
-      })
-      .default("Moon"),
-  }),
-})
+// Define your schema with a dash of magic
+const schema = z.object({ planet: z.string() })
 
-type Bio = z.infer<typeof planetSchema>
-
-const { getFieldState, register, handleSubmit, key, validate } = useForm({
-  schema: planetSchema,
+// Create your form with a unique key
+const { getFieldState, register, key } = useForm({
+  schema,
   key: "planet-form-key",
 })
 
-const planetState = getFieldState("address.planet")
-
-const onSubmit: OnSubmit<Bio> = async data => console.log("nice!", data)
-const onError: OnError = async error => console.log("oopsies!", error)
-
-const planetValidationResponse = validate("address.planet")
+// Get the state of the 'planet' field
+const planetState = getFieldState("planet")
 </script>
 
 <template>
-  <form @submit.prevent="handleSubmit(onSubmit, onError)">
-    <h1>Fancy Form '{{ key }}'</h1>
+  <div>
+    <h1>Fancy Form "{{ key }}"</h1>
 
     <input
-      v-xmodel.lazy.trim="register('address.planet')"
+      v-xmodel="register('planet')"
       placeholder="Enter your favorite planet"
     >
 
-    <hr>
-
     <p>Favorite Planet field state:</p>
-
-    <pre>
-      {{ JSON.stringify(planetState, null, 2) }}
-    </pre>
+    <pre>{{ JSON.stringify(planetState, null, 2) }}</pre>
     <hr>
-
-    <p>Realtime path validation, if you need it:</p>
-
-    <pre>
-      {{ JSON.stringify(planetValidationResponse, null, 2) }}
-    </pre>
-
-    <button>Submit (check your console)</button>
-  </form>
+  </div>
 </template>
-
-<style>
-body {
-  font-family: Arial, Helvetica, sans-serif;
-}
-</style>

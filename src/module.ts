@@ -1,5 +1,5 @@
 import {
-  addImportsDir,
+  addImports,
   addPlugin,
   addTypeTemplate,
   createResolver,
@@ -9,8 +9,9 @@ import { inputTextAreaNodeTransform } from "./runtime/lib/core/transforms/input-
 import { selectNodeTransform } from "./runtime/lib/core/transforms/select-transform"
 
 // Module options TypeScript interface definition
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface CXModuleOptions {}
+export interface CXModuleOptions {
+  useZod?: boolean
+}
 
 export default defineNuxtModule<CXModuleOptions>({
   meta: {
@@ -20,8 +21,10 @@ export default defineNuxtModule<CXModuleOptions>({
       nuxt: "^3.0.0"
     }
   },
-  defaults: {},
-  setup(_options, nuxt) {
+  defaults: {
+    useZod: true
+  },
+  setup(options, nuxt) {
     nuxt.options.vue.compilerOptions.nodeTransforms ||= []
     nuxt.options.vue.compilerOptions.nodeTransforms.push(
       selectNodeTransform,
@@ -29,7 +32,13 @@ export default defineNuxtModule<CXModuleOptions>({
     )
 
     const resolver = createResolver(import.meta.url)
-    addImportsDir(resolver.resolve("./runtime/composables"))
+    const useFormComposable = options.useZod ? "use-form" : "use-abstract-form"
+    addImports([
+      {
+        name: "useForm",
+        from: resolver.resolve(`./runtime/composables/${useFormComposable}`)
+      },
+    ])
 
     addPlugin({
       src: resolver.resolve("./runtime/plugins/xmodel"),

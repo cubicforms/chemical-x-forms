@@ -5,7 +5,7 @@ import { z } from "zod"
 const schema = z.object({ planet: z.string() })
 
 // Create your form with a unique key
-const { getFieldState, register, key } = useForm({
+const { getFieldState, register, key, setValue } = useForm({
   schema,
   key: "planet-form-key",
 })
@@ -13,6 +13,17 @@ const { getFieldState, register, key } = useForm({
 // Get the state of the 'planet' field
 const planetState = getFieldState("planet")
 const hideInput = ref(false)
+
+// random operation to demonstrate updating the planet field programmatically
+function updateVal(testUpdate: boolean) {
+  setValue("planet", (v) => {
+    const [base, count] = v.split(".")
+    const recoveredNum = Number(count ?? 0)
+    const safeNum = Number.isNaN(recoveredNum) ? 0 : recoveredNum
+    const BASE_DEFAULT = "Jupiter"
+    return testUpdate ? `${base || BASE_DEFAULT}.${safeNum + 1}` : v
+  })
+}
 </script>
 
 <template>
@@ -30,6 +41,10 @@ const hideInput = ref(false)
 
     <button @click="hideInput = !hideInput">
       {{ hideInput ? 'show input' : 'hide input' }}
+    </button>
+
+    <button @click="updateVal(true)">
+      Update value programmatically
     </button>
     <hr>
   </div>

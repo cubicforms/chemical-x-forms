@@ -213,7 +213,7 @@ export type UseAbstractFormReturnType<
     ): boolean
   }
   validate: (
-    path: string | undefined
+    path?: FlatPath<Form>
   ) => Readonly<Ref<ValidationResponseWithoutValue<Form>>>
   register: (
     path: FlatPath<Form, keyof Form, true>,

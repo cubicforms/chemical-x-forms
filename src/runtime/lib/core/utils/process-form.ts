@@ -14,7 +14,7 @@ export function getValidateFactory<Form extends GenericForm>(
   const NOT_FOUND = Symbol()
 
   function validateLogic(
-    path: string | undefined,
+    path?: FlatPath<Form>,
   ): Readonly<Ref<ValidationResponseWithoutValue<Form>>> {
     // defensive code to help users that pass `validate` by reference to event handlers etc
     const safePath = typeof path === "string" ? path : undefined
@@ -57,10 +57,10 @@ export function getValidateFactory<Form extends GenericForm>(
   }
 
   function validate(): Readonly<Ref<ValidationResponseWithoutValue<Form>>>
-  function validate<Path extends FlatPath<Form>>(
-    path: Path,
+  function validate(
+    path: FlatPath<Form>,
   ): Readonly<Ref<ValidationResponseWithoutValue<Form>>>
-  function validate<Path extends FlatPath<Form>>(path?: Path) {
+  function validate(path?: FlatPath<Form>) {
     try {
       return validateLogic(path)
     }

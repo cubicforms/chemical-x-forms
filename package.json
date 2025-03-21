@@ -1,6 +1,6 @@
 {
   "name": "@chemical-x/forms",
-  "version": "0.3.25",
+  "version": "0.3.26",
   "main": "./dist/module.cjs",
   "types": "./dist/types.d.ts",
   "files": [

@@ -56,7 +56,6 @@ export function registerFactory<Form extends GenericForm>(
             basePath: path,
             metaTracker: metaTracker.value,
             rawValue: metaTracker.value?.[path]?.rawValue ?? get(form, path),
-            updateTime: false,
             isConnected: true,
           })
         }
@@ -72,7 +71,6 @@ export function registerFactory<Form extends GenericForm>(
           basePath: path,
           metaTracker: metaTracker.value,
           rawValue: metaTracker.value?.[path]?.rawValue ?? get(form, path),
-          updateTime: false, // for consistency, only recompute `updatedAt` when form value changes
           isConnected: !!remainingElementCount, // only mark as disconnected if all elements are unmounted
         })
       },

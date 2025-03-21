@@ -12,6 +12,7 @@ const { getFieldState, register, key } = useForm({
 
 // Get the state of the 'planet' field
 const planetState = getFieldState("planet")
+const hideInput = ref(false)
 </script>
 
 <template>
@@ -19,12 +20,17 @@ const planetState = getFieldState("planet")
     <h1>Fancy Form "{{ key }}"</h1>
 
     <input
+      v-if="!hideInput"
       v-register="register('planet')"
       placeholder="Enter your favorite planet"
     >
 
     <p>Favorite Planet field state:</p>
     <pre>{{ JSON.stringify(planetState, null, 2) }}</pre>
+
+    <button @click="hideInput = !hideInput">
+      {{ hideInput ? 'show input' : 'hide input' }}
+    </button>
     <hr>
   </div>
 </template>

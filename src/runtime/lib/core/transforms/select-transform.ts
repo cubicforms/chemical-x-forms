@@ -192,15 +192,15 @@ export const selectNodeTransform: NodeTransform = (node) => {
 
   const selectProps = getSummarizedProps(node)
 
-  const xmodelIndex = selectProps.findIndex(p => p.key.includes("xmodel"))
+  const registerIndex = selectProps.findIndex(p => p.key.includes("register"))
   if (
     selectProps.length === 0
-    || xmodelIndex < 0
-    || xmodelIndex >= selectProps.length
+    || registerIndex < 0
+    || registerIndex >= selectProps.length
   )
     return
 
-  const xmodelSummarizedProp = selectProps[xmodelIndex]
+  const registerSummarizedProp = selectProps[registerIndex]
 
   function traverseSelectNode(
     _node: RootNode | TemplateChildNode,
@@ -248,7 +248,7 @@ export const selectNodeTransform: NodeTransform = (node) => {
       arg: createSimpleExpression("selected", true),
       exp: createCompoundExpression(
         generateEqualityExpression(
-          xmodelSummarizedProp?.value ?? "undefined",
+          registerSummarizedProp?.value ?? "undefined",
           optionValueSummarizedProp?.value ?? "undefined",
           previousOptionExpressions,
         )

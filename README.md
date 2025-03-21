@@ -13,7 +13,7 @@
 
 - **Compact API** – Minimal yet expressive API surface with core functions like `useForm`, `register`, and `handleSubmit` to reduce boilerplate.
 - **Abstract Schema Support** – Integrates with validation libraries like Zod for type-safe schemas and automatic validation.
-- **v-xmodel Directive** – One SSR-safe directive that automatically tracks everything.
+- **v-register Directive** – One SSR-safe directive that automatically tracks everything.
 - **Full State Tracking** – Automatically tracks field states (value, touched, dirty status, validation errors, etc).
 - **TypeScript Friendly** – Fully type-safe, with advanced form type inference from your schema.
   <br><br>
@@ -77,7 +77,7 @@ const planetState = getFieldState("planet");
     <h1>Planet Form</h1>
 
     <input
-      v-xmodel="register('planet')"
+      v-register="register('planet')"
       placeholder="Enter your favorite planet"
     />
 
@@ -94,7 +94,7 @@ _**note**: detailed documentation coming soon_
 
 `useForm(options?)` – Initializes form state. Abstract schema required.
 
-`v-xmodel` – Custom, SSR-safe directive for registering components with Chemical X
+`v-register` – Custom, SSR-safe directive for registering components with Chemical X
 
 `register(name: string)` – Binds a field to form state.
 

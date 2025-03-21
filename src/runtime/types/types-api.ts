@@ -121,7 +121,7 @@ export type CurrentValueWithContext<Value, FormSubtree = Value> = {
   meta: Readonly<Ref<DeepPartial<RemapLeafNodes<FormSubtree, MetaTrackerValue>>>>
 }
 
-export type XModelValue<Value = unknown> = {
+export type RegisterValue<Value = unknown> = {
   innerRef: Readonly<Ref<Value>>
   registerElement: (el: HTMLElement) => void
   deregisterElement: (el: HTMLElement) => void
@@ -132,7 +132,7 @@ export type CustomDirectiveRegisterAssignerFn = (value: unknown) => void
 export type CustomRegisterDirective<T, Modifiers extends string = string> = ObjectDirective<T & {
   _assigning?: boolean
   [S: symbol]: CustomDirectiveRegisterAssignerFn
-}, XModelValue, Modifiers, string>
+}, RegisterValue, Modifiers, string>
 
 export type RegisterTextCustomDirective = CustomRegisterDirective<
 HTMLInputElement | HTMLTextAreaElement,
@@ -143,7 +143,7 @@ export type RegisterCheckboxCustomDirective = CustomRegisterDirective<HTMLInputE
 export type RegisterRadioCustomDirective = CustomRegisterDirective<HTMLInputElement>
 export type RegisterSelectCustomDirective = CustomRegisterDirective<HTMLSelectElement, "number">
 export type RegisterModelDynamicCustomDirective = ObjectDirective<
-HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, XModelValue, "trim" | "number" | "lazy"
+HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, RegisterValue, "trim" | "number" | "lazy"
 >
 export type RegisterDirective =
   | RegisterTextCustomDirective
@@ -218,6 +218,6 @@ export type UseAbstractFormReturnType<
   register: (
     path: FlatPath<Form, keyof Form, true>,
     _context?: RegisterContext<typeof path, NestedType<Form, typeof path>>
-  ) => XModelValue<NestedType<Form, typeof path> | undefined>
+  ) => RegisterValue<NestedType<Form, typeof path> | undefined>
   key: FormKey
 }

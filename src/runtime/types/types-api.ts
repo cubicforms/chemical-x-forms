@@ -134,16 +134,36 @@ export type CustomRegisterDirective<T, Modifiers extends string = string> = Obje
   [S: symbol]: CustomDirectiveRegisterAssignerFn
 }, RegisterValue, Modifiers, string>
 
+// bring in this RegisterModelDynamicCustomDirective type once PR #12605 in vuejs/core enters production (currently in main but not released)
+// https://github.com/vuejs/core/pull/12605
+// export type RegisterTextCustomDirective = CustomRegisterDirective<
+// HTMLInputElement | HTMLTextAreaElement,
+// "trim" | "number" | "lazy"
+// >
+
 export type RegisterTextCustomDirective = CustomRegisterDirective<
-HTMLInputElement | HTMLTextAreaElement,
-"trim" | "number" | "lazy"
+  HTMLInputElement | HTMLTextAreaElement, string
 >
 
 export type RegisterCheckboxCustomDirective = CustomRegisterDirective<HTMLInputElement>
 export type RegisterRadioCustomDirective = CustomRegisterDirective<HTMLInputElement>
-export type RegisterSelectCustomDirective = CustomRegisterDirective<HTMLSelectElement, "number">
+
+// bring in this RegisterModelDynamicCustomDirective type once PR #12605 in vuejs/core enters production (currently in main but not released)
+// https://github.com/vuejs/core/pull/12605
+// export type RegisterTextCustomDirective = CustomRegisterDirective<
+// HTMLInputElement | HTMLTextAreaElement,
+// "trim" | "number" | "lazy"
+// >
+// export type RegisterSelectCustomDirective = CustomRegisterDirective<HTMLSelectElement, "number">
+export type RegisterSelectCustomDirective = CustomRegisterDirective<HTMLSelectElement, string>
+
+// bring in this RegisterModelDynamicCustomDirective type once PR #12605 in vuejs/core enters production (currently in main but not released)
+// https://github.com/vuejs/core/pull/12605
+// export type RegisterModelDynamicCustomDirective = ObjectDirective<
+// HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, RegisterValue, "trim" | "number" | "lazy"
+// >
 export type RegisterModelDynamicCustomDirective = ObjectDirective<
-HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, RegisterValue, "trim" | "number" | "lazy"
+HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, RegisterValue, string
 >
 export type RegisterDirective =
   | RegisterTextCustomDirective

@@ -1,6 +1,4 @@
-// import { useState } from "#app"
-// import { useState } from "nuxt/app"
-import { merge } from "lodash-es"
+import { isEqual, merge } from "lodash-es"
 import { useState } from "nuxt/app"
 import { computed } from "vue"
 import type {
@@ -41,8 +39,11 @@ export function updateMetaTracker(config: UpdateMetaTrackerConfig) {
     = typeof basePath === "string"
       ? metaTracker[basePath]?.updatedAt ?? null
       : null
+
+  const hasRawValueChanged = basePath === null ? true : !isEqual(metaTracker[basePath]?.rawValue, rawValue)
+  const newTime = hasRawValueChanged ? new Date().toISOString() : lastKnownTime
   const updatedAt
-    = updateTime ?? true ? new Date().toISOString() : lastKnownTime
+    = (updateTime ?? true) ? newTime : lastKnownTime
 
   const flattenedObject = flattenObjectWithBaseKey(
     rawValue,

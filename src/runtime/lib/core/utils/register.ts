@@ -6,7 +6,7 @@ import type {
   FormStore,
   MetaTracker,
   RegisterContext,
-  XModelValue
+  RegisterValue
 } from "../../../types/types-api"
 import type { FlatPath, GenericForm, NestedType } from "../../../types/types-core"
 import type { GetElementHelpers } from "../composables/use-field-state-store"
@@ -27,7 +27,7 @@ export function registerFactory<Form extends GenericForm>(
   function registerLogic(
     path: FlatPath<Form, keyof Form, true>,
     _context?: RegisterContext<typeof path, NestedType<Form, typeof path>>
-  ): XModelValue<NestedType<Form, typeof path> | undefined> {
+  ): RegisterValue<NestedType<Form, typeof path> | undefined> {
     if (import.meta.server) {
       updateMetaTracker({
         formKey,

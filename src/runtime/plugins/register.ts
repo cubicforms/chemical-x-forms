@@ -20,10 +20,10 @@ import {
   nextTick,
   warn,
 } from "vue"
-import type { CustomDirectiveRegisterAssignerFn, RegisterCheckboxCustomDirective, RegisterModelDynamicCustomDirective, RegisterRadioCustomDirective, RegisterSelectCustomDirective, RegisterTextCustomDirective, XModelValue } from "../types/types-api"
+import type { CustomDirectiveRegisterAssignerFn, RegisterCheckboxCustomDirective, RegisterModelDynamicCustomDirective, RegisterRadioCustomDirective, RegisterSelectCustomDirective, RegisterTextCustomDirective, RegisterValue } from "../types/types-api"
 
 export const assignKey: unique symbol = Symbol("_assign")
-function isXModelPayload<Value = unknown>(val: unknown): val is XModelValue<Value> {
+function isRegisterPayload<Value = unknown>(val: unknown): val is RegisterValue<Value> {
   if (!val) return false
   if (typeof val !== "object") return false
   if (!("innerRef" in val)) return false
@@ -45,16 +45,16 @@ function addEventListener(
   el.addEventListener(event, handler, options)
 }
 
-const getModelAssigner = (vnode: VNode, xmodelValue: XModelValue): CustomDirectiveRegisterAssignerFn => {
+const getModelAssigner = (vnode: VNode, registerValue: RegisterValue): CustomDirectiveRegisterAssignerFn => {
   const fn
-      = vnode.props?.["onUpdate:xmodelValue"] // this is a developer escape hatch
+      = vnode.props?.["onUpdate:registerValue"] // this is a developer escape hatch
   if (!fn) {
     return (value) => {
-      xmodelValue.setValueWithInternalPath(value)
+      registerValue.setValueWithInternalPath(value)
       return undefined
     }
   }
-  return isArray(fn) ? value => invokeArrayFns(fn.filter(x => isFunction(x)), value, xmodelValue) : fn
+  return isArray(fn) ? value => invokeArrayFns(fn.filter(x => isFunction(x)), value, registerValue) : fn
 }
 
 function onCompositionStart(e: Event) {
@@ -73,8 +73,8 @@ function onCompositionEnd(e: Event) {
 }
 
 function setAssignFunction(el: { [AssignKey: symbol]: CustomDirectiveRegisterAssignerFn }, vnode: VNode, value: unknown) {
-  if (!isXModelPayload(value)) {
-    warn(`vmodel expected value of type XModelValue, got value of type ${typeof value} instead. Please check your v-xmodel value.`)
+  if (!isRegisterPayload(value)) {
+    warn(`v-register expected value of type RegisterValue, got value of type ${typeof value} instead. Please check your v-register value.`)
     el[assignKey] = _ => undefined
     return
   }
@@ -86,11 +86,11 @@ function setAssignFunction(el: { [AssignKey: symbol]: CustomDirectiveRegisterAss
 
 // We are exporting the v-model runtime directly as vnode hooks so that it can
 // be tree-shaken in case v-model is never used.
-const vXModelText: RegisterTextCustomDirective = {
+const vRegisterText: RegisterTextCustomDirective = {
   created(el, { value, modifiers: { lazy, trim, number } }, vnode) {
     const castToNumber
         = number || (vnode.props && vnode.props["type"] === "number")
-    if (isXModelPayload(value)) {
+    if (isRegisterPayload(value)) {
       value.registerElement(el)
       setAssignFunction(el, vnode, value)
     }
@@ -123,7 +123,7 @@ const vXModelText: RegisterTextCustomDirective = {
   },
   // set value on mounted so it's after min/max for type="range"
   mounted(el, { value }) {
-    if (!isXModelPayload(value)) return
+    if (!isRegisterPayload(value)) return
 
     const _val = value.innerRef.value
     el.value = typeof _val === "string" || typeof _val === "number" ? `${_val}` : ""
@@ -136,7 +136,7 @@ const vXModelText: RegisterTextCustomDirective = {
     setAssignFunction(el, vnode, value)
     // avoid clearing unresolved text. #2302
     if ("composing" in el && el.composing) return
-    if (!isXModelPayload(value)) return
+    if (!isRegisterPayload(value)) return
 
     const elValue
         = (number || el.type === "number") && !/^0\d/.test(el.value)
@@ -162,11 +162,11 @@ const vXModelText: RegisterTextCustomDirective = {
   },
 }
 
-const vXModelCheckbox: RegisterCheckboxCustomDirective = {
+const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
   // #4096 array checkboxes need to be deep traversed
   deep: true,
   created(el, { value }, vnode) {
-    if (!isXModelPayload(value)) return
+    if (!isRegisterPayload(value)) return
 
     value.registerElement(el)
     setAssignFunction(el, vnode, value)
@@ -181,7 +181,7 @@ const vXModelCheckbox: RegisterCheckboxCustomDirective = {
       const assign = el[assignKey]
       if (isArray(modelValue)) {
         if (elementValue === undefined) {
-          warn("checkbox bound to a v-xmodel array or set does not have an explicit value, state not updated.")
+          warn("checkbox bound to a v-registerer array or set does not have an explicit value, state not updated.")
           return
         }
         const index = looseIndexOf(modelValue, elementValue)
@@ -197,7 +197,7 @@ const vXModelCheckbox: RegisterCheckboxCustomDirective = {
       }
       else if (isSet(modelValue)) {
         if (elementValue === undefined) {
-          warn("Please add `value` prop to checkbox or pass XModelValue of primitive value to xmodel.")
+          warn("Please add `value` prop to checkbox or pass RegisterValue of primitive value to register.")
           return
         }
         const cloned = new Set(modelValue)
@@ -227,9 +227,9 @@ function setChecked(
   { value, oldValue }: DirectiveBinding,
   vnode: VNode,
 ) {
-  // store the v-xmodel value on the element so it can be accessed by the
+  // store the v-registerer value on the element so it can be accessed by the
   // change listener.
-  if (!isXModelPayload(value)) return
+  if (!isRegisterPayload(value)) return
 
   const originalValue = value.innerRef.value
   let checked: boolean
@@ -255,9 +255,9 @@ function setChecked(
   }
 }
 
-const vXModelRadio: RegisterRadioCustomDirective = {
+const vRegisterRadio: RegisterRadioCustomDirective = {
   created(el, { value }, vnode) {
-    if (!isXModelPayload(value)) return
+    if (!isRegisterPayload(value)) return
 
     value.registerElement(el)
     // setAssignFunction(el, vnode, value)
@@ -268,7 +268,7 @@ const vXModelRadio: RegisterRadioCustomDirective = {
     })
   },
   beforeUpdate(el, { value, oldValue }, vnode) {
-    if (!isXModelPayload(value)) return
+    if (!isRegisterPayload(value)) return
 
     setAssignFunction(el, vnode, value)
     if (value.innerRef.value !== oldValue) {
@@ -277,11 +277,11 @@ const vXModelRadio: RegisterRadioCustomDirective = {
   },
 }
 
-const vXModelSelect: RegisterSelectCustomDirective = {
+const vRegisterSelect: RegisterSelectCustomDirective = {
   // <select multiple> value need to be deep traversed
   deep: true,
   created(el, { value, modifiers: { number } }, vnode) {
-    if (!isXModelPayload(value)) return
+    if (!isRegisterPayload(value)) return
 
     value.registerElement(el)
     setAssignFunction(el, vnode, value)
@@ -322,7 +322,7 @@ const vXModelSelect: RegisterSelectCustomDirective = {
 }
 
 function setSelected(el: HTMLSelectElement, value: unknown) {
-  if (!isXModelPayload(value)) return
+  if (!isRegisterPayload(value)) return
 
   const isMultiple = el.multiple
   const baseValue = value.innerRef.value
@@ -330,7 +330,7 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
   if (isMultiple && !isArrayValue && !isSet(value)) {
     if (import.meta.dev === false) return
     warn(
-      `<select multiple v-xmodel> expects an Array or Set value for its binding, `
+      `<select multiple v-registerer> expects an Array or Set value for its binding, `
       + `but got ${Object.prototype.toString.call(baseValue).slice(8, -1)}.`,
     )
     return
@@ -380,7 +380,7 @@ function getCheckboxValue(
   return key in el ? el[key] : checked
 }
 
-const vXModelDynamic: RegisterModelDynamicCustomDirective = {
+const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
   created(el, binding, vnode) {
     callModelHook(el, binding, vnode, null, "created")
   },
@@ -394,7 +394,7 @@ const vXModelDynamic: RegisterModelDynamicCustomDirective = {
     callModelHook(el, binding, vnode, prevVNode, "updated")
   },
   beforeUnmount(el, { value }) {
-    if (!isXModelPayload(value) || !el) return
+    if (!isRegisterPayload(value) || !el) return
 
     value.deregisterElement(el)
   }
@@ -403,17 +403,17 @@ const vXModelDynamic: RegisterModelDynamicCustomDirective = {
 function resolveDynamicModel(tagName: string, type: string | undefined) {
   switch (tagName) {
     case "SELECT":
-      return vXModelSelect
+      return vRegisterSelect
     case "TEXTAREA":
-      return vXModelText
+      return vRegisterText
     default:
       switch (type) {
         case "checkbox":
-          return vXModelCheckbox
+          return vRegisterCheckbox
         case "radio":
-          return vXModelRadio
+          return vRegisterRadio
         default:
-          return vXModelText
+          return vRegisterText
       }
   }
 }
@@ -434,12 +434,12 @@ function callModelHook(
 }
 
 export type VXCustomDirective =
-  | typeof vXModelText
-  | typeof vXModelCheckbox
-  | typeof vXModelSelect
-  | typeof vXModelRadio
-  | typeof vXModelDynamic
+  | typeof vRegisterText
+  | typeof vRegisterCheckbox
+  | typeof vRegisterSelect
+  | typeof vRegisterRadio
+  | typeof vRegisterDynamic
 
 export default defineNuxtPlugin((nuxtApp) => {
-  nuxtApp.vueApp.directive("xmodel", vXModelDynamic)
+  nuxtApp.vueApp.directive("register", vRegisterDynamic)
 })

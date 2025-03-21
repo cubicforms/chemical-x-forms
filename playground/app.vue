@@ -19,7 +19,7 @@ const planetState = getFieldState("planet")
     <h1>Fancy Form "{{ key }}"</h1>
 
     <input
-      v-xmodel="register('planet')"
+      v-register="register('planet')"
       placeholder="Enter your favorite planet"
     >
 

@@ -56,35 +56,35 @@ function getSummarizedPropValue(exp: ExpressionNode): SummarizedProp["value"] {
 }
 
 function generateEqualityExpression(
-  xmodelValue: SummarizedProp["value"],
+  registerValue: SummarizedProp["value"],
   elementValue: SummarizedProp["value"]
 ): CompoundExpressionNode["children"] {
-  const xmodelValueArr = Array.isArray(xmodelValue)
-    ? xmodelValue
-    : [xmodelValue]
+  const registerValueArr = Array.isArray(registerValue)
+    ? registerValue
+    : [registerValue]
   const elementValueArr = Array.isArray(elementValue)
     ? elementValue
     : [elementValue]
 
-  // account for xmodel value being an array, set, or some other value
+  // account for register value being an array, set, or some other value
   return [
     "Array.isArray((",
-    ...xmodelValueArr,
+    ...registerValueArr,
     ")?.innerRef?.value) ? ",
     "(",
-    ...xmodelValueArr,
+    ...registerValueArr,
     ")?.innerRef?.value?.includes(",
     ...elementValueArr,
     ") : ",
     "(",
-    ...xmodelValueArr,
+    ...registerValueArr,
     ")?.innerRef?.value instanceof Set ? (",
-    ...xmodelValueArr,
+    ...registerValueArr,
     ")?.innerRef?.value?.has(",
     ...elementValueArr,
     ") : ",
     "((",
-    ...xmodelValueArr,
+    ...registerValueArr,
     ")?.innerRef?.value === (",
     ...elementValueArr,
     "))",
@@ -126,9 +126,9 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
 
   const elementProps = getSummarizedProps(node)
 
-  const xmodelIndex = elementProps.findIndex(p => p.key.includes("xmodel"))
-  const xmodelSummarizedProp = elementProps[xmodelIndex]
-  if (!xmodelSummarizedProp) return // no return early if we don't find an xmodel directive
+  const registerIndex = elementProps.findIndex(p => p.key.includes("register"))
+  const registerSummarizedProp = elementProps[registerIndex]
+  if (!registerSummarizedProp) return // no return early if we don't find an register directive
 
   const valueIndex = elementProps.findIndex(p => p.key.includes("value"))
   const elementValueSummarizedProp = elementProps?.[valueIndex] ?? {
@@ -165,7 +165,7 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
 
   function computeProps(
     _node: PlainElementNode | ComponentNode | SlotOutletNode | TemplateNode,
-    xmodelSummarizedProp: SummarizedProp,
+    registerSummarizedProp: SummarizedProp,
     elementValueSummarizedProp: SummarizedProp
   ) {
     const dummyLoc: SourceLocation = {
@@ -176,16 +176,16 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
 
     const props = _node.props
     removePropsByName(props, ["checked", "value"]) // (re)create the `value` prop further down
-    const xmodelValueArr = Array.isArray(xmodelSummarizedProp.value)
-      ? xmodelSummarizedProp.value
-      : [xmodelSummarizedProp.value]
+    const registerValueArr = Array.isArray(registerSummarizedProp.value)
+      ? registerSummarizedProp.value
+      : [registerSummarizedProp.value]
     const valueExpression = createCompoundExpression([
       "(",
-      ...xmodelValueArr,
+      ...registerValueArr,
       ")?.innerRef?.value",
     ])
     const valueOrCheckedProp: DirectiveNode = {
-      // reconstruct the `value` attribute based on the provided v-xmodel, now that the computation is complete
+      // reconstruct the `value` attribute based on the provided v-registerer, now that the computation is complete
       arg: elementSelectionLabelExpression,
       exp: createCompoundExpression([
         "(",
@@ -193,11 +193,11 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
         ") === 'checked' ? (",
         // resolves to a boolean
         ...generateEqualityExpression(
-          xmodelSummarizedProp.value,
+          registerSummarizedProp.value,
           elementValueSummarizedProp.value
         ),
         ") : (",
-        // resolves to the provided xmodel value
+        // resolves to the provided register value
         ...valueExpression.children,
         ")",
       ]),
@@ -210,5 +210,5 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
     props.push(valueOrCheckedProp)
   }
 
-  computeProps(node, xmodelSummarizedProp, elementValueSummarizedProp)
+  computeProps(node, registerSummarizedProp, elementValueSummarizedProp)
 }

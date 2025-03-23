@@ -1,7 +1,6 @@
 {
   "extends": "./.nuxt/tsconfig.json",
   "compilerOptions": {
-    "module": "ES2020",
     "lib": [
       "ES2015",
       "DOM",

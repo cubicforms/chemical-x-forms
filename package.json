@@ -22,7 +22,6 @@
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxi prepare playground",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "check": "tsc --noEmit",
     "prepack": "nuxt-module-build build",
     "release": "pnpm lint && pnpm test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
     "test": "vitest run",

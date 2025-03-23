@@ -1,11 +1,7 @@
 {
-  "extends": "./.nuxt/tsconfig.json",
   "compilerOptions": {
-    "lib": [
-      "ES2015",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "target": "ESNext",
+    "module": "ESNext",
     "moduleResolution": "Node",
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -32,8 +28,7 @@
     "baseUrl": ".",
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true,
-    "incremental": false,
-    "downlevelIteration": true
+    "incremental": false
   },
   "include": [
     "src",

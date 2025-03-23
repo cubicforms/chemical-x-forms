@@ -55,8 +55,7 @@ function updateFormSummaryValuesRecord<Form extends GenericForm>(currentForm: Fo
   const previousFormKeySet = new Set(Object.keys(previousFlatForm))
 
   // categorize keys for easier processing
-  // const newKeys = setDifference(currentFormKeySet, previousFormKeySet)
-  const newKeys = currentFormKeySet.difference(previousFormKeySet)
+  const newKeys = setDifference(currentFormKeySet, previousFormKeySet)
   const deletedKeys = setDifference(previousFormKeySet, currentFormKeySet)
   const persistedKeys = setIntersection(currentFormKeySet, previousFormKeySet)
 

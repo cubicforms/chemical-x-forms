@@ -75,6 +75,11 @@
   "license": "MIT",
   "packageManager": "pnpm@9.7.0",
   "type": "module",
+  "lint-staged": {
+    "./src/**/*.{ts,vue}": "eslint",
+    "./playground/**/*.{ts,vue}": "eslint",
+    "./test/**/*.{ts,vue}": "eslint"
+  },
   "devDependencies": {
     "@commitlint/cli": "^19.8.0",
     "@commitlint/config-conventional": "^19.8.0",
@@ -92,6 +97,7 @@
     "eslint": "^9.22.0",
     "husky": "^9.1.7",
     "immer": "^10.1.1",
+    "lint-staged": "^15.5.0",
     "lodash-es": "^4.17.21",
     "nuxt": "^3.16.1",
     "rollup-plugin-dts": "^6.2.0",

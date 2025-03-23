@@ -18,6 +18,7 @@ export default defineBuildConfig({
     },
     esbuild: {
       format: "esm",
+      target: "es2020",
       minify: true,
       sourcemap: false,
       treeShaking: true,

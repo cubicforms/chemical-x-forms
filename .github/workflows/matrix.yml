@@ -47,5 +47,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Stub @chemical-x/forms and generate .nuxt types
+        run: pnpm dev:prepare
+
       - name: Run tests
         run: pnpm test

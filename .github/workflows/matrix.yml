@@ -1,5 +1,9 @@
 name: Node.js Test Suite
 
+permissions:
+  contents: read
+  actions: read
+
 on:
   push:
     branches: ["main"]

@@ -2,19 +2,19 @@ name: Node.js Test Suite
 
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]
   pull_request:
-    branches: ["**"]
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
   test:
-    name: Test on Node.js ${{ matrix.node-version }}
+    name: Test on Node.js Version ${{ matrix.node-version }}
     runs-on: ubuntu-latest
 
     strategy:
       matrix:
-        node-version: [16.x, 18.x, 20.x, 22.x, "lts/*"]
+        node-version: [18.x, 20.x, 22.x, "lts/*"]
       fail-fast: false
 
     steps:

@@ -3,6 +3,7 @@
 [![npm version][npm-version-src]][npm-version-href]
 [![npm downloads][npm-downloads-src]][npm-downloads-href]
 [![License][license-src]][license-href]
+[![Node.js Test Suite](https://github.com/cubicforms/chemical-x-forms/actions/workflows/matrix.yml/badge.svg)](https://github.com/cubicforms/chemical-x-forms/actions/workflows/matrix.yml)
 [![Nuxt][nuxt-src]][nuxt-href]
 
 **A fully type-safe, schema-driven form library that gives you superpowers**.<br>Comes with a minimal composition API that prioritizes developer experience and form correctness.<br><br>
@@ -31,17 +32,8 @@ That's it! You can now use Chemical X Forms in your Nuxt app ✨<br><br>
 **Install manually:**
 
 ```bash
-# Using pnpm
-
-pnpm add @chemical-x/forms
-
 # Using npm
-
 npm install @chemical-x/forms
-
-# Using yarn
-
-yarn add @chemical-x/forms
 ```
 
 Then add the module to your nuxt.config.ts:

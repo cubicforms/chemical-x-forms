@@ -1,11 +1,11 @@
 {
-  "extends": "./.nuxt/tsconfig.json",
   "compilerOptions": {
     "lib": [
       "ES2020",
       "DOM",
       "DOM.Iterable"
     ],
+    "module": "ES2020",
     "moduleResolution": "Node",
     "strict": true,
     "noUncheckedIndexedAccess": true,

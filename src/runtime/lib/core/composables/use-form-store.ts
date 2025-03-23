@@ -5,12 +5,12 @@ import { getForm, getValueFactory } from "../utils/get-value"
 import { getHandleSubmitFactory, getValidateFactory } from "../utils/process-form"
 import { setValueFactory } from "../utils/set-value"
 
-import { useState } from "nuxt/app"
-// import { useState } from "nuxt/app"
 import { unset } from "lodash-es"
+import { useState } from "nuxt/app"
 import type { FormKey, FormStore, FormSummaryStore, InitialStateResponse } from "../../../types/types-api"
 import type { GenericForm } from "../../../types/types-core"
 import { flattenObjectWithBaseKey } from "../utils/flatten-object"
+import { setDifference, setIntersection } from "../utils/set-utilities"
 
 export const useFormStore = <Form extends GenericForm>(formKey: FormKey, initialFormState: InitialStateResponse<Form>) => {
   const formStore = useState<FormStore<Form>>("useform/store", () => new Map())
@@ -55,15 +55,15 @@ function updateFormSummaryValuesRecord<Form extends GenericForm>(currentForm: Fo
   const previousFormKeySet = new Set(Object.keys(previousFlatForm))
 
   // categorize keys for easier processing
-  const newKeys = currentFormKeySet.difference(previousFormKeySet)
-  const deletedKeys = previousFormKeySet.difference(currentFormKeySet)
-  const persistedKeys = currentFormKeySet.intersection(previousFormKeySet)
+  const newKeys = setDifference(currentFormKeySet, previousFormKeySet)
+  const deletedKeys = setDifference(previousFormKeySet, currentFormKeySet)
+  const persistedKeys = setIntersection(currentFormKeySet, previousFormKeySet)
 
   // [defensive programming]: check what keys are actually present in the `summaryValues` record
   const summaryValuesKeys = new Set(Object.keys(summaryValues))
-  const unknownPersistedKeys = persistedKeys.difference(summaryValuesKeys)
-  const alreadyDeletedKeys = deletedKeys.difference(summaryValuesKeys)
-  const preExistingSummaryKeys = newKeys.intersection(summaryValuesKeys)
+  const unknownPersistedKeys = setDifference(persistedKeys, summaryValuesKeys)
+  const alreadyDeletedKeys = setDifference(deletedKeys, summaryValuesKeys)
+  const preExistingSummaryKeys = setIntersection(newKeys, summaryValuesKeys)
 
   for (const key of alreadyDeletedKeys) {
     deletedKeys.delete(key)

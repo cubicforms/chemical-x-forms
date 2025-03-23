@@ -32,7 +32,7 @@
     "test": "vitest run",
     "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
     "test:watch": "vitest watch",
-    "analyze": "cross-env ANALYZE=true pnpm prepack"
+    "prepare": "husky install"
   },
   "description": "A fully type-safe, schema-driven form library that gives you superpowers. Chemical X included.",
   "author": "Oswald Chisala",

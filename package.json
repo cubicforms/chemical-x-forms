@@ -1,12 +1,12 @@
 {
   "name": "@chemical-x/forms",
-  "version": "0.3.26",
+  "version": "0.3.27",
   "main": "./dist/module.cjs",
   "types": "./dist/types.d.ts",
   "files": [
     "dist"
   ],
-    "engines": {
+  "engines": {
     "node": ">=18.0.0",
     "pnpm": ">=9.0.0"
   },

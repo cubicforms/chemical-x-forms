@@ -1,4 +1,5 @@
 name: Node.js Compatibility Matrix
+run-name: Node.js Compatibility Matrix
 
 on:
   push:
@@ -27,14 +28,11 @@ jobs:
           # Use your lockfile as a cache dependency to speed up installs
           cache-dependency-path: "**/pnpm-lock.yaml"
 
-      - name: Install pnpm globally
-        run: npm install -g pnpm
+      - name: Install pnpm
+        run: npm install -g pnpm@9.7.0
 
       - name: Install dependencies
         run: pnpm install
-
-      - name: Build project
-        run: pnpm run build
 
       - name: Run tests
         run: pnpm test

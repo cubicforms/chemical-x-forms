@@ -17,10 +17,6 @@ export const useFormStore = <Form extends GenericForm>(formKey: FormKey, initial
   const formSummaryStore = useState<FormSummaryStore>("useform/form-summary-store", () => new Map([[formKey, {}]]))
   updateFormSummaryValuesRecord(initialFormState.data, undefined, formSummaryStore, formKey)
 
-  const user = { profile: { name: "Alice" } }
-  const username = user?.profile?.name ?? "Guest"
-  console.log(username)
-
   function registerForm(form: Form) {
     if (formStore.value.has(formKey)) return
 

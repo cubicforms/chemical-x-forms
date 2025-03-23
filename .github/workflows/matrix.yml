@@ -28,8 +28,10 @@ jobs:
           # Use your lockfile as a cache dependency to speed up installs
           cache-dependency-path: "**/pnpm-lock.yaml"
 
-      - name: Install pnpm
-        run: npm install -g pnpm@9.7.0
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9.7.0 # Specify your desired pnpm version
 
       - name: Install dependencies
         run: pnpm install

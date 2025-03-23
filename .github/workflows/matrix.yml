@@ -1,0 +1,40 @@
+name: Node.js Compatibility Matrix
+
+on:
+  push:
+    branches: ["**"] # Run on every branch push
+  pull_request:
+    branches: ["**"] # Run on every PR regardless of target branch
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["lts/*", 16, 18, 20, 22]
+      fail-fast: false # Run all jobs even if one fails
+
+    name: Node.js ${{ matrix.node-version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "pnpm"
+          # Use your lockfile as a cache dependency to speed up installs
+          cache-dependency-path: "**/pnpm-lock.yaml"
+
+      - name: Install pnpm globally
+        run: npm install -g pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build project
+        run: pnpm run build
+
+      - name: Run tests
+        run: pnpm test

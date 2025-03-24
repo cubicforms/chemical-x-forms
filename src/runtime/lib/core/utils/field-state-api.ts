@@ -1,9 +1,20 @@
-import type { Ref } from "vue"
-import { computed } from "vue"
-import type { DOMFieldStateStore, FieldState, FormKey, FormSummaryValueRecord, MetaTracker } from "../../../types/types-api"
-import type { CompleteFlatPath, GenericForm } from "../../../types/types-core"
+import type { Ref } from 'vue'
+import { computed } from 'vue'
+import type {
+  DOMFieldStateStore,
+  FieldState,
+  FormKey,
+  FormSummaryValueRecord,
+  MetaTracker,
+} from '../../../types/types-api'
+import type { CompleteFlatPath, GenericForm } from '../../../types/types-core'
 
-export function fieldStateFactory<Form extends GenericForm>(formSummaryRecord: Readonly<FormSummaryValueRecord>, metaTracker: Ref<MetaTracker>, domFieldStateStore: Ref<DOMFieldStateStore, DOMFieldStateStore>, formKey: FormKey) {
+export function fieldStateFactory<Form extends GenericForm>(
+  formSummaryRecord: Readonly<FormSummaryValueRecord>,
+  metaTracker: Ref<MetaTracker>,
+  domFieldStateStore: Ref<DOMFieldStateStore, DOMFieldStateStore>,
+  formKey: FormKey
+) {
   function getFieldState<Path extends CompleteFlatPath<Form>>(path: Path) {
     return computed(() => {
       const metaTrackerValue = metaTracker.value[path] ?? {
@@ -11,7 +22,7 @@ export function fieldStateFactory<Form extends GenericForm>(formSummaryRecord: R
         updatedAt: null,
         isConnected: false,
         formKey,
-        path
+        path,
       }
 
       // make sure we have the correct path (defensive code, this is probably unnecessary)
@@ -21,7 +32,13 @@ export function fieldStateFactory<Form extends GenericForm>(formSummaryRecord: R
       const clientFocused = _elementDomState?.focused ?? false
       const clientBlurred = _elementDomState?.blurred ?? true
       const clientTouched = _elementDomState?.touched ?? false
-      const formSummary = formSummaryRecord[path] ?? { currentValue: "", dirty: false, pristine: true, originalValue: "", previousValue: null }
+      const formSummary = formSummaryRecord[path] ?? {
+        currentValue: '',
+        dirty: false,
+        pristine: true,
+        originalValue: '',
+        previousValue: null,
+      }
 
       return {
         ...formSummary,

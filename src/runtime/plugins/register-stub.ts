@@ -1,5 +1,5 @@
-import { defineNuxtPlugin } from "nuxt/app"
+import { defineNuxtPlugin } from 'nuxt/app'
 
 export default defineNuxtPlugin((nuxtApp) => {
-  nuxtApp.vueApp.directive("register", {})
+  nuxtApp.vueApp.directive('register', {})
 })

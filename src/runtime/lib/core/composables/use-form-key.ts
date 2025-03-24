@@ -1,18 +1,16 @@
-import { useId } from "vue"
+import { useId } from 'vue'
 
-import { useState } from "nuxt/app"
+import { useState } from 'nuxt/app'
 // import { useState } from "nuxt/app"
-import type { FormKey } from "../../../types/types-api"
+import type { FormKey } from '../../../types/types-api'
 
 export const useFormKey = (key?: FormKey) => {
-  const warningRaised = useState("use-form-key/warning-raised", () => false)
-  const trimmedKey = key?.trim() ?? ""
+  const warningRaised = useState('use-form-key/warning-raised', () => false)
+  const trimmedKey = key?.trim() ?? ''
   const warningNotYetRaisedOnClient = import.meta.client && !warningRaised.value
 
   if (!trimmedKey && warningNotYetRaisedOnClient) {
-    console.warn(
-      "Tip: Add a unique key to every useForm configuration to improve debugging.",
-    )
+    console.warn('Tip: Add a unique key to every useForm configuration to improve debugging.')
     warningRaised.value = true
   }
 

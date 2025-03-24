@@ -1,6 +1,6 @@
 // import type { NestedType } from '@/utils/types'
-import type { z } from "zod"
-import type { NestedType } from "./types-core"
+import type { z } from 'zod'
+import type { NestedType } from './types-core'
 
 // Given potentially wrapped schema type, get deeply wrapped schema matching Zod type
 export type UnwrapZodSchemaToAccessTargetSchemaType<
@@ -52,28 +52,25 @@ export type TypeWithNullableDynamicKeys<
     infer ValueSchema extends z.ZodTypeAny
   >
     ? {
-        [Key in z.infer<KeySchema>]?: TypeWithNullableDynamicKeys<
-          ValueSchema,
-          true
-        >
+        [Key in z.infer<KeySchema>]?: TypeWithNullableDynamicKeys<ValueSchema, true>
       }
     : // Handle ZodArray
-    Schema extends z.ZodArray<infer ItemSchema extends z.ZodTypeAny>
+      Schema extends z.ZodArray<infer ItemSchema extends z.ZodTypeAny>
       ? (TypeWithNullableDynamicKeys<ItemSchema, true> | undefined)[]
       : // Handle ZodObject
-      Schema extends z.ZodObject<infer Shape>
+        Schema extends z.ZodObject<infer Shape>
         ? {
             [Key in keyof Shape]:
               | TypeWithNullableDynamicKeys<Shape[Key], CrossedBoundary>
               | (CrossedBoundary extends true ? undefined : never)
           }
         : // Handle ZodDiscriminatedUnion
-        Schema extends z.ZodDiscriminatedUnion<string, infer Options>
+          Schema extends z.ZodDiscriminatedUnion<string, infer Options>
           ? {
               [Key in keyof Options]: TypeWithNullableDynamicKeys<Options[Key], true>
             }[keyof Options & number]
           : // Fallback to z.infer for all other schemas
-      z.infer<Schema> | (CrossedBoundary extends true ? undefined : never)
+            z.infer<Schema> | (CrossedBoundary extends true ? undefined : never)
 
 export type GetValueReturnTypeFromZodSchema<
   Schema extends z.ZodSchema,

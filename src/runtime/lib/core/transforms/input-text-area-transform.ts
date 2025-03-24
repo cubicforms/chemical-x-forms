@@ -11,22 +11,22 @@ import type {
   SourceLocation,
   TemplateChildNode,
   TemplateNode,
-} from "@vue/compiler-core"
-import { createCompoundExpression, NodeTypes } from "@vue/compiler-core"
+} from '@vue/compiler-core'
+import { createCompoundExpression, NodeTypes } from '@vue/compiler-core'
 
 type SummarizedProp = {
   key: string
-  value: string | CompoundExpressionNode["children"]
+  value: string | CompoundExpressionNode['children']
 }
 
 function getSummarizedProps(node: RootNode | TemplateChildNode) {
-  if (!("props" in node)) return []
+  if (!('props' in node)) return []
   const props = node.props
 
   const summarizedProps = props.reduce<SummarizedProp[]>((acc, currProp) => {
     if (currProp.type === NodeTypes.ATTRIBUTE) {
       const key = currProp.name
-      const value = currProp.value?.content ?? ""
+      const value = currProp.value?.content ?? ''
       return [...acc, { key, value: renderAsStatic(value, true) }]
     }
 
@@ -34,7 +34,7 @@ function getSummarizedProps(node: RootNode | TemplateChildNode) {
     const key = currProp.arg
       ? getSummarizedPropValue(currProp.arg)
       : renderAsStatic(currProp.name, true)
-    if (typeof key !== "string") return acc // key must always be a string
+    if (typeof key !== 'string') return acc // key must always be a string
     const value = getSummarizedPropValue(currProp.exp)
 
     return [...acc, { key, value }]
@@ -47,7 +47,7 @@ function renderAsStatic(val: string, isStatic: boolean) {
   return isStatic ? `"${val}"` : val
 }
 
-function getSummarizedPropValue(exp: ExpressionNode): SummarizedProp["value"] {
+function getSummarizedPropValue(exp: ExpressionNode): SummarizedProp['value'] {
   if (exp.type === NodeTypes.SIMPLE_EXPRESSION) {
     return renderAsStatic(exp.content, exp.isStatic)
   }
@@ -56,56 +56,46 @@ function getSummarizedPropValue(exp: ExpressionNode): SummarizedProp["value"] {
 }
 
 function generateEqualityExpression(
-  registerValue: SummarizedProp["value"],
-  elementValue: SummarizedProp["value"]
-): CompoundExpressionNode["children"] {
-  const registerValueArr = Array.isArray(registerValue)
-    ? registerValue
-    : [registerValue]
-  const elementValueArr = Array.isArray(elementValue)
-    ? elementValue
-    : [elementValue]
+  registerValue: SummarizedProp['value'],
+  elementValue: SummarizedProp['value']
+): CompoundExpressionNode['children'] {
+  const registerValueArr = Array.isArray(registerValue) ? registerValue : [registerValue]
+  const elementValueArr = Array.isArray(elementValue) ? elementValue : [elementValue]
 
   // account for register value being an array, set, or some other value
   return [
-    "Array.isArray((",
+    'Array.isArray((',
     ...registerValueArr,
-    ")?.innerRef?.value) ? ",
-    "(",
+    ')?.innerRef?.value) ? ',
+    '(',
     ...registerValueArr,
-    ")?.innerRef?.value?.includes(",
+    ')?.innerRef?.value?.includes(',
     ...elementValueArr,
-    ") : ",
-    "(",
+    ') : ',
+    '(',
     ...registerValueArr,
-    ")?.innerRef?.value instanceof Set ? (",
+    ')?.innerRef?.value instanceof Set ? (',
     ...registerValueArr,
-    ")?.innerRef?.value?.has(",
+    ')?.innerRef?.value?.has(',
     ...elementValueArr,
-    ") : ",
-    "((",
+    ') : ',
+    '((',
     ...registerValueArr,
-    ")?.innerRef?.value === (",
+    ')?.innerRef?.value === (',
     ...elementValueArr,
-    "))",
+    '))',
   ]
 }
 
-function removePropsByName(
-  props: (AttributeNode | DirectiveNode)[],
-  propNames: string[]
-) {
+function removePropsByName(props: (AttributeNode | DirectiveNode)[], propNames: string[]) {
   const removePropIndices: number[] = []
   for (let index = 0; index < props.length; index++) {
     const prop = props[index]
     if (!prop) continue
 
     if (
-      propNames.includes(prop.name)
-      || ("arg" in prop
-        && prop.arg
-        && "content" in prop.arg
-        && propNames.includes(prop.arg.content))
+      propNames.includes(prop.name) ||
+      ('arg' in prop && prop.arg && 'content' in prop.arg && propNames.includes(prop.arg.content))
     ) {
       removePropIndices.push(index) // store index to remove later, don't mutate variable while looping through it
     }
@@ -119,45 +109,45 @@ function removePropsByName(
 export const inputTextAreaNodeTransform: NodeTransform = (node) => {
   if (node.type !== 1) return
 
-  const isInput = node.type === 1 && node.tag === "input"
-  const isTextArea = node.type === 1 && node.tag === "textarea"
+  const isInput = node.type === 1 && node.tag === 'input'
+  const isTextArea = node.type === 1 && node.tag === 'textarea'
 
   if (!isInput && !isTextArea) return
 
   const elementProps = getSummarizedProps(node)
 
-  const registerIndex = elementProps.findIndex(p => p.key.includes("register"))
+  const registerIndex = elementProps.findIndex((p) => p.key.includes('register'))
   const registerSummarizedProp = elementProps[registerIndex]
   if (!registerSummarizedProp) return // no return early if we don't find an register directive
 
-  const valueIndex = elementProps.findIndex(p => p.key.includes("value"))
+  const valueIndex = elementProps.findIndex((p) => p.key.includes('value'))
   const elementValueSummarizedProp = elementProps?.[valueIndex] ?? {
-    key: "value",
+    key: 'value',
     value: "''",
   }
 
-  const inputTypeIndex = elementProps.findIndex(p => p.key.includes("type"))
+  const inputTypeIndex = elementProps.findIndex((p) => p.key.includes('type'))
   // if (inputTypeIndex < 0 || inputTypeIndex >= elementProps.length) return
 
-  const defaultSummarizedTextProp = { key: "type", value: "'text'" }
-  const inputTypeSummarizedProp: SummarizedProp
-    = inputTypeIndex === -1
+  const defaultSummarizedTextProp = { key: 'type', value: "'text'" }
+  const inputTypeSummarizedProp: SummarizedProp =
+    inputTypeIndex === -1
       ? defaultSummarizedTextProp
       : (elementProps[inputTypeIndex] ?? defaultSummarizedTextProp)
-  const inputTypeExpressionArray
-    = typeof inputTypeSummarizedProp.value === "string"
+  const inputTypeExpressionArray =
+    typeof inputTypeSummarizedProp.value === 'string'
       ? [inputTypeSummarizedProp.value]
       : inputTypeSummarizedProp.value
 
   // this gets paired with `value` to get the [selectionLabel]=[label] prop for the given input
   // checkbox and radio are marked as selected via `checked`, others typically use `value`
   const elementSelectionLabelExpression = createCompoundExpression([
-    "(",
-    "(",
+    '(',
+    '(',
     ...inputTypeExpressionArray,
-    ")",
+    ')',
     " === 'checkbox' || ",
-    "(",
+    '(',
     ...inputTypeExpressionArray,
     ") === 'radio'",
     ") ? 'checked' : 'value'",
@@ -171,24 +161,24 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
     const dummyLoc: SourceLocation = {
       start: { column: 0, line: 0, offset: 0 },
       end: { column: 0, line: 0, offset: 0 },
-      source: "",
+      source: '',
     }
 
     const props = _node.props
-    removePropsByName(props, ["checked", "value"]) // (re)create the `value` prop further down
+    removePropsByName(props, ['checked', 'value']) // (re)create the `value` prop further down
     const registerValueArr = Array.isArray(registerSummarizedProp.value)
       ? registerSummarizedProp.value
       : [registerSummarizedProp.value]
     const valueExpression = createCompoundExpression([
-      "(",
+      '(',
       ...registerValueArr,
-      ")?.innerRef?.value",
+      ')?.innerRef?.value',
     ])
     const valueOrCheckedProp: DirectiveNode = {
       // reconstruct the `value` attribute based on the provided v-registerer, now that the computation is complete
       arg: elementSelectionLabelExpression,
       exp: createCompoundExpression([
-        "(",
+        '(',
         ...elementSelectionLabelExpression.children,
         ") === 'checked' ? (",
         // resolves to a boolean
@@ -196,12 +186,12 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
           registerSummarizedProp.value,
           elementValueSummarizedProp.value
         ),
-        ") : (",
+        ') : (',
         // resolves to the provided register value
         ...valueExpression.children,
-        ")",
+        ')',
       ]),
-      name: "bind",
+      name: 'bind',
       modifiers: [],
       type: NodeTypes.DIRECTIVE,
       loc: dummyLoc,

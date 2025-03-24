@@ -1,1 +1,1 @@
-export const PATH_SEPARATOR = "." as const
+export const PATH_SEPARATOR = '.' as const

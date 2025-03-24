@@ -1,5 +1,5 @@
-import type { ObjectDirective, Ref } from "vue"
-import type { DeepPartial, FlatPath, GenericForm, NestedType } from "./types-core"
+import type { ObjectDirective, Ref } from 'vue'
+import type { DeepPartial, FlatPath, GenericForm, NestedType } from './types-core'
 
 export type FormKey = string
 
@@ -37,14 +37,11 @@ export type InitialStateResponse<TData> =
   | ValidationResponseSuccess<TData>
   | ValidationResponseErrorWithData<TData>
 
-export type ValidationResponseWithoutValue<Form> = Omit<
-  ValidationResponse<Form>,
-  "data"
->
+export type ValidationResponseWithoutValue<Form> = Omit<ValidationResponse<Form>, 'data'>
 
 // strict: validate the data against the provided schema
 // lax: ONLY validate the shape of the data against the schema
-export type ValidationMode = "strict" | "lax"
+export type ValidationMode = 'strict' | 'lax'
 
 type GetInitialStateConfig<Form> = {
   useDefaultSchemaValues: boolean
@@ -53,16 +50,9 @@ type GetInitialStateConfig<Form> = {
 }
 
 export type AbstractSchema<Form, GetValueFormType> = {
-  getInitialState(
-    config: GetInitialStateConfig<Form>,
-  ): InitialStateResponse<Form>
-  getSchemasAtPath(
-    path: string,
-  ): AbstractSchema<NestedType<Form, typeof path>, GetValueFormType>[]
-  validateAtPath(
-    data: unknown,
-    path: string | undefined,
-  ): ValidationResponse<Form>
+  getInitialState(config: GetInitialStateConfig<Form>): InitialStateResponse<Form>
+  getSchemasAtPath(path: string): AbstractSchema<NestedType<Form, typeof path>, GetValueFormType>[]
+  validateAtPath(data: unknown, path: string | undefined): ValidationResponse<Form>
 }
 
 export type UseFormConfiguration<
@@ -97,7 +87,7 @@ export type OnError = (error: ValidationError[]) => void | Promise<void>
 
 export type HandleSubmit<Form extends GenericForm> = (
   onSubmit: OnSubmit<Form>,
-  onError?: OnError,
+  onError?: OnError
 ) => Promise<void>
 
 export type MetaTrackerValue = {
@@ -114,7 +104,12 @@ export type CurrentValueContext<WithMeta extends boolean = false> = {
   withMeta?: WithMeta
 }
 
-type RemapLeafNodes<T, V, Q = NonNullable<T>> = Q extends Record<string, unknown> ? { [K in keyof Q]: RemapLeafNodes<Q[K], V> } : (Q extends Array<infer U> ? Array<RemapLeafNodes<U, V>> : V)
+type RemapLeafNodes<T, V, Q = NonNullable<T>> =
+  Q extends Record<string, unknown>
+    ? { [K in keyof Q]: RemapLeafNodes<Q[K], V> }
+    : Q extends Array<infer U>
+      ? Array<RemapLeafNodes<U, V>>
+      : V
 
 export type CurrentValueWithContext<Value, FormSubtree = Value> = {
   currentValue: Readonly<Ref<Value>>
@@ -129,10 +124,15 @@ export type RegisterValue<Value = unknown> = {
 }
 
 export type CustomDirectiveRegisterAssignerFn = (value: unknown) => void
-export type CustomRegisterDirective<T, Modifiers extends string = string> = ObjectDirective<T & {
-  _assigning?: boolean
-  [S: symbol]: CustomDirectiveRegisterAssignerFn
-}, RegisterValue, Modifiers, string>
+export type CustomRegisterDirective<T, Modifiers extends string = string> = ObjectDirective<
+  T & {
+    _assigning?: boolean
+    [S: symbol]: CustomDirectiveRegisterAssignerFn
+  },
+  RegisterValue,
+  Modifiers,
+  string
+>
 
 // bring in this RegisterModelDynamicCustomDirective type once PR #12605 in vuejs/core enters production (currently in main but not released)
 // https://github.com/vuejs/core/pull/12605
@@ -142,7 +142,8 @@ export type CustomRegisterDirective<T, Modifiers extends string = string> = Obje
 // >
 
 export type RegisterTextCustomDirective = CustomRegisterDirective<
-  HTMLInputElement | HTMLTextAreaElement, string
+  HTMLInputElement | HTMLTextAreaElement,
+  string
 >
 
 export type RegisterCheckboxCustomDirective = CustomRegisterDirective<HTMLInputElement>
@@ -163,7 +164,9 @@ export type RegisterSelectCustomDirective = CustomRegisterDirective<HTMLSelectEl
 // HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, RegisterValue, "trim" | "number" | "lazy"
 // >
 export type RegisterModelDynamicCustomDirective = ObjectDirective<
-HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, RegisterValue, string
+  HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+  RegisterValue,
+  string
 >
 export type RegisterDirective =
   | RegisterTextCustomDirective
@@ -177,9 +180,7 @@ export type RegisterContext<Input, Output> = {
   fieldTransformer?: undefined | boolean | FieldTransformer<Input, Output>
 }
 
-export type SetValueCallback<Payload> = (
-  value: DeepPartial<Payload>,
-) => DeepPartial<Payload>
+export type SetValueCallback<Payload> = (value: DeepPartial<Payload>) => DeepPartial<Payload>
 export type SetValuePayload<Payload> = DeepPartial<Payload> | SetValueCallback<Payload>
 
 type DeepFlatten<T> =
@@ -190,26 +191,23 @@ type DeepFlatten<T> =
         [K in keyof T]: DeepFlatten<T[K]>
       }
     : T
-export type DOMFieldState =
-  | {
-    focused: boolean | null
-    blurred: boolean | null
-    touched: boolean | null
-  }
+export type DOMFieldState = {
+  focused: boolean | null
+  blurred: boolean | null
+  touched: boolean | null
+}
 export type FieldState = DeepFlatten<DOMFieldState & { meta: MetaTrackerValue } & FormSummaryValue>
 export type DOMFieldStateStore = Map<string, DOMFieldState | undefined>
 
 export type UseAbstractFormReturnType<
   Form extends GenericForm,
-  GetValueFormType extends GenericForm = Form
+  GetValueFormType extends GenericForm = Form,
 > = {
   getFieldState: (path: FlatPath<Form, keyof Form, true>) => Ref<FieldState>
   handleSubmit: HandleSubmit<Form>
   getValue: {
     (): Readonly<Ref<GetValueFormType>>
-    <Path extends FlatPath<Form>>(path: Path): Readonly<
-      Ref<NestedType<GetValueFormType, Path>>
-    >
+    <Path extends FlatPath<Form>>(path: Path): Readonly<Ref<NestedType<GetValueFormType, Path>>>
     <WithMeta extends boolean>(
       context: CurrentValueContext<WithMeta>
     ): WithMeta extends true
@@ -224,17 +222,13 @@ export type UseAbstractFormReturnType<
   }
   setValue: {
     <Value extends SetValuePayload<Form>>(value: Value): boolean
-    <
-      Path extends FlatPath<Form>,
-      Value extends SetValuePayload<NestedType<Form, Path>>
-    >(
+    <Path extends FlatPath<Form>, Value extends SetValuePayload<NestedType<Form, Path>>>(
       path: Path,
       value: Value
     ): boolean
   }
-  validate: (
-    path?: FlatPath<Form>
-  ) => Readonly<Ref<ValidationResponseWithoutValue<Form>>>
+
+  validate: (path?: FlatPath<Form>) => Readonly<Ref<ValidationResponseWithoutValue<Form>>>
   register: (
     path: FlatPath<Form, keyof Form, true>,
     _context?: RegisterContext<typeof path, NestedType<Form, typeof path>>

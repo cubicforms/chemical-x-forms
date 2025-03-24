@@ -1,22 +1,29 @@
-import { produce } from "immer"
-import { get, isFunction, isObjectLike, set, unset } from "lodash-es"
-import type { Ref } from "vue"
-import { toRaw } from "vue"
+import { produce } from 'immer'
+import { get, isFunction, isObjectLike, set, unset } from 'lodash-es'
+import type { Ref } from 'vue'
+import { toRaw } from 'vue'
 
-import type { AbstractSchema, FormKey, FormStore, MetaTracker, SetValueCallback, SetValuePayload } from "../../../types/types-api"
-import type { DeepPartial, FlatPath, GenericForm, NestedType } from "../../../types/types-core"
-import { updateMetaTracker } from "../composables/use-meta-tracker-store"
-import { getForm } from "./get-value"
+import type {
+  AbstractSchema,
+  FormKey,
+  FormStore,
+  MetaTracker,
+  SetValueCallback,
+  SetValuePayload,
+} from '../../../types/types-api'
+import type { DeepPartial, FlatPath, GenericForm, NestedType } from '../../../types/types-core'
+import { updateMetaTracker } from '../composables/use-meta-tracker-store'
+import { getForm } from './get-value'
 
 // setValue operations always REPLACE at the given path
 export function setValueFactory<Form extends GenericForm>(
   formStore: Ref<FormStore<Form>>,
   formKey: FormKey,
   schema: AbstractSchema<Form, Form>,
-  metaTracker: Readonly<Ref<MetaTracker>>,
+  metaTracker: Readonly<Ref<MetaTracker>>
 ) {
   function setValueWithCallbackAtRoot<Callback extends SetValueCallback<Form>>(
-    callback: Callback,
+    callback: Callback
   ): boolean {
     // did this for type safety
     let success = false
@@ -38,7 +45,7 @@ export function setValueFactory<Form extends GenericForm>(
         const { data: newForm, success } = schema.getInitialState({
           useDefaultSchemaValues: false,
           constraints: rawValue,
-          validationMode: "lax", // always relax the schema validation during setValue calls (assume input is a draft)
+          validationMode: 'lax', // always relax the schema validation during setValue calls (assume input is a draft)
         })
 
         updateSuccess(success)
@@ -51,15 +58,10 @@ export function setValueFactory<Form extends GenericForm>(
         for (const [key, value] of Object.entries(newForm)) {
           set(draft, key, value)
         }
-      }
-      catch (error) {
+      } catch (error) {
         const errorMessage = (error as Error)?.message
-        const display = errorMessage
-          ? `\n\tMessage: ${errorMessage}`
-          : " Unknown Error."
-        console.warn(
-          `setValue callback threw error while computing next root state.${display}`,
-        )
+        const display = errorMessage ? `\n\tMessage: ${errorMessage}` : ' Unknown Error.'
+        console.warn(`setValue callback threw error while computing next root state.${display}`)
         return
       }
     })
@@ -103,25 +105,24 @@ export function setValueFactory<Form extends GenericForm>(
             const { data } = nestedSchema.getInitialState({
               useDefaultSchemaValues: false,
               constraints: undefined,
-              validationMode: "lax",
+              validationMode: 'lax',
             })
             defaultValue = data
-          }
-          catch (error) {
-            let message = ""
+          } catch (error) {
+            let message = ''
             if (error instanceof Error) {
-              message = `\n\tError Message: ${error.message || "Unknown Error"}.`
+              message = `\n\tError Message: ${error.message || 'Unknown Error'}.`
             }
             console.error(
-              `Upstream library threw error in a nested schema's getInitialState implementation, related to form with key '${formKey}' at path '${path}'.${message}`,
+              `Upstream library threw error in a nested schema's getInitialState implementation, related to form with key '${formKey}' at path '${path}'.${message}`
             )
             return
           }
         }
 
-        const arg = (
-          valueAtPath === NOT_FOUND ? defaultValue : valueAtPath
-        ) as DeepPartial<NestedType<Form, typeof path>>
+        const arg = (valueAtPath === NOT_FOUND ? defaultValue : valueAtPath) as DeepPartial<
+          NestedType<Form, typeof path>
+        >
 
         try {
           const constraints = callback(arg)
@@ -134,21 +135,16 @@ export function setValueFactory<Form extends GenericForm>(
           const { data: newState } = nestedSchema.getInitialState({
             useDefaultSchemaValues: false,
             constraints,
-            validationMode: "lax", // always relax the schema validation during setValue calls (reason: assume user's not done updating value)
+            validationMode: 'lax', // always relax the schema validation during setValue calls (reason: assume user's not done updating value)
           })
 
           set(draftForm, path, newState)
           updateSuccess(true)
           return
-        }
-        catch (error) {
+        } catch (error) {
           const errorMessage = (error as Error)?.message
-          const display = errorMessage
-            ? `\n\tMessage: ${errorMessage}`
-            : " Unknown Error."
-          console.error(
-            `setValue callback threw Error while computing next value.${display}`,
-          )
+          const display = errorMessage ? `\n\tMessage: ${errorMessage}` : ' Unknown Error.'
+          console.error(`setValue callback threw Error while computing next value.${display}`)
           return
         }
       })
@@ -160,14 +156,13 @@ export function setValueFactory<Form extends GenericForm>(
         const { data: validatedNextState } = schema.getInitialState({
           useDefaultSchemaValues: false,
           constraints: updatedValue as DeepPartial<Form>,
-          validationMode: "lax", // always relax the schema validation during setValue calls (assume input is a draft)
+          validationMode: 'lax', // always relax the schema validation during setValue calls (assume input is a draft)
         })
         formStore.value.set(formKey, validatedNextState)
         return true
-      }
-      catch (error) {
+      } catch (error) {
         const message = (error as Error)?.message
-        const display = message ? `:\n\tMessage: ${message}` : "."
+        const display = message ? `:\n\tMessage: ${message}` : '.'
         console.error(`Failed to update form with key '${formKey}'${display}`)
         continue // try again with another matching schema
       }
@@ -192,7 +187,7 @@ export function setValueFactory<Form extends GenericForm>(
     }
 
     // nested form update
-    if (typeof pathOrValue === "string") {
+    if (typeof pathOrValue === 'string') {
       const callback = ensureFunction(value as NestedType<Form, Path>)
       return setValueWithCallbackAtPath(pathOrValue, callback)
     }

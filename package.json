@@ -31,7 +31,8 @@
     "release": "pnpm lint && pnpm test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
     "test": "vitest run",
     "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
-    "test:watch": "vitest watch"
+    "test:watch": "vitest watch",
+    "prepare": "husky"
   },
   "description": "A fully type-safe, schema-driven form library that gives you superpowers. Chemical X included.",
   "author": "Oswald Chisala",
@@ -74,7 +75,14 @@
   "license": "MIT",
   "packageManager": "pnpm@9.7.0",
   "type": "module",
+  "lint-staged": {
+    "./src/**/*.{ts,vue}": "eslint",
+    "./playground/**/*.{ts,vue}": "eslint",
+    "./test/**/*.{ts,vue}": "eslint"
+  },
   "devDependencies": {
+    "@commitlint/cli": "^19.8.0",
+    "@commitlint/config-conventional": "^19.8.0",
     "@nuxt/devtools": "^1.7.0",
     "@nuxt/eslint-config": "^0.7.6",
     "@nuxt/kit": "^3.16.1",
@@ -87,7 +95,9 @@
     "@vue/shared": "^3.5.13",
     "changelogen": "^0.5.7",
     "eslint": "^9.22.0",
+    "husky": "^9.1.7",
     "immer": "^10.1.1",
+    "lint-staged": "^15.5.0",
     "lodash-es": "^4.17.21",
     "nuxt": "^3.16.1",
     "rollup-plugin-dts": "^6.2.0",

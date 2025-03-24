@@ -1,29 +1,32 @@
-import { get } from "lodash-es"
-import type { ComputedRef, Ref } from "vue"
-import { toRaw, toRef } from "vue"
+import { get } from 'lodash-es'
+import type { ComputedRef, Ref } from 'vue'
+import { toRaw, toRef } from 'vue'
 
-import type { AbstractSchema, FormKey, HandleSubmit, ValidationError, ValidationResponseWithoutValue } from "../../../types/types-api"
-import type { FlatPath, GenericForm } from "../../../types/types-core"
-import { PATH_SEPARATOR } from "./constants"
+import type {
+  AbstractSchema,
+  FormKey,
+  HandleSubmit,
+  ValidationError,
+  ValidationResponseWithoutValue,
+} from '../../../types/types-api'
+import type { FlatPath, GenericForm } from '../../../types/types-core'
+import { PATH_SEPARATOR } from './constants'
 
 export function getValidateFactory<Form extends GenericForm>(
   form: ComputedRef<Form>,
   formKey: FormKey,
-  schema: AbstractSchema<Form, Form>,
+  schema: AbstractSchema<Form, Form>
 ) {
   const NOT_FOUND = Symbol()
 
   function validateLogic(
-    path?: FlatPath<Form>,
+    path?: FlatPath<Form>
   ): Readonly<Ref<ValidationResponseWithoutValue<Form>>> {
     // defensive code to help users that pass `validate` by reference to event handlers etc
-    const safePath = typeof path === "string" ? path : undefined
+    const safePath = typeof path === 'string' ? path : undefined
     if (safePath === undefined) {
       return toRef(() => {
-        const fullValidationResponse = schema.validateAtPath(
-          form.value,
-          safePath,
-        )
+        const fullValidationResponse = schema.validateAtPath(form.value, safePath)
         return {
           errors: fullValidationResponse.errors,
           success: fullValidationResponse.success,
@@ -57,14 +60,11 @@ export function getValidateFactory<Form extends GenericForm>(
   }
 
   function validate(): Readonly<Ref<ValidationResponseWithoutValue<Form>>>
-  function validate(
-    path: FlatPath<Form>,
-  ): Readonly<Ref<ValidationResponseWithoutValue<Form>>>
+  function validate(path: FlatPath<Form>): Readonly<Ref<ValidationResponseWithoutValue<Form>>>
   function validate(path?: FlatPath<Form>) {
     try {
       return validateLogic(path)
-    }
-    catch (error) {
+    } catch (error) {
       if (error instanceof Error) {
         console.error(`Unexpected Error: ${error.message}`)
       }
@@ -79,7 +79,7 @@ class AbstractSchemaValidationError extends Error {
   validationErrors: ValidationError[] // Define a property to hold the validation errors
 
   constructor(validationErrors: ValidationError[]) {
-    super("Abstract Schema Validation failed") // Set a default error message
+    super('Abstract Schema Validation failed') // Set a default error message
     this.validationErrors = validationErrors // Assign the argument to the class property
 
     // Ensure the prototype chain is correctly set for instanceof checks
@@ -89,7 +89,7 @@ class AbstractSchemaValidationError extends Error {
 
 export function getHandleSubmitFactory<Form extends GenericForm>(
   form: ComputedRef<Form>,
-  validate: () => Readonly<Ref<ValidationResponseWithoutValue<Form>>>,
+  validate: () => Readonly<Ref<ValidationResponseWithoutValue<Form>>>
 ) {
   const handleSubmitLogic: HandleSubmit<Form> = async (onSubmit, onError) => {
     try {
@@ -100,15 +100,13 @@ export function getHandleSubmitFactory<Form extends GenericForm>(
 
       const rawForm = toRaw(form.value)
       await onSubmit(rawForm)
-    }
-    catch (error) {
+    } catch (error) {
       if (!onError) return
 
       if (error instanceof AbstractSchemaValidationError) {
         try {
           await onError(error.validationErrors)
-        }
-        catch (error) {
+        } catch (error) {
           if (error instanceof Error) {
             console.error(error.message)
             return
@@ -128,8 +126,7 @@ export function getHandleSubmitFactory<Form extends GenericForm>(
   const handleSubmit: HandleSubmit<Form> = async (onSubmit, onError) => {
     try {
       return handleSubmitLogic(onSubmit, onError)
-    }
-    catch (error) {
+    } catch (error) {
       if (error instanceof Error) {
         console.error(error.message)
       }

@@ -1,8 +1,8 @@
-import { set } from "lodash-es"
-import { isProxy, isRef, toRaw } from "vue"
-import { isArrayOrRecord, isRecord } from "./helpers"
+import { set } from 'lodash-es'
+import { isProxy, isRef, toRaw } from 'vue'
+import { isArrayOrRecord, isRecord } from './helpers'
 
-const NO_KEY = "___USEFORM_INTERNAL_ERROR__NO_PATH_KEY_FOUND_FOR_FLATTEN___"
+const NO_KEY = '___USEFORM_INTERNAL_ERROR__NO_PATH_KEY_FOUND_FOR_FLATTEN___'
 function safeFlatPath(path: string | undefined) {
   return path === undefined ? NO_KEY : path
 }
@@ -35,10 +35,14 @@ export function flattenObjectWithBaseKey(obj: unknown, basePath?: string) {
   return recordedPaths
 }
 
-export function reconstructFlattenedObjectAtKey(obj: Record<string, unknown>, basePath: string | undefined) {
+export function reconstructFlattenedObjectAtKey(
+  obj: Record<string, unknown>,
+  basePath: string | undefined
+) {
   if (!isRecord(obj)) return {}
   const paths = Object.keys(toRaw(obj))
-  const validPaths = typeof basePath === "string" ? paths.filter(path => path.startsWith(basePath)) : paths
+  const validPaths =
+    typeof basePath === 'string' ? paths.filter((path) => path.startsWith(basePath)) : paths
 
   if (!validPaths.length) return {}
 

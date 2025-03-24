@@ -1,23 +1,20 @@
-import { useDOMFieldStateStore } from "../lib/core/composables/use-field-state-store"
-import { useFormKey } from "../lib/core/composables/use-form-key"
-import { useFormStore } from "../lib/core/composables/use-form-store"
-import { useMetaTrackerStore } from "../lib/core/composables/use-meta-tracker-store"
-import { fieldStateFactory } from "../lib/core/utils/field-state-api"
-import { getComputedSchema } from "../lib/core/utils/get-computed-schema"
-import { registerFactory } from "../lib/core/utils/register"
+import { useDOMFieldStateStore } from '../lib/core/composables/use-field-state-store'
+import { useFormKey } from '../lib/core/composables/use-form-key'
+import { useFormStore } from '../lib/core/composables/use-form-store'
+import { useMetaTrackerStore } from '../lib/core/composables/use-meta-tracker-store'
+import { fieldStateFactory } from '../lib/core/utils/field-state-api'
+import { getComputedSchema } from '../lib/core/utils/get-computed-schema'
+import { registerFactory } from '../lib/core/utils/register'
 import type {
   AbstractSchema,
   UseAbstractFormReturnType,
-  UseFormConfiguration
-} from "../types/types-api"
-import type {
-  DeepPartial,
-  GenericForm
-} from "../types/types-core"
+  UseFormConfiguration,
+} from '../types/types-api'
+import type { DeepPartial, GenericForm } from '../types/types-core'
 
 export function useAbstractForm<
   Form extends GenericForm,
-  GetValueFormType extends GenericForm = Form
+  GetValueFormType extends GenericForm = Form,
 >(
   configuration: UseFormConfiguration<
     Form,
@@ -32,7 +29,7 @@ export function useAbstractForm<
   const initialStateResponse = computedSchema.getInitialState({
     useDefaultSchemaValues: true,
     constraints: configuration.initialState,
-    validationMode: configuration.validationMode ?? "lax",
+    validationMode: configuration.validationMode ?? 'lax',
   })
 
   const {

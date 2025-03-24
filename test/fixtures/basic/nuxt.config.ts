@@ -1,11 +1,9 @@
-import { defineNuxtConfig, type DefineNuxtConfig } from "nuxt/config"
-import MyModule from "../../../src/module"
+import { defineNuxtConfig, type DefineNuxtConfig } from 'nuxt/config'
+import MyModule from '../../../src/module'
 
 export default defineNuxtConfig({
-  modules: [
-    MyModule,
-  ],
+  modules: [MyModule],
   alias: {
-    "@runtime": "../../../src/runtime"
-  }
+    '@runtime': '../../../src/runtime',
+  },
 }) as DefineNuxtConfig

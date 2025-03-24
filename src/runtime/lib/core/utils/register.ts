@@ -1,17 +1,17 @@
-import { get } from "lodash-es"
-import { toRef, type Ref } from "vue"
+import { get } from 'lodash-es'
+import { toRef, type Ref } from 'vue'
 import type {
   AbstractSchema,
   FormKey,
   FormStore,
   MetaTracker,
   RegisterContext,
-  RegisterValue
-} from "../../../types/types-api"
-import type { FlatPath, GenericForm, NestedType } from "../../../types/types-core"
-import type { GetElementHelpers } from "../composables/use-field-state-store"
-import { updateMetaTracker } from "../composables/use-meta-tracker-store"
-import { getForm } from "./get-value"
+  RegisterValue,
+} from '../../../types/types-api'
+import type { FlatPath, GenericForm, NestedType } from '../../../types/types-core'
+import type { GetElementHelpers } from '../composables/use-field-state-store'
+import { updateMetaTracker } from '../composables/use-meta-tracker-store'
+import { getForm } from './get-value'
 
 export function registerFactory<Form extends GenericForm>(
   formStore: Ref<FormStore<Form>>,
@@ -40,13 +40,13 @@ export function registerFactory<Form extends GenericForm>(
     }
     return {
       innerRef: toRef(
-        () => (metaTracker.value?.[path]?.rawValue ?? get(form, path)) as NestedType<Form, typeof path> | undefined
+        () =>
+          (metaTracker.value?.[path]?.rawValue ?? get(form, path)) as
+            | NestedType<Form, typeof path>
+            | undefined
       ),
       registerElement: (el) => {
-        if (
-          !(path in elementHelperCache)
-          || !metaTracker.value[path]?.isConnected
-        ) {
+        if (!(path in elementHelperCache) || !metaTracker.value[path]?.isConnected) {
           elementHelperCache[path] = getElementHelpers(path)
         }
         const success = elementHelperCache[path]?.registerElement(el)
@@ -64,8 +64,7 @@ export function registerFactory<Form extends GenericForm>(
         if (!(path in elementHelperCache)) {
           elementHelperCache[path] = getElementHelpers(path)
         }
-        const remainingElementCount
-          = elementHelperCache[path]?.deregisterElement(el)
+        const remainingElementCount = elementHelperCache[path]?.deregisterElement(el)
         updateMetaTracker({
           formKey,
           basePath: path,

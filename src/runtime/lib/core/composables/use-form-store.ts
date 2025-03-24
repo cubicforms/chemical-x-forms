@@ -1,20 +1,31 @@
-import type { Ref } from "vue"
-import { computed, readonly, watch } from "vue"
+import type { Ref } from 'vue'
+import { computed, readonly, watch } from 'vue'
 
-import { getForm, getValueFactory } from "../utils/get-value"
-import { getHandleSubmitFactory, getValidateFactory } from "../utils/process-form"
-import { setValueFactory } from "../utils/set-value"
+import { getForm, getValueFactory } from '../utils/get-value'
+import { getHandleSubmitFactory, getValidateFactory } from '../utils/process-form'
+import { setValueFactory } from '../utils/set-value'
 
-import { unset } from "lodash-es"
-import { useState } from "nuxt/app"
-import type { FormKey, FormStore, FormSummaryStore, InitialStateResponse } from "../../../types/types-api"
-import type { GenericForm } from "../../../types/types-core"
-import { flattenObjectWithBaseKey } from "../utils/flatten-object"
-import { setDifference, setIntersection } from "../utils/set-utilities"
+import { unset } from 'lodash-es'
+import { useState } from 'nuxt/app'
+import type {
+  FormKey,
+  FormStore,
+  FormSummaryStore,
+  InitialStateResponse,
+} from '../../../types/types-api'
+import type { GenericForm } from '../../../types/types-core'
+import { flattenObjectWithBaseKey } from '../utils/flatten-object'
+import { setDifference, setIntersection } from '../utils/set-utilities'
 
-export const useFormStore = <Form extends GenericForm>(formKey: FormKey, initialFormState: InitialStateResponse<Form>) => {
-  const formStore = useState<FormStore<Form>>("useform/store", () => new Map())
-  const formSummaryStore = useState<FormSummaryStore>("useform/form-summary-store", () => new Map([[formKey, {}]]))
+export const useFormStore = <Form extends GenericForm>(
+  formKey: FormKey,
+  initialFormState: InitialStateResponse<Form>
+) => {
+  const formStore = useState<FormStore<Form>>('useform/store', () => new Map())
+  const formSummaryStore = useState<FormSummaryStore>(
+    'useform/form-summary-store',
+    () => new Map([[formKey, {}]])
+  )
   updateFormSummaryValuesRecord(initialFormState.data, undefined, formSummaryStore, formKey)
 
   function registerForm(form: Form) {
@@ -25,9 +36,13 @@ export const useFormStore = <Form extends GenericForm>(formKey: FormKey, initial
 
   const form = computed(() => getForm(formStore, formKey))
 
-  watch(() => formStore.value.get(formKey), (currentForm, previousForm) => {
-    updateFormSummaryValuesRecord(currentForm, previousForm, formSummaryStore, formKey)
-  }, { deep: true })
+  watch(
+    () => formStore.value.get(formKey),
+    (currentForm, previousForm) => {
+      updateFormSummaryValuesRecord(currentForm, previousForm, formSummaryStore, formKey)
+    },
+    { deep: true }
+  )
 
   const formSummaryValues = readonly(formSummaryStore.value.get(formKey)!)
 
@@ -43,7 +58,12 @@ export const useFormStore = <Form extends GenericForm>(formKey: FormKey, initial
   }
 }
 
-function updateFormSummaryValuesRecord<Form extends GenericForm>(currentForm: Form | undefined, previousForm: Form | undefined, formSummaryStore: Ref<FormSummaryStore>, formKey: FormKey) {
+function updateFormSummaryValuesRecord<Form extends GenericForm>(
+  currentForm: Form | undefined,
+  previousForm: Form | undefined,
+  formSummaryStore: Ref<FormSummaryStore>,
+  formKey: FormKey
+) {
   const summaryValues = formSummaryStore.value.get(formKey)
   if (!summaryValues) return
 
@@ -96,7 +116,10 @@ function updateFormSummaryValuesRecord<Form extends GenericForm>(currentForm: Fo
   }
 
   for (const key of persistedKeys) {
-    const previousValue = previousFlatForm[key] === currentFlatForm[key] ? summaryValues[key]?.previousValue : previousFlatForm[key]
+    const previousValue =
+      previousFlatForm[key] === currentFlatForm[key]
+        ? summaryValues[key]?.previousValue
+        : previousFlatForm[key]
     const dirty = summaryValues[key]?.originalValue !== currentFlatForm[key]
     summaryValues[key] = {
       currentValue: currentFlatForm[key],

@@ -1,63 +1,52 @@
 export type GenericForm = Record<string, unknown>
 
-type IsObjectOrArray<T> = T extends GenericForm
-  ? true
-  : T extends Array<unknown>
-    ? true
-    : false
+type IsObjectOrArray<T> = T extends GenericForm ? true : T extends Array<unknown> ? true : false
 
-type PartialFlatPath<
-  Form,
-  Key extends keyof Form = keyof Form,
-> = IsObjectOrArray<Form> extends true
-  ? Key extends string
-    ? Form[Key] extends infer Value
-      ? Value extends Array<infer ArrayItem>
+type PartialFlatPath<Form, Key extends keyof Form = keyof Form> =
+  IsObjectOrArray<Form> extends true
+    ? Key extends string
+      ? Form[Key] extends infer Value
+        ? Value extends Array<infer ArrayItem>
+          ? `${Key}` | `${Key}.${number}` | `${Key}.${number}.${PartialFlatPath<ArrayItem>}`
+          : Value extends GenericForm
+            ? `${Key}` | `${Key}.${PartialFlatPath<Value>}`
+            : `${Key}`
+        : never
+      : Key extends number
         ?
-        | `${Key}`
-        | `${Key}.${number}`
-        | `${Key}.${number}.${PartialFlatPath<ArrayItem>}`
-        : Value extends GenericForm
-          ? `${Key}` | `${Key}.${PartialFlatPath<Value>}`
-          : `${Key}`
-      : never
-    : Key extends number
-      ?
-      | `${Key}`
-      | (Form[Key] extends GenericForm
-        ? `${Key}.${PartialFlatPath<Form[Key]>}`
-        : Form[Key] extends Array<infer ArrayItem>
-          ? IsObjectOrArray<ArrayItem> extends true
-            ? `${Key}.${number}` | `${Key}.${number}.${PartialFlatPath<ArrayItem>}`
-            : `${Key}.${number}`
-          : never)
-      : never
-  : never
+            | `${Key}`
+            | (Form[Key] extends GenericForm
+                ? `${Key}.${PartialFlatPath<Form[Key]>}`
+                : Form[Key] extends Array<infer ArrayItem>
+                  ? IsObjectOrArray<ArrayItem> extends true
+                    ? `${Key}.${number}` | `${Key}.${number}.${PartialFlatPath<ArrayItem>}`
+                    : `${Key}.${number}`
+                  : never)
+        : never
+    : never
 
-export type CompleteFlatPath<
-  Form,
-  Key extends keyof Form = keyof Form,
-> = IsObjectOrArray<Form> extends true
-  ? Key extends string
-    ? Form[Key] extends infer Value
-      ? Value extends Array<infer ArrayItem>
-        ? `${Key}.${number}.${CompleteFlatPath<ArrayItem>}`
-        : Value extends GenericForm
-          ? `${Key}.${CompleteFlatPath<Value>}`
-          : `${Key}`
-      : never
-    : Key extends number
-      ?
-      | `${Key}`
-      | (Form[Key] extends GenericForm
-        ? `${Key}.${CompleteFlatPath<Form[Key]>}`
-        : Form[Key] extends Array<infer ArrayItem>
-          ? IsObjectOrArray<ArrayItem> extends true
-            ? `${Key}.${number}.${CompleteFlatPath<ArrayItem>}`
-            : `${Key}.${number}`
-          : never)
-      : never
-  : never
+export type CompleteFlatPath<Form, Key extends keyof Form = keyof Form> =
+  IsObjectOrArray<Form> extends true
+    ? Key extends string
+      ? Form[Key] extends infer Value
+        ? Value extends Array<infer ArrayItem>
+          ? `${Key}.${number}.${CompleteFlatPath<ArrayItem>}`
+          : Value extends GenericForm
+            ? `${Key}.${CompleteFlatPath<Value>}`
+            : `${Key}`
+        : never
+      : Key extends number
+        ?
+            | `${Key}`
+            | (Form[Key] extends GenericForm
+                ? `${Key}.${CompleteFlatPath<Form[Key]>}`
+                : Form[Key] extends Array<infer ArrayItem>
+                  ? IsObjectOrArray<ArrayItem> extends true
+                    ? `${Key}.${number}.${CompleteFlatPath<ArrayItem>}`
+                    : `${Key}.${number}`
+                  : never)
+        : never
+    : never
 
 // FlatPath Generic Gotchas:
 //
@@ -95,35 +84,32 @@ export type NestedType<
   _RootValue = FilterOutNullishTypesDuringRecursion extends false
     ? RootValue
     : NonNullable<RootValue>,
-> = IsObjectOrArray<_RootValue> extends false
-  ? never
-  : FlattenedPath extends `${infer Key}.${infer Rest}`
-    ? Key extends `${number}`
-      ? Key extends keyof _RootValue
-        ? NestedType<_RootValue[Key], Rest, FilterOutNullishTypesDuringRecursion>
-        : Key extends `${infer NumericKey extends number}`
-          ? NumericKey extends keyof _RootValue
-            ? NestedType<
-              _RootValue[NumericKey],
-              Rest,
-              FilterOutNullishTypesDuringRecursion
-            >
+> =
+  IsObjectOrArray<_RootValue> extends false
+    ? never
+    : FlattenedPath extends `${infer Key}.${infer Rest}`
+      ? Key extends `${number}`
+        ? Key extends keyof _RootValue
+          ? NestedType<_RootValue[Key], Rest, FilterOutNullishTypesDuringRecursion>
+          : Key extends `${infer NumericKey extends number}`
+            ? NumericKey extends keyof _RootValue
+              ? NestedType<_RootValue[NumericKey], Rest, FilterOutNullishTypesDuringRecursion>
+              : never
             : never
+        : Key extends keyof _RootValue
+          ? NestedType<_RootValue[Key], Rest, FilterOutNullishTypesDuringRecursion>
           : never
-      : Key extends keyof _RootValue
-        ? NestedType<_RootValue[Key], Rest, FilterOutNullishTypesDuringRecursion>
-        : never
-    : FlattenedPath extends `${number}`
-      ? FlattenedPath extends keyof _RootValue
-        ? _RootValue[FlattenedPath]
-        : FlattenedPath extends `${infer NumericKey extends number}`
-          ? NumericKey extends keyof _RootValue
-            ? _RootValue[NumericKey]
+      : FlattenedPath extends `${number}`
+        ? FlattenedPath extends keyof _RootValue
+          ? _RootValue[FlattenedPath]
+          : FlattenedPath extends `${infer NumericKey extends number}`
+            ? NumericKey extends keyof _RootValue
+              ? _RootValue[NumericKey]
+              : never
             : never
+        : FlattenedPath extends keyof _RootValue
+          ? _RootValue[FlattenedPath]
           : never
-      : FlattenedPath extends keyof _RootValue
-        ? _RootValue[FlattenedPath]
-        : never
 
 // Helper type for primitive types (non-object and non-array)
 type Primitive = string | number | boolean | symbol | bigint | null | undefined

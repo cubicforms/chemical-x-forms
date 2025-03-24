@@ -1,15 +1,7 @@
-import { defineBuildConfig } from "unbuild"
+import { defineBuildConfig } from 'unbuild'
 
 export default defineBuildConfig({
-  externals: [
-    "@vue/compiler-core",
-    "@vue/shared",
-    "nuxt",
-    "vue",
-    "zod",
-    "immer",
-    /lodash-es.*/,
-  ],
+  externals: ['@vue/compiler-core', '@vue/shared', 'nuxt', 'vue', 'zod', 'immer', /lodash-es.*/],
   declaration: true,
   failOnWarn: true,
   rollup: {
@@ -17,15 +9,15 @@ export default defineBuildConfig({
       respectExternal: true,
     },
     esbuild: {
-      format: "esm",
-      target: "es2020",
+      format: 'esm',
+      target: 'es2020',
       minify: true,
       sourcemap: false,
       treeShaking: true,
-      legalComments: "none",
+      legalComments: 'none',
     },
   },
   sourcemap: false,
   parallel: false,
-  name: "@chemical-x/forms",
+  name: '@chemical-x/forms',
 })

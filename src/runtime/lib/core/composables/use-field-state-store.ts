@@ -1,8 +1,8 @@
-import { get } from "lodash-es"
-import { useState } from "nuxt/app"
-import { computed, ref, type Ref } from "vue"
-import type { DOMFieldStateStore } from "../../../types/types-api"
-import type { GenericForm } from "../../../types/types-core"
+import { get } from 'lodash-es'
+import { useState } from 'nuxt/app'
+import { computed, ref, type Ref } from 'vue'
+import type { DOMFieldStateStore } from '../../../types/types-api'
+import type { GenericForm } from '../../../types/types-core'
 
 export type ElementSet = Set<HTMLElement>
 export type ElementStore = Map<string, ElementSet>
@@ -17,21 +17,16 @@ export type UseDOMFieldStateStoreRefReturnValue = {
   domFieldStateStore: Ref<DOMFieldStateStore, DOMFieldStateStore>
 }
 
-export function useDOMFieldStateStore<Form extends GenericForm>(form: Ref<Form>): UseDOMFieldStateStoreRefReturnValue {
-  const elementStoreRef = useState<ElementStore>(
-    "chemical-x/element-store",
-    () => new Map()
-  )
+export function useDOMFieldStateStore<Form extends GenericForm>(
+  form: Ref<Form>
+): UseDOMFieldStateStoreRefReturnValue {
+  const elementStoreRef = useState<ElementStore>('chemical-x/element-store', () => new Map())
   const domFieldStateStore = useState<DOMFieldStateStore>(
-    "chemical-x/element-state-store",
+    'chemical-x/element-state-store',
     () => new Map()
   )
 
-  function _setKnownFocusState(
-    path: string,
-    focusedState: boolean,
-    touched: boolean,
-  ) {
+  function _setKnownFocusState(path: string, focusedState: boolean, touched: boolean) {
     domFieldStateStore.value.set(path, {
       focused: focusedState,
       blurred: !focusedState,
@@ -45,8 +40,8 @@ export function useDOMFieldStateStore<Form extends GenericForm>(form: Ref<Form>)
     // just in case this function is accidentally executed in a server context
     if (import.meta.server)
       return {
-        registerElement: _ => false,
-        deregisterElement: _ => -1,
+        registerElement: (_) => false,
+        deregisterElement: (_) => -1,
       }
 
     const touchedState = computed(() => touchedStates.value[path] ?? false)
@@ -63,13 +58,13 @@ export function useDOMFieldStateStore<Form extends GenericForm>(form: Ref<Form>)
     }
 
     function addEventListenerHelper(element: HTMLElement) {
-      element.addEventListener("focus", handleFocus)
-      element.addEventListener("blur", handleBlur)
+      element.addEventListener('focus', handleFocus)
+      element.addEventListener('blur', handleBlur)
     }
 
     function removeEventListenerHelper(element: HTMLElement) {
-      element.removeEventListener("focus", handleFocus)
-      element.removeEventListener("blur", handleBlur)
+      element.removeEventListener('focus', handleFocus)
+      element.removeEventListener('blur', handleBlur)
     }
 
     function registerElement(element: HTMLElement) {
@@ -80,8 +75,7 @@ export function useDOMFieldStateStore<Form extends GenericForm>(form: Ref<Form>)
       _setKnownFocusState(
         path,
         !!import.meta.client && document.activeElement === element,
-        touchedState.value,
-
+        touchedState.value
       )
 
       if (!elementSet) {
@@ -103,7 +97,7 @@ export function useDOMFieldStateStore<Form extends GenericForm>(form: Ref<Form>)
       if (existingElementCount === 0) {
         elementStore.delete(path) // free the path
         const domFieldStateExists = domFieldStateStore.value.has(path)
-        const NOT_FOUND = Symbol("FIELD_NOT_FOUND")
+        const NOT_FOUND = Symbol('FIELD_NOT_FOUND')
         const fieldNotFoundOnForm = get(form.value, path, NOT_FOUND) === NOT_FOUND
 
         // Only delete the dom field state if we are no longer tracking the field internally

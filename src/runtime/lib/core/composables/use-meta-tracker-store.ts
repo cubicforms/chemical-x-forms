@@ -1,20 +1,13 @@
-import { isEqual, merge } from "lodash-es"
-import { useState } from "nuxt/app"
-import { computed } from "vue"
-import type {
-  FormKey,
-  MetaTracker,
-  MetaTrackerStore,
-} from "../../../types/types-api"
-import { flattenObjectWithBaseKey } from "../utils/flatten-object"
+import { isEqual, merge } from 'lodash-es'
+import { useState } from 'nuxt/app'
+import { computed } from 'vue'
+import type { FormKey, MetaTracker, MetaTrackerStore } from '../../../types/types-api'
+import { flattenObjectWithBaseKey } from '../utils/flatten-object'
 
 export function useMetaTrackerStore(formKey: FormKey) {
-  const metaTrackerStore = useState<MetaTrackerStore>(
-    "useform/meta-tracker-store",
-    () => {
-      return new Map([[formKey, {}]])
-    }
-  )
+  const metaTrackerStore = useState<MetaTrackerStore>('useform/meta-tracker-store', () => {
+    return new Map([[formKey, {}]])
+  })
 
   const metaTracker = computed(() => metaTrackerStore.value.get(formKey)!)
 
@@ -35,24 +28,17 @@ type UpdateMetaTrackerConfig = {
 export function updateMetaTracker(config: UpdateMetaTrackerConfig) {
   const { formKey, metaTracker, rawValue, basePath, updateTime, isConnected } = config
 
-  const lastKnownTime
-    = typeof basePath === "string"
-      ? metaTracker[basePath]?.updatedAt ?? null
-      : null
+  const lastKnownTime =
+    typeof basePath === 'string' ? (metaTracker[basePath]?.updatedAt ?? null) : null
 
-  const hasRawValueChanged = basePath === null ? true : !isEqual(metaTracker[basePath]?.rawValue, rawValue)
+  const hasRawValueChanged =
+    basePath === null ? true : !isEqual(metaTracker[basePath]?.rawValue, rawValue)
   const newTime = hasRawValueChanged ? new Date().toISOString() : lastKnownTime
-  const updatedAt
-    = (updateTime ?? true) ? newTime : lastKnownTime
+  const updatedAt = (updateTime ?? true) ? newTime : lastKnownTime
 
-  const flattenedObject = flattenObjectWithBaseKey(
-    rawValue,
-    basePath ?? undefined
-  )
-  const lastKnownIsConnectedValue
-    = typeof basePath === "string"
-      ? metaTracker[basePath]?.isConnected ?? false
-      : false
+  const flattenedObject = flattenObjectWithBaseKey(rawValue, basePath ?? undefined)
+  const lastKnownIsConnectedValue =
+    typeof basePath === 'string' ? (metaTracker[basePath]?.isConnected ?? false) : false
 
   const metaTrackerPatch = Object.entries(flattenedObject).reduce<MetaTracker>(
     (acc, [key, value]) => ({

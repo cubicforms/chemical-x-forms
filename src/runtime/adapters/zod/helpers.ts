@@ -1,9 +1,12 @@
-import type { z } from "zod"
+import type { z } from 'zod'
 
 // Map each schema type name to its Zod class (using broad generics for generality)
 type ZodTypeMap = {
   ZodObject: z.AnyZodObject
-  ZodDiscriminatedUnion: z.ZodDiscriminatedUnion<string, [z.ZodDiscriminatedUnionOption<string>, ...z.ZodDiscriminatedUnionOption<string>[]]>
+  ZodDiscriminatedUnion: z.ZodDiscriminatedUnion<
+    string,
+    [z.ZodDiscriminatedUnionOption<string>, ...z.ZodDiscriminatedUnionOption<string>[]]
+  >
   ZodArray: z.ZodArray<z.ZodTypeAny>
   ZodRecord: z.ZodRecord<z.ZodTypeAny, z.ZodTypeAny>
   ZodDefault: z.ZodDefault<z.ZodTypeAny>
@@ -30,17 +33,16 @@ export function isZodSchemaType<K extends keyof ZodTypeMap>(
   schema: unknown,
   expectedType: K
 ): schema is ZodTypeMap[K] {
-    type ExpectedShape = {
-      _def?: {
-        typeName?: string
+  type ExpectedShape =
+    | {
+        _def?: {
+          typeName?: string
+        }
       }
-    } | undefined
-    if (
-      typeof schema === "object" && schema !== null
-      && (schema as ExpectedShape)?._def?.typeName
-    ) {
-      const actualType = (schema as ExpectedShape)?._def?.typeName
-      return actualType === expectedType
-    }
-    return false
+    | undefined
+  if (typeof schema === 'object' && schema !== null && (schema as ExpectedShape)?._def?.typeName) {
+    const actualType = (schema as ExpectedShape)?._def?.typeName
+    return actualType === expectedType
+  }
+  return false
 }

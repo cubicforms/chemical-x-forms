@@ -1,6 +1,10 @@
 export type GenericForm = Record<string, unknown>
 
-type IsObjectOrArray<T> = T extends GenericForm ? true : T extends Array<unknown> ? true : false
+export type IsObjectOrArray<T> = T extends GenericForm
+  ? true
+  : T extends Array<unknown>
+    ? true
+    : false
 
 type PartialFlatPath<Form, Key extends keyof Form = keyof Form> =
   IsObjectOrArray<Form> extends true

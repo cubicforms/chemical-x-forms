@@ -22,12 +22,10 @@ describe('SSR behavior of useForm', async () => {
         const html = await $fetch('/')
         assertHTML(html)
         const window = new JSDOM(html).window
-        const select = window.document.getElementById('matching-logic-select-1')
+        const selectElement = window.document.getElementById('matching-logic-select-1')
+        expect(selectElement).toBeInstanceOf(HTMLSelectElement)
 
-        expect(select).not.toBeNull()
-        expect(select?.tagName).toBe('SELECT')
-
-        const options = (select as HTMLSelectElement)?.options
+        const options = (selectElement as HTMLSelectElement)?.options
         const selectedOption = options[options.selectedIndex]
 
         expect(selectedOption).not.toBeUndefined()
@@ -39,11 +37,10 @@ describe('SSR behavior of useForm', async () => {
         assertHTML(html)
 
         const window = new JSDOM(html).window
-        const select = window.document.getElementById('matching-logic-select-1')
-        expect(select).not.toBeNull()
-        expect(select?.tagName).toBe('SELECT')
+        const selectElement = window.document.getElementById('matching-logic-select-1')
+        expect(selectElement).not.toBeInstanceOf(HTMLSelectElement)
 
-        const options = (select as HTMLSelectElement).options
+        const options = (selectElement as HTMLSelectElement).options
         const selectedOption = options[options.selectedIndex]
 
         expect(selectedOption).not.toBeUndefined()
@@ -64,10 +61,10 @@ describe('SSR behavior of useForm', async () => {
         assertHTML(html)
 
         const window = new JSDOM(html).window
-        const selected = window.document.getElementById('matching-logic-select-2')
-        expect(selected).not.toBe(null)
-        expect(selected?.tagName).toBe('SELECT')
-        const options = (selected as HTMLSelectElement)?.options
+        const selectElement = window.document.getElementById('matching-logic-select-2')
+        expect(selectElement).toBeInstanceOf(HTMLSelectElement)
+
+        const options = (selectElement as HTMLSelectElement)?.options
         expect(options.length).toBe(1)
         const option = options[0]
         expect(option?.value).toBe('chess')

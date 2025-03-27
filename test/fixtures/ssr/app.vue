@@ -24,6 +24,24 @@
       <select id="matching-logic-select-2" v-register="register('favoriteGame')">
         <option value="chess" selected="false">Chess</option>
       </select>
+
+      <select id="random-nested-select-1" v-register="register('favoriteGame')">
+        <div>
+          <optgroup>
+            <p>
+              <span>
+                <option value="chess">Chess Option Nested</option>
+              </span>
+            </p>
+          </optgroup>
+        </div>
+      </select>
+
+      <select id="deselect-failed-matches-1" v-register="register('favoriteGame')">
+        <option value="mario_kart" selected="true">Mario Kart</option>
+        <option value="tekken" selected="true">Tekken</option>
+        <option value="brain_game" selected="true">Brain Game</option>
+      </select>
     </section>
   </div>
 </template>

@@ -23,7 +23,8 @@ describe('SSR behavior of useForm', async () => {
         assertHTML(html)
         const window = new JSDOM(html).window
         const selectElement = window.document.getElementById('matching-logic-select-1')
-        expect(selectElement).toBeInstanceOf(HTMLSelectElement)
+        expect(selectElement).not.toBeNull()
+        expect(selectElement?.tagName).toBe('SELECT')
 
         const options = (selectElement as HTMLSelectElement)?.options
         const selectedOption = options[options.selectedIndex]
@@ -38,7 +39,8 @@ describe('SSR behavior of useForm', async () => {
 
         const window = new JSDOM(html).window
         const selectElement = window.document.getElementById('matching-logic-select-1')
-        expect(selectElement).not.toBeInstanceOf(HTMLSelectElement)
+        expect(selectElement).not.toBeNull()
+        expect(selectElement?.tagName).toBe('SELECT')
 
         const options = (selectElement as HTMLSelectElement).options
         const selectedOption = options[options.selectedIndex]
@@ -62,7 +64,8 @@ describe('SSR behavior of useForm', async () => {
 
         const window = new JSDOM(html).window
         const selectElement = window.document.getElementById('matching-logic-select-2')
-        expect(selectElement).toBeInstanceOf(HTMLSelectElement)
+        expect(selectElement).not.toBeNull()
+        expect(selectElement?.tagName).toBe('SELECT')
 
         const options = (selectElement as HTMLSelectElement)?.options
         expect(options.length).toBe(1)

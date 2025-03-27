@@ -20,6 +20,10 @@
         <option value="chess">Chess Bottom</option>
         <option value="blackjack">Blackjack</option>
       </select>
+
+      <select id="matching-logic-select-2" v-register="register('favoriteGame')">
+        <option value="chess" selected="false">Chess</option>
+      </select>
     </section>
   </div>
 </template>

@@ -59,7 +59,22 @@ describe('SSR behavior of useForm', async () => {
         // Ensure that no other elements are selected
         expect(otherSelectedChessOptions).toHaveLength(0)
       })
-      it('should update an <option> element to be selected when its value matches', { todo: true })
+      it('should update an <option> element to be selected when its value matches', async () => {
+        const html = await $fetch('/')
+        assertHTML(html)
+
+        const window = new JSDOM(html).window
+        const selected = window.document.getElementById('matching-logic-select-2')
+        expect(selected).not.toBe(null)
+        expect(selected?.tagName).toBe('SELECT')
+        const options = (selected as HTMLSelectElement)?.options
+        expect(options.length).toBe(1)
+        const option = options[0]
+        expect(option?.value).toBe('chess')
+
+        // this is false in the test fixture (Chemical X should set this to true)
+        expect(option?.selected).toBe(true)
+      })
       it('should ignore <option> elements without a specified value', { todo: true })
       it('should find a match in an arbitrarily nested <option> within the <select> DOM tree', {
         todo: true,

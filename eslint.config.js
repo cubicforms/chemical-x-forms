@@ -97,6 +97,12 @@ export default [
       'vue/html-comment-content-spacing': ['error', 'always'],
       'vue/padding-line-between-blocks': ['error', 'always'],
       'vue/prefer-separate-static-class': 'error',
+      'vue/block-order': [
+        'error',
+        {
+          order: ['script', 'template', 'style'],
+        },
+      ],
     },
   },
 

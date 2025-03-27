@@ -2,7 +2,7 @@
   import { z } from 'zod'
 
   // Define your schema with a dash of magic
-  const schema = z.object({ planet: z.string() })
+  const schema = z.object({ planet: z.string(), favoriteGame: z.string().default('chess') })
 
   // Create your form with a unique key
   const { getFieldState, register, key, setValue } = useForm({
@@ -44,6 +44,19 @@
     </button>
 
     <button @click="updateVal(true)">Update value programmatically</button>
+
+    <select id="deselect-failed-matches-1" v-register="register('favoriteGame')">
+      <option value="mario_kart" selected="true">Mario Kart</option>
+      <option value="tekken" selected="true">Tekken</option>
+      <option value="brain_game" selected="true">Brain Game</option>
+    </select>
+
+    Without register:
+    <select>
+      <option value="tekken" selected="false">Tekken</option>
+      <option value="mario_kart">Mario Kart</option>
+      <option value="brain_game" selected="false">Brain Game</option>
+    </select>
     <hr />
   </div>
 </template>

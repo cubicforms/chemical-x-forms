@@ -12,6 +12,7 @@
 
   // Get the state of the 'planet' field
   const planetState = getFieldState('planet')
+  const gameState = getFieldState('favoriteGame')
   const hideInput = ref(false)
 
   // random operation to demonstrate updating the planet field programmatically
@@ -52,10 +53,15 @@
     </select>
 
     Without register:
-    <select>
-      <option value="tekken" selected="false">Tekken</option>
+    <pre>{{ JSON.stringify(gameState, null, 2) }}</pre>
+
+    <select
+      id="select-where-all-options-are-without-selected-attributes"
+      v-register="register('favoriteGame')"
+    >
       <option value="mario_kart">Mario Kart</option>
-      <option value="brain_game" selected="false">Brain Game</option>
+      <option value="tekken">Tekken</option>
+      <option value="brain_game">Brain Game</option>
     </select>
     <hr />
   </div>

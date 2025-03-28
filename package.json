@@ -103,6 +103,7 @@
     "@vue/compiler-core": "^3.5.13",
     "@vue/shared": "^3.5.13",
     "changelogen": "^0.5.7",
+    "cheerio": "^1.0.0",
     "eslint": "^9.23.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-nuxt": "^4.0.0",

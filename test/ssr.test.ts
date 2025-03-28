@@ -1,4 +1,5 @@
 import { $fetch, setup } from '@nuxt/test-utils/e2e'
+import * as cheerio from 'cheerio'
 import { JSDOM } from 'jsdom'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -98,42 +99,89 @@ describe('SSR behavior of useForm', async () => {
           expect(option?.selected).toBe(true)
         })
       })
-
-      // This aligns with how browsers select options when parsing HTML for the initial render
-      // Avoiding potential subtle bugs by implementing Chemical X s.t. these rules are followed
-      describe('When no matches are found', () => {
-        it('should select first option if no options have a selected attribute', { todo: true })
-        it('should select last option with selected attribute', { todo: true })
-      })
     })
 
     // Tests handling cases where no matches or errors occur
     describe('Non-Matching and Edge Cases:', () => {
-      it(
-        "should NOT mark any <option> tags as selected if their values don't match the parent <select>'s value",
-        { todo: true }
-      )
-      it('should not break if no matching <option> elements are found', { todo: true })
-      it('should not break if no <option> elements are provided to the <select>', { todo: true })
-      it(
-        'should not apply the selected attribute to non-<option> elements even if their value matches',
-        { todo: true }
-      )
+      it("should NOT mark any <option> tags as selected if NONE of their values don't match the parent <select>'s value", async () => {
+        const html = await $fetch('/')
+        assertHTML(html)
+
+        expect(typeof html).toBe('string')
+
+        const $ = cheerio.load(html as string)
+        const selectId = 'select-with-no-matching-options-1'
+        const selectEl = $(`#${selectId}`)
+
+        // Ensure the select element exists and contains at least one option.
+        expect(selectEl.length).toBe(1)
+        expect(selectEl.html()).toContain('<option')
+
+        // Query for any option elements with a selected attribute
+        const selectedOptions = $(`#${selectId} option[selected]`)
+        expect(selectedOptions.length).toBe(0)
+      })
+      it('should not break if no <option> elements are provided to the <select>', async () => {
+        const html = await $fetch('/')
+        assertHTML(html)
+
+        const window = new JSDOM(html).window
+        const selectElement = window.document.getElementById('select-without-options-1')
+        expect(selectElement).not.toBeNull()
+        expect(selectElement?.tagName).toBe('SELECT')
+
+        const options = (selectElement as HTMLSelectElement).options
+        expect(options.length).toBe(0)
+      })
+      it('should not apply the selected attribute to non-<option> elements even if their value matches', async () => {
+        const html = await $fetch('/')
+        assertHTML(html)
+
+        expect(typeof html).toBe('string')
+
+        const $ = cheerio.load(html as string)
+        const selectId = 'select-with-invalid-element-matching-value-1'
+        const selectEl = $(`#${selectId}`)
+
+        // Ensure the select element exists and contains at least one option.
+        expect(selectEl.length).toBe(1)
+        expect(selectEl.html()).not.toContain('<option')
+
+        // Query for any selected elements with a selected attribute
+        const selectedElements = $(`#${selectId} [selected]`)
+        expect(selectedElements.length).toBe(0)
+      })
     })
 
     // Tests related to the configuration when multiple selection is disabled
     describe('Multiple Selection Configuration:', () => {
-      it('should use multiple=false by default', { todo: true })
-      it('should accept a ref for multiple with a value of false when matching an <option>', {
-        todo: true,
+      it('should use multiple=false by default', async () => {
+        // multiple is not set on two <select /> tags, value works, array fails to set
+        // success path (v-register receives a string register value)
+        const html = await $fetch('/')
+        assertHTML(html)
+        expect(typeof html).toBe('string')
+
+        const $ = cheerio.load(html as string)
+        const selectSuccessId = 'select-multiple-false-default-success-case-1'
+        const selectSuccessElement = $(`#${selectSuccessId}`)
+        expect(selectSuccessElement.length).toBe(1)
+        expect(selectSuccessElement.html()).toContain('<option')
+
+        // Query for any option elements with a selected attribute
+        const selectSuccessOptions = $(`#${selectSuccessId} option[selected]`)
+        expect(selectSuccessOptions.length).toBe(1) // value got set!
+
+        // failure path (v-register receives an array register value):
+        const selectFailureId = 'select-multiple-false-default-failure-case-1'
+        const selectFailureElement = $(`#${selectFailureId}`)
+        expect(selectFailureElement.length).toBe(1)
+        expect(selectFailureElement.html()).toContain('<option')
+
+        // Query for any option elements with a selected attribute
+        const selectFailureOptions = $(`#${selectFailureId} option[selected]`)
+        expect(selectFailureOptions.length).toBe(0) // value was not set!
       })
-      it('should accept a false boolean for multiple when matching an <option> during SSR', {
-        todo: true,
-      })
-      it(
-        'should not set any <option> elements as selected if multiple is false and an array of string values is provided',
-        { todo: true }
-      )
     })
   })
 })

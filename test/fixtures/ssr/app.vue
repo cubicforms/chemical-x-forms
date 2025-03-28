@@ -2,7 +2,10 @@
   import { useForm } from '@runtime/composables/use-form'
   import { z } from 'zod'
 
-  const schema = z.object({ favoriteGame: z.string().default('chess') })
+  const schema = z.object({
+    favoriteGame: z.string().default('chess'),
+    chessInArray: z.array(z.string()).default(['chess']),
+  })
   const { register } = useForm({ schema })
 </script>
 
@@ -37,10 +40,33 @@
         </div>
       </select>
 
-      <select id="deselect-failed-matches-1" v-register="register('favoriteGame')">
-        <option value="mario_kart" selected="true">Mario Kart</option>
-        <option value="tekken" selected="true">Tekken</option>
-        <option value="brain_game" selected="true">Brain Game</option>
+      <select id="select-with-no-matching-options-1" v-register="register('favoriteGame')">
+        <option value="mario_kart">Mario Kart</option>
+        <option value="tekken">Tekken</option>
+        <option value="brain_game">Brain Game</option>
+      </select>
+
+      <select id="select-without-options-1" v-register="register('favoriteGame')"></select>
+
+      <select
+        id="select-with-invalid-element-matching-value-1"
+        v-register="register('favoriteGame')"
+      >
+        <input value="chess" />
+      </select>
+
+      <select
+        id="select-multiple-false-default-success-case-1"
+        v-register="register('favoriteGame')"
+      >
+        <option value="chess">Chess</option>
+      </select>
+
+      <select
+        id="select-multiple-false-default-failure-case-1"
+        v-register="register('chessInArray')"
+      >
+        <option value="chess">Chess</option>
       </select>
     </section>
   </div>

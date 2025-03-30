@@ -9,7 +9,16 @@ export function useMetaTrackerStore(formKey: FormKey) {
     return new Map([[formKey, {}]])
   })
 
-  const metaTracker = computed(() => metaTrackerStore.value.get(formKey)!)
+  const metaTracker = computed(() => {
+    // we do this because useState is only called once to initialize the store (global state)
+    // useMetaTrackerStore is called whenever useForm is called (potentially with various keys)
+    // not doing this leads to a bug where metatracker is undefined if 2+ forms are declared
+    if (!metaTrackerStore.value.has(formKey)) {
+      metaTrackerStore.value.set(formKey, {})
+    }
+
+    return metaTrackerStore.value.get(formKey)!
+  })
 
   return {
     metaTracker,

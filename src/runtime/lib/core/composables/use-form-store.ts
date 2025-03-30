@@ -1,5 +1,5 @@
 import type { Ref } from 'vue'
-import { computed, readonly, watch } from 'vue'
+import { computed, watch } from 'vue'
 
 import { getForm, getValueFactory } from '../utils/get-value'
 import { getHandleSubmitFactory, getValidateFactory } from '../utils/process-form'
@@ -28,10 +28,9 @@ export const useFormStore = <Form extends GenericForm>(
   )
   updateFormSummaryValuesRecord(initialFormState.data, undefined, formSummaryStore, formKey)
 
-  function registerForm(form: Form) {
-    if (formStore.value.has(formKey)) return
-
-    formStore.value.set(formKey, form)
+  // internally make sure form is registered
+  if (!formStore.value.has(formKey)) {
+    formStore.value.set(formKey, initialFormState.data)
   }
 
   const form = computed(() => getForm(formStore, formKey))
@@ -44,7 +43,7 @@ export const useFormStore = <Form extends GenericForm>(
     { deep: true }
   )
 
-  const formSummaryValues = readonly(formSummaryStore.value.get(formKey)!)
+  const formSummaryValues = computed(() => formSummaryStore.value.get(formKey)!)
 
   return {
     getHandleSubmitFactory,
@@ -52,7 +51,6 @@ export const useFormStore = <Form extends GenericForm>(
     formSummaryValues,
     getValueFactory,
     setValueFactory,
-    registerForm,
     formStore,
     form,
   }

@@ -1,4 +1,5 @@
 import { addImports, addPlugin, addTypeTemplate, createResolver, defineNuxtModule } from '@nuxt/kit'
+import { customComponentTransform } from './runtime/lib/core/transforms/custom-component-transform'
 import { inputTextAreaNodeTransform } from './runtime/lib/core/transforms/input-text-area-transform'
 import { selectNodeTransform } from './runtime/lib/core/transforms/select-transform'
 
@@ -22,7 +23,8 @@ export default defineNuxtModule<CXModuleOptions>({
     nuxt.options.vue.compilerOptions.nodeTransforms ||= []
     nuxt.options.vue.compilerOptions.nodeTransforms.push(
       selectNodeTransform,
-      inputTextAreaNodeTransform
+      inputTextAreaNodeTransform,
+      customComponentTransform
     )
 
     const resolver = createResolver(import.meta.url)

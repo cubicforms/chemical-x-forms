@@ -28,7 +28,7 @@
     "lint:fix": "eslint --ext .ts,.js,.vue . --fix",
     "format": "prettier --write '**/*.{ts,js,vue,css,scss}'",
     "format:check": "prettier --check '**/*.{ts,js,vue,css,scss}'",
-    "check": "npm run lint && npm run format:check",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck",
     "fix": "npm run lint:fix && npm run format",
     "typecheck": "tsc --noEmit",
     "prepack": "nuxt-module-build build",

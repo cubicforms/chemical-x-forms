@@ -22,7 +22,7 @@ import type {
 } from '../types/types-api'
 
 export const assignKey: unique symbol = Symbol('_assign')
-function isRegisterPayload<Value = unknown>(val: unknown): val is RegisterValue<Value> {
+export function isRegisterValue<Value = unknown>(val: unknown): val is RegisterValue<Value> {
   if (!val) return false
   if (typeof val !== 'object') return false
   if (!('innerRef' in val)) return false
@@ -31,6 +31,8 @@ function isRegisterPayload<Value = unknown>(val: unknown): val is RegisterValue<
   if (typeof val.registerElement !== 'function') return false
   if (!('setValueWithInternalPath' in val)) return false
   if (typeof val.setValueWithInternalPath !== 'function') return false
+  if (!('attributeProxy' in val)) return false
+  if (typeof val.attributeProxy !== 'boolean') return false
   return true
 }
 
@@ -83,15 +85,16 @@ function onCompositionEnd(e: Event) {
 function setAssignFunction(
   el: { [AssignKey: symbol]: CustomDirectiveRegisterAssignerFn },
   vnode: VNode,
-  value: unknown
+  value: RegisterValue<unknown>
 ) {
-  if (!isRegisterPayload(value)) {
+  if (!isRegisterValue(value)) {
     warn(
       `v-register expected value of type RegisterValue, got value of type ${typeof value} instead. Please check your v-register value.`
     )
     el[assignKey] = (_) => undefined
     return
   }
+
   const assignerFn = getModelAssigner(vnode, value)
   if (assignerFn) {
     el[assignKey] = assignerFn
@@ -103,7 +106,7 @@ function setAssignFunction(
 const vRegisterText: RegisterTextCustomDirective = {
   created(el, { value, modifiers: { lazy, trim, number } }, vnode) {
     const castToNumber = number || (vnode.props && vnode.props['type'] === 'number')
-    if (isRegisterPayload(value)) {
+    if (isRegisterValue(value)) {
       value.registerElement(el)
       setAssignFunction(el, vnode, value)
     }
@@ -136,7 +139,7 @@ const vRegisterText: RegisterTextCustomDirective = {
   },
   // set value on mounted so it's after min/max for type="range"
   mounted(el, { value }) {
-    if (!isRegisterPayload(value)) return
+    if (!isRegisterValue(value)) return
 
     const _val = value.innerRef.value
     el.value = typeof _val === 'string' || typeof _val === 'number' ? `${_val}` : ''
@@ -145,13 +148,13 @@ const vRegisterText: RegisterTextCustomDirective = {
     setAssignFunction(el, vnode, value)
     // avoid clearing unresolved text. #2302
     if ('composing' in el && el.composing) return
-    if (!isRegisterPayload(value)) return
+    if (!isRegisterValue(value)) return
 
     const elValue =
       (number || el.type === 'number') && !/^0\d/.test(el.value)
         ? looseToNumber(el.value)
         : el.value
-    const newValue = value.innerRef.value == null ? '' : value.innerRef.value
+    const newValue = value.innerRef.value === null ? '' : value.innerRef.value
 
     if (elValue === newValue) {
       return
@@ -175,7 +178,7 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
   // #4096 array checkboxes need to be deep traversed
   deep: true,
   created(el, { value }, vnode) {
-    if (!isRegisterPayload(value)) return
+    if (!isRegisterValue(value)) return
 
     value.registerElement(el)
     setAssignFunction(el, vnode, value)
@@ -234,7 +237,7 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
 function setChecked(el: HTMLInputElement, { value, oldValue }: DirectiveBinding, vnode: VNode) {
   // store the v-registerer value on the element so it can be accessed by the
   // change listener.
-  if (!isRegisterPayload(value)) return
+  if (!isRegisterValue(value)) return
 
   const originalValue = value.innerRef.value
   let checked: boolean
@@ -260,7 +263,7 @@ function setChecked(el: HTMLInputElement, { value, oldValue }: DirectiveBinding,
 
 const vRegisterRadio: RegisterRadioCustomDirective = {
   created(el, { value }, vnode) {
-    if (!isRegisterPayload(value)) return
+    if (!isRegisterValue(value)) return
 
     value.registerElement(el)
     // setAssignFunction(el, vnode, value)
@@ -271,7 +274,7 @@ const vRegisterRadio: RegisterRadioCustomDirective = {
     })
   },
   beforeUpdate(el, { value, oldValue }, vnode) {
-    if (!isRegisterPayload(value)) return
+    if (!isRegisterValue(value)) return
 
     setAssignFunction(el, vnode, value)
     if (value.innerRef.value !== oldValue) {
@@ -284,10 +287,9 @@ const vRegisterSelect: RegisterSelectCustomDirective = {
   // <select multiple> value need to be deep traversed
   deep: true,
   created(el, { value, modifiers: { number } }, vnode) {
-    if (!isRegisterPayload(value)) return
+    if (!isRegisterValue(value)) return
 
     value.registerElement(el)
-    setAssignFunction(el, vnode, value)
     const isSetModel = isSet(value.innerRef.value)
     addEventListener(el, 'change', () => {
       const selectedVal = Array.prototype.filter
@@ -308,8 +310,8 @@ const vRegisterSelect: RegisterSelectCustomDirective = {
   mounted(el, { value }) {
     setSelected(el, value)
   },
-  beforeUpdate(el, _binding, vnode) {
-    setAssignFunction(el, vnode, _binding.value)
+  beforeUpdate(el, binding, vnode) {
+    setAssignFunction(el, vnode, binding.value)
   },
   updated(el, { value }) {
     if (!el._assigning) {
@@ -318,23 +320,49 @@ const vRegisterSelect: RegisterSelectCustomDirective = {
   },
 }
 
+function getBaseValue(value: RegisterValue, el: HTMLSelectElement) {
+  const externalValue = value.innerRef.value
+  const options = el.options
+  if (typeof externalValue === 'string') {
+    const selectedOption = options[options.selectedIndex]
+    return selectedOption?.value ?? ''
+  }
+
+  const optionsArray = [...options]
+  if (externalValue instanceof Array) {
+    return optionsArray.reduce<string[]>((result, option) => {
+      if (option.selected) {
+        result.push(option.value)
+      }
+
+      return result
+    }, [])
+  }
+  return optionsArray.reduce<Set<string>>((result, option) => {
+    if (option.selected) result.add(option.value)
+    return result
+  }, new Set())
+}
+
 function setSelected(el: HTMLSelectElement, value: unknown) {
-  if (!isRegisterPayload(value)) return
+  if (!isRegisterValue(value)) return
 
   const isMultiple = el.multiple
-  const baseValue = value.innerRef.value
+  const baseValue = getBaseValue(value, el)
   const isArrayValue = isArray(baseValue)
-  if (isMultiple && !isArrayValue && !isSet(value)) {
-    if (import.meta.dev === false) return
-    warn(
-      `<select multiple v-registerer> expects an Array or Set value for its binding, ` +
-        `but got ${Object.prototype.toString.call(baseValue).slice(8, -1)}.`
-    )
+
+  if (isMultiple && !isArrayValue && !isSet(baseValue)) {
+    if (import.meta.dev) {
+      warn(
+        `<select multiple v-register> expected an Array or Set value for its binding, ` +
+          `but got ${Object.prototype.toString.call(baseValue).slice(8, -1)} instead.`
+      )
+    }
     return
   }
 
   for (let i = 0, l = el.options.length; i < l; i++) {
-    const option = el.options[i] // this select element method is very thoughtful!
+    const option = el.options[i]
     if (!option) continue
 
     const optionValue = getValue(option)
@@ -388,7 +416,7 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
     callModelHook(el, binding, vnode, prevVNode, 'updated')
   },
   beforeUnmount(el, { value }) {
-    if (!isRegisterPayload(value) || !el) return
+    if (!isRegisterValue(value) || !el) return
 
     value.deregisterElement(el)
   },

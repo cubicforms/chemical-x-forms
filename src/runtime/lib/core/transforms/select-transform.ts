@@ -1,7 +1,9 @@
 import {
   createCompoundExpression,
   createSimpleExpression,
+  ElementTypes,
   NodeTypes,
+  processExpression,
   type AttributeNode,
   type CompoundExpressionNode,
   type DirectiveNode,
@@ -180,17 +182,48 @@ function removePropsByName(props: (AttributeNode | DirectiveNode)[], propNames: 
   }
 }
 
-export const selectNodeTransform: NodeTransform = (node) => {
-  const isSelect = node.type === 1 && node.tag === 'select'
+function flattenCompoundExpression(node: CompoundExpressionNode): string {
+  let result = ''
 
-  if (!isSelect) return
+  for (const child of node.children) {
+    if (typeof child === 'string') {
+      result += child
+    } else if (typeof child === 'symbol') {
+      continue
+    } else if (child.type === NodeTypes.SIMPLE_EXPRESSION) {
+      result += child.content
+    } else if (child.type === NodeTypes.COMPOUND_EXPRESSION) {
+      result += flattenCompoundExpression(child)
+    }
+  }
 
-  const selectProps = getSummarizedProps(node)
+  return result
+}
 
-  const registerIndex = selectProps.findIndex((p) => p.key.includes('register'))
-  if (selectProps.length === 0 || registerIndex < 0 || registerIndex >= selectProps.length) return
+export const selectNodeTransform: NodeTransform = (node, context) => {
+  const isSelect = node.type === NodeTypes.ELEMENT && node.tag === 'select'
+  const isCustomComponent =
+    node.type === NodeTypes.ELEMENT && node.tagType === ElementTypes.COMPONENT
 
-  const registerSummarizedProp = selectProps[registerIndex]
+  if (!(isSelect || isCustomComponent)) return
+
+  const selectSummarizedProps = getSummarizedProps(node)
+
+  const registerIndex = selectSummarizedProps.findIndex((p) => p.key.includes('register'))
+  if (
+    selectSummarizedProps.length === 0 ||
+    registerIndex < 0 ||
+    registerIndex >= selectSummarizedProps.length
+  )
+    return
+
+  const registerSummarizedProp = selectSummarizedProps[registerIndex]
+
+  const dummyLoc: SourceLocation = {
+    start: { column: 0, line: 0, offset: 0 },
+    end: { column: 0, line: 0, offset: 0 },
+    source: '',
+  }
 
   function traverseSelectNode(
     _node: RootNode | TemplateChildNode,
@@ -200,6 +233,7 @@ export const selectNodeTransform: NodeTransform = (node) => {
     if (!isOption) {
       // search for node children
       const hasChildren = 'children' in _node
+
       if (hasChildren) {
         for (const child of _node.children) {
           // ignore all child types except TemplateChildNode
@@ -211,6 +245,7 @@ export const selectNodeTransform: NodeTransform = (node) => {
           traverseSelectNode(child, previousOptionExpressions)
         }
       }
+
       return
     }
 
@@ -219,12 +254,6 @@ export const selectNodeTransform: NodeTransform = (node) => {
     if (optionProps.length === 0 || valueIndex < 0 || valueIndex >= optionProps.length) return
 
     const optionValueSummarizedProp = optionProps[valueIndex]
-
-    const dummyLoc: SourceLocation = {
-      start: { column: 0, line: 0, offset: 0 },
-      end: { column: 0, line: 0, offset: 0 },
-      source: '',
-    }
 
     const props = _node.props
     removePropsByName(props, ['selected'])
@@ -246,12 +275,56 @@ export const selectNodeTransform: NodeTransform = (node) => {
     props.push(newProp)
   }
 
-  const multipleExpression = extractMultipleFromSelectSummarizedProps(selectProps)
+  const multipleExpression = extractMultipleFromSelectSummarizedProps(selectSummarizedProps)
 
   const previousOptionExpressions: CompoundExpressionNode['children'][] =
     typeof multipleExpression === 'string' ? [[multipleExpression]] : [multipleExpression]
 
-  for (const child of node.children) {
-    traverseSelectNode(child, previousOptionExpressions) // start searching for options in dfs manner
+  // construct `:value` dynamic prop based on the existing `v-register` directive
+  const selectProps = node.props
+
+  removePropsByName(selectProps, ['value']) // actively prevent an attribute collision
+  const valuePropExpArray = Array.isArray(registerSummarizedProp?.value)
+    ? registerSummarizedProp.value
+    : [registerSummarizedProp?.value ?? 'undefined']
+  const initExpression = createCompoundExpression(['(', ...valuePropExpArray, ')?.innerRef.value'])
+
+  const simpleExpression = createSimpleExpression(flattenCompoundExpression(initExpression), false)
+  const outputExp = processExpression(simpleExpression, { ...context, prefixIdentifiers: false })
+
+  const valueProp: DirectiveNode = {
+    rawName: ':value',
+    arg: createSimpleExpression('value', true),
+    exp: outputExp,
+    name: 'bind',
+    modifiers: [],
+    type: NodeTypes.DIRECTIVE,
+    loc: dummyLoc,
   }
+
+  node.props.push(valueProp)
+
+  if (isSelect) {
+    for (const child of node.children) {
+      traverseSelectNode(child, previousOptionExpressions) // start searching for options in dfs manner
+    }
+
+    return
+  }
+
+  const registerProps = node.props.filter((x) => x.type === 7 && x.name === 'register')
+  const registerProp = registerProps[0]
+
+  if (!registerProp) return
+
+  const customElementProp: DirectiveNode = {
+    arg: createSimpleExpression('registerValue', true),
+    exp: 'exp' in registerProp ? registerProp.exp : createSimpleExpression('undefined', false),
+    name: 'bind',
+    modifiers: [],
+    type: NodeTypes.DIRECTIVE,
+    loc: dummyLoc,
+  }
+
+  node.props.push(customElementProp)
 }

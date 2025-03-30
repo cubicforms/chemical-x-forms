@@ -1,5 +1,5 @@
 import type { ObjectDirective, Ref } from 'vue'
-import type { DeepPartial, FlatPath, GenericForm, NestedType } from './types-core'
+import type { DeepPartial, FlatPath, GenericForm, IsObjectOrArray, NestedType } from './types-core'
 
 export type FormKey = string
 
@@ -116,6 +116,35 @@ export type CurrentValueWithContext<Value, FormSubtree = Value> = {
   meta: Readonly<Ref<DeepPartial<RemapLeafNodes<FormSubtree, MetaTrackerValue>>>>
 }
 
+// This generic generates full paths and paths that point to string arrays
+// This staisfies ts edge case for multi-select and multi-checkbox elements
+export type RegisterFlatPath<Form, Key extends keyof Form = keyof Form> =
+  IsObjectOrArray<Form> extends true
+    ? Key extends string
+      ? Form[Key] extends infer Value
+        ? Value extends Array<infer ArrayItem>
+          ? ArrayItem extends string
+            ? `${Key}` | `${Key}.${number}`
+            : `${Key}.${number}.${RegisterFlatPath<ArrayItem>}`
+          : Value extends GenericForm
+            ? `${Key}.${RegisterFlatPath<Value>}`
+            : `${Key}`
+        : never
+      : Key extends number
+        ?
+            | `${Key}`
+            | (Form[Key] extends GenericForm
+                ? `${Key}.${RegisterFlatPath<Form[Key]>}`
+                : Form[Key] extends Array<infer ArrayItem>
+                  ? IsObjectOrArray<ArrayItem> extends true
+                    ? `${Key}.${number}.${RegisterFlatPath<ArrayItem>}`
+                    : ArrayItem extends string
+                      ? `${Key}` | `${Key}.${number}`
+                      : `${Key}.${number}`
+                  : never)
+        : never
+    : never
+
 export type RegisterValue<Value = unknown> = {
   innerRef: Readonly<Ref<Value>>
   registerElement: (el: HTMLElement) => void
@@ -230,7 +259,7 @@ export type UseAbstractFormReturnType<
 
   validate: (path?: FlatPath<Form>) => Readonly<Ref<ValidationResponseWithoutValue<Form>>>
   register: (
-    path: FlatPath<Form, keyof Form, true>,
+    path: RegisterFlatPath<Form, keyof Form>,
     _context?: RegisterContext<typeof path, NestedType<Form, typeof path>>
   ) => RegisterValue<NestedType<Form, typeof path> | undefined>
   key: FormKey

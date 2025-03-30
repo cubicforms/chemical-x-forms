@@ -14,6 +14,8 @@ import type { GetElementHelpers } from '../composables/use-field-state-store'
 import { updateMetaTracker } from '../composables/use-meta-tracker-store'
 import { getForm } from './get-value'
 
+const interactiveElements = ['INPUT', 'SELECT', 'TEXTAREA']
+
 export function registerFactory<Form extends GenericForm>(
   formStore: Ref<FormStore<Form>>,
   formKey: FormKey,
@@ -47,10 +49,17 @@ export function registerFactory<Form extends GenericForm>(
             | undefined
       ),
       registerElement: (el) => {
+        // prevents non-interactive root html elements of child components from getting registered
+        // this is both a memory/perf optimization + prevents fallback attribute el. registration bugs
+        if (!interactiveElements.includes(el.tagName)) {
+          return
+        }
+
         if (!(path in elementHelperCache) || !metaTracker.value[path]?.isConnected) {
           elementHelperCache[path] = getElementHelpers(path)
         }
         const success = elementHelperCache[path]?.registerElement(el)
+
         if (success) {
           updateMetaTracker({
             formKey,

@@ -330,10 +330,13 @@ function getBaseValue(value: RegisterValue, el: HTMLSelectElement) {
 
   const optionsArray = [...options]
   if (externalValue instanceof Array) {
-    return optionsArray.reduce<string[]>(
-      (result, option) => (option.selected ? [...result, option.value] : result),
-      []
-    )
+    return optionsArray.reduce<string[]>((result, option) => {
+      if (option.selected) {
+        result.push(option.value)
+      }
+
+      return result
+    }, [])
   }
   return optionsArray.reduce<Set<string>>((result, option) => {
     if (option.selected) result.add(option.value)

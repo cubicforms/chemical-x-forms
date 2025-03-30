@@ -6,9 +6,9 @@ permissions:
 
 on:
   push:
-    branches: ["main"]
+    branches: ['main']
   pull_request:
-    branches: ["main"]
+    branches: ['main']
   workflow_dispatch:
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x, 20.x, 22.x, "lts/*"]
+        node-version: [18.x, 20.x, 22.x, 'lts/*']
       fail-fast: false
 
     steps:
@@ -53,6 +53,9 @@ jobs:
 
       - name: Stub @chemical-x/forms
         run: pnpm dev:prepare
+
+      - name: Validate Types
+        run: pnpm typecheck
 
       - name: Run tests
         run: pnpm test

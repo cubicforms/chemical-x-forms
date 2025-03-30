@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version_type:
-        description: "Version type (major, minor, patch)"
+        description: 'Version type (major, minor, patch)'
         required: true
-        default: "patch"
+        default: 'patch'
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -41,7 +41,7 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
-          registry-url: "https://registry.npmjs.org/"
+          registry-url: 'https://registry.npmjs.org/'
           always-auth: true
 
       - name: Install pnpm
@@ -57,6 +57,9 @@ jobs:
 
       - name: Stub @chemical-x/forms
         run: pnpm dev:prepare
+
+      - name: Validate Types
+        run: pnpm typecheck
 
       - name: Run tests
         run: pnpm test

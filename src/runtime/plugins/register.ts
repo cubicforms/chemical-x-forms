@@ -31,8 +31,6 @@ export function isRegisterValue<Value = unknown>(val: unknown): val is RegisterV
   if (typeof val.registerElement !== 'function') return false
   if (!('setValueWithInternalPath' in val)) return false
   if (typeof val.setValueWithInternalPath !== 'function') return false
-  if (!('attributeProxy' in val)) return false
-  if (typeof val.attributeProxy !== 'boolean') return false
   return true
 }
 

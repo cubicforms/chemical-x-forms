@@ -38,11 +38,9 @@ export function useAbstractForm<
     formSummaryValues,
     getValueFactory,
     setValueFactory,
-    registerForm,
     formStore,
     form,
   } = useFormStore<Form>(key, initialStateResponse)
-  registerForm(initialStateResponse.data)
 
   const { metaTracker } = useMetaTrackerStore(key)
   const getValue = getValueFactory<Form, GetValueFormType>(form, metaTracker)
@@ -60,7 +58,7 @@ export function useAbstractForm<
   )
 
   const getFieldState = fieldStateFactory<Form>(
-    formSummaryValues,
+    formSummaryValues.value,
     metaTracker,
     domFieldStateStore,
     key

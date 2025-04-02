@@ -1,7 +1,23 @@
 import { defineBuildConfig } from 'unbuild'
 
 export default defineBuildConfig({
-  externals: ['@vue/compiler-core', '@vue/shared', 'nuxt', 'vue', 'zod', 'immer', /lodash-es.*/],
+  externals: [
+    '@vue/compiler-core',
+    '@vue/shared',
+    'nuxt',
+    'vue',
+    'zod',
+    'immer',
+    /lodash-es.*/,
+    '@vue/compiler-sfc',
+    'glob',
+    'minimatch',
+    'path-scurry',
+    'brace-expansion',
+    'minipass',
+    'lru-cache',
+    'balanced-match',
+  ],
   declaration: true,
   failOnWarn: true,
   rollup: {

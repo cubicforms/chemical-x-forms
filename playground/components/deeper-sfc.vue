@@ -10,4 +10,5 @@
   <div>
     <input v-register="registerValue" placeholder="really deep input" />
   </div>
+  <AnotherDeeperThing v-register="registerValue" />
 </template>

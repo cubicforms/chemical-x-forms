@@ -1,19 +1,14 @@
 <script setup lang="ts">
   import { z } from 'zod'
 
-  const schema = z.object({ fruit: z.string() })
-  const { register, getValue } = useForm({ schema, key: 'example-form' })
-  const registerValue = register('fruit')
+  const schema = z.object({ name: z.string().default('love') })
+  const { register, getValue } = useForm({ schema })
+  const value = getValue('name')
+  const registerValue = register('name')
 </script>
 
 <template>
-  <div>
-    current fruit: '{{ getValue('fruit').value }}'
-    <hr />
-    <input v-register="registerValue" />
-    <hr />
-    <input v-register="registerValue" />
-    <hr />
-    <RootInput :fruit="registerValue" />
-  </div>
+  <p>hello -- '{{ value }}'</p>
+  <input v-register="registerValue" type="text" />
+  <ChildComponent v-register="registerValue" />
 </template>

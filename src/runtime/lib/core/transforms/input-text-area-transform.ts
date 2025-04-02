@@ -87,7 +87,7 @@ function generateEqualityExpression(
   ]
 }
 
-function removePropsByName(props: (AttributeNode | DirectiveNode)[], propNames: string[]) {
+export function removePropsByName(props: (AttributeNode | DirectiveNode)[], propNames: string[]) {
   const removePropIndices: number[] = []
   for (let index = 0; index < props.length; index++) {
     const prop = props[index]

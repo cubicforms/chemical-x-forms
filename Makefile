@@ -64,7 +64,10 @@ watch:  ## Rebuild dist on every src change (for consumer-side iteration via pnp
 	docker compose exec -e CI=true -e SHELL=/bin/sh cx pnpm prepack:watch
 
 watch-bg:  ## Detached watcher (PID tracked in /tmp/cx-watch.pid) — used by cubic-forms' make link-cx
-	@docker compose exec -e CI=true -e SHELL=/bin/sh -d cx sh -c 'pnpm prepack:watch > /tmp/cx-watch.log 2>&1 & echo $$! > /tmp/cx-watch.pid'
+	@# Idempotent: if a live watcher's already tracked in the pidfile, no-op.
+	@# Same /proc/$PID/cmdline check as `unwatch` — guards against a stale
+	@# pidfile pointing at a recycled PID.
+	@docker compose exec -e CI=true -e SHELL=/bin/sh -d cx sh -c 'if [ -f /tmp/cx-watch.pid ]; then PID=$$(cat /tmp/cx-watch.pid); if [ -f /proc/$$PID/cmdline ] && tr "\0" " " < /proc/$$PID/cmdline | grep -q "prepack:watch"; then exit 0; fi; fi; pnpm prepack:watch > /tmp/cx-watch.log 2>&1 & echo $$! > /tmp/cx-watch.pid'
 
 unwatch:  ## Stop the background watcher started by watch-bg
 	@# Validate the stored PID via /proc/$PID/cmdline before killing — guards

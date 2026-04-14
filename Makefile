@@ -1,4 +1,4 @@
-.PHONY: help build up down restart logs shell install dev test test-watch lint format check prepare typecheck publish-prep
+.PHONY: help build up down restart logs shell install dev test test-watch lint format check prepare typecheck publish-prep watch unwatch
 .DEFAULT_GOAL := help
 
 CONTAINER := cx-dev
@@ -59,3 +59,12 @@ typecheck:  ## TypeScript check
 
 publish-prep:  ## Build the module for publishing
 	docker compose exec cx pnpm prepack
+
+watch:  ## Rebuild dist on every src change (for consumer-side iteration via pnpm link)
+	docker compose exec -e CI=true -e SHELL=/bin/sh cx pnpm prepack:watch
+
+watch-bg:  ## Detached watcher (PID tracked in /tmp/cx-watch.pid) — used by cubic-forms' make link-cx
+	@docker compose exec -e CI=true -e SHELL=/bin/sh -d cx sh -c 'pnpm prepack:watch > /tmp/cx-watch.log 2>&1 & echo $$! > /tmp/cx-watch.pid'
+
+unwatch:  ## Stop the background watcher started by watch-bg
+	@docker compose exec cx sh -c 'if [ -f /tmp/cx-watch.pid ]; then PID=$$(cat /tmp/cx-watch.pid); kill -- -$$PID 2>/dev/null || kill $$PID 2>/dev/null || true; rm -f /tmp/cx-watch.pid /tmp/cx-watch.log; fi; true'

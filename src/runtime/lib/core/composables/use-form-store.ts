@@ -22,10 +22,14 @@ export const useFormStore = <Form extends GenericForm>(
   initialFormState: InitialStateResponse<Form>
 ) => {
   const formStore = useState<FormStore<Form>>('useform/store', () => new Map())
-  const formSummaryStore = useState<FormSummaryStore>(
-    'useform/form-summary-store',
-    () => new Map([[formKey, {}]])
-  )
+  const formSummaryStore = useState<FormSummaryStore>('useform/form-summary-store', () => new Map())
+  // `useState`'s initialiser only fires once per SSR root, so a second
+  // `useForm({ key: 'other' })` on the same page would find no entry for
+  // its own key, and `updateFormSummaryValuesRecord` would early-return
+  // (its `if (!summaryValues) return` guard). Initialise defensively.
+  if (!formSummaryStore.value.has(formKey)) {
+    formSummaryStore.value.set(formKey, {})
+  }
   updateFormSummaryValuesRecord(initialFormState.data, undefined, formSummaryStore, formKey)
 
   // internally make sure form is registered

@@ -1,8 +1,9 @@
-import type { Ref } from 'vue'
+import type { ComputedRef, Ref } from 'vue'
 import { computed } from 'vue'
 import type {
   DOMFieldStateStore,
   FieldState,
+  FormErrorRecord,
   FormKey,
   FormSummaryValueRecord,
   MetaTracker,
@@ -13,6 +14,7 @@ export function fieldStateFactory<Form extends GenericForm>(
   formSummaryRecord: Readonly<FormSummaryValueRecord>,
   metaTracker: Ref<MetaTracker>,
   domFieldStateStore: Ref<DOMFieldStateStore, DOMFieldStateStore>,
+  fieldErrors: Readonly<ComputedRef<FormErrorRecord>>,
   formKey: FormKey
 ) {
   function getFieldState<Path extends CompleteFlatPath<Form>>(path: Path) {
@@ -47,6 +49,7 @@ export function fieldStateFactory<Form extends GenericForm>(
         blurred: metaTrackerValue.isConnected ? clientBlurred : null,
         touched: metaTrackerValue.isConnected ? clientTouched : null,
         meta: metaTrackerValue,
+        errors: fieldErrors.value[path] ?? [],
       } satisfies FieldState
     })
   }

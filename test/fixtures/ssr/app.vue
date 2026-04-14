@@ -7,6 +7,49 @@
     chessInArray: z.array(z.string()).default(['chess']),
   })
   const { register } = useForm({ schema })
+
+  // -- Error API SSR fixtures --
+  // Destructured at setup level so the refs become top-level template
+  // bindings (Vue auto-unwraps top-level refs but not refs nested in plain
+  // objects, so `directErrorForm.fieldErrors.value` would not unwrap reliably).
+
+  // Direct setFieldErrors on the server, rendered into HTML so the SSR test
+  // can prove the reactive error store survives serialisation/hydration.
+  const directErrorSchema = z.object({
+    email: z.string().email(),
+    password: z.string().min(8),
+  })
+  const {
+    fieldErrors: directErrors,
+    setFieldErrors: setDirectErrors,
+    getFieldState: getDirectFieldState,
+  } = useForm({
+    schema: directErrorSchema,
+    key: 'errors-direct',
+  })
+  setDirectErrors([
+    { message: 'Email already in use', path: ['email'], formKey: 'errors-direct' },
+    {
+      message: 'Password must be at least 8 characters',
+      path: ['password'],
+      formKey: 'errors-direct',
+    },
+  ])
+  const directEmailState = getDirectFieldState('email')
+
+  // Hydration helper applied during setup, simulating a 422 from the server
+  // being mapped onto fields before the page renders.
+  const { fieldErrors: apiErrors, setFieldErrorsFromApi: setApiErrors } = useForm({
+    schema: z.object({ username: z.string() }),
+    key: 'errors-from-api',
+  })
+  setApiErrors({
+    error: {
+      code: 'VALIDATION_ERROR',
+      message: 'Invalid input',
+      details: { username: ['Username taken', 'Reserved word'] },
+    },
+  })
 </script>
 
 <template>
@@ -68,6 +111,31 @@
       >
         <option value="chess">Chess</option>
       </select>
+    </section>
+
+    <section>
+      <h2>Error API</h2>
+
+      <!-- Direct setFieldErrors -->
+      <div id="errors-direct">
+        <span id="errors-direct-fielderrors-email">{{
+          directErrors.email?.[0]?.message ?? ''
+        }}</span>
+        <span id="errors-direct-fielderrors-password">{{
+          directErrors.password?.[0]?.message ?? ''
+        }}</span>
+        <span id="errors-direct-fieldstate-email">{{
+          directEmailState.errors[0]?.message ?? ''
+        }}</span>
+        <span id="errors-direct-count">{{ Object.keys(directErrors).length }}</span>
+      </div>
+
+      <!-- setFieldErrorsFromApi -->
+      <div id="errors-from-api">
+        <span id="errors-from-api-first">{{ apiErrors.username?.[0]?.message ?? '' }}</span>
+        <span id="errors-from-api-second">{{ apiErrors.username?.[1]?.message ?? '' }}</span>
+        <span id="errors-from-api-count">{{ apiErrors.username?.length ?? 0 }}</span>
+      </div>
     </section>
   </div>
 </template>

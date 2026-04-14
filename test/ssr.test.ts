@@ -184,4 +184,68 @@ describe('SSR behavior of useForm', async () => {
       })
     })
   })
+
+  /*
+    Test Suite: Reactive field-error API in SSR
+    Focus: Errors set on the server (via setFieldErrors / setFieldErrorsFromApi)
+    must serialise into the rendered HTML and survive hydration. Also covers
+    that getFieldState(path).value.errors mirrors the underlying store.
+  */
+  describe('SSR behavior of error API >>', () => {
+    it('renders direct setFieldErrors output for each path', async () => {
+      const html = await $fetch('/')
+      assertHTML(html)
+      const window = new JSDOM(html).window
+      const { document } = window
+
+      const emailEl = document.getElementById('errors-direct-fielderrors-email')
+      const passwordEl = document.getElementById('errors-direct-fielderrors-password')
+      const countEl = document.getElementById('errors-direct-count')
+
+      expect(emailEl?.textContent?.trim()).toBe('Email already in use')
+      expect(passwordEl?.textContent?.trim()).toBe('Password must be at least 8 characters')
+      expect(countEl?.textContent?.trim()).toBe('2')
+    })
+
+    it('exposes the same errors via getFieldState(path).errors', async () => {
+      const html = await $fetch('/')
+      assertHTML(html)
+      const window = new JSDOM(html).window
+      const fieldStateEl = window.document.getElementById('errors-direct-fieldstate-email')
+      expect(fieldStateEl?.textContent?.trim()).toBe('Email already in use')
+    })
+
+    it('hydrates a wrapped { error: { details } } envelope across the SSR boundary', async () => {
+      const html = await $fetch('/')
+      assertHTML(html)
+      const window = new JSDOM(html).window
+      const { document } = window
+
+      const firstEl = document.getElementById('errors-from-api-first')
+      const secondEl = document.getElementById('errors-from-api-second')
+      const countEl = document.getElementById('errors-from-api-count')
+
+      expect(firstEl?.textContent?.trim()).toBe('Username taken')
+      expect(secondEl?.textContent?.trim()).toBe('Reserved word')
+      expect(countEl?.textContent?.trim()).toBe('2')
+    })
+
+    it('keeps each form key isolated (errors-direct vs errors-from-api do not bleed)', async () => {
+      const html = await $fetch('/')
+      assertHTML(html)
+      const window = new JSDOM(html).window
+      const { document } = window
+
+      // The api-form's section must not surface errors from the direct form,
+      // and vice versa. A single shared error store keyed by formKey would
+      // fail this; per-key isolation passes.
+      const directSection = document.getElementById('errors-direct')?.textContent ?? ''
+      const apiSection = document.getElementById('errors-from-api')?.textContent ?? ''
+
+      expect(directSection).not.toContain('Username taken')
+      expect(directSection).not.toContain('Reserved word')
+      expect(apiSection).not.toContain('Email already in use')
+      expect(apiSection).not.toContain('Password must be at least 8 characters')
+    })
+  })
 })

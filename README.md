@@ -97,7 +97,47 @@ _**note**: detailed documentation coming soon_
 `setValue(name: string, value: any)` – Updates a field programmatically.
 
 `getFieldState(name: string)` – Returns field state (value, touched, errors, etc.).
+
+`fieldErrors` – Reactive `Record<path, ValidationError[]>`. Auto-populated by `handleSubmit` on validation failure and cleared on success.
+
+`setFieldErrors(errors)` / `addFieldErrors(errors)` – Replace or merge errors imperatively.
+
+`clearFieldErrors(path?)` – Clear one path or every path.
+
+`setFieldErrorsFromApi(payload)` – Map a server error envelope (`{ error: { details: { path: [msg] } } }` or a raw `Record<path, string|string[]>`) into `ValidationError[]` and populate the store. Returns the produced errors.
 <br><br>
+
+**Per-field error display**
+
+```vue
+<script setup lang="ts">
+import { z } from 'zod'
+
+const { register, fieldErrors, handleSubmit, setFieldErrorsFromApi } = useForm({
+  schema: z.object({ email: z.string().email() }),
+  key: 'signup',
+})
+
+const onSubmit = handleSubmit(async (values) => {
+  // server-side hydration after client validation passed:
+  try {
+    await $fetch('/api/signup', { method: 'POST', body: values })
+  } catch (err) {
+    if (err.statusCode === 422) setFieldErrorsFromApi(err.data)
+  }
+})
+</script>
+
+<template>
+  <form @submit.prevent="onSubmit">
+    <input v-register="register('email')" />
+    <small v-if="fieldErrors.email?.[0]">{{ fieldErrors.email[0].message }}</small>
+    <button>Submit</button>
+  </form>
+</template>
+```
+
+<br>
 
 ## 🥇 Advanced Features
 

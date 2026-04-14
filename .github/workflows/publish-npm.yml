@@ -15,7 +15,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -37,15 +37,15 @@ jobs:
       - name: Update version
         run: echo "::notice title=Version::Publishing version ${{ steps.calculate-next-version.outputs.next_version }}"
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v5
         with:
-          node-version: 18
+          node-version: 22
           registry-url: 'https://registry.npmjs.org/'
           always-auth: true
-
-      - name: Install pnpm
-        run: npm install -g pnpm@9.7.0
 
       - name: Install dependencies
         run: pnpm install

@@ -64,10 +64,24 @@ jobs:
       - name: Run tests
         run: pnpm test
 
-      - name: Configure Git identity
-        run: |
-          git config user.name "${{ github.actor }}"
-          git config user.email "${{ github.actor }}@users.noreply.github.com"
+      # Import a GPG signing key so the version-bump commit + tag created
+      # below by `pnpm version` are signed and show as "Verified" on GitHub.
+      # Configures git user.name + user.email from the key's primary UID
+      # (so the author identity matches the signature) and turns on
+      # commit/tag autosigning. Requires repo secrets:
+      #   - GPG_PRIVATE_KEY: ASCII-armored private key (gpg --armor --export-secret-keys KEYID)
+      #   - GPG_PASSPHRASE:  the key's passphrase (omit if the key has none)
+      # The key's matching public key must be uploaded to the GitHub account
+      # whose email is in the key's UID, otherwise GitHub still marks the
+      # commit "Unverified".
+      - name: Import GPG signing key
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+          git_tag_gpgsign: true
 
       - name: Bump version
         run: |

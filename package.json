@@ -56,14 +56,10 @@
     },
     "./adapters/*": {
       "types": "./dist/runtime/adapters/*/index.d.ts",
-      "import": "./dist/runtime/adapters/*/index",
-      "require": null
+      "import": "./dist/runtime/adapters/*/index.js"
     },
     "./types": {
-      "types": "./dist/runtime/types/types-api.d.ts",
-      "import": null,
-      "require": null,
-      "default": "./dist/runtime/types/types-api.d.ts"
+      "types": "./dist/runtime/types/types-api.d.ts"
     }
   },
   "keywords": [

@@ -230,6 +230,17 @@ describe('SSR behavior of useForm', async () => {
       expect(countEl?.textContent?.trim()).toBe('2')
     })
 
+    it('handleSubmit(cb) returns a function (bindable directly to @submit)', async () => {
+      const html = await $fetch('/')
+      assertHTML(html)
+      const window = new JSDOM(html).window
+      const typeofEl = window.document.getElementById('handle-submit-typeof')
+      // Pre-0.7 returned Promise<void> here; the API was changed so consumers
+      // can write `const onSubmit = handleSubmit(cb)` and bind directly to
+      // a form. Catches accidental regressions to the old shape.
+      expect(typeofEl?.textContent?.trim()).toBe('function')
+    })
+
     it('keeps each form key isolated (errors-direct vs errors-from-api do not bleed)', async () => {
       const html = await $fetch('/')
       assertHTML(html)

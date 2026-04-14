@@ -91,44 +91,33 @@ export function getHandleSubmitFactory<Form extends GenericForm>(
   form: ComputedRef<Form>,
   validate: () => Readonly<Ref<ValidationResponseWithoutValue<Form>>>
 ) {
-  const handleSubmitLogic: HandleSubmit<Form> = async (onSubmit, onError) => {
-    try {
-      const { errors, success } = validate().value
-      if (!success) {
-        throw new AbstractSchemaValidationError(errors ?? [])
-      }
-
-      const rawForm = toRaw(form.value)
-      await onSubmit(rawForm)
-    } catch (error) {
-      if (!onError) return
-
-      if (error instanceof AbstractSchemaValidationError) {
-        try {
-          await onError(error.validationErrors)
-        } catch (error) {
-          if (error instanceof Error) {
-            console.error(error.message)
-            return
-          }
+  const handleSubmit: HandleSubmit<Form> = (onSubmit, onError) => {
+    return async (_event?: Event) => {
+      try {
+        const { errors, success } = validate().value
+        if (!success) {
+          throw new AbstractSchemaValidationError(errors ?? [])
         }
 
-        return
-      }
+        const rawForm = toRaw(form.value)
+        await onSubmit(rawForm)
+      } catch (error) {
+        if (error instanceof AbstractSchemaValidationError) {
+          if (!onError) return
+          try {
+            await onError(error.validationErrors)
+          } catch (innerError) {
+            if (innerError instanceof Error) {
+              console.error(innerError.message)
+            }
+          }
+          return
+        }
 
-      // TODO: Eventually tap into these in a useful way
-      if (error instanceof Error) {
-        console.error(error.message)
-      }
-    }
-  }
-
-  const handleSubmit: HandleSubmit<Form> = async (onSubmit, onError) => {
-    try {
-      return handleSubmitLogic(onSubmit, onError)
-    } catch (error) {
-      if (error instanceof Error) {
-        console.error(error.message)
+        // TODO: Eventually tap into these in a useful way
+        if (error instanceof Error) {
+          console.error(error.message)
+        }
       }
     }
   }

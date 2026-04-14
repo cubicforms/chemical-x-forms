@@ -90,7 +90,22 @@ _**note**: detailed documentation coming soon_
 
 `register(name: string)` – Binds a field to form state.
 
-`handleSubmit(onSubmit, onError?)` – Handles submission with validation.
+`handleSubmit(onSubmit, onError?)` – Builds a submit handler that runs validation and dispatches to your callback. Bind it to `@submit.prevent` directly:
+
+```vue
+<script setup lang="ts">
+const { handleSubmit } = useForm({ schema, key: 'signup' })
+const onSubmit = handleSubmit(async (values) => {
+  await api.post('/signup', values)
+})
+</script>
+
+<template>
+  <form @submit.prevent="onSubmit">...</form>
+</template>
+```
+
+You can also call the returned handler programmatically: `await onSubmit()`.
 
 `getValue(name: string)` – Retrieves a field value.
 

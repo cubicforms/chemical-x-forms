@@ -2,6 +2,11 @@ services:
   cx:
     build: .
     container_name: cx-dev
+    # Use tini as PID 1 so detached background processes (e.g. the
+    # prepack:watch dist-rebuild watcher started via `make link-cx`
+    # from cubic-forms) get reaped properly instead of dying when their
+    # parent shell exits.
+    init: true
     volumes:
       # Mount source so edits on host reflect in container
       - .:/app

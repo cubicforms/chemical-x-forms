@@ -1,6 +1,9 @@
 # Dependencies
 node_modules
 
+# pnpm content-addressed store (can leak through the dev bind mount)
+.pnpm-store
+
 # Logs
 *.log*
 npm-debug.log*

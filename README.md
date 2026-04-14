@@ -16,6 +16,7 @@
 - **Abstract Schema Support** – Integrates with validation libraries like Zod for type-safe schemas and automatic validation.
 - **v-register Directive** – One SSR-safe directive that automatically tracks everything.
 - **Full State Tracking** – Automatically tracks field states (value, touched, dirty status, validation errors, etc).
+- **Reactive Field Errors** – `fieldErrors` auto-populates on validation failure and clears on success; `setFieldErrorsFromApi` maps server 422 envelopes onto fields for inline display.
 - **TypeScript Friendly** – Fully type-safe, with advanced form type inference from your schema.
   <br><br>
 
@@ -84,7 +85,7 @@ const planetState = getFieldState("planet");
 
 _**note**: detailed documentation coming soon_
 
-`useForm(options?)` – Initializes form state. Abstract schema required.
+`useForm(options)` – Initializes form state. `schema` is required; `key` is recommended on every form so multiple forms on a page don't share state.
 
 `v-register` – Custom, SSR-safe directive for registering components with Chemical X
 

@@ -85,10 +85,21 @@ export type FormSummaryStore = Map<FormKey, FormSummaryValueRecord>
 export type OnSubmit<Form extends GenericForm> = (form: Form) => void | Promise<void>
 export type OnError = (error: ValidationError[]) => void | Promise<void>
 
+/**
+ * `handleSubmit(onSubmit, onError?)` returns a submit handler — a function
+ * that runs validation and dispatches to `onSubmit` (success) or `onError`
+ * (failure). Bind it directly to a form's `@submit.prevent` or invoke it
+ * programmatically.
+ *
+ * The returned handler optionally accepts the originating `Event` so it can
+ * sit on `@submit` directly (without `.prevent` if you want to call
+ * `event.preventDefault()` yourself).
+ */
+export type SubmitHandler = (event?: Event) => Promise<void>
 export type HandleSubmit<Form extends GenericForm> = (
   onSubmit: OnSubmit<Form>,
   onError?: OnError
-) => Promise<void>
+) => SubmitHandler
 
 export type MetaTrackerValue = {
   updatedAt: string | null

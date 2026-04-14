@@ -50,6 +50,16 @@
       details: { username: ['Username taken', 'Reserved word'] },
     },
   })
+
+  // -- handleSubmit return-shape fixture --
+  // Proves handleSubmit(cb) returns a function (not a Promise) so it can be
+  // bound directly to a form's @submit handler without a wrapper.
+  const submitForm = useForm({
+    schema: z.object({ name: z.string().min(1) }),
+    key: 'submit-shape',
+  })
+  const submitHandler = submitForm.handleSubmit(() => {})
+  const submitHandlerType = typeof submitHandler
 </script>
 
 <template>
@@ -135,6 +145,11 @@
         <span id="errors-from-api-first">{{ apiErrors.username?.[0]?.message ?? '' }}</span>
         <span id="errors-from-api-second">{{ apiErrors.username?.[1]?.message ?? '' }}</span>
         <span id="errors-from-api-count">{{ apiErrors.username?.length ?? 0 }}</span>
+      </div>
+
+      <!-- handleSubmit return shape -->
+      <div id="handle-submit-shape">
+        <span id="handle-submit-typeof">{{ submitHandlerType }}</span>
       </div>
     </section>
   </div>

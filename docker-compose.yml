@@ -1,0 +1,17 @@
+services:
+  cx:
+    build: .
+    container_name: cx-dev
+    volumes:
+      # Mount source so edits on host reflect in container
+      - .:/app
+      # Anonymous volume preserves the container's node_modules (host's may differ)
+      - /app/node_modules
+      - /app/playground/node_modules
+    ports:
+      - "3001:3000"  # playground dev server (3001 to avoid clashing with cubic-forms frontend on 3000)
+    environment:
+      # pnpm needs HOME for its store
+      HOME: /root
+    # Long-running idle container; use `make shell` or `make dev` to interact
+    command: ["sh", "-c", "tail -f /dev/null"]

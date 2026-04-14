@@ -12,7 +12,7 @@ export default defineNuxtModule<CXModuleOptions>({
     name: 'chemical-x-forms',
     configKey: 'chemicalX',
     compatibility: {
-      nuxt: '^3.0.0',
+      nuxt: '>=3.0.0',
     },
   },
   defaults: {

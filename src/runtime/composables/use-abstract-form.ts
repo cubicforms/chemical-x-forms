@@ -1,14 +1,20 @@
 import { useDOMFieldStateStore } from '../lib/core/composables/use-field-state-store'
+import { useFormErrorStore } from '../lib/core/composables/use-form-error-store'
 import { useFormKey } from '../lib/core/composables/use-form-key'
 import { useFormStore } from '../lib/core/composables/use-form-store'
 import { useMetaTrackerStore } from '../lib/core/composables/use-meta-tracker-store'
 import { fieldStateFactory } from '../lib/core/utils/field-state-api'
 import { getComputedSchema } from '../lib/core/utils/get-computed-schema'
+import { hydrateApiErrors } from '../lib/core/utils/hydrate-api-errors'
 import { registerFactory } from '../lib/core/utils/register'
 import type {
   AbstractSchema,
+  ApiErrorDetails,
+  ApiErrorEnvelope,
+  HandleSubmit,
   UseAbstractFormReturnType,
   UseFormConfiguration,
+  ValidationError,
 } from '../types/types-api'
 import type { DeepPartial, GenericForm } from '../types/types-core'
 
@@ -46,7 +52,7 @@ export function useAbstractForm<
   const getValue = getValueFactory<Form, GetValueFormType>(form, metaTracker)
   const setValue = setValueFactory(formStore, key, computedSchema, metaTracker)
   const validate = getValidateFactory(form, key, computedSchema)
-  const handleSubmit = getHandleSubmitFactory(form, validate)
+  const rawHandleSubmit = getHandleSubmitFactory(form, validate)
   const { getElementHelpers, domFieldStateStore } = useDOMFieldStateStore(form)
   const register = registerFactory(
     formStore,
@@ -57,12 +63,50 @@ export function useAbstractForm<
     getElementHelpers
   )
 
+  const {
+    fieldErrors,
+    setErrors: setFieldErrors,
+    addErrors: addFieldErrors,
+    clearErrors: clearFieldErrors,
+  } = useFormErrorStore(key)
+
   const getFieldState = fieldStateFactory<Form>(
     formSummaryValues.value,
     metaTracker,
     domFieldStateStore,
+    fieldErrors,
     key
   )
+
+  /**
+   * Wraps the raw `handleSubmit` to make the error store a reactive mirror
+   * of the most recent validation result:
+   * - success → clear all field errors before calling user's `onSubmit`
+   * - failure → populate the store, then fire user's `onError` (if any)
+   *
+   * Always passes an `onError` into the raw handler so the auto-populate
+   * runs even when the caller doesn't provide one (otherwise process-form's
+   * early-return on `!onError` would skip our side-effect).
+   */
+  const handleSubmit: HandleSubmit<Form> = (onSubmit, onError) =>
+    rawHandleSubmit(
+      async (values) => {
+        clearFieldErrors()
+        await onSubmit(values)
+      },
+      async (errors) => {
+        setFieldErrors(errors)
+        if (onError) await onError(errors)
+      }
+    )
+
+  function setFieldErrorsFromApi(
+    payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined
+  ): ValidationError[] {
+    const errors = hydrateApiErrors(payload, { formKey: key })
+    setFieldErrors(errors)
+    return errors
+  }
 
   return {
     getFieldState,
@@ -72,6 +116,11 @@ export function useAbstractForm<
     validate,
     register,
     key,
+    fieldErrors,
+    setFieldErrors,
+    addFieldErrors,
+    clearFieldErrors,
+    setFieldErrorsFromApi,
   } satisfies UseAbstractFormReturnType<Form, GetValueFormType>
 }
 

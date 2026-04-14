@@ -1,4 +1,4 @@
-import type { ObjectDirective, Ref } from 'vue'
+import type { ComputedRef, ObjectDirective, Ref } from 'vue'
 import type { DeepPartial, FlatPath, GenericForm, IsObjectOrArray, NestedType } from './types-core'
 
 export type FormKey = string
@@ -225,8 +225,37 @@ export type DOMFieldState = {
   blurred: boolean | null
   touched: boolean | null
 }
-export type FieldState = DeepFlatten<DOMFieldState & { meta: MetaTrackerValue } & FormSummaryValue>
+export type FieldState = DeepFlatten<
+  DOMFieldState & {
+    meta: MetaTrackerValue
+    /**
+     * Validation errors for this field's path. Populated automatically when
+     * `handleSubmit` validates, and manually via `setFieldErrors` /
+     * `setFieldErrorsFromApi`. Empty array when there are no errors for the
+     * field — safe to read without a null check.
+     */
+    errors: ValidationError[]
+  } & FormSummaryValue
+>
 export type DOMFieldStateStore = Map<string, DOMFieldState | undefined>
+
+/** Reactive per-field error store, keyed by `path.join('.')`. */
+export type FormErrorRecord = Record<string, ValidationError[]>
+export type FormErrorStore = Map<FormKey, FormErrorRecord>
+
+/**
+ * Normalised API error envelope — the shape cubic-forms (and many DRF-style
+ * APIs) return for 4xx validation failures. Both the wrapped
+ * `{ error: { details } }` form and the raw `{ details }` form are accepted.
+ */
+export type ApiErrorDetails = Record<string, string | string[]>
+export type ApiErrorEnvelope = {
+  error?: {
+    details?: ApiErrorDetails
+    [k: string]: unknown
+  }
+  details?: ApiErrorDetails
+}
 
 export type UseAbstractFormReturnType<
   Form extends GenericForm,
@@ -263,4 +292,36 @@ export type UseAbstractFormReturnType<
     _context?: RegisterContext<typeof path, NestedType<Form, typeof path>>
   ) => RegisterValue<NestedType<Form, typeof path> | undefined>
   key: FormKey
+
+  // --- Reactive field-error API ---
+
+  /**
+   * Reactive map of field errors keyed by the dotted path. Populated
+   * automatically by `handleSubmit` on validation failure and cleared on
+   * validation success. Also writable via `setFieldErrors` /
+   * `setFieldErrorsFromApi` for server-side hydration.
+   */
+  fieldErrors: Readonly<ComputedRef<FormErrorRecord>>
+
+  /** Replace all field errors for this form with the provided list. */
+  setFieldErrors: (errors: ValidationError[]) => void
+
+  /** Append errors to the existing set, preserving current entries. */
+  addFieldErrors: (errors: ValidationError[]) => void
+
+  /**
+   * Clear errors for a specific path (string or path-array), or — when called
+   * with no arguments — clear every field error for this form.
+   */
+  clearFieldErrors: (path?: string | (string | number)[]) => void
+
+  /**
+   * Convenience for server-error hydration: accepts either the wrapped
+   * `{ error: { details } }` envelope or a raw `{ path: [msg] }` record,
+   * maps it to `ValidationError[]`, stamps the current form key, and calls
+   * `setFieldErrors`. Returns the produced errors for downstream use.
+   */
+  setFieldErrorsFromApi: (
+    payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined
+  ) => ValidationError[]
 }

@@ -1,4 +1,4 @@
-.PHONY: help build up down restart logs shell install dev test test-watch lint format check prepare typecheck publish-prep watch unwatch
+.PHONY: help build up down restart logs shell install dev test test-watch lint format check prepare typecheck publish-prep watch watch-bg unwatch
 .DEFAULT_GOAL := help
 
 CONTAINER := cx-dev
@@ -67,4 +67,8 @@ watch-bg:  ## Detached watcher (PID tracked in /tmp/cx-watch.pid) — used by cu
 	@docker compose exec -e CI=true -e SHELL=/bin/sh -d cx sh -c 'pnpm prepack:watch > /tmp/cx-watch.log 2>&1 & echo $$! > /tmp/cx-watch.pid'
 
 unwatch:  ## Stop the background watcher started by watch-bg
-	@docker compose exec cx sh -c 'if [ -f /tmp/cx-watch.pid ]; then PID=$$(cat /tmp/cx-watch.pid); kill -- -$$PID 2>/dev/null || kill $$PID 2>/dev/null || true; rm -f /tmp/cx-watch.pid /tmp/cx-watch.log; fi; true'
+	@# Validate the stored PID via /proc/$PID/cmdline before killing — guards
+	@# against PID reuse if the watcher already exited. `pkill -P PID` kills
+	@# the children (chokidar) by parent-PID, so it doesn't take a regex and
+	@# can't self-match. `kill PID` then takes out the pnpm parent.
+	@docker compose exec cx sh -c 'if [ -f /tmp/cx-watch.pid ]; then PID=$$(cat /tmp/cx-watch.pid); if [ -f /proc/$$PID/cmdline ] && tr "\0" " " < /proc/$$PID/cmdline | grep -q "prepack:watch"; then pkill -P $$PID 2>/dev/null || true; kill $$PID 2>/dev/null || true; fi; rm -f /tmp/cx-watch.pid /tmp/cx-watch.log; fi; true'

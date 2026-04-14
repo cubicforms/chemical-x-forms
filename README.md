@@ -16,6 +16,7 @@
 - **Abstract Schema Support** – Integrates with validation libraries like Zod for type-safe schemas and automatic validation.
 - **v-register Directive** – One SSR-safe directive that automatically tracks everything.
 - **Full State Tracking** – Automatically tracks field states (value, touched, dirty status, validation errors, etc).
+- **Reactive Field Errors** – `fieldErrors` auto-populates on validation failure and clears on success; `setFieldErrorsFromApi` maps server 422 envelopes onto fields for inline display.
 - **TypeScript Friendly** – Fully type-safe, with advanced form type inference from your schema.
   <br><br>
 

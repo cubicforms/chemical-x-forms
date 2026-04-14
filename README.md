@@ -85,7 +85,7 @@ const planetState = getFieldState("planet");
 
 _**note**: detailed documentation coming soon_
 
-`useForm(options?)` – Initializes form state. Abstract schema required.
+`useForm(options)` – Initializes form state. `schema` is required; `key` is recommended on every form so multiple forms on a page don't share state.
 
 `v-register` – Custom, SSR-safe directive for registering components with Chemical X
 

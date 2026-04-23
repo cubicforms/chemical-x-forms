@@ -181,6 +181,14 @@ export function useAbstractForm<
   // tracks per-key changes via Vue's collection handlers.
   const isValid = computed<boolean>(() => state.errors.size === 0)
 
+  // --- Submission lifecycle ---
+  // The underlying refs live on FormState so `reset()` can clear them in one
+  // place. Exposing via `computed` gives consumers a read-only view —
+  // mutation happens only inside handleSubmit's wrapper.
+  const isSubmitting = computed<boolean>(() => state.isSubmitting.value)
+  const submitCount = computed<number>(() => state.submitCount.value)
+  const submitError = computed<unknown>(() => state.submitError.value)
+
   return {
     getFieldState: getFieldState as UseAbstractFormReturnType<
       Form,
@@ -199,6 +207,9 @@ export function useAbstractForm<
     setFieldErrorsFromApi,
     isDirty,
     isValid,
+    isSubmitting,
+    submitCount,
+    submitError,
   }
 }
 

@@ -47,6 +47,15 @@ export type FormState<F extends GenericForm> = {
   readonly originals: Map<PathKey, unknown>
   readonly schema: AbstractSchema<F, F>
 
+  // --- submission lifecycle ---
+  // Driven by buildProcessForm's handleSubmit wrapper. See use-abstract-form.ts
+  // for the public readonly surface. Mutations happen in exactly one place
+  // (the submit handler) so there's no "source of truth" ambiguity — these
+  // refs live on FormState so a `reset()` can clear them too.
+  readonly isSubmitting: Ref<boolean>
+  readonly submitCount: Ref<number>
+  readonly submitError: Ref<unknown>
+
   // --- form mutations ---
   applyFormReplacement(next: F): void
   setValueAtPath(path: Path, value: unknown): void
@@ -120,6 +129,12 @@ export function createFormState<F extends GenericForm>(
   // Originals are captured at init and on first appearance of a path; never
   // re-assigned. Not reactive — the set is append-only per form's lifetime.
   const originals = new Map<PathKey, unknown>()
+
+  // Submission lifecycle refs. Initial values encode "no submission has
+  // happened yet": not in flight, zero attempts, no captured error.
+  const isSubmitting = ref(false)
+  const submitCount = ref(0)
+  const submitError = ref<unknown>(null)
 
   // Populate originals by diffing from empty-form to schema-initial. This is
   // always the schema's shape regardless of hydration, so pristine/dirty
@@ -313,6 +328,9 @@ export function createFormState<F extends GenericForm>(
     errors,
     originals,
     schema,
+    isSubmitting,
+    submitCount,
+    submitError,
 
     applyFormReplacement,
     setValueAtPath,

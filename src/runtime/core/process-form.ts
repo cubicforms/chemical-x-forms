@@ -61,6 +61,17 @@ export function buildProcessForm<F extends GenericForm>(state: FormState<F>) {
    * If the user's onError throws/rejects, the thrown value is re-thrown
    * wrapped in SubmitErrorHandlerError — prior versions swallowed this
    * into a console.error, which masked real bugs.
+   *
+   * Drives the submission-lifecycle refs on FormState:
+   *   - `isSubmitting` flips true at entry, false in `finally`.
+   *   - `submitCount` increments once per call, regardless of outcome —
+   *     "how many times did the user click submit" is the consumer-facing
+   *     question, independent of whether anything awaited.
+   *   - `submitError` clears at entry and captures anything thrown from
+   *     the user callback (or the wrapped error-handler error). Re-throws
+   *     after capturing so imperative callers (`await handler(event)`)
+   *     still see the rejection; template `@submit="..."` callers read
+   *     `submitError` instead.
    */
   const handleSubmit: HandleSubmit<F> = (onSubmit: OnSubmit<F>, onError?: OnError) => {
     const submitHandler: SubmitHandler = async (event?: Event): Promise<void> => {
@@ -71,21 +82,31 @@ export function buildProcessForm<F extends GenericForm>(state: FormState<F>) {
       ) {
         event.preventDefault()
       }
-      const result = runValidation()
-      if (!result.success) {
-        const errors = result.errors
-        state.setAllErrors(errors)
-        if (onError !== undefined) {
-          try {
-            await onError(errors)
-          } catch (cause) {
-            throw new SubmitErrorHandlerError('User-provided onError threw', { cause })
+      state.isSubmitting.value = true
+      state.submitError.value = null
+      try {
+        const result = runValidation()
+        if (!result.success) {
+          const errors = result.errors
+          state.setAllErrors(errors)
+          if (onError !== undefined) {
+            try {
+              await onError(errors)
+            } catch (cause) {
+              throw new SubmitErrorHandlerError('User-provided onError threw', { cause })
+            }
           }
+          return
         }
-        return
+        state.clearErrors()
+        await onSubmit(result.data)
+      } catch (err) {
+        state.submitError.value = err
+        throw err
+      } finally {
+        state.isSubmitting.value = false
+        state.submitCount.value += 1
       }
-      state.clearErrors()
-      await onSubmit(result.data)
     }
     return submitHandler
   }

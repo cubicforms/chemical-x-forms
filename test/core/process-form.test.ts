@@ -110,6 +110,107 @@ describe('buildProcessForm', () => {
     })
   })
 
+  describe('handleSubmit — submission lifecycle refs', () => {
+    it('flips isSubmitting true for the duration of the handler, false after', async () => {
+      const state = alwaysValid()
+      const { handleSubmit } = buildProcessForm(state)
+      expect(state.isSubmitting.value).toBe(false)
+
+      let observedMidFlight: boolean | undefined
+      const onSubmit = async () => {
+        observedMidFlight = state.isSubmitting.value
+        await Promise.resolve()
+      }
+      await handleSubmit(onSubmit)()
+      expect(observedMidFlight).toBe(true)
+      expect(state.isSubmitting.value).toBe(false)
+    })
+
+    it('increments submitCount on success', async () => {
+      const state = alwaysValid()
+      const { handleSubmit } = buildProcessForm(state)
+      expect(state.submitCount.value).toBe(0)
+      await handleSubmit(async () => {})()
+      expect(state.submitCount.value).toBe(1)
+      await handleSubmit(async () => {})()
+      expect(state.submitCount.value).toBe(2)
+    })
+
+    it('increments submitCount on validation failure', async () => {
+      const state = alwaysInvalid()
+      const { handleSubmit } = buildProcessForm(state)
+      await handleSubmit(async () => {})()
+      expect(state.submitCount.value).toBe(1)
+    })
+
+    it('increments submitCount on user-callback throw', async () => {
+      const state = alwaysValid()
+      const { handleSubmit } = buildProcessForm(state)
+      const handler = handleSubmit(
+        // eslint-disable-next-line @typescript-eslint/require-await
+        async () => {
+          throw new Error('boom')
+        }
+      )
+      await expect(handler()).rejects.toThrow('boom')
+      expect(state.submitCount.value).toBe(1)
+    })
+
+    it('captures a thrown onSubmit into submitError (and still re-throws)', async () => {
+      const state = alwaysValid()
+      const { handleSubmit } = buildProcessForm(state)
+      const err = new Error('callback crash')
+      const handler = handleSubmit(
+        // eslint-disable-next-line @typescript-eslint/require-await
+        async () => {
+          throw err
+        }
+      )
+      await expect(handler()).rejects.toBe(err)
+      expect(state.submitError.value).toBe(err)
+      expect(state.isSubmitting.value).toBe(false)
+    })
+
+    it('clears submitError at the start of a fresh submission', async () => {
+      const state = alwaysValid()
+      const { handleSubmit } = buildProcessForm(state)
+      // First run: user callback throws.
+      const failing = handleSubmit(
+        // eslint-disable-next-line @typescript-eslint/require-await
+        async () => {
+          throw new Error('first')
+        }
+      )
+      await expect(failing()).rejects.toThrow('first')
+      expect(state.submitError.value).toBeInstanceOf(Error)
+
+      // Second run: callback succeeds — prior error must be cleared.
+      await handleSubmit(async () => {})()
+      expect(state.submitError.value).toBeNull()
+    })
+
+    it('captures SubmitErrorHandlerError when the user onError throws', async () => {
+      const state = alwaysInvalid()
+      const { handleSubmit } = buildProcessForm(state)
+      const handler = handleSubmit(
+        async () => {},
+        // eslint-disable-next-line @typescript-eslint/require-await
+        async () => {
+          throw new Error('onError crash')
+        }
+      )
+      await expect(handler()).rejects.toBeInstanceOf(SubmitErrorHandlerError)
+      expect(state.submitError.value).toBeInstanceOf(SubmitErrorHandlerError)
+    })
+
+    it('leaves submitError null on successful submit', async () => {
+      const state = alwaysValid()
+      const { handleSubmit } = buildProcessForm(state)
+      await handleSubmit(async () => {})()
+      expect(state.submitError.value).toBeNull()
+    })
+  })
+
   describe('setFieldErrorsFromApi', () => {
     it('hydrates wrapped envelope and populates state errors', () => {
       const state = alwaysValid()

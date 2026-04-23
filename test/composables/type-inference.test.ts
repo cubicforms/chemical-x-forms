@@ -209,3 +209,20 @@ describe('useForm type inference — form-level aggregates', () => {
     expectTypeOf(form.isValid.value).toEqualTypeOf<boolean>()
   })
 })
+
+describe('useForm type inference — submission lifecycle', () => {
+  it('isSubmitting is a Readonly<ComputedRef<boolean>>', () => {
+    expectTypeOf(form.isSubmitting).toEqualTypeOf<Readonly<ComputedRef<boolean>>>()
+    expectTypeOf(form.isSubmitting.value).toEqualTypeOf<boolean>()
+  })
+
+  it('submitCount is a Readonly<ComputedRef<number>>', () => {
+    expectTypeOf(form.submitCount).toEqualTypeOf<Readonly<ComputedRef<number>>>()
+    expectTypeOf(form.submitCount.value).toEqualTypeOf<number>()
+  })
+
+  it('submitError is a Readonly<ComputedRef<unknown>>', () => {
+    expectTypeOf(form.submitError).toEqualTypeOf<Readonly<ComputedRef<unknown>>>()
+    expectTypeOf(form.submitError.value).toEqualTypeOf<unknown>()
+  })
+})

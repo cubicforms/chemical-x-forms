@@ -354,4 +354,31 @@ export type UseAbstractFormReturnType<
    * and flips to false.
    */
   isValid: Readonly<ComputedRef<boolean>>
+
+  // --- Submission lifecycle ---
+
+  /**
+   * `true` while a submit handler produced by `handleSubmit` is executing.
+   * Flips on entry to the handler and off in a `finally` block — covers
+   * both the validation phase and the user's async callback.
+   */
+  isSubmitting: Readonly<ComputedRef<boolean>>
+
+  /**
+   * Increments once per call to a submit handler, regardless of outcome
+   * (validation failure, callback success, callback throw). Counts "how
+   * many times did the user click submit", not "how many succeeded".
+   */
+  submitCount: Readonly<ComputedRef<number>>
+
+  /**
+   * Captures whatever the user's submit callback (or its `onError` handler)
+   * threw or rejected with. Cleared to `null` at the start of each new
+   * submission attempt; stays `null` on successful completion.
+   *
+   * The handler still re-throws — `submitError` is the reactive mirror for
+   * template consumers; imperative callers can use `try { await
+   * handler(event) }` as normal.
+   */
+  submitError: Readonly<ComputedRef<unknown>>
 }

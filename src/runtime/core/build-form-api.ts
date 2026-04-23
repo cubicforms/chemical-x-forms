@@ -15,6 +15,7 @@ import type { DeepPartial, GenericForm } from '../types/types-core'
 import type { FormState } from './create-form-state'
 import { buildFieldArrayApi } from './field-arrays'
 import { buildFieldStateAccessor } from './field-state-api'
+import type { HistoryModule } from './history'
 import { getAtPath } from './path-walker'
 import { canonicalizePath, type Path, type Segment } from './paths'
 import { buildProcessForm } from './process-form'
@@ -23,6 +24,13 @@ import { buildRegister } from './register-api'
 export type BuildFormApiOptions = {
   /** Forwarded to buildProcessForm. See `UseFormConfiguration.onInvalidSubmit`. */
   onInvalidSubmit?: OnInvalidSubmitPolicy
+  /**
+   * Pre-wired history module for undo/redo. When omitted, the public
+   * `undo` / `redo` / `canUndo` / `canRedo` / `historySize` fields
+   * are inert no-op stubs — consumers get a consistent API shape
+   * without opting into the feature.
+   */
+  history?: HistoryModule
 }
 
 /**
@@ -153,6 +161,17 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // --- Validation lifecycle ---
   const isValidating = computed<boolean>(() => state.activeValidations.value > 0)
 
+  // --- History (undo/redo) ---
+  // When the consumer doesn't configure history, fall back to inert
+  // stubs so the public API shape stays consistent whether or not
+  // the feature is enabled.
+  const history = options.history
+  const undo = history?.undo ?? (() => false)
+  const redo = history?.redo ?? (() => false)
+  const canUndo = history?.canUndo ?? computed(() => false)
+  const canRedo = history?.canRedo ?? computed(() => false)
+  const historySize = history?.historySize ?? computed(() => 0)
+
   // --- Reset ---
   const reset = (nextInitialState?: DeepPartial<Form>): void => {
     state.reset(nextInitialState)
@@ -211,6 +230,11 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     resetField: resetField as UseAbstractFormReturnType<Form, GetValueFormType>['resetField'],
     focusFirstError,
     scrollToFirstError,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    historySize,
     append: fieldArrays.append as UseAbstractFormReturnType<Form, GetValueFormType>['append'],
     prepend: fieldArrays.prepend as UseAbstractFormReturnType<Form, GetValueFormType>['prepend'],
     insert: fieldArrays.insert as UseAbstractFormReturnType<Form, GetValueFormType>['insert'],

@@ -161,6 +161,14 @@ export type FormState<F extends GenericForm> = {
   onSubmitSuccess(listener: () => void): () => void
 
   /**
+   * Subscribe to `reset()` calls. Fires AFTER reset has replaced
+   * the form and cleared errors + lifecycle, so listeners see the
+   * fresh post-reset state. Used by the history module to drop the
+   * undo/redo stack on reset. Returns an unsubscribe function.
+   */
+  onReset(listener: () => void): () => void
+
+  /**
    * Internal: notify submit-success subscribers. Called by
    * `handleSubmit` in `process-form.ts` once the user callback has
    * resolved. Consumers shouldn't call this directly.
@@ -215,6 +223,7 @@ export function createFormState<F extends GenericForm>(
   // template should ever depend on "how many listeners are attached".
   const formChangeListeners = new Set<(next: F) => void>()
   const submitSuccessListeners = new Set<() => void>()
+  const resetListeners = new Set<() => void>()
 
   // Schema is ALWAYS consulted: we need the schema-derived originals even
   // when hydrating, so pristine/dirty computation survives SSR round-trip.
@@ -430,6 +439,13 @@ export function createFormState<F extends GenericForm>(
     }
   }
 
+  function onReset(listener: () => void): () => void {
+    resetListeners.add(listener)
+    return () => {
+      resetListeners.delete(listener)
+    }
+  }
+
   function emitSubmitSuccess(): void {
     for (const listener of submitSuccessListeners) {
       try {
@@ -444,6 +460,7 @@ export function createFormState<F extends GenericForm>(
     cancelFieldValidation()
     formChangeListeners.clear()
     submitSuccessListeners.clear()
+    resetListeners.clear()
   }
 
   function getValueAtPath(path: Path): unknown {
@@ -602,6 +619,16 @@ export function createFormState<F extends GenericForm>(
     // that reached the controller-aborted branch resolve to a no-op, so
     // the error store stays clean after the reset clears it above.
     cancelFieldValidation()
+    // Notify subscribers (history module clears its stack, persistence
+    // sees the reset via onFormChange already). Listener throws are
+    // isolated so one bad subscriber can't block the others.
+    for (const listener of resetListeners) {
+      try {
+        listener()
+      } catch (err) {
+        console.error('[@chemical-x/forms] onReset listener threw:', err)
+      }
+    }
   }
 
   function resetField(path: Path): void {
@@ -772,6 +799,7 @@ export function createFormState<F extends GenericForm>(
     cancelFieldValidation,
     onFormChange,
     onSubmitSuccess,
+    onReset,
     emitSubmitSuccess,
     dispose,
   }

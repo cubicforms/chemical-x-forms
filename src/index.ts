@@ -60,6 +60,7 @@ export type {
   FormStorage,
   FormStorageKind,
   HandleSubmit,
+  HistoryConfig,
   InitialStateResponse,
   OnError,
   OnInvalidSubmitPolicy,

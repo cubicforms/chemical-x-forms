@@ -1,0 +1,156 @@
+import { computed, shallowRef, type ComputedRef } from 'vue'
+import type { HistoryConfig, ValidationError } from '../types/types-api'
+import type { GenericForm } from '../types/types-core'
+import type { FormState } from './create-form-state'
+import type { PathKey } from './paths'
+
+/**
+ * Bounded undo/redo snapshot stack for a FormState. Subscribes to
+ * `onFormChange` to push a snapshot on every mutation; `undo` /
+ * `redo` restore via `applyFormReplacement` and `setAllErrors`.
+ * `onReset` clears both stacks and seeds a fresh baseline.
+ *
+ * Snapshots include:
+ *  - `form` — the whole form value, captured by reference. Vue's
+ *    form ref is replaced wholesale on every mutation, so the
+ *    snapshot reference is stable: old references don't mutate.
+ *  - `errors` — shallow-cloned Map entries. Consumers who have
+ *    stale errors from before an undo want to see those errors
+ *    again after the undo restores the prior form state.
+ *
+ * Field record state (touched / focused / blurred / isConnected) is
+ * deliberately NOT snapshotted. Those flags represent UI
+ * interaction history and shouldn't rewind when the user hits
+ * undo — a field that was touched stays touched.
+ */
+
+export type HistorySnapshot<F> = {
+  readonly form: F
+  readonly errors: ReadonlyArray<readonly [PathKey, ValidationError[]]>
+}
+
+export type HistoryModule = {
+  undo(): boolean
+  redo(): boolean
+  canUndo: Readonly<ComputedRef<boolean>>
+  canRedo: Readonly<ComputedRef<boolean>>
+  historySize: Readonly<ComputedRef<number>>
+  dispose(): void
+}
+
+export function createHistoryModule<F extends GenericForm>(
+  state: FormState<F>,
+  config: HistoryConfig
+): HistoryModule {
+  const max = typeof config === 'object' ? (config.max ?? 50) : 50
+
+  // undoStack[-1] is the CURRENT state. undo() pops that onto redo
+  // and restores undoStack[-2]. redoStack[-1] is the next-available
+  // redo target. This layout keeps `canUndo = undoStack.length > 1`
+  // and `canRedo = redoStack.length > 0` trivially.
+  // shallowRef avoids Vue's UnwrapRef recursion: the stacks are
+  // replaced wholesale on every mutation (spread into a new array),
+  // so deep reactivity would only add overhead and produce weird
+  // typing around `HistorySnapshot<F>` (UnwrapRef<F> !== F for
+  // generic constraints).
+  const undoStack = shallowRef<HistorySnapshot<F>[]>([])
+  const redoStack = shallowRef<HistorySnapshot<F>[]>([])
+
+  // When `undo()` / `redo()` calls `applyFormReplacement`, the
+  // resulting `onFormChange` must NOT push a new snapshot (that
+  // would duplicate the restored state and break the stack
+  // ordering). This flag suppresses the next change event.
+  let suppressNext = false
+
+  function captureSnapshot(): HistorySnapshot<F> {
+    // Vue's Ref<F> unwraps via UnwrapRef<F>; at runtime this is just F
+    // for all plain object shapes, but the compile-time types differ.
+    // Cast through unknown to reassure TS the snapshot shape matches
+    // the generic parameter the caller bound.
+    return {
+      form: state.form.value as unknown as F,
+      errors: [...state.errors.entries()].map(([k, v]) => [k, [...v]] as const),
+    }
+  }
+
+  function pushSnapshot(snap: HistorySnapshot<F>): void {
+    const next = [...undoStack.value, snap]
+    // Trim FIFO so the OLDEST snapshot is evicted when the stack
+    // exceeds max. The user's most recent history is the one worth
+    // keeping.
+    undoStack.value = next.length > max ? next.slice(-max) : next
+    redoStack.value = []
+  }
+
+  // Seed with the initial state so `undoStack[-1]` always equals
+  // the current form. The first user mutation pushes a second
+  // entry, enabling `undo()`.
+  pushSnapshot(captureSnapshot())
+
+  const unsubscribeChange = state.onFormChange(() => {
+    if (suppressNext) {
+      suppressNext = false
+      return
+    }
+    pushSnapshot(captureSnapshot())
+  })
+
+  const unsubscribeReset = state.onReset(() => {
+    // reset() fires onFormChange first (applyFormReplacement
+    // emits it), then onReset. By the time we land here, a
+    // snapshot for the reset state has already been pushed.
+    // Clear both stacks and re-seed so the reset state becomes
+    // the new baseline.
+    undoStack.value = []
+    redoStack.value = []
+    pushSnapshot(captureSnapshot())
+  })
+
+  function restore(snap: HistorySnapshot<F>): void {
+    suppressNext = true
+    state.applyFormReplacement(snap.form)
+    // Rebuild the error store from the snapshot. setAllErrors
+    // clears + repopulates in one shot.
+    const flat = snap.errors.flatMap(([, errs]) => errs)
+    state.setAllErrors(flat)
+  }
+
+  function undo(): boolean {
+    if (undoStack.value.length <= 1) return false
+    const current = undoStack.value[undoStack.value.length - 1]
+    const prev = undoStack.value[undoStack.value.length - 2]
+    if (current === undefined || prev === undefined) return false
+    redoStack.value = [...redoStack.value, current]
+    undoStack.value = undoStack.value.slice(0, -1)
+    restore(prev)
+    return true
+  }
+
+  function redo(): boolean {
+    if (redoStack.value.length === 0) return false
+    const next = redoStack.value[redoStack.value.length - 1]
+    if (next === undefined) return false
+    redoStack.value = redoStack.value.slice(0, -1)
+    undoStack.value = [...undoStack.value, next]
+    restore(next)
+    return true
+  }
+
+  const canUndo = computed(() => undoStack.value.length > 1)
+  const canRedo = computed(() => redoStack.value.length > 0)
+  const historySize = computed(() => undoStack.value.length + redoStack.value.length)
+
+  return {
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    historySize,
+    dispose() {
+      unsubscribeChange()
+      unsubscribeReset()
+      undoStack.value = []
+      redoStack.value = []
+    },
+  }
+}

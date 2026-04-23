@@ -3,6 +3,7 @@ import { buildFormApi } from '../core/build-form-api'
 import { createFormState, type FormState } from '../core/create-form-state'
 import type { FieldStateView } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
+import { createHistoryModule, type HistoryModule } from '../core/history'
 import {
   buildPersistedPayload,
   createDebouncedWriter,
@@ -89,18 +90,31 @@ export function useAbstractForm<
     onScopeDispose(disposePersist)
   }
 
+  // Wire history (opt-in). Fresh-state-only — the module subscribes
+  // to FormState events, so subscribing twice would double-push
+  // snapshots.
+  let historyModule: HistoryModule | null = null
+  if (existing === undefined && configuration.history !== undefined) {
+    historyModule = createHistoryModule(state as FormState<Form>, configuration.history)
+    if (getCurrentScope() !== undefined) {
+      const mod = historyModule
+      onScopeDispose(() => mod.dispose())
+    }
+  }
+
   // Provide the FormState to descendants via `kFormContext` so
   // `useFormContext()` can resolve it without prop-threading. The key is
   // the already-canonicalised formKey; looking up a specific form by key
   // is possible via `useFormContext(key)` even without the ambient provide.
   provide(kFormContext, state as FormState<GenericForm>)
 
-  // Only pass onInvalidSubmit when present — same exactOptionalPropertyTypes
-  // pattern as inside buildFormApi.
-  const apiOptions =
-    configuration.onInvalidSubmit !== undefined
-      ? { onInvalidSubmit: configuration.onInvalidSubmit }
-      : {}
+  const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[1] = {}
+  if (configuration.onInvalidSubmit !== undefined) {
+    apiOptions.onInvalidSubmit = configuration.onInvalidSubmit
+  }
+  if (historyModule !== null) {
+    apiOptions.history = historyModule
+  }
   return buildFormApi<Form, GetValueFormType>(state, apiOptions)
 }
 

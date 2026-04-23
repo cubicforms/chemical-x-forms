@@ -153,6 +153,12 @@ export type FormStorage = {
 export type PersistIncludeMode = 'form' | 'form+errors'
 
 /**
+ * Undo/redo configuration. `true` enables with default `max: 50`.
+ * Pass an object to tune the bounded snapshot stack size.
+ */
+export type HistoryConfig = true | { max?: number }
+
+/**
  * Opt-in persistence for the form's draft state. The library writes
  * (debounced) on every mutation and reads back on mount. Off by
  * default — no config → no reads, no writes, zero overhead.
@@ -254,6 +260,17 @@ export type UseFormConfiguration<
    * - `clearOnSubmitSuccess?`: default `true`.
    */
   persist?: PersistConfig
+
+  /**
+   * Opt-in undo/redo stack. `true` uses the default max of 50
+   * snapshots; pass `{ max: N }` to tune. Off by default.
+   *
+   * Each mutation through `setValueAtPath` / `applyFormReplacement`
+   * / field-array helpers pushes a snapshot onto the undo stack.
+   * `undo()` pops one; `redo()` replays it. The stack is trimmed
+   * FIFO when it exceeds `max`. `reset()` clears the history.
+   */
+  history?: HistoryConfig
 }
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>
@@ -637,6 +654,37 @@ export type UseAbstractFormReturnType<
    * never been set or appeared in schema defaults).
    */
   resetField: (path: FlatPath<Form>) => void
+
+  // --- Undo / redo ---
+
+  /**
+   * Revert the form to the previous snapshot. Returns `true` when a
+   * snapshot was restored, `false` when the undo stack is at its
+   * initial state (nothing to undo). Only present when
+   * `history` is configured on `useForm`; otherwise a no-op returning
+   * `false`.
+   */
+  undo: () => boolean
+
+  /**
+   * Replay a previously-undone snapshot. Returns `true` on success,
+   * `false` when the redo stack is empty. Cleared on the next new
+   * mutation.
+   */
+  redo: () => boolean
+
+  /** `true` when the undo stack has at least one restorable snapshot. */
+  canUndo: Readonly<ComputedRef<boolean>>
+
+  /** `true` when a prior `undo()` has pending replays on the redo stack. */
+  canRedo: Readonly<ComputedRef<boolean>>
+
+  /**
+   * Total snapshot count across both stacks. Primarily for debug
+   * UIs — consumers driving undo/redo UI should use `canUndo` /
+   * `canRedo` instead.
+   */
+  historySize: Readonly<ComputedRef<number>>
 
   // --- Focus / scroll to first error ---
 

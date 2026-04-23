@@ -46,6 +46,19 @@ export const kChemicalXRegistry: InjectionKey<ChemicalXRegistry> = Symbol(
   'chemical-x-forms:registry'
 )
 
+/**
+ * Provides the current form's FormState to descendants. Installed by
+ * `useAbstractForm` after it resolves the state, so any nested component
+ * can call `useFormContext()` without prop-threading the form API.
+ *
+ * Typed as `FormState<GenericForm>` — the descendant that re-emerges the
+ * shape must supply its own `Form` generic, because Vue's InjectionKey
+ * erases the generic at the provide/inject boundary.
+ */
+export const kFormContext: InjectionKey<FormState<GenericForm>> = Symbol(
+  'chemical-x-forms:form-context'
+)
+
 /** Also attached to `app._chemicalX` so serialization helpers can access it without setup context. */
 declare module 'vue' {
   interface App {

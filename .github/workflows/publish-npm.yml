@@ -48,7 +48,11 @@ jobs:
           always-auth: true
 
       - name: Install dependencies
-        run: pnpm install
+        # --frozen-lockfile aborts if pnpm-lock.yaml is stale, so the
+        # published tarball is always built against the exact dep graph
+        # the lockfile promises. Prevents a silent lockfile drift from
+        # producing a mystery publish diff.
+        run: pnpm install --frozen-lockfile
 
       - name: Validate Auth
         run: npm whoami
@@ -59,10 +63,10 @@ jobs:
         run: pnpm dev:prepare
 
       - name: Validate ESLint and Types
+        # `pnpm check` already runs lint, format:check, typecheck, test,
+        # size, bench, and coverage. A separate `pnpm test` step after
+        # this duplicates work and slows the workflow.
         run: pnpm check
-
-      - name: Run tests
-        run: pnpm test
 
       # Import a GPG signing key so the version-bump commit + tag created
       # below by `pnpm version` are signed and show as "Verified" on GitHub.
@@ -95,7 +99,12 @@ jobs:
         run: pnpm prepack
 
       - name: Publish to npm
-        run: pnpm publish --access public
+        # `--provenance` attaches an OIDC-signed statement linking the
+        # published tarball to this workflow run + commit. The workflow
+        # already declares `id-token: write`; npm's registry records
+        # the statement so consumers can verify a tarball came from
+        # this repo via `npm audit signatures`.
+        run: pnpm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

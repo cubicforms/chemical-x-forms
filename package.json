@@ -34,7 +34,7 @@
     "typecheck": "tsc --noEmit",
     "prepack": "unbuild",
     "prepack:watch": "chokidar 'src/**/*' -c 'pnpm prepack' --initial",
-    "release": "pnpm lint && pnpm test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
+    "release": "pnpm check && pnpm version patch && pnpm prepack && pnpm publish && git push --follow-tags",
     "test": "vitest run",
     "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
     "test:watch": "vitest watch",
@@ -42,6 +42,7 @@
     "check:size": "pnpm prepack && size-limit",
     "check:coverage": "vitest run --coverage",
     "check:bench": "node scripts/check-bench.mjs",
+    "version": "node scripts/promote-changelog.mjs && git add CHANGELOG.md",
     "prepare": "husky"
   },
   "size-limit": [

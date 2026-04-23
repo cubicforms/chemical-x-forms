@@ -88,6 +88,14 @@ jobs:
           git_tag_gpgsign: true
 
       - name: Bump version
+        # `pnpm version` fires the `version` npm-hook script, which runs
+        # `promote-changelog.mjs` + `generate-release-notes.mjs`. The
+        # second script hits GitHub's `generate-notes` API via `gh`, so
+        # the step needs GH_TOKEN — supplied from the workflow-scoped
+        # GITHUB_TOKEN (read-only for repo content, sufficient for the
+        # generate-notes endpoint).
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -z "${{ github.event.inputs.version_type }}" ]; then
             pnpm version patch

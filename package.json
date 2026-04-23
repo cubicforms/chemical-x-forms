@@ -42,7 +42,7 @@
     "check:size": "pnpm prepack && size-limit",
     "check:coverage": "vitest run --coverage",
     "check:bench": "node scripts/check-bench.mjs",
-    "version": "node scripts/promote-changelog.mjs && git add CHANGELOG.md",
+    "version": "node scripts/promote-changelog.mjs && (node scripts/generate-release-notes.mjs || echo '[version] release-notes step failed; continuing') && git add CHANGELOG.md RELEASES.md",
     "prepare": "husky"
   },
   "size-limit": [

@@ -102,6 +102,23 @@ Checklist:
       subpath exports work and the SSR round-trip under
       `@vue/server-renderer` is intact.
 
+The `version` script hook does two things during the workflow's
+version-bump step:
+
+1. Promotes `CHANGELOG.md`'s `## Unreleased` block to `## v<version>`
+   (`scripts/promote-changelog.mjs`).
+2. Fetches PR-sourced release notes for the range
+   `(previous tag, HEAD)` from GitHub's `generate-notes` API and
+   prepends the result to `RELEASES.md`
+   (`scripts/generate-release-notes.mjs`). Requires `GH_TOKEN` —
+   provided by the workflow's `GITHUB_TOKEN`. Outside CI the script
+   skips, so local `pnpm version` doesn't need a PAT.
+
+Both files get staged by the hook and land in the same commit as the
+version bump, so the tag a consumer sees carries both the
+narrative (CHANGELOG) and the PR-ledger (RELEASES) views of the
+release.
+
 ### Via `pnpm release` (local)
 
 Used for emergency patches or when CI is down. Same steps as the

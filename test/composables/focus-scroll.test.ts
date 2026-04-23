@@ -45,7 +45,7 @@ function mountWith(options: {
         }
       }
       const useOpts: Parameters<typeof useForm<Form>>[0] = {
-        schema: fakeSchema(defaults, validator),
+        schema: fakeSchema<Form>(defaults, validator),
         key: 'focus-scroll-form',
       }
       if (options.onInvalidSubmit !== undefined) useOpts.onInvalidSubmit = options.onInvalidSubmit
@@ -55,7 +55,13 @@ function mountWith(options: {
         const childNodes: ReturnType<typeof h>[] = []
         for (const name of Object.keys(defaults) as (keyof Form)[]) {
           if (options.detachField === name) continue
-          const reg = handle.api?.register(name as string)
+          // register's type is branded to RegisterFlatPath<Form>; cast
+          // through `unknown` so TS accepts the dynamically-chosen key.
+          // (Fine in a test — the field names we loop over are exactly
+          // the ones the form's shape declares.)
+          const reg = handle.api?.register(
+            name as unknown as Parameters<NonNullable<typeof handle.api>['register']>[0]
+          )
           const style = options.hideField === name ? 'display:none' : ''
           childNodes.push(
             h('input', {
@@ -166,6 +172,13 @@ describe('onInvalidSubmit policy wiring', () => {
   let scrollSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
+    // vi.spyOn on the first describe restores scrollIntoView back to
+    // jsdom's (missing) state at teardown — re-stub before re-spying.
+    if (typeof HTMLElement.prototype.scrollIntoView !== 'function') {
+      HTMLElement.prototype.scrollIntoView = function scrollIntoView() {
+        return undefined
+      }
+    }
     focusSpy = vi.spyOn(HTMLElement.prototype, 'focus')
     scrollSpy = vi.spyOn(HTMLElement.prototype, 'scrollIntoView')
     Object.defineProperty(HTMLElement.prototype, 'offsetParent', {

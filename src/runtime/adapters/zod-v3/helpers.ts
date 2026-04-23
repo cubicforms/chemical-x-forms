@@ -33,16 +33,7 @@ export function isZodSchemaType<K extends keyof ZodTypeMap>(
   schema: unknown,
   expectedType: K
 ): schema is ZodTypeMap[K] {
-  type ExpectedShape =
-    | {
-        _def?: {
-          typeName?: string
-        }
-      }
-    | undefined
-  if (typeof schema === 'object' && schema !== null && (schema as ExpectedShape)?._def?.typeName) {
-    const actualType = (schema as ExpectedShape)?._def?.typeName
-    return actualType === expectedType
-  }
-  return false
+  if (typeof schema !== 'object' || schema === null) return false
+  const maybeDef = (schema as { _def?: { typeName?: string } })._def
+  return maybeDef?.typeName === expectedType
 }

@@ -48,16 +48,15 @@ export function zodAdapter<
         stripZodRefinements: true,
       })
       if (!isZodSchemaType(_schema, 'ZodObject')) {
-        const actualUnwrappedSchemaName = (_schema as ZodTypeWithInnerType)?._def?.typeName
-        const actualOriginalSchemaName = (_zodSchema as unknown as ZodTypeWithInnerType)?._def
-          ?.typeName
-        const actualSchemaName = actualUnwrappedSchemaName ?? actualOriginalSchemaName
-        const unwrappedMessage = actualUnwrappedSchemaName ? 'unwrapped' : ''
+        const actualUnwrappedSchemaName = (_schema as ZodTypeWithInnerType)._def.typeName
+        const actualOriginalSchemaName = (_zodSchema as unknown as ZodTypeWithInnerType)._def
+          .typeName
+        const actualSchemaName = actualUnwrappedSchemaName
+        const unwrappedMessage =
+          actualUnwrappedSchemaName !== actualOriginalSchemaName ? 'unwrapped' : ''
 
         const expectedUnwrappedMessage = stripped ? ' unwrapped ' : ' '
-        const actualSchemaMessage = actualSchemaName
-          ? `, got ${unwrappedMessage} schema of type '${actualSchemaName}' instead.`
-          : '.'
+        const actualSchemaMessage = `, got ${unwrappedMessage} schema of type '${actualSchemaName}' instead.`
 
         throw new Error(
           `Programming error: ZodAdapter expected${expectedUnwrappedMessage}schema of type 'ZodObject'${actualSchemaMessage}`
@@ -102,7 +101,9 @@ export function zodAdapter<
 
         let fixedData = {}
 
-        if (!success) {
+        // `if (success) return ...` above handles the happy path; below we're
+        // always in the failure case.
+        {
           // use error messages to dynamically construct correct initial state
           for (const issue of error.issues) {
             const path = issue.path.join(PATH_SEPARATOR)
@@ -368,9 +369,11 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
 function unwrapToDiscriminatedUnion(
   schema: z.ZodTypeAny
 ): z.ZodDiscriminatedUnion<string, readonly z.ZodDiscriminatedUnionOption<string>[]> | undefined {
-  let currentSchema: z.ZodTypeAny | undefined = schema
+  let currentSchema: z.ZodTypeAny = schema
 
-  while (currentSchema) {
+  // `innerType` on ZodDefault/Optional/Nullable is a ZodType (non-nullable),
+  // so we loop unconditionally and exit via `return`.
+  for (;;) {
     // If the schema is a discriminated union, return it
     if (isZodSchemaType(currentSchema, 'ZodDiscriminatedUnion')) {
       return currentSchema
@@ -386,11 +389,9 @@ function unwrapToDiscriminatedUnion(
       continue
     }
 
-    // If the schema is any other type, return undefined
-    break
+    // Any other type: give up.
+    return undefined
   }
-
-  return undefined
 }
 
 type DefaultValueContext = {
@@ -455,7 +456,7 @@ function getDefaultValue(
   if (expected === 'undefined') return undefined
   if (expected === 'unknown') return undefined
   if (expected === 'nan') return Number('nan')
-  if (expected === 'never' || expected === 'void') return undefined
+  // 'never' and 'void' fall through to the default below.
   return undefined
 }
 
@@ -509,13 +510,10 @@ function getInitialStateFromZodSchema<
     // Handle objects
     if (isZodSchemaType(schema, 'ZodObject')) {
       const shape = schema.shape
-      return Object.keys(shape).reduce(
-        (acc, key) => {
-          acc[key] = generateValue(shape[key])
-          return acc
-        },
-        {} as Record<string, unknown>
-      )
+      return Object.keys(shape).reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = generateValue(shape[key])
+        return acc
+      }, {})
     }
 
     // Handle arrays
@@ -624,7 +622,7 @@ function getSchemaByDiscriminatorKey(
   // Find the schema with the matching discriminator value
   return unionSchema._def.options.find((schema: z.ZodObject<z.ZodRawShape>) => {
     const discriminator = schema.shape[unionSchema._def.discriminator]
-    return discriminator && discriminator._def.value === key
+    return discriminator !== undefined && discriminator._def.value === key
   })
 }
 
@@ -642,23 +640,23 @@ function hasChecks(schema: z.ZodTypeAny): boolean {
   if (!('_def' in schema)) return false
 
   const schemaDef = schema._def
-  if (!schema || !('checks' in schemaDef)) return false
+  if (!('checks' in schemaDef)) return false
 
   const checks = schemaDef['checks'] as unknown
 
   if (!Array.isArray(checks)) return false
 
-  return !!checks.length
+  return checks.length > 0
 }
 
 function stripRefinements<T extends z.ZodTypeAny>(schema: T) {
   function _stripRefinements(_schema: z.ZodTypeAny): z.ZodTypeAny {
-    if (isZodSchemaType(_schema, 'ZodString') && _schema._def.checks?.length) {
+    if (isZodSchemaType(_schema, 'ZodString') && _schema._def.checks.length > 0) {
       // Rebuild a ZodString without checks
       return z.string()
     }
 
-    if (isZodSchemaType(_schema, 'ZodNumber') && _schema._def.checks?.length) {
+    if (isZodSchemaType(_schema, 'ZodNumber') && _schema._def.checks.length > 0) {
       // Rebuild a ZodNumber without checks
       return z.number()
     }
@@ -733,11 +731,6 @@ function stripRootSchema(schema: z.ZodSchema, stripConfig: StripConfig) {
       return recursion(stripRefinements(_schema))
     }
 
-    if (!_schema) {
-      throw new Error(
-        "Form schema is falsy after attempting to remove ZodNullable, ZodNullish, and/or ZodEffects classes recursively in the 'recursion' function, called by 'stripRootSchema'. Is your schema valid?"
-      )
-    }
     return [_schema, _stripped]
   }
 
@@ -753,7 +746,7 @@ const getStripInstruction = (
   stripValueOrCallback: boolean | StripConfigCallback | undefined,
   schema: z.ZodTypeAny | z.ZodSchema
 ): boolean => {
-  if (!stripValueOrCallback) return false
+  if (stripValueOrCallback === undefined || stripValueOrCallback === false) return false
 
   return isFunction(stripValueOrCallback) ? stripValueOrCallback(schema) : stripValueOrCallback
 }
@@ -791,8 +784,6 @@ function getSlimSchema<RS extends z.ZodRawShape, Schema extends z.ZodSchema>(
 
       for (const option of _schema._def.options) {
         const slimmedSchema = _getSlimSchema(option)
-        if (!slimmedSchema) continue
-
         // slimmedSchema will be a structurally deep object, so break pointer refs to prevent recursion bugs
         const deepCloneSlimmedSchema = cloneDeep(slimmedSchema)
         slimmedSchemas.push(deepCloneSlimmedSchema)

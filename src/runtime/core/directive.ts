@@ -37,8 +37,7 @@ import type {
 
 export const assignKey: unique symbol = Symbol('_assign')
 export function isRegisterValue<Value = unknown>(val: unknown): val is RegisterValue<Value> {
-  if (!val) return false
-  if (typeof val !== 'object') return false
+  if (typeof val !== 'object' || val === null) return false
   if (!('innerRef' in val)) return false
   if (!isRef(val.innerRef)) return false
   if (!('registerElement' in val)) return false
@@ -62,21 +61,25 @@ const getModelAssigner = (
   vnode: VNode,
   registerValue: RegisterValue
 ): CustomDirectiveRegisterAssignerFn => {
-  const fn = vnode.props?.['onUpdate:registerValue'] // this is a developer escape hatch
-  if (!fn) {
-    return (value) => {
-      registerValue.setValueWithInternalPath(value)
-      return undefined
-    }
+  // developer escape hatch — Vue wires `onUpdate:registerValue` as either a
+  // single function or an array of functions depending on how many listeners
+  // are bound. We narrow before dispatching.
+  const fn: unknown = vnode.props?.['onUpdate:registerValue']
+  if (isArray(fn)) {
+    return (value) =>
+      invokeArrayFns(
+        fn.filter((x) => isFunction(x)) as ((...args: unknown[]) => unknown)[],
+        value,
+        registerValue
+      )
   }
-  return isArray(fn)
-    ? (value) =>
-        invokeArrayFns(
-          fn.filter((x) => isFunction(x)),
-          value,
-          registerValue
-        )
-    : fn
+  if (isFunction(fn)) {
+    return fn as CustomDirectiveRegisterAssignerFn
+  }
+  return (value) => {
+    registerValue.setValueWithInternalPath(value)
+    return undefined
+  }
 }
 
 function onCompositionStart(e: Event) {
@@ -88,7 +91,7 @@ function onCompositionStart(e: Event) {
 
 function onCompositionEnd(e: Event) {
   const target = e.target as ComposingTarget
-  if (target && target?.composing) {
+  if (target?.composing === true) {
     target.composing = false
     target.dispatchEvent(new Event('input'))
   }
@@ -107,26 +110,23 @@ function setAssignFunction(
     return
   }
 
-  const assignerFn = getModelAssigner(vnode, value)
-  if (assignerFn) {
-    el[assignKey] = assignerFn
-  }
+  el[assignKey] = getModelAssigner(vnode, value)
 }
 
 // We are exporting the v-model runtime directly as vnode hooks so that it can
 // be tree-shaken in case v-model is never used.
 const vRegisterText: RegisterTextCustomDirective = {
   created(el, { value, modifiers: { lazy, trim, number } }, vnode) {
-    const castToNumber = number || (vnode.props && vnode.props['type'] === 'number')
+    const castToNumber = number === true || vnode.props?.['type'] === 'number'
     if (isRegisterValue(value)) {
       value.registerElement(el)
       setAssignFunction(el, vnode, value)
     }
-    addEventListener(el, lazy ? 'change' : 'input', (e) => {
+    addEventListener(el, lazy === true ? 'change' : 'input', (e) => {
       const target = e.target as ComposingTarget
-      if (!target || target.composing) return
+      if (target === null || target.composing) return
       let domValue: string | number = el.value
-      if (trim) {
+      if (trim === true) {
         domValue = domValue.trim()
       }
       if (castToNumber) {
@@ -134,12 +134,12 @@ const vRegisterText: RegisterTextCustomDirective = {
       }
       el[assignKey]?.(domValue)
     })
-    if (trim) {
+    if (trim === true) {
       addEventListener(el, 'change', () => {
         el.value = el.value.trim()
       })
     }
-    if (!lazy) {
+    if (lazy !== true) {
       addEventListener(el, 'compositionstart', onCompositionStart)
       addEventListener(el, 'compositionend', onCompositionEnd)
       // Safari < 10.2 & UIWebView doesn't fire compositionend when
@@ -159,11 +159,11 @@ const vRegisterText: RegisterTextCustomDirective = {
   beforeUpdate(el, { value, oldValue, modifiers: { lazy, trim, number } }, vnode) {
     setAssignFunction(el, vnode, value)
     // avoid clearing unresolved text. #2302
-    if ('composing' in el && el.composing) return
+    if ((el as { composing?: boolean }).composing === true) return
     if (!isRegisterValue(value)) return
 
     const elValue =
-      (number || el.type === 'number') && !/^0\d/.test(el.value)
+      (number === true || el.type === 'number') && !/^0\d/.test(el.value)
         ? looseToNumber(el.value)
         : el.value
     const newValue = value.innerRef.value === null ? '' : value.innerRef.value
@@ -174,10 +174,10 @@ const vRegisterText: RegisterTextCustomDirective = {
 
     if (document.activeElement === el && el.type !== 'range') {
       // #8546
-      if (lazy && value.innerRef.value === oldValue) {
+      if (lazy === true && value.innerRef.value === oldValue) {
         return
       }
-      if (trim && el.value.trim() === newValue) {
+      if (trim === true && el.value.trim() === newValue) {
         return
       }
     }
@@ -306,12 +306,12 @@ const vRegisterSelect: RegisterSelectCustomDirective = {
     addEventListener(el, 'change', () => {
       const selectedVal = Array.prototype.filter
         .call(el.options, (o: HTMLOptionElement) => o.selected)
-        .map((o: HTMLOptionElement) => (number ? looseToNumber(getValue(o)) : getValue(o)))
+        .map((o: HTMLOptionElement) => (number === true ? looseToNumber(getValue(o)) : getValue(o)))
       el[assignKey]?.(
         el.multiple ? (isSetModel ? new Set(selectedVal) : selectedVal) : selectedVal[0]
       )
       el._assigning = true
-      nextTick(() => {
+      void nextTick(() => {
         el._assigning = false
       })
     })
@@ -326,7 +326,7 @@ const vRegisterSelect: RegisterSelectCustomDirective = {
     setAssignFunction(el, vnode, binding.value)
   },
   updated(el, { value }) {
-    if (!el._assigning) {
+    if (el._assigning !== true) {
       setSelected(el, value)
     }
   },
@@ -428,7 +428,7 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
     callModelHook(el, binding, vnode, prevVNode, 'updated')
   },
   beforeUnmount(el, { value }) {
-    if (!isRegisterValue(value) || !el) return
+    if (!isRegisterValue(value)) return
 
     value.deregisterElement(el)
 
@@ -485,7 +485,7 @@ function callModelHook(
   hook: keyof ObjectDirective
 ) {
   const modelToUse = resolveDynamicModel(el.tagName, vnode.props?.['type'])
-  const fn = modelToUse[hook] as DirectiveHook
+  const fn = modelToUse[hook] as DirectiveHook | undefined
   fn?.(el, binding, vnode, prevVNode)
 }
 

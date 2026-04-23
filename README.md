@@ -10,10 +10,10 @@
 
 ## 📦 Status
 
-**Public beta** (`0.8.0-beta`). The API is stable and under SemVer from
-`v1.0` onward — 0.x minor bumps may still include small breaking
-changes; each one lands with a migration note under
-[`docs/migration/`](./docs/migration). [What's new in 0.8.0-beta →](./CHANGELOG.md#v080-beta)
+**Pre-1.0.** The API is stable and under SemVer from `v1.0` onward —
+0.x minor bumps may still include small breaking changes; each one
+lands with a migration note under
+[`docs/migration/`](./docs/migration). [Recent changes →](./CHANGELOG.md)
 <br><br>
 
 ## 🏔️ Features

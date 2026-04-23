@@ -1,43 +1,40 @@
 # Changelog
 
-## v0.8.0-beta
-
-The first public-beta release. Everything in this entry came in on
-branch `claude/qc` over Plans 2–3.
+## Unreleased
 
 **What's new at a glance**
 
-- **Full rewrite of the core.** Five pre-rewrite `useState` composables
-  collapsed into a single `FormState` closure per form. Registry-backed,
-  framework-agnostic — works under Nuxt 3/4, bare Vue 3, and bare Vue 3
-  + `@vue/server-renderer`.
+- **Full rewrite of the core.** The pre-rewrite `useState` composables
+  are collapsed into a single `FormState` closure per form. Registry-
+  backed, framework-agnostic — works under Nuxt 3/4, bare Vue 3, and
+  bare Vue 3 + `@vue/server-renderer`.
 - **Zod v4 adapter** at `@chemical-x/forms/zod`. The v3 adapter stays
   at `@chemical-x/forms/zod-v3` for existing consumers; the two are
   physically isolated and pick the zod major the consumer installs.
-- **Type-inference at IDE-native quality.** `register` / `getValue` /
-  `setValue` / `getFieldState` narrow down to the exact leaf type for
-  any `FlatPath<Form>`. New `ArrayPath<Form>` / `ArrayItem<Form, Path>`
+- **Type-inference improvements.** `register` / `getValue` / `setValue`
+  / `getFieldState` narrow down to the exact leaf type for any
+  `FlatPath<Form>`. New `ArrayPath<Form>` / `ArrayItem<Form, Path>`
   helper types drive the typed array helpers.
 - **New surface:** `isDirty`, `isValid`, `isSubmitting`, `submitCount`,
-  `submitError`, `reset()`, `resetField(path)`, and seven typed array
+  `submitError`, `reset()`, `resetField(path)`, and the typed array
   helpers (`append` / `prepend` / `insert` / `remove` / `swap` /
   `move` / `replace`).
-- **Memory-leak fix.** FormState is now evicted from the registry on
+- **Memory-leak fix.** `FormState` is evicted from the registry on
   the last consumer's scope dispose — prevents accumulation in
   long-lived SPAs.
-- **Performance.** Keystroke bench runs 7–10× faster than the
-  pre-rewrite baseline. `scripts/check-bench.mjs` fails CI if the
-  ratio drops.
-- **CI gates:** bundle size (`size-limit`), coverage (v8, with per-
+- **Performance.** The keystroke bench runs several times faster than
+  the pre-rewrite baseline; `scripts/check-bench.mjs` fails CI if the
+  ratio regresses.
+- **CI gates:** bundle size (`size-limit`), coverage (v8 with per-
   metric thresholds), and bench regression all run on every PR across
-  the Node 18/20/22/lts matrix. Test-file and intra-file execution
-  order shuffles on every run.
-- **Tree-shaking.** `sideEffects: false` is now declared — unused
-  subpath imports drop out of consumer bundles.
-- **Docs.** A new `docs/` tree covers the full public API, five
-  task-oriented recipes (dynamic field arrays, server errors, custom
-  adapters, SSR hydration, advanced validation), and two per-release
-  migration notes (`0.6→0.7`, `0.7→0.8`).
+  the Node matrix. Test-file and intra-file execution order shuffles
+  on every run.
+- **Tree-shaking.** `sideEffects: false` is declared — unused subpath
+  imports drop out of consumer bundles.
+- **Docs.** A new `docs/` tree covers the full public API, task-
+  oriented recipes (dynamic field arrays, server errors, custom
+  adapters, SSR hydration, advanced validation), and per-release
+  migration notes.
 
 **Breaking changes**
 
@@ -51,7 +48,7 @@ Two consumer-facing breakages since 0.6:
   imperatively. See
   [`docs/migration/0.6-to-0.7.md`](docs/migration/0.6-to-0.7.md).
 
-**Scoped out of this release (Plan 4 candidates)**
+**Out of scope for this release (future candidates)**
 
 Async validators, a Valibot adapter to validate the
 schema-agnostic claim, a bare-Vue playground, an auto-release
@@ -60,7 +57,7 @@ benchmarks against FormKit / VeeValidate / react-hook-form.
 
 ---
 
-## v0.5.0...v0.8.0-beta
+## Compare
 
 [compare changes](https://github.com/cubicforms/chemical-x-forms/compare/v0.5.0...HEAD)
 

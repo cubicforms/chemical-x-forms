@@ -6,10 +6,10 @@ This recipe covers three patterns that come up often.
 
 > **Async validators are not yet supported.** `validateAtPath` is
 > synchronous — zod's `.refine(async ...)` and `.transform(async ...)`
-> throw at runtime. Async validation is on the post-beta roadmap
-> (Plan 4). For now, run async checks inside your `handleSubmit`
-> callback and feed the result into `setFieldErrorsFromApi` — see the
-> server-errors recipe.
+> throw at runtime. Adding async validation is a planned follow-up.
+> For now, run async checks inside your `handleSubmit` callback and
+> feed the result into `setFieldErrorsFromApi` — see the server-errors
+> recipe.
 
 ## Cross-field validation with zod `.refine()`
 
@@ -134,6 +134,7 @@ Supporting async refines requires:
 - A cancellation story for stale in-flight validations.
 
 This is a genuinely breaking change to the core (every current caller
-assumes sync validation). Plan 4 will tackle it with proper regression
-coverage. The `setFieldErrors` / `setFieldErrorsFromApi` bridge from
-`handleSubmit` is the supported interim answer.
+assumes sync validation), so it's deferred to a future release with
+proper regression coverage. The `setFieldErrors` /
+`setFieldErrorsFromApi` bridge from `handleSubmit` is the supported
+interim answer.

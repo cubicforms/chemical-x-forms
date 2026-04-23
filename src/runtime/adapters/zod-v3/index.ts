@@ -1,5 +1,9 @@
 import { cloneDeep, isFunction, merge, set } from 'lodash-es'
-import { z } from 'zod'
+// Imports zod v3 via the pnpm alias defined in devDependencies; the
+// published bundle rewrites this specifier back to 'zod' via the build
+// step (see build.config.ts). Consumers of `@chemical-x/forms/zod-v3`
+// install zod@3 themselves and the resolved import works.
+import { z } from 'zod-v3'
 import type { AbstractSchema, FormKey, ValidationError } from '../../types/types-api'
 
 // The adapter speaks the pre-rewrite dotted-string path format at the

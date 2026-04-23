@@ -135,8 +135,11 @@ importers:
         specifier: ^2.2.8
         version: 2.2.8(typescript@5.7.3)
       zod:
-        specifier: ^3.24.2
-        version: 3.24.2
+        specifier: ^4.3.6
+        version: 4.3.6
+      zod-v3:
+        specifier: npm:zod@^3.24
+        version: zod@3.24.2
 
 packages:
 
@@ -5935,6 +5938,9 @@ packages:
 
   zod@3.24.2:
     resolution: {integrity: sha512-lY7CDW43ECgW9u1TcT3IoXHflywfVqDYze4waEz812jR/bZ8FHDsl7pFQoSZTz5N+2NqRXs8GBwnAwo3ZNxqhQ==}
+
+  zod@4.3.6:
+    resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
 
 snapshots:
 
@@ -12676,3 +12682,5 @@ snapshots:
       readable-stream: 4.7.0
 
   zod@3.24.2: {}
+
+  zod@4.3.6: {}

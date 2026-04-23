@@ -109,10 +109,6 @@ export default [
   // Nuxt config
   {
     plugins: { nuxt },
-    languageOptions: {
-      // Typically not needed for .nuxt/ auto-generated files
-      globals: 'readonly',
-    },
   },
 
   // File structure rules
@@ -364,6 +360,7 @@ export default [
       '**/dist/**',
       '**/coverage/**',
       '.prettierrc.cjs',
+      'scripts/**',
     ],
   },
 ]

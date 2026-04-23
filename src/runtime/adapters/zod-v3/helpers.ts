@@ -1,4 +1,4 @@
-import type { z } from 'zod'
+import type { z } from 'zod-v3'
 
 // Map each schema type name to its Zod class (using broad generics for generality)
 type ZodTypeMap = {

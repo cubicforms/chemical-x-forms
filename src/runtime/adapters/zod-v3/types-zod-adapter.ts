@@ -1,4 +1,4 @@
-import type { z } from 'zod'
+import type { z } from 'zod-v3'
 import type { FormKey, ValidationMode } from '../../types/types-api'
 
 export type UseFormConfigurationWithZod<Schema extends z.ZodType<unknown>, InitialState> = {

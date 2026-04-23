@@ -31,7 +31,7 @@
     "check": "pnpm lint && pnpm format:check && pnpm typecheck",
     "fix": "npm run lint:fix && npm run format",
     "typecheck": "tsc --noEmit",
-    "prepack": "unbuild",
+    "prepack": "unbuild && node scripts/rewrite-zod-aliases.mjs",
     "prepack:watch": "chokidar 'src/**/*' -c 'pnpm prepack' --initial",
     "release": "pnpm lint && pnpm test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
     "test": "vitest run",
@@ -62,6 +62,10 @@
     "./transforms": {
       "types": "./dist/transforms.d.mts",
       "import": "./dist/transforms.mjs"
+    },
+    "./zod": {
+      "types": "./dist/zod.d.mts",
+      "import": "./dist/zod.mjs"
     },
     "./zod-v3": {
       "types": "./dist/zod-v3.d.mts",
@@ -132,7 +136,8 @@
     "vue": "^3.5.13",
     "vue-eslint-parser": "^10.1.1",
     "vue-tsc": "^2.2.8",
-    "zod": "^3.24.2"
+    "zod": "^4.3.6",
+    "zod-v3": "npm:zod@^3.24"
   },
   "peerDependencies": {
     "@vue/compiler-core": ">=3.5.0",
@@ -143,8 +148,14 @@
     "zod": ">=3.0.0 <4.0.0"
   },
   "peerDependenciesMeta": {
-    "nuxt": { "optional": true },
-    "vite": { "optional": true },
-    "zod": { "optional": true }
+    "nuxt": {
+      "optional": true
+    },
+    "vite": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
   }
 }

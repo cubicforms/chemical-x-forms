@@ -1,6 +1,8 @@
 <script setup lang="ts">
   import { useForm } from '@runtime/composables/use-form'
-  import { z } from 'zod'
+  // The SSR fixture exercises the zod v3 adapter via useForm auto-import.
+  // Installed side-by-side with zod v4 via pnpm alias.
+  import { z } from 'zod-v3'
 
   const schema = z.object({
     favoriteGame: z.string().default('chess'),

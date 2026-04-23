@@ -4,6 +4,7 @@ import type {
   FormKey,
   ValidationError,
 } from '../types/types-api'
+import { InvalidPathError } from './errors'
 import { canonicalizePath } from './paths'
 
 /**
@@ -63,7 +64,18 @@ export function hydrateApiErrors(
   const errors: ValidationError[] = []
   for (const [key, messages] of Object.entries(details)) {
     const messageList = Array.isArray(messages) ? messages : [messages]
-    const { segments } = canonicalizePath(key)
+    // `canonicalizePath` throws `InvalidPathError` for dotted strings with
+    // empty segments (e.g. `'. '`, `'a..b'`). A misbehaving server can
+    // genuinely emit such a key; the hydrator is a normaliser, not a
+    // validator, so we drop offending keys rather than let the exception
+    // escape. Well-formed keys continue as normal.
+    let segments: readonly (string | number)[]
+    try {
+      segments = canonicalizePath(key).segments
+    } catch (err) {
+      if (err instanceof InvalidPathError) continue
+      throw err
+    }
     for (const message of messageList) {
       if (typeof message !== 'string' || message.length === 0) continue
       errors.push({

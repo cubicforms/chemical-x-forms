@@ -76,6 +76,27 @@ renders in a hot template, gate the computed behind a more specific
 predicate (e.g. derive per-field `isDirty` via the leaf's
 original-vs-current comparison).
 
+## Path canonicalisation
+
+`canonicalizePath` (`src/runtime/core/paths.ts`) runs on every
+`register` / `setValue` / `getValue` / `validate` / `resetField` call
+and on every diff-apply patch emitted during a form mutation. Dotted-
+string inputs are LRU-cached (128-entry cap); array inputs bypass the
+cache since they're already structured. For a typical form that
+re-canonicalises a small working-set of paths thousands of times per
+session (one per keystroke on each registered field), the LRU turns
+the repeat cost into an O(1) Map hit.
+
+`isDirty`'s `originals` loop used to `JSON.parse(pathKey)` per entry
+to recover the canonical Path. As of phase 5.1 the originals Map
+stores the `segments` alongside each value, so the loop skips the
+parse entirely. On a 100-leaf pristine form this is ~4× faster than
+the pre-5.1 shape — measurable because the comparison walks every
+entry (pristine short-circuits only when a dirty leaf is found).
+
+Both improvements have regression gates in `bench/paths.bench.ts`
+under `scripts/check-bench.mjs` (3× ratio floor).
+
 ## Reset cost
 
 `reset()` walks the `fields` / `errors` / `originals` maps and

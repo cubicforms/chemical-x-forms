@@ -60,20 +60,60 @@ export function parseDottedPath(path: string): Segment[] {
 }
 
 /**
+ * Bounded LRU cache for canonicalizePath on dotted-string inputs. Real forms
+ * issue many repeat canonicalizations for a small working-set of paths as
+ * the user types, registers fields, and validates — so an LRU amortises the
+ * parse + stringify cost across repeat calls without pinning memory as apps
+ * accumulate fields.
+ *
+ * Array inputs are not cached: they're already structured, so `.map` +
+ * `JSON.stringify` on a short array is cheaper than two Map touches.
+ *
+ * LRU is implemented as a plain `Map<string, entry>`: Map preserves insertion
+ * order, so on a cache hit we re-insert to move the entry to the end, and on
+ * overflow we delete the oldest (Map's first-in-iteration key). The cap is
+ * 128 — well above a typical form's working set but small enough that the
+ * Map itself stays cheap to scan on eviction.
+ */
+const CANONICAL_STRING_CACHE_MAX = 128
+const canonicalStringCache = new Map<string, { segments: readonly Segment[]; key: PathKey }>()
+
+/**
  * Canonicalise a path input into a structured form plus a stable string key.
  * Accepts either dotted-string or array form; array form is lossless.
  *
  * The PathKey is derived via `JSON.stringify` on the normalised segments,
  * guaranteeing collision-free encoding even if segment strings contain the
  * null byte or any other character.
+ *
+ * Dotted-string inputs are LRU-cached; see `canonicalStringCache` above.
  */
 export function canonicalizePath(input: string | Path): {
   segments: readonly Segment[]
   key: PathKey
 } {
-  const rawSegments: Segment[] =
-    typeof input === 'string' ? parseDottedPath(input) : Array.from(input)
-  const segments = rawSegments.map(normalizeSegment)
+  if (typeof input === 'string') {
+    const cached = canonicalStringCache.get(input)
+    if (cached !== undefined) {
+      // Move to end so frequently-touched paths survive eviction; `delete`
+      // + `set` is the canonical JS-Map LRU bump pattern.
+      canonicalStringCache.delete(input)
+      canonicalStringCache.set(input, cached)
+      return cached
+    }
+    // `parseDottedPath` already normalises each segment; the previous
+    // `.map(normalizeSegment)` second pass was a no-op. We drop it here.
+    const segments: readonly Segment[] = parseDottedPath(input)
+    const key = JSON.stringify(segments) as PathKey
+    const entry = { segments, key }
+    if (canonicalStringCache.size >= CANONICAL_STRING_CACHE_MAX) {
+      const oldest = canonicalStringCache.keys().next().value
+      if (oldest !== undefined) canonicalStringCache.delete(oldest)
+    }
+    canonicalStringCache.set(input, entry)
+    return entry
+  }
+  const segments = Array.from(input).map(normalizeSegment)
   const key = JSON.stringify(segments) as PathKey
   return { segments, key }
 }

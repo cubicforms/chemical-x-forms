@@ -71,24 +71,42 @@ export type FormState<F extends GenericForm> = {
   getOriginalAtPath(path: Path): unknown
 }
 
+/**
+ * Hydration payload shape accepted by `createFormState`. When provided, the
+ * initial form value comes from here rather than from `schema.getInitialState`.
+ * Used to replay SSR state on the client; originals are reconstructed from
+ * the schema because they're not serialised.
+ */
+export type FormStateHydration = {
+  readonly form: unknown
+  readonly errors: ReadonlyArray<readonly [string, unknown]>
+  readonly fields: ReadonlyArray<readonly [string, unknown]>
+}
+
 export type CreateFormStateOptions<F extends GenericForm> = {
   readonly formKey: FormKey
   readonly schema: AbstractSchema<F, F>
   readonly initialState?: DeepPartial<F> | undefined
   readonly validationMode?: ValidationMode | undefined
+  readonly hydration?: FormStateHydration | undefined
 }
 
 export function createFormState<F extends GenericForm>(
   options: CreateFormStateOptions<F>
 ): FormState<F> {
-  const { formKey, schema, initialState, validationMode = 'lax' } = options
+  const { formKey, schema, initialState, validationMode = 'lax', hydration } = options
 
-  const initialResponse: InitialStateResponse<F> = schema.getInitialState({
+  // Schema is ALWAYS consulted: we need the schema-derived originals even
+  // when hydrating, so pristine/dirty computation survives SSR round-trip.
+  // The form's actual starting value, though, prefers hydration data.
+  const schemaResponse: InitialStateResponse<F> = schema.getInitialState({
     useDefaultSchemaValues: true,
     constraints: initialState,
     validationMode,
   })
-  const initialData = initialResponse.data
+  const schemaInitialData = schemaResponse.data
+
+  const initialData: F = hydration !== undefined ? (hydration.form as F) : schemaInitialData
 
   const form = ref(initialData) as Ref<F>
 
@@ -103,23 +121,39 @@ export function createFormState<F extends GenericForm>(
   // re-assigned. Not reactive — the set is append-only per form's lifetime.
   const originals = new Map<PathKey, unknown>()
 
-  // Populate originals + field records for every initial leaf by diffing
-  // from an empty form. Reuses the diff-apply walker so tree-traversal logic
-  // lives in one place.
+  // Populate originals by diffing from empty-form to schema-initial. This is
+  // always the schema's shape regardless of hydration, so pristine/dirty
+  // comparisons are against what the form was supposed to start as.
   const initStamp = new Date().toISOString()
-  diffAndApply({}, initialData, [], (patch) => {
+  diffAndApply({}, schemaInitialData, [], (patch) => {
     if (patch.kind !== 'added') return
     const { key } = canonicalizePath(patch.path)
     originals.set(key, patch.newValue)
-    fields.set(key, {
-      path: patch.path,
-      updatedAt: initStamp,
-      isConnected: false,
-      focused: null,
-      blurred: null,
-      touched: null,
-    })
   })
+
+  // Populate fields from either the hydration payload (preserves exact
+  // server-side timestamps and flags) or by walking initialData for leaves.
+  if (hydration !== undefined) {
+    for (const [rawKey, record] of hydration.fields) {
+      fields.set(rawKey as PathKey, record as FieldRecord)
+    }
+    for (const [rawKey, errs] of hydration.errors) {
+      errors.set(rawKey as PathKey, errs as ValidationError[])
+    }
+  } else {
+    diffAndApply({}, initialData, [], (patch) => {
+      if (patch.kind !== 'added') return
+      const { key } = canonicalizePath(patch.path)
+      fields.set(key, {
+        path: patch.path,
+        updatedAt: initStamp,
+        isConnected: false,
+        focused: null,
+        blurred: null,
+        touched: null,
+      })
+    })
+  }
 
   function touchFieldRecord(
     pathKey: PathKey,

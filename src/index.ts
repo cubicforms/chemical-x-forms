@@ -37,6 +37,12 @@ export { escapeForInlineScript } from './runtime/core/serialize-script'
 // schema-agnostic core.
 export { useAbstractForm as useForm } from './runtime/composables/use-abstract-form'
 
+// Re-export for nested components that want to reach the nearest
+// ancestor form (or an arbitrary form by key) without prop-threading.
+// The consumer supplies the `Form` generic — see the composable's
+// docblock for the type-erasure reasoning.
+export { useFormContext } from './runtime/composables/use-form-context'
+
 // The v-register directive (registered automatically by createChemicalXForms,
 // but exported for advanced consumers who install directives themselves).
 export { vRegister, isRegisterValue, assignKey } from './runtime/core/directive'

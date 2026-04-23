@@ -6,7 +6,7 @@
     favoriteGame: z.string().default('chess'),
     chessInArray: z.array(z.string()).default(['chess']),
   })
-  const { register } = useForm({ schema })
+  const { register } = useForm({ schema, key: 'ssr-select-fixture' })
 
   // -- Error API SSR fixtures --
   // Destructured at setup level so the refs become top-level template

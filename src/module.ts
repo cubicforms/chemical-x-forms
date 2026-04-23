@@ -35,13 +35,7 @@ export default defineNuxtModule<CXModuleOptions>({
     ])
 
     addPlugin({
-      src: resolver.resolve('./runtime/plugins/register'),
-      mode: 'client',
-    })
-
-    addPlugin({
-      src: resolver.resolve('./runtime/plugins/register-stub'),
-      mode: 'server',
+      src: resolver.resolve('./runtime/plugins/chemical-x'),
     })
 
     // v-register directive type

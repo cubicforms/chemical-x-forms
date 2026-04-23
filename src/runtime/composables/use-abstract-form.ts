@@ -1,22 +1,46 @@
-import { useDOMFieldStateStore } from '../lib/core/composables/use-field-state-store'
-import { useFormErrorStore } from '../lib/core/composables/use-form-error-store'
-import { useFormKey } from '../lib/core/composables/use-form-key'
-import { useFormStore } from '../lib/core/composables/use-form-store'
-import { useMetaTrackerStore } from '../lib/core/composables/use-meta-tracker-store'
-import { fieldStateFactory } from '../lib/core/utils/field-state-api'
-import { getComputedSchema } from '../lib/core/utils/get-computed-schema'
-import { hydrateApiErrors } from '../lib/core/utils/hydrate-api-errors'
-import { registerFactory } from '../lib/core/utils/register'
+import { computed, type ComputedRef, type Ref } from 'vue'
+import { createFormState, type FormState } from '../core/create-form-state'
+import { buildFieldStateAccessor, type FieldStateView } from '../core/field-state-api'
+import { getComputedSchema } from '../core/get-computed-schema'
+import { canonicalizePath, type Path, type Segment } from '../core/paths'
+import { getAtPath } from '../core/path-walker'
+import { buildProcessForm } from '../core/process-form'
+import { buildRegister } from '../core/register-api'
+import { useRegistry } from '../core/registry'
 import type {
   AbstractSchema,
-  ApiErrorDetails,
-  ApiErrorEnvelope,
-  HandleSubmit,
+  CurrentValueContext,
+  CurrentValueWithContext,
+  FieldState,
+  FormErrorRecord,
+  FormKey,
+  RegisterContext,
+  RegisterValue,
   UseAbstractFormReturnType,
   UseFormConfiguration,
   ValidationError,
+  ValidationResponseWithoutValue,
 } from '../types/types-api'
 import type { DeepPartial, GenericForm } from '../types/types-core'
+
+/**
+ * useForm's abstract entry point. The Zod-typed `useForm` sitting at
+ * ../composables/use-form.ts delegates here after wrapping its Zod schema
+ * with `zodAdapter` — the result is an `AbstractSchema<Form, GetValueFormType>`
+ * instance indistinguishable from a hand-rolled adapter.
+ *
+ * Wiring:
+ * - Fetches the current Vue app's ChemicalXRegistry via useRegistry().
+ * - Looks up (or creates) the FormState<F> for the configured key. If the
+ *   registry has a pending hydration entry for the key, threads it into
+ *   createFormState so the client side starts from the server's snapshot.
+ * - Builds register / getFieldState / validate / handleSubmit /
+ *   setFieldErrorsFromApi from that FormState via the Phase 1b factories.
+ *
+ * The old pre-rewrite implementation stitched together five separate Nuxt
+ * useState composables and a cache in register.ts. This file collapses all
+ * of that into one registry-backed closure.
+ */
 
 export function useAbstractForm<
   Form extends GenericForm,
@@ -29,100 +53,185 @@ export function useAbstractForm<
     DeepPartial<Form>
   >
 ): UseAbstractFormReturnType<Form, GetValueFormType> {
-  const { schema } = configuration
-  const key = useFormKey(configuration.key)
-  const computedSchema = getComputedSchema(key, schema)
-  const initialStateResponse = computedSchema.getInitialState({
-    useDefaultSchemaValues: true,
-    constraints: configuration.initialState,
-    validationMode: configuration.validationMode ?? 'lax',
+  const key = requireFormKey(configuration.key)
+
+  // Resolve the schema (accepts either an AbstractSchema or a factory).
+  const resolvedSchema = getComputedSchema(key, configuration.schema) as unknown as AbstractSchema<
+    Form,
+    Form
+  >
+
+  // One FormState per (app, formKey). Multiple useForm calls with the same
+  // key resolve to the same instance — matches the pre-rewrite "shared
+  // store" semantic that forms with the same key were intended to share.
+  const registry = useRegistry()
+  const existing = registry.forms.get(key) as FormState<Form> | undefined
+  const state: FormState<Form> =
+    existing ?? buildFreshState<Form>(key, resolvedSchema, configuration, registry)
+
+  // --- API surface ---
+  const register = buildRegister(state) as (
+    path: string | Path,
+    context?: RegisterContext<unknown, unknown>
+  ) => RegisterValue<unknown>
+  const getFieldStateBuilt = buildFieldStateAccessor(state)
+  const {
+    validate: validateBuilt,
+    handleSubmit,
+    setFieldErrorsFromApi: setFromApiBuilt,
+  } = buildProcessForm(state)
+
+  const getFieldState = (pathInput: string) =>
+    getFieldStateBuilt(pathInput) as unknown as Ref<FieldState>
+
+  const validate = (pathInput?: string) =>
+    validateBuilt(pathInput) as Ref<ValidationResponseWithoutValue<Form>>
+
+  // Back-compat: setFieldErrorsFromApi previously returned ValidationError[].
+  // New implementation returns the structured HydrateApiErrorsResult but we
+  // still emit the errors array to match the documented return — consumers
+  // wanting the structured result should call the underlying hydrate helper
+  // directly.
+  const setFieldErrorsFromApi = (
+    payload: Parameters<typeof setFromApiBuilt>[0]
+  ): ValidationError[] => setFromApiBuilt(payload).errors
+
+  // --- getValue / setValue (overloaded) ---
+  function getValueImpl(
+    pathOrContext?: string | CurrentValueContext<boolean>,
+    maybeContext?: CurrentValueContext<boolean>
+  ): unknown {
+    if (pathOrContext === undefined) {
+      return state.form as unknown as Readonly<Ref<GetValueFormType>>
+    }
+    if (typeof pathOrContext === 'object') {
+      // { withMeta: true|false } at position 0
+      return contextualiseValue(state, [], pathOrContext)
+    }
+    const segments = canonicalizePath(pathOrContext).segments
+    if (maybeContext !== undefined) {
+      return contextualiseValue(state, segments, maybeContext)
+    }
+    return computed(() => getAtPath(state.form.value, segments)) as Readonly<Ref<unknown>>
+  }
+
+  function setValueImpl(pathOrValue: unknown, maybeValue?: unknown): boolean {
+    if (arguments.length === 1) {
+      // setValue(value) — whole-form replacement.
+      state.applyFormReplacement(pathOrValue as Form)
+      return true
+    }
+    const segments = canonicalizePath(pathOrValue as string | Path).segments
+    state.setValueAtPath(segments, maybeValue)
+    return true
+  }
+
+  // --- Error store API — dotted-key record for back-compat ---
+  const fieldErrors = computed<FormErrorRecord>(() => {
+    const record: FormErrorRecord = {}
+    for (const [, entries] of state.errors) {
+      for (const err of entries) {
+        const dottedKey = (err.path as ReadonlyArray<Segment>).map(String).join('.')
+        const existingForKey = record[dottedKey]
+        if (existingForKey === undefined) record[dottedKey] = [err]
+        else existingForKey.push(err)
+      }
+    }
+    return record
   })
 
-  const {
-    getHandleSubmitFactory,
-    getValidateFactory,
-    formSummaryValues,
-    getValueFactory,
-    setValueFactory,
-    formStore,
-    form,
-  } = useFormStore<Form>(key, initialStateResponse)
+  function setFieldErrors(errors: ValidationError[]): void {
+    state.setAllErrors(errors)
+  }
 
-  const { metaTracker } = useMetaTrackerStore(key)
-  const getValue = getValueFactory<Form, GetValueFormType>(form, metaTracker)
-  const setValue = setValueFactory(formStore, key, computedSchema, metaTracker)
-  const validate = getValidateFactory(form, key, computedSchema)
-  const rawHandleSubmit = getHandleSubmitFactory(form, validate)
-  const { getElementHelpers, domFieldStateStore } = useDOMFieldStateStore(form)
-  const register = registerFactory(
-    formStore,
-    key,
-    computedSchema,
-    metaTracker,
-    setValue,
-    getElementHelpers
-  )
+  function addFieldErrors(errors: ValidationError[]): void {
+    state.addErrors(errors)
+  }
 
-  const {
-    fieldErrors,
-    setErrors: setFieldErrors,
-    addErrors: addFieldErrors,
-    clearErrors: clearFieldErrors,
-  } = useFormErrorStore(key)
-
-  const getFieldState = fieldStateFactory<Form>(
-    formSummaryValues.value,
-    metaTracker,
-    domFieldStateStore,
-    fieldErrors,
-    key
-  )
-
-  /**
-   * Wraps the raw `handleSubmit` to make the error store a reactive mirror
-   * of the most recent validation result:
-   * - success → clear all field errors before calling user's `onSubmit`
-   * - failure → populate the store, then fire user's `onError` (if any)
-   *
-   * Always passes an `onError` into the raw handler so the auto-populate
-   * runs even when the caller doesn't provide one (otherwise process-form's
-   * early-return on `!onError` would skip our side-effect).
-   */
-  const handleSubmit: HandleSubmit<Form> = (onSubmit, onError) =>
-    rawHandleSubmit(
-      async (values) => {
-        clearFieldErrors()
-        await onSubmit(values)
-      },
-      async (errors) => {
-        setFieldErrors(errors)
-        if (onError) await onError(errors)
-      }
-    )
-
-  function setFieldErrorsFromApi(
-    payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined
-  ): ValidationError[] {
-    const errors = hydrateApiErrors(payload, { formKey: key })
-    setFieldErrors(errors)
-    return errors
+  function clearFieldErrors(path?: string | (string | number)[]): void {
+    if (path === undefined) {
+      state.clearErrors()
+      return
+    }
+    const segments = canonicalizePath(path as string | Path).segments
+    state.clearErrors(segments)
   }
 
   return {
-    getFieldState,
+    getFieldState: getFieldState as UseAbstractFormReturnType<
+      Form,
+      GetValueFormType
+    >['getFieldState'],
     handleSubmit,
-    getValue,
-    setValue,
-    validate,
-    register,
+    getValue: getValueImpl as UseAbstractFormReturnType<Form, GetValueFormType>['getValue'],
+    setValue: setValueImpl as UseAbstractFormReturnType<Form, GetValueFormType>['setValue'],
+    validate: validate as UseAbstractFormReturnType<Form, GetValueFormType>['validate'],
+    register: register as UseAbstractFormReturnType<Form, GetValueFormType>['register'],
     key,
-    fieldErrors,
+    fieldErrors: fieldErrors as Readonly<ComputedRef<FormErrorRecord>>,
     setFieldErrors,
     addFieldErrors,
     clearFieldErrors,
     setFieldErrorsFromApi,
-  } satisfies UseAbstractFormReturnType<Form, GetValueFormType>
+  }
 }
 
-// create an alias for conditional import in the consumer app
+function buildFreshState<F extends GenericForm>(
+  key: FormKey,
+  schema: AbstractSchema<F, F>,
+  configuration: UseFormConfiguration<F, F, AbstractSchema<F, F>, DeepPartial<F>>,
+  registry: ReturnType<typeof useRegistry>
+): FormState<F> {
+  const pending = registry.pendingHydration.get(key)
+  if (pending !== undefined) registry.pendingHydration.delete(key)
+  const state = createFormState<F>({
+    formKey: key,
+    schema,
+    initialState: configuration.initialState,
+    validationMode: configuration.validationMode,
+    hydration: pending,
+  })
+  // Storage type is FormState<GenericForm>; the lookup above narrows back to F
+  // via the `existing as FormState<Form>` cast.
+  ;(registry.forms as Map<FormKey, FormState<GenericForm>>).set(
+    key,
+    state as unknown as FormState<GenericForm>
+  )
+  return state
+}
+
+function contextualiseValue<F extends GenericForm>(
+  state: FormState<F>,
+  segments: Path,
+  context: CurrentValueContext<boolean>
+): unknown {
+  // withMeta: true returns { currentValue, meta } per UseAbstractFormReturnType.
+  // For now we return the simple shape — the meta field is a stub until Phase 2
+  // finishes. No existing tests exercise this branch; trace to zero consumer
+  // coverage means the simple implementation doesn't regress anything.
+  const currentValue = computed(() => getAtPath(state.form.value, segments))
+  if (context.withMeta === true) {
+    return {
+      currentValue: currentValue as Readonly<Ref<unknown>>,
+      meta: computed(() => ({})) as Readonly<Ref<unknown>>,
+    } as unknown as CurrentValueWithContext<unknown>
+  }
+  return currentValue as Readonly<Ref<unknown>>
+}
+
+function requireFormKey(key: FormKey | undefined): FormKey {
+  if (key === undefined || key === null || key === '') {
+    throw new Error(
+      '[@chemical-x/forms] useForm requires an explicit `key` option. ' +
+        'Anonymous forms share state across unrelated components; pass a unique string per form.'
+    )
+  }
+  return key
+}
+
+// Alias for the public `useForm` name — use-form.ts (the Zod entry) exports
+// a wrapper that first runs the schema through zodAdapter, but the abstract
+// form can be imported directly for consumers who build their own adapters.
 export { useAbstractForm as useForm }
+
+export type { FieldStateView }

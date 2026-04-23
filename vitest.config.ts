@@ -21,6 +21,17 @@ import { defineConfig } from 'vitest/config'
  */
 export default defineConfig({
   test: {
+    // Shuffle test-file AND intra-file test order on every run. Surfaces
+    // any implicit ordering dependency (a test leaking state, a module-
+    // level side effect triggered by load order, etc.) that would
+    // otherwise hide in the always-same default order. CI reruns with
+    // different seeds, so a flake pinned to one ordering is a blocker.
+    sequence: {
+      shuffle: {
+        files: true,
+        tests: true,
+      },
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

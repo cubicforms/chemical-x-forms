@@ -293,9 +293,13 @@ export type UseAbstractFormReturnType<
   }
 
   validate: (path?: FlatPath<Form>) => Readonly<Ref<ValidationResponseWithoutValue<Form>>>
-  register: (
-    path: RegisterFlatPath<Form, keyof Form>
-  ) => RegisterValue<NestedType<Form, typeof path> | undefined>
+  // register is generic so the RegisterValue narrows to the specific path's
+  // leaf type. Without the generic, `typeof path` in the return would resolve
+  // to the full `RegisterFlatPath<Form>` union, and every register call
+  // would produce a RegisterValue<union-of-every-leaf | undefined>.
+  register: <Path extends RegisterFlatPath<Form, keyof Form>>(
+    path: Path
+  ) => RegisterValue<NestedType<Form, Path> | undefined>
   key: FormKey
 
   // --- Reactive field-error API ---

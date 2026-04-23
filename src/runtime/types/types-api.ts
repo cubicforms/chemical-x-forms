@@ -62,7 +62,10 @@ export type UseFormConfiguration<
   InitialState extends DeepPartial<Form>,
 > = {
   schema: Schema | ((key: FormKey) => Schema)
-  key?: FormKey
+  // Required by design: forms without an explicit key silently share state
+  // across unrelated components. The runtime `requireFormKey` still throws
+  // for non-TS consumers passing `undefined` / `''`.
+  key: FormKey
   initialState?: InitialState
   validationMode?: ValidationMode
 }

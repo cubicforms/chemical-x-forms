@@ -7,7 +7,9 @@ export type UseFormConfigurationWithZod<Schema extends z.ZodType<unknown>, Initi
       ? Schema
       : never
     : never
-  key?: FormKey
+  // Required by design — matches the core `UseFormConfiguration`. See
+  // types-api.ts for the rationale.
+  key: FormKey
   initialState?: InitialState
   validationMode?: ValidationMode
 }

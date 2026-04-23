@@ -54,7 +54,7 @@ export function useForm<
   return useAbstractForm<Form, GetValueFormType>({
     schema: abstractSchema,
     initialState: configuration.initialState as DeepPartial<Form>,
-    key: configuration.key ?? '',
+    key: configuration.key,
     validationMode: configuration.validationMode ?? 'lax',
   })
 }

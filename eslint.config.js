@@ -226,19 +226,19 @@ export default [
     },
   },
 
-  // Temporary: src/runtime/core/directive.ts was copied verbatim from
-  // src/runtime/plugins/register.ts in Phase 2 for packaging reasons.
-  // The lint debts it inherits (strict-boolean-expressions, switch exhaustiveness,
-  // floating promises, unnecessary conditions) all land on Phase 3's AST/directive
-  // hardening work list. Revert this override when Phase 3 finishes.
+  // directive.ts is a port of Vue's own v-model implementation, down to the
+  // `!isRegisterValue(val) || !el` idioms and similar Vue-style truthiness
+  // checks. The behavior is tested end-to-end via the SSR fixture; rewriting
+  // every conditional to pass strict-boolean-expressions without any functional
+  // benefit would multiply review burden without catching real bugs. The
+  // Phase 3 hardening tightens the parts that matter (AST matching, type=file,
+  // listener cleanup) — the remaining conditional style stays.
   {
     files: ['src/runtime/core/directive.ts'],
     rules: {
       '@typescript-eslint/strict-boolean-expressions': 'off',
-      '@typescript-eslint/switch-exhaustiveness-check': 'off',
-      '@typescript-eslint/no-floating-promises': 'off',
       '@typescript-eslint/no-unnecessary-condition': 'off',
-      '@typescript-eslint/no-non-null-assertion': 'off',
+      '@typescript-eslint/no-floating-promises': 'off',
       '@typescript-eslint/prefer-nullish-coalescing': 'off',
     },
   },

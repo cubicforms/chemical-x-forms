@@ -106,99 +106,125 @@ function removePropsByName(props: (AttributeNode | DirectiveNode)[], propNames: 
   }
 }
 
+// Exact prop-name match. Pre-rewrite used .includes('register') / .includes('value') /
+// .includes('type') which false-positived on any user prop whose name contained those
+// substrings (e.g. `data-register-id`, `valueFoo`, `prototype`, `:registerField`).
+function isExactKey(summarizedKey: string, name: string): boolean {
+  // Summarized keys come in three shapes depending on prop type:
+  //   attribute       -> "name"          (from getSummarizedProps)
+  //   v-bind:name="x" -> "\"name\""      (quoted via renderAsStatic)
+  //   static v-prefix -> "\"name\""
+  return summarizedKey === name || summarizedKey === `"${name}"`
+}
+
 export const inputTextAreaNodeTransform: NodeTransform = (node) => {
-  if (node.type !== 1) return
+  try {
+    if (node.type !== NodeTypes.ELEMENT) return
 
-  const isInput = node.type === 1 && node.tag === 'input'
-  const isTextArea = node.type === 1 && node.tag === 'textarea'
+    const isInput = node.tag === 'input'
+    const isTextArea = node.tag === 'textarea'
 
-  if (!isInput && !isTextArea) return
+    if (!isInput && !isTextArea) return
 
-  const elementProps = getSummarizedProps(node)
+    const elementProps = getSummarizedProps(node)
 
-  const registerIndex = elementProps.findIndex((p) => p.key.includes('register'))
-  const registerSummarizedProp = elementProps[registerIndex]
-  if (!registerSummarizedProp) return // no return early if we don't find an register directive
+    const registerIndex = elementProps.findIndex((p) => isExactKey(p.key, 'register'))
+    const registerSummarizedProp = elementProps[registerIndex]
+    if (!registerSummarizedProp) return // no v-register directive; nothing to transform
 
-  const valueIndex = elementProps.findIndex((p) => p.key.includes('value'))
-  const elementValueSummarizedProp = elementProps?.[valueIndex] ?? {
-    key: 'value',
-    value: "''",
-  }
+    // <input type="file" v-register="..."> silently skipped — at runtime the
+    // directive routes to a no-op variant. Trying to set el.value on a file
+    // input throws a DOMException for security reasons.
+    const typeIndex = elementProps.findIndex((p) => isExactKey(p.key, 'type'))
+    const typeProp = elementProps[typeIndex]
+    if (typeProp !== undefined && typeProp.value === '"file"') return
 
-  const inputTypeIndex = elementProps.findIndex((p) => p.key.includes('type'))
-  // if (inputTypeIndex < 0 || inputTypeIndex >= elementProps.length) return
-
-  const defaultSummarizedTextProp = { key: 'type', value: "'text'" }
-  const inputTypeSummarizedProp: SummarizedProp =
-    inputTypeIndex === -1
-      ? defaultSummarizedTextProp
-      : (elementProps[inputTypeIndex] ?? defaultSummarizedTextProp)
-  const inputTypeExpressionArray =
-    typeof inputTypeSummarizedProp.value === 'string'
-      ? [inputTypeSummarizedProp.value]
-      : inputTypeSummarizedProp.value
-
-  // this gets paired with `value` to get the [selectionLabel]=[label] prop for the given input
-  // checkbox and radio are marked as selected via `checked`, others typically use `value`
-  const elementSelectionLabelExpression = createCompoundExpression([
-    '(',
-    '(',
-    ...inputTypeExpressionArray,
-    ')',
-    " === 'checkbox' || ",
-    '(',
-    ...inputTypeExpressionArray,
-    ") === 'radio'",
-    ") ? 'checked' : 'value'",
-  ])
-
-  function computeProps(
-    _node: PlainElementNode | ComponentNode | SlotOutletNode | TemplateNode,
-    registerSummarizedProp: SummarizedProp,
-    elementValueSummarizedProp: SummarizedProp
-  ) {
-    const dummyLoc: SourceLocation = {
-      start: { column: 0, line: 0, offset: 0 },
-      end: { column: 0, line: 0, offset: 0 },
-      source: '',
+    const valueIndex = elementProps.findIndex((p) => isExactKey(p.key, 'value'))
+    const elementValueSummarizedProp = elementProps?.[valueIndex] ?? {
+      key: 'value',
+      value: "''",
     }
 
-    const props = _node.props
-    removePropsByName(props, ['checked', 'value']) // (re)create the `value` prop further down
-    const registerValueArr = Array.isArray(registerSummarizedProp.value)
-      ? registerSummarizedProp.value
-      : [registerSummarizedProp.value]
-    const valueExpression = createCompoundExpression([
+    const inputTypeIndex = typeIndex
+
+    const defaultSummarizedTextProp = { key: 'type', value: "'text'" }
+    const inputTypeSummarizedProp: SummarizedProp =
+      inputTypeIndex === -1
+        ? defaultSummarizedTextProp
+        : (elementProps[inputTypeIndex] ?? defaultSummarizedTextProp)
+    const inputTypeExpressionArray =
+      typeof inputTypeSummarizedProp.value === 'string'
+        ? [inputTypeSummarizedProp.value]
+        : inputTypeSummarizedProp.value
+
+    // this gets paired with `value` to get the [selectionLabel]=[label] prop for the given input
+    // checkbox and radio are marked as selected via `checked`, others typically use `value`
+    const elementSelectionLabelExpression = createCompoundExpression([
       '(',
-      ...registerValueArr,
-      ')?.innerRef?.value',
+      '(',
+      ...inputTypeExpressionArray,
+      ')',
+      " === 'checkbox' || ",
+      '(',
+      ...inputTypeExpressionArray,
+      ") === 'radio'",
+      ") ? 'checked' : 'value'",
     ])
-    const valueOrCheckedProp: DirectiveNode = {
-      // reconstruct the `value` attribute based on the provided v-registerer, now that the computation is complete
-      arg: elementSelectionLabelExpression,
-      exp: createCompoundExpression([
+
+    function computeProps(
+      _node: PlainElementNode | ComponentNode | SlotOutletNode | TemplateNode,
+      registerSummarizedProp: SummarizedProp,
+      elementValueSummarizedProp: SummarizedProp
+    ): void {
+      const dummyLoc: SourceLocation = {
+        start: { column: 0, line: 0, offset: 0 },
+        end: { column: 0, line: 0, offset: 0 },
+        source: '',
+      }
+
+      const props = _node.props
+      removePropsByName(props, ['checked', 'value']) // (re)create the `value` prop further down
+      const registerValueArr = Array.isArray(registerSummarizedProp.value)
+        ? registerSummarizedProp.value
+        : [registerSummarizedProp.value]
+      const valueExpression = createCompoundExpression([
         '(',
-        ...elementSelectionLabelExpression.children,
-        ") === 'checked' ? (",
-        // resolves to a boolean
-        ...generateEqualityExpression(
-          registerSummarizedProp.value,
-          elementValueSummarizedProp.value
-        ),
-        ') : (',
-        // resolves to the provided register value
-        ...valueExpression.children,
-        ')',
-      ]),
-      name: 'bind',
-      modifiers: [],
-      type: NodeTypes.DIRECTIVE,
-      loc: dummyLoc,
+        ...registerValueArr,
+        ')?.innerRef?.value',
+      ])
+      const valueOrCheckedProp: DirectiveNode = {
+        // reconstruct the `value` attribute based on the provided v-registerer, now that the computation is complete
+        arg: elementSelectionLabelExpression,
+        exp: createCompoundExpression([
+          '(',
+          ...elementSelectionLabelExpression.children,
+          ") === 'checked' ? (",
+          // resolves to a boolean
+          ...generateEqualityExpression(
+            registerSummarizedProp.value,
+            elementValueSummarizedProp.value
+          ),
+          ') : (',
+          // resolves to the provided register value
+          ...valueExpression.children,
+          ')',
+        ]),
+        name: 'bind',
+        modifiers: [],
+        type: NodeTypes.DIRECTIVE,
+        loc: dummyLoc,
+      }
+
+      props.push(valueOrCheckedProp)
     }
 
-    props.push(valueOrCheckedProp)
-  }
+    computeProps(node, registerSummarizedProp, elementValueSummarizedProp)
+  } catch (err) {
+    // AST shapes can shift with minor Vue compiler updates. If we hit
+    // anything unexpected, skip this transform — the runtime directive
+    // alone handles value binding (via mounted/beforeUpdate), so the only
+    // cost is a one-frame flash on SSR initial render.
 
-  computeProps(node, registerSummarizedProp, elementValueSummarizedProp)
+    console.error('[@chemical-x/forms] input/textarea transform failed, skipping:', err)
+  }
 }

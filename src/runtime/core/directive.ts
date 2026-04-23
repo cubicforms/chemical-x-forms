@@ -22,7 +22,7 @@ import {
   looseEqual,
   looseIndexOf,
   looseToNumber,
-} from '@vue/shared'
+} from './vue-shared-shim'
 import type { DirectiveBinding, DirectiveHook, ObjectDirective, VNode } from 'vue'
 import { isRef, nextTick, warn } from 'vue'
 import type {
@@ -431,25 +431,50 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
     if (!isRegisterValue(value) || !el) return
 
     value.deregisterElement(el)
+
+    // Remove internal state that the directive attaches directly to the
+    // element. If the element is reused (<KeepAlive>, v-show), stale flags
+    // like `composing: true` (IME in progress) would swallow user input.
+    // The pre-rewrite code left these in place — a silent bug.
+    delete (el as { composing?: boolean }).composing
+    delete (el as { _assigning?: boolean })._assigning
+    delete (el as unknown as { [k: symbol]: unknown })[assignKey]
   },
 }
 
-function resolveDynamicModel(tagName: string, type: string | undefined) {
-  switch (tagName) {
-    case 'SELECT':
-      return vRegisterSelect
-    case 'TEXTAREA':
-      return vRegisterText
-    default:
-      switch (type) {
-        case 'checkbox':
-          return vRegisterCheckbox
-        case 'radio':
-          return vRegisterRadio
-        default:
-          return vRegisterText
-      }
-  }
+// No-op variant for <input type="file">. Setting el.value on a file input
+// throws a DOMException for security reasons; the compile-time transform
+// skips this case, and this runtime directive routes reactive type="file"
+// (e.g. `:type="isUpload ? 'file' : 'text'"`) to a no-op too, still tracking
+// the element for focus-state purposes.
+const vRegisterFileNoop: RegisterModelDynamicCustomDirective = {
+  created(el, { value }) {
+    if (!isRegisterValue(value)) return
+    value.registerElement(el)
+    if (import.meta.dev) {
+      warn(
+        '[@chemical-x/forms] v-register on <input type="file"> is not supported. ' +
+          'Handle uploads with a manual @change listener.'
+      )
+    }
+  },
+  beforeUnmount(el, { value }) {
+    if (!isRegisterValue(value)) return
+    value.deregisterElement(el)
+  },
+}
+
+function resolveDynamicModel(tagName: string, type: unknown) {
+  // tagName is always uppercase per DOM spec (el.tagName); type comes from
+  // vnode.props and is usually a string, but reactive bindings (`:type="x"`)
+  // can pass other values — guard defensively.
+  if (tagName === 'SELECT') return vRegisterSelect
+  if (tagName === 'TEXTAREA') return vRegisterText
+  if (typeof type !== 'string') return vRegisterText
+  if (type === 'file') return vRegisterFileNoop
+  if (type === 'checkbox') return vRegisterCheckbox
+  if (type === 'radio') return vRegisterRadio
+  return vRegisterText
 }
 
 function callModelHook(

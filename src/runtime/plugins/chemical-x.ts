@@ -13,25 +13,33 @@ import { createChemicalXForms } from '../core/plugin'
 import { hydrateChemicalXState, renderChemicalXState } from '../core/serialize'
 import type { SerializedChemicalXState } from '../core/serialize'
 
-export default defineNuxtPlugin((nuxtApp) => {
-  const isServer = import.meta.server
-  nuxtApp.vueApp.use(createChemicalXForms({ override: isServer }))
+export default defineNuxtPlugin({
+  // `enforce: 'pre'` makes the "we run before any component's setup" claim
+  // explicit. Combined with `prepend: true` on the addPlugin call in
+  // src/nuxt.ts, this guarantees hydration is staged into pendingHydration
+  // before any user plugin or page can call `useForm`. Without it, a user
+  // plugin running first would observe an empty registry and skip hydration.
+  enforce: 'pre',
+  setup(nuxtApp) {
+    const isServer = import.meta.server
+    nuxtApp.vueApp.use(createChemicalXForms({ override: isServer }))
 
-  if (isServer) {
-    // After the app renders, capture every FormState into the Nuxt payload
-    // so the client can hydrate with matching form values and errors.
-    nuxtApp.hook('app:rendered', () => {
-      const state = renderChemicalXState(nuxtApp.vueApp)
-      ;(nuxtApp.payload as unknown as { chemicalX?: SerializedChemicalXState }).chemicalX = state
-    })
-  } else {
-    // Before any component's setup() runs (guaranteed by Nuxt's plugin
-    // ordering since this plugin is installed first), stage the payload
-    // into pendingHydration so `useForm` finds it.
-    const serialized = (nuxtApp.payload as unknown as { chemicalX?: SerializedChemicalXState })
-      .chemicalX
-    if (serialized !== undefined) {
-      hydrateChemicalXState(nuxtApp.vueApp, serialized)
+    if (isServer) {
+      // After the app renders, capture every FormState into the Nuxt payload
+      // so the client can hydrate with matching form values and errors.
+      nuxtApp.hook('app:rendered', () => {
+        const state = renderChemicalXState(nuxtApp.vueApp)
+        ;(nuxtApp.payload as unknown as { chemicalX?: SerializedChemicalXState }).chemicalX = state
+      })
+    } else {
+      // Stage the payload into pendingHydration so `useForm` finds it. The
+      // `enforce: 'pre'` + `prepend: true` pair above is what makes it safe
+      // to assume this runs before any user setup.
+      const serialized = (nuxtApp.payload as unknown as { chemicalX?: SerializedChemicalXState })
+        .chemicalX
+      if (serialized !== undefined) {
+        hydrateChemicalXState(nuxtApp.vueApp, serialized)
+      }
     }
-  }
+  },
 })

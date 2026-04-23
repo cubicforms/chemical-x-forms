@@ -34,6 +34,11 @@ export default defineNuxtModule<CXModuleOptions>({
       },
     ])
 
+    // @nuxt/kit's addPlugin defaults to PREPEND (not append) — per the
+    // function's own jsdoc, "By default plugin is prepended to the plugins
+    // array". So we don't need a second-arg override; we're already first
+    // in the order. The plugin file pairs this with `enforce: 'pre'` so the
+    // ordering claim is enforced at the Nuxt-plugin layer too.
     addPlugin({
       src: resolver.resolve('./runtime/plugins/chemical-x'),
     })

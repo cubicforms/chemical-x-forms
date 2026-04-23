@@ -34,7 +34,7 @@ describe('zod v4 adapter — fuzz over arbitrary supported schemas', () => {
 
   test.prop([arbRootSchema])(
     'validateAtPath(initialState, undefined) passes in lax mode',
-    (schema) => {
+    async (schema) => {
       // Lax mode round-trip: the shape the adapter derives for defaults
       // must validate against the slimmed (refinement-stripped) schema.
       // Since the arbitrary doesn't produce refinements, this reduces to
@@ -46,7 +46,7 @@ describe('zod v4 adapter — fuzz over arbitrary supported schemas', () => {
         validationMode: 'lax',
       })
       expect(initial.success).toBe(true)
-      const validation = adapter.validateAtPath(initial.data, undefined)
+      const validation = await adapter.validateAtPath(initial.data, undefined)
       expect(validation.success).toBe(true)
     }
   )

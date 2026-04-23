@@ -1,4 +1,4 @@
-import { computed, type Ref } from 'vue'
+import { getCurrentScope, onScopeDispose, ref, watchEffect, type Ref } from 'vue'
 import type {
   ApiErrorDetails,
   ApiErrorEnvelope,
@@ -6,6 +6,7 @@ import type {
   OnError,
   OnInvalidSubmitPolicy,
   OnSubmit,
+  ReactiveValidationStatus,
   SubmitHandler,
   ValidationResponse,
   ValidationResponseWithoutValue,
@@ -24,6 +25,12 @@ import { canonicalizePath, type Path } from './paths'
  * validate + handleSubmit + setFieldErrorsFromApi, all built against a
  * FormState<F>. Replaces use-form-store's validation factory + the submit
  * wrapper in use-abstract-form.ts.
+ *
+ * Phase 5.6: validation is async end-to-end. `AbstractSchema.validateAtPath`
+ * returns `Promise<ValidationResponse<F>>`, so every caller here awaits.
+ * The reactive `validate()` ref carries a `pending` flag to distinguish
+ * "in-flight" from "settled"; stale results are dropped via a per-call
+ * generation counter.
  */
 
 export type BuildProcessFormOptions = {
@@ -40,35 +47,111 @@ export function buildProcessForm<F extends GenericForm>(
   options: BuildProcessFormOptions = {}
 ) {
   const invalidPolicy: OnInvalidSubmitPolicy = options.onInvalidSubmit ?? 'none'
-  function validate(pathInput?: string | Path): Ref<ValidationResponseWithoutValue<F>> {
-    // Validation is computed lazily from form.value — the reactive Ref
-    // updates whenever form mutates, so templates bound to this ref
-    // reflect live validity without extra wiring.
-    return computed(() => {
-      const response = runValidation(pathInput)
-      if (response.success) {
-        return {
-          errors: undefined,
-          success: true,
-          formKey: response.formKey,
-        }
-      }
-      return {
-        errors: response.errors,
+
+  function validate(pathInput?: string | Path): Readonly<Ref<ReactiveValidationStatus<F>>> {
+    // Start in a pending state — the first async run has not settled yet.
+    // When validation fires, this ref writes `{ pending: false, ... }`
+    // with the resolved status; stale writes (older generation) are
+    // dropped so a slow earlier run can't overwrite a newer result.
+    const result = ref<ReactiveValidationStatus<F>>({
+      pending: true,
+      errors: undefined,
+      success: false,
+      formKey: state.formKey,
+    }) as Ref<ReactiveValidationStatus<F>>
+
+    let gen = 0
+
+    async function kickoff(
+      data: unknown,
+      stringPath: string | undefined,
+      captured: number
+    ): Promise<void> {
+      // Runs on a microtask outside the watchEffect's sync frame. Reads
+      // and writes to reactive state inside this function DO NOT track
+      // against the effect — the activeEffect stack is empty here —
+      // so writing to `activeValidations` / `result` can't re-trigger
+      // the watchEffect below.
+      state.activeValidations.value += 1
+      result.value = {
+        pending: true,
+        errors: undefined,
         success: false,
-        formKey: response.formKey,
+        formKey: state.formKey,
       }
-    }) as unknown as Ref<ValidationResponseWithoutValue<F>>
+      try {
+        const response = await runValidation(data, stringPath)
+        if (captured !== gen) return
+        result.value = settled(response)
+      } catch (err) {
+        if (captured !== gen) return
+        // Adapters are contractually "return errors, don't throw"; if
+        // one does throw we don't want the validate() ref to hang in
+        // `pending: true` forever. Wrap the throw as a single
+        // adapter-level error so the form surfaces something.
+        result.value = {
+          pending: false,
+          errors: [{ message: adapterThrowMessage(err), path: [], formKey: state.formKey }],
+          success: false,
+          formKey: state.formKey,
+        }
+      } finally {
+        state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
+      }
+    }
+
+    const stop = watchEffect(() => {
+      // Read form.value (or the subtree at path) so the effect re-runs
+      // on any mutation. We must NOT touch any other reactive state
+      // here — the writes in `kickoff` would otherwise re-trigger the
+      // effect in a hot loop. Deferring via `queueMicrotask` puts the
+      // writes on a clean task where `activeEffect` is null.
+      const dataAtPath =
+        pathInput === undefined ? state.form.value : state.getValueAtPath(toSegments(pathInput))
+      const stringPath = pathInput === undefined ? undefined : toDottedString(pathInput)
+      const localGen = ++gen
+      queueMicrotask(() => {
+        void kickoff(dataAtPath, stringPath, localGen)
+      })
+    })
+    // Tie the watcher's lifetime to the caller's effect scope so
+    // components that call validate() in setup release the watcher on
+    // unmount. Tests calling validate() in a raw context simply leak
+    // the watcher for the test's duration — acceptable given tests
+    // tear down the module context per run.
+    if (getCurrentScope() !== undefined) onScopeDispose(stop)
+    return result as Readonly<Ref<ReactiveValidationStatus<F>>>
   }
 
-  function runValidation(pathInput?: string | Path): ValidationResponse<F> {
+  /**
+   * Imperative one-shot validation. Doesn't subscribe to form reactivity;
+   * each call runs validation once against the current form snapshot.
+   * Used by consumers who want to `await` a single validation run — the
+   * debounced field-level path in 5.7, server-side round-trips, tests.
+   */
+  async function validateAsync(
+    pathInput?: string | Path
+  ): Promise<ValidationResponseWithoutValue<F>> {
     const dataAtPath =
       pathInput === undefined ? state.form.value : state.getValueAtPath(toSegments(pathInput))
+    const stringPath = pathInput === undefined ? undefined : toDottedString(pathInput)
+    state.activeValidations.value += 1
+    try {
+      const response = await runValidation(dataAtPath, stringPath)
+      return stripData(response)
+    } finally {
+      state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
+    }
+  }
+
+  async function runValidation(
+    data: unknown,
+    stringPath: string | undefined
+  ): Promise<ValidationResponse<F>> {
     // AbstractSchema.validateAtPath expects a dotted-string path; the zod
     // adapter (Phase 1c / Phase 4) will be migrated to structured paths.
     // For now bridge both worlds.
-    const stringPath = pathInput === undefined ? undefined : toDottedString(pathInput)
-    return state.schema.validateAtPath(dataAtPath, stringPath) as ValidationResponse<F>
+    return (await state.schema.validateAtPath(data, stringPath)) as ValidationResponse<F>
   }
 
   /**
@@ -90,6 +173,11 @@ export function buildProcessForm<F extends GenericForm>(
    *     after capturing so imperative callers (`await handler(event)`)
    *     still see the rejection; template `@submit="..."` callers read
    *     `submitError` instead.
+   *
+   * Phase 5.6: the pre-dispatch validation is now async, so the handler
+   * awaits `runValidation` before branching on success/failure. The
+   * `isValidating` ref (backed by `state.activeValidations`) is true
+   * for the validation window.
    */
   const handleSubmit: HandleSubmit<F> = (onSubmit: OnSubmit<F>, onError?: OnError) => {
     const submitHandler: SubmitHandler = async (event?: Event): Promise<void> => {
@@ -110,8 +198,12 @@ export function buildProcessForm<F extends GenericForm>(
       state.activeSubmissions.value += 1
       state.isSubmitting.value = true
       state.submitError.value = null
+      state.activeValidations.value += 1
+      let validationSettled = false
       try {
-        const result = runValidation()
+        const result = await runValidation(state.form.value, undefined)
+        state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
+        validationSettled = true
         if (!result.success) {
           const errors = result.errors
           state.setAllErrors(errors)
@@ -142,6 +234,11 @@ export function buildProcessForm<F extends GenericForm>(
         }
         throw err
       } finally {
+        // If validation threw before we decremented, drop the counter now
+        // so `isValidating` doesn't hang true after a failed submit.
+        if (!validationSettled) {
+          state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
+        }
         state.activeSubmissions.value = Math.max(0, state.activeSubmissions.value - 1)
         // `activeSubmissions` always decrements (the submission is done),
         // but the *visible* lifecycle counters — `isSubmitting` and
@@ -184,7 +281,7 @@ export function buildProcessForm<F extends GenericForm>(
     return result
   }
 
-  return { validate, handleSubmit, setFieldErrorsFromApi }
+  return { validate, validateAsync, handleSubmit, setFieldErrorsFromApi }
 }
 
 function toSegments(pathInput: string | Path): Path {
@@ -194,6 +291,29 @@ function toSegments(pathInput: string | Path): Path {
 function toDottedString(pathInput: string | Path): string {
   if (typeof pathInput === 'string') return pathInput
   return pathInput.map(String).join('.')
+}
+
+function settled<F extends GenericForm>(
+  response: ValidationResponse<F>
+): ReactiveValidationStatus<F> {
+  if (response.success) {
+    return { pending: false, errors: undefined, success: true, formKey: response.formKey }
+  }
+  return { pending: false, errors: response.errors, success: false, formKey: response.formKey }
+}
+
+function stripData<F extends GenericForm>(
+  response: ValidationResponse<F>
+): ValidationResponseWithoutValue<F> {
+  if (response.success) {
+    return { errors: undefined, success: true, formKey: response.formKey }
+  }
+  return { errors: response.errors, success: false, formKey: response.formKey }
+}
+
+function adapterThrowMessage(err: unknown): string {
+  if (err instanceof Error) return `Adapter validateAtPath threw: ${err.message}`
+  return 'Adapter validateAtPath threw a non-Error value'
 }
 
 function applyInvalidSubmitPolicy<F extends GenericForm>(

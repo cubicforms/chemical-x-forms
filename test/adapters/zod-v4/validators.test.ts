@@ -11,19 +11,19 @@ import { zodAdapter } from '../../../src/runtime/adapters/zod-v4'
  */
 
 describe('zod v4 adapter — refine / superRefine error paths', () => {
-  it('leaf .refine emits error at the leaf path', () => {
+  it('leaf .refine emits error at the leaf path', async () => {
     const schema = z.object({
       username: z.string().refine((v) => v.length > 3, 'too short'),
     })
     const adapter = zodAdapter(schema)('f')
-    const result = adapter.validateAtPath({ username: 'ab' }, undefined)
+    const result = await adapter.validateAtPath({ username: 'ab' }, undefined)
     expect(result.success).toBe(false)
     expect(result.errors).toHaveLength(1)
     expect(result.errors?.[0]?.path).toEqual(['username'])
     expect(result.errors?.[0]?.message).toBe('too short')
   })
 
-  it('.refine with explicit path redirects the error to that path', () => {
+  it('.refine with explicit path redirects the error to that path', async () => {
     const schema = z
       .object({
         password: z.string(),
@@ -34,14 +34,14 @@ describe('zod v4 adapter — refine / superRefine error paths', () => {
         path: ['confirm'],
       })
     const adapter = zodAdapter(schema)('f')
-    const result = adapter.validateAtPath({ password: 'abc', confirm: 'xyz' }, undefined)
+    const result = await adapter.validateAtPath({ password: 'abc', confirm: 'xyz' }, undefined)
     expect(result.success).toBe(false)
     expect(result.errors).toHaveLength(1)
     expect(result.errors?.[0]?.path).toEqual(['confirm'])
     expect(result.errors?.[0]?.message).toBe('passwords differ')
   })
 
-  it('.superRefine preserves the issue path it sets, including numeric segments', () => {
+  it('.superRefine preserves the issue path it sets, including numeric segments', async () => {
     const schema = z.object({
       items: z.array(z.object({ name: z.string() })).superRefine((items, ctx) => {
         items.forEach((it, i) => {
@@ -56,7 +56,7 @@ describe('zod v4 adapter — refine / superRefine error paths', () => {
       }),
     })
     const adapter = zodAdapter(schema)('f')
-    const result = adapter.validateAtPath(
+    const result = await adapter.validateAtPath(
       { items: [{ name: 'a' }, { name: '' }, { name: '' }] },
       undefined
     )
@@ -71,7 +71,7 @@ describe('zod v4 adapter — refine / superRefine error paths', () => {
     expect(customPaths).toContainEqual(['items', 2, 'name'])
   })
 
-  it('multiple refinements on one field surface as separate errors', () => {
+  it('multiple refinements on one field surface as separate errors', async () => {
     const schema = z.object({
       password: z
         .string()
@@ -79,7 +79,7 @@ describe('zod v4 adapter — refine / superRefine error paths', () => {
         .refine((v) => /[0-9]/.test(v), 'needs a digit'),
     })
     const adapter = zodAdapter(schema)('f')
-    const result = adapter.validateAtPath({ password: 'abc' }, undefined)
+    const result = await adapter.validateAtPath({ password: 'abc' }, undefined)
     // zod short-circuits after the first failing refinement on a single
     // value — we assert that at least one fires and the path is correct.
     expect(result.success).toBe(false)
@@ -88,17 +88,17 @@ describe('zod v4 adapter — refine / superRefine error paths', () => {
 })
 
 describe('zod v4 adapter — transform / pipe', () => {
-  it('transform produces the transformed shape when parse succeeds', () => {
+  it('transform produces the transformed shape when parse succeeds', async () => {
     const schema = z.object({
       email: z.string().transform((v) => v.trim().toLowerCase()),
     })
     const adapter = zodAdapter(schema)('f')
-    const result = adapter.validateAtPath({ email: '  HI@X.CO  ' }, undefined)
+    const result = await adapter.validateAtPath({ email: '  HI@X.CO  ' }, undefined)
     expect(result.success).toBe(true)
     expect(result.data).toEqual({ email: 'hi@x.co' })
   })
 
-  it('pipe rejects when the input schema fails, with the leaf path', () => {
+  it('pipe rejects when the input schema fails, with the leaf path', async () => {
     // `z.string().transform(...).pipe(z.number())` ties the two ends
     // together with a matching output → input type. The transform
     // converts "42" → 42, "nope" → NaN; the downstream z.number() then
@@ -110,12 +110,12 @@ describe('zod v4 adapter — transform / pipe', () => {
         .pipe(z.number().refine((n) => !Number.isNaN(n), 'must be numeric')),
     })
     const adapter = zodAdapter(schema)('f')
-    const bad = adapter.validateAtPath({ ageStr: 'not-a-number' }, undefined)
+    const bad = await adapter.validateAtPath({ ageStr: 'not-a-number' }, undefined)
     expect(bad.success).toBe(false)
     expect(bad.errors?.[0]?.path).toEqual(['ageStr'])
   })
 
-  it('pipe succeeds end-to-end when the input parses through', () => {
+  it('pipe succeeds end-to-end when the input parses through', async () => {
     const schema = z.object({
       ageStr: z
         .string()
@@ -123,14 +123,14 @@ describe('zod v4 adapter — transform / pipe', () => {
         .pipe(z.number()),
     })
     const adapter = zodAdapter(schema)('f')
-    const ok = adapter.validateAtPath({ ageStr: '42' }, undefined)
+    const ok = await adapter.validateAtPath({ ageStr: '42' }, undefined)
     expect(ok.success).toBe(true)
     expect(ok.data).toEqual({ ageStr: 42 })
   })
 })
 
 describe('zod v4 adapter — discriminated union with per-branch refinement', () => {
-  it('routes refinement errors to the active branch', () => {
+  it('routes refinement errors to the active branch', async () => {
     const schema = z.object({
       event: z.discriminatedUnion('kind', [
         z.object({
@@ -141,7 +141,7 @@ describe('zod v4 adapter — discriminated union with per-branch refinement', ()
       ]),
     })
     const adapter = zodAdapter(schema)('f')
-    const result = adapter.validateAtPath({ event: { kind: 'click', x: -1 } }, undefined)
+    const result = await adapter.validateAtPath({ event: { kind: 'click', x: -1 } }, undefined)
     expect(result.success).toBe(false)
     const pathMatch = result.errors?.some((e) => {
       // Zod's discriminator-aware walker collapses `kind` and routes the
@@ -160,7 +160,7 @@ describe('zod v4 adapter — discriminated union with per-branch refinement', ()
 })
 
 describe('zod v4 adapter — validateAtPath forwards issue paths under a prefix', () => {
-  it('path arg + schema-level refinement produces issues under that path', () => {
+  it('path arg + schema-level refinement produces issues under that path', async () => {
     // When validating the subtree at a path, zod's issue paths are relative
     // to the subtree root. The adapter emits them verbatim — consumers
     // resolve against the same subtree, so paths stay correct end-to-end.
@@ -170,7 +170,7 @@ describe('zod v4 adapter — validateAtPath forwards issue paths under a prefix'
       }),
     })
     const adapter = zodAdapter(schema)('f')
-    const result = adapter.validateAtPath({ age: -1 }, 'profile')
+    const result = await adapter.validateAtPath({ age: -1 }, 'profile')
     expect(result.success).toBe(false)
     expect(result.errors?.[0]?.path).toEqual(['age'])
     expect(result.errors?.[0]?.message).toBe('non-negative')

@@ -53,24 +53,26 @@ describe('zod v3 adapter — fuzz over arbitrary supported schemas', () => {
     }
   )
 
-  test.prop([arbRootSchema])('validateAtPath is total — never throws', (schema) => {
+  test.prop([arbRootSchema])('validateAtPath is total — never rejects', async (schema) => {
     const adapter = zodAdapter(schema as z.ZodObject<z.ZodRawShape>)('f')
     // Fuzz random values through validateAtPath without requiring a
-    // valid initial state. The contract is "returns a ValidationResponse
-    // (success or error), does not throw". Covers the path where a
-    // consumer calls validate on partial / malformed data.
+    // valid initial state. The contract is "resolves to a
+    // ValidationResponse (success or error), does not reject". Covers
+    // the path where a consumer calls validate on partial / malformed
+    // data. Post-5.6 the adapter method is Promise-returning, so the
+    // property reads "never rejects" rather than "never throws".
     for (const probe of [undefined, null, 0, '', [], {}]) {
-      expect(() => adapter.validateAtPath(probe, undefined)).not.toThrow()
+      await expect(adapter.validateAtPath(probe, undefined)).resolves.toBeDefined()
     }
   })
 
   test.prop([arbRootSchema, fc.string({ minLength: 1, maxLength: 8 })])(
     'validateAtPath error responses carry the right formKey',
-    (schema, formKey) => {
+    async (schema, formKey) => {
       const adapter = zodAdapter(schema as z.ZodObject<z.ZodRawShape>)(formKey)
       // Use a value guaranteed to fail shape-check — null — so we're on
       // the error branch of validateAtPath.
-      const result = adapter.validateAtPath(null, undefined)
+      const result = await adapter.validateAtPath(null, undefined)
       if (!result.success) {
         for (const err of result.errors) {
           expect(err.formKey).toBe(formKey)

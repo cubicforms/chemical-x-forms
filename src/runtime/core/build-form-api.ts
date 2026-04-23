@@ -5,6 +5,7 @@ import type {
   FieldState,
   FormErrorRecord,
   OnInvalidSubmitPolicy,
+  ReactiveValidationStatus,
   RegisterValue,
   UseAbstractFormReturnType,
   ValidationError,
@@ -48,6 +49,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     options.onInvalidSubmit !== undefined ? { onInvalidSubmit: options.onInvalidSubmit } : {}
   const {
     validate: validateBuilt,
+    validateAsync: validateAsyncBuilt,
     handleSubmit,
     setFieldErrorsFromApi: setFromApiBuilt,
   } = buildProcessForm(state, processOptions)
@@ -56,7 +58,10 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     getFieldStateBuilt(pathInput) as unknown as Ref<FieldState>
 
   const validate = (pathInput?: string) =>
-    validateBuilt(pathInput) as Ref<ValidationResponseWithoutValue<Form>>
+    validateBuilt(pathInput) as Ref<ReactiveValidationStatus<Form>>
+
+  const validateAsync = (pathInput?: string) =>
+    validateAsyncBuilt(pathInput) as Promise<ValidationResponseWithoutValue<Form>>
 
   // Back-compat: setFieldErrorsFromApi previously returned ValidationError[].
   // New implementation returns the structured HydrateApiErrorsResult but we
@@ -145,6 +150,9 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   const submitCount = computed<number>(() => state.submitCount.value)
   const submitError = computed<unknown>(() => state.submitError.value)
 
+  // --- Validation lifecycle ---
+  const isValidating = computed<boolean>(() => state.activeValidations.value > 0)
+
   // --- Reset ---
   const reset = (nextInitialState?: DeepPartial<Form>): void => {
     state.reset(nextInitialState)
@@ -182,6 +190,10 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     getValue: getValueImpl as UseAbstractFormReturnType<Form, GetValueFormType>['getValue'],
     setValue: setValueImpl as UseAbstractFormReturnType<Form, GetValueFormType>['setValue'],
     validate: validate as UseAbstractFormReturnType<Form, GetValueFormType>['validate'],
+    validateAsync: validateAsync as UseAbstractFormReturnType<
+      Form,
+      GetValueFormType
+    >['validateAsync'],
     register: register as UseAbstractFormReturnType<Form, GetValueFormType>['register'],
     key: state.formKey,
     fieldErrors: fieldErrors as Readonly<ComputedRef<FormErrorRecord>>,
@@ -194,6 +206,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     isSubmitting,
     submitCount,
     submitError,
+    isValidating,
     reset: reset as UseAbstractFormReturnType<Form, GetValueFormType>['reset'],
     resetField: resetField as UseAbstractFormReturnType<Form, GetValueFormType>['resetField'],
     focusFirstError,

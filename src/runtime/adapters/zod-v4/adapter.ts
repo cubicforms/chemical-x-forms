@@ -77,8 +77,11 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
                 formKey,
               }),
               getSchemasAtPath: () => [],
-              validateAtPath: (data: unknown) => {
-                const result = schema.safeParse(data)
+              validateAtPath: async (data: unknown) => {
+                // safeParseAsync accepts both sync and async refinements —
+                // sync check perf is a microtask slower than safeParse but
+                // we trade that for the ability to express .refine(async).
+                const result = await schema.safeParseAsync(data)
                 if (result.success) {
                   return { data: result.data, errors: undefined, success: true, formKey }
                 }
@@ -93,9 +96,9 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         )
       },
 
-      validateAtPath(data, path): ReturnType<AbstractSchema<Form, Form>['validateAtPath']> {
+      async validateAtPath(data, path): ReturnType<AbstractSchema<Form, Form>['validateAtPath']> {
         if (path === undefined) {
-          const result = rootSchema.safeParse(data) as z.ZodSafeParseResult<Form>
+          const result = (await rootSchema.safeParseAsync(data)) as z.ZodSafeParseResult<Form>
           if (result.success) {
             return { data: result.data, errors: undefined, success: true, formKey }
           }
@@ -121,10 +124,13 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
             formKey,
           }
         }
-        // Try each candidate (union branches); first success wins.
+        // Try each candidate (union branches); first success wins. The
+        // loop awaits sequentially — parallel parses are tempting but
+        // would run every branch's side effects (async refinements in
+        // particular) on a value only one branch should see.
         const aggregated: ValidationError[] = []
         for (const candidate of resolved) {
-          const result = candidate.safeParse(data)
+          const result = await candidate.safeParseAsync(data)
           if (result.success) {
             return { data: result.data as Form, errors: undefined, success: true, formKey }
           }

@@ -93,34 +93,34 @@ describe('zod v4 adapter', () => {
   })
 
   describe('validateAtPath', () => {
-    it('returns success for a valid full-form value', () => {
+    it('returns success for a valid full-form value', async () => {
       const schema = z.object({ email: z.email() })
       const adapter = zodAdapter(schema)('f')
-      const result = adapter.validateAtPath({ email: 'a@b.co' }, undefined)
+      const result = await adapter.validateAtPath({ email: 'a@b.co' }, undefined)
       expect(result.success).toBe(true)
     })
 
-    it('returns ValidationError[] for invalid input', () => {
+    it('returns ValidationError[] for invalid input', async () => {
       const schema = z.object({ email: z.email() })
       const adapter = zodAdapter(schema)('f')
-      const result = adapter.validateAtPath({ email: 'not-an-email' }, undefined)
+      const result = await adapter.validateAtPath({ email: 'not-an-email' }, undefined)
       expect(result.success).toBe(false)
       expect(result.errors).toHaveLength(1)
       expect(result.errors?.[0]?.path).toEqual(['email'])
     })
 
-    it('validates at a specific path', () => {
+    it('validates at a specific path', async () => {
       const schema = z.object({ email: z.email(), name: z.string() })
       const adapter = zodAdapter(schema)('f')
-      const good = adapter.validateAtPath('a@b.co', 'email')
+      const good = await adapter.validateAtPath('a@b.co', 'email')
       expect(good.success).toBe(true)
-      const bad = adapter.validateAtPath('nope', 'email')
+      const bad = await adapter.validateAtPath('nope', 'email')
       expect(bad.success).toBe(false)
     })
   })
 
   describe('getSchemasAtPath', () => {
-    it('resolves a nested path', () => {
+    it('resolves a nested path', async () => {
       const schema = z.object({
         user: z.object({ email: z.string() }),
       })
@@ -128,8 +128,8 @@ describe('zod v4 adapter', () => {
       const schemas = adapter.getSchemasAtPath('user.email')
       expect(schemas).toHaveLength(1)
       // Validate that the resolved schema is the inner string schema.
-      expect(schemas[0]?.validateAtPath('hi', undefined).success).toBe(true)
-      expect(schemas[0]?.validateAtPath(42, undefined).success).toBe(false)
+      expect((await schemas[0]?.validateAtPath('hi', undefined))?.success).toBe(true)
+      expect((await schemas[0]?.validateAtPath(42, undefined))?.success).toBe(false)
     })
 
     it('returns empty for a non-existent path', () => {

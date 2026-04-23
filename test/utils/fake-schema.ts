@@ -22,10 +22,16 @@ import type { DeepPartial, GenericForm } from '../../src/runtime/types/types-cor
  * - `getSchemasAtPath` returns `[]` (no path-specific subschemas).
  *
  * For tests that need validation failure cases, pass a custom `validator`.
+ * The validator can return either a synchronous `ValidationResponse<F>` or
+ * a `Promise` — the schema's `validateAtPath` is always Promise-returning,
+ * matching the Phase 5.6 `AbstractSchema` contract.
  */
 export function fakeSchema<F extends GenericForm>(
   defaults: F,
-  validator?: (data: unknown, path: string | undefined) => ValidationResponse<F>
+  validator?: (
+    data: unknown,
+    path: string | undefined
+  ) => ValidationResponse<F> | Promise<ValidationResponse<F>>
 ): AbstractSchema<F, F> {
   const schema: AbstractSchema<F, F> = {
     getInitialState(config): InitialStateResponse<F> {
@@ -41,8 +47,8 @@ export function fakeSchema<F extends GenericForm>(
       void path
       return []
     },
-    validateAtPath(data, path): ValidationResponse<F> {
-      if (validator) return validator(data, path)
+    async validateAtPath(data, path): Promise<ValidationResponse<F>> {
+      if (validator) return await validator(data, path)
       return {
         data: data as F,
         errors: undefined,

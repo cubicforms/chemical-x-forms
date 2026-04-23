@@ -82,6 +82,15 @@ export type FormState<F extends GenericForm> = {
    * in-flight promise rejects.
    */
   readonly submissionGeneration: Ref<number>
+  /**
+   * Counts in-flight validation calls across every `validate()` ref and
+   * every `validateAsync(...)` / `handleSubmit` pre-check. `isValidating`
+   * on the public API mirrors `activeValidations.value > 0`. Tracked
+   * separately from submissions because a validate-while-submitting
+   * (e.g. a debounced field check overlapping a submit) needs to show
+   * the union of both surfaces.
+   */
+  readonly activeValidations: Ref<number>
 
   // --- form mutations ---
   applyFormReplacement(next: F): void
@@ -187,6 +196,7 @@ export function createFormState<F extends GenericForm>(
   const submitCount = ref(0)
   const submitError = ref<unknown>(null)
   const submissionGeneration = ref(0)
+  const activeValidations = ref(0)
 
   // Populate originals by diffing from empty-form to schema-initial. This is
   // always the schema's shape regardless of hydration, so pristine/dirty
@@ -551,6 +561,7 @@ export function createFormState<F extends GenericForm>(
     submitCount,
     submitError,
     submissionGeneration,
+    activeValidations,
 
     applyFormReplacement,
     setValueAtPath,

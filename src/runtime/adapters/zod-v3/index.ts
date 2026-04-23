@@ -202,9 +202,12 @@ export function zodAdapter<
           getAbstractSchema(_formKey, n as NestedType<Form, typeof path>, false)
         )
       },
-      validateAtPath(data, path) {
+      async validateAtPath(data, path) {
         if (path === undefined) {
-          const { success, data: successData, error } = _zodSchema.safeParse(data)
+          // safeParseAsync accepts both sync and async refinements —
+          // matches the v4 adapter's contract so .refine(async ...) is a
+          // first-class schema feature for both adapters.
+          const { success, data: successData, error } = await _zodSchema.safeParseAsync(data)
           if (success) {
             return {
               data: successData,
@@ -251,9 +254,12 @@ export function zodAdapter<
           }
         }
 
+        // Branch-by-branch sequential await — parallelising would run
+        // every branch's async side effects on a value only one branch
+        // should see. See the v4 adapter's matching comment.
         const accumulatedErrors: z.ZodError<unknown>[] = []
         for (const nestedSchema of nestedZodSchemas) {
-          const { data: successData, success, error } = nestedSchema.safeParse(data)
+          const { data: successData, success, error } = await nestedSchema.safeParseAsync(data)
 
           if (!success) {
             accumulatedErrors.push(error)

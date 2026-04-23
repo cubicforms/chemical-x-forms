@@ -60,8 +60,38 @@ type GetInitialStateConfig<Form> = {
 export type AbstractSchema<Form, GetValueFormType> = {
   getInitialState(config: GetInitialStateConfig<Form>): InitialStateResponse<Form>
   getSchemasAtPath(path: string): AbstractSchema<NestedType<Form, typeof path>, GetValueFormType>[]
-  validateAtPath(data: unknown, path: string | undefined): ValidationResponse<Form>
+  /**
+   * Validate a subtree (when `path` is provided) or the whole form (when
+   * `path` is `undefined`). Returns a `Promise` so adapters can back
+   * validation onto async parsers (`zod.safeParseAsync`) and consumers can
+   * express async refinements (`z.string().refine(async ...)`). Adapters
+   * MUST NOT throw — errors are returned as a `success: false` response
+   * with a populated `errors` array.
+   */
+  validateAtPath(data: unknown, path: string | undefined): Promise<ValidationResponse<Form>>
 }
+
+/**
+ * Status the `validate()` reactive ref exposes. `pending: true` means a
+ * validation call is in flight — `errors` / `success` / `formKey` reflect
+ * the initial "no result yet" state. `pending: false` is the settled
+ * state; the other fields mirror the latest `ValidationResponse`.
+ *
+ * Consumers narrow on `pending`: `if (!status.pending) { ... }` gives
+ * access to the settled discriminated union (success or failure).
+ */
+export type PendingValidationStatus = {
+  readonly pending: true
+  readonly errors: undefined
+  readonly success: false
+  readonly formKey: FormKey
+}
+
+export type SettledValidationStatus<Form> = {
+  readonly pending: false
+} & ValidationResponseWithoutValue<Form>
+
+export type ReactiveValidationStatus<Form> = PendingValidationStatus | SettledValidationStatus<Form>
 
 /**
  * Optional policy that fires on submit-validation failure — the library
@@ -324,7 +354,31 @@ export type UseAbstractFormReturnType<
     ): boolean
   }
 
-  validate: (path?: FlatPath<Form>) => Readonly<Ref<ValidationResponseWithoutValue<Form>>>
+  /**
+   * Reactive validation status for the whole form (or a subtree when a
+   * path is given). The returned ref's value carries a `pending` flag —
+   * `true` while the async validator is in flight, `false` when settled.
+   * Consumers typically gate rendering on `!status.value.pending` before
+   * trusting `success` / `errors`.
+   *
+   * Re-runs whenever the form (or the subtree at `path`) mutates. Stale
+   * in-flight validations are dropped via an internal generation counter,
+   * so the ref only ever writes results from the most recent call.
+   */
+  validate: (path?: FlatPath<Form>) => Readonly<Ref<ReactiveValidationStatus<Form>>>
+
+  /**
+   * Imperative one-shot validation. Resolves to a settled
+   * `ValidationResponseWithoutValue` (success + undefined errors, or
+   * failure + populated errors) for the whole form when called without a
+   * path, or for the subtree at `path`. Unlike `validate()`, this does
+   * not subscribe to form reactivity — each call runs validation once
+   * against the current form state.
+   *
+   * `isValidating` is flipped `true` while the returned promise is
+   * in flight.
+   */
+  validateAsync: (path?: FlatPath<Form>) => Promise<ValidationResponseWithoutValue<Form>>
   // register is generic so the RegisterValue narrows to the specific path's
   // leaf type. Without the generic, `typeof path` in the return would resolve
   // to the full `RegisterFlatPath<Form>` union, and every register call
@@ -420,6 +474,14 @@ export type UseAbstractFormReturnType<
    * handler(event) }` as normal.
    */
   submitError: Readonly<ComputedRef<unknown>>
+
+  /**
+   * `true` while any validation run (reactive `validate()` re-run,
+   * imperative `validateAsync(...)`, or the pre-submit validation inside
+   * `handleSubmit`) is in flight. Drops back to `false` when every
+   * in-flight run has settled.
+   */
+  isValidating: Readonly<ComputedRef<boolean>>
 
   // --- Reset ---
 

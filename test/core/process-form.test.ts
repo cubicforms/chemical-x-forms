@@ -1,9 +1,28 @@
 import { describe, expect, it, vi } from 'vitest'
+import { nextTick, type Ref } from 'vue'
 import { createFormState } from '../../src/runtime/core/create-form-state'
 import { SubmitErrorHandlerError } from '../../src/runtime/core/errors'
 import { buildProcessForm } from '../../src/runtime/core/process-form'
-import type { ValidationResponse } from '../../src/runtime/types/types-api'
+import type {
+  ReactiveValidationStatus,
+  ValidationResponse,
+} from '../../src/runtime/types/types-api'
 import { fakeSchema } from '../utils/fake-schema'
+
+/**
+ * Drain the microtask queue + a Vue tick until the reactive validate()
+ * ref has settled (pending === false). The async parse is one microtask
+ * away; a generous loop cap guards against contract regressions that
+ * would otherwise hang the test.
+ */
+async function waitUntilSettled<F>(r: Ref<ReactiveValidationStatus<F>>): Promise<void> {
+  for (let i = 0; i < 16; i++) {
+    if (!r.value.pending) return
+    await Promise.resolve()
+    await nextTick()
+  }
+  throw new Error('validate() ref did not settle within 16 microtasks')
+}
 
 type Signup = { email: string; password: string }
 
@@ -28,23 +47,78 @@ describe('buildProcessForm', () => {
     })
   }
 
-  describe('validate (as a Ref)', () => {
-    it('reflects success when schema passes', () => {
+  describe('validate (as a reactive Ref)', () => {
+    it('starts pending and settles to success when schema passes', async () => {
       const state = alwaysValid()
       const { validate } = buildProcessForm(state)
       const r = validate()
+      // Initial synchronous read — the async parse hasn't settled yet.
+      expect(r.value.pending).toBe(true)
+      // Await the microtask pump so the Promise returned by the fake
+      // schema resolves and the watchEffect writes the settled status.
+      await waitUntilSettled(r)
+      expect(r.value.pending).toBe(false)
+      if (r.value.pending) throw new Error('unreachable — narrowed above')
       expect(r.value.success).toBe(true)
       expect(r.value.errors).toBeUndefined()
     })
 
-    it('reflects failure with errors when schema rejects', () => {
+    it('settles to failure with errors when schema rejects', async () => {
       const state = alwaysInvalid()
       const { validate } = buildProcessForm(state)
       const r = validate()
+      await waitUntilSettled(r)
+      expect(r.value.pending).toBe(false)
+      if (r.value.pending) throw new Error('unreachable')
       expect(r.value.success).toBe(false)
       expect(r.value.errors).toEqual([
         { message: 'Enter a valid email', path: ['email'], formKey: 'pf' },
       ])
+    })
+
+    it('isValidating flips true during a run and back to false on settle', async () => {
+      const state = alwaysValid()
+      const { validate } = buildProcessForm(state)
+      expect(state.activeValidations.value).toBe(0)
+      const r = validate()
+      // The watchEffect defers the counter bump to a microtask (so the
+      // write doesn't re-trigger the effect). Drain one microtask,
+      // then the counter should be > 0 while the parse is in flight.
+      await Promise.resolve()
+      expect(state.activeValidations.value).toBeGreaterThan(0)
+      await waitUntilSettled(r)
+      expect(state.activeValidations.value).toBe(0)
+    })
+  })
+
+  describe('validateAsync', () => {
+    it('resolves to a settled response for the full form', async () => {
+      const state = alwaysValid()
+      const { validateAsync } = buildProcessForm(state)
+      const response = await validateAsync()
+      expect(response.success).toBe(true)
+      expect(response.errors).toBeUndefined()
+    })
+
+    it('resolves to a failure response when the schema rejects', async () => {
+      const state = alwaysInvalid()
+      const { validateAsync } = buildProcessForm(state)
+      const response = await validateAsync()
+      expect(response.success).toBe(false)
+      expect(response.errors).toEqual([
+        { message: 'Enter a valid email', path: ['email'], formKey: 'pf' },
+      ])
+    })
+
+    it('decrements activeValidations back to 0 on completion', async () => {
+      const state = alwaysValid()
+      const { validateAsync } = buildProcessForm(state)
+      // validateAsync runs synchronously to the first await — its
+      // counter bump happens before the returned promise resolves.
+      const pending = validateAsync()
+      expect(state.activeValidations.value).toBe(1)
+      await pending
+      expect(state.activeValidations.value).toBe(0)
     })
   })
 

@@ -3,15 +3,19 @@ import { setAtPath } from '../../core/path-walker'
 import type { FormKey } from '../../types/types-api'
 import { getDiscriminatedUnionFirstOption, unwrapToDiscriminatedUnion } from './discriminator'
 import {
+  getCatchDefault,
   getDefaultValue,
   getDiscriminatedOptions,
   getEnumValues,
+  getIntersectionLeft,
+  getIntersectionRight,
   getLiteralValues,
   getObjectShape,
   getTupleItems,
   getUnionOptions,
   kindOf,
   unwrapInner,
+  unwrapLazy,
   unwrapPipe,
   type ZodKind,
 } from './introspect'
@@ -101,10 +105,44 @@ function defaultForKind(kind: ZodKind, schema: z.ZodType, useDefault: boolean): 
     }
     case 'nan':
       return NaN
+    case 'lazy': {
+      const inner = unwrapLazy(schema)
+      return inner === undefined ? undefined : deriveDefault(inner, useDefault)
+    }
+    case 'intersection': {
+      const left = getIntersectionLeft(schema)
+      const right = getIntersectionRight(schema)
+      const l = left === undefined ? undefined : deriveDefault(left, useDefault)
+      const r = right === undefined ? undefined : deriveDefault(right, useDefault)
+      // `mergeDeep` prefers `right` where both sides carry a plain-record
+      // value at a key, and returns `right` wholesale when either side is
+      // a leaf. That matches parse-time semantics: an intersection of
+      // `{ a }` and `{ b }` must satisfy both, so the merged shape carries
+      // both keys' defaults.
+      return mergeDeep(l, r)
+    }
+    case 'catch': {
+      // Catch wraps a schema with a fallback value used when parsing
+      // fails. For `useDefault=true` the catch value *is* the best
+      // default — it's the authoritative "fresh" value the consumer
+      // declared. For `useDefault=false` fall through to the inner
+      // walker so the leaf's empty value wins (matches the default/
+      // prefault branch's semantics).
+      if (useDefault) return getCatchDefault(schema)
+      const inner = unwrapInner(schema)
+      return inner === undefined ? undefined : deriveDefault(inner, useDefault)
+    }
     case 'any':
     case 'unknown':
     case 'void':
     case 'never':
+    case 'promise':
+    case 'custom':
+    case 'template-literal':
+      // `promise`/`custom`/`template-literal` are rejected by
+      // `assertSupportedKinds` at adapter construction, so this branch
+      // is unreachable through the public surface. Kept for exhaustive
+      // switch safety when `deriveDefault` is called directly in tests.
       return undefined
   }
 }

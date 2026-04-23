@@ -1,6 +1,7 @@
 import type { z } from 'zod'
 import type { AbstractSchema, FormKey, ValidationError } from '../../types/types-api'
 import type { DeepPartial, GenericForm } from '../../types/types-core'
+import { assertSupportedKinds } from './assert-supported'
 import { zodIssuesToValidationErrors } from './errors'
 import { deriveDefault, getInitialStateFromZodSchema } from './initial-state'
 import { assertZodVersion } from './introspect'
@@ -27,6 +28,10 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
   rootSchema: FormSchema
 ): (formKey: FormKey) => AbstractSchema<Form, Form> {
   assertZodVersion(rootSchema)
+  // Fail fast at adapter construction if the schema uses kinds we can't
+  // represent (z.promise / z.custom / z.templateLiteral) or a recursive
+  // z.lazy(). Errors carry the dotted path to the offending node.
+  assertSupportedKinds(rootSchema)
 
   return (formKey: FormKey): AbstractSchema<Form, Form> => {
     return {

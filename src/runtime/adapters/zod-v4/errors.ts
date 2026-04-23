@@ -17,3 +17,17 @@ export function zodIssuesToValidationErrors(
     formKey,
   }))
 }
+
+/**
+ * Thrown by the adapter constructor when the schema tree contains a Zod
+ * kind the adapter cannot represent in a form (`z.promise`, `z.custom`,
+ * `z.templateLiteral`) or a recursive `z.lazy(...)` whose factory
+ * resolves back into itself. The message includes the offending dotted
+ * path so consumers can locate the node without hunting.
+ */
+export class UnsupportedSchemaError extends Error {
+  override readonly name = 'UnsupportedSchemaError'
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options)
+  }
+}

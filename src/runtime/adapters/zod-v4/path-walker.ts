@@ -2,12 +2,15 @@ import type { z } from 'zod'
 import {
   getArrayElement,
   getDiscriminatedOptions,
+  getIntersectionLeft,
+  getIntersectionRight,
   getObjectShape,
   getRecordValueType,
   getTupleItems,
   getUnionOptions,
   kindOf,
   unwrapInner,
+  unwrapLazy,
   unwrapPipe,
 } from './introspect'
 
@@ -76,13 +79,31 @@ function walkSegments(schema: z.ZodType, segments: readonly string[]): z.ZodType
     case 'optional':
     case 'nullable':
     case 'default':
-    case 'readonly': {
+    case 'readonly':
+    case 'catch': {
+      // `catch` peels like a wrapper — descend into the inner schema.
+      // The catch fallback only matters at parse time, not path lookup.
       const inner = unwrapInner(schema)
       return inner === undefined ? [] : walkSegments(inner, segments)
     }
     case 'pipe': {
       const inner = unwrapPipe(schema)
       return inner === undefined ? [] : walkSegments(inner, segments)
+    }
+    case 'lazy': {
+      // Lazy transparently descends — `assertSupportedKinds` guarantees
+      // the tree is finite before we get here.
+      const inner = unwrapLazy(schema)
+      return inner === undefined ? [] : walkSegments(inner, segments)
+    }
+    case 'intersection': {
+      // Union of both sides' resolutions — callers try each candidate,
+      // matching parse-time semantics where a value must satisfy both.
+      const left = getIntersectionLeft(schema)
+      const right = getIntersectionRight(schema)
+      const leftResults = left === undefined ? [] : walkSegments(left, segments)
+      const rightResults = right === undefined ? [] : walkSegments(right, segments)
+      return [...leftResults, ...rightResults]
     }
     // Leaf types — can't descend further.
     case 'string':
@@ -99,6 +120,9 @@ function walkSegments(schema: z.ZodType, segments: readonly string[]): z.ZodType
     case 'enum':
     case 'literal':
     case 'nan':
+    case 'promise':
+    case 'custom':
+    case 'template-literal':
       return []
   }
 }

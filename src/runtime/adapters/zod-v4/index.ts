@@ -14,6 +14,7 @@ import type { DeepPartial, GenericForm } from '../../types/types-core'
 import { zodV4Adapter } from './adapter'
 
 export { zodV4Adapter as zodAdapter } from './adapter'
+export { UnsupportedSchemaError } from './errors'
 export { assertZodVersion, kindOf } from './introspect'
 export type { ZodKind } from './introspect'
 

@@ -1,9 +1,12 @@
 import { z } from 'zod'
 import {
   getArrayElement,
+  getCatchDefault,
   getDefaultValue,
   getDiscriminatedOptions,
   getDiscriminator,
+  getIntersectionLeft,
+  getIntersectionRight,
   getObjectShape,
   getRecordKeyType,
   getRecordValueType,
@@ -12,6 +15,7 @@ import {
   hasChecks,
   kindOf,
   unwrapInner,
+  unwrapLazy,
   unwrapPipe,
 } from './introspect'
 
@@ -82,6 +86,24 @@ export function stripRefinements(schema: z.ZodType): z.ZodType {
     case 'pipe':
       // These wrappers are handled by getSlimSchema below per stripConfig.
       return schema
+    case 'lazy': {
+      const inner = unwrapLazy(schema)
+      if (inner === undefined) return schema
+      const slimmedInner = stripRefinements(inner)
+      return z.lazy(() => slimmedInner)
+    }
+    case 'intersection': {
+      const left = getIntersectionLeft(schema)
+      const right = getIntersectionRight(schema)
+      if (left === undefined || right === undefined) return schema
+      return z.intersection(stripRefinements(left), stripRefinements(right))
+    }
+    case 'catch': {
+      const inner = unwrapInner(schema)
+      if (inner === undefined) return schema
+      const slimmedInner = stripRefinements(inner)
+      return (slimmedInner as z.ZodType).catch(getCatchDefault(schema) as never)
+    }
     // Leaf types without refinements, or Zod features we don't rewrite.
     case 'boolean':
     case 'date':
@@ -94,6 +116,9 @@ export function stripRefinements(schema: z.ZodType): z.ZodType {
     case 'nan':
     case 'void':
     case 'never':
+    case 'promise':
+    case 'custom':
+    case 'template-literal':
       return schema
   }
 }
@@ -209,6 +234,29 @@ export function getSlimSchema(schema: z.ZodType, stripConfig: StripConfig): z.Zo
     case 'nan':
     case 'void':
     case 'never':
+    case 'promise':
+    case 'custom':
+    case 'template-literal':
       return schema
+    case 'lazy': {
+      const inner = unwrapLazy(schema)
+      if (inner === undefined) return schema
+      const slimmedInner = getSlimSchema(inner, stripConfig)
+      return z.lazy(() => slimmedInner)
+    }
+    case 'intersection': {
+      const left = getIntersectionLeft(schema)
+      const right = getIntersectionRight(schema)
+      if (left === undefined || right === undefined) return schema
+      return z.intersection(getSlimSchema(left, stripConfig), getSlimSchema(right, stripConfig))
+    }
+    case 'catch': {
+      const inner = unwrapInner(schema)
+      if (inner === undefined) return schema
+      const slimmedInner = getSlimSchema(inner, stripConfig)
+      // Preserve the catch wrapper so downstream safeParse still uses
+      // the declared fallback — stripping it would discard user intent.
+      return (slimmedInner as z.ZodType).catch(getCatchDefault(schema) as never)
+    }
   }
 }

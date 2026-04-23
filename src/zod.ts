@@ -15,5 +15,11 @@
  *   })
  */
 
-export { useForm, zodAdapter, assertZodVersion, kindOf } from './runtime/adapters/zod-v4'
+export {
+  UnsupportedSchemaError,
+  assertZodVersion,
+  kindOf,
+  useForm,
+  zodAdapter,
+} from './runtime/adapters/zod-v4'
 export type { ZodKind } from './runtime/adapters/zod-v4'

@@ -37,6 +37,12 @@ export type ZodKind =
   | 'nan'
   | 'void'
   | 'never'
+  | 'lazy'
+  | 'intersection'
+  | 'catch'
+  | 'promise'
+  | 'custom'
+  | 'template-literal'
 
 // Narrow accessor for the unstable `def` surface. All reads from this
 // object go through helpers below — never inline.
@@ -57,6 +63,14 @@ interface ZodInternalShape {
     in?: unknown
     out?: unknown
     checks?: readonly unknown[]
+    // Added for the extended kind coverage. `getter` on z.lazy(),
+    // `left`/`right` on z.intersection(), `catchValue` on z.catch(),
+    // `parts` on z.templateLiteral().
+    getter?: () => unknown
+    left?: unknown
+    right?: unknown
+    catchValue?: (ctx: { error: unknown; input: unknown }) => unknown
+    parts?: readonly unknown[]
   }
 }
 
@@ -123,6 +137,19 @@ export function kindOf(schema: unknown): ZodKind {
       return 'void'
     case 'never':
       return 'never'
+    case 'lazy':
+      return 'lazy'
+    case 'intersection':
+      return 'intersection'
+    case 'catch':
+      return 'catch'
+    case 'promise':
+      return 'promise'
+    case 'custom':
+      return 'custom'
+    case 'template_literal':
+    case 'templateLiteral':
+      return 'template-literal'
     default:
       return 'unknown'
   }
@@ -179,6 +206,54 @@ export function unwrapInner(schema: z.ZodType): z.ZodType | undefined {
 export function unwrapPipe(schema: z.ZodType): z.ZodType | undefined {
   const def = readDef(schema)
   return (def?.in as z.ZodType | undefined) ?? (def?.out as z.ZodType | undefined)
+}
+
+/**
+ * Resolve a `z.lazy(() => inner)` to its inner schema by invoking the
+ * factory. Each invocation runs the arrow function fresh, so the returned
+ * schema is a distinct object on each call — cycle detection must track
+ * the getter function identity, not the resulting schema.
+ */
+export function unwrapLazy(schema: z.ZodType): z.ZodType | undefined {
+  const def = readDef(schema)
+  const getter = def?.getter
+  if (typeof getter !== 'function') return undefined
+  return getter() as z.ZodType
+}
+
+/** Getter function reference on a `z.lazy()` — used for recursion detection. */
+export function getLazyGetter(schema: z.ZodType): (() => unknown) | undefined {
+  const def = readDef(schema)
+  return typeof def?.getter === 'function' ? def.getter : undefined
+}
+
+export function getIntersectionLeft(schema: z.ZodType): z.ZodType | undefined {
+  const def = readDef(schema)
+  return def?.left as z.ZodType | undefined
+}
+
+export function getIntersectionRight(schema: z.ZodType): z.ZodType | undefined {
+  const def = readDef(schema)
+  return def?.right as z.ZodType | undefined
+}
+
+/**
+ * Materialise the fallback value of a `z.catch(inner, value)` wrapper.
+ * v4 stores the catch as a function `(ctx) => value` on `def.catchValue`;
+ * we invoke it with a placeholder context. Consumer catch functions that
+ * inspect `ctx.input` / `ctx.error` during initial-state derivation are
+ * rare — if the function throws, we surface `undefined` and let the
+ * validate-then-fix loop find a fallback.
+ */
+export function getCatchDefault(schema: z.ZodType): unknown {
+  const def = readDef(schema)
+  const cv = def?.catchValue
+  if (typeof cv !== 'function') return undefined
+  try {
+    return cv({ error: new Error('cx:initial-state'), input: undefined })
+  } catch {
+    return undefined
+  }
 }
 
 export function getDefaultValue(schema: z.ZodType): unknown {

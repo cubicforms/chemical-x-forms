@@ -117,6 +117,35 @@ function isExactKey(summarizedKey: string, name: string): boolean {
   return summarizedKey === name || summarizedKey === `"${name}"`
 }
 
+/**
+ * Returns true if the type prop's value MIGHT resolve to "file" at runtime.
+ * Conservative — anything not provably non-"file" returns true so the caller
+ * skips the transform.
+ *
+ * Concretely:
+ *   - `type="text"`   → value is `'"text"'`         → false (static literal != "file")
+ *   - `type="file"`   → value is `'"file"'`         → true  (static "file")
+ *   - `:type="'text'"`→ value is `"'text'"`         → false
+ *   - `:type="'file'"`→ value is `"'file'"`         → true
+ *   - `:type="kind"`  → value is `'kind'`           → true  (dynamic identifier)
+ *   - `:type="`a-${x}`"` → array or template lit    → true  (compound expression)
+ */
+function couldResolveToFileType(value: SummarizedProp['value']): boolean {
+  if (Array.isArray(value)) return true
+  const trimmed = value.trim()
+  // Match a one-line JS string literal: '...', "...", or `...`. Doesn't
+  // attempt to handle escaped quotes inside the literal — a `type` prop
+  // containing escaped quotes is vanishingly rare and falling through to
+  // "could be file" here is the safe direction anyway.
+  const literalMatch = /^(["'`])(.*)\1$/.exec(trimmed)
+  if (literalMatch === null) return true // dynamic expression — can't prove safe
+  const quote = literalMatch[1] as string
+  const inner = literalMatch[2] as string
+  // Template literals with interpolations resolve at runtime.
+  if (quote === '`' && inner.includes('${')) return true
+  return inner === 'file'
+}
+
 export const inputTextAreaNodeTransform: NodeTransform = (node) => {
   try {
     if (node.type !== NodeTypes.ELEMENT) return
@@ -134,10 +163,13 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
 
     // <input type="file" v-register="..."> silently skipped — at runtime the
     // directive routes to a no-op variant. Trying to set el.value on a file
-    // input throws a DOMException for security reasons.
+    // input throws a DOMException for security reasons. We must skip not just
+    // the static type="file" case but any dynamic binding (`:type="x"`,
+    // template-literal expressions, etc.) that COULD resolve to "file" at
+    // runtime — `couldResolveToFileType` errs on the conservative side.
     const typeIndex = elementProps.findIndex((p) => isExactKey(p.key, 'type'))
     const typeProp = elementProps[typeIndex]
-    if (typeProp !== undefined && typeProp.value === '"file"') return
+    if (typeProp !== undefined && couldResolveToFileType(typeProp.value)) return
 
     const valueIndex = elementProps.findIndex((p) => isExactKey(p.key, 'value'))
     const elementValueSummarizedProp = elementProps?.[valueIndex] ?? {

@@ -63,6 +63,29 @@ describe('inputTextAreaNodeTransform', () => {
       const code = compileWithTransform(`<input type="text" v-register="name" />`)
       expect(code).toContain('innerRef')
     })
+
+    // Conservative skip on dynamic / template-literal type bindings — they
+    // could resolve to "file" at runtime and trigger DOMException on
+    // el.value assignment.
+    it('skips <input :type="userKind" v-register> (dynamic identifier)', () => {
+      const code = compileWithTransform(`<input :type="userKind" v-register="x" />`)
+      expect(code).not.toContain('innerRef')
+    })
+
+    it('skips <input :type="`prefix-${suffix}`" v-register> (template literal with interpolation)', () => {
+      const code = compileWithTransform('<input :type="`prefix-${suffix}`" v-register="x" />')
+      expect(code).not.toContain('innerRef')
+    })
+
+    it('skips <input :type="\'file\'" v-register> (literal expression form)', () => {
+      const code = compileWithTransform(`<input :type="'file'" v-register="x" />`)
+      expect(code).not.toContain('innerRef')
+    })
+
+    it('still transforms <input :type="\'text\'" v-register> (provably non-file literal)', () => {
+      const code = compileWithTransform(`<input :type="'text'" v-register="x" />`)
+      expect(code).toContain('innerRef')
+    })
   })
 
   describe('fail-safe', () => {

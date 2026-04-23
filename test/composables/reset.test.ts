@@ -116,12 +116,9 @@ describe('useForm — reset()', () => {
     const { app, form } = harness()
     apps.push(app)
     // Run a failing submit to populate submitCount + submitError.
-    const handler = form.handleSubmit(
-      // eslint-disable-next-line @typescript-eslint/require-await
-      async () => {
-        throw new Error('boom')
-      }
-    )
+    const handler = form.handleSubmit(async () => {
+      throw new Error('boom')
+    })
     await expect(handler()).rejects.toThrow('boom')
     expect(form.submitCount.value).toBe(1)
     expect(form.submitError.value).toBeInstanceOf(Error)

@@ -22,7 +22,7 @@ function isPrimitive(input: unknown): boolean {
 }
 
 import type { NestedType } from '../../types/types-core'
-import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from '../../types/types-zod'
+import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from './types-zod'
 import { isZodSchemaType } from './helpers'
 
 export function zodAdapter<

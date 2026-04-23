@@ -1,13 +1,16 @@
 import type { z } from 'zod'
-import { zodAdapter } from '../adapters/zod'
+import { zodAdapter } from '../adapters/zod-v3'
 import type {
   AbstractSchema,
   UseAbstractFormReturnType,
   UseFormConfiguration,
 } from '../types/types-api'
 import type { DeepPartial, GenericForm } from '../types/types-core'
-import type { TypeWithNullableDynamicKeys } from '../types/types-zod'
-import type { UnwrapZodObject, UseFormConfigurationWithZod } from '../types/types-zod-adapter'
+import type { TypeWithNullableDynamicKeys } from '../adapters/zod-v3/types-zod'
+import type {
+  UnwrapZodObject,
+  UseFormConfigurationWithZod,
+} from '../adapters/zod-v3/types-zod-adapter'
 import { useAbstractForm } from './use-abstract-form'
 
 // Overload the useForm type definition to signal that zod schemas have 1st class support

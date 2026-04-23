@@ -226,6 +226,26 @@ export default [
     },
   },
 
+  // Zod v3 adapter is the pre-rewrite implementation moved verbatim from
+  // src/runtime/adapters/zod/ in Phase 4a. It speaks v3-specific internals
+  // (_def.typeName, .unwrap(), .innerType()) that won't satisfy the new
+  // strict-boolean-expressions / no-unnecessary-condition rules without a
+  // full rewrite. The adapter is scheduled for an 8-way split in Phase 4b;
+  // at that point introspect.ts will isolate the _def access and the rest
+  // of the adapter will satisfy strict rules. Until then: exempt.
+  {
+    files: ['src/runtime/adapters/zod-v3/**/*.ts'],
+    rules: {
+      '@typescript-eslint/strict-boolean-expressions': 'off',
+      '@typescript-eslint/no-unnecessary-condition': 'off',
+      '@typescript-eslint/prefer-nullish-coalescing': 'off',
+      '@typescript-eslint/no-non-null-assertion': 'off',
+      '@typescript-eslint/no-misused-promises': 'off',
+      '@typescript-eslint/no-floating-promises': 'off',
+      '@typescript-eslint/consistent-type-assertions': 'off',
+    },
+  },
+
   // directive.ts is a port of Vue's own v-model implementation, down to the
   // `!isRegisterValue(val) || !el` idioms and similar Vue-style truthiness
   // checks. The behavior is tested end-to-end via the SSR fixture; rewriting

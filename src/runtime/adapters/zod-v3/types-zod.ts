@@ -1,6 +1,6 @@
 // import type { NestedType } from '@/utils/types'
 import type { z } from 'zod'
-import type { NestedType } from './types-core'
+import type { NestedType } from '../../types/types-core'
 
 // Given potentially wrapped schema type, get deeply wrapped schema matching Zod type
 export type UnwrapZodSchemaToAccessTargetSchemaType<

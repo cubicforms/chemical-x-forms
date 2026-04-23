@@ -19,14 +19,14 @@ export default defineNuxtModule<CXModuleOptions>({
     useZod: true,
   },
   setup(options, nuxt) {
-    nuxt.options.vue.compilerOptions.nodeTransforms ||= []
+    nuxt.options.vue.compilerOptions.nodeTransforms ??= []
     nuxt.options.vue.compilerOptions.nodeTransforms.push(
       selectNodeTransform,
       inputTextAreaNodeTransform
     )
 
     const resolver = createResolver(import.meta.url)
-    const useFormComposable = options.useZod ? 'use-form' : 'use-abstract-form'
+    const useFormComposable = options.useZod === true ? 'use-form' : 'use-abstract-form'
     addImports([
       {
         name: 'useForm',

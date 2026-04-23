@@ -1,5 +1,5 @@
 import { defineNuxtConfig, type DefineNuxtConfig } from 'nuxt/config'
-import MyModule from '../../../src/module'
+import MyModule from '../../../src/nuxt'
 
 export default defineNuxtConfig({
   modules: [MyModule],

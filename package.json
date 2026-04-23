@@ -1,8 +1,8 @@
 {
   "name": "@chemical-x/forms",
   "version": "0.7.2",
-  "main": "./dist/module.cjs",
-  "types": "./dist/types.d.ts",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
   "files": [
     "dist"
   ],
@@ -31,7 +31,7 @@
     "check": "pnpm lint && pnpm format:check && pnpm typecheck",
     "fix": "npm run lint:fix && npm run format",
     "typecheck": "tsc --noEmit",
-    "prepack": "nuxt-module-build build",
+    "prepack": "unbuild",
     "prepack:watch": "chokidar 'src/**/*' -c 'pnpm prepack' --initial",
     "release": "pnpm lint && pnpm test && npm run prepack && changelogen --release && npm publish && git push --follow-tags",
     "test": "vitest run",
@@ -47,21 +47,28 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/types.d.ts",
-      "import": "./dist/module.mjs",
-      "require": "./dist/module.cjs"
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
     },
     "./nuxt": {
-      "types": "./dist/types.d.ts",
-      "import": "./dist/module.mjs",
-      "require": "./dist/module.cjs"
+      "types": "./dist/nuxt.d.mts",
+      "import": "./dist/nuxt.mjs",
+      "require": "./dist/nuxt.cjs"
     },
-    "./adapters/*": {
-      "types": "./dist/runtime/adapters/*/index.d.ts",
-      "import": "./dist/runtime/adapters/*/index.js"
+    "./vite": {
+      "types": "./dist/vite.d.mts",
+      "import": "./dist/vite.mjs"
+    },
+    "./transforms": {
+      "types": "./dist/transforms.d.mts",
+      "import": "./dist/transforms.mjs"
+    },
+    "./zod-v3": {
+      "types": "./dist/zod-v3.d.mts",
+      "import": "./dist/zod-v3.mjs"
     },
     "./types": {
-      "types": "./dist/runtime/types/types-api.d.ts"
+      "types": "./dist/index.d.mts"
     }
   },
   "keywords": [
@@ -99,7 +106,6 @@
     "@typescript-eslint/eslint-plugin": "^8.28.0",
     "@typescript-eslint/parser": "^8.28.0",
     "@vue/compiler-core": "^3.5.13",
-    "@vue/shared": "^3.5.13",
     "changelogen": "^0.5.7",
     "cheerio": "^1.0.0",
     "chokidar-cli": "^3.0.0",
@@ -132,7 +138,13 @@
     "@vue/compiler-core": ">=3.5.0",
     "lodash-es": ">= 4.0.0",
     "nuxt": ">=3.0.0",
+    "vite": ">=5.0.0",
     "vue": ">=3.5.0",
     "zod": ">=3.0.0 <4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "nuxt": { "optional": true },
+    "vite": { "optional": true },
+    "zod": { "optional": true }
   }
 }

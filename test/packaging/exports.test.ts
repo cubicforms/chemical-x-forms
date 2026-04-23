@@ -60,4 +60,18 @@ describe.skipIf(!existsSync(distDir))('packaging: package.json exports', () => {
     const src = readFileSync(join(distDir, 'zod-v3.mjs'), 'utf-8')
     expect(src).toMatch(/from\s*['"]zod['"]/)
   })
+
+  it('no dist bundle imports `zod-v3` (the pnpm-alias specifier gets rewritten)', () => {
+    // Guard against regressions in the rollup alias plugin (build.config.ts).
+    // If the alias silently stopped firing, every zod-v3 entry would re-
+    // externalize as `from 'zod-v3'` and consumers would hit resolution
+    // failures at install time. We exclude error-message string literals
+    // from the check.
+    for (const name of ['index', 'nuxt', 'vite', 'transforms', 'zod', 'zod-v3']) {
+      const mjs = readFileSync(join(distDir, `${name}.mjs`), 'utf-8')
+      expect(mjs, `${name}.mjs imports zod-v3`).not.toMatch(
+        /from\s*['"]zod-v3['"]|require\(\s*['"]zod-v3['"]\s*\)/
+      )
+    }
+  })
 })

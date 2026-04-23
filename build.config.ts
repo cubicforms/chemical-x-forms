@@ -1,3 +1,4 @@
+import aliasPlugin from '@rollup/plugin-alias'
 import { defineBuildConfig } from 'unbuild'
 
 export default defineBuildConfig({
@@ -13,18 +14,29 @@ export default defineBuildConfig({
     'vite',
     'vue',
     'zod',
-    'zod-v3', // aliased dev install; rewritten to 'zod' via rollup.replace below
+    // `zod-v3` is intentionally NOT in externals so that the alias plugin
+    // (wired below) sees it in a resolution context and rewrites it to
+    // `zod`. If we listed it as external, rollup would short-circuit and
+    // emit `from 'zod-v3'` in the bundle.
     'typescript',
     /lodash-es.*/,
   ],
   declaration: true,
   failOnWarn: false,
+  hooks: {
+    'rollup:options'(_ctx, options) {
+      // Prepend the alias plugin so it fires before unbuild's own plugins
+      // (notably the externalisation and resolution steps). At resolution
+      // time, `zod-v3` rewrites to `zod`; at runtime, the external `zod`
+      // resolves against the consumer's installed zod@3.
+      options.plugins = [
+        aliasPlugin({ entries: [{ find: 'zod-v3', replacement: 'zod' }] }),
+        ...(Array.isArray(options.plugins) ? options.plugins : []),
+      ]
+    },
+  },
   rollup: {
     emitCJS: true,
-    // `zod-v3` (our dev-install pnpm alias for zod@3) stays external; the
-    // post-pack script `scripts/rewrite-zod-aliases.mjs` rewrites the
-    // specifier to `zod` in published bundles so consumers install zod@3
-    // themselves and the import resolves against their install.
     dts: {
       // respectExternal:false avoids re-rolling type-only deps whose TS shape
       // (e.g. typescript's own nested namespaces) can't be bundled by

@@ -38,6 +38,9 @@ importers:
       '@nuxtjs/eslint-config-typescript':
         specifier: ^12.1.0
         version: 12.1.0(eslint-plugin-import-x@4.9.4(eslint@9.23.0(jiti@2.4.2))(typescript@5.7.3))(eslint@9.23.0(jiti@2.4.2))(typescript@5.7.3)
+      '@rollup/plugin-alias':
+        specifier: ^6.0.0
+        version: 6.0.0(rollup@4.38.0)
       '@types/jsdom':
         specifier: ^21.1.7
         version: 21.1.7
@@ -1335,6 +1338,15 @@ packages:
     engines: {node: '>=14.0.0'}
     peerDependencies:
       rollup: ^1.20.0||^2.0.0||^3.0.0||^4.0.0
+    peerDependenciesMeta:
+      rollup:
+        optional: true
+
+  '@rollup/plugin-alias@6.0.0':
+    resolution: {integrity: sha512-tPCzJOtS7uuVZd+xPhoy5W4vThe6KWXNmsFCNktaAh5RTqcLiSfT4huPQIXkgJ6YCOjJHvecOAzQxLFhPxKr+g==}
+    engines: {node: '>=20.19.0'}
+    peerDependencies:
+      rollup: '>=4.0.0'
     peerDependenciesMeta:
       rollup:
         optional: true
@@ -7313,6 +7325,10 @@ snapshots:
       rollup: 3.29.5
 
   '@rollup/plugin-alias@5.1.1(rollup@4.38.0)':
+    optionalDependencies:
+      rollup: 4.38.0
+
+  '@rollup/plugin-alias@6.0.0(rollup@4.38.0)':
     optionalDependencies:
       rollup: 4.38.0
 

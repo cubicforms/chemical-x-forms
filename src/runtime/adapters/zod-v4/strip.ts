@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   getArrayElement,
+  getDefaultValue,
   getDiscriminatedOptions,
   getDiscriminator,
   getObjectShape,
@@ -132,11 +133,18 @@ export function getSlimSchema(schema: z.ZodType, stripConfig: StripConfig): z.Zo
     case 'default': {
       const inner = unwrapInner(schema) ?? schema
       const slimmedInner = getSlimSchema(inner, stripConfig)
-      // We can't easily re-apply `.default(...)` here because the default
-      // value lives on the wrapper; stripping it when `stripDefaultValues`
-      // is set is the more useful direction. When false, keep the original
-      // wrapper — the walker will honour it.
-      return stripConfig.stripDefaultValues === true ? slimmedInner : schema
+      if (stripConfig.stripDefaultValues === true) return slimmedInner
+      // Re-apply the default to the slimmed inner. Returning `schema`
+      // unchanged would skip nested stripping (refinements / pipe inside
+      // a `.default()` wrapper would survive, breaking parity with the
+      // optional / nullable cases above). The default value lives on
+      // the wrapper at `_zod.def.defaultValue`; introspect.getDefaultValue
+      // reads it through the v4 getter and resolves to the materialised
+      // value (lazy `.default(() => x)` getters fire here — we rewrap
+      // as a fixed value, which is correct for the slim schema's
+      // single-shot use during initial-state derivation).
+      const defaultValue = getDefaultValue(schema)
+      return (slimmedInner as z.ZodType).default(defaultValue as never)
     }
     case 'readonly':
     case 'pipe': {

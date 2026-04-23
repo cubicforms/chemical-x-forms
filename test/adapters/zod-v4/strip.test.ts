@@ -69,6 +69,29 @@ describe('getSlimSchema — stripDefaultValues flag', () => {
     expect(parsed.success).toBe(true)
     if (parsed.success) expect(parsed.data).toBe('hello')
   })
+
+  it('strips refinements INSIDE a .default() wrapper when stripDefaultValues=false', () => {
+    // Regression: previously the 'default' branch returned the original
+    // schema unchanged when stripDefaultValues=false, which meant nested
+    // stripRefinements / stripPipe flags never reached the inner schema.
+    // Now we re-apply .default(slimmedInner) so the chain is honoured.
+    const schema = z.string().email().default('seed@example.com')
+    const slim = getSlimSchema(schema, { stripRefinements: true })
+    // The default still resolves on undefined.
+    const onUndefined = slim.safeParse(undefined)
+    expect(onUndefined.success).toBe(true)
+    if (onUndefined.success) expect(onUndefined.data).toBe('seed@example.com')
+    // Empty string, which would fail .email() on the original, now passes.
+    expect(slim.safeParse('').success).toBe(true)
+  })
+
+  it('default-wrapped enum: `.default(value)` survives + slimming runs through', () => {
+    const schema = z.enum(['a', 'b', 'c']).default('a')
+    const slim = getSlimSchema(schema, { stripRefinements: true })
+    const onUndefined = slim.safeParse(undefined)
+    expect(onUndefined.success).toBe(true)
+    if (onUndefined.success) expect(onUndefined.data).toBe('a')
+  })
 })
 
 describe('getSlimSchema — stripOptional / stripNullable flags', () => {

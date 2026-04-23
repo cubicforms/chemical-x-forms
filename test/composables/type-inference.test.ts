@@ -1,6 +1,6 @@
 import { describe, expectTypeOf, it } from 'vitest'
 import { z } from 'zod'
-import type { Ref } from 'vue'
+import type { ComputedRef, Ref } from 'vue'
 import type { useForm } from '../../src/zod'
 
 /**
@@ -195,5 +195,17 @@ describe('useForm type inference — getFieldState + fieldErrors', () => {
 
   it('fieldErrors is a ComputedRef<FormErrorRecord>', () => {
     expectTypeOf(form.fieldErrors.value).toMatchTypeOf<Record<string, unknown>>()
+  })
+})
+
+describe('useForm type inference — form-level aggregates', () => {
+  it('isDirty is a Readonly<ComputedRef<boolean>>', () => {
+    expectTypeOf(form.isDirty).toEqualTypeOf<Readonly<ComputedRef<boolean>>>()
+    expectTypeOf(form.isDirty.value).toEqualTypeOf<boolean>()
+  })
+
+  it('isValid is a Readonly<ComputedRef<boolean>>', () => {
+    expectTypeOf(form.isValid).toEqualTypeOf<Readonly<ComputedRef<boolean>>>()
+    expectTypeOf(form.isValid.value).toEqualTypeOf<boolean>()
   })
 })

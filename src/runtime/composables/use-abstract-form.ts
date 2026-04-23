@@ -163,6 +163,24 @@ export function useAbstractForm<
     state.clearErrors(segments)
   }
 
+  // --- Form-level aggregates ---
+  // `state.originals` is a plain (non-reactive) Map, but it only grows inside
+  // applyFormReplacement — which also mutates the reactive `form` ref. Reading
+  // `state.form.value` inside the computed is what establishes the dependency
+  // edge; originals being non-reactive is an optimisation (the set doesn't
+  // change independently of form.value, so tracking it would only add noise).
+  const isDirty = computed<boolean>(() => {
+    for (const [pathKey, original] of state.originals) {
+      const segments = JSON.parse(pathKey) as Path
+      if (!Object.is(getAtPath(state.form.value, segments), original)) return true
+    }
+    return false
+  })
+
+  // `state.errors` is a Vue-reactive Map; reading `.size` in the computed
+  // tracks per-key changes via Vue's collection handlers.
+  const isValid = computed<boolean>(() => state.errors.size === 0)
+
   return {
     getFieldState: getFieldState as UseAbstractFormReturnType<
       Form,
@@ -179,6 +197,8 @@ export function useAbstractForm<
     addFieldErrors,
     clearFieldErrors,
     setFieldErrorsFromApi,
+    isDirty,
+    isValid,
   }
 }
 

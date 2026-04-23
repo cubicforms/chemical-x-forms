@@ -333,4 +333,25 @@ export type UseAbstractFormReturnType<
   setFieldErrorsFromApi: (
     payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined
   ) => ValidationError[]
+
+  // --- Form-level aggregates ---
+
+  /**
+   * `true` when any tracked leaf's current value differs from the value it
+   * was initialised with. Returns `false` for a pristine form and for one
+   * where every mutation has been undone back to its original.
+   *
+   * Comparisons use `Object.is`; object/array leaves are reference-compared,
+   * so structural equality after a replace-with-equal-copy will still read
+   * as dirty. Reset via `reset()` to restore the pristine baseline.
+   */
+  isDirty: Readonly<ComputedRef<boolean>>
+
+  /**
+   * `true` when the form has no recorded errors. Driven by the same error
+   * store `fieldErrors` exposes — a successful `validate()` / `handleSubmit`
+   * run clears errors and flips this to true; a failed run populates them
+   * and flips to false.
+   */
+  isValid: Readonly<ComputedRef<boolean>>
 }

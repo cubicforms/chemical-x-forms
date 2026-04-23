@@ -100,6 +100,31 @@ export type ReactiveValidationStatus<Form> = PendingValidationStatus | SettledVa
  */
 export type OnInvalidSubmitPolicy = 'none' | 'focus-first-error' | 'scroll-to-first-error' | 'both'
 
+/**
+ * Field-level validation trigger mode.
+ *
+ * - `'none'` (default): no field-level validation. `handleSubmit` and
+ *   explicit `validate()` / `validateAsync()` calls are the only
+ *   validation surface.
+ * - `'change'`: on every mutation via `setValueAtPath` (register,
+ *   `setValue(path, ...)`, array helpers), schedule a debounced
+ *   validation for the written path.
+ * - `'blur'`: on `markFocused(path, false)` — i.e. when the user
+ *   tabs away from a field — validate immediately (no debounce) for
+ *   that path.
+ */
+export type FieldValidationMode = 'change' | 'blur' | 'none'
+
+export type FieldValidationConfig = {
+  /** Trigger mode. Default `'none'`. */
+  on?: FieldValidationMode
+  /**
+   * Debounce window for `on: 'change'`. Ignored when `on` is `'blur'`
+   * or `'none'`. Default `200` ms.
+   */
+  debounceMs?: number
+}
+
 export type UseFormConfiguration<
   Form extends GenericForm,
   GetValueFormType,
@@ -130,6 +155,25 @@ export type UseFormConfiguration<
    * no-ops rather than throwing.
    */
   onInvalidSubmit?: OnInvalidSubmitPolicy
+
+  /**
+   * Configure per-field validation that fires between submit attempts.
+   * Default `{ on: 'none' }` — no field validation.
+   *
+   * - `{ on: 'change', debounceMs: 200 }` — every mutation via
+   *   `setValueAtPath` schedules validation for that path after the
+   *   debounce elapses. Rapid successive mutations reset the timer;
+   *   in-flight runs are cancelled via `AbortController` so stale
+   *   results can't clobber fresher ones.
+   * - `{ on: 'blur' }` — validation fires immediately (no debounce)
+   *   when the user tabs away from a registered field. Ignores
+   *   `debounceMs`.
+   *
+   * Runs concurrently with `handleSubmit`'s full-form validation:
+   * field runs in flight are aborted at submit entry so the submit
+   * result is authoritative. Aborted on `reset()` too.
+   */
+  fieldValidation?: FieldValidationConfig
 }
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>

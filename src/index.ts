@@ -53,6 +53,8 @@ export type {
   ApiErrorDetails,
   ApiErrorEnvelope,
   FieldState,
+  FieldValidationConfig,
+  FieldValidationMode,
   FormErrorRecord,
   FormKey,
   HandleSubmit,

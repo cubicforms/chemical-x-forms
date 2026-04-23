@@ -97,6 +97,7 @@ function buildFreshState<F extends GenericForm>(
     initialState: configuration.initialState,
     validationMode: configuration.validationMode,
     hydration: pending,
+    fieldValidation: configuration.fieldValidation,
   })
   // Storage type is FormState<GenericForm>; the lookup above narrows back to F
   // via the `existing as FormState<Form>` cast.

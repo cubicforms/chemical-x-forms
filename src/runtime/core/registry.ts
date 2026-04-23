@@ -87,6 +87,12 @@ export function createRegistry(options: SSRDetectOptions = {}): ChemicalXRegistr
       disposed = true
       const remaining = (consumers.get(key) ?? 1) - 1
       if (remaining <= 0) {
+        // Tear down non-reactive resources the FormState owns (field-
+        // validation timers, abort controllers) BEFORE dropping the
+        // registry reference — once the Map entry is gone we can't
+        // reach the state anymore.
+        const state = forms.get(key)
+        state?.dispose()
         consumers.delete(key)
         forms.delete(key)
       } else {

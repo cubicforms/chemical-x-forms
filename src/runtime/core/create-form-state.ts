@@ -1,6 +1,8 @@
 import { reactive, ref, type Ref } from 'vue'
 import type {
   AbstractSchema,
+  FieldValidationConfig,
+  FieldValidationMode,
   FormKey,
   InitialStateResponse,
   ValidationError,
@@ -131,6 +133,22 @@ export type FormState<F extends GenericForm> = {
    * dev-only warning.
    */
   getFirstErrorElement(): { path: Path; element: HTMLElement } | null
+
+  /**
+   * Cancel every in-flight field-level validation run — clears timers
+   * for debounced 'change' runs that haven't fired, aborts controllers
+   * for runs whose async parse is in flight. Called by `handleSubmit`
+   * at entry (submit validation is authoritative) and by `reset()`.
+   */
+  cancelFieldValidation(): void
+
+  /**
+   * Tear down non-reactive resources owned by this FormState. Invoked
+   * by the registry when the last consumer unmounts. Currently clears
+   * pending field-validation timers so a Node-side test or SSR run
+   * doesn't keep the process alive past the form's lifetime.
+   */
+  dispose(): void
 }
 
 /**
@@ -151,12 +169,21 @@ export type CreateFormStateOptions<F extends GenericForm> = {
   readonly initialState?: DeepPartial<F> | undefined
   readonly validationMode?: ValidationMode | undefined
   readonly hydration?: FormStateHydration | undefined
+  readonly fieldValidation?: FieldValidationConfig | undefined
 }
 
 export function createFormState<F extends GenericForm>(
   options: CreateFormStateOptions<F>
 ): FormState<F> {
   const { formKey, schema, initialState, validationMode = 'lax', hydration } = options
+  const fieldValidationMode: FieldValidationMode = options.fieldValidation?.on ?? 'none'
+  const fieldValidationDebounceMs: number = options.fieldValidation?.debounceMs ?? 200
+
+  type FieldValidationEntry = {
+    controller: AbortController
+    timer: ReturnType<typeof setTimeout> | null
+  }
+  const fieldValidationState = new Map<PathKey, FieldValidationEntry>()
 
   // Schema is ALWAYS consulted: we need the schema-derived originals even
   // when hydrating, so pristine/dirty computation survives SSR round-trip.
@@ -270,6 +297,85 @@ export function createFormState<F extends GenericForm>(
   function setValueAtPath(path: Path, value: unknown): void {
     const nextForm = setAtPath(form.value, path, value) as F
     applyFormReplacement(nextForm)
+    if (fieldValidationMode === 'change') {
+      scheduleFieldValidation(path, false /* debounced */)
+    }
+  }
+
+  /**
+   * Schedule (or kick off immediately) a field-level validation run
+   * for `path`. Per-path AbortController semantics: a new schedule
+   * cancels any prior in-flight run for the same path, so rapid
+   * successive writes don't pile up concurrent validations.
+   *
+   * The validation reads the current value at `path` from `form.value`
+   * AT THE TIME THE TIMER FIRES, not at schedule time. That's the
+   * correct semantics for a debounced change trigger: the user's
+   * latest-keystroke value is what matters, not whichever value
+   * tripped the timer scheduler N milliseconds ago.
+   */
+  function scheduleFieldValidation(path: Path, immediate: boolean): void {
+    if (fieldValidationMode === 'none') return
+    const { key } = canonicalizePath(path)
+    const prev = fieldValidationState.get(key)
+    if (prev !== undefined) {
+      if (prev.timer !== null) clearTimeout(prev.timer)
+      prev.controller.abort()
+    }
+    const controller = new AbortController()
+    const fresh: FieldValidationEntry = { controller, timer: null }
+    fieldValidationState.set(key, fresh)
+
+    const run = () => {
+      fresh.timer = null
+      if (controller.signal.aborted) return
+      const stringPath = path.map(String).join('.')
+      const data = getAtPath(form.value, path)
+      activeValidations.value += 1
+      void Promise.resolve()
+        .then(() => schema.validateAtPath(data, stringPath))
+        .then((response) => {
+          if (controller.signal.aborted) return
+          // The adapter emits issue paths relative to the sub-schema it
+          // parsed (e.g. `[]` for a leaf string). Re-stamp each error
+          // with the absolute field path so `fieldErrors[<dotted path>]`
+          // lookups match the key the consumer is watching for.
+          const nextErrors = response.success
+            ? []
+            : response.errors.map((err) => ({
+                ...err,
+                path: [...path, ...(err.path as Segment[])],
+              }))
+          setErrorsForPath(path, nextErrors)
+        })
+        .catch(() => {
+          // Adapter contract forbids throws — swallow here so a misbehaving
+          // custom adapter doesn't surface as an uncaught rejection. The
+          // silent drop matches the reactive `validate()` ref's catch
+          // branch for adapter-level throws (see process-form.ts).
+        })
+        .finally(() => {
+          activeValidations.value = Math.max(0, activeValidations.value - 1)
+        })
+    }
+
+    if (immediate) {
+      run()
+    } else {
+      fresh.timer = setTimeout(run, fieldValidationDebounceMs)
+    }
+  }
+
+  function cancelFieldValidation(): void {
+    for (const entry of fieldValidationState.values()) {
+      if (entry.timer !== null) clearTimeout(entry.timer)
+      entry.controller.abort()
+    }
+    fieldValidationState.clear()
+  }
+
+  function dispose(): void {
+    cancelFieldValidation()
   }
 
   function getValueAtPath(path: Path): unknown {
@@ -362,6 +468,12 @@ export function createFormState<F extends GenericForm>(
       // `touched` becomes true on blur (matches the pre-rewrite contract).
       touched: focused ? (fields.get(key)?.touched ?? null) : true,
     })
+    // On blur (focused → false), `fieldValidation: { on: 'blur' }` fires
+    // an immediate (no-debounce) validation for this path. Ignored for
+    // change/none modes so behaviour matches the declared config.
+    if (!focused && fieldValidationMode === 'blur') {
+      scheduleFieldValidation(path, true /* immediate */)
+    }
   }
 
   function markTouched(path: Path): void {
@@ -418,6 +530,10 @@ export function createFormState<F extends GenericForm>(
     activeSubmissions.value = 0
     submitCount.value = 0
     submitError.value = null
+    // Drop any pending field-validation timers / in-flight runs. Writes
+    // that reached the controller-aborted branch resolve to a no-op, so
+    // the error store stays clean after the reset clears it above.
+    cancelFieldValidation()
   }
 
   function resetField(path: Path): void {
@@ -585,6 +701,8 @@ export function createFormState<F extends GenericForm>(
     getFieldRecord,
     getOriginalAtPath,
     getFirstErrorElement,
+    cancelFieldValidation,
+    dispose,
   }
 }
 

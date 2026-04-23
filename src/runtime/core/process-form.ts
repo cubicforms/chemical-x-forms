@@ -198,6 +198,10 @@ export function buildProcessForm<F extends GenericForm>(
       state.activeSubmissions.value += 1
       state.isSubmitting.value = true
       state.submitError.value = null
+      // Abort any in-flight per-field validation runs so their late
+      // writes can't clobber the authoritative submit result. Also
+      // clears debounce timers that never fired.
+      state.cancelFieldValidation()
       state.activeValidations.value += 1
       let validationSettled = false
       try {

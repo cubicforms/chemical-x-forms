@@ -1,0 +1,84 @@
+import type {
+  AbstractSchema,
+  InitialStateResponse,
+  ValidationResponse,
+} from '../../src/runtime/types/types-api'
+import type { DeepPartial, GenericForm } from '../../src/runtime/types/types-core'
+
+/**
+ * A minimal, dependency-free AbstractSchema implementation used by the core
+ * test suite. Tests against the core must exercise the schema-agnostic
+ * contract without pulling in Zod — that would defeat the purpose of the
+ * decoupling.
+ *
+ * Usage:
+ *   const schema = fakeSchema<MyForm>({ user: { name: 'alice', age: 30 } })
+ *   const state = createFormState({ formKey: 'test', schema })
+ *
+ * This schema:
+ * - Accepts any form shape; no validation rules.
+ * - Uses the provided `defaults` as the initial state.
+ * - `validateAtPath` always reports success.
+ * - `getSchemasAtPath` returns `[]` (no path-specific subschemas).
+ *
+ * For tests that need validation failure cases, pass a custom `validator`.
+ */
+export function fakeSchema<F extends GenericForm>(
+  defaults: F,
+  validator?: (data: unknown, path: string | undefined) => ValidationResponse<F>
+): AbstractSchema<F, F> {
+  const schema: AbstractSchema<F, F> = {
+    getInitialState(config): InitialStateResponse<F> {
+      const merged = mergeDeepPartial(defaults, config.constraints) as F
+      return {
+        data: merged,
+        errors: undefined,
+        success: true,
+        formKey: '',
+      }
+    },
+    getSchemasAtPath(path) {
+      void path
+      return []
+    },
+    validateAtPath(data, path): ValidationResponse<F> {
+      if (validator) return validator(data, path)
+      return {
+        data: data as F,
+        errors: undefined,
+        success: true,
+        formKey: '',
+      }
+    },
+  }
+  return schema
+}
+
+function mergeDeepPartial<T>(base: T, override: DeepPartial<T> | undefined): T {
+  if (override === undefined || override === null) return base
+  if (typeof base !== 'object' || base === null) return override as T
+  if (Array.isArray(base)) {
+    return Array.isArray(override) ? (override as unknown as T) : base
+  }
+  const result: Record<string, unknown> = { ...(base as Record<string, unknown>) }
+  for (const key of Object.keys(override as object)) {
+    const overrideValue = (override as Record<string, unknown>)[key]
+    const baseValue = (base as Record<string, unknown>)[key]
+    if (
+      typeof baseValue === 'object' &&
+      baseValue !== null &&
+      !Array.isArray(baseValue) &&
+      typeof overrideValue === 'object' &&
+      overrideValue !== null &&
+      !Array.isArray(overrideValue)
+    ) {
+      result[key] = mergeDeepPartial(
+        baseValue as Record<string, unknown>,
+        overrideValue as DeepPartial<Record<string, unknown>>
+      )
+    } else if (overrideValue !== undefined) {
+      result[key] = overrideValue
+    }
+  }
+  return result as T
+}

@@ -131,6 +131,47 @@ describe('diffAndApply', () => {
     })
   })
 
+  describe('undefined <-> descendable (init / dynamic field additions)', () => {
+    it('undefined → object recurses and emits one added patch per leaf', () => {
+      const patches = collect(undefined, { a: 1, b: 2 })
+      expect(patches).toEqual([
+        { kind: 'added', path: ['a'], newValue: 1 },
+        { kind: 'added', path: ['b'], newValue: 2 },
+      ])
+    })
+
+    it('undefined → array recurses and emits one added patch per leaf', () => {
+      const patches = collect(undefined, [10, 20])
+      expect(patches).toEqual([
+        { kind: 'added', path: [0], newValue: 10 },
+        { kind: 'added', path: [1], newValue: 20 },
+      ])
+    })
+
+    it('object → undefined recurses and emits one removed patch per leaf', () => {
+      const patches = collect({ a: 1, b: 2 }, undefined)
+      expect(patches).toEqual([
+        { kind: 'removed', path: ['a'], oldValue: 1 },
+        { kind: 'removed', path: ['b'], oldValue: 2 },
+      ])
+    })
+
+    it('nested undefined → object descends all the way to leaves', () => {
+      const patches = collect({}, { profile: { name: 'alice', age: 30 } })
+      expect(patches).toEqual([
+        { kind: 'added', path: ['profile', 'name'], newValue: 'alice' },
+        { kind: 'added', path: ['profile', 'age'], newValue: 30 },
+      ])
+    })
+
+    it('null → object is atomic (null is a deliberate value, not missing)', () => {
+      const patches = collect({ a: null }, { a: { b: 1 } })
+      expect(patches).toEqual([
+        { kind: 'changed', path: ['a'], oldValue: null, newValue: { b: 1 } },
+      ])
+    })
+  })
+
   describe('shape transitions', () => {
     it('object → array emits a single changed patch (full replacement)', () => {
       const patches = collect({ a: 1 }, [1, 2])

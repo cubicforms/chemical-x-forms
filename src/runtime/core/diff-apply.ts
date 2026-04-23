@@ -67,6 +67,39 @@ export function diffAndApply(
   const oldIsDescendable = isDescendable(oldValue)
   const newIsDescendable = isDescendable(newValue)
 
+  // Missing (undefined) <-> descendable: recurse into the descendable side so
+  // every leaf emits an atomic 'added' / 'removed' patch. Populating
+  // per-field metadata during form init / dynamic field additions relies on
+  // this granularity. Other shape mismatches (primitive <-> object, array <->
+  // object) are treated as atomic replacements.
+  if (oldValue === undefined && newIsDescendable) {
+    if (Array.isArray(newValue)) {
+      for (let i = 0; i < newValue.length; i++) {
+        diffAndApply(undefined, newValue[i], appendSegment(prefix, i), visit)
+      }
+    } else {
+      const rec = newValue as Record<string, unknown>
+      for (const k of Object.keys(rec)) {
+        diffAndApply(undefined, rec[k], appendSegment(prefix, k), visit)
+      }
+    }
+    return
+  }
+
+  if (oldIsDescendable && newValue === undefined) {
+    if (Array.isArray(oldValue)) {
+      for (let i = 0; i < oldValue.length; i++) {
+        diffAndApply(oldValue[i], undefined, appendSegment(prefix, i), visit)
+      }
+    } else {
+      const rec = oldValue as Record<string, unknown>
+      for (const k of Object.keys(rec)) {
+        diffAndApply(rec[k], undefined, appendSegment(prefix, k), visit)
+      }
+    }
+    return
+  }
+
   if (oldIsDescendable && newIsDescendable) {
     const oldIsArray = Array.isArray(oldValue)
     const newIsArray = Array.isArray(newValue)

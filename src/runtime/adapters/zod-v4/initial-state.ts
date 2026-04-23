@@ -1,0 +1,252 @@
+import type { z } from 'zod'
+import { setAtPath } from '../../core/path-walker'
+import type { FormKey } from '../../types/types-api'
+import { getDiscriminatedUnionFirstOption, unwrapToDiscriminatedUnion } from './discriminator'
+import {
+  getDefaultValue,
+  getDiscriminatedOptions,
+  getEnumValues,
+  getLiteralValues,
+  getObjectShape,
+  getTupleItems,
+  getUnionOptions,
+  kindOf,
+  unwrapInner,
+  unwrapPipe,
+  type ZodKind,
+} from './introspect'
+import { getNestedZodSchemasAtPath } from './path-walker'
+import { getSlimSchema } from './strip'
+
+/**
+ * Derive a default value for any Zod v4 schema. Mirrors v3's walker but
+ * routes through the introspect helpers so `def.*` access stays
+ * chokepointed. When `useDefault` is false, `.default(x)` wrappers are
+ * skipped so the walker produces the underlying leaf's empty value
+ * instead — useful when the caller wants a "blank" initial state rather
+ * than the schema's declared defaults.
+ */
+export function deriveDefault(schema: z.ZodType, useDefault: boolean): unknown {
+  return defaultForKind(kindOf(schema), schema, useDefault)
+}
+
+function defaultForKind(kind: ZodKind, schema: z.ZodType, useDefault: boolean): unknown {
+  switch (kind) {
+    case 'object': {
+      const shape = getObjectShape(schema as z.ZodObject)
+      const out: Record<string, unknown> = {}
+      for (const [key, subSchema] of Object.entries(shape)) {
+        out[key] = deriveDefault(subSchema, useDefault)
+      }
+      return out
+    }
+    case 'default': {
+      if (useDefault) return getDefaultValue(schema)
+      const inner = unwrapInner(schema)
+      return inner === undefined ? undefined : deriveDefault(inner, useDefault)
+    }
+    case 'optional':
+      return undefined
+    case 'nullable':
+      return null
+    case 'readonly': {
+      const inner = unwrapInner(schema)
+      return inner === undefined ? undefined : deriveDefault(inner, useDefault)
+    }
+    case 'pipe': {
+      const inner = unwrapPipe(schema)
+      return inner === undefined ? undefined : deriveDefault(inner, useDefault)
+    }
+    case 'array':
+      return []
+    case 'record':
+      return {}
+    case 'tuple': {
+      const items = getTupleItems(schema)
+      return items.map((item) => deriveDefault(item, useDefault))
+    }
+    case 'union': {
+      const options = getUnionOptions(schema)
+      const first = options[0]
+      return first === undefined ? undefined : deriveDefault(first, useDefault)
+    }
+    case 'discriminated-union': {
+      const first = getDiscriminatedUnionFirstOption(schema)
+      return first === undefined ? undefined : deriveDefault(first, useDefault)
+    }
+    case 'string':
+      return ''
+    case 'number':
+    case 'bigint':
+      return 0
+    case 'boolean':
+      return false
+    case 'date':
+      return new Date(0)
+    case 'null':
+      return null
+    case 'undefined':
+      return undefined
+    case 'enum': {
+      const values = getEnumValues(schema)
+      return values[0]
+    }
+    case 'literal': {
+      const values = getLiteralValues(schema)
+      return values[0]
+    }
+    case 'nan':
+      return NaN
+    case 'any':
+    case 'unknown':
+    case 'void':
+    case 'never':
+      return undefined
+  }
+}
+
+/** Merge `override` into `base` recursively, preferring override leaves. */
+export function mergeDeep(base: unknown, override: unknown): unknown {
+  if (override === undefined || override === null) return base
+  if (typeof base !== 'object' || base === null) return override
+  if (Array.isArray(base) || Array.isArray(override)) {
+    return Array.isArray(override) ? override : base
+  }
+  const result = { ...(base as Record<string, unknown>) }
+  for (const key of Object.keys(override as Record<string, unknown>)) {
+    const oVal = (override as Record<string, unknown>)[key]
+    const bVal = (base as Record<string, unknown>)[key]
+    if (
+      typeof oVal === 'object' &&
+      oVal !== null &&
+      !Array.isArray(oVal) &&
+      typeof bVal === 'object' &&
+      bVal !== null &&
+      !Array.isArray(bVal)
+    ) {
+      result[key] = mergeDeep(bVal, oVal)
+    } else if (oVal !== undefined) {
+      result[key] = oVal
+    }
+  }
+  return result
+}
+
+export type GetInitialStateOptions = {
+  schema: z.ZodObject
+  useDefaultSchemaValues: boolean
+  validationMode: 'strict' | 'lax'
+  constraints: unknown
+  formKey: FormKey
+}
+
+export type InitialStateResult<Form> = {
+  data: Form
+  success: boolean
+  slimSchema: z.ZodType
+}
+
+/**
+ * getInitialStateFromZodSchema — produces a form's starting value.
+ *
+ * The algorithm mirrors v3's: walk the schema to derive blank defaults,
+ * merge constraints, then run the schema's `safeParse`. On failure, walk
+ * the resulting issues and fill in issue-specific defaults at each
+ * complaining path — e.g. `invalid_type` with `issue.expected === 'string'`
+ * fills in `''`, `invalid_value` picks the first allowed value, etc. Re-
+ * parse and return.
+ *
+ * In **lax** mode the schema is first slimmed (refinements stripped) so
+ * that e.g. `z.string().email()` accepts `''` as an initial value. In
+ * strict mode the slim still strips defaults/pipe but keeps refinements,
+ * so callers get the full validation surface.
+ */
+export function getInitialStateFromZodSchema<Form>(
+  opts: GetInitialStateOptions
+): InitialStateResult<Form> {
+  const { schema, useDefaultSchemaValues, validationMode, constraints } = opts
+  const initial = deriveDefault(schema, useDefaultSchemaValues)
+  const merged = mergeDeep(initial, constraints) as unknown
+
+  // Strip wrappers per validation mode. Lax mode also strips refinements
+  // so walker-produced empties pass `safeParse`; strict keeps them.
+  const slimSchema = getSlimSchema(schema, {
+    stripDefaultValues: true,
+    stripPipe: true,
+    stripRefinements: validationMode === 'lax',
+  })
+
+  const firstParse = slimSchema.safeParse(merged)
+  if (firstParse.success) {
+    return { data: firstParse.data as Form, success: true, slimSchema }
+  }
+
+  // Validate-then-fix: walk issues and fill defaults per path.
+  let fixedData = merged as Record<string, unknown>
+  for (const issue of firstParse.error.issues) {
+    const pathSegments = issue.path.map((seg) => (typeof seg === 'number' ? seg : String(seg))) as (
+      | string
+      | number
+    )[]
+    const dottedPath = pathSegments.join('.')
+    const candidates = getNestedZodSchemasAtPath(slimSchema, dottedPath)
+    if (candidates.length === 0) continue
+    const candidate = candidates[0]
+    if (candidate === undefined) continue
+
+    // Some issues don't carry a type path: fall back to deriving a default
+    // for the schema at that location.
+    const fixValue = defaultFromIssue(issue, candidate, useDefaultSchemaValues)
+    if (fixValue === SKIP) continue
+    fixedData = (
+      pathSegments.length === 0 ? fixValue : setAtPath(fixedData, pathSegments, fixValue)
+    ) as Record<string, unknown>
+  }
+
+  const secondParse = slimSchema.safeParse(fixedData)
+  if (secondParse.success) {
+    return { data: secondParse.data as Form, success: true, slimSchema }
+  }
+
+  // Last-resort: hand back what we constructed even if it still doesn't
+  // parse. Better a partially-valid form than an exception at mount time.
+  return { data: fixedData as unknown as Form, success: false, slimSchema }
+}
+
+const SKIP = Symbol('cx:skip-fix')
+
+/**
+ * Map a Zod v4 issue to a concrete replacement value for the path the
+ * issue points at. Falls back to the candidate subschema's walker default
+ * when the issue code doesn't carry enough info.
+ */
+function defaultFromIssue(
+  issue: z.core.$ZodIssue,
+  candidate: z.ZodType,
+  useDefaultSchemaValues: boolean
+): unknown {
+  if (issue.code === 'invalid_type') {
+    // If the candidate is (or wraps) a discriminated union, prefer the
+    // first-option default over `undefined` — matches v3's behaviour.
+    const du = unwrapToDiscriminatedUnion(candidate)
+    if (du !== undefined) {
+      const first = getDiscriminatedUnionFirstOption(du)
+      if (first !== undefined) return deriveDefault(first, useDefaultSchemaValues)
+    }
+    return deriveDefault(candidate, useDefaultSchemaValues)
+  }
+  if (issue.code === 'invalid_value') {
+    const values = (issue as unknown as { values?: readonly unknown[] }).values
+    if (values !== undefined && values.length > 0) return values[0]
+    return deriveDefault(candidate, useDefaultSchemaValues)
+  }
+  // Other issue codes (too_small/too_big/invalid_format) only fire in strict
+  // mode since lax mode strips refinements. Fall back to the walker default.
+  return deriveDefault(candidate, useDefaultSchemaValues)
+}
+
+/**
+ * Exported for callers who want the discriminated-union option set for
+ * path resolution (used by the adapter's getSchemasAtPath).
+ */
+export { getDiscriminatedOptions, getUnionOptions }

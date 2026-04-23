@@ -80,7 +80,9 @@ export function kindOf(schema: unknown): ZodKind {
     case 'tuple':
       return 'tuple'
     case 'union':
-      return 'union'
+      // v4 stores `z.discriminatedUnion(...)` as `type: 'union'` with an
+      // extra `discriminator: string` field — differentiate here.
+      return def?.discriminator !== undefined ? 'discriminated-union' : 'union'
     case 'discriminated_union':
     case 'discriminatedUnion':
       return 'discriminated-union'
@@ -185,6 +187,33 @@ export function getDefaultValue(schema: z.ZodType): unknown {
   // (v3 stored a function that had to be called). We read the property via
   // normal access so the getter fires.
   return def?.defaultValue
+}
+
+/** True if the schema's `def` carries refinement checks (e.g. `.min(3)`). */
+export function hasChecks(schema: z.ZodType): boolean {
+  const def = readDef(schema)
+  const checks = def?.checks
+  return Array.isArray(checks) && checks.length > 0
+}
+
+/** Raw checks array. Empty when the schema has no refinements. */
+export function getChecks(schema: z.ZodType): readonly unknown[] {
+  const def = readDef(schema)
+  const checks = def?.checks
+  return Array.isArray(checks) ? (checks as readonly unknown[]) : []
+}
+
+/** ZodDiscriminatedUnion: the discriminator key (e.g. 'status'). */
+export function getDiscriminator(schema: z.ZodType): string | undefined {
+  const def = readDef(schema)
+  return def?.discriminator
+}
+
+/** ZodDiscriminatedUnion: the option objects (typed narrowly as ZodObject). */
+export function getDiscriminatedOptions(schema: z.ZodType): readonly z.ZodObject[] {
+  const def = readDef(schema)
+  const options = def?.options
+  return Array.isArray(options) ? (options as readonly z.ZodObject[]) : []
 }
 
 /**

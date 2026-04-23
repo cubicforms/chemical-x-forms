@@ -1,12 +1,20 @@
-import { getCurrentScope, onScopeDispose, provide } from 'vue'
+import { getCurrentScope, onScopeDispose, provide, toRaw } from 'vue'
 import { buildFormApi } from '../core/build-form-api'
 import { createFormState, type FormState } from '../core/create-form-state'
 import type { FieldStateView } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
+import {
+  buildPersistedPayload,
+  createDebouncedWriter,
+  getStorageAdapter,
+  readPersistedPayload,
+  resolveStorageKey,
+} from '../core/persistence'
 import { kFormContext, useRegistry } from '../core/registry'
 import type {
   AbstractSchema,
   FormKey,
+  PersistConfig,
   UseAbstractFormReturnType,
   UseFormConfiguration,
 } from '../types/types-api'
@@ -68,6 +76,19 @@ export function useAbstractForm<
     onScopeDispose(releaseConsumer)
   }
 
+  // Wire persistence (opt-in) — only on fresh state creation, skipped
+  // on SSR. `existing` means a prior useForm() already mounted and
+  // wired persistence; we don't double-subscribe.
+  if (
+    existing === undefined &&
+    configuration.persist !== undefined &&
+    !registry.isSSR &&
+    getCurrentScope() !== undefined
+  ) {
+    const disposePersist = wirePersistence(state as FormState<Form>, configuration.persist)
+    onScopeDispose(disposePersist)
+  }
+
   // Provide the FormState to descendants via `kFormContext` so
   // `useFormContext()` can resolve it without prop-threading. The key is
   // the already-canonicalised formKey; looking up a specific form by key
@@ -116,6 +137,112 @@ function requireFormKey(key: FormKey | undefined): FormKey {
     )
   }
   return key
+}
+
+/**
+ * Wire persistence to a fresh FormState:
+ *
+ *   1. Resolve the storage adapter (dynamic-imported — `'local'` never
+ *      pulls IDB code; tree-shakes cleanly).
+ *   2. Async-read any persisted payload and apply it via
+ *      `applyFormReplacement`. First render shows schema defaults
+ *      (the "flash of default state" — documented tradeoff for
+ *      async backends).
+ *   3. Subscribe a debounced writer to `onFormChange`; every mutation
+ *      schedules a write.
+ *   4. Subscribe a `removeItem` on submit-success (when
+ *      `clearOnSubmitSuccess` is not explicitly false).
+ *   5. Return a disposer that flushes any pending write, cancels
+ *      the debounce, and removes subscribers. Called on consumer
+ *      teardown.
+ */
+function wirePersistence<F extends GenericForm>(
+  state: FormState<F>,
+  config: PersistConfig
+): () => void {
+  const key = resolveStorageKey(config, state.formKey)
+  const debounceMs = config.debounceMs ?? 300
+  const include = config.include ?? 'form'
+  const version = config.version ?? 1
+  const clearOnSubmitSuccess = config.clearOnSubmitSuccess ?? true
+
+  // Single shared adapter promise — both the hydration path and the
+  // write/clear paths await it. Avoids a race where an early write
+  // (fast debounceMs) would see `adapter === null` and skip silently
+  // because the dynamic-import hadn't resolved yet.
+  const adapterPromise = getStorageAdapter(config.storage)
+  let disposed = false
+
+  const writer = createDebouncedWriter(async () => {
+    if (disposed) return
+    const adapter = await adapterPromise
+    if (disposed) return
+    // Unwrap the reactive form to a plain object before handing it to
+    // the adapter — IDB's `structuredClone` can't serialise Vue
+    // proxies (DATA_CLONE_ERR), and local/session stringify the
+    // proxy's own-enumerable keys anyway.
+    const rawForm = toRaw(state.form.value)
+    const payload = buildPersistedPayload(rawForm, include, state.errors, version)
+    await adapter.setItem(key, payload)
+  }, debounceMs)
+
+  const unsubscribeChange = state.onFormChange(() => {
+    if (disposed) return
+    writer.schedule()
+  })
+
+  const unsubscribeSuccess = clearOnSubmitSuccess
+    ? state.onSubmitSuccess(() => {
+        if (disposed) return
+        // Flush any pending/in-flight write BEFORE removing — otherwise
+        // a timer that fires between submit and removeItem re-persists
+        // the now-stale state. `flush()` awaits the in-flight promise
+        // if one exists; if there's only a timer, it fires it
+        // immediately and awaits. After that, removeItem wins.
+        void (async () => {
+          await writer.flush()
+          if (disposed) return
+          const adapter = await adapterPromise
+          if (disposed) return
+          await adapter.removeItem(key)
+        })()
+      })
+    : () => undefined
+
+  // Async setup: resolve the adapter, then read back the persisted
+  // payload. If the caller unmounts before this finishes, `disposed`
+  // is true — the restore is skipped.
+  void (async () => {
+    const adapter = await adapterPromise
+    if (disposed) return
+    try {
+      const raw = await adapter.getItem(key)
+      const payload = readPersistedPayload<F>(raw, version)
+      if (payload === null) return
+      if (disposed) return
+      state.applyFormReplacement(payload.data.form)
+      if (payload.data.errors !== undefined && include === 'form+errors') {
+        // Flatten to a ValidationError[] so setAllErrors rebuilds the
+        // Map by path. Consumers who bumped `version` already had
+        // their payload rejected above.
+        const flat = payload.data.errors.flatMap(([, errs]) => errs)
+        state.setAllErrors(flat)
+      }
+    } catch {
+      // Adapter IO errors shouldn't surface; storage adapters are
+      // "best-effort" and already log their own warnings.
+    }
+  })()
+
+  return () => {
+    disposed = true
+    unsubscribeChange()
+    unsubscribeSuccess()
+    // Flush pending write so the last-typed state makes it to disk
+    // before unmount. Caller shouldn't await here, but the flush
+    // works as a fire-and-forget.
+    void writer.flush().catch(() => undefined)
+  }
 }
 
 export type { FieldStateView }

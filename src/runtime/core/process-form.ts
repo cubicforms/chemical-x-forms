@@ -227,6 +227,10 @@ export function buildProcessForm<F extends GenericForm>(
         }
         state.clearErrors()
         await onSubmit(result.data)
+        // Notify subscribers (persistence's clear-on-success handler,
+        // future hooks). Fires only when the user callback resolved —
+        // validation-failure and callback-throw skip it.
+        state.emitSubmitSuccess()
       } catch (err) {
         // Only publish the error if `reset()` hasn't fired since this
         // submission began. Otherwise the consumer just zeroed the

@@ -98,6 +98,9 @@ importers:
       eslint-plugin-vue:
         specifier: ^10.0.0
         version: 10.0.0(eslint@9.23.0(jiti@2.4.2))(vue-eslint-parser@10.1.1(eslint@9.23.0(jiti@2.4.2)))
+      fake-indexeddb:
+        specifier: ^6.2.5
+        version: 6.2.5
       fast-check:
         specifier: ^4.7.0
         version: 4.7.0
@@ -3428,8 +3431,8 @@ packages:
   externality@1.0.2:
     resolution: {integrity: sha512-LyExtJWKxtgVzmgtEHyQtLFpw1KFhQphF9nTG8TpAIVkiI/xQ3FJh75tRFLYl4hkn7BNIIdLJInuDAavX35pMw==}
 
-  fake-indexeddb@6.0.0:
-    resolution: {integrity: sha512-YEboHE5VfopUclOck7LncgIqskAqnv4q0EWbYCaxKKjAvO93c+TJIaBuGy8CBFdbg9nKdpN3AuPRwVBJ4k7NrQ==}
+  fake-indexeddb@6.2.5:
+    resolution: {integrity: sha512-CGnyrvbhPlWYMngksqrSSUT1BAVP49dZocrHuK0SvtR0D5TMs5wP0o3j7jexDJW01KSadjBp1M/71o/KR3nD1w==}
     engines: {node: '>=18'}
 
   fast-check@4.7.0:
@@ -7490,7 +7493,7 @@ snapshots:
       defu: 6.1.4
       destr: 2.0.3
       estree-walker: 3.0.3
-      fake-indexeddb: 6.0.0
+      fake-indexeddb: 6.2.5
       get-port-please: 3.1.2
       h3: 1.15.1
       local-pkg: 1.1.1
@@ -10070,7 +10073,7 @@ snapshots:
       pathe: 1.1.2
       ufo: 1.5.4
 
-  fake-indexeddb@6.0.0: {}
+  fake-indexeddb@6.2.5: {}
 
   fast-check@4.7.0:
     dependencies:

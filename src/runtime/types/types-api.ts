@@ -125,6 +125,72 @@ export type FieldValidationConfig = {
   debounceMs?: number
 }
 
+/**
+ * Built-in storage backend keys — maps to `localStorage`,
+ * `sessionStorage`, or a zero-dep IndexedDB wrapper. Consumers can
+ * swap in a custom `FormStorage` object for anything else (encrypted
+ * local storage, a cookie store, a native mobile bridge).
+ */
+export type FormStorageKind = 'local' | 'session' | 'indexeddb'
+
+/**
+ * Uniform async storage contract. `localStorage` / `sessionStorage`
+ * are wrapped in `async` functions; the single-microtask cost is
+ * negligible and the simpler contract beats a `T | Promise<T>` union
+ * that every caller would have to handle.
+ *
+ * `getItem` returns `unknown` (not `string | null`) because IDB
+ * stores structured-cloned values. The local/session adapters
+ * stringify on write and parse on read, so from the caller's
+ * perspective the contract is "give me back whatever I put in".
+ */
+export type FormStorage = {
+  getItem(key: string): Promise<unknown>
+  setItem(key: string, value: unknown): Promise<void>
+  removeItem(key: string): Promise<void>
+}
+
+export type PersistIncludeMode = 'form' | 'form+errors'
+
+/**
+ * Opt-in persistence for the form's draft state. The library writes
+ * (debounced) on every mutation and reads back on mount. Off by
+ * default — no config → no reads, no writes, zero overhead.
+ */
+export type PersistConfig = {
+  /**
+   * Which backend to persist to. String shortcuts load built-in
+   * adapters via dynamic import (tree-shakeable — a consumer who
+   * picks `'local'` never pulls IndexedDB code). Pass a custom
+   * `FormStorage` object for anything else.
+   */
+  storage: FormStorageKind | FormStorage
+
+  /** Defaults to `chemical-x-forms:${formKey}`. */
+  key?: string
+
+  /** Debounce window for writes. Default `300` ms. */
+  debounceMs?: number
+
+  /**
+   * `'form'` (default) persists only the form value. Errors on
+   * reload are usually stale — fresh validation will repopulate
+   * them. Use `'form+errors'` when the server-side error context
+   * is expensive to reconstruct (complex cross-field refinements).
+   */
+  include?: PersistIncludeMode
+
+  /**
+   * Increment to invalidate all existing persisted payloads across
+   * every client. Readers check `v` and drop mismatched entries.
+   * Default `1`.
+   */
+  version?: number
+
+  /** Clear the persisted entry when a submit handler resolves. Default `true`. */
+  clearOnSubmitSuccess?: boolean
+}
+
 export type UseFormConfiguration<
   Form extends GenericForm,
   GetValueFormType,
@@ -174,6 +240,20 @@ export type UseFormConfiguration<
    * result is authoritative. Aborted on `reset()` too.
    */
   fieldValidation?: FieldValidationConfig
+
+  /**
+   * Opt-in persistence of the form's draft state. Off by default.
+   * See `docs/recipes/persistence.md` for the tradeoff table and
+   * backend picker guidance. Key fields:
+   *
+   * - `storage: 'local' | 'session' | 'indexeddb' | FormStorage`
+   * - `key?`: persisted entry key. Defaults to
+   *   `chemical-x-forms:${formKey}`.
+   * - `debounceMs?`: write debounce. Default `300` ms.
+   * - `version?`: bump to invalidate existing entries.
+   * - `clearOnSubmitSuccess?`: default `true`.
+   */
+  persist?: PersistConfig
 }
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>

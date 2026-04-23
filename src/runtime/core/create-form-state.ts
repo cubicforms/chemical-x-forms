@@ -143,10 +143,36 @@ export type FormState<F extends GenericForm> = {
   cancelFieldValidation(): void
 
   /**
+   * Subscribe to every `applyFormReplacement`. Fires synchronously
+   * after `form.value` has been swapped to `next` and all field /
+   * originals bookkeeping has run. Used by persistence + undo/redo
+   * to hook the single mutation funnel. Returns an unsubscribe
+   * function.
+   */
+  onFormChange(listener: (next: F) => void): () => void
+
+  /**
+   * Subscribe to successful submissions. Fires after the consumer's
+   * `onSubmit` callback has resolved — not on validation failure,
+   * not on callback throw. Used by persistence's `clearOnSubmitSuccess`
+   * to drop the stored payload once the form is safely through the
+   * server round-trip. Returns an unsubscribe function.
+   */
+  onSubmitSuccess(listener: () => void): () => void
+
+  /**
+   * Internal: notify submit-success subscribers. Called by
+   * `handleSubmit` in `process-form.ts` once the user callback has
+   * resolved. Consumers shouldn't call this directly.
+   */
+  emitSubmitSuccess(): void
+
+  /**
    * Tear down non-reactive resources owned by this FormState. Invoked
-   * by the registry when the last consumer unmounts. Currently clears
-   * pending field-validation timers so a Node-side test or SSR run
-   * doesn't keep the process alive past the form's lifetime.
+   * by the registry when the last consumer unmounts. Cancels pending
+   * field-validation timers and drops every subscriber — so a Node-
+   * side test or SSR run doesn't keep the process alive past the
+   * form's lifetime.
    */
   dispose(): void
 }
@@ -184,6 +210,11 @@ export function createFormState<F extends GenericForm>(
     timer: ReturnType<typeof setTimeout> | null
   }
   const fieldValidationState = new Map<PathKey, FieldValidationEntry>()
+
+  // Plain Sets (not reactive) — these fire imperative callbacks; no
+  // template should ever depend on "how many listeners are attached".
+  const formChangeListeners = new Set<(next: F) => void>()
+  const submitSuccessListeners = new Set<() => void>()
 
   // Schema is ALWAYS consulted: we need the schema-derived originals even
   // when hydrating, so pristine/dirty computation survives SSR round-trip.
@@ -292,6 +323,17 @@ export function createFormState<F extends GenericForm>(
       }
       touchFieldRecord(key, patch.path, { updatedAt: now })
     })
+    // Notify any subscribed modules (persistence, undo/redo) — fire
+    // after field bookkeeping so listeners see a fully-updated form.
+    // Listener throws are isolated so one misbehaving subscriber
+    // can't block the others.
+    for (const listener of formChangeListeners) {
+      try {
+        listener(next)
+      } catch (err) {
+        console.error('[@chemical-x/forms] onFormChange listener threw:', err)
+      }
+    }
   }
 
   function setValueAtPath(path: Path, value: unknown): void {
@@ -374,8 +416,34 @@ export function createFormState<F extends GenericForm>(
     fieldValidationState.clear()
   }
 
+  function onFormChange(listener: (next: F) => void): () => void {
+    formChangeListeners.add(listener)
+    return () => {
+      formChangeListeners.delete(listener)
+    }
+  }
+
+  function onSubmitSuccess(listener: () => void): () => void {
+    submitSuccessListeners.add(listener)
+    return () => {
+      submitSuccessListeners.delete(listener)
+    }
+  }
+
+  function emitSubmitSuccess(): void {
+    for (const listener of submitSuccessListeners) {
+      try {
+        listener()
+      } catch (err) {
+        console.error('[@chemical-x/forms] onSubmitSuccess listener threw:', err)
+      }
+    }
+  }
+
   function dispose(): void {
     cancelFieldValidation()
+    formChangeListeners.clear()
+    submitSuccessListeners.clear()
   }
 
   function getValueAtPath(path: Path): unknown {
@@ -702,6 +770,9 @@ export function createFormState<F extends GenericForm>(
     getOriginalAtPath,
     getFirstErrorElement,
     cancelFieldValidation,
+    onFormChange,
+    onSubmitSuccess,
+    emitSubmitSuccess,
     dispose,
   }
 }

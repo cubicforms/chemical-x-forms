@@ -61,6 +61,10 @@ export type FormState<F extends GenericForm> = {
   setValueAtPath(path: Path, value: unknown): void
   getValueAtPath(path: Path): unknown
 
+  // --- reset ---
+  reset(nextInitialState?: DeepPartial<F>): void
+  resetField(path: Path): void
+
   // --- errors ---
   setErrorsForPath(path: Path, errors: ValidationError[]): void
   setAllErrors(errors: readonly ValidationError[]): void
@@ -302,6 +306,124 @@ export function createFormState<F extends GenericForm>(
     touchFieldRecord(key, path, { touched: true })
   }
 
+  // --- Reset ---
+
+  function reset(nextInitialState?: DeepPartial<F>): void {
+    const next = schema.getInitialState({
+      useDefaultSchemaValues: true,
+      constraints: nextInitialState,
+      validationMode,
+    }).data
+    // Replace form in one shot — applyFormReplacement will emit diffAndApply
+    // patches and touch field records for every changed leaf.
+    applyFormReplacement(next)
+    // Rebuild originals from the new baseline. The set becomes the
+    // post-reset pristine reference — a subsequent isDirty comparison
+    // returns false until the consumer mutates again.
+    originals.clear()
+    diffAndApply({}, next, [], (patch) => {
+      if (patch.kind !== 'added') return
+      const { key } = canonicalizePath(patch.path)
+      originals.set(key, patch.newValue)
+    })
+    // Drop every recorded error — the form is a fresh surface again.
+    errors.clear()
+    // Blow away touched/focused/blurred per field. isConnected stays as-is
+    // (the DOM elements haven't detached — that's a separate concern from
+    // form state) and updatedAt stamps to now.
+    const now = new Date().toISOString()
+    for (const [pathKey, record] of fields) {
+      fields.set(pathKey, {
+        path: record.path,
+        updatedAt: now,
+        isConnected: record.isConnected,
+        focused: null,
+        blurred: null,
+        touched: null,
+      })
+    }
+    // Clear submission lifecycle so a reset surface reports "nothing has
+    // been submitted yet" rather than holding on to the prior run's count.
+    isSubmitting.value = false
+    submitCount.value = 0
+    submitError.value = null
+  }
+
+  function resetField(path: Path): void {
+    const { key: targetKey, segments: targetSegments } = canonicalizePath(path)
+
+    // Leaf shortcut: direct originals hit means one setValueAtPath does it.
+    if (originals.has(targetKey)) {
+      setValueAtPath(targetSegments, originals.get(targetKey))
+      errors.delete(targetKey)
+      clearFieldRecordFlags(targetKey)
+      return
+    }
+
+    // Container case — reconstruct the subtree by walking originals for
+    // every leaf whose path is a descendant of `targetSegments`. We assemble
+    // the subtree first, then apply it in one setValueAtPath so diffAndApply
+    // sees a single coherent replacement (rather than N mutations).
+    let subtree: unknown = undefined
+    let anyMatch = false
+    for (const [leafKey, original] of originals) {
+      const leafSegments = JSON.parse(leafKey) as Segment[]
+      if (!isPathPrefix(targetSegments, leafSegments)) continue
+      if (leafSegments.length === targetSegments.length) continue // covered by the leaf shortcut above
+      anyMatch = true
+      const relative = leafSegments.slice(targetSegments.length)
+      if (subtree === undefined) {
+        // Seed root container type from the first relative segment. Numeric
+        // index → array; string key → plain object. setAtPath will stay
+        // consistent with that choice for the rest of the walk.
+        subtree = typeof relative[0] === 'number' ? [] : {}
+      }
+      subtree = setAtPath(subtree, relative, original)
+    }
+    if (!anyMatch) return // nothing tracked under this prefix; no-op
+
+    setValueAtPath(targetSegments, subtree)
+
+    // Clear errors and reset field-record flags for the target + every
+    // descendant. `Array.from(errors.keys())` avoids mutating while iterating.
+    for (const errorKey of Array.from(errors.keys())) {
+      const leafSegments = JSON.parse(errorKey) as Segment[]
+      if (isPathPrefix(targetSegments, leafSegments)) errors.delete(errorKey)
+    }
+    for (const fieldKey of Array.from(fields.keys())) {
+      const leafSegments = JSON.parse(fieldKey) as Segment[]
+      if (isPathPrefix(targetSegments, leafSegments)) clearFieldRecordFlags(fieldKey)
+    }
+  }
+
+  function clearFieldRecordFlags(pathKey: PathKey): void {
+    const record = fields.get(pathKey)
+    if (record === undefined) return
+    fields.set(pathKey, {
+      path: record.path,
+      updatedAt: new Date().toISOString(),
+      isConnected: record.isConnected,
+      focused: null,
+      blurred: null,
+      touched: null,
+    })
+  }
+
+  /**
+   * True iff `prefix` is a path-prefix of `candidate`. Equal arrays count as
+   * a prefix (every array is a prefix of itself). Segment equality is strict
+   * `===` — `'0'` and `0` are distinct here even though canonicalizePath
+   * normalises them upstream; both paths always come from the same
+   * canonicalisation so the check holds.
+   */
+  function isPathPrefix(prefix: readonly Segment[], candidate: readonly Segment[]): boolean {
+    if (prefix.length > candidate.length) return false
+    for (let i = 0; i < prefix.length; i++) {
+      if (prefix[i] !== candidate[i]) return false
+    }
+    return true
+  }
+
   // --- Derived ---
 
   function isPristineAtPath(path: Path): boolean {
@@ -335,6 +457,9 @@ export function createFormState<F extends GenericForm>(
     applyFormReplacement,
     setValueAtPath,
     getValueAtPath,
+
+    reset,
+    resetField,
 
     setErrorsForPath,
     setAllErrors,

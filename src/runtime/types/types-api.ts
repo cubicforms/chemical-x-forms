@@ -381,4 +381,35 @@ export type UseAbstractFormReturnType<
    * handler(event) }` as normal.
    */
   submitError: Readonly<ComputedRef<unknown>>
+
+  // --- Reset ---
+
+  /**
+   * Restore the form to its initial state. With no argument, re-evaluates
+   * the schema's defaults. With `nextInitialState`, applies those
+   * constraints over the schema defaults (same precedence rules as the
+   * `useForm({ initialState })` option).
+   *
+   * Side-effects beyond replacing `form`:
+   *   - `originals` is rebuilt against the new baseline (so a follow-up
+   *     `setValue` to any leaf will correctly flip `isDirty`);
+   *   - `fieldErrors` is cleared;
+   *   - per-field `touched` / `focused` / `blurred` are cleared (the
+   *     `isConnected` DOM flag is preserved);
+   *   - submission lifecycle (`isSubmitting` / `submitCount` /
+   *     `submitError`) resets to the "pre-submission" state.
+   */
+  reset: (nextInitialState?: DeepPartial<Form>) => void
+
+  /**
+   * Restore a single field (or a whole sub-tree, when `path` names a
+   * container like `'user'` rather than a leaf like `'user.name'`) to the
+   * value captured in `originals`. Clears errors and resets touched flags
+   * for the target and any descendants. Does not touch siblings or
+   * submission state.
+   *
+   * No-ops if the path is not tracked (e.g. a freshly-named key that has
+   * never been set or appeared in schema defaults).
+   */
+  resetField: (path: FlatPath<Form>) => void
 }

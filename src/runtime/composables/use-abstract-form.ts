@@ -189,6 +189,16 @@ export function useAbstractForm<
   const submitCount = computed<number>(() => state.submitCount.value)
   const submitError = computed<unknown>(() => state.submitError.value)
 
+  // --- Reset ---
+  const reset = (nextInitialState?: DeepPartial<Form>): void => {
+    state.reset(nextInitialState)
+  }
+
+  const resetField = (pathInput: string): void => {
+    const segments = canonicalizePath(pathInput).segments
+    state.resetField(segments)
+  }
+
   return {
     getFieldState: getFieldState as UseAbstractFormReturnType<
       Form,
@@ -210,6 +220,8 @@ export function useAbstractForm<
     isSubmitting,
     submitCount,
     submitError,
+    reset: reset as UseAbstractFormReturnType<Form, GetValueFormType>['reset'],
+    resetField: resetField as UseAbstractFormReturnType<Form, GetValueFormType>['resetField'],
   }
 }
 

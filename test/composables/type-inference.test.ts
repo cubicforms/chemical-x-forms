@@ -226,3 +226,38 @@ describe('useForm type inference — submission lifecycle', () => {
     expectTypeOf(form.submitError.value).toEqualTypeOf<unknown>()
   })
 })
+
+describe('useForm type inference — reset / resetField', () => {
+  it('reset accepts no args or a DeepPartial<Form>', () => {
+    form.reset()
+    form.reset({})
+    form.reset({ email: 'x@y' })
+    form.reset({ profile: { name: 'alice' } })
+  })
+
+  it('reset rejects values whose shape does not match the form', () => {
+    // @ts-expect-error - 'email' must be a string
+    form.reset({ email: 123 })
+    // @ts-expect-error - 'nope' is not a known key
+    form.reset({ nope: 'x' })
+  })
+
+  it('resetField accepts a known leaf path', () => {
+    form.resetField('email')
+    form.resetField('profile.name')
+    form.resetField('profile.bio')
+    form.resetField('tags.0')
+    form.resetField('posts.0.title')
+  })
+
+  it('resetField accepts a nested-container path', () => {
+    form.resetField('profile')
+  })
+
+  it('resetField rejects unknown paths', () => {
+    // @ts-expect-error - 'nope' is not a known path
+    form.resetField('nope')
+    // @ts-expect-error - 'profile.bogus' is not known
+    form.resetField('profile.bogus')
+  })
+})

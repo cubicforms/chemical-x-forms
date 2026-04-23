@@ -138,5 +138,4 @@ benchmarks against FormKit / VeeValidate / react-hook-form.
 ### ❤️ Contributors
 
 - Oswald Chisala <ozzy@cubicforms.com>
-- Oswald Kay Chisala ([@ozzyfromspace](http://github.com/ozzyfromspace))
 

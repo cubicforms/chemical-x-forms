@@ -1,5 +1,6 @@
 import { computed, getCurrentScope, onScopeDispose, type ComputedRef, type Ref } from 'vue'
 import { createFormState, type FormState } from '../core/create-form-state'
+import { buildFieldArrayApi } from '../core/field-arrays'
 import { buildFieldStateAccessor, type FieldStateView } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
 import { canonicalizePath, type Path, type Segment } from '../core/paths'
@@ -199,6 +200,12 @@ export function useAbstractForm<
     state.resetField(segments)
   }
 
+  // --- Field arrays ---
+  // Typed on the public return (ArrayPath<Form> + ArrayItem<Form, Path>);
+  // the untyped core helpers accept `(string, unknown)` and the
+  // cast on the way out of `return` recovers the narrowed shape.
+  const fieldArrays = buildFieldArrayApi(state)
+
   return {
     getFieldState: getFieldState as UseAbstractFormReturnType<
       Form,
@@ -222,6 +229,13 @@ export function useAbstractForm<
     submitError,
     reset: reset as UseAbstractFormReturnType<Form, GetValueFormType>['reset'],
     resetField: resetField as UseAbstractFormReturnType<Form, GetValueFormType>['resetField'],
+    append: fieldArrays.append as UseAbstractFormReturnType<Form, GetValueFormType>['append'],
+    prepend: fieldArrays.prepend as UseAbstractFormReturnType<Form, GetValueFormType>['prepend'],
+    insert: fieldArrays.insert as UseAbstractFormReturnType<Form, GetValueFormType>['insert'],
+    remove: fieldArrays.remove as UseAbstractFormReturnType<Form, GetValueFormType>['remove'],
+    swap: fieldArrays.swap as UseAbstractFormReturnType<Form, GetValueFormType>['swap'],
+    move: fieldArrays.move as UseAbstractFormReturnType<Form, GetValueFormType>['move'],
+    replace: fieldArrays.replace as UseAbstractFormReturnType<Form, GetValueFormType>['replace'],
   }
 }
 

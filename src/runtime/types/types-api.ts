@@ -1,5 +1,13 @@
 import type { ComputedRef, ObjectDirective, Ref } from 'vue'
-import type { DeepPartial, FlatPath, GenericForm, IsObjectOrArray, NestedType } from './types-core'
+import type {
+  ArrayItem,
+  ArrayPath,
+  DeepPartial,
+  FlatPath,
+  GenericForm,
+  IsObjectOrArray,
+  NestedType,
+} from './types-core'
 
 export type FormKey = string
 
@@ -412,4 +420,28 @@ export type UseAbstractFormReturnType<
    * never been set or appeared in schema defaults).
    */
   resetField: (path: FlatPath<Form>) => void
+
+  // --- Field arrays ---
+  //
+  // Typed helpers for the common list-editing operations. `Path` is narrowed
+  // to `ArrayPath<Form>` so calling these against a non-array path is a
+  // compile error; `value` is narrowed to the array's element type so
+  // appending a mismatched shape is also a compile error. All helpers
+  // preserve array semantics via `Array.prototype.splice` under the hood —
+  // out-of-range indices no-op rather than grow the array.
+  append: <Path extends ArrayPath<Form>>(path: Path, value: ArrayItem<Form, Path>) => void
+  prepend: <Path extends ArrayPath<Form>>(path: Path, value: ArrayItem<Form, Path>) => void
+  insert: <Path extends ArrayPath<Form>>(
+    path: Path,
+    index: number,
+    value: ArrayItem<Form, Path>
+  ) => void
+  remove: <Path extends ArrayPath<Form>>(path: Path, index: number) => void
+  swap: <Path extends ArrayPath<Form>>(path: Path, a: number, b: number) => void
+  move: <Path extends ArrayPath<Form>>(path: Path, from: number, to: number) => void
+  replace: <Path extends ArrayPath<Form>>(
+    path: Path,
+    index: number,
+    value: ArrayItem<Form, Path>
+  ) => void
 }

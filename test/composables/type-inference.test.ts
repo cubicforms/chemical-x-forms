@@ -227,6 +227,44 @@ describe('useForm type inference — submission lifecycle', () => {
   })
 })
 
+describe('useForm type inference — field array helpers', () => {
+  it('append accepts only array paths with a matching item shape', () => {
+    form.append('tags', 'a-tag')
+    form.append('posts', { title: 't', views: 1 })
+  })
+
+  it('append rejects non-array paths', () => {
+    // @ts-expect-error - email is a string, not an array
+    form.append('email', 'x')
+    // @ts-expect-error - profile is an object, not an array
+    form.append('profile', { name: 'n', bio: 'b' })
+  })
+
+  it('append rejects mismatched item shapes', () => {
+    // @ts-expect-error - tags expects string, not number
+    form.append('tags', 42)
+    // @ts-expect-error - posts expects { title; views }, not a bare string
+    form.append('posts', 'not an object')
+    // @ts-expect-error - post shape is missing `views`
+    form.append('posts', { title: 't' })
+  })
+
+  it('insert / replace enforce the same item shape + accept number index', () => {
+    form.insert('tags', 0, 'new')
+    form.replace('posts', 1, { title: 't', views: 3 })
+    // @ts-expect-error - string index not allowed
+    form.insert('tags', 'first', 'new')
+  })
+
+  it('remove / swap / move operate purely on numeric indices', () => {
+    form.remove('tags', 0)
+    form.swap('posts', 0, 1)
+    form.move('tags', 0, 2)
+    // @ts-expect-error - remove doesn't accept a value argument
+    form.remove('tags', 0, 'extra')
+  })
+})
+
 describe('useForm type inference — reset / resetField', () => {
   it('reset accepts no args or a DeepPartial<Form>', () => {
     form.reset()

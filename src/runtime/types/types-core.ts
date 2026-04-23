@@ -117,3 +117,28 @@ export type NestedType<
 
 // Helper type for primitive types (non-object and non-array)
 type Primitive = string | number | boolean | symbol | bigint | null | undefined
+
+/**
+ * Filter FlatPath<Form> down to the subset of paths whose resolved leaf
+ * is an array. Used by the typed field-array helpers (append / remove /
+ * swap / ...) so those helpers only accept paths that actually address
+ * an array — calling `append('email', ...)` on a `{ email: string }`
+ * is a compile error.
+ *
+ * `P extends string` re-triggers distribution over the `FlatPath<Form>`
+ * union so the conditional evaluates per member. Without it, the
+ * branch would reduce against the union as a whole and collapse to
+ * `never` whenever a single member failed the predicate.
+ */
+export type ArrayPath<Form, P extends FlatPath<Form> = FlatPath<Form>> = P extends string
+  ? NestedType<Form, P> extends readonly unknown[]
+    ? P
+    : never
+  : never
+
+/**
+ * Extract the element type of the array addressed by `Path`. Callers
+ * constrain `Path extends ArrayPath<Form>` so this is always well-defined.
+ */
+export type ArrayItem<Form, Path extends ArrayPath<Form>> =
+  NestedType<Form, Path> extends ReadonlyArray<infer Item> ? Item : never

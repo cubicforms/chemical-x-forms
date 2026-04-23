@@ -41,6 +41,11 @@ function mount() {
 
 describe('discriminated-union: single-field assignment inside active branch', () => {
   const form = mount()
+  // Seed the discriminant so every iteration measures the DU-walker path
+  // into the `click` branch — otherwise the first bench calls can land on
+  // a path the walker can't resolve and skew the ops/sec.
+  const seed: { kind: 'click'; x: number; y: number } = { kind: 'click', x: 0, y: 0 }
+  form.setValue('event' as never, seed as never)
   let i = 0
   bench('setValue(event.x, N)', () => {
     form.setValue('event.x' as never, (i++ % 100) as never)

@@ -3,7 +3,7 @@
  *
  * Reset reseeds the form from schema defaults and clears errors +
  * field records. It walks `originals` + `errors` + `fields` maps and
- * replaces each. On a 500-leaf form this is the kind of operation
+ * replaces each. On a 100-leaf form this is the kind of operation
  * where an O(N²) regression would be invisible until a user hits it
  * at scale. The bench keeps an eye on the cost per reset.
  *

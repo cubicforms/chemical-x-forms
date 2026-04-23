@@ -124,8 +124,17 @@ export function buildProcessForm<F extends GenericForm>(state: FormState<F>) {
         throw err
       } finally {
         state.activeSubmissions.value = Math.max(0, state.activeSubmissions.value - 1)
-        state.isSubmitting.value = state.activeSubmissions.value > 0
-        state.submitCount.value += 1
+        // `activeSubmissions` always decrements (the submission is done),
+        // but the *visible* lifecycle counters — `isSubmitting` and
+        // `submitCount` — only update when the submission's generation
+        // still matches. A post-reset completion is a no-op from the
+        // consumer's point of view: reset already flipped `isSubmitting`
+        // to false and zeroed `submitCount`, and the finished submission
+        // belongs to the prior generation.
+        if (state.submissionGeneration.value === genAtEntry) {
+          state.isSubmitting.value = state.activeSubmissions.value > 0
+          state.submitCount.value += 1
+        }
       }
     }
     return submitHandler

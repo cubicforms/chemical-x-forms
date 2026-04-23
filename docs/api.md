@@ -128,7 +128,7 @@ component's `setup()`.
 
 ### `renderChemicalXState(app) → SerializedChemicalXState`
 
-Server-side: serialise every form in the app to a plain object safe
+Server-side: serialize every form in the app to a plain object safe
 for `JSON.stringify` into the SSR payload. Pair with
 `hydrateChemicalXState` on the client.
 
@@ -151,7 +151,7 @@ const payload = escapeForInlineScript(JSON.stringify(renderChemicalXState(app)))
 // `<script>window.__STATE__ = ${payload}</script>` is safe to inline.
 ```
 
-Nuxt consumers don't need to call this — the Nuxt module serialises
+Nuxt consumers don't need to call this — the Nuxt module serializes
 through `devalue`, which handles the escaping automatically.
 
 ### `vRegister`

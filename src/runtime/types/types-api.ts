@@ -433,9 +433,16 @@ export type UseAbstractFormReturnType<
   // Typed helpers for the common list-editing operations. `Path` is narrowed
   // to `ArrayPath<Form>` so calling these against a non-array path is a
   // compile error; `value` is narrowed to the array's element type so
-  // appending a mismatched shape is also a compile error. All helpers
-  // preserve array semantics via `Array.prototype.splice` under the hood —
-  // out-of-range indices no-op rather than grow the array.
+  // appending a mismatched shape is also a compile error.
+  //
+  // Out-of-range behaviour differs by helper:
+  //   - `remove` / `swap` / `move` / `replace` guard explicitly and no-op
+  //     when any index is `< 0` or `>= length`.
+  //   - `insert` delegates to `Array.prototype.splice`, which clamps
+  //     `index` into `[0, length]` and treats negatives as offsets from
+  //     the end (`splice(-1, 0, v)` inserts just before the last item).
+  //     It therefore *does* insert at a clamped position rather than
+  //     no-op — matching the ergonomic consumers expect from `splice`.
   append: <Path extends ArrayPath<Form>>(path: Path, value: ArrayItem<Form, Path>) => void
   prepend: <Path extends ArrayPath<Form>>(path: Path, value: ArrayItem<Form, Path>) => void
   insert: <Path extends ArrayPath<Form>>(

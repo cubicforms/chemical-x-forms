@@ -287,11 +287,13 @@ describe('buildProcessForm', () => {
       await Promise.resolve()
       await Promise.resolve()
 
-      // In-flight finally ran — counter clamped at 0, isSubmitting stayed
-      // false, submitCount records the user's click.
+      // In-flight finally ran, but all visible lifecycle counters stay
+      // at their post-reset values — the completion belongs to the
+      // prior generation, so isSubmitting, submitCount, and submitError
+      // remain the "fresh form" state the consumer asked for.
       expect(state.isSubmitting.value).toBe(false)
       expect(state.activeSubmissions.value).toBe(0)
-      expect(state.submitCount.value).toBe(1)
+      expect(state.submitCount.value).toBe(0)
       expect(state.submitError.value).toBeNull()
     })
 

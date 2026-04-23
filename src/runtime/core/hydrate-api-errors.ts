@@ -158,6 +158,18 @@ function extractDetails(payload: Record<string, unknown>): ExtractResult {
     return { ok: false, reason: 'error.details was not a record of string | string[]' }
   }
 
+  // `{ error: 'oops' }` / `{ error: 42 }` is a malformed wrapped envelope —
+  // the server meant an error object but sent a scalar. Without this guard
+  // the payload would fall through to the raw-details branch below, where
+  // `{ error: 'oops' }` satisfies `isDetailsRecord` and silently produces
+  // a phantom `ValidationError` at path `['error']`.
+  if (wrappedError !== null && wrappedError !== undefined && typeof wrappedError !== 'object') {
+    return {
+      ok: false,
+      reason: `payload.error was ${typeof wrappedError}, expected an object with { details }`,
+    }
+  }
+
   if ('details' in payload) {
     const inner = payload['details']
     if (inner === undefined) return { ok: true, details: {} }

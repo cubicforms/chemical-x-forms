@@ -4,7 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DirectiveBinding } from 'vue'
 import { ref } from 'vue'
-import { vRegister } from '../../src/runtime/core/directive'
+import { assignKey, vRegister } from '../../src/runtime/core/directive'
 import type { RegisterValue } from '../../src/runtime/types/types-api'
 
 /**
@@ -191,14 +191,24 @@ describe('v-register directive — listener teardown on unmount', () => {
     const vnode = makeVNode({ type: 'text' })
 
     hooks.created?.(input, binding, vnode, null)
-    const unknownInput = input as unknown as { composing?: boolean; _assigning?: boolean }
+    const unknownInput = input as unknown as {
+      composing?: boolean
+      _assigning?: boolean
+      [k: symbol]: unknown
+    }
     unknownInput.composing = true
     unknownInput._assigning = true
+    // `created` calls setAssignFunction, which writes the assigner
+    // onto `el[assignKey]`. The teardown guarantees this is wiped
+    // too — otherwise a reused element would keep dispatching DOM
+    // events to the prior form's assigner.
+    expect(unknownInput[assignKey]).toBeDefined()
 
     hooks.beforeUnmount?.(input, binding, vnode, null)
 
     expect(unknownInput.composing).toBeUndefined()
     expect(unknownInput._assigning).toBeUndefined()
+    expect(unknownInput[assignKey]).toBeUndefined()
   })
 
   it('beforeUnmount drains listeners even if value is no longer a RegisterValue', () => {

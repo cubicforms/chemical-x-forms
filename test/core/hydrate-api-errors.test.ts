@@ -108,6 +108,24 @@ describe('hydrateApiErrors (structured result)', () => {
       expect(resultNumber.rejected).toContain('number')
     })
 
+    it('rejects { error: "<string>" } envelopes (scalar error, not object)', () => {
+      // Without the guard this payload would fall through to the raw-
+      // details branch because `{ error: '...' }` satisfies
+      // `isDetailsRecord` (key='error', value=string). We reject
+      // explicitly so the consumer sees an integration bug instead of
+      // a phantom ValidationError at path ['error'].
+      const result = hydrateApiErrors({ error: 'Something went wrong' } as unknown, { formKey })
+      expect(result.ok).toBe(false)
+      expect(result.errors).toEqual([])
+      expect(result.rejected).toContain('payload.error was string')
+    })
+
+    it('rejects { error: <number> } envelopes similarly', () => {
+      const result = hydrateApiErrors({ error: 42 } as unknown, { formKey })
+      expect(result.ok).toBe(false)
+      expect(result.rejected).toContain('payload.error was number')
+    })
+
     it('returns ok:false when the payload has no recognised shape', () => {
       const result = hydrateApiErrors({ message: 'Something went wrong', code: 500 } as unknown, {
         formKey,

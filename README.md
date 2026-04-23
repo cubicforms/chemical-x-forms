@@ -12,38 +12,69 @@
 
 ## 🏔️ Features
 
-- **Compact API** – Minimal yet expressive API surface with core functions like `useForm`, `register`, and `handleSubmit` to reduce boilerplate.
-- **Abstract Schema Support** – Integrates with validation libraries like Zod for type-safe schemas and automatic validation.
-- **v-register Directive** – One SSR-safe directive that automatically tracks everything.
-- **Full State Tracking** – Automatically tracks field states (value, touched, dirty status, validation errors, etc).
+- **Framework-agnostic core** – Works under Nuxt 3/4, bare Vue 3 (CSR), and bare Vue 3 + `@vue/server-renderer` (SSR). `createChemicalXForms()` is a one-liner Vue plugin; the Nuxt module wraps it for Nuxt users.
+- **Compact API** – Minimal yet expressive: `useForm`, `register`, `handleSubmit`, `getFieldState`. Cross-form state isolation is built in (no shared path-keyed state between forms).
+- **Schema-agnostic, Zod-friendly** – The core only depends on an `AbstractSchema` contract. Zod v4 adapter at `/zod`, Zod v3 at `/zod-v3` — both physically isolated with `introspect.ts` quarantining internal access. Consumers pick the zod major they use.
+- **v-register Directive** – One SSR-safe directive; no per-input `v-model` + `@input` boilerplate.
+- **Full State Tracking** – Automatically tracks field state (value, touched, focused, dirty, errors, updatedAt, isConnected).
 - **Reactive Field Errors** – `fieldErrors` auto-populates on validation failure and clears on success; `setFieldErrorsFromApi` maps server 422 envelopes onto fields for inline display.
-- **TypeScript Friendly** – Fully type-safe, with advanced form type inference from your schema.
+- **Structured paths** – Field names with literal dots round-trip losslessly via array-form paths (`register(['user.name'])` vs `register(['user', 'name'])`). Dotted-string form still accepted for ergonomics.
+- **TypeScript-first** – Every strictness flag on (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`, branded `PathKey`/`FormKey`, no `any` in public surface).
   <br><br>
 
 ## 🪩 Installation
 
-**Install with Nuxi:**
+Chemical X Forms works under Nuxt 3/4, bare Vue 3 (CSR), and bare Vue 3 + `@vue/server-renderer` (SSR).
+
+### Nuxt 3 / Nuxt 4
 
 ```bash
-npx nuxi module add @chemical-x/forms
+npm install @chemical-x/forms zod
 ```
-
-That's it! You can now use Chemical X Forms in your Nuxt app ✨<br><br>
-
-**Install manually:**
-
-```bash
-# Using npm
-npm install @chemical-x/forms
-```
-
-Then add the module to your nuxt.config.ts:
 
 ```ts
+// nuxt.config.ts
 export default defineNuxtConfig({
-  modules: ["@chemical-x/forms"],
-});
+  modules: ['@chemical-x/forms/nuxt'],
+})
 ```
+
+### Bare Vue 3 (CSR or SSR)
+
+```bash
+npm install @chemical-x/forms zod
+```
+
+```ts
+// main.ts
+import { createApp } from 'vue'
+import { createChemicalXForms } from '@chemical-x/forms'
+
+createApp(App).use(createChemicalXForms()).mount('#app')
+```
+
+```ts
+// vite.config.ts
+import vue from '@vitejs/plugin-vue'
+import { chemicalXForms } from '@chemical-x/forms/vite'
+
+export default defineConfig({
+  plugins: [vue(), chemicalXForms()],
+})
+```
+
+For SSR (`@vue/server-renderer`), `renderChemicalXState(app)` / `hydrateChemicalXState(app, payload)` bridge the server→client boundary. See [test/ssr-bare-vue/round-trip.test.ts](./test/ssr-bare-vue/round-trip.test.ts) for a complete example.
+
+### Subpath exports
+
+| Subpath                          | Purpose                                                   |
+| -------------------------------- | --------------------------------------------------------- |
+| `@chemical-x/forms`              | Framework-agnostic core (plugin, `useForm`, directive)    |
+| `@chemical-x/forms/nuxt`         | Nuxt 3/4 module                                           |
+| `@chemical-x/forms/vite`         | Vite plugin (registers node transforms)                   |
+| `@chemical-x/forms/transforms`   | Raw node transforms for custom bundlers                   |
+| `@chemical-x/forms/zod`          | Zod v4 adapter (recommended; requires `zod@^4`)           |
+| `@chemical-x/forms/zod-v3`       | Zod v3 adapter (legacy; requires `zod@^3`)                |
 
 <br>
 
@@ -53,16 +84,17 @@ export default defineNuxtConfig({
 
 ```vue
 <script setup lang="ts">
-import { z } from "zod";
+import { useForm } from '@chemical-x/forms/zod' // zod v4; use /zod-v3 for v3
+import { z } from 'zod'
 
 // Define your schema
-const schema = z.object({ planet: z.string() });
+const schema = z.object({ planet: z.string() })
 
-// Create your form
-const { getFieldState, register, key } = useForm({ schema });
+// Create your form — `key` is required
+const { getFieldState, register } = useForm({ schema, key: 'planet-form' })
 
 // Get the state of the 'planet' field
-const planetState = getFieldState("planet");
+const planetState = getFieldState('planet')
 </script>
 
 <template>

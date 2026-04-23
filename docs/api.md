@@ -293,6 +293,12 @@ to the return. See `docs/recipes/undo-redo.md` for snapshot
 semantics, keyboard wiring, and interaction with reset /
 persistence / field-level validation.
 
+The plugin auto-wires a Vue DevTools inspector when
+`@vue/devtools-api` is installed — forms show up in the DevTools
+sidebar with a timeline layer for submit / reset / mutation
+events. Pass `createChemicalXForms({ devtools: false })` to
+disable. See `docs/recipes/devtools.md`.
+
 ### Error store
 
 | Member                               | Type                                                                   |

@@ -4,6 +4,7 @@ import type {
   ApiErrorEnvelope,
   HandleSubmit,
   OnError,
+  OnInvalidSubmitPolicy,
   OnSubmit,
   SubmitHandler,
   ValidationResponse,
@@ -25,7 +26,20 @@ import { canonicalizePath, type Path } from './paths'
  * wrapper in use-abstract-form.ts.
  */
 
-export function buildProcessForm<F extends GenericForm>(state: FormState<F>) {
+export type BuildProcessFormOptions = {
+  /**
+   * Policy applied inside handleSubmit when validation fails. Invoked
+   * after the error store is populated and before the user's `onError`
+   * callback. Default `'none'`.
+   */
+  onInvalidSubmit?: OnInvalidSubmitPolicy
+}
+
+export function buildProcessForm<F extends GenericForm>(
+  state: FormState<F>,
+  options: BuildProcessFormOptions = {}
+) {
+  const invalidPolicy: OnInvalidSubmitPolicy = options.onInvalidSubmit ?? 'none'
   function validate(pathInput?: string | Path): Ref<ValidationResponseWithoutValue<F>> {
     // Validation is computed lazily from form.value — the reactive Ref
     // updates whenever form mutates, so templates bound to this ref
@@ -101,6 +115,11 @@ export function buildProcessForm<F extends GenericForm>(state: FormState<F>) {
         if (!result.success) {
           const errors = result.errors
           state.setAllErrors(errors)
+          // Apply the invalid-submit focus/scroll policy AFTER populating
+          // the error store (so getFirstErrorElement walks the fresh
+          // entries) and BEFORE the user's onError callback (so consumer
+          // logic can override by calling .focus on something else).
+          applyInvalidSubmitPolicy(state, invalidPolicy)
           if (onError !== undefined) {
             try {
               await onError(errors)
@@ -175,4 +194,25 @@ function toSegments(pathInput: string | Path): Path {
 function toDottedString(pathInput: string | Path): string {
   if (typeof pathInput === 'string') return pathInput
   return pathInput.map(String).join('.')
+}
+
+function applyInvalidSubmitPolicy<F extends GenericForm>(
+  state: FormState<F>,
+  policy: OnInvalidSubmitPolicy
+): void {
+  if (policy === 'none') return
+  const target = state.getFirstErrorElement()
+  if (target === null) return
+  if (policy === 'scroll-to-first-error') {
+    target.element.scrollIntoView()
+    return
+  }
+  if (policy === 'focus-first-error') {
+    target.element.focus()
+    return
+  }
+  // 'both' — scroll first, then focus with preventScroll so the
+  // browser doesn't undo the explicit scroll.
+  target.element.scrollIntoView()
+  target.element.focus({ preventScroll: true })
 }

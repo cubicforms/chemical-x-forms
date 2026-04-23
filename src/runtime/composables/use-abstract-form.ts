@@ -74,7 +74,13 @@ export function useAbstractForm<
   // is possible via `useFormContext(key)` even without the ambient provide.
   provide(kFormContext, state as FormState<GenericForm>)
 
-  return buildFormApi<Form, GetValueFormType>(state)
+  // Only pass onInvalidSubmit when present — same exactOptionalPropertyTypes
+  // pattern as inside buildFormApi.
+  const apiOptions =
+    configuration.onInvalidSubmit !== undefined
+      ? { onInvalidSubmit: configuration.onInvalidSubmit }
+      : {}
+  return buildFormApi<Form, GetValueFormType>(state, apiOptions)
 }
 
 function buildFreshState<F extends GenericForm>(

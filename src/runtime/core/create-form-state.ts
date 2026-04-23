@@ -109,6 +109,19 @@ export type FormState<F extends GenericForm> = {
   isPristineAtPath(path: Path): boolean
   getFieldRecord(path: Path): FieldRecord | undefined
   getOriginalAtPath(path: Path): unknown
+  /**
+   * Returns the first errored field's first connected, visible DOM
+   * element — the target that `focusFirstError` / `scrollToFirstError`
+   * act on. Iteration order matches `errors`' insertion order (Map
+   * preserves it), so the "first" error is whichever the schema reported
+   * first during validation.
+   *
+   * Returns `null` when every errored path has no currently-attached
+   * element (fields behind `v-if="false"`, unmounted components, or a
+   * hidden `display:none` parent). Callers get the choice of no-op or a
+   * dev-only warning.
+   */
+  getFirstErrorElement(): { path: Path; element: HTMLElement } | null
 }
 
 /**
@@ -500,6 +513,31 @@ export function createFormState<F extends GenericForm>(
     return originals.get(key)?.value
   }
 
+  function getFirstErrorElement(): { path: Path; element: HTMLElement } | null {
+    // Iterate errors in insertion-order (Map preserves it). Insertion
+    // order matches the order the schema reported issues, so the "first
+    // error" is the one the user would most-likely expect to be scrolled
+    // to: the topmost failing field on the form.
+    for (const [, errs] of errors) {
+      const first = errs[0]
+      if (first === undefined) continue // defensive — invariant says non-empty
+      const { key } = canonicalizePath(first.path as readonly Segment[])
+      const record = elements.get(key)
+      if (record === undefined || record.elements.size === 0) continue
+      for (const el of record.elements) {
+        // `el.isConnected` covers the "component was unmounted, element
+        // removed from DOM" case that the FieldRecord.isConnected flag
+        // can lag on. `el.offsetParent === null` catches `display:none`
+        // and its ancestor chain — the browser won't focus or scroll to
+        // a hidden element anyway, so we keep walking.
+        if (!el.isConnected) continue
+        if (el.offsetParent === null) continue
+        return { path: first.path as Path, element: el }
+      }
+    }
+    return null
+  }
+
   return {
     formKey,
     form,
@@ -535,6 +573,7 @@ export function createFormState<F extends GenericForm>(
     isPristineAtPath,
     getFieldRecord,
     getOriginalAtPath,
+    getFirstErrorElement,
   }
 }
 

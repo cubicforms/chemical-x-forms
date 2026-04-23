@@ -4,6 +4,7 @@ import type {
   CurrentValueWithContext,
   FieldState,
   FormErrorRecord,
+  OnInvalidSubmitPolicy,
   RegisterValue,
   UseAbstractFormReturnType,
   ValidationError,
@@ -18,6 +19,11 @@ import { canonicalizePath, type Path, type Segment } from './paths'
 import { buildProcessForm } from './process-form'
 import { buildRegister } from './register-api'
 
+export type BuildFormApiOptions = {
+  /** Forwarded to buildProcessForm. See `UseFormConfiguration.onInvalidSubmit`. */
+  onInvalidSubmit?: OnInvalidSubmitPolicy
+}
+
 /**
  * Build the public form API from a FormState. Extracted from
  * `useAbstractForm` so that both the top-level form entry (which creates
@@ -27,18 +33,24 @@ import { buildRegister } from './register-api'
  *
  * `buildFormApi` does not interact with the registry, consumer ref-counts,
  * or the current Vue instance — those concerns belong to the caller. This
- * function is pure over (FormState) → api.
+ * function is pure over (FormState, options) → api.
  */
 export function buildFormApi<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
-  state: FormState<Form>
+  state: FormState<Form>,
+  options: BuildFormApiOptions = {}
 ): UseAbstractFormReturnType<Form, GetValueFormType> {
   const register = buildRegister(state) as (path: string | Path) => RegisterValue<unknown>
   const getFieldStateBuilt = buildFieldStateAccessor(state)
+  // Don't set `onInvalidSubmit: undefined` — exactOptionalPropertyTypes
+  // treats an explicit-undefined value differently from an omitted
+  // property. Only pass the key when the consumer opted in.
+  const processOptions =
+    options.onInvalidSubmit !== undefined ? { onInvalidSubmit: options.onInvalidSubmit } : {}
   const {
     validate: validateBuilt,
     handleSubmit,
     setFieldErrorsFromApi: setFromApiBuilt,
-  } = buildProcessForm(state)
+  } = buildProcessForm(state, processOptions)
 
   const getFieldState = (pathInput: string) =>
     getFieldStateBuilt(pathInput) as unknown as Ref<FieldState>
@@ -143,6 +155,21 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     state.resetField(segments)
   }
 
+  // --- Focus / scroll to first error ---
+  const focusFirstError = (options?: { preventScroll?: boolean }): boolean => {
+    const target = state.getFirstErrorElement()
+    if (target === null) return false
+    target.element.focus(options)
+    return true
+  }
+
+  const scrollToFirstError = (options?: ScrollIntoViewOptions): boolean => {
+    const target = state.getFirstErrorElement()
+    if (target === null) return false
+    target.element.scrollIntoView(options)
+    return true
+  }
+
   // --- Field arrays ---
   const fieldArrays = buildFieldArrayApi(state)
 
@@ -169,6 +196,8 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     submitError,
     reset: reset as UseAbstractFormReturnType<Form, GetValueFormType>['reset'],
     resetField: resetField as UseAbstractFormReturnType<Form, GetValueFormType>['resetField'],
+    focusFirstError,
+    scrollToFirstError,
     append: fieldArrays.append as UseAbstractFormReturnType<Form, GetValueFormType>['append'],
     prepend: fieldArrays.prepend as UseAbstractFormReturnType<Form, GetValueFormType>['prepend'],
     insert: fieldArrays.insert as UseAbstractFormReturnType<Form, GetValueFormType>['insert'],

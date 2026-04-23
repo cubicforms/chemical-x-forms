@@ -63,6 +63,13 @@ export type AbstractSchema<Form, GetValueFormType> = {
   validateAtPath(data: unknown, path: string | undefined): ValidationResponse<Form>
 }
 
+/**
+ * Optional policy that fires on submit-validation failure — the library
+ * can focus and/or scroll the first errored field into view without the
+ * consumer having to wire an `onError` callback. Off by default.
+ */
+export type OnInvalidSubmitPolicy = 'none' | 'focus-first-error' | 'scroll-to-first-error' | 'both'
+
 export type UseFormConfiguration<
   Form extends GenericForm,
   GetValueFormType,
@@ -76,6 +83,23 @@ export type UseFormConfiguration<
   key: FormKey
   initialState?: InitialState
   validationMode?: ValidationMode
+  /**
+   * What to do when a submit attempt fails validation. Fires after the
+   * error store is populated and before the user's `onError` callback.
+   * Default `'none'` — consumers who want this behaviour must opt in.
+   *
+   * - `'focus-first-error'`: calls `.focus({ preventScroll: true })` on
+   *   the first errored field's first connected, visible element.
+   * - `'scroll-to-first-error'`: calls `.scrollIntoView()` on it.
+   * - `'both'`: scroll then focus (focus-with-preventScroll means the
+   *   browser doesn't do its own scroll and undo the explicit one).
+   * - `'none'` (default): no-op.
+   *
+   * If no errored field has a currently-mounted, visible element (every
+   * candidate is unmounted or `display:none`), this policy silently
+   * no-ops rather than throwing.
+   */
+  onInvalidSubmit?: OnInvalidSubmitPolicy
 }
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>
@@ -427,6 +451,30 @@ export type UseAbstractFormReturnType<
    * never been set or appeared in schema defaults).
    */
   resetField: (path: FlatPath<Form>) => void
+
+  // --- Focus / scroll to first error ---
+
+  /**
+   * Focuses the first errored field's first connected, visible element.
+   * Returns `true` when an element was focused, `false` when no
+   * qualifying element was found (no errors, or every errored field is
+   * unmounted / hidden).
+   *
+   * Honours `preventScroll`: pass `true` to suppress the browser's
+   * default scroll-on-focus and do the scrolling yourself (pair with
+   * `scrollToFirstError`).
+   */
+  focusFirstError: (options?: { preventScroll?: boolean }) => boolean
+
+  /**
+   * Scrolls the first errored field's first connected, visible element
+   * into view. Returns `true` when the call happened, `false` when no
+   * qualifying element was found.
+   *
+   * `options` is forwarded to `Element.scrollIntoView` unchanged — the
+   * default is the browser's `{ block: 'start' }` behaviour.
+   */
+  scrollToFirstError: (options?: ScrollIntoViewOptions) => boolean
 
   // --- Field arrays ---
   //

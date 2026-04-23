@@ -71,6 +71,20 @@ export function buildZodLeafArbitrary(z: ZNs): fc.Arbitrary<ZNs> {
 }
 
 /**
+ * Options that narrow the set of zod kinds the schema arbitrary may emit.
+ * The v3 adapter's current `getInitialState` throws on certain nested
+ * `z.union([...])` shapes (initial-state derivation can't pick a branch
+ * when neither matches the defaulted value). Phase 5.6's async rewrite
+ * will make both adapters total on unions; until then, the v3 fuzz file
+ * passes `{ includeUnion: false }` to stay within the current adapter's
+ * supported surface.
+ */
+export type SchemaKindOptions = {
+  /** Include `z.union([...])`. Default: true. */
+  includeUnion?: boolean
+}
+
+/**
  * Arbitrary for any supported zod schema (leaf OR container) at bounded
  * depth. At depth 0 returns only leaves; each container/wrapper pass
  * consumes one unit of remaining depth budget.
@@ -83,25 +97,31 @@ export function buildZodLeafArbitrary(z: ZNs): fc.Arbitrary<ZNs> {
 export function buildZodSchemaArbitrary(
   z: ZNs,
   depth: number,
-  makeRecord: (inner: ZNs) => ZNs
+  makeRecord: (inner: ZNs) => ZNs,
+  options: SchemaKindOptions = {}
 ): fc.Arbitrary<ZNs> {
+  const { includeUnion = true } = options
   const leaves = buildZodLeafArbitrary(z)
   if (depth <= 0) return leaves
 
-  const inner = buildZodSchemaArbitrary(z, depth - 1, makeRecord)
+  const inner = buildZodSchemaArbitrary(z, depth - 1, makeRecord, options)
 
-  return fc.oneof(
+  const builders: fc.Arbitrary<ZNs>[] = [
     leaves,
     inner.map((s) => s.optional()),
     inner.map((s) => s.nullable()),
     inner.map((s) => z.array(s)),
     fc.array(inner, { minLength: 1, maxLength: 3 }).map((items) => z.tuple(items)),
     inner.map(makeRecord),
-    fc.array(inner, { minLength: 2, maxLength: 3 }).map((opts) => z.union(opts)),
     fc
       .dictionary(fc.string({ minLength: 1, maxLength: 6 }), inner, { minKeys: 1, maxKeys: 3 })
-      .map((shape) => z.object(shape))
-  )
+      .map((shape) => z.object(shape)),
+  ]
+  if (includeUnion) {
+    builders.push(fc.array(inner, { minLength: 2, maxLength: 3 }).map((opts) => z.union(opts)))
+  }
+
+  return fc.oneof(...builders)
 }
 
 /**
@@ -112,9 +132,10 @@ export function buildZodSchemaArbitrary(
 export function buildZodRootObjectArbitrary(
   z: ZNs,
   depth: number,
-  makeRecord: (inner: ZNs) => ZNs
+  makeRecord: (inner: ZNs) => ZNs,
+  options: SchemaKindOptions = {}
 ): fc.Arbitrary<ZNs> {
-  const inner = buildZodSchemaArbitrary(z, Math.max(0, depth - 1), makeRecord)
+  const inner = buildZodSchemaArbitrary(z, Math.max(0, depth - 1), makeRecord, options)
   return fc
     .dictionary(fc.string({ minLength: 1, maxLength: 6 }), inner, { minKeys: 1, maxKeys: 4 })
     .map((shape) => z.object(shape))

@@ -48,6 +48,7 @@
     "src",
     "types",
     "test",
+    "bench",
     "build.config.ts",
     "playground",
     "eslint-plugin-nuxt.d.ts"

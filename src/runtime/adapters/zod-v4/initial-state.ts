@@ -77,8 +77,12 @@ function defaultForKind(kind: ZodKind, schema: z.ZodType, useDefault: boolean): 
     case 'string':
       return ''
     case 'number':
-    case 'bigint':
       return 0
+    case 'bigint':
+      // z.bigint() strictly rejects numbers; the default must be a bigint
+      // literal. Using `0` here causes initial-state derivation to fail
+      // the schema's own validation.
+      return 0n
     case 'boolean':
       return false
     case 'date':
@@ -105,31 +109,49 @@ function defaultForKind(kind: ZodKind, schema: z.ZodType, useDefault: boolean): 
   }
 }
 
-/** Merge `override` into `base` recursively, preferring override leaves. */
+/**
+ * Merge `override` into `base` recursively, preferring override leaves.
+ *
+ * Leaf semantics (anything not a plain `{}` record is a leaf):
+ *   - `undefined` override → no-op (don't drop the base value)
+ *   - `null` override → replaces base (a deliberate "clear this field" signal)
+ *   - primitives, arrays, `Date`, `Map`, class instances → replace wholesale
+ *
+ * Only plain records on BOTH sides recurse. The previous implementation
+ * walked any `typeof === 'object'` value, which collapsed `Date`/`Map`
+ * overrides into `{}` and silently swallowed `null` overrides intended
+ * to clear a nullable default.
+ */
 export function mergeDeep(base: unknown, override: unknown): unknown {
-  if (override === undefined || override === null) return base
-  if (typeof base !== 'object' || base === null) return override
-  if (Array.isArray(base) || Array.isArray(override)) {
-    return Array.isArray(override) ? override : base
-  }
-  const result = { ...(base as Record<string, unknown>) }
-  for (const key of Object.keys(override as Record<string, unknown>)) {
-    const oVal = (override as Record<string, unknown>)[key]
-    const bVal = (base as Record<string, unknown>)[key]
-    if (
-      typeof oVal === 'object' &&
-      oVal !== null &&
-      !Array.isArray(oVal) &&
-      typeof bVal === 'object' &&
-      bVal !== null &&
-      !Array.isArray(bVal)
-    ) {
+  if (override === undefined) return base
+  // Non-plain-record overrides are leaves and replace base wholesale.
+  // (null, primitives, arrays, Date, Map, class instances all land here.)
+  if (!isPlainRecord(override)) return override
+  // Override is a plain record but base isn't — leaf-replacement again.
+  if (!isPlainRecord(base)) return override
+
+  const result: Record<string, unknown> = { ...base }
+  for (const key of Object.keys(override)) {
+    const oVal = override[key]
+    const bVal = base[key]
+    // Recurse only when BOTH sides are plain records; otherwise treat the
+    // override as a leaf. Preserves the historic quirk that an explicit
+    // `undefined` does NOT evict the base key (consumers who want to
+    // clear a field use `null`).
+    if (isPlainRecord(oVal) && isPlainRecord(bVal)) {
       result[key] = mergeDeep(bVal, oVal)
     } else if (oVal !== undefined) {
       result[key] = oVal
     }
   }
   return result
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object') return false
+  if (Array.isArray(value)) return false
+  const proto = Object.getPrototypeOf(value) as object | null
+  return proto === null || proto === Object.prototype
 }
 
 export type GetInitialStateOptions = {

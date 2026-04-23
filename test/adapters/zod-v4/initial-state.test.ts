@@ -137,3 +137,44 @@ describe('getInitialStateFromZodSchema — validate-then-fix recovery', () => {
     expect(success).toBe(true)
   })
 })
+
+describe('getInitialStateFromZodSchema — bigint default', () => {
+  // z.bigint() rejects numbers (Object.is(typeof 0, 'number') !== 'bigint').
+  // Using `0` here previously caused the schema's own safeParse to fail
+  // before validate-then-fix could intervene.
+  it('returns a bigint zero, not a number', () => {
+    const schema = z.object({ count: z.bigint() })
+    const { data, success } = run(schema)
+    expect(typeof data.count).toBe('bigint')
+    expect(data.count).toBe(0n)
+    expect(success).toBe(true)
+  })
+})
+
+describe('getInitialStateFromZodSchema — mergeDeep edge cases', () => {
+  it('null override clears a nullable default', () => {
+    const schema = z.object({
+      avatar: z.string().nullable(),
+    })
+    const { data } = run(schema, { constraints: { avatar: null } })
+    expect(data.avatar).toBeNull()
+  })
+
+  it('preserves Date overrides instead of collapsing them to {}', () => {
+    const fixed = new Date('2026-01-01T00:00:00.000Z')
+    const schema = z.object({
+      createdAt: z.date(),
+    })
+    const { data } = run(schema, { constraints: { createdAt: fixed } })
+    expect(data.createdAt).toBeInstanceOf(Date)
+    expect((data.createdAt as Date).toISOString()).toBe(fixed.toISOString())
+  })
+
+  it('explicit `undefined` in constraints does NOT evict the base default', () => {
+    // Documented quirk: undefined means "I didn't specify this", not
+    // "clear it". Consumers who want to clear use null.
+    const schema = z.object({ name: z.string() })
+    const { data } = run(schema, { constraints: { name: undefined } })
+    expect(data.name).toBe('')
+  })
+})

@@ -1,13 +1,15 @@
 {
   "compilerOptions": {
+    "target": "ESNext",
     "lib": [
-      "ES2020",
+      "ESNext",
       "DOM",
       "DOM.Iterable"
     ],
-    "module": "ES2020",
-    "moduleResolution": "Node",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "strict": true,
+    "strictFunctionTypes": true,
     "noUncheckedIndexedAccess": true,
     "noFallthroughCasesInSwitch": true,
     "noEmitOnError": true,
@@ -21,6 +23,9 @@
     "exactOptionalPropertyTypes": true,
     "noImplicitReturns": true,
     "noImplicitThis": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "verbatimModuleSyntax": true,
     "pretty": true,
     "paths": {
       "@runtime/*": [
@@ -29,7 +34,6 @@
     },
     "removeComments": false,
     "strictBuiltinIteratorReturn": true,
-    "strictFunctionTypes": false,
     "esModuleInterop": true,
     "emitDeclarationOnly": false,
     "declaration": true,

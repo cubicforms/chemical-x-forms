@@ -142,7 +142,7 @@ export default [
     },
   },
 
-  // TypeScript-specific rules for ts/tsx/vue files
+  // TypeScript-specific rules for ts/tsx/vue files (universal)
   {
     files: ['**/*.{ts,tsx,vue}'],
     languageOptions: {
@@ -160,6 +160,137 @@ export default [
         {
           argsIgnorePattern: '^_',
           varsIgnorePattern: '^_',
+        },
+      ],
+      '@typescript-eslint/consistent-type-imports': [
+        'error',
+        {
+          prefer: 'type-imports',
+          fixStyle: 'inline-type-imports',
+        },
+      ],
+    },
+  },
+
+  // Strict rules scoped to new-code paths. Existing paths (src/runtime/lib/**,
+  // src/runtime/plugins/**, src/runtime/composables/**, src/runtime/adapters/zod/**,
+  // and the current test files) are scheduled for rewrite in Phases 1-4; they'll
+  // inherit these rules when they move into the new-paths list.
+  {
+    files: [
+      // New core primitives (Phase 0+)
+      'src/runtime/core/**/*.{ts,vue}',
+      // New package entry points (Phase 4)
+      'src/index.ts',
+      'src/nuxt.ts',
+      'src/vite.ts',
+      'src/transforms.ts',
+      'src/zod.ts',
+      'src/zod-v3.ts',
+      // New adapter shape (Phase 4)
+      'src/runtime/adapters/zod-v3/**/*.{ts,vue}',
+      'src/runtime/adapters/zod-v4/**/*.{ts,vue}',
+      // New test directories
+      'test/core/**/*.{ts,vue}',
+      'test/adapters/**/*.{ts,vue}',
+      'test/transforms/**/*.{ts,vue}',
+      'test/packaging/**/*.{ts,vue}',
+      'test/ssr-bare-vue/**/*.{ts,vue}',
+      'test/utils/fake-schema.ts',
+      'bench/**/*.{ts,vue}',
+    ],
+    languageOptions: {
+      parser: vueParser,
+      parserOptions: {
+        parser: tseslint.parser,
+        ...commonParserOptions,
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-non-null-assertion': 'error',
+      '@typescript-eslint/consistent-type-assertions': [
+        'error',
+        {
+          assertionStyle: 'as',
+          objectLiteralTypeAssertions: 'never',
+        },
+      ],
+      '@typescript-eslint/strict-boolean-expressions': 'error',
+      '@typescript-eslint/switch-exhaustiveness-check': 'error',
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
+      '@typescript-eslint/require-await': 'error',
+      '@typescript-eslint/prefer-nullish-coalescing': 'error',
+      '@typescript-eslint/prefer-optional-chain': 'error',
+      '@typescript-eslint/no-unnecessary-condition': 'error',
+    },
+  },
+
+  // Core may not import from adapters. Enforces the schema-agnostic guarantee.
+  {
+    files: ['src/runtime/core/**/*.{ts,vue}', 'src/runtime/lib/core/**/*.{ts,vue}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/adapters/**', '../adapters/**', '../../adapters/**'],
+              message: 'Core must not import from adapters; it must remain schema-agnostic.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  // Adapters may not cross-import. The v3 and v4 zod adapters are fully isolated.
+  {
+    files: ['src/runtime/adapters/zod-v3/**/*.{ts,vue}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/adapters/zod-v4/**', '../zod-v4/**'],
+              message: 'Zod v3 and v4 adapters are fully isolated; cross-imports forbidden.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/runtime/adapters/zod-v4/**/*.{ts,vue}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/adapters/zod-v3/**', '../zod-v3/**'],
+              message: 'Zod v3 and v4 adapters are fully isolated; cross-imports forbidden.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  // test/core/** must not import zod — it tests the abstract core against fake-schema.ts.
+  {
+    files: ['test/core/**/*.{ts,vue}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['zod'],
+              message: 'Core tests must not import zod. Use test/utils/fake-schema.ts instead.',
+            },
+          ],
         },
       ],
     },

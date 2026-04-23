@@ -82,6 +82,12 @@ export function buildProcessForm<F extends GenericForm>(state: FormState<F>) {
       ) {
         event.preventDefault()
       }
+      // Use the in-flight counter on FormState so two overlapping submit
+      // handlers don't clobber each other: the first completion only
+      // flips isSubmitting to false when the counter reaches zero, not
+      // unconditionally. submitError is shared across runs by design — a
+      // later run's success / failure replaces the earlier capture.
+      state.activeSubmissions.value += 1
       state.isSubmitting.value = true
       state.submitError.value = null
       try {
@@ -104,7 +110,8 @@ export function buildProcessForm<F extends GenericForm>(state: FormState<F>) {
         state.submitError.value = err
         throw err
       } finally {
-        state.isSubmitting.value = false
+        state.activeSubmissions.value = Math.max(0, state.activeSubmissions.value - 1)
+        state.isSubmitting.value = state.activeSubmissions.value > 0
         state.submitCount.value += 1
       }
     }

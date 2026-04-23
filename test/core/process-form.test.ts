@@ -209,6 +209,52 @@ describe('buildProcessForm', () => {
       await handleSubmit(async () => {})()
       expect(state.submitError.value).toBeNull()
     })
+
+    it('keeps isSubmitting true across overlapping submissions until all complete', async () => {
+      // Regression: previously each handler invocation set isSubmitting
+      // = false on its own completion, so the FIRST resolution prematurely
+      // flipped the flag while a later submission was still in flight.
+      // The fix maintains an in-flight counter on FormState; isSubmitting
+      // is true iff the counter is > 0.
+      const state = alwaysValid()
+      const { handleSubmit } = buildProcessForm(state)
+
+      let resolveFirst!: () => void
+      let resolveSecond!: () => void
+      const firstStarted = new Promise<void>((resolve) => {
+        const blocker = new Promise<void>((r) => (resolveFirst = r))
+        void handleSubmit(async () => {
+          resolve()
+          await blocker
+        })()
+      })
+      const secondStarted = new Promise<void>((resolve) => {
+        const blocker = new Promise<void>((r) => (resolveSecond = r))
+        void handleSubmit(async () => {
+          resolve()
+          await blocker
+        })()
+      })
+
+      await Promise.all([firstStarted, secondStarted])
+      expect(state.isSubmitting.value).toBe(true)
+      expect(state.activeSubmissions.value).toBe(2)
+
+      // Resolve the first submission — counter drops to 1, flag stays true.
+      resolveFirst()
+      await Promise.resolve() // microtask drain so the finally block runs
+      await Promise.resolve()
+      expect(state.isSubmitting.value).toBe(true)
+      expect(state.activeSubmissions.value).toBe(1)
+
+      // Resolve the second — counter drops to 0, flag flips false.
+      resolveSecond()
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(state.isSubmitting.value).toBe(false)
+      expect(state.activeSubmissions.value).toBe(0)
+      expect(state.submitCount.value).toBe(2)
+    })
   })
 
   describe('setFieldErrorsFromApi', () => {

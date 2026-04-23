@@ -52,7 +52,13 @@ export type FormState<F extends GenericForm> = {
   // for the public readonly surface. Mutations happen in exactly one place
   // (the submit handler) so there's no "source of truth" ambiguity — these
   // refs live on FormState so a `reset()` can clear them too.
+  //
+  // `activeSubmissions` is the source of truth for "is anything in flight".
+  // `isSubmitting` mirrors `activeSubmissions > 0` and is what consumers
+  // read; tracking the counter separately means overlapping submissions
+  // don't prematurely flip isSubmitting to false when the first completes.
   readonly isSubmitting: Ref<boolean>
+  readonly activeSubmissions: Ref<number>
   readonly submitCount: Ref<number>
   readonly submitError: Ref<unknown>
 
@@ -136,7 +142,11 @@ export function createFormState<F extends GenericForm>(
 
   // Submission lifecycle refs. Initial values encode "no submission has
   // happened yet": not in flight, zero attempts, no captured error.
+  // `activeSubmissions` counts concurrent in-flight submissions so the
+  // last completion (count → 0) is what flips `isSubmitting` to false,
+  // not just the first.
   const isSubmitting = ref(false)
+  const activeSubmissions = ref(0)
   const submitCount = ref(0)
   const submitError = ref<unknown>(null)
 
@@ -349,7 +359,13 @@ export function createFormState<F extends GenericForm>(
     }
     // Clear submission lifecycle so a reset surface reports "nothing has
     // been submitted yet" rather than holding on to the prior run's count.
+    // `activeSubmissions` is also zeroed: in the unusual case where a
+    // submission is still in flight when reset() fires, the wrapper's
+    // finally-block will decrement back into the negative, but isSubmitting
+    // recovers on the next submission entry. We accept that drift over
+    // leaving stale state visible to the consumer.
     isSubmitting.value = false
+    activeSubmissions.value = 0
     submitCount.value = 0
     submitError.value = null
   }
@@ -456,6 +472,7 @@ export function createFormState<F extends GenericForm>(
     originals,
     schema,
     isSubmitting,
+    activeSubmissions,
     submitCount,
     submitError,
 

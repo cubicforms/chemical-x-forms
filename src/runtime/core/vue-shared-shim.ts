@@ -75,7 +75,15 @@ export function looseEqual(a: unknown, b: unknown): boolean {
   if (aIsArray || bIsArray) {
     return aIsArray && bIsArray ? looseCompareArrays(a, b) : false
   }
-  if (isObject(a) && isObject(b)) {
+  // Short-circuit on object/non-object mismatch BEFORE the deep-equality
+  // block. Without this, the fallthrough to `String(a) === String(b)` at
+  // the bottom would coerce `{}` to `'[object Object]'` and incorrectly
+  // claim `looseEqual({}, '[object Object]') === true`. @vue/shared's
+  // own implementation makes the same early return.
+  const aIsObject = isObject(a)
+  const bIsObject = isObject(b)
+  if (aIsObject !== bIsObject) return false
+  if (aIsObject && bIsObject) {
     const keysA = Object.keys(a)
     if (keysA.length !== Object.keys(b).length) return false
     for (const key of keysA) {

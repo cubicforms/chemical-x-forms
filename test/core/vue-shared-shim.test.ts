@@ -112,6 +112,15 @@ describe('vue-shared shim', () => {
     it('mixed types (array vs object) are not equal', () => {
       expect(looseEqual([1, 2], { 0: 1, 1: 2 })).toBe(false)
     })
+
+    it('object vs primitive does NOT collapse via String() coercion', () => {
+      // Without the early object/non-object short-circuit, this would
+      // fall through to `String({}) === '[object Object]'` and return
+      // true. Vue's @vue/shared makes the same early return.
+      expect(looseEqual({}, '[object Object]')).toBe(false)
+      expect(looseEqual({ a: 1 }, '[object Object]')).toBe(false)
+      expect(looseEqual([], '')).toBe(false)
+    })
   })
 
   describe('looseIndexOf', () => {

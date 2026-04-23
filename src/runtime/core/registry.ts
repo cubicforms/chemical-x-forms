@@ -31,6 +31,14 @@ export type ChemicalXRegistry = {
   readonly forms: Map<FormKey, FormState<GenericForm>>
   readonly pendingHydration: PendingHydration
   readonly isSSR: boolean
+  /**
+   * Ref-counts `useForm` consumers per key. Each `useForm` call pairs a
+   * `trackConsumer(key)` on mount with the returned dispose on unmount.
+   * When the last consumer for a key disposes, the FormState is evicted
+   * from `forms` — preventing long-lived SPAs from accumulating detached
+   * form state across page navigations.
+   */
+  readonly trackConsumer: (key: FormKey) => () => void
 }
 
 /** Registry is placed on the Vue app via `app.provide(kChemicalXRegistry, …)`. */
@@ -53,7 +61,28 @@ export function createRegistry(options: SSRDetectOptions = {}): ChemicalXRegistr
   // mangle FormState.form's Ref<F> type into F on lookup.
   const forms = shallowReactive(new Map<FormKey, FormState<GenericForm>>())
   const pendingHydration = shallowReactive(new Map<FormKey, SerializedFormData>())
-  return { forms, pendingHydration, isSSR }
+  // Consumer counts are bookkeeping — not reactive. No template should ever
+  // depend on "how many useForm calls are live", and using a plain Map
+  // avoids triggering watchers when we increment on every mount.
+  const consumers = new Map<FormKey, number>()
+
+  function trackConsumer(key: FormKey): () => void {
+    consumers.set(key, (consumers.get(key) ?? 0) + 1)
+    let disposed = false
+    return () => {
+      if (disposed) return
+      disposed = true
+      const remaining = (consumers.get(key) ?? 1) - 1
+      if (remaining <= 0) {
+        consumers.delete(key)
+        forms.delete(key)
+      } else {
+        consumers.set(key, remaining)
+      }
+    }
+  }
+
+  return { forms, pendingHydration, isSSR, trackConsumer }
 }
 
 /**

@@ -1,4 +1,4 @@
-import { computed, type ComputedRef, type Ref } from 'vue'
+import { computed, getCurrentScope, onScopeDispose, type ComputedRef, type Ref } from 'vue'
 import { createFormState, type FormState } from '../core/create-form-state'
 import { buildFieldStateAccessor, type FieldStateView } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
@@ -67,6 +67,16 @@ export function useAbstractForm<
   const existing = registry.forms.get(key) as FormState<Form> | undefined
   const state: FormState<Form> =
     existing ?? buildFreshState<Form>(key, resolvedSchema, configuration, registry)
+
+  // Ref-count this consumer. When the component's effect scope tears down,
+  // release the count; the registry evicts the FormState once the last
+  // consumer disposes. Guarded on `getCurrentScope()` so callers without an
+  // effect-scope context (defensive — setup() always provides one) don't
+  // leak a pinned consumer. See registry.trackConsumer for the counter.
+  if (getCurrentScope() !== undefined) {
+    const releaseConsumer = registry.trackConsumer(key)
+    onScopeDispose(releaseConsumer)
+  }
 
   // --- API surface ---
   const register = buildRegister(state) as (path: string | Path) => RegisterValue<unknown>

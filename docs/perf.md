@@ -127,3 +127,15 @@ describe('my form — typical interaction', () => {
 Run with `pnpm bench`. The `scripts/check-bench.mjs` gate only fires
 for benches that follow the `old: / new:` pairing convention —
 informational benches like this run without gating.
+
+## Peer-dep coverage
+
+Per-PR CI (`.github/workflows/matrix.yml`) runs the full quality gate
+on Node 18 / 20 / 22 / LTS against the devDep-pinned peer versions
+(Vue 3.5.13, Vite 6.2.x, Nuxt 3.16.x). A separate weekly workflow
+(`.github/workflows/peer-matrix.yml`) sweeps the declared peer-dep
+range — Vue 3.5 floor through 3.6, Vite 5 and 6, Nuxt 3.16 floor
+through Nuxt 4 — via `pnpm.overrides` injected before install. Jobs
+report independently (`fail-fast: false`); versions that aren't
+released yet (e.g. Vue 3.6 before its publish) surface as failed
+cells rather than blocking the workflow.

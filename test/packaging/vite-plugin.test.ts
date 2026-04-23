@@ -1,0 +1,87 @@
+import vue from '@vitejs/plugin-vue'
+import { describe, expect, it } from 'vitest'
+import { resolveConfig, type Plugin, type ResolvedConfig } from 'vite'
+import { chemicalXForms } from '../../src/vite'
+import { inputTextAreaNodeTransform } from '../../src/runtime/lib/core/transforms/input-text-area-transform'
+import { selectNodeTransform } from '../../src/runtime/lib/core/transforms/select-transform'
+
+/**
+ * Integration coverage for `@chemical-x/forms/vite`. The plugin mutates
+ * @vitejs/plugin-vue's options via the (informal) `api.options` surface;
+ * if Vite's plugin resolution order or @vitejs/plugin-vue's api shape
+ * changes, we want the build to break loudly, not at render time in a
+ * consumer app.
+ *
+ * These tests use `resolveConfig` rather than a full Vite build so they
+ * finish in <2s and don't touch the file system beyond config parsing.
+ */
+
+type VuePluginApi = {
+  options?: {
+    template?: {
+      compilerOptions?: {
+        nodeTransforms?: unknown[]
+      }
+    }
+  }
+}
+
+async function resolveWith(plugins: Plugin[]): Promise<ResolvedConfig> {
+  return resolveConfig({ plugins, configFile: false }, 'serve')
+}
+
+function getVueApi(config: ResolvedConfig): VuePluginApi | undefined {
+  const vuePlugin = config.plugins.find((p) => p.name === 'vite:vue')
+  return (vuePlugin as unknown as { api?: VuePluginApi } | undefined)?.api
+}
+
+describe('@chemical-x/forms/vite — plugin registration', () => {
+  it('registers both node transforms with @vitejs/plugin-vue', async () => {
+    const config = await resolveWith([vue(), chemicalXForms()])
+    const api = getVueApi(config)
+    const nodeTransforms = api?.options?.template?.compilerOptions?.nodeTransforms ?? []
+
+    // Reference identity — the plugin must register OUR transform functions,
+    // not wrappers. This rules out a regression where a bundler (e.g.
+    // unbuild) accidentally wraps the export.
+    expect(nodeTransforms).toContain(selectNodeTransform)
+    expect(nodeTransforms).toContain(inputTextAreaNodeTransform)
+  })
+
+  it('preserves pre-existing nodeTransforms from earlier plugins', async () => {
+    const sentinel = Symbol('sentinel-transform')
+    const earlierPlugin: Plugin = {
+      name: 'test:earlier',
+      configResolved(resolved) {
+        const api = getVueApi(resolved as ResolvedConfig)
+        if (api === undefined) throw new Error('vite:vue not found')
+        api.options ??= {}
+        api.options.template ??= {}
+        api.options.template.compilerOptions ??= {}
+        const transforms = (api.options.template.compilerOptions.nodeTransforms ??= [])
+        transforms.push(sentinel as unknown as (...args: unknown[]) => unknown)
+      },
+    }
+    const config = await resolveWith([vue(), earlierPlugin, chemicalXForms()])
+    const api = getVueApi(config)
+    const nodeTransforms = api?.options?.template?.compilerOptions?.nodeTransforms ?? []
+    expect(nodeTransforms).toContain(sentinel)
+    expect(nodeTransforms).toContain(selectNodeTransform)
+    expect(nodeTransforms).toContain(inputTextAreaNodeTransform)
+  })
+
+  it('throws a helpful install-hint error when @vitejs/plugin-vue is missing', async () => {
+    await expect(resolveWith([chemicalXForms()])).rejects.toThrow(
+      /Could not find @vitejs\/plugin-vue/
+    )
+  })
+})
+
+describe('@chemical-x/forms/vite — plugin order', () => {
+  it('runs with enforce:"pre" so it is not downstream of other transforms', async () => {
+    const config = await resolveWith([vue(), chemicalXForms()])
+    const cxPlugin = config.plugins.find((p) => p.name === 'chemical-x-forms')
+    expect(cxPlugin).toBeDefined()
+    expect(cxPlugin?.enforce).toBe('pre')
+  })
+})

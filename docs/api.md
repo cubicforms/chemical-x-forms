@@ -257,6 +257,18 @@ SettledValidationStatus<Form>` — narrow on `status.pending` before
 trusting `success` / `errors` / `formKey`. See
 `docs/recipes/async-validation.md` for the pattern.
 
+Opt into per-field validation (between submits) via the
+`fieldValidation` option on `useForm`:
+
+```ts
+useForm({ schema, key, fieldValidation: { on: 'change', debounceMs: 200 } })
+```
+
+Three modes: `'none'` (default), `'change'` (debounced on
+setValueAtPath), `'blur'` (immediate on blur). See
+`docs/recipes/field-level-validation.md` for the full semantics —
+cancellation, submit / reset interaction, nested paths.
+
 ### Error store
 
 | Member                               | Type                                                                   |

@@ -3,9 +3,8 @@ import { inputTextAreaNodeTransform } from './runtime/lib/core/transforms/input-
 import { selectNodeTransform } from './runtime/lib/core/transforms/select-transform'
 
 // Module options TypeScript interface definition
-export interface CXModuleOptions {
-  useZod?: boolean
-}
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface CXModuleOptions {}
 
 export default defineNuxtModule<CXModuleOptions>({
   meta: {
@@ -15,10 +14,8 @@ export default defineNuxtModule<CXModuleOptions>({
       nuxt: '>=3.0.0',
     },
   },
-  defaults: {
-    useZod: true,
-  },
-  setup(options, nuxt) {
+  defaults: {},
+  setup(_options, nuxt) {
     nuxt.options.vue.compilerOptions.nodeTransforms ??= []
     nuxt.options.vue.compilerOptions.nodeTransforms.push(
       selectNodeTransform,
@@ -26,11 +23,14 @@ export default defineNuxtModule<CXModuleOptions>({
     )
 
     const resolver = createResolver(import.meta.url)
-    const useFormComposable = options.useZod === true ? 'use-form' : 'use-abstract-form'
+    // Auto-import `useForm` → schema-agnostic core composable. Consumers who
+    // want the Zod-typed wrapper must import from `@chemical-x/forms/zod` or
+    // `@chemical-x/forms/zod-v3` explicitly.
     addImports([
       {
-        name: 'useForm',
-        from: resolver.resolve(`./runtime/composables/${useFormComposable}`),
+        name: 'useAbstractForm',
+        as: 'useForm',
+        from: resolver.resolve('./runtime/composables/use-abstract-form'),
       },
     ])
 

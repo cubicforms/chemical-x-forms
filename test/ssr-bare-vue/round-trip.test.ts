@@ -1,7 +1,7 @@
 import { renderToString } from '@vue/server-renderer'
 import { describe, expect, it } from 'vitest'
 import { createSSRApp, defineComponent, h } from 'vue'
-import { useAbstractForm } from '../../src/runtime/composables/use-abstract-form'
+import { useForm } from '../../src'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { getRegistryFromApp } from '../../src/runtime/core/registry'
 import { hydrateChemicalXState, renderChemicalXState } from '../../src/runtime/core/serialize'
@@ -24,7 +24,7 @@ type Form = { email: string; password: string }
 function makeApp(opts: { ssr: boolean; initialEmail?: string }) {
   const App = defineComponent({
     setup() {
-      const form = useAbstractForm<Form>({
+      const form = useForm<Form>({
         schema: fakeSchema<Form>({ email: opts.initialEmail ?? '', password: '' }),
         key: 'signup',
       })

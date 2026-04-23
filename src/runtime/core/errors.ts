@@ -11,15 +11,6 @@ export class InvalidPathError extends Error {
   }
 }
 
-export class InvalidApiErrorPayloadError extends Error {
-  override readonly name = 'InvalidApiErrorPayloadError'
-  readonly reason: string
-  constructor(reason: string, options?: ErrorOptions) {
-    super(`API error payload could not be hydrated: ${reason}`, options)
-    this.reason = reason
-  }
-}
-
 export class SubmitErrorHandlerError extends Error {
   override readonly name = 'SubmitErrorHandlerError'
   constructor(message: string, options?: ErrorOptions) {

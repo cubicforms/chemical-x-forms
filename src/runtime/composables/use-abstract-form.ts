@@ -14,7 +14,6 @@ import type {
   FieldState,
   FormErrorRecord,
   FormKey,
-  RegisterContext,
   RegisterValue,
   UseAbstractFormReturnType,
   UseFormConfiguration,
@@ -70,10 +69,7 @@ export function useAbstractForm<
     existing ?? buildFreshState<Form>(key, resolvedSchema, configuration, registry)
 
   // --- API surface ---
-  const register = buildRegister(state) as (
-    path: string | Path,
-    context?: RegisterContext<unknown, unknown>
-  ) => RegisterValue<unknown>
+  const register = buildRegister(state) as (path: string | Path) => RegisterValue<unknown>
   const getFieldStateBuilt = buildFieldStateAccessor(state)
   const {
     validate: validateBuilt,
@@ -228,10 +224,5 @@ function requireFormKey(key: FormKey | undefined): FormKey {
   }
   return key
 }
-
-// Alias for the public `useForm` name — use-form.ts (the Zod entry) exports
-// a wrapper that first runs the schema through zodAdapter, but the abstract
-// form can be imported directly for consumers who build their own adapters.
-export { useAbstractForm as useForm }
 
 export type { FieldStateView }

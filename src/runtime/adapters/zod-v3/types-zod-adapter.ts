@@ -10,7 +10,6 @@ export type UseFormConfigurationWithZod<Schema extends z.ZodType<unknown>, Initi
   key?: FormKey
   initialState?: InitialState
   validationMode?: ValidationMode
-  useFieldTransformer?: boolean
 }
 
 // Recursively unwraps Zod types like ZodDefault, ZodOptional, ZodNullable, etc.

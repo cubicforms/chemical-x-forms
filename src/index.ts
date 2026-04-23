@@ -32,10 +32,9 @@ export { hydrateChemicalXState, renderChemicalXState } from './runtime/core/seri
 export type { SerializedChemicalXState } from './runtime/core/serialize'
 
 // The abstract useForm — works against any AbstractSchema implementation.
-export {
-  useAbstractForm,
-  useAbstractForm as useForm,
-} from './runtime/composables/use-abstract-form'
+// Zod-typed wrappers live at `/zod` (v4) and `/zod-v3`; this entry is the
+// schema-agnostic core.
+export { useAbstractForm as useForm } from './runtime/composables/use-abstract-form'
 
 // The v-register directive (registered automatically by createChemicalXForms,
 // but exported for advanced consumers who install directives themselves).
@@ -72,7 +71,6 @@ export type { Path, PathKey, Segment } from './runtime/core/paths'
 
 // Error classes
 export {
-  InvalidApiErrorPayloadError,
   InvalidPathError,
   RegistryNotInstalledError,
   SubmitErrorHandlerError,

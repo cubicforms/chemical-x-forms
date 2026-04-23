@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  InvalidApiErrorPayloadError,
   InvalidPathError,
   RegistryNotInstalledError,
   SubmitErrorHandlerError,
@@ -31,15 +30,6 @@ describe('error classes', () => {
         }
       })()
       expect(thrown).toBeInstanceOf(InvalidPathError)
-    })
-  })
-
-  describe('InvalidApiErrorPayloadError', () => {
-    it('carries a structured `reason` in addition to a composed message', () => {
-      const err = new InvalidApiErrorPayloadError('details must be a record')
-      expect(err.reason).toBe('details must be a record')
-      expect(err.message).toContain('details must be a record')
-      expect(err.name).toBe('InvalidApiErrorPayloadError')
     })
   })
 

@@ -65,10 +65,7 @@ export type UseFormConfiguration<
   key?: FormKey
   initialState?: InitialState
   validationMode?: ValidationMode
-  useFieldTransformer?: boolean
 }
-
-export type FieldTransformer<Input, Output> = (input: Input) => Output
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>
 
@@ -215,11 +212,6 @@ export type RegisterDirective =
   | RegisterRadioCustomDirective
   | RegisterModelDynamicCustomDirective
 
-// undefined by default (defer to useForm global setting)
-export type RegisterContext<Input, Output> = {
-  fieldTransformer?: undefined | boolean | FieldTransformer<Input, Output>
-}
-
 export type SetValueCallback<Payload> = (value: DeepPartial<Payload>) => DeepPartial<Payload>
 export type SetValuePayload<Payload> = DeepPartial<Payload> | SetValueCallback<Payload>
 
@@ -299,8 +291,7 @@ export type UseAbstractFormReturnType<
 
   validate: (path?: FlatPath<Form>) => Readonly<Ref<ValidationResponseWithoutValue<Form>>>
   register: (
-    path: RegisterFlatPath<Form, keyof Form>,
-    _context?: RegisterContext<typeof path, NestedType<Form, typeof path>>
+    path: RegisterFlatPath<Form, keyof Form>
   ) => RegisterValue<NestedType<Form, typeof path> | undefined>
   key: FormKey
 

@@ -1,4 +1,3 @@
-import { set } from 'lodash-es'
 import type { z } from 'zod'
 import type { AbstractSchema, FormKey, ValidationError } from '../../types/types-api'
 import type { DeepPartial, GenericForm } from '../../types/types-core'
@@ -328,15 +327,6 @@ function zodIssuesToValidationErrors(
     path: issue.path.map((seg) => (typeof seg === 'number' ? seg : String(seg))),
     formKey,
   }))
-}
-
-/** Re-exported for callers that want to pre-construct a nested-state object. */
-export function __setAtPathForInitialStateFallback(
-  target: object,
-  path: string,
-  value: unknown
-): void {
-  set(target, path, value)
 }
 
 // Type-only re-export so downstream code can reference the Form shape.

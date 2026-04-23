@@ -1,7 +1,7 @@
 import { defineNuxtConfig, type DefineNuxtConfig } from 'nuxt/config'
 
 export default defineNuxtConfig({
-  modules: [['../src/module', { useZod: true }]],
+  modules: ['../src/nuxt'],
   devtools: { enabled: true },
   alias: {
     '@chemical-x/forms/types': '../src/runtime/types/types-api.ts',

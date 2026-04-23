@@ -13,7 +13,7 @@ on:
 
 jobs:
   test:
-    name: Test on Node.js Version ${{ matrix.node-version }}
+    name: Full check on Node.js ${{ matrix.node-version }}
     runs-on: ubuntu-latest
 
     strategy:
@@ -49,11 +49,61 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Stub @chemical-x/forms (Nuxt + playground types)
+        run: pnpm dev:prepare
+
+      # `pnpm check` runs the full gate: lint → format:check → typecheck →
+      # test → check:size → check:bench → check:coverage. Running it on the
+      # full Node matrix catches compat regressions (a new syntax, a changed
+      # Buffer API, a bundler quirk on LTS vs current) at PR time rather
+      # than on release.
+      - name: Full pnpm check
+        run: pnpm check
+
+  coverage-artifact:
+    name: Publish coverage HTML artifact
+    runs-on: ubuntu-latest
+    # Independent of the matrix job — this exists so PR reviewers can open
+    # the coverage report in a browser without checking out the branch and
+    # running the suite locally. Fails only if coverage thresholds fail
+    # (matrix job would already be red in that case).
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Setup Node.js (lts)
+        uses: actions/setup-node@v5
+        with:
+          node-version: 'lts/*'
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install
+
       - name: Stub @chemical-x/forms
         run: pnpm dev:prepare
 
-      - name: Validate ESLint and Types
-        run: pnpm check
+      - name: Run coverage
+        run: pnpm check:coverage
 
-      - name: Run tests
-        run: pnpm test
+      - name: Upload coverage HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: coverage/
+          retention-days: 14

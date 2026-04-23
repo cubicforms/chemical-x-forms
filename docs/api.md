@@ -281,6 +281,18 @@ Backends: `'local'` / `'session'` / `'indexeddb'` (or a custom
 picker, version bumps, clear-on-submit, and async-hydration
 caveats.
 
+Opt into undo/redo via `history: true` (default max of 50
+snapshots) or `history: { max: N }`:
+
+```ts
+useForm({ schema, key, history: true })
+```
+
+Adds `undo()` / `redo()` / `canUndo` / `canRedo` / `historySize`
+to the return. See `docs/recipes/undo-redo.md` for snapshot
+semantics, keyboard wiring, and interaction with reset /
+persistence / field-level validation.
+
 ### Error store
 
 | Member                               | Type                                                                   |

@@ -18,8 +18,59 @@
 
 import { bench, describe } from 'vitest'
 import { diffAndApply, type Patch } from '../src/runtime/core/diff-apply'
-import { flattenObjectWithBaseKey } from '../src/runtime/lib/core/utils/flatten-object'
-import { setDifference, setIntersection } from '../src/runtime/lib/core/utils/set-utilities'
+
+// The "old approach" utilities (flattenObjectWithBaseKey + setDifference +
+// setIntersection) used to live under src/runtime/lib/core/utils/ but were
+// deleted as part of Phase 2.3. We keep verbatim copies here so the bench
+// keeps comparing the new writer against the exact historical algorithm.
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isArrayOrRecord(value: unknown): value is unknown[] | Record<string, unknown> {
+  return Array.isArray(value) || isRecord(value)
+}
+
+function flattenObjectWithBaseKey(obj: unknown, basePath?: string): Record<string, unknown> {
+  const recordedPaths: Record<string, unknown> = {}
+  function logic(currentValue: unknown, _basePath?: string): void {
+    if (!isArrayOrRecord(currentValue)) {
+      recordedPaths[_basePath ?? ''] = currentValue
+      return
+    }
+    for (const key of Object.keys(currentValue)) {
+      const childValue = (currentValue as Record<string, unknown>)[key]
+      const targetPath =
+        _basePath !== undefined && _basePath.length > 0 ? `${_basePath}.${key}` : key
+      if (!isArrayOrRecord(childValue)) {
+        recordedPaths[targetPath] = childValue
+        continue
+      }
+      logic(childValue, targetPath)
+    }
+  }
+  logic(obj, basePath)
+  return recordedPaths
+}
+
+function setDifference<T>(primary: Set<T>, secondary: Set<T>): Set<T> {
+  const diff = new Set<T>()
+  for (const item of primary) {
+    if (!secondary.has(item)) diff.add(item)
+  }
+  return diff
+}
+
+function setIntersection<T>(first: Set<T>, second: Set<T>): Set<T> {
+  const intersection = new Set<T>()
+  const smallest = first.size <= second.size ? first : second
+  const other = smallest === first ? second : first
+  for (const item of smallest) {
+    if (other.has(item)) intersection.add(item)
+  }
+  return intersection
+}
 
 type Summary = {
   currentValue: unknown

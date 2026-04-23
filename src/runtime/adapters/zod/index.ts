@@ -1,8 +1,26 @@
 import { cloneDeep, isFunction, merge, set } from 'lodash-es'
 import { z } from 'zod'
-import { PATH_SEPARATOR } from '../../lib/core/utils/constants'
-import { isPrimitive } from '../../lib/core/utils/helpers'
 import type { AbstractSchema, FormKey, ValidationError } from '../../types/types-api'
+
+// The adapter speaks the pre-rewrite dotted-string path format at the
+// AbstractSchema boundary; core passes dotted strings to validateAtPath
+// and getSchemasAtPath for now. Phase 4 migrates the adapter to
+// `Path` (Segment[]) as part of the v3/v4 split.
+const PATH_SEPARATOR = '.'
+
+function isPrimitive(input: unknown): boolean {
+  const type = typeof input
+  if (
+    type === 'string' ||
+    type === 'number' ||
+    type === 'boolean' ||
+    type === 'bigint' ||
+    type === 'undefined'
+  )
+    return true
+  return input === null
+}
+
 import type { NestedType } from '../../types/types-core'
 import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from '../../types/types-zod'
 import { isZodSchemaType } from './helpers'

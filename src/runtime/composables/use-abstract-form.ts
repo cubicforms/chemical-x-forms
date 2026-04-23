@@ -171,9 +171,13 @@ export function useAbstractForm<
   // `state.form.value` inside the computed is what establishes the dependency
   // edge; originals being non-reactive is an optimisation (the set doesn't
   // change independently of form.value, so tracking it would only add noise).
+  //
+  // Each entry stores its canonical `segments` alongside the recorded
+  // `value`, so this loop skips `JSON.parse(pathKey)` per iteration — the
+  // hot-path cost at the previous shape was O(originals.size) parses per
+  // read, which on a 100-leaf form amounts to 100 JSON.parses per keystroke.
   const isDirty = computed<boolean>(() => {
-    for (const [pathKey, original] of state.originals) {
-      const segments = JSON.parse(pathKey) as Path
+    for (const [, { segments, value: original }] of state.originals) {
       if (!Object.is(getAtPath(state.form.value, segments), original)) return true
     }
     return false

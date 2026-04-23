@@ -36,7 +36,7 @@ export function buildFieldStateAccessor<F extends GenericForm>(state: FormState<
     return computed<FieldStateView>(() => {
       const record = state.fields.get(key)
       const value = state.getValueAtPath(segments)
-      const original = state.originals.get(key)
+      const original = state.originals.get(key)?.value
       const pristine = state.isPristineAtPath(segments)
       return {
         value,

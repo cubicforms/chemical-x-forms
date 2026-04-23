@@ -38,13 +38,26 @@ export type ElementRecord = {
   readonly elements: Set<HTMLElement>
 }
 
+/**
+ * Per-path record stored in `originals`. Pairing `segments` with the tracked
+ * value means `isDirty` and `resetField`'s container loop don't have to
+ * `JSON.parse(pathKey)` on every iteration — the canonical Path is already
+ * sitting next to the value it belongs to. PathKey still keys the Map (the
+ * stable string is the only collision-free identifier), but downstream
+ * iteration reads `segments` directly.
+ */
+export type OriginalsRecord = {
+  readonly segments: Path
+  readonly value: unknown
+}
+
 export type FormState<F extends GenericForm> = {
   readonly formKey: FormKey
   readonly form: Ref<F>
   readonly fields: Map<PathKey, FieldRecord>
   readonly elements: Map<PathKey, ElementRecord>
   readonly errors: Map<PathKey, ValidationError[]>
-  readonly originals: Map<PathKey, unknown>
+  readonly originals: Map<PathKey, OriginalsRecord>
   readonly schema: AbstractSchema<F, F>
 
   // --- submission lifecycle ---
@@ -146,7 +159,10 @@ export function createFormState<F extends GenericForm>(
 
   // Originals are captured at init and on first appearance of a path; never
   // re-assigned. Not reactive — the set is append-only per form's lifetime.
-  const originals = new Map<PathKey, unknown>()
+  // Value is a {segments, value} record so consumers iterating this Map
+  // (isDirty, resetField's container loop) don't need to `JSON.parse(key)`
+  // to recover the canonical Path.
+  const originals = new Map<PathKey, OriginalsRecord>()
 
   // Submission lifecycle refs. Initial values encode "no submission has
   // happened yet": not in flight, zero attempts, no captured error.
@@ -166,7 +182,7 @@ export function createFormState<F extends GenericForm>(
   diffAndApply({}, schemaInitialData, [], (patch) => {
     if (patch.kind !== 'added') return
     const { key } = canonicalizePath(patch.path)
-    originals.set(key, patch.newValue)
+    originals.set(key, { segments: patch.path, value: patch.newValue })
   })
 
   // Populate fields from either the hydration payload (preserves exact
@@ -222,7 +238,7 @@ export function createFormState<F extends GenericForm>(
       // originals map; this branch records absence-as-original so the
       // first appearance is correctly seen as dirty.
       if (patch.kind === 'added' && !originals.has(key)) {
-        originals.set(key, undefined)
+        originals.set(key, { segments: patch.path, value: undefined })
       }
       touchFieldRecord(key, patch.path, { updatedAt: now })
     })
@@ -348,7 +364,7 @@ export function createFormState<F extends GenericForm>(
     diffAndApply({}, next, [], (patch) => {
       if (patch.kind !== 'added') return
       const { key } = canonicalizePath(patch.path)
-      originals.set(key, patch.newValue)
+      originals.set(key, { segments: patch.path, value: patch.newValue })
     })
     // Drop every recorded error — the form is a fresh surface again.
     errors.clear()
@@ -385,8 +401,9 @@ export function createFormState<F extends GenericForm>(
     const { key: targetKey, segments: targetSegments } = canonicalizePath(path)
 
     // Leaf shortcut: direct originals hit means one setValueAtPath does it.
-    if (originals.has(targetKey)) {
-      setValueAtPath(targetSegments, originals.get(targetKey))
+    const leafEntry = originals.get(targetKey)
+    if (leafEntry !== undefined) {
+      setValueAtPath(targetSegments, leafEntry.value)
       errors.delete(targetKey)
       clearFieldRecordFlags(targetKey)
       return
@@ -396,10 +413,14 @@ export function createFormState<F extends GenericForm>(
     // every leaf whose path is a descendant of `targetSegments`. We assemble
     // the subtree first, then apply it in one setValueAtPath so diffAndApply
     // sees a single coherent replacement (rather than N mutations).
+    //
+    // The iteration reads `entry.segments` directly; the alternative
+    // (JSON.parse on the Map key) both allocates and pays a parse cost per
+    // entry even on cold paths.
     let subtree: unknown = undefined
     let anyMatch = false
-    for (const [leafKey, original] of originals) {
-      const leafSegments = JSON.parse(leafKey) as Segment[]
+    for (const [, entry] of originals) {
+      const leafSegments = entry.segments
       if (!isPathPrefix(targetSegments, leafSegments)) continue
       if (leafSegments.length === targetSegments.length) continue // covered by the leaf shortcut above
       anyMatch = true
@@ -410,21 +431,25 @@ export function createFormState<F extends GenericForm>(
         // consistent with that choice for the rest of the walk.
         subtree = typeof relative[0] === 'number' ? [] : {}
       }
-      subtree = setAtPath(subtree, relative, original)
+      subtree = setAtPath(subtree, relative, entry.value)
     }
     if (!anyMatch) return // nothing tracked under this prefix; no-op
 
     setValueAtPath(targetSegments, subtree)
 
     // Clear errors and reset field-record flags for the target + every
-    // descendant. `Array.from(errors.keys())` avoids mutating while iterating.
-    for (const errorKey of Array.from(errors.keys())) {
-      const leafSegments = JSON.parse(errorKey) as Segment[]
-      if (isPathPrefix(targetSegments, leafSegments)) errors.delete(errorKey)
+    // descendant. Segments come from the stored records (each ValidationError
+    // carries its own `path`, each FieldRecord carries `path`), so neither
+    // loop has to `JSON.parse` the Map key.
+    for (const [errorKey, errs] of Array.from(errors.entries())) {
+      const first = errs[0]
+      if (first === undefined) continue
+      if (isPathPrefix(targetSegments, first.path as readonly Segment[])) {
+        errors.delete(errorKey)
+      }
     }
-    for (const fieldKey of Array.from(fields.keys())) {
-      const leafSegments = JSON.parse(fieldKey) as Segment[]
-      if (isPathPrefix(targetSegments, leafSegments)) clearFieldRecordFlags(fieldKey)
+    for (const [fieldKey, record] of Array.from(fields.entries())) {
+      if (isPathPrefix(targetSegments, record.path)) clearFieldRecordFlags(fieldKey)
     }
   }
 
@@ -460,8 +485,9 @@ export function createFormState<F extends GenericForm>(
 
   function isPristineAtPath(path: Path): boolean {
     const { key, segments } = canonicalizePath(path)
-    if (!originals.has(key)) return true
-    return Object.is(getAtPath(form.value, segments), originals.get(key))
+    const entry = originals.get(key)
+    if (entry === undefined) return true
+    return Object.is(getAtPath(form.value, segments), entry.value)
   }
 
   function getFieldRecord(path: Path): FieldRecord | undefined {
@@ -471,7 +497,7 @@ export function createFormState<F extends GenericForm>(
 
   function getOriginalAtPath(path: Path): unknown {
     const { key } = canonicalizePath(path)
-    return originals.get(key)
+    return originals.get(key)?.value
   }
 
   return {

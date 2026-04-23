@@ -11,13 +11,10 @@ export default defineBuildConfig({
     'nuxt',
     'nuxt/app',
     '@nuxt/kit',
+    '@nuxt/schema', // re-exported by @nuxt/kit; silences "implicitly bundling"
     'vite',
     'vue',
     'zod',
-    // `zod-v3` is intentionally NOT in externals so that the alias plugin
-    // (wired below) sees it in a resolution context and rewrites it to
-    // `zod`. If we listed it as external, rollup would short-circuit and
-    // emit `from 'zod-v3'` in the bundle.
     'typescript',
     /lodash-es.*/,
   ],
@@ -25,10 +22,26 @@ export default defineBuildConfig({
   failOnWarn: false,
   hooks: {
     'rollup:options'(_ctx, options) {
-      // Prepend the alias plugin so it fires before unbuild's own plugins
-      // (notably the externalisation and resolution steps). At resolution
-      // time, `zod-v3` rewrites to `zod`; at runtime, the external `zod`
-      // resolves against the consumer's installed zod@3.
+      // Problem: the source imports `from 'zod-v3'` (our pnpm-alias dev
+      // install for zod@3) but published bundles need `from 'zod'` so
+      // consumers can install zod@3 themselves. @rollup/plugin-alias does
+      // the rewrite — but rollup calls `external(id)` BEFORE the
+      // resolveId chain runs, and unbuild's default external warns
+      // "Implicitly bundling zod-v3" before plugin-alias has a chance.
+      //
+      // Fix: wrap the external function so `zod-v3` is explicitly
+      // *not*-external (lets resolveId run → plugin-alias rewrites →
+      // post-resolve external sees 'zod' and marks it external). The
+      // wrapper also silences the implicit-bundling warning for the
+      // specific zod-v3 case.
+      const originalExternal = options.external
+      options.external = (id, parentId, isResolved) => {
+        if (id === 'zod-v3') return false
+        if (typeof originalExternal === 'function') {
+          return originalExternal(id, parentId, isResolved)
+        }
+        return false
+      }
       options.plugins = [
         aliasPlugin({ entries: [{ find: 'zod-v3', replacement: 'zod' }] }),
         ...(Array.isArray(options.plugins) ? options.plugins : []),

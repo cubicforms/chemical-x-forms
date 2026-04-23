@@ -61,6 +61,14 @@ export type FormState<F extends GenericForm> = {
   readonly activeSubmissions: Ref<number>
   readonly submitCount: Ref<number>
   readonly submitError: Ref<unknown>
+  /**
+   * Incremented by every `reset()` call. The submit wrapper captures
+   * this at entry and skips writing `submitError` from a catch that
+   * fires *after* a reset — otherwise a reset-during-submit would
+   * visibly clear `submitError` and then have it reappear when the
+   * in-flight promise rejects.
+   */
+  readonly submissionGeneration: Ref<number>
 
   // --- form mutations ---
   applyFormReplacement(next: F): void
@@ -149,6 +157,7 @@ export function createFormState<F extends GenericForm>(
   const activeSubmissions = ref(0)
   const submitCount = ref(0)
   const submitError = ref<unknown>(null)
+  const submissionGeneration = ref(0)
 
   // Populate originals by diffing from empty-form to schema-initial. This is
   // always the schema's shape regardless of hydration, so pristine/dirty
@@ -358,12 +367,14 @@ export function createFormState<F extends GenericForm>(
       })
     }
     // Clear submission lifecycle so a reset surface reports "nothing has
-    // been submitted yet" rather than holding on to the prior run's count.
-    // `activeSubmissions` is also zeroed: in the unusual case where a
-    // submission is still in flight when reset() fires, the wrapper's
-    // finally-block will decrement back into the negative, but isSubmitting
-    // recovers on the next submission entry. We accept that drift over
-    // leaving stale state visible to the consumer.
+    // been submitted yet" rather than holding on to the prior run's
+    // count. The generation counter is bumped first so any in-flight
+    // submission's catch block knows its error write would land on the
+    // post-reset state and skips it. `activeSubmissions` is zeroed
+    // unconditionally — the finally-block's Math.max clamps the
+    // decrement at zero, and `isSubmitting` stays false afterwards
+    // because the clamped value never exceeds zero.
+    submissionGeneration.value += 1
     isSubmitting.value = false
     activeSubmissions.value = 0
     submitCount.value = 0
@@ -475,6 +486,7 @@ export function createFormState<F extends GenericForm>(
     activeSubmissions,
     submitCount,
     submitError,
+    submissionGeneration,
 
     applyFormReplacement,
     setValueAtPath,

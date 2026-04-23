@@ -86,7 +86,9 @@ export function buildProcessForm<F extends GenericForm>(state: FormState<F>) {
       // handlers don't clobber each other: the first completion only
       // flips isSubmitting to false when the counter reaches zero, not
       // unconditionally. submitError is shared across runs by design — a
-      // later run's success / failure replaces the earlier capture.
+      // later run's success / failure replaces the earlier capture,
+      // UNLESS a `reset()` fired between entry and throw (see below).
+      const genAtEntry = state.submissionGeneration.value
       state.activeSubmissions.value += 1
       state.isSubmitting.value = true
       state.submitError.value = null
@@ -107,7 +109,14 @@ export function buildProcessForm<F extends GenericForm>(state: FormState<F>) {
         state.clearErrors()
         await onSubmit(result.data)
       } catch (err) {
-        state.submitError.value = err
+        // Only publish the error if `reset()` hasn't fired since this
+        // submission began. Otherwise the consumer just zeroed the
+        // submission surface and we'd undo their intent by re-raising
+        // into `submitError`. We still re-throw so imperative callers
+        // (`await handler(event)`) observe the rejection.
+        if (state.submissionGeneration.value === genAtEntry) {
+          state.submitError.value = err
+        }
         throw err
       } finally {
         state.activeSubmissions.value = Math.max(0, state.activeSubmissions.value - 1)

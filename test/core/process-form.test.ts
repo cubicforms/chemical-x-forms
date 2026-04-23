@@ -257,6 +257,97 @@ describe('buildProcessForm', () => {
     })
   })
 
+  describe('handleSubmit — reset() during in-flight submission', () => {
+    it('reset() keeps isSubmitting false through the in-flight completion', async () => {
+      // Regression: previously `reset()` zeroed `activeSubmissions` and
+      // the in-flight submission's finally-block then decremented into
+      // a negative value (clamped to 0 by Math.max but still a messy
+      // state). With the clamp in place, isSubmitting stays false —
+      // this test pins that guarantee.
+      const state = alwaysValid()
+      const { handleSubmit } = buildProcessForm(state)
+
+      let resolveSubmit!: () => void
+      const started = new Promise<void>((resolve) => {
+        const blocker = new Promise<void>((r) => (resolveSubmit = r))
+        void handleSubmit(async () => {
+          resolve()
+          await blocker
+        })()
+      })
+      await started
+      expect(state.isSubmitting.value).toBe(true)
+
+      state.reset()
+      expect(state.isSubmitting.value).toBe(false)
+      expect(state.activeSubmissions.value).toBe(0)
+      expect(state.submitCount.value).toBe(0)
+
+      resolveSubmit()
+      await Promise.resolve()
+      await Promise.resolve()
+
+      // In-flight finally ran — counter clamped at 0, isSubmitting stayed
+      // false, submitCount records the user's click.
+      expect(state.isSubmitting.value).toBe(false)
+      expect(state.activeSubmissions.value).toBe(0)
+      expect(state.submitCount.value).toBe(1)
+      expect(state.submitError.value).toBeNull()
+    })
+
+    it('reset() keeps submitError null even if the in-flight submission later throws', async () => {
+      // Without the generation guard, the catch block re-populates
+      // submitError with the thrown value after reset cleared it —
+      // visually "unfocusing" the reset the consumer just triggered.
+      const state = alwaysValid()
+      const { handleSubmit } = buildProcessForm(state)
+      const err = new Error('post-reset crash')
+
+      let rejectSubmit!: (e: unknown) => void
+      const started = new Promise<void>((resolve) => {
+        const blocker = new Promise<void>((_res, rej) => (rejectSubmit = rej))
+        void handleSubmit(async () => {
+          resolve()
+          await blocker
+        })().catch(() => {
+          /* ignore — the test inspects state, not the rejected promise */
+        })
+      })
+      await started
+      expect(state.submitError.value).toBeNull()
+
+      state.reset()
+      rejectSubmit(err)
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+
+      // Post-reset state is stable: no stale error, not submitting.
+      expect(state.submitError.value).toBeNull()
+      expect(state.isSubmitting.value).toBe(false)
+      expect(state.submissionGeneration.value).toBe(1)
+    })
+
+    it('submissions started AFTER reset still capture their own errors normally', async () => {
+      // Regression guard for the generation check: post-reset, new
+      // submissions should behave exactly as before.
+      const state = alwaysValid()
+      const { handleSubmit } = buildProcessForm(state)
+      state.reset()
+
+      const err = new Error('fresh')
+      const handler = handleSubmit(
+        // eslint-disable-next-line @typescript-eslint/require-await
+        async () => {
+          throw err
+        }
+      )
+      await expect(handler()).rejects.toBe(err)
+      expect(state.submitError.value).toBe(err)
+      expect(state.submitCount.value).toBe(1)
+    })
+  })
+
   describe('setFieldErrorsFromApi', () => {
     it('hydrates wrapped envelope and populates state errors', () => {
       const state = alwaysValid()

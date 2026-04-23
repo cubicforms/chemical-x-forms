@@ -269,6 +269,18 @@ setValueAtPath), `'blur'` (immediate on blur). See
 `docs/recipes/field-level-validation.md` for the full semantics —
 cancellation, submit / reset interaction, nested paths.
 
+Opt into draft-state persistence (writes debounced, reads on
+mount) via the `persist` option:
+
+```ts
+useForm({ schema, key, persist: { storage: 'local' } })
+```
+
+Backends: `'local'` / `'session'` / `'indexeddb'` (or a custom
+`FormStorage`). See `docs/recipes/persistence.md` for the backend
+picker, version bumps, clear-on-submit, and async-hydration
+caveats.
+
 ### Error store
 
 | Member                               | Type                                                                   |

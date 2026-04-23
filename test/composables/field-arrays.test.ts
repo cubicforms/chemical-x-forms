@@ -203,4 +203,23 @@ describe('useForm — field array helpers', () => {
     // Computed ref should now reflect the new array — reactivity round-trip.
     expect(tags.value).toEqual(['a', 'b'])
   })
+
+  it('append flips isDirty (newly-introduced leaves count as mutations)', () => {
+    // Regression: previously the post-init originals capture treated
+    // `append`'d items as "always pristine" because the new path's
+    // first-seen value was recorded as its own baseline.
+    const { app, form } = harness({ tags: [] })
+    apps.push(app)
+    expect(form.isDirty.value).toBe(false)
+    form.append('tags', 'first')
+    expect(form.isDirty.value).toBe(true)
+  })
+
+  it('remove flips isDirty (removing an originals-tracked leaf is a mutation)', () => {
+    const { app, form } = harness({ tags: ['a', 'b'] })
+    apps.push(app)
+    expect(form.isDirty.value).toBe(false)
+    form.remove('tags', 0)
+    expect(form.isDirty.value).toBe(true)
+  })
 })

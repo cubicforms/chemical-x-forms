@@ -197,8 +197,13 @@ export function createFormState<F extends GenericForm>(
     const now = new Date().toISOString()
     diffAndApply(prev, next, [], (patch) => {
       const { key } = canonicalizePath(patch.path)
+      // Runtime-added paths (e.g. `append('posts', {...})` introducing a
+      // new array index) must compare against `undefined` for `isDirty`
+      // — appearing IS a mutation. Only `reset()` rebaselines the
+      // originals map; this branch records absence-as-original so the
+      // first appearance is correctly seen as dirty.
       if (patch.kind === 'added' && !originals.has(key)) {
-        originals.set(key, patch.newValue)
+        originals.set(key, undefined)
       }
       touchFieldRecord(key, patch.path, { updatedAt: now })
     })

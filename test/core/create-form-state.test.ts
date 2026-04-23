@@ -143,11 +143,16 @@ describe('createFormState', () => {
       expect(state.isPristineAtPath(['email'])).toBe(true)
     })
 
-    it('newly-added paths (post-init) get their first-seen value as their original', () => {
-      // dynamic fields: assume the form grew a new key after init
+    it('newly-added paths (post-init) compare against undefined as their original', () => {
+      // Dynamic fields — e.g. an `append('posts', {...})` call introducing
+      // a new array index, or a `setValue` on a path the schema didn't
+      // declare. The original is `undefined` (the path's pre-existence
+      // state), not the just-set value, so the first appearance is
+      // correctly seen as a dirty change.
       const state = makeState()
       state.setValueAtPath(['profile', 'nickname' as keyof SignupForm['profile']], 'xyz')
-      expect(state.getOriginalAtPath(['profile', 'nickname'])).toBe('xyz')
+      expect(state.getOriginalAtPath(['profile', 'nickname'])).toBeUndefined()
+      expect(state.isPristineAtPath(['profile', 'nickname'])).toBe(false)
     })
   })
 

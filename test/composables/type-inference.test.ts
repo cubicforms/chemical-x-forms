@@ -57,6 +57,10 @@ type ExpectedForm = {
 // Form → FlatPath/NestedType).
 type Form = ReturnType<typeof useForm<Schema>>
 
+// The public factory's *parameter* type — used to test the type-level
+// requirement on `key` without actually invoking useForm at runtime.
+type UseFormOptions = Parameters<typeof useForm<Schema>>[0]
+
 // `expectTypeOf` evaluates its argument at runtime even though it only
 // cares about the type. We can't call the real `useForm` here (no Vue
 // app context), so we fake a `form` whose property/method access never
@@ -74,13 +78,18 @@ const form: Form = (() => {
 
 describe('useForm type inference — factory signature', () => {
   it('requires `key` at the type level (Phase 7.2)', () => {
-    // Dead-code guard: TypeScript still typechecks inside `if (false)`,
-    // and `useForm` is imported as `type` only — its identifier has no
-    // runtime binding, so we must not actually evaluate this call.
-    if (false as boolean) {
-      // @ts-expect-error - missing required `key`
-      useForm({ schema })
-    }
+    // Type-only assertion — exercises the parameter shape directly so
+    // the @ts-expect-error fires for the right reason. The previous
+    // pattern (a dead-code call inside `if (false)`) errored because
+    // `useForm` is imported as type-only and has no runtime binding,
+    // not because `key` is missing.
+    // @ts-expect-error - missing required `key`
+    const missingKeyConfig: UseFormOptions = { schema }
+    void missingKeyConfig
+
+    // Sanity: providing `key` typechecks cleanly.
+    const validConfig: UseFormOptions = { schema, key: 'test' }
+    void validConfig
   })
 
   it('returns the inferred Form shape at the top-level getValue()', () => {

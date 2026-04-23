@@ -25,15 +25,43 @@ import { renderToString } from '@vue/server-renderer'
 import { createChemicalXForms, renderChemicalXState } from '@chemical-x/forms'
 import App from './App.vue'
 
+/**
+ * Escape a JSON string so it's safe to embed inside an inline <script> tag.
+ * `JSON.stringify` alone is unsafe — a form value containing the literal
+ * substring `</script>` would break out of the script tag and let arbitrary
+ * markup take over. The five characters below are the well-known set; this
+ * is the same approach React's `serialize-javascript` and Nuxt's payload
+ * serialiser take.
+ */
+function escapeForInlineScript(json: string): string {
+  return json.replace(/[<>&\u2028\u2029]/g, (char) => {
+    switch (char) {
+      case '<':
+        return '\\u003c'
+      case '>':
+        return '\\u003e'
+      case '&':
+        return '\\u0026'
+      case '\u2028':
+        return '\\u2028'
+      case '\u2029':
+        return '\\u2029'
+      default:
+        return char
+    }
+  })
+}
+
 export async function render(url: string) {
   const app = createSSRApp(App)
   app.use(createChemicalXForms())
 
   const html = await renderToString(app)
 
-  // Serialise every form currently in the registry.
+  // Serialise every form currently in the registry, then escape so the
+  // payload is safe to inline inside <script>...</script>.
   const chemicalXState = renderChemicalXState(app)
-  const payload = JSON.stringify(chemicalXState)
+  const payload = escapeForInlineScript(JSON.stringify(chemicalXState))
 
   return { html, payload }
 }
@@ -45,6 +73,9 @@ export async function render(url: string) {
 <body>
   <div id="app"><!--ssr-outlet--></div>
   <script>
+    // The escape above keeps `</script>` (and U+2028 / U+2029 line
+    // separators that would otherwise terminate the script) out of the
+    // inline payload.
     window.__CHEMICAL_X_STATE__ = {{{ payload }}};
   </script>
   <script type="module" src="/src/entry-client.ts"></script>

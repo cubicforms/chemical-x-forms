@@ -101,22 +101,32 @@ function makeForm(leafCount: number, depth: number): Record<string, unknown> {
   return form
 }
 
-/** Deeply clone and mutate one leaf to simulate a single keystroke. */
+/**
+ * Deeply clone and mutate one leaf to simulate a single keystroke.
+ *
+ * Descends through `level1 → level2 → … → levelN` greedily until it
+ * reaches a parent node whose first child is NOT a `levelN` container
+ * — the field-bearing parent. The previous hardcoded
+ * `level1 → level2 → break` walker stopped one level early at depth ≥ 4
+ * and ended up mutating a `levelN` key itself (clobbering the whole
+ * leaves-bearing subtree with a primitive). That made the 500-leaf
+ * bench measure subtree replacement instead of a single-leaf
+ * keystroke and gave a misleading speedup ratio.
+ */
 function mutateOneLeaf(form: Record<string, unknown>, newValue: unknown): Record<string, unknown> {
   // Structured clone for a fair "next state" object (keeps ref inequality).
   const next = structuredClone(form) as Record<string, unknown>
-  // Walk into a known leaf at group0/level1/.../fieldN — our generator always produces it.
-  let node = next
-  // Descend to group0
-  node = node['group0'] as Record<string, unknown>
-  // Descend through levels
-  while ('level1' in node) {
-    node = node['level1'] as Record<string, unknown>
-    if (!('level2' in node)) break
-    node = node['level2'] as Record<string, unknown>
-    if (!('level3' in node)) break
+  let node = next['group0'] as Record<string, unknown>
+  // Walk down through every `level\d+` child until we hit the parent of
+  // the field leaves. Since our generator only emits one container per
+  // level, the first matching key is unambiguous.
+  for (;;) {
+    const childKeys = Object.keys(node)
+    const levelKey = childKeys.find((k) => /^level\d+$/.test(k))
+    if (levelKey === undefined) break
+    node = node[levelKey] as Record<string, unknown>
   }
-  // Mutate the first leaf we see in this node.
+  // Mutate the first leaf in the field-bearing parent.
   for (const k of Object.keys(node)) {
     node[k] = newValue
     break

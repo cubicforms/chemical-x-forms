@@ -1,15 +1,99 @@
-# Advanced validation patterns
+# Async validation
 
 Chemical X treats validation as schema-driven: whatever rules your
-schema library can express, `handleSubmit` / `validate()` will apply.
-This recipe covers three patterns that come up often.
+schema library can express, `handleSubmit` / `validate()` apply.
+Phase 5.6 lands **first-class async validation** — the
+`AbstractSchema.validateAtPath` contract is Promise-returning, so both
+adapters (zod v3 and v4) accept `.refine(async ...)` /
+`.superRefine(async ...)` and all the downstream APIs wait for those
+to settle.
 
-> **Async validators are not yet supported.** `validateAtPath` is
-> synchronous — zod's `.refine(async ...)` and `.transform(async ...)`
-> throw at runtime. Adding async validation is a planned follow-up.
-> For now, run async checks inside your `handleSubmit` callback and
-> feed the result into `setFieldErrorsFromApi` — see the server-errors
-> recipe.
+## Async refinements
+
+Write refinements exactly as you would synchronously; drop `async`
+in:
+
+```ts
+import { z } from 'zod'
+import { useForm } from '@chemical-x/forms/zod'
+
+const signupSchema = z.object({
+  email: z
+    .string()
+    .email()
+    .refine(async (value) => {
+      const res = await fetch(`/api/email-available?e=${encodeURIComponent(value)}`)
+      const { available } = (await res.json()) as { available: boolean }
+      return available
+    }, 'Email already registered'),
+  password: z.string().min(8),
+})
+
+const { handleSubmit, fieldErrors } = useForm({ schema: signupSchema, key: 'signup' })
+```
+
+`handleSubmit` awaits the async parse internally — the submit handler
+dispatches to `onSubmit` / `onError` only after every refinement has
+settled.
+
+## Reactive `validate()` — pending state
+
+The reactive `validate()` ref carries a `pending` flag so templates
+can show "checking…" UI while the async parse is in flight:
+
+```vue
+<script setup lang="ts">
+const { validate } = useForm({ schema: signupSchema, key: 'signup' })
+const status = validate()
+</script>
+
+<template>
+  <p v-if="status.pending">Checking…</p>
+  <p v-else-if="status.success">Looks good!</p>
+  <ul v-else>
+    <li v-for="e in status.errors" :key="e.message">{{ e.message }}</li>
+  </ul>
+</template>
+```
+
+When the form mutates, `pending` flips back to `true` and a fresh
+validation kicks off; stale in-flight runs are dropped via a
+generation counter so an older "taken@" response can't clobber a
+newer "alice@" result.
+
+## Imperative `validateAsync(path?)` — one-shot
+
+For flows where you need to `await` a single validation run (server
+round-trips, multi-step forms, non-submit buttons), call the
+imperative helper:
+
+```ts
+const { validateAsync, fieldErrors } = useForm({ schema, key: 'signup' })
+
+async function onContinueClick() {
+  const result = await validateAsync()
+  if (!result.success) {
+    // fieldErrors is already populated — or inspect result.errors directly.
+    return
+  }
+  goToNextStep()
+}
+```
+
+`validateAsync(path)` validates the subtree at `path`, mirroring the
+reactive `validate(path)` surface.
+
+## `isValidating`
+
+`isValidating` is a reactive boolean that's `true` while any
+validation call — `validate()` re-run, `validateAsync(...)`, or the
+pre-submit validation inside `handleSubmit` — is in flight. Use it to
+disable buttons or show inline spinners without plumbing your own
+tracking state:
+
+```vue
+<button :disabled="isValidating || isSubmitting">Continue</button>
+```
 
 ## Cross-field validation with zod `.refine()`
 
@@ -28,16 +112,14 @@ const schema = z
     message: 'Passwords do not match',
     path: ['passwordConfirmation'],
   })
-
-const form = useForm({ schema, key: 'signup' })
 ```
 
-The error lands on `fieldErrors.passwordConfirmation` — the `path` in
-`.refine`'s options tells zod where to attribute the issue.
+Sync refinements work alongside async ones — the adapter's
+`safeParseAsync` call handles both uniformly.
 
 ## Chained validators
 
-Compose multiple sync refines by chaining:
+Compose multiple refines by chaining:
 
 ```ts
 const schema = z
@@ -56,8 +138,9 @@ const schema = z
 ```
 
 Zod runs refines in declaration order; a failure in an earlier refine
-does NOT short-circuit later ones by default. If you need short-circuit
-semantics, use `z.superRefine` with an early `ctx.addIssue + ctx.abort`.
+does NOT short-circuit later ones by default. Use `z.superRefine` with
+an early `ctx.addIssue + ctx.abort` if you want short-circuit
+semantics.
 
 ## Field-specific validation messages
 
@@ -96,45 +179,53 @@ the active branch from the discriminator key in the current form value
 and validates against only that branch's schema. Switch the `type`
 field and the next `validate()` call uses the new branch.
 
-## Doing async work from `handleSubmit`
+## Combining async validation with server errors
 
-Until async validators land, the pattern is:
+Async validation at the **schema** level covers things the schema
+knows about (uniqueness checks, allow-lists). Server errors —
+responses from a real POST — still flow through
+`setFieldErrorsFromApi`:
 
 ```ts
-const onSubmit = form.handleSubmit(async (values) => {
-  // 1. Your schema has already validated the shape. If you need an
-  //    async check (uniqueness, remote allow-list), do it now.
-  const emailTaken = await checkEmailAvailability(values.email)
-  if (emailTaken) {
-    form.setFieldErrors([
-      { path: ['email'], message: 'That email is already taken', formKey: form.key },
-    ])
-    return
+const onSubmit = handleSubmit(async (values) => {
+  try {
+    await $fetch('/api/signup', { method: 'POST', body: values })
+  } catch (err) {
+    if (err.statusCode === 422) {
+      // Map the server's error payload into fieldErrors and surface
+      // the first bad field.
+      setFieldErrorsFromApi(err.data)
+      focusFirstError({ preventScroll: true })
+    }
   }
-
-  // 2. Proceed with the real request.
-  await $fetch('/api/signup', { method: 'POST', body: values })
 })
 ```
 
-`isSubmitting` is true for the full duration including your async
-check, so UI gated on `isSubmitting` works correctly without
+`isSubmitting` stays `true` across the full handler (schema
+validation + server round-trip), so UI gated on it works without
 extra wiring.
 
-## Why not async refines today?
+## What `getInitialState` does NOT do
 
-Supporting async refines requires:
+The contract change only covers `validateAtPath`. `getInitialState`
+stays synchronous — it walks the schema shape to produce blank
+defaults, which doesn't benefit from async. An async
+`getInitialState` would also make SSR more expensive: the server
+currently resolves initial form state synchronously inside Vue's
+setup.
 
-- `validateAtPath` returning a `Promise<ValidationResponse>` instead
-  of a synchronous one. Every caller (the `validate()` reactive ref,
-  `handleSubmit`, `runValidation`) has to `await` the result.
-- Care about overlapping invocations — a user typing quickly into an
-  async-validated field would fire multiple concurrent checks that
-  could resolve out of order.
-- A cancellation story for stale in-flight validations.
+If you need to seed the form from an async source (API call), do it
+in a `watch` outside of `useForm`:
 
-This is a genuinely breaking change to the core (every current caller
-assumes sync validation), so it's deferred to a future release with
-proper regression coverage. The `setFieldErrors` /
-`setFieldErrorsFromApi` bridge from `handleSubmit` is the supported
-interim answer.
+```ts
+const form = useForm({ schema, key: 'profile' })
+
+onMounted(async () => {
+  const profile = await $fetch('/api/profile')
+  form.reset(profile)
+})
+```
+
+`reset(next)` applies the `next` constraints over the schema's own
+defaults — same precedence rules as the `useForm({ initialState })`
+option, just deferred until the async source is ready.

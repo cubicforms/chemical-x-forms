@@ -246,10 +246,16 @@ piece of form state as a named field. Group by concern:
 
 ### Validation + submission
 
-| Member                     | Signature                                                      | What it does                                                          |
-| -------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `validate(path?)`          | `(path?) => Readonly<Ref<ValidationResponseWithoutValue>>`     | Reactive validation result. Recomputes on form mutation.              |
-| `handleSubmit(cb, onErr?)` | `(cb, onErr?) => (event?) => Promise<void>`                    | Builds a submit handler. See the lifecycle refs below.                |
+| Member                     | Signature                                                      | What it does                                                                            |
+| -------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `validate(path?)`          | `(path?) => Readonly<Ref<ReactiveValidationStatus<Form>>>`     | Reactive validation result. Re-runs on form mutation; value carries a `pending` flag.   |
+| `validateAsync(path?)`     | `(path?) => Promise<ValidationResponseWithoutValue<Form>>`     | Imperative one-shot. Resolves to the settled response.                                  |
+| `handleSubmit(cb, onErr?)` | `(cb, onErr?) => (event?) => Promise<void>`                    | Builds a submit handler. Awaits validation internally. See the lifecycle refs below.    |
+
+`ReactiveValidationStatus<Form>` is `PendingValidationStatus |
+SettledValidationStatus<Form>` — narrow on `status.pending` before
+trusting `success` / `errors` / `formKey`. See
+`docs/recipes/async-validation.md` for the pattern.
 
 ### Error store
 
@@ -275,6 +281,7 @@ piece of form state as a named field. Group by concern:
 | `isSubmitting`  | `Readonly<ComputedRef<boolean>>`    | True while the submit handler is running.                                                |
 | `submitCount`   | `Readonly<ComputedRef<number>>`     | Incremented once per call, regardless of outcome.                                        |
 | `submitError`   | `Readonly<ComputedRef<unknown>>`    | Whatever the callback threw; null on success. Cleared on every new submission.           |
+| `isValidating`  | `Readonly<ComputedRef<boolean>>`    | True while any validation run (reactive, imperative, or pre-submit) is in flight.        |
 
 ### Reset
 

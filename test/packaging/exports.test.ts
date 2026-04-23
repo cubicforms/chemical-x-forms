@@ -18,7 +18,19 @@ const pkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf-8')) as
   exports: Record<string, { types?: string; import?: string; require?: string }>
 }
 
-describe.skipIf(!existsSync(distDir))('packaging: package.json exports', () => {
+/**
+ * After running `pnpm dev:prepare` or `pnpm nuxi prepare playground`,
+ * Nuxt's module-builder drops jiti-wrapped stubs into dist/ so the
+ * playground can resolve the module without a real build. Those stubs
+ * re-export from source via jiti and don't reflect the final published
+ * shape. Skip the packaging asserts in that case — `pnpm prepack` (or
+ * `pnpm check:size` which runs it) produces the real build.
+ */
+const isRealBuild =
+  existsSync(join(distDir, 'index.mjs')) &&
+  !readFileSync(join(distDir, 'index.mjs'), 'utf-8').includes('import jiti from')
+
+describe.skipIf(!existsSync(distDir) || !isRealBuild)('packaging: package.json exports', () => {
   it('main points at a file that exists', () => {
     expect(existsSync(join(repoRoot, pkg.main))).toBe(true)
   })

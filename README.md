@@ -7,7 +7,13 @@
 [![Nuxt][nuxt-src]][nuxt-href]
 
 **A fully type-safe, schema-driven form library that gives you superpowers**.<br>Comes with a minimal composition API that prioritizes developer experience and form correctness.<br><br>
-🚧 this library is not production ready _yet_.
+
+## 📦 Status
+
+**Public beta** (`0.8.0-beta`). The API is stable and under SemVer from
+`v1.0` onward — 0.x minor bumps may still include small breaking
+changes; each one lands with a migration note under
+[`docs/migration/`](./docs/migration). [What's new in 0.8.0-beta →](./CHANGELOG.md#v080-beta)
 <br><br>
 
 ## 🏔️ Features
@@ -16,8 +22,12 @@
 - **Compact API** – Minimal yet expressive: `useForm`, `register`, `handleSubmit`, `getFieldState`. Cross-form state isolation is built in (no shared path-keyed state between forms).
 - **Schema-agnostic, Zod-friendly** – The core only depends on an `AbstractSchema` contract. Zod v4 adapter at `/zod`, Zod v3 at `/zod-v3` — both physically isolated with `introspect.ts` quarantining internal access. Consumers pick the zod major they use.
 - **v-register Directive** – One SSR-safe directive; no per-input `v-model` + `@input` boilerplate.
-- **Full State Tracking** – Automatically tracks field state (value, touched, focused, dirty, errors, updatedAt, isConnected).
-- **Reactive Field Errors** – `fieldErrors` auto-populates on validation failure and clears on success; `setFieldErrorsFromApi` maps server 422 envelopes onto fields for inline display.
+- **Form-level aggregates** – `isDirty` and `isValid` are computed refs driven off `originals` + `fieldErrors`. Gate a "Save" button on `isDirty && isValid` without wiring per-field watchers.
+- **Submission lifecycle** – `isSubmitting`, `submitCount`, and `submitError` surface every outcome of `handleSubmit`. Spinner + per-click counter + reactive error banner without extra refs.
+- **Reset primitives** – `reset(next?)` re-seeds from schema defaults (or a constraint partial) and rebuilds the `originals` baseline. `resetField(path)` restores a single leaf or a whole sub-tree.
+- **Typed array helpers** – `append` / `prepend` / `insert` / `remove` / `swap` / `move` / `replace`, each narrowed to paths whose leaf is an array (`ArrayPath<Form>`) and values whose shape matches the element type (`ArrayItem<Form, Path>`). See the [dynamic-field-arrays recipe](./docs/recipes/dynamic-field-arrays.md).
+- **Full field-state tracking** – Per-path `value`, `touched`, `focused`, `blurred`, `isConnected`, `updatedAt`, `errors`.
+- **Reactive field errors** – `fieldErrors` auto-populates on validation failure and clears on success; [`setFieldErrorsFromApi`](./docs/recipes/server-errors.md) maps server 422 envelopes onto fields for inline display.
 - **Structured paths** – Field names with literal dots round-trip losslessly via array-form paths (`register(['user.name'])` vs `register(['user', 'name'])`). Dotted-string form still accepted for ergonomics.
 - **TypeScript-first** – Every strictness flag on (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`, branded `PathKey`/`FormKey`, no `any` in public surface).
   <br><br>
@@ -115,9 +125,9 @@ const planetState = getFieldState('planet')
 
 **Core API Functions**
 
-_**note**: detailed documentation coming soon_
+Comprehensive surface in [`docs/api.md`](./docs/api.md). Quick tour:
 
-`useForm(options)` – Initializes form state. `schema` is required; `key` is recommended on every form so multiple forms on a page don't share state.
+`useForm(options)` – Initializes form state. `schema` and `key` are both required.
 
 `v-register` – Custom, SSR-safe directive for registering components with Chemical X
 
@@ -189,11 +199,18 @@ const onSubmit = handleSubmit(async (values) => {
 
 ## 🥇 Advanced Features
 
-- **Fully SSR Safe** – Fully Nuxt 3-compatible with hydration-safe bindings.
+- **Fully SSR-safe** – Nuxt 3/4 + bare Vue 3 + `@vue/server-renderer`. Server-side form state round-trips via `renderChemicalXState` / `hydrateChemicalXState`. See the [SSR hydration recipe](./docs/recipes/ssr-hydration.md).
+- **Validation handling** – Schema validation errors populate `fieldErrors` automatically; `setFieldErrorsFromApi` hydrates server errors onto the same store.
+- **Discriminated unions** – Both Zod adapters introspect discriminated unions and validate against the active branch only.
+- **Performance** – Keystroke benchmark runs 7–10× faster than the pre-rewrite baseline. A CI job fails the run if the ratio drops.
+- **Custom adapters** – The `AbstractSchema` contract has three sync methods; see the [custom-adapter recipe](./docs/recipes/custom-adapter.md) for a Valibot-style walkthrough.
 
-- **Validation Handling** – Displays schema validation errors automatically.
+## 📚 Documentation
 
-- **Performance Optimizations** – Efficient reactive updates for optimal performance.
+- [`docs/api.md`](./docs/api.md) — every public export with signatures and return shapes
+- [`docs/recipes/`](./docs/recipes) — task-oriented walkthroughs (dynamic field arrays, server errors, SSR hydration, custom adapters, validation patterns)
+- [`docs/migration/`](./docs/migration) — per-release upgrade notes
+- [`CHANGELOG.md`](./CHANGELOG.md) — full release history
 
 <br>
 

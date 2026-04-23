@@ -50,6 +50,7 @@
     "test",
     "bench",
     "build.config.ts",
+    "vitest.config.ts",
     "playground",
     "eslint-plugin-nuxt.d.ts"
   ],

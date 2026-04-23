@@ -36,6 +36,25 @@ import type {
 } from '../types/types-api'
 
 export const assignKey: unique symbol = Symbol('_assign')
+
+/**
+ * Per-element bag of listener tuples added by the active directive
+ * variant in `created`. `vRegisterDynamic.beforeUnmount` drains the bag
+ * so reused elements (KeepAlive, v-show) don't accumulate orphaned
+ * handlers across activation cycles.
+ */
+const listenersKey: unique symbol = Symbol('cxListeners')
+
+type TrackedListener = {
+  event: string
+  handler: EventListener
+  // Explicitly `undefined`-able so `exactOptionalPropertyTypes` lets us
+  // stash tuples where the caller didn't pass options.
+  options: EventListenerOptions | undefined
+}
+
+type ListenerCarrier = { [listenersKey]?: TrackedListener[] }
+
 export function isRegisterValue<Value = unknown>(val: unknown): val is RegisterValue<Value> {
   if (typeof val !== 'object' || val === null) return false
   if (!('innerRef' in val)) return false
@@ -55,6 +74,23 @@ function addEventListener(
   options?: EventListenerOptions
 ): void {
   el.addEventListener(event, handler, options)
+  // Stash the tuple on the element so `beforeUnmount` can detach it.
+  // A bare `addEventListener` without tracking would leak across
+  // KeepAlive re-activations where the DOM node is reused.
+  const carrier = el as ListenerCarrier
+  const bag = carrier[listenersKey] ?? []
+  bag.push({ event, handler, options })
+  carrier[listenersKey] = bag
+}
+
+function removeTrackedListeners(el: Element): void {
+  const carrier = el as ListenerCarrier
+  const bag = carrier[listenersKey]
+  if (bag === undefined) return
+  for (const { event, handler, options } of bag) {
+    el.removeEventListener(event, handler, options)
+  }
+  delete carrier[listenersKey]
 }
 
 const getModelAssigner = (
@@ -428,6 +464,12 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
     callModelHook(el, binding, vnode, prevVNode, 'updated')
   },
   beforeUnmount(el, { value }) {
+    // Detach every listener the variant attached in `created`, regardless
+    // of whether the binding is still a valid RegisterValue. An element
+    // re-used by KeepAlive / v-show would otherwise double its listener
+    // count on the next activation cycle.
+    removeTrackedListeners(el)
+
     if (!isRegisterValue(value)) return
 
     value.deregisterElement(el)
@@ -459,6 +501,11 @@ const vRegisterFileNoop: RegisterModelDynamicCustomDirective = {
     }
   },
   beforeUnmount(el, { value }) {
+    // The file-input variant attaches no listeners, but we still drain
+    // the bag defensively — a runtime-typed `:type` binding that flipped
+    // from 'text' to 'file' on a reused element would have left the text
+    // variant's listeners attached.
+    removeTrackedListeners(el)
     if (!isRegisterValue(value)) return
     value.deregisterElement(el)
   },

@@ -99,8 +99,15 @@ describe('zod v4 adapter — transform / pipe', () => {
   })
 
   it('pipe rejects when the input schema fails, with the leaf path', () => {
+    // `z.string().transform(...).pipe(z.number())` ties the two ends
+    // together with a matching output → input type. The transform
+    // converts "42" → 42, "nope" → NaN; the downstream z.number() then
+    // either accepts or rejects.
     const schema = z.object({
-      ageStr: z.string().pipe(z.coerce.number().int()),
+      ageStr: z
+        .string()
+        .transform((s) => Number(s))
+        .pipe(z.number().refine((n) => !Number.isNaN(n), 'must be numeric')),
     })
     const adapter = zodAdapter(schema)('f')
     const bad = adapter.validateAtPath({ ageStr: 'not-a-number' }, undefined)
@@ -110,7 +117,10 @@ describe('zod v4 adapter — transform / pipe', () => {
 
   it('pipe succeeds end-to-end when the input parses through', () => {
     const schema = z.object({
-      ageStr: z.string().pipe(z.coerce.number()),
+      ageStr: z
+        .string()
+        .transform((s) => Number(s))
+        .pipe(z.number()),
     })
     const adapter = zodAdapter(schema)('f')
     const ok = adapter.validateAtPath({ ageStr: '42' }, undefined)

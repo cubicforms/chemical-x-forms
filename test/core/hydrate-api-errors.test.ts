@@ -126,4 +126,64 @@ describe('hydrateApiErrors (structured result)', () => {
       expect(result.errors.every((e) => e.formKey === 'custom-key')).toBe(true)
     })
   })
+
+  describe('DoS guardrails', () => {
+    it('rejects payloads whose entry count exceeds maxEntries', () => {
+      const big: Record<string, string> = {}
+      for (let i = 0; i < 1200; i++) big[`field_${i}`] = 'err'
+      const result = hydrateApiErrors(big, { formKey: 'f', maxEntries: 1000 })
+      expect(result.ok).toBe(false)
+      expect(result.errors).toEqual([])
+      expect(result.rejected).toContain('exceeds maxEntries=1000')
+    })
+
+    it('defaults maxEntries to 1000 when not specified', () => {
+      const big: Record<string, string> = {}
+      for (let i = 0; i < 1001; i++) big[`k${i}`] = 'x'
+      const result = hydrateApiErrors(big, { formKey: 'f' })
+      expect(result.ok).toBe(false)
+      expect(result.rejected).toContain('1001 entries')
+    })
+
+    it('accepts payloads up to maxEntries inclusive', () => {
+      const payload: Record<string, string> = {}
+      for (let i = 0; i < 1000; i++) payload[`k${i}`] = 'msg'
+      const result = hydrateApiErrors(payload, { formKey: 'f', maxEntries: 1000 })
+      expect(result.ok).toBe(true)
+      expect(result.errors).toHaveLength(1000)
+    })
+
+    it('drops individual keys that exceed maxPathDepth; keeps the rest', () => {
+      // Depth cap is per-key — a single deep path is dropped but other
+      // well-formed entries still apply. Consumers who want stricter
+      // rejection can compare `errors.length` to entry count.
+      const payload = {
+        'a.b.c.d.e': 'shallow',
+        'x.x.x.x.x.x.x.x.x.x': 'too deep',
+      }
+      const result = hydrateApiErrors(payload, { formKey: 'f', maxPathDepth: 6 })
+      expect(result.ok).toBe(true)
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0]?.message).toBe('shallow')
+    })
+
+    it('defaults maxPathDepth to 32 when not specified', () => {
+      const segments = Array.from({ length: 40 }, (_, i) => `s${i}`).join('.')
+      const payload = { [segments]: 'deep' }
+      const result = hydrateApiErrors(payload, { formKey: 'f' })
+      expect(result.ok).toBe(true)
+      expect(result.errors).toHaveLength(0)
+    })
+
+    it('counts numeric-like segments the same as string segments against the depth cap', () => {
+      // `'a.0.b'` canonicalises to three segments, same as `'a.x.b'`. The
+      // cap treats them uniformly — there is no separate "numeric-index"
+      // budget.
+      const payload = { 'a.0.1.2.3.4.5.6': 'ok' }
+      const result = hydrateApiErrors(payload, { formKey: 'f', maxPathDepth: 8 })
+      expect(result.errors).toHaveLength(1)
+      const dropResult = hydrateApiErrors(payload, { formKey: 'f', maxPathDepth: 7 })
+      expect(dropResult.errors).toHaveLength(0)
+    })
+  })
 })

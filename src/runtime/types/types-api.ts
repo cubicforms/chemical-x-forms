@@ -337,9 +337,16 @@ export type UseAbstractFormReturnType<
    * `{ error: { details } }` envelope or a raw `{ path: [msg] }` record,
    * maps it to `ValidationError[]`, stamps the current form key, and calls
    * `setFieldErrors`. Returns the produced errors for downstream use.
+   *
+   * The optional `limits` object caps entry count and path depth so
+   * attacker-controlled payloads (gateway passthroughs, untrusted
+   * microservices) can't DoS the form. Defaults: 1 000 entries, depth 32.
+   * Over-budget payloads are rejected wholesale; over-depth individual
+   * keys are dropped but the rest of the payload still applies.
    */
   setFieldErrorsFromApi: (
-    payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined
+    payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined,
+    limits?: { maxEntries?: number; maxPathDepth?: number }
   ) => ValidationError[]
 
   // --- Form-level aggregates ---

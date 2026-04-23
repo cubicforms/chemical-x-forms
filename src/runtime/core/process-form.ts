@@ -12,7 +12,11 @@ import type {
 import type { GenericForm } from '../types/types-core'
 import type { FormState } from './create-form-state'
 import { SubmitErrorHandlerError } from './errors'
-import { hydrateApiErrors, type HydrateApiErrorsResult } from './hydrate-api-errors'
+import {
+  hydrateApiErrors,
+  type HydrateApiErrorsOptions,
+  type HydrateApiErrorsResult,
+} from './hydrate-api-errors'
 import { canonicalizePath, type Path } from './paths'
 
 /**
@@ -131,11 +135,21 @@ export function buildProcessForm<F extends GenericForm>(state: FormState<F>) {
    * setFieldErrorsFromApi accepts an API-shaped payload, hydrates it, and
    * populates the form's error map. Returns the structured hydrate result
    * so the caller can detect malformed payloads.
+   *
+   * The optional `limits` object caps entries and path depth — see
+   * `HydrateApiErrorsOptions`. Passing untrusted / gateway-passthrough
+   * payloads without narrower caps is a DoS surface; defaults (1 000
+   * entries, depth 32) are conservative but consumers who know their
+   * server should tune them.
    */
   function setFieldErrorsFromApi(
-    payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined
+    payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined,
+    limits?: Omit<HydrateApiErrorsOptions, 'formKey'>
   ): HydrateApiErrorsResult {
-    const result = hydrateApiErrors(payload, { formKey: state.formKey })
+    const result = hydrateApiErrors(payload, {
+      formKey: state.formKey,
+      ...(limits ?? {}),
+    })
     if (result.ok) {
       state.setAllErrors(result.errors)
     }

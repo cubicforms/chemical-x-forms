@@ -100,8 +100,9 @@ export function useAbstractForm<
   // wanting the structured result should call the underlying hydrate helper
   // directly.
   const setFieldErrorsFromApi = (
-    payload: Parameters<typeof setFromApiBuilt>[0]
-  ): ValidationError[] => setFromApiBuilt(payload).errors
+    payload: Parameters<typeof setFromApiBuilt>[0],
+    limits?: Parameters<typeof setFromApiBuilt>[1]
+  ): ValidationError[] => setFromApiBuilt(payload, limits).errors
 
   // --- getValue / setValue (overloaded) ---
   function getValueImpl(

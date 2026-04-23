@@ -19,6 +19,41 @@ export type HydrateApiErrorsResult = {
 }
 
 /**
+ * Guardrails for untrusted API error payloads. A misbehaving (or
+ * hostile) server can emit large or deeply-nested detail maps; applying
+ * them to form state is O(entries × depth) in the worst case. Hitting
+ * either ceiling causes the hydrator to reject the payload wholesale —
+ * partial application would silently apply some errors and drop others,
+ * which is worse for debugging than a clean rejection.
+ */
+export type HydrateApiErrorsOptions = {
+  readonly formKey: FormKey
+  /**
+   * Maximum number of distinct keys accepted in the details record.
+   * Defaults to 1 000. Raise for trusted-backend integrations that
+   * legitimately need more; lower for gateway-passthrough code where
+   * the payload might be attacker-shaped.
+   */
+  readonly maxEntries?: number
+  /**
+   * Maximum number of path segments per key. Defaults to 32 — deeper
+   * than any realistic form schema. Keys that exceed it are dropped
+   * with the rest of the payload so the failure is visible (vs. a
+   * silent partial apply).
+   */
+  readonly maxPathDepth?: number
+}
+
+/**
+ * Default caps. Conservative; consumers who deliberately ship larger
+ * payloads can override on a per-call basis.
+ */
+export const HYDRATE_API_ERRORS_DEFAULTS = {
+  maxEntries: 1000,
+  maxPathDepth: 32,
+} as const
+
+/**
  * Normalise an API validation-error payload into `ValidationError[]`.
  *
  * Accepts:
@@ -46,8 +81,11 @@ export type HydrateApiErrorsResult = {
  */
 export function hydrateApiErrors(
   payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined | unknown,
-  options: { formKey: FormKey }
+  options: HydrateApiErrorsOptions
 ): HydrateApiErrorsResult {
+  const maxEntries = options.maxEntries ?? HYDRATE_API_ERRORS_DEFAULTS.maxEntries
+  const maxPathDepth = options.maxPathDepth ?? HYDRATE_API_ERRORS_DEFAULTS.maxPathDepth
+
   if (payload === null || payload === undefined) {
     return { ok: true, errors: [] }
   }
@@ -61,6 +99,18 @@ export function hydrateApiErrors(
   }
 
   const { details } = extraction
+  const entryCount = Object.keys(details).length
+  // Enforce the guardrails before we spend time walking the payload.
+  // Rejecting wholesale (not partial-applying) keeps the failure visible
+  // so consumers can tune the caps or investigate the server payload.
+  if (entryCount > maxEntries) {
+    return {
+      ok: false,
+      errors: [],
+      rejected: `payload has ${entryCount} entries, exceeds maxEntries=${maxEntries}`,
+    }
+  }
+
   const errors: ValidationError[] = []
   for (const [key, messages] of Object.entries(details)) {
     const messageList = Array.isArray(messages) ? messages : [messages]
@@ -76,6 +126,12 @@ export function hydrateApiErrors(
       if (err instanceof InvalidPathError) continue
       throw err
     }
+    // Per-path depth cap. We drop the offending key (rather than
+    // rejecting the whole payload) because a single stray deep path
+    // in an otherwise legitimate error set is still worth surfacing
+    // the rest. Consumers who want strict rejection can post-filter
+    // on `result.errors.length < details entryCount`.
+    if (segments.length > maxPathDepth) continue
     for (const message of messageList) {
       if (typeof message !== 'string' || message.length === 0) continue
       errors.push({

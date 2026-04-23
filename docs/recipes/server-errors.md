@@ -150,3 +150,58 @@ const onSubmit = form.handleSubmit(async (values) => {
   </p>
 </template>
 ```
+
+## Security considerations
+
+`setFieldErrorsFromApi` accepts arbitrary-shaped payloads from the
+server. If the server itself is trusted (it's your backend, your
+ORM, your error mapper), the defaults are fine. If the payload
+crosses an untrusted boundary — a gateway that forwards third-party
+validation errors, a federated API, a passthrough microservice —
+three things are worth knowing:
+
+1. **DoS surface.** The hydrator walks the whole details record. An
+   attacker-controlled payload with tens of thousands of keys, each
+   carrying a deep dotted path, costs memory and CPU on the client.
+   `setFieldErrorsFromApi` takes an optional second argument with
+   `maxEntries` (default 1 000) and `maxPathDepth` (default 32).
+   Over-entry payloads are rejected wholesale; over-depth individual
+   keys are dropped. Tighten the caps for gateway code:
+
+   ```ts
+   form.setFieldErrorsFromApi(response, { maxEntries: 50, maxPathDepth: 8 })
+   ```
+
+2. **Message content is rendered.** Vue escapes text content by
+   default — no XSS — but the error copy is still visible to your
+   user. An attacker-controlled `message` field can display misleading
+   UI text ("Your account has been suspended — click here to verify").
+   Validate the shape and length of server messages before binding.
+
+3. **Path-traversal into fields that don't exist.** The hydrator
+   accepts any string key. A malicious server could push an error
+   onto `users.0.adminPasswordHash`, which is harmless (the form has
+   no such field) but might confuse your UI's error surfacing. Either
+   parse the payload against a Zod schema before calling
+   `setFieldErrorsFromApi`, or post-filter the returned
+   `ValidationError[]` against your schema's known paths.
+
+Zod-parsing the response is the cleanest option — the details record
+becomes a typed `Record<string, string | string[]>`, and anything
+else fails at the boundary:
+
+```ts
+const ErrorPayload = z.object({
+  error: z.object({
+    details: z.record(
+      z.string(),
+      z.union([z.string(), z.array(z.string())])
+    ),
+  }),
+})
+
+const parsed = ErrorPayload.safeParse(response)
+if (parsed.success) {
+  form.setFieldErrorsFromApi(parsed.data, { maxEntries: 200 })
+}
+```

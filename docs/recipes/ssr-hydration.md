@@ -22,35 +22,18 @@ Nuxt differs.
 ```ts
 import { createSSRApp } from 'vue'
 import { renderToString } from '@vue/server-renderer'
-import { createChemicalXForms, renderChemicalXState } from '@chemical-x/forms'
+import {
+  createChemicalXForms,
+  escapeForInlineScript,
+  renderChemicalXState,
+} from '@chemical-x/forms'
 import App from './App.vue'
 
-/**
- * Escape a JSON string so it's safe to embed inside an inline <script> tag.
- * `JSON.stringify` alone is unsafe — a form value containing the literal
- * substring `</script>` would break out of the script tag and let arbitrary
- * markup take over. The five characters below are the well-known set; this
- * is the same approach React's `serialize-javascript` and Nuxt's payload
- * serialiser take.
- */
-function escapeForInlineScript(json: string): string {
-  return json.replace(/[<>&\u2028\u2029]/g, (char) => {
-    switch (char) {
-      case '<':
-        return '\\u003c'
-      case '>':
-        return '\\u003e'
-      case '&':
-        return '\\u0026'
-      case '\u2028':
-        return '\\u2028'
-      case '\u2029':
-        return '\\u2029'
-      default:
-        return char
-    }
-  })
-}
+// `escapeForInlineScript` ships with the library so every consumer uses
+// the same escape set. Plain `JSON.stringify` is NOT safe to inline —
+// a form value containing the literal `</script>` (or U+2028 / U+2029
+// line separators) would break out of the `<script>` tag and let
+// arbitrary markup take over.
 
 export async function render(url: string) {
   const app = createSSRApp(App)

@@ -94,6 +94,7 @@ import {
   useRegistry,
   renderChemicalXState,
   hydrateChemicalXState,
+  escapeForInlineScript,
   vRegister,
   canonicalizePath,
 } from '@chemical-x/forms'
@@ -134,6 +135,24 @@ for `JSON.stringify` into the SSR payload. Pair with
 ### `hydrateChemicalXState(app, payload)`
 
 Client-side: rehydrate forms from the serialized payload.
+
+### `escapeForInlineScript(json) → string`
+
+Takes a JSON string and escapes the five characters that would
+otherwise let a form value break out of an inline `<script>` tag:
+`<`, `>`, `&`, U+2028, U+2029. The output is still valid JSON — the
+unicode escapes parse back to the original characters when the client
+runs `JSON.parse(window.__STATE__)`.
+
+Pair with `renderChemicalXState` when you're hand-rolling SSR:
+
+```ts
+const payload = escapeForInlineScript(JSON.stringify(renderChemicalXState(app)))
+// `<script>window.__STATE__ = ${payload}</script>` is safe to inline.
+```
+
+Nuxt consumers don't need to call this — the Nuxt module serialises
+through `devalue`, which handles the escaping automatically.
 
 ### `vRegister`
 

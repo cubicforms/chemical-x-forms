@@ -30,6 +30,7 @@ export {
 export type { ChemicalXRegistry, SerializedFormData } from './runtime/core/registry'
 export { hydrateChemicalXState, renderChemicalXState } from './runtime/core/serialize'
 export type { SerializedChemicalXState } from './runtime/core/serialize'
+export { escapeForInlineScript } from './runtime/core/serialize-script'
 
 // The abstract useForm — works against any AbstractSchema implementation.
 // Zod-typed wrappers live at `/zod` (v4) and `/zod-v3`; this entry is the

@@ -1,5 +1,12 @@
 import type { z } from 'zod-v3'
-import type { FormKey, ValidationMode } from '../../types/types-api'
+import type {
+  FieldValidationConfig,
+  FormKey,
+  HistoryConfig,
+  OnInvalidSubmitPolicy,
+  PersistConfig,
+  ValidationMode,
+} from '../../types/types-api'
 
 export type UseFormConfigurationWithZod<Schema extends z.ZodType<unknown>, InitialState> = {
   schema: Schema extends z.ZodType<unknown>
@@ -12,6 +19,10 @@ export type UseFormConfigurationWithZod<Schema extends z.ZodType<unknown>, Initi
   key: FormKey
   initialState?: InitialState
   validationMode?: ValidationMode
+  onInvalidSubmit?: OnInvalidSubmitPolicy
+  fieldValidation?: FieldValidationConfig
+  persist?: PersistConfig
+  history?: HistoryConfig
 }
 
 // Recursively unwraps Zod types like ZodDefault, ZodOptional, ZodNullable, etc.

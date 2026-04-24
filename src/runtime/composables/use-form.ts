@@ -51,7 +51,17 @@ export function useForm<
     ? zodAdapter<Schema, Form, TypeWithNullableDynamicKeys<typeof schema>>(schema)
     : schema
 
+  // Spread the full configuration so opt-in options (`onInvalidSubmit`,
+  // `fieldValidation`, `persist`, `history`) reach useAbstractForm.
+  // The explicit overrides below narrow schema / initialState /
+  // validationMode to the shapes useAbstractForm expects.
   return useAbstractForm<Form, GetValueFormType>({
+    ...(configuration as UseFormConfiguration<
+      Form,
+      GetValueFormType,
+      AbstractSchema<Form, GetValueFormType>,
+      DeepPartial<Form>
+    >),
     schema: abstractSchema,
     initialState: configuration.initialState as DeepPartial<Form>,
     key: configuration.key,

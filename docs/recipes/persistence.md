@@ -1,102 +1,78 @@
-# Persistence (draft state across reloads)
+# Persist drafts across reloads
 
-Forms that take the user more than a minute to fill — multi-step
-onboarding, checkout, long surveys — should survive a navigation
-mistake or a browser refresh. Chemical X ships a `persist` option
-that writes the form state to the chosen backend on every mutation
-(debounced) and reads it back on mount.
-
-## Enabling it
+Long forms — multi-step onboarding, checkout, surveys — should
+survive a navigation mistake or a browser refresh. Opt in with one
+line:
 
 ```ts
-const form = useForm({
+useForm({
   schema,
   key: 'signup',
   persist: { storage: 'local' },
 })
 ```
 
-That's the 80% case: `localStorage`, default debounce, `clearOnSubmitSuccess`
-default on. Full shape:
+Every mutation writes (debounced) to the chosen backend; on next
+mount, the form hydrates from the saved payload. On a successful
+submit, the entry is cleared.
+
+## Full options
 
 ```ts
 persist: {
   storage: 'local' | 'session' | 'indexeddb' | FormStorage,
-  key?: string,                    // default: chemical-x-forms:${formKey}
-  debounceMs?: number,             // default 300
+  key?: string,                     // default: chemical-x-forms:${formKey}
+  debounceMs?: number,              // default 300
   include?: 'form' | 'form+errors', // default 'form'
-  version?: number,                // default 1 — bump to invalidate old entries
-  clearOnSubmitSuccess?: boolean,  // default true
+  version?: number,                 // default 1 — bump to invalidate old entries
+  clearOnSubmitSuccess?: boolean,   // default true
 }
 ```
 
 ## Picking a backend
 
-| Backend          | Quota                              | Sync/async | Serialisation       | Best for                                                                  |
-| ---------------- | ---------------------------------- | ---------- | ------------------- | ------------------------------------------------------------------------- |
-| `'local'`        | ~5 MB (browser-dependent)          | sync       | JSON string         | small forms, widest compatibility. Shared across tabs for the same origin. |
-| `'session'`      | ~5 MB                              | sync       | JSON string         | tab-scoped scratch state — closing the tab drops the entry.                |
-| `'indexeddb'`    | 50%+ of disk (tens-to-hundreds MB) | async      | structured clone    | large forms, `Date` / `Map` / `Set` / typed-array values, cross-tab state. |
-| `FormStorage`    | caller-defined                     | caller-defined (Promise-returning) | caller-defined | encrypted stores, cookie-backed stores, native-mobile bridges.             |
+| Backend       | Size budget                 | Sync/async | Best for                                                                |
+| ------------- | --------------------------- | ---------- | ----------------------------------------------------------------------- |
+| `'local'`     | ~5 MB                       | sync       | Small forms, widest compatibility. Shared across same-origin tabs.      |
+| `'session'`   | ~5 MB                       | sync       | Tab-scoped scratch state. Closes with the tab.                          |
+| `'indexeddb'` | 50%+ of disk                | async      | Large forms. `Date` / `Map` / `Set` / typed arrays round-trip verbatim. |
+| `FormStorage` | You decide                  | You decide | Encrypted stores, cookie-backed, native-mobile bridges.                 |
 
-### Size tradeoffs
+`'local'` and `'session'` go through `JSON.stringify` — non-JSON
+leaves lose fidelity. `'indexeddb'` uses the browser's structured-
+clone algorithm, so those leaves round-trip cleanly.
 
-All three built-in backends are dynamically imported — a consumer
-who picks `'local'` never pulls IndexedDB code into their bundle
-(Rollup's side-effect-free graph tree-shakes the unused adapters).
-Pick the smallest that fits.
+Only the backend you choose is bundled. Pick `'local'`, don't pay
+for the IndexedDB code.
 
-### JSON vs. structured clone
+## Bumping the version on schema change
 
-`'local'` and `'session'` use `JSON.stringify` / `JSON.parse`:
-`Date` / `Map` / `Set` / typed arrays round-trip as strings or
-objects. `'indexeddb'` uses the browser's structured-clone algorithm
-— fidelity is preserved. If your form has non-JSON leaves, pick
-`'indexeddb'`.
-
-## The "flash of default state"
-
-`IndexedDB` (and any custom async `FormStorage`) reads are async.
-`useForm` is synchronous inside Vue's setup context, so on mount
-the first render shows schema defaults — the persisted payload
-arrives one microtask later and swaps in via `applyFormReplacement`.
-
-For tiny forms where this matters (2-3 fields above the fold), use
-`'local'` or `'session'` — their reads are synchronous under the
-hood and the swap completes before paint. For larger forms,
-structure your UI so the flash is invisible: show a spinner until
-`isDirty` has a meaningful value, or default to rendering the form
-`display:none` until an `onMounted` + `nextTick` tick.
-
-## Versioning
-
-Any time you change the form's shape in a schema-incompatible way
-(rename a field, change a type), bump `persist.version`. Readers
-compare `v` on the payload and drop mismatched entries — the form
-starts from schema defaults instead of trying to parse stale data
-into a changed shape.
+When you rename a field or change a type, bump `persist.version`.
+Old payloads are dropped on read — users start from schema defaults
+instead of crashing on a shape mismatch.
 
 ```ts
-persist: {
-  storage: 'local',
-  version: 2,   // was 1; old entries are discarded on read
-}
+persist: { storage: 'local', version: 2 }
 ```
 
-## Clear-on-submit
+## Keeping the draft after submit
 
-Default behaviour: a successful submit removes the persisted entry.
-If the user's form "worked", there's no draft to recover on next
-mount.
+Default: a successful submit clears the entry. Set
+`clearOnSubmitSuccess: false` to keep it (useful for wizards with
+review pages, or if submit might return a retryable server error).
 
-To keep the entry (wizards with review pages, recover-from-refresh
-scenarios where submit returns a server error you want to retry),
-pass `clearOnSubmitSuccess: false`.
+## Including errors
 
-## Custom `FormStorage`
+Default `include: 'form'` persists just the values. Server-side
+validation errors on reload are usually stale and confusing.
 
-The escape hatch: implement the three-method contract and pass the
-object directly.
+For multi-step wizards where reconstructing errors is expensive,
+`include: 'form+errors'` persists and re-hydrates `fieldErrors`.
+
+## Custom backend
+
+The escape hatch — implement the three-method contract and pass the
+object directly:
 
 ```ts
 import type { FormStorage } from '@chemical-x/forms'
@@ -117,54 +93,41 @@ const encryptedStorage: FormStorage = {
 useForm({ schema, key: 'signup', persist: { storage: encryptedStorage } })
 ```
 
-`getItem` returns `unknown` so the adapter can hand back structured-
-cloned values (IDB) or parsed JSON (local/session) without a forced
-cast. The payload shape the library writes is versioned — your
-storage only has to round-trip whatever it receives from `setItem`.
+All three methods are Promise-returning so sync and async backends
+share one shape. `getItem` returns `unknown` so your backend can
+hand back whatever `setItem` received.
 
-## Including errors
+## Async backends + the "flash of default state"
 
-Default: `include: 'form'`. Errors on reload are usually stale —
-fresh validation fires on mount anyway, and reloading with a `422`
-in the store is just noise.
+IndexedDB (and any async custom `FormStorage`) can't deliver a value
+in time for the first render. Users see schema defaults for one
+microtask, then the persisted payload swaps in.
 
-Set `include: 'form+errors'` when the server-side error context is
-expensive to reconstruct (complex cross-field refinements, a
-multi-step wizard that validates server-side on each step). The
-adapter re-hydrates `fieldErrors` from the persisted entry.
+For small forms where that flash is jarring, stick to `'local'` or
+`'session'`. For larger forms, gate rendering on an `onMounted`
+tick or show a spinner until the first mutation settles.
 
-## SSR safety
+## SSR
 
-`persist` is gated behind `registry.isSSR`. On the server, no reads
-or writes happen — the first client render hydrates from SSR state
-(if any), then the persisted payload races in on the next microtask
-and wins if present. The hydration precedence is: **SSR state >
-persisted payload > schema defaults**.
+Persistence is automatically skipped on the server — no reads, no
+writes. On the client, SSR-hydrated state wins over persisted state
+if both are present.
 
-## What it doesn't do
+## Not included
 
+- **Encryption.** Built-in backends write plaintext. Sensitive
+  drafts need a custom `FormStorage` that encrypts on write.
+- **Schema migrations.** Bumping `version` drops old payloads
+  wholesale. If you need to rename a field without losing state,
+  read the raw entry yourself and massage it before calling
+  `reset()`.
 - **Cross-form coordination.** Each form persists independently.
-- **Per-field granularity.** The whole form (plus optionally
-  errors) is one blob.
-- **Schema migrations.** Bumping `version` drops the old payload
-  wholesale. For in-place migration (rename a field without
-  losing state), keep `version` stable and write your own hydration
-  path that reads the raw entry and massages it before `reset()`.
-- **Encryption.** The built-in backends write plain JSON or
-  structured-cloned values. Anything sensitive in a draft needs a
-  custom `FormStorage` that encrypts on write.
 
-## Caveats
+## Gotchas
 
-- **`localStorage` is synchronous — large writes block the main
-  thread.** Keep forms modest, or pick `'indexeddb'` if a single
-  write starts to exceed ~50 ms on a cold device.
-- **Safari private mode.** `localStorage.setItem` can throw a
-  `SecurityError` in some older Safari private-mode builds. The
-  adapter swallows it silently — the form keeps working; writes
-  just don't land. Document this for your Safari-heavy users.
-- **IndexedDB version bumps.** The library opens a shared DB
-  (`chemical-x-forms`) at version 1. Consumers who need a different
-  schema should wire a custom `FormStorage` (IDB is deliberately
-  minimal in the built-in adapter; we ship no indexes, no cursors,
-  no version upgrade hooks).
+- **`localStorage` blocks the main thread** on large writes. If
+  your writes exceed ~50 ms on a cold device, switch to
+  `'indexeddb'`.
+- **Safari private mode** can throw `SecurityError` on
+  `localStorage.setItem`. The adapter swallows it — the form stays
+  usable; writes just don't land.

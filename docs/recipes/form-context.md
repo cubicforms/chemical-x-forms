@@ -1,23 +1,15 @@
-# Form context for nested components
+# Form context in nested components
 
-A form's API (`register`, `getFieldState`, `handleSubmit`, …) normally
-comes from the `useForm` call that owns the form. Once you split that
-form across multiple components — a `FieldGroup`, a reusable `EmailRow`
-— every child needs the same API. Prop-threading works for a single
-level, but nested two or three levels deep it gets tedious.
+Splitting a form across components? Don't prop-drill `register` /
+`fieldErrors` / `handleSubmit` through every layer. Call
+`useFormContext()` in any descendant and get the same handle back.
 
-`useFormContext` solves this by letting descendants (or sibling
-components) resolve the ambient form without threading props.
+## The common case — ambient resolution
 
-## Ambient resolution (the common case)
-
-Call `useForm` in the ancestor that owns the form. Call
-`useFormContext` in any descendant. The child gets a handle that is
-type-identical to `useForm`'s return and reads / writes the same
-underlying state.
+Parent owns the form:
 
 ```vue
-<!-- SignupForm.vue — the owner -->
+<!-- SignupForm.vue -->
 <script setup lang="ts">
 import { useForm } from '@chemical-x/forms/zod'
 import { z } from 'zod'
@@ -28,7 +20,7 @@ interface Form {
 }
 
 const schema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   profile: z.object({ name: z.string(), age: z.number() }),
 })
 
@@ -47,8 +39,10 @@ const onSubmit = handleSubmit(async (values) => {
 </template>
 ```
 
+Any descendant grabs the same form:
+
 ```vue
-<!-- EmailRow.vue — resolves the nearest form via provide/inject -->
+<!-- EmailRow.vue -->
 <script setup lang="ts">
 import { useFormContext } from '@chemical-x/forms/zod'
 
@@ -69,21 +63,18 @@ const { register, fieldErrors } = useFormContext<Form>()
 </template>
 ```
 
-`useFormContext<Form>()` resolves whichever form the nearest ancestor
-`useForm({…})` call owns, via Vue's `provide` / `inject`. You supply
-the `Form` generic because Vue's `InjectionKey` erases it — the library
-can't recover the shape on your behalf.
+You supply the `Form` generic — Vue's injection system erases it,
+so the library can't recover your shape on your behalf. Other than
+that, `useFormContext<Form>()` returns an object type-identical to
+`useForm`'s return.
 
-## Explicit-key resolution (distant components)
+## Reaching a form that isn't an ancestor
 
-Sometimes the component that needs the form isn't a descendant — a
-sidebar status widget, a floating submit button at the app root, or
-anything sitting alongside the form in the component tree. Pass the
-form's key to `useFormContext` to bypass the ambient lookup and reach
-the form by its registry entry:
+Floating save buttons, sidebar status widgets, anything in a
+different branch of the component tree:
 
 ```vue
-<!-- FloatingSaveButton.vue — anywhere in the app -->
+<!-- FloatingSaveButton.vue (anywhere in the app) -->
 <script setup lang="ts">
 import { useFormContext } from '@chemical-x/forms/zod'
 
@@ -95,50 +86,45 @@ const { isDirty, isSubmitting, handleSubmit } = useFormContext<Form>('signup')
 <template>
   <button
     :disabled="!isDirty || isSubmitting"
-    @click="handleSubmit(onSubmit)()"
+    @click="handleSubmit(onSave)()"
   >
     Save
   </button>
 </template>
 ```
 
-The key is the same `key` you passed to the owning `useForm` call.
-If no form is registered under that key at the time `useFormContext`
-runs, it throws a descriptive error — you'll see which key was
-requested.
+Pass the same `key` you passed to `useForm({ key: 'signup' })`. If no
+form is registered under that key when the component mounts, you
+get a clear error naming the missing key.
 
 ## Lifetime
 
-Both resolution modes ref-count their consumer on the form's registry
-entry. That means:
+Both resolution modes ref-count on the form's registry entry. In
+practice:
 
-- The form's state survives until every component that reached it —
-  the owner plus every `useFormContext` consumer — has unmounted.
-- You don't have to coordinate teardown between parent and child; the
-  registry evicts the state after the last release.
-- A form accessed only by `useFormContext` calls (via an explicit key)
-  is kept alive by those calls while they're mounted, even if the
-  original `useForm` owner unmounts first.
+- The form survives until every component that reached it unmounts.
+- You don't coordinate cleanup — it just works.
+- A form accessed only by `useFormContext(key)` stays alive as long
+  as at least one consumer is mounted, even if the original
+  `useForm` owner unmounted first.
 
 ## Error messages
 
-`useFormContext()` throws in two cases:
+`useFormContext()` throws only in two cases:
 
-- **No ambient form**: you called `useFormContext()` without an
-  ancestor `useForm` and without an explicit key. The message names
-  both resolutions so you can pick either.
-
-- **Key not registered**: you called `useFormContext(key)` but no
-  form is registered under that key. The message includes the key
-  value so you can debug typos or mounting-order bugs.
+- **No ambient form** — you called `useFormContext()` with no
+  ancestor `useForm` and no key argument. The error names both
+  resolutions so you can pick either.
+- **Key not registered** — you called `useFormContext('key-name')`
+  but nothing is registered. The error includes the key value so
+  you can spot typos or mounting-order bugs.
 
 ## When not to use it
 
-If your form logic fits inside a single component, skip
-`useFormContext` — `useForm` is cheaper (no injection lookup, no
-extra ref-count) and the prop-free single-component shape is easier
-to read.
+If your form logic fits in one component, stick with `useForm`
+directly. `useFormContext` is a small reactive overhead you don't
+need when there's nothing to share.
 
-Use `useFormContext` when field components want to be reusable across
-multiple forms, or when a distant component needs read-only status
-(dirty, submitting, validation errors) of a form it doesn't own.
+Reach for it when field components are reusable across forms, or
+when a distant component needs read-only status (`isDirty`,
+`isSubmitting`, `fieldErrors`) of a form it doesn't own.

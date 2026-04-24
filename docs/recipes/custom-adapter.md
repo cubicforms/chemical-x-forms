@@ -1,46 +1,43 @@
-# Writing a custom adapter (AbstractSchema walkthrough)
+# Plug in your own schema library
 
-The core of `@chemical-x/forms` is schema-agnostic. Zod is just one
-implementation of an internal contract called `AbstractSchema`. If
-you're on Valibot, ArkType, Effect-Schema, or a hand-rolled validator,
-you can plug it in without forking the library.
-
-This recipe walks through building a minimal adapter against an
-imaginary schema library. Use it as a template — the real work is
-translating between your library's type-introspection primitives and
-the three methods below.
+Chemical X is schema-agnostic. Zod is just one implementation of
+the internal `AbstractSchema` contract. If you're on Valibot,
+ArkType, Effect-Schema, or a hand-rolled validator, wire yours in
+without forking the library.
 
 ## The contract
+
+Three methods:
 
 ```ts
 type AbstractSchema<Form, GetValueFormType = Form> = {
   getInitialState(config): InitialStateResponse<Form>
   getSchemasAtPath(path: string | Path): readonly unknown[]
-  validateAtPath(data: unknown, path: string | undefined): ValidationResponse<Form>
+  validateAtPath(data: unknown, path: string | undefined): Promise<ValidationResponse<Form>>
 }
 ```
 
-Three methods, all synchronous:
+- **`getInitialState({ useDefaultSchemaValues, constraints, validationMode })`**
+  — returns `{ data, errors, success, formKey }`. Called at form
+  creation and on `reset()`.
+- **`getSchemasAtPath(path)`** — returns the list of sub-schemas
+  at `path`. Advanced introspection hook; return `[]` if you don't
+  use it.
+- **`validateAtPath(data, path?)`** — returns
+  `Promise<ValidationResponse>`. When `path` is `undefined`,
+  validate the whole form.
 
-1. `getInitialState({ useDefaultSchemaValues, constraints, validationMode })`
-   — returns `{ data, errors, success, formKey }`. Called at form
-   creation and on every `reset()`. `constraints` is the caller's
-   `initialState` / `reset(x)` argument; your adapter decides how to
-   merge it over the schema's defaults.
+`validateAtPath` must NOT throw. Return `{ success: false, errors
+}` for validation failures; return (or reject with) a synthetic
+error only if your parser is genuinely misbehaving.
 
-2. `getSchemasAtPath(path)` — returns the list of sub-schemas that live
-   at `path`. Mostly an introspection hook for advanced recipes;
-   returning `[]` is fine if you don't need it.
+## A minimal Valibot-ish adapter
 
-3. `validateAtPath(data, path?)` — returns `{ data, errors, success,
-   formKey }`. When `path` is `undefined`, validate the whole form.
-
-## A minimal Valibot-like adapter
-
-Assume our imaginary library exposes:
+Assume your library exposes:
 
 - `schema.defaultValues()` returning the schema's typed defaults.
-- `schema.parse(data)` returning `{ success: true, data }` or
+- `schema.parse(data)` returning
+  `{ success: true, data }` or
   `{ success: false, issues: { path: string[]; message: string }[] }`.
 
 ```ts
@@ -54,38 +51,28 @@ import type {
 import type { DeepPartial, GenericForm } from '@chemical-x/forms'
 
 export function myLibAdapter<F extends GenericForm>(
-  schema: MyLibSchema<F>
+  schema: MyLibSchema<F>,
 ): AbstractSchema<F, F> {
   return {
     getInitialState({ constraints }): InitialStateResponse<F> {
       const defaults = schema.defaultValues()
       const merged = mergeDeepPartial(defaults, constraints)
-      return {
-        data: merged,
-        errors: undefined,
-        success: true,
-        formKey: '',
-      }
+      return { data: merged, errors: undefined, success: true, formKey: '' }
     },
 
     getSchemasAtPath(_path) {
       return []
     },
 
-    validateAtPath(data, _path): ValidationResponse<F> {
+    async validateAtPath(data, _path): Promise<ValidationResponse<F>> {
       const result = schema.parse(data)
       if (result.success) {
-        return {
-          data: result.data as F,
-          errors: undefined,
-          success: true,
-          formKey: '',
-        }
+        return { data: result.data as F, errors: undefined, success: true, formKey: '' }
       }
       return {
         data: undefined,
         errors: result.issues.map<ValidationError>((issue) => ({
-          path: issue.path, // readonly (string | number)[]
+          path: issue.path,
           message: issue.message,
           formKey: '',
         })),
@@ -97,16 +84,18 @@ export function myLibAdapter<F extends GenericForm>(
 }
 
 function mergeDeepPartial<T>(base: T, override?: DeepPartial<T>): T {
-  // …same shape as any immutable deep-merge; see test/utils/fake-schema.ts
-  // for a dependency-free implementation.
+  // Dependency-free deep merge; see test/utils/fake-schema.ts for a
+  // reference implementation.
 }
 ```
 
-The `formKey` field on every response stays empty — the composable
-stamps the real key in after validation. This is an implementation
-quirk of how the schema can't know which form it's attached to.
+Leave `formKey` as `''` — the composable stamps the real key in.
 
-## Wiring to useForm
+`validateAtPath` is declared `async` so the return type is
+automatically Promise-wrapped. Sync-under-the-hood parsers pay one
+microtask and the caller's code works identically.
+
+## Wire it to useForm
 
 ```ts
 // useForm.ts
@@ -128,62 +117,52 @@ export function useForm<F extends GenericForm>(options: {
 }
 ```
 
-That's the whole integration. Consumers call `useForm({ schema,
-key })` exactly like they would with the Zod subpath; the typing flows
-from your library's schema shape through `AbstractSchema` into the
-composable's public surface.
+Consumers call your `useForm({ schema, key })` exactly like the Zod
+one. The typing flows from your schema shape through
+`AbstractSchema` into the public API.
 
 ## Validating a single path
 
-`validateAtPath(data, path)` is called with a dotted-string `path` when
-the form is asking "is this one field valid right now?". If your
-library only exposes full-object parse, you have two options:
+When the library needs to re-check just one field, it passes a
+dotted `path`. Two implementation strategies:
 
-1. Run the full parse, filter `issues` by `path`, return only the
-   matching issues. This is what the Zod v3 adapter does in some
-   places. Simple, correct, but does more work than necessary.
+1. **Full parse + filter issues** — run the whole parse, return
+   only the issues that match. Simpler; extra work per call.
+2. **Walk to the sub-schema, validate only that** — matches the
+   Zod v4 adapter's approach. Faster; needs your library's
+   introspection.
 
-2. Walk your schema tree to find the sub-schema at `path`, then
-   validate only the sub-value. This matches what the Zod v4 adapter
-   does via `getSchemasAtPath`. Faster but requires knowing your
-   library's shape.
+Start with (1). Upgrade if profiling shows it matters.
 
-Start with option 1 — correctness over speed — and upgrade if
-profiling shows it matters.
+## Type inference
 
-## Types-only vs runtime constraints
-
-The abstract `useForm` accepts any `AbstractSchema<Form, Form>` — the
-type parameter is free. Your adapter is what narrows `Form` to whatever
-your schema produces at runtime:
+The abstract `useForm` accepts any `AbstractSchema<Form, Form>`.
+Your adapter is what pins `Form` to whatever your schema produces:
 
 ```ts
-// Zod v4's zodAdapter uses z.output<Schema>:
+// Zod v4:
 type Form = z.output<typeof schema>
-// Valibot would be:
+// Valibot:
 type Form = v.InferOutput<typeof schema>
 // Hand-rolled:
-type Form = { email: string; password: string } // declared explicitly
+type Form = { email: string; password: string }
 ```
 
-Because the core is schema-agnostic, `useForm`'s return type
-(`UseAbstractFormReturnType<Form>`) carries no schema-library-specific
-types. The whole surface works identically regardless of which adapter
-produced the `AbstractSchema`.
+`useForm`'s return type (`UseAbstractFormReturnType<Form>`)
+carries no schema-library-specific types — the public surface is
+identical regardless of adapter.
 
 ## Testing your adapter
 
-The v4 adapter's test suite (`test/adapters/zod-v4/`) is the template.
 Minimum coverage:
 
-- `getInitialState` returns schema defaults when `constraints` is
-  absent.
+- `getInitialState` returns schema defaults when no `constraints`.
 - `getInitialState` merges `constraints` over defaults.
 - `validateAtPath` returns `{ success: true }` for valid input.
-- `validateAtPath` returns structured `ValidationError[]` for invalid
-  input.
+- `validateAtPath` returns structured `ValidationError[]` for invalid input.
 - `validateAtPath(undefined)` validates the whole form.
 
-A property test over random forms is useful if your adapter does
-non-trivial path walking — `test/core/diff-apply.property.test.ts`
-shows the pattern with `@fast-check/vitest`.
+The v4 adapter's test suite (`test/adapters/zod-v4/`) is the
+template. Add a fast-check property test over random forms if your
+adapter does non-trivial path walking —
+`test/core/diff-apply.property.test.ts` shows the pattern.

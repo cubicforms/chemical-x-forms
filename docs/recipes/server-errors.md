@@ -1,47 +1,12 @@
-# Server-side errors (HTTP 4xx validation failures)
+# Server errors (HTTP 4xx validation failures)
 
-Client-side validation rejects bad input before it leaves the browser,
-but the server has rules the client doesn't know about: "email already
-taken", "coupon expired", "we couldn't reach the payment provider".
-Those errors arrive after the request — `useForm` surfaces them via
+Client-side schema validation rejects bad shape before the request
+leaves the browser. The server has rules the client doesn't —
+"email already taken", "coupon expired", "we couldn't reach the
+payment provider" — and those come back as `fieldErrors` via
 `setFieldErrorsFromApi`.
 
-## The envelope shapes we accept
-
-`setFieldErrorsFromApi(payload)` understands two shapes. The first is a
-wrapped envelope:
-
-```ts
-{
-  error: {
-    details: {
-      email: 'already taken',
-      password: ['too short', 'must contain a digit'],
-    }
-  }
-}
-```
-
-The second is the bare details record (useful when your backend
-serialises errors directly):
-
-```ts
-{
-  email: 'already taken',
-  password: ['too short', 'must contain a digit'],
-}
-```
-
-Keys are field paths in dotted form (`'user.email'`, `'items.0.qty'`).
-Values can be either a single string or an array of strings — the
-helper normalises both into `ValidationError[]`.
-
-Paths not covered by either form (numbers, booleans, other shapes)
-result in `setFieldErrorsFromApi` returning an empty array and leaving
-the form's error store untouched. Inspect the return to detect that
-case.
-
-## Happy-path example
+## The usual case
 
 ```vue
 <script setup lang="ts">
@@ -59,13 +24,11 @@ const onSubmit = form.handleSubmit(async (values) => {
   try {
     await $fetch('/api/signup', { method: 'POST', body: values })
   } catch (err: any) {
-    // 422 Unprocessable Entity — your server's validation disagreed.
     if (err.statusCode === 422) {
       form.setFieldErrorsFromApi(err.data)
       return
     }
-    // Other errors propagate as submitError.
-    throw err
+    throw err // Other errors flow through to `submitError`.
   }
 })
 </script>
@@ -87,57 +50,95 @@ const onSubmit = form.handleSubmit(async (values) => {
 </template>
 ```
 
-Three details worth pointing out:
+By the time your callback runs, client-side schema validation has
+already passed — `setFieldErrorsFromApi` is genuinely for server-
+only failures. The previous run's errors stay put until you
+explicitly clear them or the user interacts.
 
-1. `handleSubmit` re-runs schema validation first. By the time your
-   callback fires, client-side validation has passed. Anything the
-   server rejects is genuinely server-only.
+## Payload shapes
 
-2. On a successful response, `handleSubmit` clears any pre-existing
-   errors. On a failed response, the previous errors stay unless you
-   explicitly clear them (via `clearFieldErrors` or `reset`).
+Two shapes work out of the box. A wrapped envelope:
 
-3. `submitError` captures the thrown error for the "didn't handle it"
-   path — showing a top-level banner when the error isn't a 422 is a
-   one-liner.
+```ts
+{
+  error: {
+    details: {
+      email: 'already taken',
+      password: ['too short', 'must contain a digit'],
+    },
+  },
+}
+```
+
+Or a bare details record:
+
+```ts
+{
+  email: 'already taken',
+  password: ['too short', 'must contain a digit'],
+}
+```
+
+Keys are dotted paths (`'user.email'`, `'items.0.qty'`). Values can
+be a string or an array of strings — both normalise into
+`ValidationError[]`.
+
+Anything else — numbers, booleans, nested objects — returns an
+empty array and leaves your error store untouched. Inspect the
+return to branch on that case.
+
+## Pairing with focus-on-error
+
+A 422 with no visible focus is invisible to screen-reader users and
+easy to miss for sighted users scrolled past the error. Hydrate
++ focus in the same block:
+
+```ts
+import { focusFirstError } from '@chemical-x/forms'
+
+const onSubmit = form.handleSubmit(async (values) => {
+  try {
+    await $fetch('/api/signup', { method: 'POST', body: values })
+  } catch (err: any) {
+    if (err.statusCode === 422) {
+      form.setFieldErrorsFromApi(err.data)
+      form.focusFirstError({ preventScroll: true })
+      form.scrollToFirstError({ block: 'center', behavior: 'smooth' })
+    }
+  }
+})
+```
 
 ## Mixing server + client errors
 
-Suppose the server wants to say "your coupon is invalid, but let the
-user pick a new one":
+To replace one field's error without wiping the rest:
 
 ```ts
 if (err.statusCode === 422) {
-  // Clear any pre-existing errors on `coupon` first, so the new one
-  // replaces the old.
   form.clearFieldErrors('coupon')
-  // Then add server-reported errors. addFieldErrors preserves any
-  // other errors currently in the store.
   form.addFieldErrors(
     (err.data.coupon ?? []).map((message: string) => ({
       path: ['coupon'],
       message,
       formKey: form.key,
-    }))
+    })),
   )
 }
 ```
 
-`setFieldErrorsFromApi` is still the right default for "replace
-everything from the server payload"; `addFieldErrors` is for finer
-control.
+`setFieldErrorsFromApi` is the right default for "replace everything
+from this payload". `addFieldErrors` + `clearFieldErrors` are for
+finer control.
 
-## Handling non-field errors
+## Non-field errors
 
-Some errors aren't tied to a field — "our payment provider is down",
-"try again in 30 seconds". These belong in `submitError`, not
-`fieldErrors`:
+Some server errors aren't tied to a field — rate limits, provider
+outages. They belong in `submitError`, not `fieldErrors`:
 
 ```ts
 const onSubmit = form.handleSubmit(async (values) => {
   const res = await $fetch('/api/signup', { method: 'POST', body: values })
   if (!res.ok) {
-    // Throwing keeps submitError populated for a top-level banner.
     throw new Error(res.error ?? 'Something went wrong. Try again shortly.')
   }
 })
@@ -151,57 +152,44 @@ const onSubmit = form.handleSubmit(async (values) => {
 </template>
 ```
 
-## Security considerations
+## Untrusted payloads
 
-`setFieldErrorsFromApi` accepts arbitrary-shaped payloads from the
-server. If the server itself is trusted (it's your backend, your
-ORM, your error mapper), the defaults are fine. If the payload
-crosses an untrusted boundary — a gateway that forwards third-party
-validation errors, a federated API, a passthrough microservice —
-three things are worth knowing:
+If your API response is first-party, defaults are fine. If the
+payload might cross an untrusted gateway or a federated API, three
+things to know:
 
-1. **DoS surface.** The hydrator walks the whole details record. An
-   attacker-controlled payload with tens of thousands of keys, each
-   carrying a deep dotted path, costs memory and CPU on the client.
-   `setFieldErrorsFromApi` takes an optional second argument with
-   `maxEntries` (default 1 000) and `maxPathDepth` (default 32).
-   Over-entry payloads are rejected wholesale; over-depth individual
-   keys are dropped. Tighten the caps for gateway code:
+**1. Entry-count / path-depth caps.** `setFieldErrorsFromApi` takes
+an optional second argument:
 
-   ```ts
-   form.setFieldErrorsFromApi(response, { maxEntries: 50, maxPathDepth: 8 })
-   ```
+```ts
+form.setFieldErrorsFromApi(response, { maxEntries: 50, maxPathDepth: 8 })
+```
 
-2. **Message content is rendered.** Vue escapes text content by
-   default — no XSS — but the error copy is still visible to your
-   user. An attacker-controlled `message` field can display misleading
-   UI text ("Your account has been suspended — click here to verify").
-   Validate the shape and length of server messages before binding.
+Defaults are `maxEntries: 1000`, `maxPathDepth: 32`. Over-budget
+payloads are rejected; over-depth keys are dropped. Tighten the caps
+for pass-through code.
 
-3. **Path-traversal into fields that don't exist.** The hydrator
-   accepts any string key. A malicious server could push an error
-   onto `users.0.adminPasswordHash`, which is harmless (the form has
-   no such field) but might confuse your UI's error surfacing. Either
-   parse the payload against a Zod schema before calling
-   `setFieldErrorsFromApi`, or post-filter the returned
-   `ValidationError[]` against your schema's known paths.
+**2. Message content shows in your UI.** Vue's text binding escapes
+output, so XSS is not a concern — but an attacker-controlled
+message can display misleading copy ("your account is suspended;
+click here"). Validate the length and allowed characters before
+binding.
 
-Zod-parsing the response is the cleanest option — the details record
-becomes a typed `Record<string, string | string[]>`, and anything
-else fails at the boundary:
+**3. Unknown paths accept quietly.** An error pushed to
+`users.0.adminPasswordHash` is harmless (no field renders it) but
+can confuse error-surfacing logic. Pre-parse the payload with a Zod
+schema to reject anything unexpected:
 
 ```ts
 const ErrorPayload = z.object({
   error: z.object({
     details: z.record(
       z.string(),
-      z.union([z.string(), z.array(z.string())])
+      z.union([z.string(), z.array(z.string())]),
     ),
   }),
 })
 
 const parsed = ErrorPayload.safeParse(response)
-if (parsed.success) {
-  form.setFieldErrorsFromApi(parsed.data, { maxEntries: 200 })
-}
+if (parsed.success) form.setFieldErrorsFromApi(parsed.data, { maxEntries: 200 })
 ```

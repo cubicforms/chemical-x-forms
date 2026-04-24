@@ -8,39 +8,13 @@
 
 **A fully type-safe, schema-driven form library that gives you superpowers**.<br>Comes with a minimal composition API that prioritizes developer experience and form correctness.<br><br>
 
-## 📦 Status
-
-**Pre-1.0.** The API is stable and under SemVer from `v1.0` onward —
-0.x minor bumps may still include small breaking changes; each one
-lands with a migration note under
-[`docs/migration/`](./docs/migration). [Recent changes →](./CHANGELOG.md)
-<br><br>
-
-## 🏔️ Features
-
-- **Framework-agnostic core** – Works under Nuxt 3/4, bare Vue 3 (CSR), and bare Vue 3 + `@vue/server-renderer` (SSR). `createChemicalXForms()` is a one-liner Vue plugin; the Nuxt module wraps it for Nuxt users.
-- **Compact API** – Minimal yet expressive: `useForm`, `register`, `handleSubmit`, `getFieldState`. Cross-form state isolation is built in (no shared path-keyed state between forms).
-- **Schema-agnostic, Zod-friendly** – The core only depends on an `AbstractSchema` contract. Zod v4 adapter at `/zod`, Zod v3 at `/zod-v3` — both physically isolated with `introspect.ts` quarantining internal access. Consumers pick the zod major they use.
-- **v-register Directive** – One SSR-safe directive; no per-input `v-model` + `@input` boilerplate.
-- **Form-level aggregates** – `isDirty` and `isValid` are computed refs driven off `originals` + `fieldErrors`. Gate a "Save" button on `isDirty && isValid` without wiring per-field watchers.
-- **Submission lifecycle** – `isSubmitting`, `submitCount`, and `submitError` surface every outcome of `handleSubmit`. Spinner + per-click counter + reactive error banner without extra refs.
-- **Reset primitives** – `reset(next?)` re-seeds from schema defaults (or a constraint partial) and rebuilds the `originals` baseline. `resetField(path)` restores a single leaf or a whole sub-tree.
-- **Typed array helpers** – `append` / `prepend` / `insert` / `remove` / `swap` / `move` / `replace`, each narrowed to paths whose leaf is an array (`ArrayPath<Form>`) and values whose shape matches the element type (`ArrayItem<Form, Path>`). See the [dynamic-field-arrays recipe](./docs/recipes/dynamic-field-arrays.md).
-- **Full field-state tracking** – Per-path `value`, `touched`, `focused`, `blurred`, `isConnected`, `updatedAt`, `errors`.
-- **Reactive field errors** – `fieldErrors` auto-populates on validation failure and clears on success; [`setFieldErrorsFromApi`](./docs/recipes/server-errors.md) maps server 422 envelopes onto fields for inline display.
-- **Structured paths** – Field names with literal dots round-trip losslessly via array-form paths (`register(['user.name'])` vs `register(['user', 'name'])`). Dotted-string form still accepted for ergonomics.
-- **TypeScript-first** – Every strictness flag on (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`, branded `PathKey`/`FormKey`, no `any` in public surface).
-  <br><br>
-
-## 🪩 Installation
-
-Chemical X Forms works under Nuxt 3/4, bare Vue 3 (CSR), and bare Vue 3 + `@vue/server-renderer` (SSR).
-
-### Nuxt 3 / Nuxt 4
+## 🚀 60-second start
 
 ```bash
 npm install @chemical-x/forms zod
 ```
+
+**Nuxt 3 / 4** — add the module:
 
 ```ts
 // nuxt.config.ts
@@ -49,11 +23,7 @@ export default defineNuxtConfig({
 })
 ```
 
-### Bare Vue 3 (CSR or SSR)
-
-```bash
-npm install @chemical-x/forms zod
-```
+**Bare Vue 3** — install the plugin:
 
 ```ts
 // main.ts
@@ -73,144 +43,179 @@ export default defineConfig({
 })
 ```
 
-For SSR (`@vue/server-renderer`), `renderChemicalXState(app)` / `hydrateChemicalXState(app, payload)` bridge the server→client boundary. See [test/ssr-bare-vue/round-trip.test.ts](./test/ssr-bare-vue/round-trip.test.ts) for a complete example.
+That's it. [Jump to your first form →](#-your-first-form)
+<br><br>
 
-### Subpath exports
-
-| Subpath                          | Purpose                                                   |
-| -------------------------------- | --------------------------------------------------------- |
-| `@chemical-x/forms`              | Framework-agnostic core (plugin, `useForm`, directive)    |
-| `@chemical-x/forms/nuxt`         | Nuxt 3/4 module                                           |
-| `@chemical-x/forms/vite`         | Vite plugin (registers node transforms)                   |
-| `@chemical-x/forms/transforms`   | Raw node transforms for custom bundlers                   |
-| `@chemical-x/forms/zod`          | Zod v4 adapter (recommended; requires `zod@^4`)           |
-| `@chemical-x/forms/zod-v3`       | Zod v3 adapter (legacy; requires `zod@^3`)                |
-
-<br>
-
-## 🪄 Usage
-
-**Basic Example**
+## 🪄 Your first form
 
 ```vue
 <script setup lang="ts">
 import { useForm } from '@chemical-x/forms/zod' // zod v4; use /zod-v3 for v3
 import { z } from 'zod'
 
-// Define your schema
-const schema = z.object({ planet: z.string() })
-
-// Create your form — `key` is required
-const { getFieldState, register } = useForm({ schema, key: 'planet-form' })
-
-// Get the state of the 'planet' field
-const planetState = getFieldState('planet')
-</script>
-
-<template>
-  <div>
-    <h1>Planet Form</h1>
-
-    <input
-      v-register="register('planet')"
-      placeholder="Enter your favorite planet"
-    />
-
-    <p>Planet field State:</p>
-    <pre>{{ JSON.stringify(planetState, null, 2) }}</pre>
-    <hr />
-  </div>
-</template>
-```
-
-**Core API Functions**
-
-Comprehensive surface in [`docs/api.md`](./docs/api.md). Quick tour:
-
-`useForm(options)` – Initializes form state. `schema` and `key` are both required.
-
-`v-register` – Custom, SSR-safe directive for registering components with Chemical X
-
-`register(name: string)` – Binds a field to form state.
-
-`handleSubmit(onSubmit, onError?)` – Builds a submit handler that runs validation and dispatches to your callback. Bind it to `@submit.prevent` directly:
-
-```vue
-<script setup lang="ts">
-const { handleSubmit } = useForm({ schema, key: 'signup' })
-const onSubmit = handleSubmit(async (values) => {
-  await api.post('/signup', values)
-})
-</script>
-
-<template>
-  <form @submit.prevent="onSubmit">...</form>
-</template>
-```
-
-You can also call the returned handler programmatically: `await onSubmit()`.
-
-`getValue(name: string)` – Retrieves a field value.
-
-`setValue(name: string, value: any)` – Updates a field programmatically.
-
-`getFieldState(name: string)` – Returns field state (value, touched, errors, etc.).
-
-`fieldErrors` – Reactive `Record<path, ValidationError[]>`. Auto-populated by `handleSubmit` on validation failure and cleared on success.
-
-`setFieldErrors(errors)` / `addFieldErrors(errors)` – Replace or merge errors imperatively.
-
-`clearFieldErrors(path?)` – Clear one path or every path.
-
-`setFieldErrorsFromApi(payload)` – Map a server error envelope (`{ error: { details: { path: [msg] } } }` or a raw `Record<path, string|string[]>`) into `ValidationError[]` and populate the store. Returns the produced errors.
-<br><br>
-
-**Per-field error display**
-
-```vue
-<script setup lang="ts">
-import { z } from 'zod'
-
-const { register, fieldErrors, handleSubmit, setFieldErrorsFromApi } = useForm({
-  schema: z.object({ email: z.string().email() }),
+const { register, handleSubmit, fieldErrors, isSubmitting } = useForm({
+  schema: z.object({
+    email: z.email(),
+    password: z.string().min(8),
+  }),
   key: 'signup',
 })
 
 const onSubmit = handleSubmit(async (values) => {
-  // server-side hydration after client validation passed:
-  try {
-    await $fetch('/api/signup', { method: 'POST', body: values })
-  } catch (err) {
-    if (err.statusCode === 422) setFieldErrorsFromApi(err.data)
-  }
+  await fetch('/api/signup', { method: 'POST', body: JSON.stringify(values) })
 })
 </script>
 
 <template>
   <form @submit.prevent="onSubmit">
-    <input v-register="register('email')" />
+    <input v-register="register('email')" placeholder="Email" />
     <small v-if="fieldErrors.email?.[0]">{{ fieldErrors.email[0].message }}</small>
-    <button>Submit</button>
+
+    <input v-register="register('password')" type="password" placeholder="Password" />
+    <small v-if="fieldErrors.password?.[0]">{{ fieldErrors.password[0].message }}</small>
+
+    <button :disabled="isSubmitting">Sign up</button>
   </form>
 </template>
 ```
 
-<br>
+You get: schema-typed values, per-field errors, a submit handler that
+validates first, and a reactive `isSubmitting` flag. Every leaf of
+`fieldErrors` and every branded path is inferred from your Zod schema.
+<br><br>
 
-## 🥇 Advanced Features
+## 🎯 The core you always have
 
-- **Fully SSR-safe** – Nuxt 3/4 + bare Vue 3 + `@vue/server-renderer`. Server-side form state round-trips via `renderChemicalXState` / `hydrateChemicalXState`. See the [SSR hydration recipe](./docs/recipes/ssr-hydration.md).
-- **Validation handling** – Schema validation errors populate `fieldErrors` automatically; `setFieldErrorsFromApi` hydrates server errors onto the same store.
-- **Discriminated unions** – Both Zod adapters introspect discriminated unions and validate against the active branch only.
-- **Performance** – Keystroke benchmark runs 7–10× faster than the pre-rewrite baseline. A CI job fails the run if the ratio drops.
-- **Custom adapters** – The `AbstractSchema` contract has three sync methods; see the [custom-adapter recipe](./docs/recipes/custom-adapter.md) for a Valibot-style walkthrough.
+Everything below is on by default — no opt-in needed:
+
+- **`register(path)` + `v-register`** — bind an input to a field in one directive. SSR-safe, no per-input `v-model` + `@input` boilerplate.
+- **`handleSubmit(onSubmit, onError?)`** — validates, then dispatches. Bind straight to `@submit.prevent`.
+- **`fieldErrors`** — reactive `Record<path, ValidationError[]>`. Auto-populated by `handleSubmit` on failure, cleared on success. Also writable from your own code.
+- **`isDirty` / `isValid`** — computed refs. Gate a "Save" button on `isDirty && isValid` without wiring per-field watchers.
+- **`isSubmitting` / `submitCount` / `submitError`** — full submission lifecycle. Spinner, per-click counter, reactive error banner with zero extra refs.
+- **`getValue(path)` / `setValue(path, value)`** — read / write any field programmatically.
+- **`getFieldState(path)`** — everything for one path: value, errors, touched, focused, blurred, isConnected, updatedAt.
+- **`reset(next?)` / `resetField(path)`** — restore the whole form, or a single subtree, back to schema defaults (or a partial override).
+- **Field-array helpers** — `append` / `prepend` / `insert` / `remove` / `swap` / `move` / `replace`. Path is narrowed to arrays, value to the element type — `append('title', …)` on a string field is a compile error. [Recipe →](./docs/recipes/dynamic-field-arrays.md)
+- **Structured paths** — field names with literal dots? `register(['user.name'])` keeps them as a single segment. `register('user.name')` splits.
+  <br><br>
+
+## ⚡ Superpowers (opt-in)
+
+Flip a config flag, get a whole feature. Each of these is off by default.
+
+### Async validation
+
+Use `z.refine(async …)` to check uniqueness, allow-lists, server availability. `handleSubmit` awaits it for you.
+
+```ts
+const schema = z.object({
+  email: z.email().refine(async (v) => !(await isEmailTaken(v)), 'Email already registered'),
+})
+```
+
+`validate()` / `validateAsync(path?)` / `isValidating` give you reactive + imperative surfaces for live validation UI. [Recipe →](./docs/recipes/async-validation.md)
+
+### Live field validation
+
+Validate as the user types or tabs away — no submit needed:
+
+```ts
+useForm({ schema, key, fieldValidation: { on: 'change', debounceMs: 200 } })
+```
+
+Three modes — `'change'` (debounced), `'blur'` (immediate), `'none'` (default). Rapid typing is debounced + auto-cancelled. [Recipe →](./docs/recipes/field-level-validation.md)
+
+### Focus / scroll to first error
+
+```ts
+useForm({ schema, key, onInvalidSubmit: 'focus-first-error' })
+```
+
+Or call `focusFirstError()` / `scrollToFirstError({ block: 'start' })` imperatively after a failed submit or a `setFieldErrorsFromApi` hydration. [Recipe →](./docs/recipes/focus-on-error.md)
+
+### Persist drafts across reloads
+
+```ts
+useForm({ schema, key, persist: { storage: 'local' } })
+```
+
+Backends: `'local'` / `'session'` / `'indexeddb'` (or your own). Writes debounced, clears on successful submit, survives hard refresh. [Recipe →](./docs/recipes/persistence.md)
+
+### Undo / redo
+
+```ts
+useForm({ schema, key, history: true })
+```
+
+Adds `undo()` / `redo()` / `canUndo` / `canRedo` with a bounded snapshot stack (default 50). Wire it to <kbd>⌘Z</kbd> / <kbd>⌘⇧Z</kbd> in one line. [Recipe →](./docs/recipes/undo-redo.md)
+
+### Nested form components
+
+Call `useFormContext()` in any descendant to reach the ancestor's form without prop-threading. Pass a form's `key` to reach a form that isn't an ancestor. [Recipe →](./docs/recipes/form-context.md)
+
+### Server errors
+
+```ts
+setFieldErrorsFromApi(err.data) // accepts { error: { details: { path: [msg] } } } or { path: [msg] }
+```
+
+Drops straight into your `catch` block. Built-in caps on entry count + path depth keep untrusted payloads safe. [Recipe →](./docs/recipes/server-errors.md)
+
+### Vue DevTools
+
+```bash
+npm install -D @vue/devtools-api
+```
+
+Every registered form shows up in the DevTools sidebar with an editable tree, an error view, and a timeline for submit / reset / mutation events. Auto-wired; pass `createChemicalXForms({ devtools: false })` to disable. [Recipe →](./docs/recipes/devtools.md)
+
+### SSR
+
+Nuxt: zero config — the module handles payload round-trip via `nuxtApp.payload`.<br>
+Bare Vue + `@vue/server-renderer`: `renderChemicalXState(app)` on the server, `hydrateChemicalXState(app, payload)` on the client. [Recipe →](./docs/recipes/ssr-hydration.md)
+
+### Bring your own schema library
+
+Zod v4 is the default. Valibot, ArkType, hand-rolled — implement three methods on `AbstractSchema` and `useForm` works against it. [Recipe →](./docs/recipes/custom-adapter.md)
+<br><br>
 
 ## 📚 Documentation
 
-- [`docs/api.md`](./docs/api.md) — every public export with signatures and return shapes
-- [`docs/recipes/`](./docs/recipes) — task-oriented walkthroughs (dynamic field arrays, server errors, SSR hydration, custom adapters, validation patterns)
-- [`docs/migration/`](./docs/migration) — per-release upgrade notes
-- [`CHANGELOG.md`](./CHANGELOG.md) — full release history
+- [**`docs/api.md`**](./docs/api.md) — every public export with signatures and return shapes
+- [**`docs/recipes/`**](./docs/recipes) — task-oriented walkthroughs for everything above
+- [**`docs/troubleshooting.md`**](./docs/troubleshooting.md) — common gotchas and fixes
+- [**`docs/migration/`**](./docs/migration) — per-release upgrade notes
+- [**`docs/perf.md`**](./docs/perf.md) — how it scales; when to worry
+- [**`CHANGELOG.md`**](./CHANGELOG.md) — full release history
+  <br><br>
+
+## 🏔️ What's in the box
+
+- **Framework-agnostic core** — Nuxt 3 / 4, bare Vue 3 (CSR), bare Vue 3 + `@vue/server-renderer` (SSR). One Vue plugin; the Nuxt module wraps it.
+- **Schema-agnostic, Zod-friendly** — Zod v4 at `/zod`, Zod v3 at `/zod-v3`. Bring your own validator if you don't use Zod.
+- **TypeScript-first** — every strictness flag on, branded `PathKey` / `FormKey`, no `any` in the public surface.
+- **Performance** — keystroke path is 6–12× faster than the pre-rewrite baseline; a CI job fails the run if the ratio drops.
+- **Zero framework-specific validator ceremony** — no `v-model` + `@input` wiring, no manual error mapping from your schema library to your UI.
+  <br><br>
+
+## 📦 Status
+
+**Pre-1.0.** The API is stable and under SemVer from `v1.0` onward —
+0.x minor bumps may still include small breaking changes; each one
+lands with a migration note under [`docs/migration/`](./docs/migration). [Recent changes →](./CHANGELOG.md)
+<br><br>
+
+### Subpath exports
+
+| Subpath                          | Purpose                                                   |
+| -------------------------------- | --------------------------------------------------------- |
+| `@chemical-x/forms`              | Framework-agnostic core (plugin, `useForm`, directive)    |
+| `@chemical-x/forms/nuxt`         | Nuxt 3 / 4 module                                         |
+| `@chemical-x/forms/vite`         | Vite plugin (registers node transforms)                   |
+| `@chemical-x/forms/transforms`   | Raw node transforms for custom bundlers                   |
+| `@chemical-x/forms/zod`          | Zod v4 adapter (recommended; requires `zod@^4`)           |
+| `@chemical-x/forms/zod-v3`       | Zod v3 adapter (legacy; requires `zod@^3`)                |
 
 <br>
 

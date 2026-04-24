@@ -1,17 +1,14 @@
 # Undo / redo
 
-Enable a bounded undo/redo stack per form by passing the `history`
-option to `useForm`:
-
 ```ts
 const form = useForm({
   schema,
   key: 'signup',
-  history: true,     // default max of 50 snapshots
+  history: true,       // default: 50-snapshot bounded stack
 })
 ```
 
-or tune the depth:
+Tune the depth:
 
 ```ts
 useForm({ schema, key: 'signup', history: { max: 200 } })
@@ -19,24 +16,25 @@ useForm({ schema, key: 'signup', history: { max: 200 } })
 
 ## API
 
-| Member          | Type                                       | What it does                                                     |
-| --------------- | ------------------------------------------ | ---------------------------------------------------------------- |
-| `undo()`        | `() => boolean`                            | Revert to the prior snapshot. Returns `true` on success, `false` at baseline. |
-| `redo()`        | `() => boolean`                            | Replay a previously-undone snapshot. Returns `true` on success, `false` when nothing to redo. |
-| `canUndo`       | `Readonly<ComputedRef<boolean>>`           | `true` when a prior snapshot exists.                              |
-| `canRedo`       | `Readonly<ComputedRef<boolean>>`           | `true` when a prior `undo()` has pending replays.                 |
-| `historySize`   | `Readonly<ComputedRef<number>>`            | Total snapshots across both stacks. Debug UIs only; gate UI on `canUndo` / `canRedo` instead. |
+| Member          | Type                                       | What it does                                                              |
+| --------------- | ------------------------------------------ | ------------------------------------------------------------------------- |
+| `undo()`        | `() => boolean`                            | Revert to the previous snapshot. `false` at baseline (nothing to undo).   |
+| `redo()`        | `() => boolean`                            | Replay a previously-undone snapshot. `false` when nothing's queued.       |
+| `canUndo`       | `Readonly<ComputedRef<boolean>>`           | Gate an "Undo" button on this.                                            |
+| `canRedo`       | `Readonly<ComputedRef<boolean>>`           | Gate a "Redo" button on this.                                             |
+| `historySize`   | `Readonly<ComputedRef<number>>`            | Total snapshots across both stacks — useful for debug overlays.           |
 
-When `history` is not configured on `useForm`, these members are
-still present but inert — `undo()` / `redo()` always return
-`false`, `canUndo` / `canRedo` always read `false`, `historySize` is
-`0`. The consistent shape means templates don't need to branch.
+When `history` isn't configured, the five members are still present
+but inert: `undo()` / `redo()` return `false`, refs read `false` /
+`0`. Templates don't need conditional logic.
 
-## Template usage
+## Keyboard shortcuts
+
+Not wired by default — do it in a line:
 
 ```vue
 <script setup lang="ts">
-const { undo, redo, canUndo, canRedo, handleSubmit } = useForm({
+const { undo, redo, canUndo, canRedo } = useForm({
   schema, key: 'editor', history: true,
 })
 
@@ -52,84 +50,48 @@ function onKeydown(event: KeyboardEvent) {
   <div @keydown="onKeydown">
     <button :disabled="!canUndo" @click="undo">Undo</button>
     <button :disabled="!canRedo" @click="redo">Redo</button>
-    <!-- ...form fields... -->
+    <!-- …form fields… -->
   </div>
 </template>
 ```
 
 ## What gets snapshotted
 
-Each snapshot captures:
-- The whole form value (reference — the ref is replaced wholesale
-  on every mutation, so the captured reference is immutable).
-- The error map at the moment of the snapshot (shallow-cloned).
+- Every form value (via `setValue`, register inputs, array helpers).
+- The error map at the time of the snapshot.
 
-What is NOT snapshotted:
-- **Field records** (touched / focused / blurred / isConnected).
-  These represent UI interaction history — a field that was
-  touched stays touched across undos.
-- **Submission lifecycle** (submitCount, isSubmitting, submitError).
+What's NOT snapshotted:
+
+- **Field records** (touched / focused / blurred / isConnected) —
+  UI interaction history, it shouldn't rewind. A field that was
+  touched stays touched.
+- **Submission lifecycle** (`submitCount`, `submitError`).
 - **Validation in-flight state**.
 
-## When snapshots are pushed
+## What pushes a snapshot
 
-A snapshot is pushed on every `applyFormReplacement`, which is the
-single mutation funnel for:
-- `setValue(path, value)` / `setValue(whole)`.
-- Every field-array helper: `append` / `prepend` / `insert` /
-  `remove` / `swap` / `move` / `replace`.
-- Register-backed input bindings (v-register).
+Every form mutation: `setValue`, `register`-backed input edits, any
+array helper (`append`, `prepend`, `insert`, `remove`, `swap`,
+`move`, `replace`), or a programmatic write.
 
-Calling `setFieldErrors` / `setFieldErrorsFromApi` / `clearFieldErrors`
-does NOT push a snapshot — those touch the error map directly. The
-NEXT form mutation's snapshot carries whatever error state is live
-at that point.
+Calling `setFieldErrors` / `setFieldErrorsFromApi` /
+`clearFieldErrors` does NOT push — those only touch the error map.
+Whatever errors are live when the next mutation lands go into that
+mutation's snapshot.
 
-## Interaction with other features
+## Interactions
 
-- **`reset()`** clears both stacks entirely and re-seeds with the
-  reset state. A reset is a conceptual "new session".
-- **Field-level validation** (`fieldValidation`). Undo / redo
-  restores through `applyFormReplacement`, which fires the field-
-  validation scheduler. The restored state validates like any
-  other — stale errors on the restored form will clear on the next
-  run.
-- **Persistence** (`persist`). Every undo / redo schedules a
-  debounced write of the restored state. That's correct: the
-  persisted payload should always reflect the current form, which
-  an undo did just change.
+- **`reset()`** clears both stacks and uses the reset state as the
+  new baseline. A reset is a "new session".
+- **Live field validation** still runs on undo / redo — the
+  restored state validates like any other.
+- **Persistence** picks up each undo / redo as a normal mutation
+  and writes the restored state to your chosen backend.
 
 ## Memory
 
-Snapshots share structural references to the form value — Vue's
-form ref is replaced wholesale on every mutation, so old snapshots
-keep their references stable. The error map is shallow-cloned per
-snapshot. Memory cost is dominated by the size of the errors array
-(usually small) + constant overhead per snapshot.
-
-Default `max: 50` means at most 50 past snapshots and 50 redo
-snapshots are kept. Bump `max` for editors with long undo
-histories; drop it for mobile with memory pressure.
-
-## Keyboard shortcuts
-
-Not wired by default — Chemical X is framework-agnostic and
-doesn't assume a keyboard model. Wire `@keydown` on the form
-container to `event.metaKey + 'z'` (macOS) or `event.ctrlKey + 'z'`
-(Windows / Linux), with `shiftKey` for redo as shown above.
-
-## Caveats
-
-- **Snapshots capture the form after each applyFormReplacement.**
-  Batched mutations from the field-array helpers' `move` /
-  `swap` / `replace` land as single snapshots (one reassignment of
-  the whole array), which is what a user expects. But two
-  consecutive `setValue` calls produce two snapshots — undo steps
-  through them one at a time.
-- **No snapshot for "pure error" mutations.** Calling
-  `setFieldErrors` alone doesn't create an entry; there's nothing
-  to undo at the form level, and spending stack depth on error-only
-  states doesn't match typical undo intuition.
-- **Pre-mount hydration** (SSR / persistence-restore) counts as
-  the baseline — the restored-form IS the initial snapshot, so
-  undo from first mount bottoms out there.
+Default `max: 50` keeps at most 50 past + 50 redo snapshots. Bump
+it for editors with long histories; drop it for memory-constrained
+targets. Each snapshot holds a reference to the form value (not a
+deep copy) plus a shallow copy of the error map — cost scales
+linearly, not quadratically.

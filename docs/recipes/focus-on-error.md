@@ -1,15 +1,10 @@
 # Focus (and scroll) to the first error
 
-When a form fails validation, dropping the user at the top of the page
-isn't helpful — they want to see which field is wrong and start
-fixing. `useForm` ships two imperative helpers and one declarative
-config for this.
+When a form fails validation, dropping the user at the top of the
+page isn't helpful — they want to see which field is wrong and
+start fixing. Two ways to wire it up.
 
-## Declarative: `onInvalidSubmit`
-
-The most common case: focus the first errored field when `handleSubmit`
-trips validation. Pass a policy at `useForm` construction and the
-library handles it without an `onError` callback:
+## Declarative (most forms)
 
 ```ts
 const { handleSubmit } = useForm({
@@ -21,23 +16,22 @@ const { handleSubmit } = useForm({
 
 Four policies:
 
-| Policy | Behaviour |
-|---|---|
-| `'none'` (default) | No-op. Consumer wires their own behaviour via `onError`. |
-| `'focus-first-error'` | Calls `.focus()` on the first errored field. Browser may scroll. |
-| `'scroll-to-first-error'` | Calls `.scrollIntoView()` on it. No focus change. |
-| `'both'` | Scrolls first, then focuses with `{ preventScroll: true }` so the browser doesn't scroll a second time and undo the explicit one. |
+| Policy                    | What happens                                                                        |
+| ------------------------- | ----------------------------------------------------------------------------------- |
+| `'none'`                  | Default. No-op. Wire your own via `onError`.                                        |
+| `'focus-first-error'`     | Calls `.focus()` on the first errored field. The browser may scroll.                |
+| `'scroll-to-first-error'` | Calls `.scrollIntoView()` on it. No focus change.                                   |
+| `'both'`                  | Scrolls first, then focuses with `{ preventScroll: true }` so the browser doesn't re-scroll and undo the explicit one. |
 
-The policy fires **after** the error store is populated (so
-`fieldErrors` reflects the failure in the same tick) and **before**
-your `onError` callback (so you can override by focusing something
-else inside the callback).
+The policy fires after `fieldErrors` is populated and before your
+`onError` callback — `onError` can override it by calling `.focus()`
+on something else.
 
-## Imperative: `focusFirstError()` / `scrollToFirstError()`
+## Imperative (server errors, manual flows)
 
-For flows that don't run through `handleSubmit` — a server error
-hydrated via `setFieldErrorsFromApi`, a manual `validate()`, a dirty
-button that runs its own logic — call the helpers directly:
+For errors that don't come through `handleSubmit` — a 422 from your
+API, a custom "validate + continue" button — call the helpers
+directly:
 
 ```vue
 <script setup lang="ts">
@@ -50,7 +44,6 @@ const onSubmit = handleSubmit(async (values) => {
   } catch (err) {
     if (err.statusCode === 422) {
       setFieldErrorsFromApi(err.data)
-      // Server validation failed — bring the user to the first bad field.
       scrollToFirstError({ block: 'center', behavior: 'smooth' })
       focusFirstError({ preventScroll: true })
     }
@@ -61,47 +54,35 @@ const onSubmit = handleSubmit(async (values) => {
 
 Both helpers return a boolean:
 
-- `true` when a qualifying element was acted on.
-- `false` when no errored field has a currently-mounted, visible
-  element. This is common when the errored field lives behind a
-  conditional (`v-if="..."`) that's currently false.
+- `true` — an element was acted on.
+- `false` — no errored field had a mounted, visible element (common when the bad field is behind a `v-if="false"`).
 
-## How "first" is decided
+## How "first" is picked
 
-Errors are iterated in the order the schema reported them. The
-library walks that sequence and returns the first errored field whose
-DOM element is:
+The library walks errors in the order your schema reported them and
+acts on the first field that's:
 
-1. Registered via `v-register` (or a manual `registerElement` call
-   from a custom directive).
-2. Connected to the document (`el.isConnected === true`).
-3. Visible (`el.offsetParent !== null`, which excludes elements
-   hidden via `display: none` or whose ancestor chain is).
+1. Registered via `v-register` (or a manual `registerElement` call).
+2. Currently in the DOM.
+3. Visible (`display:none` and ancestor `display:none` are skipped).
 
-Fields that are rendered but hidden via `visibility: hidden`,
-`opacity: 0`, or `aria-hidden` are still considered "visible" by this
-check — they occupy layout. If that's wrong for your UI, call
-`getFirstErrorElement` yourself and apply your own filter.
+Fields hidden via `visibility: hidden`, `opacity: 0`, or `aria-hidden`
+count as "visible" — they occupy layout. If that's wrong for your
+UI, inspect `fieldErrors` yourself and focus the right element.
 
 ## Edge cases
 
-- **Errors on a conditional field**: the errored field's template is
-  unmounted, so no element is registered. Both helpers return `false`
-  and `onInvalidSubmit` silently no-ops. Consumers who want a fallback
-  can test the return and scroll to the form itself.
-- **Array-of-objects forms**: each array index's element registers
-  separately. "First" follows schema-issue order, which typically
-  matches render order for list inputs.
-- **Multiple DOM elements at the same path** (e.g. a radio-group):
-  the first registered element wins. That's consistent regardless of
-  how many are in the `Set<HTMLElement>` for that path.
+- **Errors on a conditional field**: the element isn't registered,
+  so both helpers return `false` and `onInvalidSubmit` silently
+  no-ops. Gate your own fallback on the return value.
+- **Array-of-objects forms**: each array index registers its own
+  element; "first" follows schema order, which usually matches
+  render order.
+- **Multiple elements at the same path** (a radio-group, say): the
+  first registered element wins.
 
 ## When to use which
 
-- **Declarative (`onInvalidSubmit`)**: 90% case. Set it once per
-  form; forget about it.
-- **Imperative helpers**: server-side errors, multi-step flows, or
-  when you want to combine focus with a toast / announcement.
-- **Roll your own via `getFirstErrorElement`**: only needed when the
-  visibility heuristic doesn't match your layout. Most consumers will
-  not reach for this.
+- **Declarative** for the 90% case. Set it once per form.
+- **Imperative** for server errors, multi-step flows, or when you
+  want to combine focus with a toast / ARIA announcement.

@@ -14,9 +14,11 @@ export type UseFormConfigurationWithZod<Schema extends z.ZodType<unknown>, Initi
       ? Schema
       : never
     : never
-  // Required by design — matches the core `UseFormConfiguration`. See
-  // types-api.ts for the rationale.
-  key: FormKey
+  // Optional — matches the core `UseFormConfiguration`. Omit for
+  // one-off forms; pass a string when the form needs identity (shared
+  // state, distant lookup, persistence default, DevTools label). See
+  // types-api.ts for the full rationale.
+  key?: FormKey
   initialState?: InitialState
   validationMode?: ValidationMode
   onInvalidSubmit?: OnInvalidSubmitPolicy

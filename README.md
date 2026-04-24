@@ -58,7 +58,6 @@ const { register, handleSubmit, fieldErrors, isSubmitting } = useForm({
     email: z.email(),
     password: z.string().min(8),
   }),
-  key: 'signup',
 })
 
 const onSubmit = handleSubmit(async (values) => {
@@ -121,7 +120,7 @@ const schema = z.object({
 Validate as the user types or tabs away — no submit needed:
 
 ```ts
-useForm({ schema, key, fieldValidation: { on: 'change', debounceMs: 200 } })
+useForm({ schema, fieldValidation: { on: 'change', debounceMs: 200 } })
 ```
 
 Three modes — `'change'` (debounced), `'blur'` (immediate), `'none'` (default). Rapid typing is debounced + auto-cancelled. [Recipe →](./docs/recipes/field-level-validation.md)
@@ -129,7 +128,7 @@ Three modes — `'change'` (debounced), `'blur'` (immediate), `'none'` (default)
 ### Focus / scroll to first error
 
 ```ts
-useForm({ schema, key, onInvalidSubmit: 'focus-first-error' })
+useForm({ schema, onInvalidSubmit: 'focus-first-error' })
 ```
 
 Or call `focusFirstError()` / `scrollToFirstError({ block: 'start' })` imperatively after a failed submit or a `setFieldErrorsFromApi` hydration. [Recipe →](./docs/recipes/focus-on-error.md)
@@ -152,7 +151,7 @@ Adds `undo()` / `redo()` / `canUndo` / `canRedo` with a bounded snapshot stack (
 
 ### Nested form components
 
-Call `useFormContext()` in any descendant to reach the ancestor's form without prop-threading. Pass a form's `key` to reach a form that isn't an ancestor. [Recipe →](./docs/recipes/form-context.md)
+Call `useFormContext()` in any descendant to reach the ancestor's form without prop-threading. Pass a form's `key` to reach a form that isn't an ancestor — or when a single parent owns more than one form and descendants need to disambiguate. [Recipe →](./docs/recipes/form-context.md)
 
 ### Server errors
 

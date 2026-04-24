@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { createSSRApp, defineComponent, h } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { useForm } from '../../src'
@@ -6,61 +6,62 @@ import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { fakeSchema } from '../utils/fake-schema'
 
 /**
- * Belt-and-braces coverage for `requireFormKey` in use-abstract-form.ts.
+ * Coverage for `resolveFormKey` in use-abstract-form.ts.
  *
- * Phase 7.2 tightened the type-level contract — `UseFormConfiguration.key`
- * is no longer optional — but the runtime guard still catches non-TS
- * callers (e.g. JS consumers, `as` casts, null from dynamic inputs). These
- * tests prove the throw fires for the three shapes the guard intercepts.
+ * The post-0.8.3 contract treats `key` as optional: a missing /
+ * nullish / empty-string key resolves to a synthetic `cx:anon:<id>`
+ * allocated via Vue's `useId()` (inside setup) or a module counter
+ * (outside). These tests prove all four "anonymous" shapes produce a
+ * working form and that an explicit key passes through unchanged.
  */
 
 type Form = { name: string }
+type ApiReturn = ReturnType<typeof useForm<Form>>
 
-function mountWith(keyValue: unknown): Promise<string> {
-  const App = defineComponent({
-    setup() {
-      // Bypass the type-level `key: FormKey` constraint to simulate a
-      // non-TS caller. The runtime guard is the last line of defence.
-      useForm<Form>({
-        schema: fakeSchema<Form>({ name: '' }),
-        key: keyValue as string,
-      })
-      return () => h('div')
-    },
+function mountWith(config: { keyValue?: unknown; provideKey: boolean }): Promise<ApiReturn> {
+  return new Promise((resolve) => {
+    const App = defineComponent({
+      setup() {
+        // Bypass the type-level `key?: FormKey` constraint so non-TS
+        // paths (null from a dynamic input, `as` casts, literal '')
+        // are exercised alongside the typed forms.
+        const api = useForm<Form>({
+          schema: fakeSchema<Form>({ name: '' }),
+          ...(config.provideKey ? { key: config.keyValue as string } : {}),
+        })
+        resolve(api)
+        return () => h('div')
+      },
+    })
+    const app = createSSRApp(App)
+    app.use(createChemicalXForms({ override: true }))
+    void renderToString(app)
   })
-  const app = createSSRApp(App)
-  app.use(createChemicalXForms({ override: true }))
-  return renderToString(app)
 }
 
-describe('useForm — runtime requireFormKey guard', () => {
-  // Vue logs `[Vue warn]: Unhandled error during execution of setup`
-  // via `console.warn` when setup() throws during renderToString. The
-  // three throw-tests below intentionally exercise that throw; silencing
-  // the expected warn keeps test output clean without losing a
-  // real regression signal — Vue's native warn channel is the only
-  // thing we suppress.
-  let warnSpy: ReturnType<typeof vi.spyOn>
-  beforeEach(() => {
-    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-  })
-  afterEach(() => {
-    warnSpy.mockRestore()
+describe('useForm — runtime key resolution', () => {
+  it('allocates an anonymous key when `key` is omitted entirely', async () => {
+    const api = await mountWith({ provideKey: false })
+    expect(api.key).toMatch(/^cx:anon:/)
   })
 
-  it('throws when key is undefined', async () => {
-    await expect(mountWith(undefined)).rejects.toThrow(/requires an explicit `key`/)
+  it('allocates an anonymous key when `key` is `undefined`', async () => {
+    const api = await mountWith({ keyValue: undefined, provideKey: true })
+    expect(api.key).toMatch(/^cx:anon:/)
   })
 
-  it('throws when key is null', async () => {
-    await expect(mountWith(null)).rejects.toThrow(/requires an explicit `key`/)
+  it('allocates an anonymous key when `key` is `null`', async () => {
+    const api = await mountWith({ keyValue: null, provideKey: true })
+    expect(api.key).toMatch(/^cx:anon:/)
   })
 
-  it('throws when key is an empty string', async () => {
-    await expect(mountWith('')).rejects.toThrow(/requires an explicit `key`/)
+  it('allocates an anonymous key when `key` is the empty string', async () => {
+    const api = await mountWith({ keyValue: '', provideKey: true })
+    expect(api.key).toMatch(/^cx:anon:/)
   })
 
-  it('accepts a non-empty key', async () => {
-    await expect(mountWith('form-1')).resolves.toContain('<div')
+  it('preserves an explicit key verbatim', async () => {
+    const api = await mountWith({ keyValue: 'form-1', provideKey: true })
+    expect(api.key).toBe('form-1')
   })
 })

@@ -75,7 +75,7 @@ describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
     await wait(60)
     await drain()
 
-    expect(api.fieldErrors.value['email']?.[0]?.message).toBe('bad email')
+    expect(api.fieldErrors.value.email?.[0]?.message).toBe('bad email')
   })
 
   it('forwards persist — custom FormStorage receives setItem calls', async () => {

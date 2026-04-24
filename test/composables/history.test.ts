@@ -119,12 +119,12 @@ describe('history — default (history: true)', () => {
     // snapshot captures the cleared state.
     api.clearFieldErrors('email')
     api.setValue('email', 'c')
-    expect(api.fieldErrors.value['email']).toBeUndefined()
+    expect(api.fieldErrors.value.email).toBeUndefined()
     // Undo once — snapshot taken at the 'b' mutation carried the
     // errors that were set just before it.
     api.undo()
     expect(api.getValue('email').value).toBe('b')
-    expect(api.fieldErrors.value['email']?.[0]?.message).toBe('bad')
+    expect(api.fieldErrors.value.email?.[0]?.message).toBe('bad')
   })
 })
 

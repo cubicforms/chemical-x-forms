@@ -157,7 +157,7 @@ describe('useForm — resetField(path)', () => {
 
     form.resetField('email')
     expect(form.fieldErrors.value).not.toHaveProperty('email')
-    expect(form.fieldErrors.value['password']).toHaveLength(1)
+    expect(form.fieldErrors.value.password).toHaveLength(1)
   })
 
   it('restores an entire sub-tree when path names a container', () => {

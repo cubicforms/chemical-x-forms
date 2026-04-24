@@ -448,9 +448,29 @@ export type FieldState = DeepFlatten<
 >
 export type DOMFieldStateStore = Map<string, DOMFieldState | undefined>
 
-/** Reactive per-field error store, keyed by `path.join('.')`. */
+/**
+ * Reactive per-field error store, keyed by `path.join('.')`. Exposed
+ * as `FormFieldErrors<Form>` on the `useForm` return so consumers get
+ * dot-access for known schema paths; the broader `FormErrorRecord`
+ * type still types the underlying store / SSR-serialisation shape.
+ */
 export type FormErrorRecord = Record<string, ValidationError[]>
 export type FormErrorStore = Map<FormKey, FormErrorRecord>
+
+/**
+ * Form-aware view of `fieldErrors`. A mapped type over the form's own
+ * `FlatPath<Form>` union, so `fieldErrors.email` (dot access) works
+ * for a form declaring `email` as a leaf. Dotted nested paths
+ * (`'user.profile.email'`) are still present as keys — access those
+ * via bracket notation because JS dot-access splits on literal dots.
+ *
+ * Server errors landing on paths outside the schema (rare, usually a
+ * bug in the server's error shape) can be read via a cast to
+ * `FormErrorRecord`.
+ */
+export type FormFieldErrors<Form extends GenericForm> = Partial<
+  Record<FlatPath<Form>, ValidationError[]>
+>
 
 /**
  * Normalised API error envelope — the shape cubic-forms (and many DRF-style
@@ -536,8 +556,14 @@ export type UseAbstractFormReturnType<
    * automatically by `handleSubmit` on validation failure and cleared on
    * validation success. Also writable via `setFieldErrors` /
    * `setFieldErrorsFromApi` for server-side hydration.
+   *
+   * Typed as `FormFieldErrors<Form>` — a mapped type over the form's
+   * own `FlatPath<Form>`. Dot access works for known top-level paths
+   * (`fieldErrors.email`); bracket access is required for dotted
+   * nested keys (`fieldErrors['user.profile.email']`) because JS dot
+   * notation splits on literal dots.
    */
-  fieldErrors: Readonly<ComputedRef<FormErrorRecord>>
+  fieldErrors: Readonly<ComputedRef<FormFieldErrors<Form>>>
 
   /** Replace all field errors for this form with the provided list. */
   setFieldErrors: (errors: ValidationError[]) => void

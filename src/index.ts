@@ -56,6 +56,7 @@ export type {
   FieldValidationConfig,
   FieldValidationMode,
   FormErrorRecord,
+  FormFieldErrors,
   FormKey,
   FormStorage,
   FormStorageKind,

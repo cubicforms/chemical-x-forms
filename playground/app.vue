@@ -1,4 +1,8 @@
 <script setup lang="ts">
+  // Explicit zod-v4 import: Phase 7.1 dropped the `useZod` Nuxt option, so
+  // the Nuxt-auto-imported `useForm` is now the schema-agnostic abstract
+  // composable. Use the /zod subpath (v4) or /zod-v3 for zod-typed forms.
+  import { useForm } from '@chemical-x/forms/zod'
   import { z } from 'zod'
 
   // -- Original demo: register + getValue across multiple inputs --

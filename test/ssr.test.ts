@@ -259,4 +259,39 @@ describe('SSR behavior of useForm', async () => {
       expect(apiSection).not.toContain('Password must be at least 8 characters')
     })
   })
+
+  /*
+    Test Suite: Nuxt SSR payload round-trip
+    Focus: A value written into form state during server setup must land in
+    BOTH the rendered HTML and the serialised Nuxt payload so the client-
+    side registry can reconstruct the state without re-running defaults.
+  */
+  describe('SSR payload hydration round-trip >>', () => {
+    it('server-written value appears in the rendered HTML', async () => {
+      const html = await $fetch('/')
+      assertHTML(html)
+      const window = new JSDOM(html).window
+      const valueEl = window.document.getElementById('hydration-check-value')
+      expect(valueEl?.textContent?.trim()).toBe('server-written-value')
+    })
+
+    it('server-written value survives into the __NUXT__ payload script', async () => {
+      const html = await $fetch('/')
+      assertHTML(html)
+      const typedHtml = typeof html === 'string' ? html : String(html)
+
+      // Nuxt serialises payload with devalue, not plain JSON. A naive
+      // JSON.parse of the inline <script> would explode on the custom
+      // encoding. Substring match is enough to prove the payload carries
+      // both the form key and the value: if either is missing, the client
+      // would fall back to schema defaults and lose the server edit.
+      expect(typedHtml).toContain('hydration-check')
+      expect(typedHtml).toContain('server-written-value')
+
+      // Also confirm the payload envelope itself exists so we're not just
+      // matching the rendered <span>. `window.__NUXT__` (or the newer
+      // __NUXT_DATA__ script node) is where Nuxt stashes it.
+      expect(typedHtml).toMatch(/__NUXT(?:_DATA)?__/)
+    })
+  })
 })

@@ -1,13 +1,16 @@
-import type { z } from 'zod'
-import { zodAdapter } from '../adapters/zod'
+import type { z } from 'zod-v3'
+import { zodAdapter } from '../adapters/zod-v3'
 import type {
   AbstractSchema,
   UseAbstractFormReturnType,
   UseFormConfiguration,
 } from '../types/types-api'
 import type { DeepPartial, GenericForm } from '../types/types-core'
-import type { TypeWithNullableDynamicKeys } from '../types/types-zod'
-import type { UnwrapZodObject, UseFormConfigurationWithZod } from '../types/types-zod-adapter'
+import type { TypeWithNullableDynamicKeys } from '../adapters/zod-v3/types-zod'
+import type {
+  UnwrapZodObject,
+  UseFormConfigurationWithZod,
+} from '../adapters/zod-v3/types-zod-adapter'
 import { useAbstractForm } from './use-abstract-form'
 
 // Overload the useForm type definition to signal that zod schemas have 1st class support
@@ -48,10 +51,20 @@ export function useForm<
     ? zodAdapter<Schema, Form, TypeWithNullableDynamicKeys<typeof schema>>(schema)
     : schema
 
+  // Spread the full configuration so opt-in options (`onInvalidSubmit`,
+  // `fieldValidation`, `persist`, `history`) reach useAbstractForm.
+  // The explicit overrides below narrow schema / initialState /
+  // validationMode to the shapes useAbstractForm expects.
   return useAbstractForm<Form, GetValueFormType>({
+    ...(configuration as UseFormConfiguration<
+      Form,
+      GetValueFormType,
+      AbstractSchema<Form, GetValueFormType>,
+      DeepPartial<Form>
+    >),
     schema: abstractSchema,
     initialState: configuration.initialState as DeepPartial<Form>,
-    key: configuration.key ?? '',
+    key: configuration.key,
     validationMode: configuration.validationMode ?? 'lax',
   })
 }

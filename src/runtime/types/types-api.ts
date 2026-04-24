@@ -1,5 +1,14 @@
 import type { ComputedRef, ObjectDirective, Ref } from 'vue'
-import type { DeepPartial, FlatPath, GenericForm, IsObjectOrArray, NestedType } from './types-core'
+import type { Path } from '../core/paths'
+import type {
+  ArrayItem,
+  ArrayPath,
+  DeepPartial,
+  FlatPath,
+  GenericForm,
+  IsObjectOrArray,
+  NestedType,
+} from './types-core'
 
 export type FormKey = string
 
@@ -51,8 +60,155 @@ type GetInitialStateConfig<Form> = {
 
 export type AbstractSchema<Form, GetValueFormType> = {
   getInitialState(config: GetInitialStateConfig<Form>): InitialStateResponse<Form>
-  getSchemasAtPath(path: string): AbstractSchema<NestedType<Form, typeof path>, GetValueFormType>[]
-  validateAtPath(data: unknown, path: string | undefined): ValidationResponse<Form>
+  /**
+   * Return every sub-schema that could resolve at the given structured
+   * path. Multiple results are only expected for discriminated / union
+   * branches where the adapter can't decide a single winner until the
+   * data lands. `path` is the canonical `Segment[]` — adapters walk it
+   * segment-by-segment so literal-dot keys (`['user.name']`) don't
+   * collide with the sibling-pair form (`['user', 'name']`).
+   */
+  getSchemasAtPath(path: Path): AbstractSchema<unknown, GetValueFormType>[]
+  /**
+   * Validate a subtree (when `path` is provided) or the whole form (when
+   * `path` is `undefined`). `path` is the canonical `Segment[]`, not a
+   * dotted string — two schemas with otherwise-colliding dotted forms
+   * (`['user.name']` vs `['user', 'name']`) stay distinct at the
+   * adapter boundary.
+   *
+   * Returns a `Promise` so adapters can back validation onto async
+   * parsers (`zod.safeParseAsync`) and consumers can express async
+   * refinements (`z.string().refine(async ...)`). Adapters MUST NOT
+   * throw — errors are returned as a `success: false` response with a
+   * populated `errors` array.
+   */
+  validateAtPath(data: unknown, path: Path | undefined): Promise<ValidationResponse<Form>>
+}
+
+/**
+ * Status the `validate()` reactive ref exposes. `pending: true` means a
+ * validation call is in flight — `errors` / `success` / `formKey` reflect
+ * the initial "no result yet" state. `pending: false` is the settled
+ * state; the other fields mirror the latest `ValidationResponse`.
+ *
+ * Consumers narrow on `pending`: `if (!status.pending) { ... }` gives
+ * access to the settled discriminated union (success or failure).
+ */
+export type PendingValidationStatus = {
+  readonly pending: true
+  readonly errors: undefined
+  readonly success: false
+  readonly formKey: FormKey
+}
+
+export type SettledValidationStatus<Form> = {
+  readonly pending: false
+} & ValidationResponseWithoutValue<Form>
+
+export type ReactiveValidationStatus<Form> = PendingValidationStatus | SettledValidationStatus<Form>
+
+/**
+ * Optional policy that fires on submit-validation failure — the library
+ * can focus and/or scroll the first errored field into view without the
+ * consumer having to wire an `onError` callback. Off by default.
+ */
+export type OnInvalidSubmitPolicy = 'none' | 'focus-first-error' | 'scroll-to-first-error' | 'both'
+
+/**
+ * Field-level validation trigger mode.
+ *
+ * - `'none'` (default): no field-level validation. `handleSubmit` and
+ *   explicit `validate()` / `validateAsync()` calls are the only
+ *   validation surface.
+ * - `'change'`: on every mutation via `setValueAtPath` (register,
+ *   `setValue(path, ...)`, array helpers), schedule a debounced
+ *   validation for the written path.
+ * - `'blur'`: on `markFocused(path, false)` — i.e. when the user
+ *   tabs away from a field — validate immediately (no debounce) for
+ *   that path.
+ */
+export type FieldValidationMode = 'change' | 'blur' | 'none'
+
+export type FieldValidationConfig = {
+  /** Trigger mode. Default `'none'`. */
+  on?: FieldValidationMode
+  /**
+   * Debounce window for `on: 'change'`. Ignored when `on` is `'blur'`
+   * or `'none'`. Default `200` ms.
+   */
+  debounceMs?: number
+}
+
+/**
+ * Built-in storage backend keys — maps to `localStorage`,
+ * `sessionStorage`, or a zero-dep IndexedDB wrapper. Consumers can
+ * swap in a custom `FormStorage` object for anything else (encrypted
+ * local storage, a cookie store, a native mobile bridge).
+ */
+export type FormStorageKind = 'local' | 'session' | 'indexeddb'
+
+/**
+ * Uniform async storage contract. `localStorage` / `sessionStorage`
+ * are wrapped in `async` functions; the single-microtask cost is
+ * negligible and the simpler contract beats a `T | Promise<T>` union
+ * that every caller would have to handle.
+ *
+ * `getItem` returns `unknown` (not `string | null`) because IDB
+ * stores structured-cloned values. The local/session adapters
+ * stringify on write and parse on read, so from the caller's
+ * perspective the contract is "give me back whatever I put in".
+ */
+export type FormStorage = {
+  getItem(key: string): Promise<unknown>
+  setItem(key: string, value: unknown): Promise<void>
+  removeItem(key: string): Promise<void>
+}
+
+export type PersistIncludeMode = 'form' | 'form+errors'
+
+/**
+ * Undo/redo configuration. `true` enables with default `max: 50`.
+ * Pass an object to tune the bounded snapshot stack size.
+ */
+export type HistoryConfig = true | { max?: number }
+
+/**
+ * Opt-in persistence for the form's draft state. The library writes
+ * (debounced) on every mutation and reads back on mount. Off by
+ * default — no config → no reads, no writes, zero overhead.
+ */
+export type PersistConfig = {
+  /**
+   * Which backend to persist to. String shortcuts load built-in
+   * adapters via dynamic import (tree-shakeable — a consumer who
+   * picks `'local'` never pulls IndexedDB code). Pass a custom
+   * `FormStorage` object for anything else.
+   */
+  storage: FormStorageKind | FormStorage
+
+  /** Defaults to `chemical-x-forms:${formKey}`. */
+  key?: string
+
+  /** Debounce window for writes. Default `300` ms. */
+  debounceMs?: number
+
+  /**
+   * `'form'` (default) persists only the form value. Errors on
+   * reload are usually stale — fresh validation will repopulate
+   * them. Use `'form+errors'` when the server-side error context
+   * is expensive to reconstruct (complex cross-field refinements).
+   */
+  include?: PersistIncludeMode
+
+  /**
+   * Increment to invalidate all existing persisted payloads across
+   * every client. Readers check `v` and drop mismatched entries.
+   * Default `1`.
+   */
+  version?: number
+
+  /** Clear the persisted entry when a submit handler resolves. Default `true`. */
+  clearOnSubmitSuccess?: boolean
 }
 
 export type UseFormConfiguration<
@@ -62,13 +218,74 @@ export type UseFormConfiguration<
   InitialState extends DeepPartial<Form>,
 > = {
   schema: Schema | ((key: FormKey) => Schema)
-  key?: FormKey
+  // Required by design: forms without an explicit key silently share state
+  // across unrelated components. The runtime `requireFormKey` still throws
+  // for non-TS consumers passing `undefined` / `''`.
+  key: FormKey
   initialState?: InitialState
   validationMode?: ValidationMode
-  useFieldTransformer?: boolean
-}
+  /**
+   * What to do when a submit attempt fails validation. Fires after the
+   * error store is populated and before the user's `onError` callback.
+   * Default `'none'` — consumers who want this behaviour must opt in.
+   *
+   * - `'focus-first-error'`: calls `.focus({ preventScroll: true })` on
+   *   the first errored field's first connected, visible element.
+   * - `'scroll-to-first-error'`: calls `.scrollIntoView()` on it.
+   * - `'both'`: scroll then focus (focus-with-preventScroll means the
+   *   browser doesn't do its own scroll and undo the explicit one).
+   * - `'none'` (default): no-op.
+   *
+   * If no errored field has a currently-mounted, visible element (every
+   * candidate is unmounted or `display:none`), this policy silently
+   * no-ops rather than throwing.
+   */
+  onInvalidSubmit?: OnInvalidSubmitPolicy
 
-export type FieldTransformer<Input, Output> = (input: Input) => Output
+  /**
+   * Configure per-field validation that fires between submit attempts.
+   * Default `{ on: 'none' }` — no field validation.
+   *
+   * - `{ on: 'change', debounceMs: 200 }` — every mutation via
+   *   `setValueAtPath` schedules validation for that path after the
+   *   debounce elapses. Rapid successive mutations reset the timer;
+   *   in-flight runs are cancelled via `AbortController` so stale
+   *   results can't clobber fresher ones.
+   * - `{ on: 'blur' }` — validation fires immediately (no debounce)
+   *   when the user tabs away from a registered field. Ignores
+   *   `debounceMs`.
+   *
+   * Runs concurrently with `handleSubmit`'s full-form validation:
+   * field runs in flight are aborted at submit entry so the submit
+   * result is authoritative. Aborted on `reset()` too.
+   */
+  fieldValidation?: FieldValidationConfig
+
+  /**
+   * Opt-in persistence of the form's draft state. Off by default.
+   * See `docs/recipes/persistence.md` for the tradeoff table and
+   * backend picker guidance. Key fields:
+   *
+   * - `storage: 'local' | 'session' | 'indexeddb' | FormStorage`
+   * - `key?`: persisted entry key. Defaults to
+   *   `chemical-x-forms:${formKey}`.
+   * - `debounceMs?`: write debounce. Default `300` ms.
+   * - `version?`: bump to invalidate existing entries.
+   * - `clearOnSubmitSuccess?`: default `true`.
+   */
+  persist?: PersistConfig
+
+  /**
+   * Opt-in undo/redo stack. `true` uses the default max of 50
+   * snapshots; pass `{ max: N }` to tune. Off by default.
+   *
+   * Each mutation through `setValueAtPath` / `applyFormReplacement`
+   * / field-array helpers pushes a snapshot onto the undo stack.
+   * `undo()` pops one; `redo()` replays it. The stack is trimmed
+   * FIFO when it exceeds `max`. `reset()` clears the history.
+   */
+  history?: HistoryConfig
+}
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>
 
@@ -215,11 +432,6 @@ export type RegisterDirective =
   | RegisterRadioCustomDirective
   | RegisterModelDynamicCustomDirective
 
-// undefined by default (defer to useForm global setting)
-export type RegisterContext<Input, Output> = {
-  fieldTransformer?: undefined | boolean | FieldTransformer<Input, Output>
-}
-
 export type SetValueCallback<Payload> = (value: DeepPartial<Payload>) => DeepPartial<Payload>
 export type SetValuePayload<Payload> = DeepPartial<Payload> | SetValueCallback<Payload>
 
@@ -250,9 +462,29 @@ export type FieldState = DeepFlatten<
 >
 export type DOMFieldStateStore = Map<string, DOMFieldState | undefined>
 
-/** Reactive per-field error store, keyed by `path.join('.')`. */
+/**
+ * Reactive per-field error store, keyed by `path.join('.')`. Exposed
+ * as `FormFieldErrors<Form>` on the `useForm` return so consumers get
+ * dot-access for known schema paths; the broader `FormErrorRecord`
+ * type still types the underlying store / SSR-serialisation shape.
+ */
 export type FormErrorRecord = Record<string, ValidationError[]>
 export type FormErrorStore = Map<FormKey, FormErrorRecord>
+
+/**
+ * Form-aware view of `fieldErrors`. A mapped type over the form's own
+ * `FlatPath<Form>` union, so `fieldErrors.email` (dot access) works
+ * for a form declaring `email` as a leaf. Dotted nested paths
+ * (`'user.profile.email'`) are still present as keys — access those
+ * via bracket notation because JS dot-access splits on literal dots.
+ *
+ * Server errors landing on paths outside the schema (rare, usually a
+ * bug in the server's error shape) can be read via a cast to
+ * `FormErrorRecord`.
+ */
+export type FormFieldErrors<Form extends GenericForm> = Partial<
+  Record<FlatPath<Form>, ValidationError[]>
+>
 
 /**
  * Normalised API error envelope — the shape cubic-forms (and many DRF-style
@@ -297,11 +529,38 @@ export type UseAbstractFormReturnType<
     ): boolean
   }
 
-  validate: (path?: FlatPath<Form>) => Readonly<Ref<ValidationResponseWithoutValue<Form>>>
-  register: (
-    path: RegisterFlatPath<Form, keyof Form>,
-    _context?: RegisterContext<typeof path, NestedType<Form, typeof path>>
-  ) => RegisterValue<NestedType<Form, typeof path> | undefined>
+  /**
+   * Reactive validation status for the whole form (or a subtree when a
+   * path is given). The returned ref's value carries a `pending` flag —
+   * `true` while the async validator is in flight, `false` when settled.
+   * Consumers typically gate rendering on `!status.value.pending` before
+   * trusting `success` / `errors`.
+   *
+   * Re-runs whenever the form (or the subtree at `path`) mutates. Stale
+   * in-flight validations are dropped via an internal generation counter,
+   * so the ref only ever writes results from the most recent call.
+   */
+  validate: (path?: FlatPath<Form>) => Readonly<Ref<ReactiveValidationStatus<Form>>>
+
+  /**
+   * Imperative one-shot validation. Resolves to a settled
+   * `ValidationResponseWithoutValue` (success + undefined errors, or
+   * failure + populated errors) for the whole form when called without a
+   * path, or for the subtree at `path`. Unlike `validate()`, this does
+   * not subscribe to form reactivity — each call runs validation once
+   * against the current form state.
+   *
+   * `isValidating` is flipped `true` while the returned promise is
+   * in flight.
+   */
+  validateAsync: (path?: FlatPath<Form>) => Promise<ValidationResponseWithoutValue<Form>>
+  // register is generic so the RegisterValue narrows to the specific path's
+  // leaf type. Without the generic, `typeof path` in the return would resolve
+  // to the full `RegisterFlatPath<Form>` union, and every register call
+  // would produce a RegisterValue<union-of-every-leaf | undefined>.
+  register: <Path extends RegisterFlatPath<Form, keyof Form>>(
+    path: Path
+  ) => RegisterValue<NestedType<Form, Path> | undefined>
   key: FormKey
 
   // --- Reactive field-error API ---
@@ -311,8 +570,14 @@ export type UseAbstractFormReturnType<
    * automatically by `handleSubmit` on validation failure and cleared on
    * validation success. Also writable via `setFieldErrors` /
    * `setFieldErrorsFromApi` for server-side hydration.
+   *
+   * Typed as `FormFieldErrors<Form>` — a mapped type over the form's
+   * own `FlatPath<Form>`. Dot access works for known top-level paths
+   * (`fieldErrors.email`); bracket access is required for dotted
+   * nested keys (`fieldErrors['user.profile.email']`) because JS dot
+   * notation splits on literal dots.
    */
-  fieldErrors: Readonly<ComputedRef<FormErrorRecord>>
+  fieldErrors: Readonly<ComputedRef<FormFieldErrors<Form>>>
 
   /** Replace all field errors for this form with the provided list. */
   setFieldErrors: (errors: ValidationError[]) => void
@@ -331,8 +596,188 @@ export type UseAbstractFormReturnType<
    * `{ error: { details } }` envelope or a raw `{ path: [msg] }` record,
    * maps it to `ValidationError[]`, stamps the current form key, and calls
    * `setFieldErrors`. Returns the produced errors for downstream use.
+   *
+   * The optional `limits` object caps entry count and path depth so
+   * attacker-controlled payloads (gateway passthroughs, untrusted
+   * microservices) can't DoS the form. Defaults: 1 000 entries, depth 32.
+   * Over-budget payloads are rejected wholesale; over-depth individual
+   * keys are dropped but the rest of the payload still applies.
    */
   setFieldErrorsFromApi: (
-    payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined
+    payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined,
+    limits?: { maxEntries?: number; maxPathDepth?: number }
   ) => ValidationError[]
+
+  // --- Form-level aggregates ---
+
+  /**
+   * `true` when any tracked leaf's current value differs from the value it
+   * was initialised with. Returns `false` for a pristine form and for one
+   * where every mutation has been undone back to its original.
+   *
+   * Comparisons use `Object.is`; object/array leaves are reference-compared,
+   * so structural equality after a replace-with-equal-copy will still read
+   * as dirty. Reset via `reset()` to restore the pristine baseline.
+   */
+  isDirty: Readonly<ComputedRef<boolean>>
+
+  /**
+   * `true` when the form has no recorded errors. Driven by the same error
+   * store `fieldErrors` exposes — a successful `validate()` / `handleSubmit`
+   * run clears errors and flips this to true; a failed run populates them
+   * and flips to false.
+   */
+  isValid: Readonly<ComputedRef<boolean>>
+
+  // --- Submission lifecycle ---
+
+  /**
+   * `true` while a submit handler produced by `handleSubmit` is executing.
+   * Flips on entry to the handler and off in a `finally` block — covers
+   * both the validation phase and the user's async callback.
+   */
+  isSubmitting: Readonly<ComputedRef<boolean>>
+
+  /**
+   * Increments once per call to a submit handler, regardless of outcome
+   * (validation failure, callback success, callback throw). Counts "how
+   * many times did the user click submit", not "how many succeeded".
+   */
+  submitCount: Readonly<ComputedRef<number>>
+
+  /**
+   * Captures whatever the user's submit callback (or its `onError` handler)
+   * threw or rejected with. Cleared to `null` at the start of each new
+   * submission attempt; stays `null` on successful completion.
+   *
+   * The handler still re-throws — `submitError` is the reactive mirror for
+   * template consumers; imperative callers can use `try { await
+   * handler(event) }` as normal.
+   */
+  submitError: Readonly<ComputedRef<unknown>>
+
+  /**
+   * `true` while any validation run (reactive `validate()` re-run,
+   * imperative `validateAsync(...)`, or the pre-submit validation inside
+   * `handleSubmit`) is in flight. Drops back to `false` when every
+   * in-flight run has settled.
+   */
+  isValidating: Readonly<ComputedRef<boolean>>
+
+  // --- Reset ---
+
+  /**
+   * Restore the form to its initial state. With no argument, re-evaluates
+   * the schema's defaults. With `nextInitialState`, applies those
+   * constraints over the schema defaults (same precedence rules as the
+   * `useForm({ initialState })` option).
+   *
+   * Side-effects beyond replacing `form`:
+   *   - `originals` is rebuilt against the new baseline (so a follow-up
+   *     `setValue` to any leaf will correctly flip `isDirty`);
+   *   - `fieldErrors` is cleared;
+   *   - per-field `touched` / `focused` / `blurred` are cleared (the
+   *     `isConnected` DOM flag is preserved);
+   *   - submission lifecycle (`isSubmitting` / `submitCount` /
+   *     `submitError`) resets to the "pre-submission" state.
+   */
+  reset: (nextInitialState?: DeepPartial<Form>) => void
+
+  /**
+   * Restore a single field (or a whole sub-tree, when `path` names a
+   * container like `'user'` rather than a leaf like `'user.name'`) to the
+   * value captured in `originals`. Clears errors and resets touched flags
+   * for the target and any descendants. Does not touch siblings or
+   * submission state.
+   *
+   * No-ops if the path is not tracked (e.g. a freshly-named key that has
+   * never been set or appeared in schema defaults).
+   */
+  resetField: (path: FlatPath<Form>) => void
+
+  // --- Undo / redo ---
+
+  /**
+   * Revert the form to the previous snapshot. Returns `true` when a
+   * snapshot was restored, `false` when the undo stack is at its
+   * initial state (nothing to undo). Only present when
+   * `history` is configured on `useForm`; otherwise a no-op returning
+   * `false`.
+   */
+  undo: () => boolean
+
+  /**
+   * Replay a previously-undone snapshot. Returns `true` on success,
+   * `false` when the redo stack is empty. Cleared on the next new
+   * mutation.
+   */
+  redo: () => boolean
+
+  /** `true` when the undo stack has at least one restorable snapshot. */
+  canUndo: Readonly<ComputedRef<boolean>>
+
+  /** `true` when a prior `undo()` has pending replays on the redo stack. */
+  canRedo: Readonly<ComputedRef<boolean>>
+
+  /**
+   * Total snapshot count across both stacks. Primarily for debug
+   * UIs — consumers driving undo/redo UI should use `canUndo` /
+   * `canRedo` instead.
+   */
+  historySize: Readonly<ComputedRef<number>>
+
+  // --- Focus / scroll to first error ---
+
+  /**
+   * Focuses the first errored field's first connected, visible element.
+   * Returns `true` when an element was focused, `false` when no
+   * qualifying element was found (no errors, or every errored field is
+   * unmounted / hidden).
+   *
+   * Honours `preventScroll`: pass `true` to suppress the browser's
+   * default scroll-on-focus and do the scrolling yourself (pair with
+   * `scrollToFirstError`).
+   */
+  focusFirstError: (options?: { preventScroll?: boolean }) => boolean
+
+  /**
+   * Scrolls the first errored field's first connected, visible element
+   * into view. Returns `true` when the call happened, `false` when no
+   * qualifying element was found.
+   *
+   * `options` is forwarded to `Element.scrollIntoView` unchanged — the
+   * default is the browser's `{ block: 'start' }` behaviour.
+   */
+  scrollToFirstError: (options?: ScrollIntoViewOptions) => boolean
+
+  // --- Field arrays ---
+  //
+  // Typed helpers for the common list-editing operations. `Path` is narrowed
+  // to `ArrayPath<Form>` so calling these against a non-array path is a
+  // compile error; `value` is narrowed to the array's element type so
+  // appending a mismatched shape is also a compile error.
+  //
+  // Out-of-range behaviour differs by helper:
+  //   - `remove` / `swap` / `move` / `replace` guard explicitly and no-op
+  //     when any index is `< 0` or `>= length`.
+  //   - `insert` delegates to `Array.prototype.splice`, which clamps
+  //     `index` into `[0, length]` and treats negatives as offsets from
+  //     the end (`splice(-1, 0, v)` inserts just before the last item).
+  //     It therefore *does* insert at a clamped position rather than
+  //     no-op — matching the ergonomic consumers expect from `splice`.
+  append: <Path extends ArrayPath<Form>>(path: Path, value: ArrayItem<Form, Path>) => void
+  prepend: <Path extends ArrayPath<Form>>(path: Path, value: ArrayItem<Form, Path>) => void
+  insert: <Path extends ArrayPath<Form>>(
+    path: Path,
+    index: number,
+    value: ArrayItem<Form, Path>
+  ) => void
+  remove: <Path extends ArrayPath<Form>>(path: Path, index: number) => void
+  swap: <Path extends ArrayPath<Form>>(path: Path, a: number, b: number) => void
+  move: <Path extends ArrayPath<Form>>(path: Path, from: number, to: number) => void
+  replace: <Path extends ArrayPath<Form>>(
+    path: Path,
+    index: number,
+    value: ArrayItem<Form, Path>
+  ) => void
 }

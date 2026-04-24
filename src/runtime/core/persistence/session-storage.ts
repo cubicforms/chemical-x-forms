@@ -1,0 +1,41 @@
+import type { FormStorage } from '../../types/types-api'
+
+/**
+ * `sessionStorage` adapter — identical shape to the `localStorage`
+ * adapter, different backing store. Tab-scoped: closing the tab
+ * drops the entry. Useful for multi-step flows where the user
+ * shouldn't see last-session state on a fresh open.
+ */
+export function createSessionStorageAdapter(): FormStorage {
+  const available = typeof sessionStorage !== 'undefined'
+  return {
+    getItem(key) {
+      if (!available) return Promise.resolve(undefined)
+      try {
+        const raw = sessionStorage.getItem(key)
+        if (raw === null) return Promise.resolve(undefined)
+        return Promise.resolve(JSON.parse(raw) as unknown)
+      } catch {
+        return Promise.resolve(undefined)
+      }
+    },
+    setItem(key, value) {
+      if (!available) return Promise.resolve()
+      try {
+        sessionStorage.setItem(key, JSON.stringify(value))
+      } catch {
+        // Quota-exceeded or SecurityError — swallow.
+      }
+      return Promise.resolve()
+    },
+    removeItem(key) {
+      if (!available) return Promise.resolve()
+      try {
+        sessionStorage.removeItem(key)
+      } catch {
+        // SecurityError in private mode — swallow.
+      }
+      return Promise.resolve()
+    },
+  }
+}

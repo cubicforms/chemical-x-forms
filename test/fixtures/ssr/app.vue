@@ -1,12 +1,14 @@
 <script setup lang="ts">
   import { useForm } from '@runtime/composables/use-form'
-  import { z } from 'zod'
+  // The SSR fixture exercises the zod v3 adapter via useForm auto-import.
+  // Installed side-by-side with zod v4 via pnpm alias.
+  import { z } from 'zod-v3'
 
   const schema = z.object({
     favoriteGame: z.string().default('chess'),
     chessInArray: z.array(z.string()).default(['chess']),
   })
-  const { register } = useForm({ schema })
+  const { register } = useForm({ schema, key: 'ssr-select-fixture' })
 
   // -- Error API SSR fixtures --
   // Destructured at setup level so the refs become top-level template
@@ -60,6 +62,17 @@
   })
   const submitHandler = submitForm.handleSubmit(() => {})
   const submitHandlerType = typeof submitHandler
+
+  // -- Hydration round-trip fixture --
+  // Server writes a value into form state during setup; the value must
+  // appear in the rendered HTML *and* serialise into the `__NUXT__` payload
+  // so the client-side registry reconstructs the state. Phase 7.9 test.
+  const hydrationForm = useForm({
+    schema: z.object({ hydratedField: z.string() }),
+    key: 'hydration-check',
+  })
+  hydrationForm.setValue('hydratedField', 'server-written-value')
+  const hydratedFieldValue = hydrationForm.getValue('hydratedField')
 </script>
 
 <template>
@@ -150,6 +163,13 @@
       <!-- handleSubmit return shape -->
       <div id="handle-submit-shape">
         <span id="handle-submit-typeof">{{ submitHandlerType }}</span>
+      </div>
+
+      <!-- Hydration round-trip -->
+      <div id="hydration-check">
+        <!-- Vue templates auto-unwrap top-level refs; the `.value` goes on
+             the <script setup> side, not here. -->
+        <span id="hydration-check-value">{{ hydratedFieldValue }}</span>
       </div>
     </section>
   </div>

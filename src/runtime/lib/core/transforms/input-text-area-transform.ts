@@ -106,99 +106,160 @@ function removePropsByName(props: (AttributeNode | DirectiveNode)[], propNames: 
   }
 }
 
+// Exact prop-name match. Pre-rewrite used .includes('register') / .includes('value') /
+// .includes('type') which false-positived on any user prop whose name contained those
+// substrings (e.g. `data-register-id`, `valueFoo`, `prototype`, `:registerField`).
+function isExactKey(summarizedKey: string, name: string): boolean {
+  // Summarized keys come in three shapes depending on prop type:
+  //   attribute       -> "name"          (from getSummarizedProps)
+  //   v-bind:name="x" -> "\"name\""      (quoted via renderAsStatic)
+  //   static v-prefix -> "\"name\""
+  return summarizedKey === name || summarizedKey === `"${name}"`
+}
+
+/**
+ * Returns true if the type prop's value MIGHT resolve to "file" at runtime.
+ * Conservative — anything not provably non-"file" returns true so the caller
+ * skips the transform.
+ *
+ * Concretely:
+ *   - `type="text"`   → value is `'"text"'`         → false (static literal != "file")
+ *   - `type="file"`   → value is `'"file"'`         → true  (static "file")
+ *   - `:type="'text'"`→ value is `"'text'"`         → false
+ *   - `:type="'file'"`→ value is `"'file'"`         → true
+ *   - `:type="kind"`  → value is `'kind'`           → true  (dynamic identifier)
+ *   - `:type="`a-${x}`"` → array or template lit    → true  (compound expression)
+ */
+function couldResolveToFileType(value: SummarizedProp['value']): boolean {
+  if (Array.isArray(value)) return true
+  const trimmed = value.trim()
+  // Match a one-line JS string literal: '...', "...", or `...`. Doesn't
+  // attempt to handle escaped quotes inside the literal — a `type` prop
+  // containing escaped quotes is vanishingly rare and falling through to
+  // "could be file" here is the safe direction anyway.
+  const literalMatch = /^(["'`])(.*)\1$/.exec(trimmed)
+  if (literalMatch === null) return true // dynamic expression — can't prove safe
+  const quote = literalMatch[1] as string
+  const inner = literalMatch[2] as string
+  // Template literals with interpolations resolve at runtime.
+  if (quote === '`' && inner.includes('${')) return true
+  // The HTML spec matches `type` ASCII case-insensitively, so
+  // `<input type="FILE">` behaves identically to `<input type="file">`.
+  // Compare lower-cased so we catch both.
+  return inner.toLowerCase() === 'file'
+}
+
 export const inputTextAreaNodeTransform: NodeTransform = (node) => {
-  if (node.type !== 1) return
+  try {
+    if (node.type !== NodeTypes.ELEMENT) return
 
-  const isInput = node.type === 1 && node.tag === 'input'
-  const isTextArea = node.type === 1 && node.tag === 'textarea'
+    const isInput = node.tag === 'input'
+    const isTextArea = node.tag === 'textarea'
 
-  if (!isInput && !isTextArea) return
+    if (!isInput && !isTextArea) return
 
-  const elementProps = getSummarizedProps(node)
+    const elementProps = getSummarizedProps(node)
 
-  const registerIndex = elementProps.findIndex((p) => p.key.includes('register'))
-  const registerSummarizedProp = elementProps[registerIndex]
-  if (!registerSummarizedProp) return // no return early if we don't find an register directive
+    const registerIndex = elementProps.findIndex((p) => isExactKey(p.key, 'register'))
+    const registerSummarizedProp = elementProps[registerIndex]
+    if (!registerSummarizedProp) return // no v-register directive; nothing to transform
 
-  const valueIndex = elementProps.findIndex((p) => p.key.includes('value'))
-  const elementValueSummarizedProp = elementProps?.[valueIndex] ?? {
-    key: 'value',
-    value: "''",
-  }
+    // <input type="file" v-register="..."> silently skipped — at runtime the
+    // directive routes to a no-op variant. Trying to set el.value on a file
+    // input throws a DOMException for security reasons. We must skip not just
+    // the static type="file" case but any dynamic binding (`:type="x"`,
+    // template-literal expressions, etc.) that COULD resolve to "file" at
+    // runtime — `couldResolveToFileType` errs on the conservative side.
+    const typeIndex = elementProps.findIndex((p) => isExactKey(p.key, 'type'))
+    const typeProp = elementProps[typeIndex]
+    if (typeProp !== undefined && couldResolveToFileType(typeProp.value)) return
 
-  const inputTypeIndex = elementProps.findIndex((p) => p.key.includes('type'))
-  // if (inputTypeIndex < 0 || inputTypeIndex >= elementProps.length) return
-
-  const defaultSummarizedTextProp = { key: 'type', value: "'text'" }
-  const inputTypeSummarizedProp: SummarizedProp =
-    inputTypeIndex === -1
-      ? defaultSummarizedTextProp
-      : (elementProps[inputTypeIndex] ?? defaultSummarizedTextProp)
-  const inputTypeExpressionArray =
-    typeof inputTypeSummarizedProp.value === 'string'
-      ? [inputTypeSummarizedProp.value]
-      : inputTypeSummarizedProp.value
-
-  // this gets paired with `value` to get the [selectionLabel]=[label] prop for the given input
-  // checkbox and radio are marked as selected via `checked`, others typically use `value`
-  const elementSelectionLabelExpression = createCompoundExpression([
-    '(',
-    '(',
-    ...inputTypeExpressionArray,
-    ')',
-    " === 'checkbox' || ",
-    '(',
-    ...inputTypeExpressionArray,
-    ") === 'radio'",
-    ") ? 'checked' : 'value'",
-  ])
-
-  function computeProps(
-    _node: PlainElementNode | ComponentNode | SlotOutletNode | TemplateNode,
-    registerSummarizedProp: SummarizedProp,
-    elementValueSummarizedProp: SummarizedProp
-  ) {
-    const dummyLoc: SourceLocation = {
-      start: { column: 0, line: 0, offset: 0 },
-      end: { column: 0, line: 0, offset: 0 },
-      source: '',
+    const valueIndex = elementProps.findIndex((p) => isExactKey(p.key, 'value'))
+    const elementValueSummarizedProp = elementProps?.[valueIndex] ?? {
+      key: 'value',
+      value: "''",
     }
 
-    const props = _node.props
-    removePropsByName(props, ['checked', 'value']) // (re)create the `value` prop further down
-    const registerValueArr = Array.isArray(registerSummarizedProp.value)
-      ? registerSummarizedProp.value
-      : [registerSummarizedProp.value]
-    const valueExpression = createCompoundExpression([
+    const inputTypeIndex = typeIndex
+
+    const defaultSummarizedTextProp = { key: 'type', value: "'text'" }
+    const inputTypeSummarizedProp: SummarizedProp =
+      inputTypeIndex === -1
+        ? defaultSummarizedTextProp
+        : (elementProps[inputTypeIndex] ?? defaultSummarizedTextProp)
+    const inputTypeExpressionArray =
+      typeof inputTypeSummarizedProp.value === 'string'
+        ? [inputTypeSummarizedProp.value]
+        : inputTypeSummarizedProp.value
+
+    // this gets paired with `value` to get the [selectionLabel]=[label] prop for the given input
+    // checkbox and radio are marked as selected via `checked`, others typically use `value`
+    const elementSelectionLabelExpression = createCompoundExpression([
       '(',
-      ...registerValueArr,
-      ')?.innerRef?.value',
+      '(',
+      ...inputTypeExpressionArray,
+      ')',
+      " === 'checkbox' || ",
+      '(',
+      ...inputTypeExpressionArray,
+      ") === 'radio'",
+      ") ? 'checked' : 'value'",
     ])
-    const valueOrCheckedProp: DirectiveNode = {
-      // reconstruct the `value` attribute based on the provided v-registerer, now that the computation is complete
-      arg: elementSelectionLabelExpression,
-      exp: createCompoundExpression([
+
+    function computeProps(
+      _node: PlainElementNode | ComponentNode | SlotOutletNode | TemplateNode,
+      registerSummarizedProp: SummarizedProp,
+      elementValueSummarizedProp: SummarizedProp
+    ): void {
+      const dummyLoc: SourceLocation = {
+        start: { column: 0, line: 0, offset: 0 },
+        end: { column: 0, line: 0, offset: 0 },
+        source: '',
+      }
+
+      const props = _node.props
+      removePropsByName(props, ['checked', 'value']) // (re)create the `value` prop further down
+      const registerValueArr = Array.isArray(registerSummarizedProp.value)
+        ? registerSummarizedProp.value
+        : [registerSummarizedProp.value]
+      const valueExpression = createCompoundExpression([
         '(',
-        ...elementSelectionLabelExpression.children,
-        ") === 'checked' ? (",
-        // resolves to a boolean
-        ...generateEqualityExpression(
-          registerSummarizedProp.value,
-          elementValueSummarizedProp.value
-        ),
-        ') : (',
-        // resolves to the provided register value
-        ...valueExpression.children,
-        ')',
-      ]),
-      name: 'bind',
-      modifiers: [],
-      type: NodeTypes.DIRECTIVE,
-      loc: dummyLoc,
+        ...registerValueArr,
+        ')?.innerRef?.value',
+      ])
+      const valueOrCheckedProp: DirectiveNode = {
+        // reconstruct the `value` attribute based on the provided v-registerer, now that the computation is complete
+        arg: elementSelectionLabelExpression,
+        exp: createCompoundExpression([
+          '(',
+          ...elementSelectionLabelExpression.children,
+          ") === 'checked' ? (",
+          // resolves to a boolean
+          ...generateEqualityExpression(
+            registerSummarizedProp.value,
+            elementValueSummarizedProp.value
+          ),
+          ') : (',
+          // resolves to the provided register value
+          ...valueExpression.children,
+          ')',
+        ]),
+        name: 'bind',
+        modifiers: [],
+        type: NodeTypes.DIRECTIVE,
+        loc: dummyLoc,
+      }
+
+      props.push(valueOrCheckedProp)
     }
 
-    props.push(valueOrCheckedProp)
-  }
+    computeProps(node, registerSummarizedProp, elementValueSummarizedProp)
+  } catch (err) {
+    // AST shapes can shift with minor Vue compiler updates. If we hit
+    // anything unexpected, skip this transform — the runtime directive
+    // alone handles value binding (via mounted/beforeUpdate), so the only
+    // cost is a one-frame flash on SSR initial render.
 
-  computeProps(node, registerSummarizedProp, elementValueSummarizedProp)
+    console.error('[@chemical-x/forms] input/textarea transform failed, skipping:', err)
+  }
 }

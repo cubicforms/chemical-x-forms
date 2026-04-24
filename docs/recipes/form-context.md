@@ -1,0 +1,130 @@
+# Form context in nested components
+
+Splitting a form across components? Don't prop-drill `register` /
+`fieldErrors` / `handleSubmit` through every layer. Call
+`useFormContext()` in any descendant and get the same handle back.
+
+## The common case — ambient resolution
+
+Parent owns the form:
+
+```vue
+<!-- SignupForm.vue -->
+<script setup lang="ts">
+import { useForm } from '@chemical-x/forms/zod'
+import { z } from 'zod'
+
+interface Form {
+  email: string
+  profile: { name: string; age: number }
+}
+
+const schema = z.object({
+  email: z.email(),
+  profile: z.object({ name: z.string(), age: z.number() }),
+})
+
+const { handleSubmit } = useForm<Form>({ schema, key: 'signup' })
+const onSubmit = handleSubmit(async (values) => {
+  await api.post('/signup', values)
+})
+</script>
+
+<template>
+  <form @submit.prevent="onSubmit">
+    <EmailRow />
+    <ProfileGroup />
+    <button>Sign up</button>
+  </form>
+</template>
+```
+
+Any descendant grabs the same form:
+
+```vue
+<!-- EmailRow.vue -->
+<script setup lang="ts">
+import { useFormContext } from '@chemical-x/forms/zod'
+
+interface Form {
+  email: string
+  profile: { name: string; age: number }
+}
+
+const { register, fieldErrors } = useFormContext<Form>()
+</script>
+
+<template>
+  <label>Email</label>
+  <input v-register="register('email')" type="email" />
+  <small v-if="fieldErrors.email?.[0]">
+    {{ fieldErrors.email[0].message }}
+  </small>
+</template>
+```
+
+You supply the `Form` generic — Vue's injection system erases it,
+so the library can't recover your shape on your behalf. Other than
+that, `useFormContext<Form>()` returns an object type-identical to
+`useForm`'s return.
+
+## Reaching a form that isn't an ancestor
+
+Floating save buttons, sidebar status widgets, anything in a
+different branch of the component tree:
+
+```vue
+<!-- FloatingSaveButton.vue (anywhere in the app) -->
+<script setup lang="ts">
+import { useFormContext } from '@chemical-x/forms/zod'
+
+interface Form { /* … */ }
+
+const { isDirty, isSubmitting, handleSubmit } = useFormContext<Form>('signup')
+</script>
+
+<template>
+  <button
+    :disabled="!isDirty || isSubmitting"
+    @click="handleSubmit(onSave)()"
+  >
+    Save
+  </button>
+</template>
+```
+
+Pass the same `key` you passed to `useForm({ key: 'signup' })`. If no
+form is registered under that key when the component mounts, you
+get a clear error naming the missing key.
+
+## Lifetime
+
+Both resolution modes ref-count on the form's registry entry. In
+practice:
+
+- The form survives until every component that reached it unmounts.
+- You don't coordinate cleanup — it just works.
+- A form accessed only by `useFormContext(key)` stays alive as long
+  as at least one consumer is mounted, even if the original
+  `useForm` owner unmounted first.
+
+## Error messages
+
+`useFormContext()` throws only in two cases:
+
+- **No ambient form** — you called `useFormContext()` with no
+  ancestor `useForm` and no key argument. The error names both
+  resolutions so you can pick either.
+- **Key not registered** — you called `useFormContext('key-name')`
+  but nothing is registered. The error includes the key value so
+  you can spot typos or mounting-order bugs.
+
+## When not to use it
+
+If your form logic fits in one component, stick with `useForm`
+directly. `useFormContext` is a small reactive overhead you don't
+need when there's nothing to share.
+
+Reach for it when field components are reusable across forms, or
+when a distant component needs read-only status (`isDirty`,
+`isSubmitting`, `fieldErrors`) of a form it doesn't own.

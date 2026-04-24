@@ -1,0 +1,112 @@
+name: Peer-Dep Matrix
+
+# Weekly sweep across the peer-dep surface. The README claims support for
+# Nuxt 3/4 and Vue 3.5+ (with Vite 5/6). This workflow enforces that claim
+# by installing each supported combination and running the core quality
+# gate (typecheck + test + size-limit) against it.
+#
+# Scope:
+#   - Node runtime: pinned to 20.x so the matrix isolates peer variance.
+#     The main `matrix.yml` workflow already covers Node 18 / 20 / 22 / lts.
+#   - Version pinning uses `pnpm.overrides` injected before install so the
+#     pin propagates across the whole dep graph (transitive resolutions
+#     follow the override too, which is the point of peer-dep testing).
+#   - Combinations are listed explicitly via `include:` rather than
+#     cartesian product to avoid known-invalid pairings (Nuxt 4 needs
+#     Vite ≥6; some Nuxt/Vue pairs are incompatible).
+#   - `fail-fast: false` lets every combination report independently.
+#     Missing future versions (e.g. Vue 3.6 before release) surface as
+#     failed jobs in the Actions tab — informational, not blocking.
+#
+# Scheduling:
+#   - Cron: Monday 06:00 UTC weekly. Not wired into PR checks; bench +
+#     transient peer-version flakiness would be needlessly noisy on every
+#     PR, and nothing merging to main changes the peer-dep axis.
+#   - `workflow_dispatch` for manual runs before releases.
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  peer-matrix:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Floor: the declared peer-dep minimums.
+          - label: floor — Vue 3.5.13 / Vite 5 / Nuxt 3.16
+            vue: 3.5.13
+            vite: ^5.0.0
+            nuxt: ^3.16.0
+          # Vite 6 over the Vue 3.5 floor — confirms no Vite 6-specific
+          # regressions in the core that would surprise Vite 6 adopters
+          # still on Vue 3.5.
+          - label: Vue 3.5 latest / Vite 6 / Nuxt 3 latest
+            vue: ^3.5.0
+            vite: ^6.0.0
+            nuxt: ^3.0.0
+          # Ceiling of the Vue 3.x line with the current Nuxt 3 line.
+          - label: Vue 3.6 / Vite 6 / Nuxt 3 latest
+            vue: ^3.6.0
+            vite: ^6.0.0
+            nuxt: ^3.0.0
+          # Nuxt 4 — the README claims 3/4 parity, and this pairing is
+          # what a Nuxt 4 adopter would actually install.
+          - label: Vue 3.6 / Vite 6 / Nuxt 4
+            vue: ^3.6.0
+            vite: ^6.0.0
+            nuxt: ^4.0.0
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20.x
+
+      - name: Inject pnpm.overrides for this matrix cell
+        run: |
+          node -e "
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+          pkg.pnpm = pkg.pnpm ?? {};
+          pkg.pnpm.overrides = {
+            ...(pkg.pnpm.overrides ?? {}),
+            vue: '${{ matrix.vue }}',
+            vite: '${{ matrix.vite }}',
+            nuxt: '${{ matrix.nuxt }}',
+          };
+          fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
+          console.log('applied overrides:', pkg.pnpm.overrides);
+          "
+
+      - name: Install with overrides
+        # --no-frozen-lockfile: the override mutation invalidates the
+        # committed pnpm-lock.yaml; we deliberately re-resolve against the
+        # overridden range here. The lockfile change is scratch (never
+        # committed from this runner).
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Stub @chemical-x/forms
+        run: pnpm dev:prepare
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Tests
+        run: pnpm test
+
+      - name: Size limit
+        run: pnpm check:size

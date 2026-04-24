@@ -1,13 +1,15 @@
 {
   "compilerOptions": {
+    "target": "ESNext",
     "lib": [
-      "ES2020",
+      "ESNext",
       "DOM",
       "DOM.Iterable"
     ],
-    "module": "ES2020",
-    "moduleResolution": "Node",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "strict": true,
+    "strictFunctionTypes": true,
     "noUncheckedIndexedAccess": true,
     "noFallthroughCasesInSwitch": true,
     "noEmitOnError": true,
@@ -21,30 +23,44 @@
     "exactOptionalPropertyTypes": true,
     "noImplicitReturns": true,
     "noImplicitThis": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "verbatimModuleSyntax": true,
     "pretty": true,
     "paths": {
       "@runtime/*": [
         "./src/runtime/*"
+      ],
+      "@chemical-x/forms": [
+        "./src/index.ts"
+      ],
+      "@chemical-x/forms/types": [
+        "./src/runtime/types/types-api.ts"
+      ],
+      "@chemical-x/forms/zod": [
+        "./src/zod.ts"
+      ],
+      "@chemical-x/forms/zod-v3": [
+        "./src/zod-v3.ts"
       ]
     },
     "removeComments": false,
     "strictBuiltinIteratorReturn": true,
-    "strictFunctionTypes": false,
     "esModuleInterop": true,
     "emitDeclarationOnly": false,
     "declaration": true,
     "skipLibCheck": true,
-    "baseUrl": ".",
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true,
-    "incremental": false,
-    "downlevelIteration": true
+    "incremental": false
   },
   "include": [
     "src",
     "types",
     "test",
+    "bench",
     "build.config.ts",
+    "vitest.config.ts",
     "playground",
     "eslint-plugin-nuxt.d.ts"
   ],

@@ -38,7 +38,7 @@ jobs:
         run: echo "::notice title=Version::Publishing version ${{ steps.calculate-next-version.outputs.next_version }}"
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v6

@@ -26,6 +26,7 @@ function isPrimitive(input: unknown): boolean {
 }
 
 import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from './types-zod'
+import { fingerprintZodSchema } from './fingerprint'
 import { isZodSchemaType } from './helpers'
 
 export function zodAdapter<
@@ -63,6 +64,7 @@ export function zodAdapter<
       }
     }
     const abstractSchema: AbstractSchema<Form, GetValueFormType> = {
+      fingerprint: () => fingerprintZodSchema(_zodSchema),
       getInitialState(config) {
         const initialStateWithoutConstraints = getInitialStateFromZodSchema(
           _zodSchema,

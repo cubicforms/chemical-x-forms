@@ -1,6 +1,7 @@
 import { getCurrentScope, onScopeDispose, provide, toRaw } from 'vue'
 import { buildFormApi } from '../core/build-form-api'
 import { createFormState, type FormState } from '../core/create-form-state'
+import { __DEV__ } from '../core/dev'
 import type { FieldStateView } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
 import { createHistoryModule, type HistoryModule } from '../core/history'
@@ -65,6 +66,19 @@ export function useAbstractForm<
   // store" semantic that forms with the same key were intended to share.
   const registry = useRegistry()
   const existing = registry.forms.get(key) as FormState<Form, GetValueFormType> | undefined
+  if (__DEV__ && existing !== undefined) {
+    // Shared-key semantics are a feature when consumers OPT in to them
+    // (two `useForm({ key: 'x' })` calls that genuinely want the same
+    // store). They're a silent-collision footgun when two unrelated
+    // parts of an app happen to agree on a key. Fingerprinting the
+    // schema turns collision into a diagnosable warning: if the
+    // second call's schema has a different structural fingerprint
+    // than the first's, the forms almost certainly shouldn't be
+    // sharing. The second call's schema is then silently dropped in
+    // favour of the first's — matching what already happens (only
+    // the first caller's config wires the FormState).
+    warnOnSchemaFingerprintMismatch(key, existing.schema, resolvedSchema)
+  }
   const state: FormState<Form, GetValueFormType> =
     existing ??
     buildFreshState<Form, GetValueFormType>(key, resolvedSchema, configuration, registry)
@@ -162,6 +176,40 @@ function requireFormKey(key: FormKey | undefined): FormKey {
     )
   }
   return key
+}
+
+/**
+ * Dev-only: warn when a second `useForm` lands on the same key with
+ * a structurally-different schema. Two schemas compute their own
+ * fingerprints; we compare the strings and flag mismatches. A
+ * fingerprint exception (adapter-implementation bug) is swallowed —
+ * we'd rather miss a warning than crash a working form. See
+ * `AbstractSchema.fingerprint()` in types-api.ts for the contract.
+ */
+function warnOnSchemaFingerprintMismatch(
+  key: FormKey,
+  existing: AbstractSchema<GenericForm, GenericForm>,
+  incoming: AbstractSchema<GenericForm, GenericForm>
+): void {
+  let existingFp: string
+  let incomingFp: string
+  try {
+    existingFp = existing.fingerprint()
+    incomingFp = incoming.fingerprint()
+  } catch {
+    return
+  }
+  if (existingFp === incomingFp) return
+  console.warn(
+    `[@chemical-x/forms] Two useForm() calls with key "${key}" use ` +
+      'structurally-different schemas. Only the first caller wires the ' +
+      "form; the second caller's schema is silently ignored (shared " +
+      '"last-write" semantics). If the sharing is intentional, both ' +
+      'calls should use the same schema. If the collision is accidental, ' +
+      'pick a unique key for each form.\n' +
+      `  existing schema fingerprint: ${existingFp}\n` +
+      `  incoming schema fingerprint: ${incomingFp}`
+  )
 }
 
 /**

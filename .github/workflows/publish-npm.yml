@@ -120,6 +120,70 @@ jobs:
         if: success()
         run: git push --follow-tags
 
+      # Create the GitHub Release for the just-pushed tag. Runs AFTER
+      # npm publish + git push so a release on
+      # https://github.com/<owner>/<repo>/releases always corresponds
+      # to a published tarball and a remote tag. Best-effort: a failure
+      # here (transient API, auth hiccup, quota) does NOT roll back the
+      # publish — the user can re-run `gh release create` manually from
+      # the tag if needed.
+      #
+      # Body shape: a metadata prelude (version, commit, author,
+      # workflow run, npm link) plus GitHub's auto-generated
+      # PR-grouped changelog (same API the `generate-release-notes.mjs`
+      # hook script uses for RELEASES.md, so the two stay consistent).
+      - name: Create GitHub Release
+        if: success()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.calculate-next-version.outputs.next_version }}"
+          TAG="v$VERSION"
+
+          # Metadata harvested from the version-bump commit at HEAD.
+          COMMIT_SHA=$(git rev-parse HEAD)
+          COMMIT_TITLE=$(git log -1 --pretty=%s HEAD)
+          COMMIT_AUTHOR_NAME=$(git log -1 --pretty=%an HEAD)
+          COMMIT_AUTHOR_EMAIL=$(git log -1 --pretty=%ae HEAD)
+          COMMIT_DATE_ISO=$(git log -1 --pretty=%aI HEAD)
+          SHORT_SHA="${COMMIT_SHA:0:12}"
+          REPO_URL="${{ github.server_url }}/${{ github.repository }}"
+
+          # Auto-generated PR-grouped notes — follows `.github/release.yml`
+          # if present, otherwise GitHub's default categorisation.
+          AUTO_NOTES=$(gh api \
+            --method POST \
+            "/repos/${{ github.repository }}/releases/generate-notes" \
+            -f tag_name="$TAG" \
+            --jq .body)
+
+          {
+            echo "**Version** \`$VERSION\` • **Released** $COMMIT_DATE_ISO"
+            echo ""
+            echo "- Commit: [\`$SHORT_SHA\`]($REPO_URL/commit/$COMMIT_SHA) — $COMMIT_TITLE"
+            echo "- Author: **$COMMIT_AUTHOR_NAME** <$COMMIT_AUTHOR_EMAIL>"
+            echo "- Published via: [workflow run]($REPO_URL/actions/runs/${{ github.run_id }})"
+            echo "- npm: [\`@chemical-x/forms@$VERSION\`](https://www.npmjs.com/package/@chemical-x/forms/v/$VERSION)"
+            echo ""
+            echo "---"
+            echo ""
+            echo "$AUTO_NOTES"
+          } > "$RUNNER_TEMP/release-body.md"
+
+          # `--verify-tag` confirms the tag exists on the remote before
+          # creating the release, so a failed `git push --follow-tags`
+          # above would short-circuit here rather than produce an
+          # orphan release. `--latest` marks this as the primary
+          # release on the repo's releases page — valid for patch /
+          # minor / major bumps (the only modes this workflow accepts).
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file "$RUNNER_TEMP/release-body.md" \
+            --verify-tag \
+            --latest
+
       - name: Rollback version bump if failed
         if: failure()
         run: |

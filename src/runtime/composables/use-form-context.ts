@@ -1,6 +1,7 @@
 import { getCurrentScope, inject, onScopeDispose } from 'vue'
 import { buildFormApi } from '../core/build-form-api'
 import type { FormState } from '../core/create-form-state'
+import type { HistoryModule } from '../core/history'
 import { kFormContext, useRegistry, type ChemicalXRegistry } from '../core/registry'
 import type { FormKey, UseAbstractFormReturnType } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
@@ -46,7 +47,17 @@ export function useFormContext<
     onScopeDispose(releaseConsumer)
   }
 
-  return buildFormApi<Form, GetValueFormType>(state)
+  // Pull the cached history module (if the owning `useForm` wired it)
+  // so every consumer's API surface includes `undo` / `redo` / `canUndo`
+  // / `canRedo` / `historySize`. Without this, consumers reached via
+  // the context would receive inert stubs even when history is enabled
+  // on the form.
+  const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[1] = {}
+  const history = state.modules.get('history') as HistoryModule | undefined
+  if (history !== undefined) {
+    apiOptions.history = history
+  }
+  return buildFormApi<Form, GetValueFormType>(state, apiOptions)
 }
 
 /**

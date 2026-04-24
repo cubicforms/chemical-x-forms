@@ -79,27 +79,26 @@ export function useAbstractForm<
 
   // Wire persistence (opt-in) — only on fresh state creation, skipped
   // on SSR. `existing` means a prior useForm() already mounted and
-  // wired persistence; we don't double-subscribe.
-  if (
-    existing === undefined &&
-    configuration.persist !== undefined &&
-    !registry.isSSR &&
-    getCurrentScope() !== undefined
-  ) {
+  // wired persistence; we don't double-subscribe. The disposer is
+  // registered on the FormState (not on this consumer's scope) so
+  // persistence survives any single consumer unmounting — it tears
+  // down only when the last consumer releases and the registry evicts
+  // the state.
+  if (existing === undefined && configuration.persist !== undefined && !registry.isSSR) {
     const disposePersist = wirePersistence(state as FormState<Form>, configuration.persist)
-    onScopeDispose(disposePersist)
+    state.registerCleanup(disposePersist)
   }
 
   // Wire history (opt-in). Fresh-state-only — the module subscribes
   // to FormState events, so subscribing twice would double-push
-  // snapshots.
-  let historyModule: HistoryModule | null = null
+  // snapshots. Cache the module on the FormState so subsequent
+  // `useForm` / `useFormContext` calls for the same key retrieve the
+  // SAME instance, keeping `canUndo` / `canRedo` / `historySize` /
+  // `undo` / `redo` consistent across mount order.
   if (existing === undefined && configuration.history !== undefined) {
-    historyModule = createHistoryModule(state as FormState<Form>, configuration.history)
-    if (getCurrentScope() !== undefined) {
-      const mod = historyModule
-      onScopeDispose(() => mod.dispose())
-    }
+    const historyModule = createHistoryModule(state as FormState<Form>, configuration.history)
+    state.modules.set(HISTORY_MODULE_KEY, historyModule)
+    state.registerCleanup(() => historyModule.dispose())
   }
 
   // Provide the FormState to descendants via `kFormContext` so
@@ -112,11 +111,18 @@ export function useAbstractForm<
   if (configuration.onInvalidSubmit !== undefined) {
     apiOptions.onInvalidSubmit = configuration.onInvalidSubmit
   }
-  if (historyModule !== null) {
-    apiOptions.history = historyModule
+  const history = state.modules.get(HISTORY_MODULE_KEY) as HistoryModule | undefined
+  if (history !== undefined) {
+    apiOptions.history = history
   }
   return buildFormApi<Form, GetValueFormType>(state, apiOptions)
 }
+
+/**
+ * Shared key for the per-state history module cache. Exported would be
+ * over-sharing — the only callers are this file and `useFormContext`.
+ */
+const HISTORY_MODULE_KEY = 'history'
 
 function buildFreshState<F extends GenericForm>(
   key: FormKey,

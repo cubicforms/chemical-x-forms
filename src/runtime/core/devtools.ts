@@ -239,12 +239,15 @@ function wire(api: UnsafeDevtoolsApi, app: App, registry: ChemicalXRegistry): vo
     if (state === undefined) return
     // payload.path is `['Form value', 'form', ...pathSegments]` — the
     // first two segments are the inspector section + key, the rest is
-    // the target form path the user edited.
+    // the target form path the user edited. Pass the segment array
+    // directly to `canonicalizePath`: join('.') would collapse a
+    // literal-dot field key (`{"user.email": ...}`) into two segments,
+    // writing to the wrong leaf.
     if (payload.path.length < 3) return
     const section = payload.path[0]
     if (section !== 'Form value') return
     const segments = payload.path.slice(2)
-    const { segments: canonicalPath } = canonicalizePath(segments.join('.'))
+    const { segments: canonicalPath } = canonicalizePath(segments)
     state.setValueAtPath(canonicalPath, payload.state.value)
     refreshState()
   })

@@ -43,17 +43,20 @@ function openDb(): Promise<IDBDatabase | null> {
   return dbPromise
 }
 
-function runOp<T>(
-  mode: IDBTransactionMode,
-  fn: (store: IDBObjectStore) => IDBRequest<T>
-): Promise<T | undefined> {
+/**
+ * Read path: resolve on `request.onsuccess` with the fetched value.
+ * `readonly` transactions are atomic by nature — there's no commit
+ * phase to worry about, so waiting for the transaction's
+ * `oncomplete` would be redundant.
+ */
+function runReadOp<T>(fn: (store: IDBObjectStore) => IDBRequest<T>): Promise<T | undefined> {
   return openDb().then(
     (db) =>
       new Promise<T | undefined>((resolve) => {
         if (db === null) return resolve(undefined)
         let tx: IDBTransaction
         try {
-          tx = db.transaction(STORE_NAME, mode)
+          tx = db.transaction(STORE_NAME, 'readonly')
         } catch {
           return resolve(undefined)
         }
@@ -66,16 +69,50 @@ function runOp<T>(
   )
 }
 
+/**
+ * Write path: resolve on `tx.oncomplete` (the spec-defined commit
+ * signal), NOT on `request.onsuccess` (which fires per-request,
+ * before the transaction commits).
+ *
+ * Resolving on `onsuccess` means a tab close, power loss, or
+ * browser crash between the request succeeding and the transaction
+ * committing silently loses the write — the Promise already
+ * resolved successfully. Aborts (quota exceeded, version change,
+ * constraint violation) likewise roll back after `onsuccess` fired.
+ *
+ * Resolving on `oncomplete` makes durability a precondition for
+ * the Promise settlement; `onabort` catches the failure cases so
+ * the Promise resolves to `undefined` instead of hanging.
+ */
+function runWriteOp(fn: (store: IDBObjectStore) => void): Promise<void> {
+  return openDb().then(
+    (db) =>
+      new Promise<void>((resolve) => {
+        if (db === null) return resolve()
+        let tx: IDBTransaction
+        try {
+          tx = db.transaction(STORE_NAME, 'readwrite')
+        } catch {
+          return resolve()
+        }
+        fn(tx.objectStore(STORE_NAME))
+        tx.oncomplete = () => resolve()
+        tx.onabort = () => resolve()
+        tx.onerror = () => resolve()
+      })
+  )
+}
+
 export function createIndexedDbAdapter(): FormStorage {
   return {
     async getItem(key) {
-      return await runOp<unknown>('readonly', (store) => store.get(key) as IDBRequest<unknown>)
+      return await runReadOp<unknown>((store) => store.get(key) as IDBRequest<unknown>)
     },
     async setItem(key, value) {
-      await runOp<IDBValidKey>('readwrite', (store) => store.put(value, key))
+      await runWriteOp((store) => void store.put(value, key))
     },
     async removeItem(key) {
-      await runOp<undefined>('readwrite', (store) => store.delete(key) as IDBRequest<undefined>)
+      await runWriteOp((store) => void store.delete(key))
     },
   }
 }

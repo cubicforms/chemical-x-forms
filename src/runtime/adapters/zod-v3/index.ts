@@ -179,6 +179,19 @@ export function zodAdapter<
           }
         }
 
+        // Strict mode: if the second parse succeeded, the fix-up loop
+        // reconciled the data and the issues from the first parse no
+        // longer apply. Report success. Only surface the first-parse
+        // issues when the fix-up couldn't resolve them.
+        if (secondParse.success) {
+          return {
+            data: finalData as Form,
+            errors: undefined,
+            success: true,
+            formKey: _formKey,
+          }
+        }
+
         return {
           data: finalData as Form,
           errors: error.issues.map((issue) => ({

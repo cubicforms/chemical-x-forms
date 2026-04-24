@@ -176,11 +176,28 @@ export type FormState<F extends GenericForm> = {
   emitSubmitSuccess(): void
 
   /**
+   * Register a teardown function whose lifetime is bound to the
+   * FormState itself (not a consumer's Vue effect scope). Called by
+   * `dispose()` when the last consumer unmounts. Used by persistence /
+   * history wiring so their subscribers aren't detached prematurely
+   * when only the first consumer unmounts but others remain.
+   */
+  registerCleanup(fn: () => void): void
+
+  /**
+   * Cache for per-state modules (history, persistence) that must
+   * outlive any single consumer. Subsequent `useForm` / `useFormContext`
+   * calls for the same key read from this map so the public API shape
+   * is identical regardless of mount order. Keyed by a string identifier
+   * owned by the caller (e.g. `'history'`).
+   */
+  readonly modules: Map<string, unknown>
+
+  /**
    * Tear down non-reactive resources owned by this FormState. Invoked
    * by the registry when the last consumer unmounts. Cancels pending
-   * field-validation timers and drops every subscriber — so a Node-
-   * side test or SSR run doesn't keep the process alive past the
-   * form's lifetime.
+   * field-validation timers, drops every subscriber, and fires each
+   * cleanup hook registered via `registerCleanup`.
    */
   dispose(): void
 }
@@ -224,6 +241,13 @@ export function createFormState<F extends GenericForm>(
   const formChangeListeners = new Set<(next: F) => void>()
   const submitSuccessListeners = new Set<() => void>()
   const resetListeners = new Set<() => void>()
+
+  // State-scoped teardown hooks. Persistence / history / any other
+  // per-state module registers its disposer here so the cleanup is
+  // bound to the FormState's own lifetime (`dispose()` call at
+  // registry-eviction) and not the first consumer's effect scope.
+  const cleanupHooks: (() => void)[] = []
+  const modules = new Map<string, unknown>()
 
   // Schema is ALWAYS consulted: we need the schema-derived originals even
   // when hydrating, so pristine/dirty computation survives SSR round-trip.
@@ -456,7 +480,25 @@ export function createFormState<F extends GenericForm>(
     }
   }
 
+  function registerCleanup(fn: () => void): void {
+    cleanupHooks.push(fn)
+  }
+
   function dispose(): void {
+    // Run state-scoped teardowns BEFORE clearing listener sets, so a
+    // module that wants to flush something by emitting one last event
+    // from its cleanup (unlikely but harmless) doesn't find the
+    // listener set already empty. Each hook runs inside try/catch so
+    // one misbehaving module can't block the others.
+    for (const hook of cleanupHooks) {
+      try {
+        hook()
+      } catch (err) {
+        console.error('[@chemical-x/forms] state cleanup hook threw:', err)
+      }
+    }
+    cleanupHooks.length = 0
+    modules.clear()
     cancelFieldValidation()
     formChangeListeners.clear()
     submitSuccessListeners.clear()
@@ -801,6 +843,8 @@ export function createFormState<F extends GenericForm>(
     onSubmitSuccess,
     onReset,
     emitSubmitSuccess,
+    registerCleanup,
+    modules,
     dispose,
   }
 }

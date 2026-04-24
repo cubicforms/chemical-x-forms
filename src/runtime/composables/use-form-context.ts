@@ -74,8 +74,7 @@ function resolveState<Form extends GenericForm>(
     const stored = registry.forms.get(key) as FormState<Form> | undefined
     if (stored === undefined) {
       throw new Error(
-        `[@chemical-x/forms] useFormContext: no form registered under key '${key}'. ` +
-          'Call useForm({ key }) in an ancestor component (or anywhere earlier in the render) first.'
+        `[@chemical-x/forms] useFormContext: no form registered for key '${key}'. Call useForm({ key }) first.`
       )
     }
     return stored
@@ -83,8 +82,7 @@ function resolveState<Form extends GenericForm>(
   const ambient = inject(kFormContext, null) as FormState<Form> | null
   if (ambient === null) {
     throw new Error(
-      '[@chemical-x/forms] useFormContext: no ambient form context found. ' +
-        'Either call useForm({...}) in an ancestor component, or pass an explicit form key.'
+      '[@chemical-x/forms] useFormContext: no ambient form context. Call useForm(...) in an ancestor or pass a key.'
     )
   }
   return ambient

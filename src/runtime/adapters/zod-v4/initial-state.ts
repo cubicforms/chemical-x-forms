@@ -1,5 +1,5 @@
 import type { z } from 'zod'
-import { setAtPath } from '../../core/path-walker'
+import { isPlainRecord, setAtPath } from '../../core/path-walker'
 import type { FormKey } from '../../types/types-api'
 import { getDiscriminatedUnionFirstOption, unwrapToDiscriminatedUnion } from './discriminator'
 import {
@@ -183,13 +183,6 @@ export function mergeDeep(base: unknown, override: unknown): unknown {
     }
   }
   return result
-}
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  if (value === null || typeof value !== 'object') return false
-  if (Array.isArray(value)) return false
-  const proto = Object.getPrototypeOf(value) as object | null
-  return proto === null || proto === Object.prototype
 }
 
 export type GetInitialStateOptions = {

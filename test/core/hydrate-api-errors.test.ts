@@ -131,7 +131,7 @@ describe('hydrateApiErrors (structured result)', () => {
         formKey,
       })
       expect(result.ok).toBe(false)
-      expect(result.rejected).toContain('shape not recognised')
+      expect(result.rejected).toContain('unrecognised payload shape')
     })
   })
 

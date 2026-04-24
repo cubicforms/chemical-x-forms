@@ -51,7 +51,7 @@ export function parseDottedPath(path: string): Segment[] {
   for (const raw of rawSegments) {
     if (raw.length === 0) {
       throw new InvalidPathError(
-        `Path '${path}' contains an empty segment. Use the array form (e.g. ['a', '', 'b']) if a key is genuinely empty.`
+        `Path '${path}' has an empty segment; use the array form for empty keys.`
       )
     }
     segments.push(normalizeSegment(raw))

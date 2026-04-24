@@ -299,9 +299,6 @@ export function getDiscriminatedOptions(schema: z.ZodType): readonly z.ZodObject
 export function assertZodVersion(schema: unknown): void {
   const def = readDef(schema)
   if (def?.type === undefined) {
-    throw new Error(
-      '[@chemical-x/forms/zod] Detected a schema that does not expose Zod v4 internals. ' +
-        'Install zod@^4 in your project, or import from @chemical-x/forms/zod-v3 if you are on zod@^3.'
-    )
+    throw new Error('[@chemical-x/forms/zod] schema is not zod v4. Install zod@^4 or use /zod-v3.')
   }
 }

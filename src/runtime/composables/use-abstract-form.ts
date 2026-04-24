@@ -66,6 +66,19 @@ export function useAbstractForm<
   // store" semantic that forms with the same key were intended to share.
   const registry = useRegistry()
   const existing = registry.forms.get(key) as FormState<Form, GetValueFormType> | undefined
+  if (__DEV__ && existing !== undefined) {
+    // Shared-key semantics are a feature when consumers OPT in to them
+    // (two `useForm({ key: 'x' })` calls that genuinely want the same
+    // store). They're a silent-collision footgun when two unrelated
+    // parts of an app happen to agree on a key. Fingerprinting the
+    // schema turns collision into a diagnosable warning: if the
+    // second call's schema has a different structural fingerprint
+    // than the first's, the forms almost certainly shouldn't be
+    // sharing. The second call's schema is then silently dropped in
+    // favour of the first's — matching what already happens (only
+    // the first caller's config wires the FormState).
+    warnOnSchemaFingerprintMismatch(key, existing.schema, resolvedSchema)
+  }
   const state: FormState<Form, GetValueFormType> =
     existing ??
     buildFreshState<Form, GetValueFormType>(key, resolvedSchema, configuration, registry)
@@ -234,6 +247,38 @@ function resolveFormKey(key: FormKey | undefined): FormKey {
   // Outside setup (tests, ad-hoc composable use) there's no Vue
   // instance to draw from; fall back to a module-local counter.
   return `cx:anon:${anonCounter++}`
+}
+
+/**
+ * Dev-only: warn when a second `useForm` lands on the same key with
+ * a structurally-different schema. Two schemas compute their own
+ * fingerprints; we compare the strings and flag mismatches. An
+ * adapter-thrown `fingerprint()` is caught (never crashes the form)
+ * and surfaced as a `console.error` in dev — the mismatch check is
+ * skipped, matching the "allow the inconsistency" failure mode. See
+ * `AbstractSchema.fingerprint()` in types-api.ts for the contract.
+ */
+function warnOnSchemaFingerprintMismatch(
+  key: FormKey,
+  existing: AbstractSchema<GenericForm, GenericForm>,
+  incoming: AbstractSchema<GenericForm, GenericForm>
+): void {
+  let existingFp: string
+  let incomingFp: string
+  try {
+    existingFp = existing.fingerprint()
+    incomingFp = incoming.fingerprint()
+  } catch (error) {
+    console.error(
+      `[@chemical-x/forms] fingerprint() threw for key "${key}"; skipping mismatch check.`,
+      error
+    )
+    return
+  }
+  if (existingFp === incomingFp) return
+  console.warn(
+    `[@chemical-x/forms] useForm() calls with key "${key}" use different schemas; first wins, second is ignored. Use identical schemas or unique keys.\n  existing: ${existingFp}\n  incoming: ${incomingFp}`
+  )
 }
 
 /**

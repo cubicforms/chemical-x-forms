@@ -3,6 +3,7 @@ import type { AbstractSchema, FormKey, ValidationError } from '../../types/types
 import type { DeepPartial, GenericForm } from '../../types/types-core'
 import { assertSupportedKinds } from './assert-supported'
 import { zodIssuesToValidationErrors } from './errors'
+import { fingerprintZodSchema } from './fingerprint'
 import { deriveDefault, getInitialStateFromZodSchema } from './initial-state'
 import { assertZodVersion } from './introspect'
 import { getNestedZodSchemasAtPath } from './path-walker'
@@ -35,6 +36,8 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
 
   return (formKey: FormKey): AbstractSchema<Form, Form> => {
     return {
+      fingerprint: () => fingerprintZodSchema(rootSchema),
+
       getInitialState(config): ReturnType<AbstractSchema<Form, Form>['getInitialState']> {
         const { data } = getInitialStateFromZodSchema<Form>({
           schema: rootSchema,
@@ -70,6 +73,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         return resolved.map(
           (schema) =>
             ({
+              fingerprint: () => fingerprintZodSchema(schema),
               getInitialState: () => ({
                 data: deriveDefault(schema, true),
                 errors: undefined,

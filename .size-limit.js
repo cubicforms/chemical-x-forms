@@ -13,20 +13,35 @@ const asEsm = (config) => ({ ...config, format: 'esm' })
 export default [
   {
     path: 'dist/index.mjs',
-    limit: '12 KB',
+    // Raised 12 → 12.5 KB after the anonymous-forms work (PR #117)
+    // + fingerprint warning landed in the shared core chunk. Text-
+    // shortening took this as low as 11.91 KB on its own; the
+    // shared-chunk footprint from both features pushes it back to
+    // 12.11 KB post-merge. 12.5 KB reflects the honest cost with
+    // ~400 B headroom.
+    limit: '12.5 KB',
     gzip: true,
     modifyEsbuildConfig: asEsm,
   },
   {
     path: 'dist/zod.mjs',
-    limit: '12 KB',
+    // Raised from 12 KB → 14.7 KB to accommodate the v4 fingerprint
+    // walker (src/runtime/adapters/zod-v4/fingerprint.ts, ~360 LOC of
+    // structural-equivalence code that backs the shared-key mismatch
+    // warning). Landed in 9bc2b5a / 590a03b / 7b89e64.
+    limit: '14.7 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
   },
   {
     path: 'dist/zod-v3.mjs',
-    limit: '12 KB',
+    // Raised 12 → 12.5 KB for the same reason as index.mjs — the
+    // shared core chunk now carries anonymous-forms + fingerprint
+    // warning code, and zod-v3.mjs inherits that cost. Adapter-
+    // specific trims already applied; ~400 B headroom under the
+    // new cap.
+    limit: '12.5 KB',
     gzip: true,
     ignore: ['zod', 'lodash-es'],
     modifyEsbuildConfig: asEsm,

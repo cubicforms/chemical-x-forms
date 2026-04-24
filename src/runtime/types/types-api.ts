@@ -59,6 +59,39 @@ type GetInitialStateConfig<Form> = {
 }
 
 export type AbstractSchema<Form, GetValueFormType> = {
+  /**
+   * Structural fingerprint of the schema. Same shape → same string;
+   * different shape → (best-effort) different string.
+   *
+   * The library uses this to detect schema mismatches at a shared
+   * form key: two `useForm({ key: 'x', schema })` calls are allowed
+   * to land on the same `FormState` (the "shared store" semantic),
+   * but only when their schemas agree. If the second call's
+   * fingerprint differs from the first's, the library emits a
+   * dev-mode warning — the first call's schema stays canonical and
+   * the second call's schema is silently ignored.
+   *
+   * Guarantees adapter authors should provide:
+   * - **Determinism:** equal shapes at different memory addresses
+   *   must produce the same fingerprint. Referential equality fails
+   *   99% of the time across files, so reference-identity is not a
+   *   substitute.
+   * - **Key-order-insensitivity** for record-like shapes (object,
+   *   struct) — two shapes with the same keys but different iteration
+   *   order must match.
+   * - **Order-insensitivity for unbounded unions** — `a | b` and
+   *   `b | a` must match (the set of members is what matters, not
+   *   their source order).
+   *
+   * Compromises adapter authors may accept:
+   * - Function-valued metadata (`.refine(fn)`, `.transform(fn)`,
+   *   lazy defaults) is not stably hashable. Represent it as an
+   *   opaque sentinel; two schemas differing only in refinement
+   *   logic will look identical. The warning is a footgun catcher,
+   *   not a soundness guarantee.
+   */
+  fingerprint(): string
+
   getInitialState(config: GetInitialStateConfig<Form>): InitialStateResponse<Form>
   /**
    * Return every sub-schema that could resolve at the given structured

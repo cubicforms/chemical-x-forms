@@ -32,9 +32,18 @@ export function fakeSchema<F extends GenericForm>(
   validator?: (
     data: unknown,
     path: Path | undefined
-  ) => ValidationResponse<F> | Promise<ValidationResponse<F>>
+  ) => ValidationResponse<F> | Promise<ValidationResponse<F>>,
+  /**
+   * Optional fingerprint override. Defaults to a constant so most
+   * tests that don't care about the schema-mismatch warning land in
+   * the "schemas match" branch automatically. Tests that exercise
+   * the shared-key mismatch path pass distinct strings to simulate
+   * two structurally-different schemas.
+   */
+  fingerprint = 'fake-schema'
 ): AbstractSchema<F, F> {
   const schema: AbstractSchema<F, F> = {
+    fingerprint: () => fingerprint,
     getInitialState(config): InitialStateResponse<F> {
       const merged = mergeDeepPartial(defaults, config.constraints) as F
       return {

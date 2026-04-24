@@ -17,7 +17,18 @@ import { fakeSchema } from '../utils/fake-schema'
  * fingerprints. The second call's schema is silently ignored in
  * favour of the first's (matching the existing "only first caller
  * wires the state" behaviour).
+ *
+ * NOTE: `useAbstractForm` also emits a separate `console.warn` from
+ * `warnOnDuplicateAmbientProvide` when two `useForm()` calls run in
+ * the same component (covers the anonymous-forms footgun — see PR
+ * #117). The fixtures here deliberately use that pattern to drive
+ * the shared-store resolution, so every test filters `warnSpy.mock.calls`
+ * by the fingerprint-warning marker rather than asserting the spy's
+ * raw call count. The fingerprint-warning marker is `"use different
+ * schemas"` — unique to this subsystem.
  */
+
+const FINGERPRINT_WARN_MARKER = 'use different schemas'
 
 type Form = { name: string }
 const defaults: Form = { name: '' }
@@ -33,6 +44,11 @@ describe('schema-fingerprint shared-key warning', () => {
     warnSpy.mockRestore()
     errorSpy.mockRestore()
   })
+
+  const fingerprintWarnCalls = (): readonly unknown[][] =>
+    warnSpy.mock.calls.filter((args: readonly unknown[]) =>
+      String(args[0] ?? '').includes(FINGERPRINT_WARN_MARKER)
+    )
 
   function mountTwo(
     schemaA: ReturnType<typeof fakeSchema<Form>>,
@@ -56,7 +72,7 @@ describe('schema-fingerprint shared-key warning', () => {
     const schemaA = fakeSchema<Form>(defaults, undefined, 'fp:same')
     const schemaB = fakeSchema<Form>(defaults, undefined, 'fp:same')
     const unmount = mountTwo(schemaA, schemaB)
-    expect(warnSpy).not.toHaveBeenCalled()
+    expect(fingerprintWarnCalls()).toHaveLength(0)
     unmount()
   })
 
@@ -64,8 +80,9 @@ describe('schema-fingerprint shared-key warning', () => {
     const schemaA = fakeSchema<Form>(defaults, undefined, 'fp:first')
     const schemaB = fakeSchema<Form>(defaults, undefined, 'fp:second')
     const unmount = mountTwo(schemaA, schemaB)
-    expect(warnSpy).toHaveBeenCalledTimes(1)
-    const message = String(warnSpy.mock.calls[0]?.[0] ?? '')
+    const calls = fingerprintWarnCalls()
+    expect(calls).toHaveLength(1)
+    const message = String(calls[0]?.[0] ?? '')
     expect(message).toContain('shared-form')
     expect(message).toContain('fp:first')
     expect(message).toContain('fp:second')
@@ -85,7 +102,7 @@ describe('schema-fingerprint shared-key warning', () => {
     }
     const second = fakeSchema<Form>(defaults, undefined, 'fp:other')
     const unmount = mountTwo(throwing, second)
-    expect(warnSpy).not.toHaveBeenCalled()
+    expect(fingerprintWarnCalls()).toHaveLength(0)
     expect(errorSpy).toHaveBeenCalledTimes(1)
     const [message, errArg] = errorSpy.mock.calls[0] ?? []
     expect(String(message)).toContain('shared-form')
@@ -116,7 +133,7 @@ describe('schema-fingerprint shared-key warning', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    expect(warnSpy).not.toHaveBeenCalled()
+    expect(fingerprintWarnCalls()).toHaveLength(0)
     app.unmount()
   })
 })

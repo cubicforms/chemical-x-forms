@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+_No unreleased changes yet._
+
+## v0.8.0
 **What's new at a glance**
 
 - **Full rewrite of the core.** The pre-rewrite `useState` composables

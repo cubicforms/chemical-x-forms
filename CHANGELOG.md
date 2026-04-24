@@ -4,6 +4,9 @@
 
 _No unreleased changes yet._
 
+## v0.8.1
+_No unreleased changes yet._
+
 ## v0.8.0
 **What's new at a glance**
 

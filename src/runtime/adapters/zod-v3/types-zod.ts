@@ -70,7 +70,7 @@ export type TypeWithNullableDynamicKeys<
               [Key in keyof Options]: TypeWithNullableDynamicKeys<Options[Key], true>
             }[keyof Options & number]
           : // Fallback to z.infer for all other schemas
-            z.infer<Schema> | (CrossedBoundary extends true ? undefined : never)
+              z.infer<Schema> | (CrossedBoundary extends true ? undefined : never)
 
 export type GetValueReturnTypeFromZodSchema<
   Schema extends z.ZodSchema,

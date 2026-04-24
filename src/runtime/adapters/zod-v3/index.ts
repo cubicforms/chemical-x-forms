@@ -652,7 +652,7 @@ function getSchemaByDiscriminatorKey(
   // Find the schema with the matching discriminator value
   return unionSchema._def.options.find((schema: z.ZodObject<z.ZodRawShape>) => {
     const discriminator = schema.shape[unionSchema._def.discriminator]
-    return discriminator !== undefined && discriminator._def.value === key
+    return discriminator?._def.value === key
   })
 }
 

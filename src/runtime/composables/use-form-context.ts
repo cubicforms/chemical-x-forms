@@ -1,7 +1,7 @@
 import { getCurrentScope, inject, onScopeDispose } from 'vue'
 import { buildFormApi } from '../core/build-form-api'
 import type { FormState } from '../core/create-form-state'
-import { kFormContext, useRegistry } from '../core/registry'
+import { kFormContext, useRegistry, type ChemicalXRegistry } from '../core/registry'
 import type { FormKey, UseAbstractFormReturnType } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 
@@ -36,26 +36,7 @@ export function useFormContext<
 >(key?: FormKey): UseAbstractFormReturnType<Form, GetValueFormType> {
   const registry = useRegistry()
 
-  let state: FormState<Form> | null = null
-  if (key !== undefined) {
-    const stored = registry.forms.get(key) as FormState<Form> | undefined
-    if (stored === undefined) {
-      throw new Error(
-        `[@chemical-x/forms] useFormContext: no form registered under key '${key}'. ` +
-          'Call useForm({ key }) in an ancestor component (or anywhere earlier in the render) first.'
-      )
-    }
-    state = stored
-  } else {
-    const ambient = inject(kFormContext, null) as FormState<Form> | null
-    if (ambient === null) {
-      throw new Error(
-        '[@chemical-x/forms] useFormContext: no ambient form context found. ' +
-          'Either call useForm({...}) in an ancestor component, or pass an explicit form key.'
-      )
-    }
-    state = ambient
-  }
+  const state: FormState<Form> = resolveState<Form>(key, registry)
 
   // Ref-count this consumer so the FormState survives until every nested
   // component that reached it has torn down. Mirrors the behaviour in
@@ -66,4 +47,34 @@ export function useFormContext<
   }
 
   return buildFormApi<Form, GetValueFormType>(state)
+}
+
+/**
+ * Split out so each branch `return`s — lets the caller hold `state` as
+ * a plain `const` and keeps ESLint's `no-useless-assignment` rule
+ * happy (the prior shape declared `let state = null` and re-assigned
+ * in both branches).
+ */
+function resolveState<Form extends GenericForm>(
+  key: FormKey | undefined,
+  registry: ChemicalXRegistry
+): FormState<Form> {
+  if (key !== undefined) {
+    const stored = registry.forms.get(key) as FormState<Form> | undefined
+    if (stored === undefined) {
+      throw new Error(
+        `[@chemical-x/forms] useFormContext: no form registered under key '${key}'. ` +
+          'Call useForm({ key }) in an ancestor component (or anywhere earlier in the render) first.'
+      )
+    }
+    return stored
+  }
+  const ambient = inject(kFormContext, null) as FormState<Form> | null
+  if (ambient === null) {
+    throw new Error(
+      '[@chemical-x/forms] useFormContext: no ambient form context found. ' +
+        'Either call useForm({...}) in an ancestor component, or pass an explicit form key.'
+    )
+  }
+  return ambient
 }

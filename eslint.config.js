@@ -1,5 +1,4 @@
 import js from '@eslint/js'
-import nuxt from 'eslint-plugin-nuxt'
 import prettier from 'eslint-plugin-prettier'
 import vue from 'eslint-plugin-vue'
 import globals from 'globals'
@@ -104,11 +103,6 @@ export default [
         },
       ],
     },
-  },
-
-  // Nuxt config
-  {
-    plugins: { nuxt },
   },
 
   // File structure rules

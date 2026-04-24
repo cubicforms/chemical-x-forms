@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h } from 'vue'
 import { useForm } from '../../src'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
@@ -113,6 +113,14 @@ describe('focusFirstError / scrollToFirstError', () => {
     })
   })
 
+  afterEach(() => {
+    // Detach the prototype-level spies so the next test (in file or
+    // workspace) doesn't see call counts from ours. Without this,
+    // vi.spyOn stacks on the same prototype method and counts leak.
+    focusSpy.mockRestore()
+    scrollSpy.mockRestore()
+  })
+
   it('focusFirstError returns false and no-ops when there are no errors', () => {
     const { api, app } = mountWith({ errorsFor: [] })
     expect(api.focusFirstError()).toBe(false)
@@ -187,6 +195,11 @@ describe('onInvalidSubmit policy wiring', () => {
         return this.style.display === 'none' ? null : this.parentNode
       },
     })
+  })
+
+  afterEach(() => {
+    focusSpy.mockRestore()
+    scrollSpy.mockRestore()
   })
 
   it('focus-first-error: submit failure focuses the first errored field', async () => {

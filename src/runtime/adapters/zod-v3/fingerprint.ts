@@ -6,13 +6,16 @@ import type { z } from 'zod-v3'
  * Same contract as the v4 counterpart — deterministic across
  * reference-distinct but structurally-equal schemas, key-order-
  * insensitive for `z.object` shapes, membership-order-insensitive
- * for `z.union` options. See
- * `src/runtime/adapters/zod-v4/fingerprint.ts` for the full rationale
- * and the list of compromises (function-valued refinements /
- * transforms / lazy defaults collapse to opaque sentinels).
+ * for `z.union` options, idempotent across calls. See
+ * `src/runtime/adapters/zod-v4/fingerprint.ts` for the full
+ * rationale and the list of compromises (function-valued
+ * refinements / transforms / non-deterministic default factories
+ * collapse to opaque `fn:*` sentinels).
  *
- * Results are WeakMap-cached per schema reference, so repeat calls
- * are O(1). A WeakSet guards against cycles introduced by `z.lazy`.
+ * Caching is per-call, not module-global: cycles mean a cached
+ * mid-traversal result from one call is invalid for another
+ * (the `<cyclic>` sentinel's meaning depends on the starting
+ * node). A WeakSet guards against cycles introduced by `z.lazy`.
  */
 
 type V3Schema = z.ZodTypeAny
@@ -39,25 +42,30 @@ interface V3Def {
   readonly catchValue?: () => unknown
 }
 
-const fingerprintCache = new WeakMap<object, string>()
 const cyclicSentinel = '<cyclic>'
 
 export function fingerprintZodSchema(schema: V3Schema): string {
+  const cache = new WeakMap<object, string>()
   const inProgress = new WeakSet<object>()
-  return visit(schema, inProgress)
+  return visit(schema, cache, inProgress)
 }
 
-function visit(schema: V3Schema, inProgress: WeakSet<object>): string {
-  const cached = fingerprintCache.get(schema as unknown as object)
+function visit(
+  schema: V3Schema,
+  cache: WeakMap<object, string>,
+  inProgress: WeakSet<object>
+): string {
+  const key = schema as unknown as object
+  const cached = cache.get(key)
   if (cached !== undefined) return cached
-  if (inProgress.has(schema as unknown as object)) return cyclicSentinel
-  inProgress.add(schema as unknown as object)
+  if (inProgress.has(key)) return cyclicSentinel
+  inProgress.add(key)
   try {
-    const computed = computeFingerprint(schema, inProgress)
-    fingerprintCache.set(schema as unknown as object, computed)
+    const computed = computeFingerprint(schema, cache, inProgress)
+    cache.set(key, computed)
     return computed
   } finally {
-    inProgress.delete(schema as unknown as object)
+    inProgress.delete(key)
   }
 }
 
@@ -65,9 +73,14 @@ function getDef(schema: V3Schema): V3Def {
   return (schema as unknown as { _def: V3Def })._def
 }
 
-function computeFingerprint(schema: V3Schema, inProgress: WeakSet<object>): string {
+function computeFingerprint(
+  schema: V3Schema,
+  cache: WeakMap<object, string>,
+  inProgress: WeakSet<object>
+): string {
   const def = getDef(schema)
   const kind = def.typeName ?? 'ZodUnknown'
+  const recurse = (child: V3Schema): string => visit(child, cache, inProgress)
 
   switch (kind) {
     case 'ZodString':
@@ -101,68 +114,64 @@ function computeFingerprint(schema: V3Schema, inProgress: WeakSet<object>): stri
     }
 
     case 'ZodObject': {
-      const shape = typeof def.shape === 'function' ? def.shape() : {}
+      const shape = readShapeSafely(def)
       const sortedEntries = Object.entries(shape)
         .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-        .map(([k, v]) => `${JSON.stringify(k)}:${visit(v, inProgress)}`)
+        .map(([k, v]) => `${JSON.stringify(k)}:${recurse(v)}`)
       return `ZodObject{${sortedEntries.join(',')}}`
     }
 
     case 'ZodArray':
-      return `ZodArray[${def.type === undefined ? '?' : visit(def.type, inProgress)}]${formatChecks(def.checks)}`
+      return `ZodArray[${def.type === undefined ? '?' : recurse(def.type)}]${formatChecks(def.checks)}`
 
     case 'ZodTuple': {
       const items = def.items ?? []
-      return `ZodTuple[${items.map((item) => visit(item, inProgress)).join(',')}]`
+      return `ZodTuple[${items.map(recurse).join(',')}]`
     }
 
     case 'ZodRecord': {
-      const keyPart = def.keyType === undefined ? '?' : visit(def.keyType, inProgress)
-      const valuePart = def.valueType === undefined ? '?' : visit(def.valueType, inProgress)
+      const keyPart = def.keyType === undefined ? '?' : recurse(def.keyType)
+      const valuePart = def.valueType === undefined ? '?' : recurse(def.valueType)
       return `ZodRecord<${keyPart},${valuePart}>`
     }
 
     case 'ZodUnion': {
-      const options = (def.options ?? []).map((opt) => visit(opt, inProgress)).sort()
+      const options = (def.options ?? []).map(recurse).sort()
       return `ZodUnion(${options.join('|')})`
     }
 
     case 'ZodDiscriminatedUnion': {
       const disc = def.discriminator ?? '?'
-      const options = (def.options ?? []).map((opt) => visit(opt, inProgress)).sort()
+      const options = (def.options ?? []).map(recurse).sort()
       return `ZodDiscriminatedUnion[${JSON.stringify(disc)}](${options.join('|')})`
     }
 
     case 'ZodOptional': {
       const inner = def.innerType
-      return `ZodOptional(${inner === undefined ? '?' : visit(inner, inProgress)})`
+      return inner === undefined ? 'ZodOptional(?)' : `ZodOptional(${recurse(inner)})`
     }
 
     case 'ZodNullable': {
       const inner = def.innerType
-      return `ZodNullable(${inner === undefined ? '?' : visit(inner, inProgress)})`
+      return inner === undefined ? 'ZodNullable(?)' : `ZodNullable(${recurse(inner)})`
     }
 
     case 'ZodDefault': {
       const inner = def.innerType
-      // v3 always wraps the default in a function (`defaultValue: () => X`).
-      // Call it to introspect the materialised value, but guard in case
-      // that throws or returns a function itself.
-      let defRepr = 'fn:*'
-      if (typeof def.defaultValue === 'function') {
-        try {
-          const resolved = def.defaultValue()
-          defRepr = typeof resolved === 'function' ? 'fn:*' : canonicalStringify(resolved)
-        } catch {
-          defRepr = 'fn:*'
-        }
-      }
-      return `ZodDefault[${defRepr}](${inner === undefined ? '?' : visit(inner, inProgress)})`
+      // v3 stores defaults as a factory: `defaultValue: () => X`.
+      // Call it twice and compare with Object.is — non-deterministic
+      // factories (`() => new Date()`) return distinct objects each
+      // call, so we collapse to `fn:*` to stay idempotent. Pure
+      // factories that return the same primitive / cached reference
+      // serialise normally.
+      return `ZodDefault[${defaultFactoryRepr(def.defaultValue)}](${
+        inner === undefined ? '?' : recurse(inner)
+      })`
     }
 
     case 'ZodReadonly': {
       const inner = def.innerType
-      return `ZodReadonly(${inner === undefined ? '?' : visit(inner, inProgress)})`
+      return inner === undefined ? 'ZodReadonly(?)' : `ZodReadonly(${recurse(inner)})`
     }
 
     case 'ZodEffects': {
@@ -173,19 +182,19 @@ function computeFingerprint(schema: V3Schema, inProgress: WeakSet<object>): stri
       // sentinel.
       const effectType = def.effect?.type ?? 'effect'
       const inner = def.schema
-      return `ZodEffects:${effectType}:fn:*(${inner === undefined ? '?' : visit(inner, inProgress)})`
+      return `ZodEffects:${effectType}:fn:*(${inner === undefined ? '?' : recurse(inner)})`
     }
 
     case 'ZodPipeline': {
       // Internally `z.pipe(a, b)` — `.in` and `.out` live on the def.
       const inner = def.schema
-      return `ZodPipeline(${inner === undefined ? '?' : visit(inner, inProgress)})`
+      return inner === undefined ? 'ZodPipeline(?)' : `ZodPipeline(${recurse(inner)})`
     }
 
     case 'ZodCatch': {
       const inner = def.innerType ?? def.schema
-      const catchVal = typeof def.catchValue === 'function' ? 'fn:*' : 'none'
-      return `ZodCatch[${catchVal}](${inner === undefined ? '?' : visit(inner, inProgress)})`
+      const catchRepr = defaultFactoryRepr(def.catchValue)
+      return `ZodCatch[${catchRepr}](${inner === undefined ? '?' : recurse(inner)})`
     }
 
     case 'ZodLazy': {
@@ -193,15 +202,15 @@ function computeFingerprint(schema: V3Schema, inProgress: WeakSet<object>): stri
       if (typeof resolve !== 'function') return 'ZodLazy(?)'
       try {
         const inner = resolve()
-        return `ZodLazy(${visit(inner, inProgress)})`
+        return `ZodLazy(${recurse(inner)})`
       } catch {
         return 'ZodLazy(?)'
       }
     }
 
     case 'ZodIntersection': {
-      const leftPart = def.left === undefined ? '?' : visit(def.left, inProgress)
-      const rightPart = def.right === undefined ? '?' : visit(def.right, inProgress)
+      const leftPart = def.left === undefined ? '?' : recurse(def.left)
+      const rightPart = def.right === undefined ? '?' : recurse(def.right)
       const parts = [leftPart, rightPart].sort()
       return `ZodIntersection(${parts.join('&')})`
     }
@@ -218,6 +227,37 @@ function computeFingerprint(schema: V3Schema, inProgress: WeakSet<object>): stri
     default:
       return `${kind}:*`
   }
+}
+
+function readShapeSafely(def: V3Def): Record<string, V3Schema> {
+  if (typeof def.shape !== 'function') return {}
+  try {
+    return def.shape()
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Render a v3 default / catch factory. Called twice; if the two
+ * results differ (by `Object.is`), the factory is non-deterministic
+ * and we collapse to `fn:*` to preserve idempotence. Same fix as
+ * v4's `defaultValueRepr` — factories like `() => new Date()` would
+ * otherwise make the fingerprint time-dependent.
+ */
+function defaultFactoryRepr(factory: (() => unknown) | undefined): string {
+  if (typeof factory !== 'function') return 'none'
+  let first: unknown
+  let second: unknown
+  try {
+    first = factory()
+    second = factory()
+  } catch {
+    return 'fn:*'
+  }
+  if (!Object.is(first, second)) return 'fn:*'
+  if (typeof first === 'function') return 'fn:*'
+  return canonicalStringify(first)
 }
 
 function formatChecks(checks: readonly unknown[] | undefined): string {
@@ -238,7 +278,14 @@ function canonicalStringify(value: unknown, seen: WeakSet<object> = new WeakSet(
   if (Array.isArray(value)) {
     if (seen.has(value)) return '<cyclic>'
     seen.add(value)
-    return `[${value.map((v) => canonicalStringify(v, seen)).join(',')}]`
+    try {
+      return `[${value.map((v) => canonicalStringify(v, seen)).join(',')}]`
+    } finally {
+      // Add/delete ancestor-stack pattern. Without `delete`, two
+      // sibling properties pointing at the same object get the
+      // second one falsely labelled `<cyclic>`.
+      seen.delete(value)
+    }
   }
   if (t === 'object') {
     // `null` already returned above; `object` here is guaranteed
@@ -247,12 +294,16 @@ function canonicalStringify(value: unknown, seen: WeakSet<object> = new WeakSet(
     const obj = value as Record<string, unknown>
     if (seen.has(obj)) return '<cyclic>'
     seen.add(obj)
-    if (value instanceof Date) return `date:${value.getTime()}`
-    if (value instanceof RegExp) return `regex:${String(value)}`
-    const entries = Object.entries(obj)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([k, v]) => `${JSON.stringify(k)}:${canonicalStringify(v, seen)}`)
-    return `{${entries.join(',')}}`
+    try {
+      if (value instanceof Date) return `date:${value.getTime()}`
+      if (value instanceof RegExp) return `regex:${String(value)}`
+      const entries = Object.entries(obj)
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([k, v]) => `${JSON.stringify(k)}:${canonicalStringify(v, seen)}`)
+      return `{${entries.join(',')}}`
+    } finally {
+      seen.delete(obj)
+    }
   }
   return 'unknown'
 }

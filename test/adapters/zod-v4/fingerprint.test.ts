@@ -119,13 +119,36 @@ describe('fingerprintZodSchema — documented false negatives', () => {
     expect(fingerprintZodSchema(a)).toBe(fingerprintZodSchema(b))
   })
 
-  // Lazy defaults ARE distinguishable when the factory returns a
-  // serialisable primitive — v4's `getDefaultValue` invokes the
-  // getter and we fingerprint the materialised value. Factories
-  // that return functions (rare) collapse via `fn:*`.
-  it('lazy default factories returning different primitives distinguish', () => {
-    const a = z.object({ created: z.date().default(() => new Date(0)) })
-    const b = z.object({ created: z.date().default(() => new Date(1000)) })
+  // Non-deterministic default factories (`.default(() => new
+  // Date())`) collapse to the opaque `fn:*` sentinel — distinguishing
+  // their output would break idempotence (v4's getter invokes the
+  // factory on every read; two back-to-back reads would return
+  // different Dates, so the fingerprint would change across calls).
+  // Two factories that produce structurally-different but
+  // non-deterministic outputs therefore look the same here.
+  it('non-deterministic default factories collapse to the same fingerprint', () => {
+    const a = z.object({ created: z.date().default(() => new Date()) })
+    const b = z.object({ created: z.date().default(() => new Date()) })
+    expect(fingerprintZodSchema(a)).toBe(fingerprintZodSchema(b))
+  })
+
+  it('two factory defaults that produce different Dates still match (idempotence wins)', () => {
+    // Previous behaviour DID distinguish these (each factory's
+    // Date differs) — but the comparison relied on whichever Date
+    // happened to materialise. Under the new idempotent contract
+    // both collapse to `fn:*` so the fingerprint is stable across
+    // calls.
+    let counter = 0
+    const a = z.object({ created: z.number().default(() => counter++) })
+    const b = z.object({ created: z.number().default(() => counter++) })
+    expect(fingerprintZodSchema(a)).toBe(fingerprintZodSchema(b))
+  })
+
+  // Literal defaults still distinguish — no factory, no idempotence
+  // risk.
+  it('literal defaults with different values distinguish', () => {
+    const a = z.object({ count: z.number().default(0) })
+    const b = z.object({ count: z.number().default(10) })
     expect(fingerprintZodSchema(a)).not.toBe(fingerprintZodSchema(b))
   })
 })
@@ -259,6 +282,137 @@ describe('fingerprintZodSchema — scale', () => {
     mutated[15] = ['f15', z.number()] // swap middle field type
     const b = z.object(Object.fromEntries(mutated))
 
+    expect(fingerprintZodSchema(a)).not.toBe(fingerprintZodSchema(b))
+  })
+})
+
+describe('fingerprintZodSchema — idempotence under non-determinism', () => {
+  // The fingerprint must be stable across calls, including when the
+  // schema contains non-deterministic factories. These tests were
+  // added after a bug where `.default(() => new Date())` fingerprinted
+  // differently on every call (each read resolved the factory to a
+  // fresh Date, and canonicalStringify emitted `date:${time}`).
+  it('new Date() default — two calls produce the same fingerprint', () => {
+    const schema = z.object({ created: z.date().default(() => new Date()) })
+    const fp1 = fingerprintZodSchema(schema)
+    const fp2 = fingerprintZodSchema(schema)
+    expect(fp1).toBe(fp2)
+  })
+
+  it('stateful counter default — stable across many calls', () => {
+    let counter = 0
+    const schema = z.object({ n: z.number().default(() => counter++) })
+    const first = fingerprintZodSchema(schema)
+    for (let i = 0; i < 50; i++) {
+      expect(fingerprintZodSchema(schema)).toBe(first)
+    }
+  })
+
+  it('factory returning a fresh object literal — stable', () => {
+    const schema = z.object({ meta: z.any().default(() => ({ when: Date.now() })) })
+    expect(fingerprintZodSchema(schema)).toBe(fingerprintZodSchema(schema))
+  })
+
+  it('catch with a factory — stable', () => {
+    const schema = z.object({ n: z.number().catch(() => Math.random()) })
+    expect(fingerprintZodSchema(schema)).toBe(fingerprintZodSchema(schema))
+  })
+})
+
+describe('fingerprintZodSchema — shared sub-schema references', () => {
+  // A regression test for the `canonicalStringify` sibling bug. Two
+  // sibling properties pointing at the same object / array must not
+  // produce a `<cyclic>` sentinel — the reference isn't an ancestor,
+  // just a shared child. The walker uses reference identity for
+  // actual cycle detection, not repeat visits.
+  it('shared leaf sub-schema at two positions does not trip cycle detection', () => {
+    const leaf = z.string()
+    const a = z.object({ first: leaf, second: leaf })
+    const fp = fingerprintZodSchema(a)
+    // Neither property should be marked `<cyclic>` — `leaf` isn't
+    // on either property's ancestor chain, just referenced twice.
+    expect(fp).not.toContain('<cyclic>')
+    // And both properties should have the same leaf fingerprint in
+    // their serialised form.
+    expect(fp).toBe(fingerprintZodSchema(z.object({ first: z.string(), second: z.string() })))
+  })
+
+  it('shared default object reference between two properties produces identical structure', () => {
+    const shared = { answer: 42 }
+    const a = z.object({
+      a: z.any().default(shared),
+      b: z.any().default(shared),
+    })
+    const b = z.object({
+      a: z.any().default({ answer: 42 }),
+      b: z.any().default({ answer: 42 }),
+    })
+    // `a` and `b` differ only in whether the default object is the
+    // same reference or two separate ones. Both must fingerprint
+    // identically — reference identity is not part of the schema
+    // meaning.
+    expect(fingerprintZodSchema(a)).toBe(fingerprintZodSchema(b))
+    // And neither side should contain `<cyclic>`.
+    expect(fingerprintZodSchema(a)).not.toContain('<cyclic>')
+  })
+})
+
+describe('fingerprintZodSchema — mutually-recursive schemas', () => {
+  // Mutually-recursive lazy schemas expose a cache-poisoning bug
+  // if the walker shares a module-level cache across calls: the
+  // `<cyclic>` sentinel's meaning is relative to the starting node,
+  // so caching an intermediate result from one call poisons later
+  // fingerprint calls rooted at a different node. The walker uses a
+  // per-call cache to avoid this.
+  it('fingerprint is the same across multiple calls on the same schema', () => {
+    type A = { nextA: A }
+    type B = { nextB: B }
+    // The lazy getters close over `nodeA`/`nodeB` before they're
+    // assigned; using a holder object keeps the references
+    // late-bound without tripping prefer-const.
+    const nodes: { a?: z.ZodType<A>; b?: z.ZodType<B> } = {}
+    nodes.a = z.lazy(() => z.object({ nextA: nodes.b as z.ZodType<B> })) as unknown as z.ZodType<A>
+    nodes.b = z.lazy(() => z.object({ nextB: nodes.a as z.ZodType<A> })) as unknown as z.ZodType<B>
+    const nodeA = nodes.a
+    const nodeB = nodes.b
+
+    const fpA1 = fingerprintZodSchema(nodeA)
+    const fpB1 = fingerprintZodSchema(nodeB)
+    // Fingerprint each a few more times; results must be stable
+    // regardless of order, even with two distinct recursion entries.
+    expect(fingerprintZodSchema(nodeA)).toBe(fpA1)
+    expect(fingerprintZodSchema(nodeB)).toBe(fpB1)
+    expect(fingerprintZodSchema(nodeA)).toBe(fpA1)
+  })
+
+  it('self-referential schema produces the same fingerprint no matter when it is called first', () => {
+    // Build tree A first, get its fingerprint. Then build structurally
+    // identical tree B and fingerprint. They must match.
+    type Node = { name: string; children: Node[] }
+    const buildTree = (): z.ZodType<Node> => {
+      const tree: z.ZodType<Node> = z.lazy(() =>
+        z.object({ name: z.string(), children: z.array(tree) })
+      )
+      return tree
+    }
+    const fp1 = fingerprintZodSchema(buildTree())
+    const fp2 = fingerprintZodSchema(buildTree())
+    expect(fp1).toBe(fp2)
+  })
+})
+
+describe('fingerprintZodSchema — multi-value literal ordering', () => {
+  it('z.literal([a, b]) matches z.literal([b, a])', () => {
+    // `z.literal` can accept an array of accepted values. Those have
+    // no semantic order, so canonical-sort before hashing.
+    const a = z.literal(['a', 'b'])
+    const b = z.literal(['b', 'a'])
+    expect(fingerprintZodSchema(a)).toBe(fingerprintZodSchema(b))
+  })
+
+  it('z.literal([a, b]) ≠ z.literal([a, c])', () => {
+    const a = z.literal(['a', 'b'])
+    const b = z.literal(['a', 'c'])
     expect(fingerprintZodSchema(a)).not.toBe(fingerprintZodSchema(b))
   })
 })

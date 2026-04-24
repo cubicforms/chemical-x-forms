@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h } from 'vue'
+import { z } from 'zod'
+import { useForm as useZodForm } from '../../src/zod'
 import { useForm } from '../../src'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { fakeSchema } from '../utils/fake-schema'
@@ -79,5 +81,31 @@ describe('schema-fingerprint shared-key warning', () => {
     const unmount = mountTwo(throwing, second)
     expect(warnSpy).not.toHaveBeenCalled()
     unmount()
+  })
+
+  it('no false positive on shared key with zod factory default', () => {
+    // Regression: before the idempotence fix in the v4 walker,
+    // `.default(() => new Date())` made `.fingerprint()` return a
+    // different string on every call (the getter re-invoked the
+    // factory). At warning-check time we compare the stored
+    // schema's fingerprint vs the incoming schema's fingerprint —
+    // even when they're the SAME reference, the two calls could
+    // produce different strings and falsely fire the warning. With
+    // the fix, factory defaults collapse to `fn:*` and the
+    // fingerprint is stable across calls.
+    const schema = z.object({ created: z.date().default(() => new Date()) })
+    const App = defineComponent({
+      setup() {
+        useZodForm({ schema, key: 'factory-default-form' })
+        useZodForm({ schema, key: 'factory-default-form' })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    expect(warnSpy).not.toHaveBeenCalled()
+    app.unmount()
   })
 })

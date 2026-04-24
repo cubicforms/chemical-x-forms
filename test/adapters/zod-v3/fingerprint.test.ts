@@ -98,6 +98,45 @@ describe('v3 fingerprintZodSchema — caching', () => {
   })
 })
 
+describe('v3 fingerprintZodSchema — idempotence under non-determinism', () => {
+  it('new Date() default is stable across calls', () => {
+    const schema = z.object({ created: z.date().default(() => new Date()) })
+    const fp1 = fingerprintZodSchema(schema)
+    const fp2 = fingerprintZodSchema(schema)
+    expect(fp1).toBe(fp2)
+  })
+
+  it('stateful counter default is stable across calls', () => {
+    let counter = 0
+    const schema = z.object({ n: z.number().default(() => counter++) })
+    const first = fingerprintZodSchema(schema)
+    for (let i = 0; i < 50; i++) {
+      expect(fingerprintZodSchema(schema)).toBe(first)
+    }
+  })
+
+  it('literal defaults distinguish, factory defaults collapse', () => {
+    const literalA = z.object({ n: z.number().default(0) })
+    const literalB = z.object({ n: z.number().default(10) })
+    expect(fingerprintZodSchema(literalA)).not.toBe(fingerprintZodSchema(literalB))
+
+    const factoryA = z.object({ n: z.number().default(() => Math.random()) })
+    const factoryB = z.object({ n: z.number().default(() => Math.random()) })
+    expect(fingerprintZodSchema(factoryA)).toBe(fingerprintZodSchema(factoryB))
+  })
+})
+
+describe('v3 fingerprintZodSchema — shared references', () => {
+  it('shared leaf schema at two positions does not trigger cycle detection', () => {
+    const leaf = z.string()
+    const schema = z.object({ first: leaf, second: leaf })
+    expect(fingerprintZodSchema(schema)).not.toContain('<cyclic>')
+    expect(fingerprintZodSchema(schema)).toBe(
+      fingerprintZodSchema(z.object({ first: z.string(), second: z.string() }))
+    )
+  })
+})
+
 describe('v3 fingerprintZodSchema — deep nesting + scale', () => {
   it('distinguishes 4-level-nested objects that differ only at the innermost leaf', () => {
     const a = z.object({

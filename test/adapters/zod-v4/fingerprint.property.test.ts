@@ -47,12 +47,16 @@ type Recipe =
   | { readonly kind: 'enum'; readonly values: readonly string[] }
   | { readonly kind: 'optional'; readonly inner: Recipe }
   | { readonly kind: 'nullable'; readonly inner: Recipe }
+  | { readonly kind: 'readonly'; readonly inner: Recipe }
+  | { readonly kind: 'default-literal'; readonly inner: Recipe; readonly value: number }
+  | { readonly kind: 'catch-literal'; readonly inner: Recipe; readonly value: number }
   | { readonly kind: 'array'; readonly element: Recipe }
   | { readonly kind: 'tuple'; readonly items: readonly Recipe[] }
   | {
       readonly kind: 'object'
       readonly fields: ReadonlyArray<readonly [string, Recipe]>
     }
+  | { readonly kind: 'record'; readonly value: Recipe }
   | { readonly kind: 'union'; readonly options: readonly Recipe[] }
   | {
       readonly kind: 'dunion'
@@ -62,6 +66,7 @@ type Recipe =
         readonly extra: ReadonlyArray<readonly [string, Recipe]>
       }>
     }
+  | { readonly kind: 'intersection'; readonly left: Recipe; readonly right: Recipe }
 
 function buildZod(recipe: Recipe): z.ZodType {
   switch (recipe.kind) {
@@ -98,6 +103,12 @@ function buildZod(recipe: Recipe): z.ZodType {
       return buildZod(recipe.inner).optional()
     case 'nullable':
       return buildZod(recipe.inner).nullable()
+    case 'readonly':
+      return buildZod(recipe.inner).readonly()
+    case 'default-literal':
+      return (buildZod(recipe.inner) as z.ZodType).default(recipe.value as never)
+    case 'catch-literal':
+      return (buildZod(recipe.inner) as z.ZodType).catch(recipe.value as never)
     case 'array':
       return z.array(buildZod(recipe.element))
     case 'tuple': {
@@ -128,6 +139,10 @@ function buildZod(recipe: Recipe): z.ZodType {
         opts as unknown as readonly [z.ZodObject, ...z.ZodObject[]]
       )
     }
+    case 'record':
+      return z.record(z.string(), buildZod(recipe.value))
+    case 'intersection':
+      return z.intersection(buildZod(recipe.left), buildZod(recipe.right))
   }
 }
 
@@ -168,6 +183,12 @@ function canonicaliseRecipe(recipe: Recipe): string {
       return `optional(${canonicaliseRecipe(recipe.inner)})`
     case 'nullable':
       return `nullable(${canonicaliseRecipe(recipe.inner)})`
+    case 'readonly':
+      return `readonly(${canonicaliseRecipe(recipe.inner)})`
+    case 'default-literal':
+      return `default[${recipe.value}](${canonicaliseRecipe(recipe.inner)})`
+    case 'catch-literal':
+      return `catch[${recipe.value}](${canonicaliseRecipe(recipe.inner)})`
     case 'array':
       return `array[${canonicaliseRecipe(recipe.element)}]`
     case 'tuple':
@@ -192,6 +213,14 @@ function canonicaliseRecipe(recipe: Recipe): string {
         })
         .sort()
       return `dunion[${JSON.stringify(recipe.discriminator)}](${opts.join('|')})`
+    }
+    case 'record':
+      return `record<string,${canonicaliseRecipe(recipe.value)}>`
+    case 'intersection': {
+      const left = canonicaliseRecipe(recipe.left)
+      const right = canonicaliseRecipe(recipe.right)
+      const parts = [left, right].sort()
+      return `intersection(${parts.join('&')})`
     }
   }
 }
@@ -276,7 +305,33 @@ const recipeArb: fc.Arbitrary<Recipe> = fc.letrec<{ recipe: Recipe }>((tie) => (
       }),
     fc
       .array(tie('recipe') as fc.Arbitrary<Recipe>, { minLength: 2, maxLength: 3 })
-      .map((options) => ({ kind: 'union' as const, options }))
+      .map((options) => ({ kind: 'union' as const, options })),
+    // Wrapper kinds added to exercise branches the initial recipe
+    // missed (readonly, default with literal, catch with literal,
+    // record, intersection).
+    fc.record({
+      kind: fc.constant('readonly' as const),
+      inner: tie('recipe') as fc.Arbitrary<Recipe>,
+    }),
+    fc.record({
+      kind: fc.constant('default-literal' as const),
+      inner: tie('recipe') as fc.Arbitrary<Recipe>,
+      value: fc.integer({ min: -10, max: 10 }),
+    }),
+    fc.record({
+      kind: fc.constant('catch-literal' as const),
+      inner: tie('recipe') as fc.Arbitrary<Recipe>,
+      value: fc.integer({ min: -10, max: 10 }),
+    }),
+    fc.record({
+      kind: fc.constant('record' as const),
+      value: tie('recipe') as fc.Arbitrary<Recipe>,
+    }),
+    fc.record({
+      kind: fc.constant('intersection' as const),
+      left: tie('recipe') as fc.Arbitrary<Recipe>,
+      right: tie('recipe') as fc.Arbitrary<Recipe>,
+    })
   ),
 })).recipe
 

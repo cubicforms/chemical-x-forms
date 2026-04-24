@@ -86,6 +86,18 @@ describe('inputTextAreaNodeTransform', () => {
       const code = compileWithTransform(`<input :type="'text'" v-register="x" />`)
       expect(code).toContain('innerRef')
     })
+
+    it('skips <input type="FILE" v-register> (HTML type is ASCII case-insensitive)', () => {
+      // The HTML spec matches `type` case-insensitively, so `FILE`, `File`
+      // and `file` all produce the same runtime element. The skip must too.
+      const code = compileWithTransform(`<input type="FILE" v-register="upload" />`)
+      expect(code).not.toContain('innerRef')
+    })
+
+    it('skips <input :type="\'File\'" v-register> (mixed-case literal)', () => {
+      const code = compileWithTransform(`<input :type="'File'" v-register="upload" />`)
+      expect(code).not.toContain('innerRef')
+    })
   })
 
   describe('fail-safe', () => {

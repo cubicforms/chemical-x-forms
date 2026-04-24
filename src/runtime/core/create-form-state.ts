@@ -117,6 +117,16 @@ export type FormState<F extends GenericForm, G extends GenericForm = F> = {
   markTouched(path: Path): void
 
   // --- derived ---
+  /**
+   * Leaf-only pristine check. `originals` is populated via
+   * `diffAndApply`'s `added` patches, which fire only on primitive
+   * leaves — a container path (e.g. `['profile']`) that isn't in
+   * `originals` returns `true` here even when a descendant is dirty.
+   * Callers that need container semantics should either loop over
+   * leaves or walk `originals` manually. The public `getFieldState`
+   * surface is typed to accept leaf paths only, so in practice this
+   * isn't exposed to consumers.
+   */
   isPristineAtPath(path: Path): boolean
   getFieldRecord(path: Path): FieldRecord | undefined
   getOriginalAtPath(path: Path): unknown

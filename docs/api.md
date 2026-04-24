@@ -139,13 +139,13 @@ a component's `setup()`.
 
 ### `renderChemicalXState(app) → SerializedChemicalXState`
 
-Server-side: serialise every form in the app to a plain object safe
+Server-side: serialize every form in the app to a plain object safe
 for `JSON.stringify`. Pair with `hydrateChemicalXState` on the
 client.
 
 ### `hydrateChemicalXState(app, payload)`
 
-Client-side: rehydrate forms from the serialised payload. Call
+Client-side: rehydrate forms from the serialized payload. Call
 before `app.mount(...)`.
 
 ### `escapeForInlineScript(json) → string`

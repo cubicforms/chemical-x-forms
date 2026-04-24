@@ -143,7 +143,10 @@ function couldResolveToFileType(value: SummarizedProp['value']): boolean {
   const inner = literalMatch[2] as string
   // Template literals with interpolations resolve at runtime.
   if (quote === '`' && inner.includes('${')) return true
-  return inner === 'file'
+  // The HTML spec matches `type` ASCII case-insensitively, so
+  // `<input type="FILE">` behaves identically to `<input type="file">`.
+  // Compare lower-cased so we catch both.
+  return inner.toLowerCase() === 'file'
 }
 
 export const inputTextAreaNodeTransform: NodeTransform = (node) => {

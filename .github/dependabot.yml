@@ -1,11 +1,59 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+# Dependabot version updates.
+# Reference: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Two ecosystems are scanned:
+#   - `npm` for runtime + dev dependencies (pnpm uses npm-compatible manifests).
+#   - `github-actions` for workflow action versions (e.g. actions/checkout@v4).
+#
+# Dev-dep updates land as PRs against `main`; the usual CI gate (matrix.yml)
+# runs `pnpm check`, so any update that breaks lint / typecheck / tests / size
+# fails the PR and blocks auto-merge. Security advisories are filed separately
+# by GitHub's native advisory scanner regardless of this schedule.
 
 version: 2
 updates:
-  - package-ecosystem: "" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: 'npm'
+    directory: '/'
     schedule:
-      interval: "weekly"
+      interval: 'weekly'
+      day: 'monday'
+    # Cap open PRs so a dep graph with many out-of-date packages doesn't
+    # carpet-bomb the PR list. Security PRs are NOT counted against this cap.
+    open-pull-requests-limit: 5
+    # Group non-security updates by kind so the review surface stays small.
+    # Security updates are intentionally NOT grouped — each one gets its own
+    # PR so the severity, advisory link, and upgrade blast radius are clear.
+    groups:
+      dev-dependencies:
+        dependency-type: 'development'
+        update-types:
+          - 'minor'
+          - 'patch'
+      production-dependencies:
+        dependency-type: 'production'
+        update-types:
+          - 'minor'
+          - 'patch'
+    # Conventional-commit scope is embedded in the prefix directly
+    # (`chore(deps): …`, `chore(deps-dev): …`). Do NOT also set
+    # `include: 'scope'` — Dependabot concatenates the two, producing
+    # malformed `chore(deps)(deps): …` subjects that fail commitlint.
+    commit-message:
+      prefix: 'chore(deps)'
+      prefix-development: 'chore(deps-dev)'
+    labels:
+      - 'dependencies'
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    open-pull-requests-limit: 5
+    # Same pattern as the npm block: scope is in the prefix itself;
+    # `include: 'scope'` is intentionally omitted to avoid a double scope.
+    commit-message:
+      prefix: 'chore(ci)'
+    labels:
+      - 'dependencies'
+      - 'github-actions'

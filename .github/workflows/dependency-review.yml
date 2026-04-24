@@ -1,0 +1,78 @@
+name: Dependency Review
+
+# Runs GitHub's Dependency Review Action on every PR against main.
+# The action diffs the PR's dependency graph against the base branch and
+# fails the check when the PR introduces a dependency with a known
+# vulnerability at or above the configured severity threshold.
+#
+# This is the PR-time gate. Weekly Dependabot PRs (see .github/dependabot.yml)
+# handle the *maintenance* side — fixing known vulnerabilities in the current
+# graph. Together they cover "don't land new CVEs" + "fix existing CVEs."
+#
+# Reference:
+# https://docs.github.com/code-security/supply-chain-security/understanding-your-software-supply-chain/about-dependency-review
+
+# Forked-PR limitation: GitHub strips `pull-requests: write` from
+# workflows triggered by `pull_request` events from forks (security —
+# a malicious fork would otherwise be able to write to the PR). That
+# means `comment-summary-in-pr` below does NOT post a comment when
+# the PR originates from a fork. The failure itself is still
+# enforced — the workflow still fails the check — but reviewers have
+# to open the Actions log to see *why*. If fork-PR comments ever
+# become a hard requirement, the standard workaround is the two-
+# workflow pattern: keep this `pull_request` workflow for the check,
+# and add a companion `workflow_run` workflow (triggered on this
+# workflow's completion) that has the write scope and posts the
+# comment. See:
+#   https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run
+#   https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/
+on:
+  pull_request:
+    branches: ['main']
+
+permissions:
+  contents: read
+  # Needed for `comment-summary-in-pr: on-failure` below. GitHub
+  # automatically downgrades this to read-only for forked-PR runs,
+  # so the comment post silently no-ops on forks (see note above).
+  pull-requests: write
+
+jobs:
+  dependency-review:
+    name: Review dependency changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        with:
+          # Fail the PR when any newly introduced dependency has a known
+          # vulnerability at `moderate` or higher. Tighten to `high` if the
+          # noise-to-signal ratio is too low in practice; loosen to `low`
+          # for a stricter review surface.
+          fail-on-severity: moderate
+          # Post a human-readable summary as a PR comment so reviewers see
+          # the diff without clicking into the Actions log.
+          comment-summary-in-pr: on-failure
+          # License policy — deny copyleft licenses that would legally
+          # contaminate a library published under MIT. Consumers bundle
+          # npm packages statically (via Vite / Webpack / Rollup), so the
+          # "dynamic linking" exception that usually makes LGPL OK for
+          # *applications* does NOT apply here — LGPL contamination in a
+          # bundled JS library is equivalent to GPL. Hence LGPL is on the
+          # deny list too. SPDX 3.0+ deprecated the suffix-less forms
+          # (`GPL-3.0`, `AGPL-3.0`, etc.); only the `-only` / `-or-later`
+          # variants are listed.
+          # Consumers' own license audits remain their responsibility;
+          # this is a belt-and-braces check at dependency-introduction time.
+          deny-licenses: >-
+            AGPL-1.0-only, AGPL-1.0-or-later,
+            AGPL-3.0-only, AGPL-3.0-or-later,
+            GPL-1.0-only, GPL-1.0-or-later,
+            GPL-2.0-only, GPL-2.0-or-later,
+            GPL-3.0-only, GPL-3.0-or-later,
+            LGPL-2.0-only, LGPL-2.0-or-later,
+            LGPL-2.1-only, LGPL-2.1-or-later,
+            LGPL-3.0-only, LGPL-3.0-or-later

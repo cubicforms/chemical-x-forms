@@ -251,10 +251,25 @@ export type UseFormConfiguration<
   InitialState extends DeepPartial<Form>,
 > = {
   schema: Schema | ((key: FormKey) => Schema)
-  // Required by design: forms without an explicit key silently share state
-  // across unrelated components. The runtime `requireFormKey` still throws
-  // for non-TS consumers passing `undefined` / `''`.
-  key: FormKey
+  /**
+   * Optional — omit for one-off forms. When absent, the runtime
+   * allocates a collision-free synthetic id via Vue's `useId()`
+   * (SSR-safe, positional, stable across server→client hydration).
+   * Each anonymous `useForm` call resolves to a distinct `FormState`.
+   *
+   * Pass an explicit string key when the form needs identity:
+   * - cross-component lookup via `useFormContext(key)` (distant,
+   *   non-descendant access);
+   * - intentionally shared state (multiple `useForm({ key: 'x' })`
+   *   calls resolving to the same store);
+   * - a stable persistence storage-key default;
+   * - a recognisable DevTools / `ValidationError.formKey` label.
+   *
+   * Descendant-only access via ambient `useFormContext<F>()` works
+   * for anonymous forms too — it resolves via `provide`/`inject`,
+   * not the registry's key space.
+   */
+  key?: FormKey
   initialState?: InitialState
   validationMode?: ValidationMode
   /**

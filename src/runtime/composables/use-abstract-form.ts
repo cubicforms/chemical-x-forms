@@ -1,4 +1,4 @@
-import { getCurrentScope, onScopeDispose, provide, toRaw } from 'vue'
+import { getCurrentInstance, getCurrentScope, onScopeDispose, provide, toRaw, useId } from 'vue'
 import { buildFormApi } from '../core/build-form-api'
 import { createFormState, type FormState } from '../core/create-form-state'
 import { __DEV__ } from '../core/dev'
@@ -52,7 +52,7 @@ export function useAbstractForm<
     DeepPartial<Form>
   >
 ): UseAbstractFormReturnType<Form, GetValueFormType> {
-  const key = requireFormKey(configuration.key)
+  const key = resolveFormKey(configuration.key)
 
   // Resolve the schema (accepts either an AbstractSchema or a factory).
   // Preserve both generics — dropping `GetValueFormType` here would make
@@ -121,6 +121,15 @@ export function useAbstractForm<
   // `useFormContext()` can resolve it without prop-threading. The key is
   // the already-canonicalised formKey; looking up a specific form by key
   // is possible via `useFormContext(key)` even without the ambient provide.
+  //
+  // Ambient mode is "last-provide wins": if two `useForm` calls run in the
+  // same component, the second overwrites the first and descendants
+  // reading via `useFormContext<F>()` (no key) see only the second form.
+  // The dev-mode check below flags that case so someone converting a
+  // multi-form component to anonymous keys doesn't get a silent
+  // regression. Descendants that want unambiguous access to a specific
+  // form should use `useFormContext<F>(key)` with an explicit key.
+  warnOnDuplicateAmbientProvide(key)
   provide(kFormContext, state as FormState<GenericForm>)
 
   const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[1] = {}
@@ -168,14 +177,76 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
   return state
 }
 
-function requireFormKey(key: FormKey | undefined): FormKey {
-  if (key === undefined || key === null || key === '') {
-    throw new Error(
-      '[@chemical-x/forms] useForm requires an explicit `key` option. ' +
-        'Anonymous forms share state across unrelated components; pass a unique string per form.'
-    )
+/**
+ * Module-local counter for the "no Vue instance in scope" fallback
+ * (tests, raw composable calls outside setup). Collisions with
+ * user-supplied keys are avoided by the `cx:anon:` prefix. Inside
+ * setup — the common path — `useId()` produces a tree-position-stable
+ * id that matches across SSR hydration, so two mounts of the same
+ * component tree resolve to the same anonymous key and hydration
+ * works without user bookkeeping.
+ */
+let anonCounter = 0
+
+/**
+ * Tracks which Vue component instances have already run
+ * `provide(kFormContext, ...)` via `useAbstractForm`. Dev-only —
+ * `null` in production so the WeakMap allocation tree-shakes out.
+ * A `WeakMap` keyed by the instance object lets Vue GC each
+ * component's entry when it unmounts without us tracking
+ * lifecycle.
+ */
+const ambientProvideHistory: WeakMap<object, FormKey[]> | null = __DEV__
+  ? new WeakMap<object, FormKey[]>()
+  : null
+
+function warnOnDuplicateAmbientProvide(key: FormKey): void {
+  if (!__DEV__ || ambientProvideHistory === null) return
+  const instance = getCurrentInstance()
+  if (instance === null) return
+  const instanceKey = instance as unknown as object
+  const existing = ambientProvideHistory.get(instanceKey)
+  if (existing === undefined) {
+    ambientProvideHistory.set(instanceKey, [key])
+    return
   }
-  return key
+  console.warn(
+    '[@chemical-x/forms] Multiple useForm() calls in the same component ' +
+      'provide ambient form context; descendants using useFormContext<F>() ' +
+      '(no key) will only see the last-provided form. Keys already ' +
+      `provided in this component: [${existing.join(', ')}]. Adding: "${key}". ` +
+      'Fix: pass a key to each useForm() and use useFormContext<F>(key) in ' +
+      'descendants, or split the forms across separate components.'
+  )
+  existing.push(key)
+}
+
+/**
+ * Normalise `configuration.key` into a concrete FormKey. Explicit keys
+ * pass through; empty / nullish keys are treated as anonymous and
+ * allocated a unique id. `cx:anon:` prefix makes the origin obvious in
+ * DevTools, ValidationError payloads, and the registry's key space —
+ * and guarantees no collision with the (user-chosen) string keys that
+ * share a flat namespace.
+ *
+ * Anonymous semantics: each `useForm({ schema })` call without a key
+ * resolves to a distinct FormState. Descendant components reach it via
+ * ambient `useFormContext<F>()`; cross-component lookup by key is not
+ * possible (and not meaningful — the key is synthetic). Callers that
+ * need shared state, distant lookup, persistence defaults, or a
+ * recognisable DevTools label should pass an explicit `key`.
+ */
+function resolveFormKey(key: FormKey | undefined): FormKey {
+  if (key !== undefined && key !== null && key !== '') return key
+  // In setup context, `useId()` threads through Vue's SSR id-allocator
+  // so server-rendered and client-hydrated trees agree on the same
+  // synthetic key.
+  if (getCurrentInstance() !== null) {
+    return `cx:anon:${useId()}`
+  }
+  // Outside setup (tests, ad-hoc composable use) there's no Vue
+  // instance to draw from; fall back to a module-local counter.
+  return `cx:anon:${anonCounter++}`
 }
 
 /**

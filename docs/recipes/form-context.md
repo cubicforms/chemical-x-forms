@@ -97,6 +97,55 @@ Pass the same `key` you passed to `useForm({ key: 'signup' })`. If no
 form is registered under that key when the component mounts, you
 get a clear error naming the missing key.
 
+## Do I need to pass a `key` to `useForm`?
+
+Only if something else needs to find the form by name:
+
+- **Ambient access is free.** `useFormContext<Form>()` with no
+  argument resolves via Vue's `provide`/`inject` and doesn't care
+  whether the owning `useForm` had a key. A key-less parent + a
+  key-less descendant call works identically to a named pair.
+- **Distant access needs a key.** `useFormContext<Form>('signup')`
+  looks the form up in the registry by name; if `useForm` didn't
+  supply one, the name isn't discoverable.
+
+Skip `key` for single-component one-off forms (login modal,
+settings panel). Supply one when you want cross-component lookup,
+multi-call-site shared state, a stable persistence default, or a
+legible DevTools label.
+
+### Gotcha: multiple `useForm` calls in the same component
+
+Vue's `provide`/`inject` is last-write-wins per component. If a
+parent calls `useForm` twice, the second call overwrites the first
+in the ambient context, and descendants using
+`useFormContext<Form>()` (no key) will only see the second form.
+
+```ts
+// Parent component
+const formA = useForm({ schema: schemaA }) // provides ambient → A
+const formB = useForm({ schema: schemaB }) // provides ambient → B (overwrites A)
+// Descendants' useFormContext<Form>() reads B. A is unreachable via ambient.
+```
+
+The runtime emits a dev-mode `console.warn` when it detects a
+second ambient provide on the same component, naming both forms so
+the regression is visible at the site.
+
+**Fixes** — either give each form a key and use explicit lookup
+downstream:
+
+```ts
+useForm({ schema: schemaA, key: 'a' })
+useForm({ schema: schemaB, key: 'b' })
+// Descendants:
+const a = useFormContext<FormA>('a')
+const b = useFormContext<FormB>('b')
+```
+
+…or split the two forms into their own components. Components
+owning a single form don't hit this.
+
 ## Lifetime
 
 Both resolution modes ref-count on the form's registry entry. In

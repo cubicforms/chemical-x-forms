@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, createSSRApp, defineComponent, h } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { useForm, useFormContext } from '../../src'
@@ -98,6 +98,73 @@ describe('anonymous useForm — ambient useFormContext access', () => {
     // Writes land on the same form.
     captured.owner?.setValue('name', 'Bob')
     expect(captured.consumer?.getValue('name').value).toBe('Bob')
+
+    app.unmount()
+  })
+})
+
+describe('anonymous useForm — ambient-overwrite dev warning', () => {
+  // Two useForm calls in the same component overwrite each other's
+  // ambient provide (Vue's provide/inject semantics — last write
+  // wins). The old "key is required" contract forced users to name
+  // both forms and prevented this from becoming a silent regression.
+  // Under the new optional-key contract the path of least resistance
+  // (two anonymous forms in one parent) hits this footgun, so the
+  // runtime emits a dev-mode warning when it sees a second ambient
+  // provide on the same component instance.
+  let warnSpy: ReturnType<typeof vi.spyOn>
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  })
+  afterEach(() => {
+    warnSpy.mockRestore()
+  })
+
+  it('warns when a component calls useForm twice', () => {
+    const App = defineComponent({
+      setup() {
+        useForm({ schema: fakeSchema<Form>(defaults) })
+        useForm({ schema: fakeSchema<Form>(defaults) })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    const message = String(warnSpy.mock.calls[0]?.[0] ?? '')
+    expect(message).toContain('Multiple useForm() calls in the same component')
+    expect(message).toContain('useFormContext<F>(key)')
+
+    app.unmount()
+  })
+
+  it('stays quiet when sibling components each call useForm once', () => {
+    const ChildA = defineComponent({
+      setup() {
+        useForm({ schema: fakeSchema<Form>(defaults) })
+        return () => h('span')
+      },
+    })
+    const ChildB = defineComponent({
+      setup() {
+        useForm({ schema: fakeSchema<Form>(defaults) })
+        return () => h('span')
+      },
+    })
+    const App = defineComponent({
+      setup() {
+        return () => h('div', [h(ChildA), h(ChildB)])
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+
+    expect(warnSpy).not.toHaveBeenCalled()
 
     app.unmount()
   })

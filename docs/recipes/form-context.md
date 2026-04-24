@@ -114,6 +114,38 @@ settings panel). Supply one when you want cross-component lookup,
 multi-call-site shared state, a stable persistence default, or a
 legible DevTools label.
 
+### Gotcha: multiple `useForm` calls in the same component
+
+Vue's `provide`/`inject` is last-write-wins per component. If a
+parent calls `useForm` twice, the second call overwrites the first
+in the ambient context, and descendants using
+`useFormContext<Form>()` (no key) will only see the second form.
+
+```ts
+// Parent component
+const formA = useForm({ schema: schemaA }) // provides ambient → A
+const formB = useForm({ schema: schemaB }) // provides ambient → B (overwrites A)
+// Descendants' useFormContext<Form>() reads B. A is unreachable via ambient.
+```
+
+The runtime emits a dev-mode `console.warn` when it detects a
+second ambient provide on the same component, naming both forms so
+the regression is visible at the site.
+
+**Fixes** — either give each form a key and use explicit lookup
+downstream:
+
+```ts
+useForm({ schema: schemaA, key: 'a' })
+useForm({ schema: schemaB, key: 'b' })
+// Descendants:
+const a = useFormContext<FormA>('a')
+const b = useFormContext<FormB>('b')
+```
+
+…or split the two forms into their own components. Components
+owning a single form don't hit this.
+
 ## Lifetime
 
 Both resolution modes ref-count on the form's registry entry. In

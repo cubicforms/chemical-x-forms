@@ -1,5 +1,15 @@
 # Releases
 
+## v0.10.0 — 2026-04-24
+
+## What's Changed
+* fix(nuxt): resolve Nuxt module against package entry, not ./runtime/ by @ozzyfromcubic in https://github.com/cubicforms/chemical-x-forms/pull/125
+
+
+**Full Changelog**: https://github.com/cubicforms/chemical-x-forms/compare/v0.9.0...v0.10.0
+
+---
+
 ## v0.9.0 — 2026-04-24
 
 ## What's Changed

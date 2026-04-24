@@ -97,6 +97,23 @@ Pass the same `key` you passed to `useForm({ key: 'signup' })`. If no
 form is registered under that key when the component mounts, you
 get a clear error naming the missing key.
 
+## Do I need to pass a `key` to `useForm`?
+
+Only if something else needs to find the form by name:
+
+- **Ambient access is free.** `useFormContext<Form>()` with no
+  argument resolves via Vue's `provide`/`inject` and doesn't care
+  whether the owning `useForm` had a key. A key-less parent + a
+  key-less descendant call works identically to a named pair.
+- **Distant access needs a key.** `useFormContext<Form>('signup')`
+  looks the form up in the registry by name; if `useForm` didn't
+  supply one, the name isn't discoverable.
+
+Skip `key` for single-component one-off forms (login modal,
+settings panel). Supply one when you want cross-component lookup,
+multi-call-site shared state, a stable persistence default, or a
+legible DevTools label.
+
 ## Lifetime
 
 Both resolution modes ref-count on the form's registry entry. In

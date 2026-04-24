@@ -77,19 +77,22 @@ const form: Form = (() => {
 })()
 
 describe('useForm type inference — factory signature', () => {
-  it('requires `key` at the type level (Phase 7.2)', () => {
-    // Type-only assertion — exercises the parameter shape directly so
-    // the @ts-expect-error fires for the right reason. The previous
-    // pattern (a dead-code call inside `if (false)`) errored because
-    // `useForm` is imported as type-only and has no runtime binding,
-    // not because `key` is missing.
-    // @ts-expect-error - missing required `key`
-    const missingKeyConfig: UseFormOptions = { schema }
-    void missingKeyConfig
+  it('accepts `key` as optional for anonymous forms', () => {
+    // Post-0.8.3: `key` is optional. Omitted keys resolve to a
+    // collision-free synthetic id via Vue's `useId()` at runtime, so
+    // a config without `key` must typecheck cleanly.
+    const anonymousConfig: UseFormOptions = { schema }
+    void anonymousConfig
 
-    // Sanity: providing `key` typechecks cleanly.
-    const validConfig: UseFormOptions = { schema, key: 'test' }
-    void validConfig
+    // Explicit keys still typecheck — the string form is required
+    // when supplied (not `FormKey | undefined`).
+    const namedConfig: UseFormOptions = { schema, key: 'test' }
+    void namedConfig
+
+    // `schema` remains required — omitting it should still fail.
+    // @ts-expect-error - missing required `schema`
+    const missingSchemaConfig: UseFormOptions = { key: 'test' }
+    void missingSchemaConfig
   })
 
   it('returns the inferred Form shape at the top-level getValue()', () => {

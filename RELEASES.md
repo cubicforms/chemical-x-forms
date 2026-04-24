@@ -1,5 +1,17 @@
 # Releases
 
+## v0.8.1 — 2026-04-24
+
+## What's Changed
+* ci: bump crazy-max/ghaction-import-gpg + actions/upload-artifact by @ozzyfromcubic in https://github.com/cubicforms/chemical-x-forms/pull/113
+
+## New Contributors
+* @ozzyfromcubic made their first contribution in https://github.com/cubicforms/chemical-x-forms/pull/113
+
+**Full Changelog**: https://github.com/cubicforms/chemical-x-forms/compare/v0.8.0...v0.8.1
+
+---
+
 ## v0.8.0 — 2026-04-24
 
 ## What's Changed

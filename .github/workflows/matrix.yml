@@ -25,7 +25,7 @@ jobs:
       fail-fast: false
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
@@ -71,7 +71,7 @@ jobs:
     # running the suite locally. Fails only if coverage thresholds fail
     # (matrix job would already be red in that case).
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5

@@ -103,6 +103,13 @@ function resolveState<Form extends GenericForm>(
  * actually used the ambient slot. That made spike / test pages wall-
  * warn for a non-problem; this version fires at most once per
  * `useFormContext()` consumer that genuinely collides.
+ *
+ * Message format: one bullet per `useForm()` call on the offending
+ * ancestor, showing the captured source frame (click-through in
+ * DevTools) and, for calls that passed an explicit key, the key
+ * itself — because `useFormContext('that-key')` is the escape hatch
+ * for named forms. Synthetic `cx:anon:<id>` keys are deliberately
+ * omitted; they're positional and carry no signal for the author.
  */
 function warnIfAmbientProviderHadDuplicates(): void {
   if (!__DEV__ || ambientProvideHistory === null) return
@@ -111,13 +118,20 @@ function warnIfAmbientProviderHadDuplicates(): void {
     const history = ambientProvideHistory.get(ancestor as unknown as object)
     if (history !== undefined) {
       if (history.length > 1) {
+        const lines = history.map((entry) => {
+          const source = entry.source ?? '<unknown location>'
+          return entry.namedKey !== undefined
+            ? `  - ${source}  [key: "${entry.namedKey}"]`
+            : `  - ${source}`
+        })
         console.warn(
           '[@chemical-x/forms] useFormContext<F>() (no key) resolved against ' +
             'an ancestor that called useForm() multiple times; descendants ' +
-            'only see the last-provided form. Keys provided by that ancestor: ' +
-            `[${history.join(', ')}]. Fix: pass a key to useFormContext<F>(key) ` +
-            'to target a specific form, or split the forms across separate ' +
-            'components.'
+            'only see the last-provided form. useForm() was called at:\n' +
+            lines.join('\n') +
+            '\nFix: pass a key to useFormContext<F>(key) to target a specific ' +
+            'form (named entries above are already addressable by key), or ' +
+            'split the forms across separate components.'
         )
       }
       return

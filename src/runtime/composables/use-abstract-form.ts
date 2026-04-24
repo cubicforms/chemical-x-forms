@@ -131,7 +131,7 @@ export function useAbstractForm<
   // would spam components that have multiple forms but no keyless
   // descendant consumer — a non-problem. Recording is skipped on SSR so
   // the client-side warn fires once, not once-per-render-pass.
-  recordAmbientProvide(key, registry.isSSR)
+  recordAmbientProvide(key, configuration.key, registry.isSSR)
   provide(kFormContext, state as FormState<GenericForm>)
 
   const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[1] = {}
@@ -191,6 +191,21 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
 let anonCounter = 0
 
 /**
+ * One entry per `useForm()` call that landed in a component's
+ * ambient provide slot. `source` is the best-effort user call site
+ * (first non-cx frame off `new Error().stack`) — we print source
+ * frames in the collision warning instead of the synthetic
+ * `cx:anon:<id>` keys, which carry no information for the author.
+ * `namedKey` is set only when the author passed an explicit key;
+ * we surface those separately as addressable alternatives
+ * (`useFormContext('that-key')`).
+ */
+export type AmbientProvideEntry = {
+  readonly source: string | undefined
+  readonly namedKey: string | undefined
+}
+
+/**
  * Tracks which Vue component instances have already run
  * `provide(kFormContext, ...)` via `useAbstractForm`. Dev-only —
  * `null` in production so the WeakMap allocation tree-shakes out.
@@ -204,21 +219,71 @@ let anonCounter = 0
  * `useForm()` misfired on components that call useForm multiple
  * times intentionally but have no keyless consumer.
  */
-export const ambientProvideHistory: WeakMap<object, FormKey[]> | null = __DEV__
-  ? new WeakMap<object, FormKey[]>()
+export const ambientProvideHistory: WeakMap<object, AmbientProvideEntry[]> | null = __DEV__
+  ? new WeakMap<object, AmbientProvideEntry[]>()
   : null
 
-function recordAmbientProvide(key: FormKey, isSSR: boolean): void {
+function recordAmbientProvide(
+  key: FormKey,
+  userSuppliedKey: FormKey | undefined,
+  isSSR: boolean
+): void {
   if (!__DEV__ || isSSR || ambientProvideHistory === null) return
   const instance = getCurrentInstance()
   if (instance === null) return
   const instanceKey = instance as unknown as object
+  const entry: AmbientProvideEntry = {
+    source: captureUserCallSite(),
+    // Only user-supplied keys are addressable by name — synthetic
+    // `cx:anon:<id>` keys exist but are hidden from the warning so
+    // authors aren't tempted to reference them. The full `key` is
+    // still what the registry indexes; this field is purely for the
+    // dev-warning text.
+    namedKey:
+      userSuppliedKey !== undefined && userSuppliedKey !== null && userSuppliedKey !== ''
+        ? String(userSuppliedKey)
+        : undefined,
+  }
   const existing = ambientProvideHistory.get(instanceKey)
   if (existing === undefined) {
-    ambientProvideHistory.set(instanceKey, [key])
+    ambientProvideHistory.set(instanceKey, [entry])
     return
   }
-  existing.push(key)
+  existing.push(entry)
+  // `key` is accepted as a parameter to keep the call-site symmetric with
+  // `useAbstractForm`'s already-resolved key, and to leave room for future
+  // diagnostics that want to surface the resolved key. Referenced here only
+  // so the parameter isn't unused — no runtime effect.
+  void key
+}
+
+/**
+ * Best-effort capture of the caller's source frame. Walks the stack
+ * past `@chemical-x/forms` internal frames and returns the first
+ * frame that looks like user code. Returns `undefined` on engines
+ * that don't expose `.stack` or when parsing fails — the warning
+ * degrades to listing "<unknown location>" in that slot.
+ *
+ * Dev-only; guarded upstream in `recordAmbientProvide`. The regex
+ * matches both the published path (`@chemical-x/forms/...`) and
+ * the linked / source path (`chemical-x-forms/...`) so local dev
+ * via `make link-cx` surfaces the same trimmed frames.
+ */
+function captureUserCallSite(): string | undefined {
+  const raw = new Error().stack
+  if (typeof raw !== 'string') return undefined
+  const lines = raw.split('\n')
+  // Skip the "Error" message line and any frame inside cx itself.
+  for (let i = 1; i < lines.length; i++) {
+    const frame = lines[i]
+    if (frame === undefined) continue
+    if (/chemical-x[/-]forms?/i.test(frame)) continue
+    if (/\bforms\.[A-Za-z0-9_-]+\.m?js\b/.test(frame)) continue
+    const trimmed = frame.trim()
+    if (trimmed.length === 0) continue
+    return trimmed
+  }
+  return undefined
 }
 
 /**

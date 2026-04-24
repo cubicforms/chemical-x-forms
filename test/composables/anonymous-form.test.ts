@@ -165,7 +165,72 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     expect(warnSpy).toHaveBeenCalledTimes(1)
     const message = String(warnSpy.mock.calls[0]?.[0] ?? '')
     expect(message).toContain('useFormContext<F>() (no key)')
-    expect(message).toContain('useForm() multiple times')
+    expect(message).toContain('useForm() was called at:')
+
+    app.unmount()
+  })
+
+  it('lists source frames rather than synthetic cx:anon keys', () => {
+    // The synthetic `cx:anon:<id>` keys carry no signal for authors —
+    // they never typed them. The warning should show call sites (click-
+    // through in DevTools) and stay silent about the anon-key space.
+    const Child = defineComponent({
+      setup() {
+        useFormContext<Form>()
+        return () => h('span', 'child')
+      },
+    })
+    const App = defineComponent({
+      setup() {
+        useForm({ schema: fakeSchema<Form>(defaults) })
+        useForm({ schema: fakeSchema<Form>(defaults) })
+        useForm({ schema: fakeSchema<Form>(defaults) })
+        return () => h('div', [h(Child)])
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    const message = String(warnSpy.mock.calls[0]?.[0] ?? '')
+    expect(message).not.toMatch(/cx:anon:/)
+    // Three bullet lines, one per useForm() call.
+    const bulletCount = (message.match(/^ {2}- /gm) ?? []).length
+    expect(bulletCount).toBe(3)
+
+    app.unmount()
+  })
+
+  it('surfaces user-supplied keys in the bullet list (anonymous ones show only source)', () => {
+    // Named keys ARE useful — the fix for a named form is
+    // `useFormContext('that-key')`, so we show it. Anonymous forms
+    // only get their source frame.
+    const Child = defineComponent({
+      setup() {
+        useFormContext<Form>()
+        return () => h('span', 'child')
+      },
+    })
+    const App = defineComponent({
+      setup() {
+        useForm({ schema: fakeSchema<Form>(defaults) })
+        useForm({ schema: fakeSchema<Form>(defaults), key: 'my-named-form' })
+        return () => h('div', [h(Child)])
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    const message = String(warnSpy.mock.calls[0]?.[0] ?? '')
+    expect(message).toContain('[key: "my-named-form"]')
+    // Exactly one named-key annotation (the anonymous form has no [key: ...] suffix).
+    const keyAnnotations = (message.match(/\[key: "/g) ?? []).length
+    expect(keyAnnotations).toBe(1)
 
     app.unmount()
   })

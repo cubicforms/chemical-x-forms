@@ -97,3 +97,58 @@ describe('v3 fingerprintZodSchema — caching', () => {
     expect(fingerprintZodSchema(schema)).toBe(fingerprintZodSchema(schema))
   })
 })
+
+describe('v3 fingerprintZodSchema — deep nesting + scale', () => {
+  it('distinguishes 4-level-nested objects that differ only at the innermost leaf', () => {
+    const a = z.object({
+      a: z.object({ b: z.object({ c: z.object({ d: z.string() }) }) }),
+    })
+    const b = z.object({
+      a: z.object({ b: z.object({ c: z.object({ d: z.number() }) }) }),
+    })
+    expect(fingerprintZodSchema(a)).not.toBe(fingerprintZodSchema(b))
+  })
+
+  it('distinguishes tuples that differ at a single position', () => {
+    const a = z.tuple([z.string(), z.number(), z.object({ flag: z.boolean() })])
+    const b = z.tuple([z.string(), z.number(), z.object({ flag: z.string() })])
+    expect(fingerprintZodSchema(a)).not.toBe(fingerprintZodSchema(b))
+  })
+
+  it('matches across 50 random key orderings of a 20-field object', () => {
+    const fields: Array<[string, z.ZodTypeAny]> = []
+    for (let i = 0; i < 20; i++) {
+      fields.push([`f${i}`, i % 2 === 0 ? z.string() : z.number()])
+    }
+    const canonicalFp = fingerprintZodSchema(z.object(Object.fromEntries(fields)))
+
+    // Deterministic PRNG — reproducible across CI runs.
+    let seed = 0xdecafbad
+    const rand = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff
+      return seed / 0x80000000
+    }
+
+    for (let trial = 0; trial < 50; trial++) {
+      const shuffled = [...fields]
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1))
+        ;[shuffled[i], shuffled[j]] = [
+          shuffled[j] as [string, z.ZodTypeAny],
+          shuffled[i] as [string, z.ZodTypeAny],
+        ]
+      }
+      expect(fingerprintZodSchema(z.object(Object.fromEntries(shuffled)))).toBe(canonicalFp)
+    }
+  })
+
+  it('distinguishes 20-field objects that differ in exactly one field type', () => {
+    const baseFields: Array<[string, z.ZodTypeAny]> = []
+    for (let i = 0; i < 20; i++) baseFields.push([`f${i}`, z.string()])
+    const a = z.object(Object.fromEntries(baseFields))
+    const mutated = [...baseFields]
+    mutated[10] = ['f10', z.number()]
+    const b = z.object(Object.fromEntries(mutated))
+    expect(fingerprintZodSchema(a)).not.toBe(fingerprintZodSchema(b))
+  })
+})

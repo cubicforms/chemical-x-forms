@@ -215,7 +215,12 @@ const literalValue: fc.Arbitrary<string | number | boolean | null> = fc.oneof(
  */
 const recipeArb: fc.Arbitrary<Recipe> = fc.letrec<{ recipe: Recipe }>((tie) => ({
   recipe: fc.oneof(
-    { maxDepth: 3 },
+    // `maxDepth: 5` lets the generator produce recipes that go a
+    // handful of levels deep before bottoming out at a leaf. Deeper
+    // than typical forms but within tractable runtime, and enough
+    // to exercise the walker's descent at a depth where a
+    // sort-stability or serialisation bug would likely surface.
+    { maxDepth: 5 },
     // Leaves — weighted heavier than containers so trees shrink faster.
     fc.record({
       kind: fc.constant('string' as const),
@@ -276,7 +281,7 @@ const recipeArb: fc.Arbitrary<Recipe> = fc.letrec<{ recipe: Recipe }>((tie) => (
 })).recipe
 
 describe('v4 fingerprint — statistical injectivity (property-based)', () => {
-  test.prop([recipeArb], { numRuns: 200 })(
+  test.prop([recipeArb], { numRuns: 400 })(
     'idempotence: same recipe → same fingerprint across independent builds',
     (recipe) => {
       const fpA = fingerprintZodSchema(buildZod(recipe))
@@ -285,7 +290,7 @@ describe('v4 fingerprint — statistical injectivity (property-based)', () => {
     }
   )
 
-  test.prop([recipeArb, recipeArb], { numRuns: 400 })(
+  test.prop([recipeArb, recipeArb], { numRuns: 800 })(
     'injectivity: canonically-different recipes → different fingerprints',
     (r1, r2) => {
       // Skip pairs that canonicalise identically — they SHOULD match,

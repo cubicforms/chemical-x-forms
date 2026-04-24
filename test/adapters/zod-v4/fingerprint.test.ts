@@ -130,6 +130,139 @@ describe('fingerprintZodSchema — documented false negatives', () => {
   })
 })
 
+describe('fingerprintZodSchema — deep nesting + adversarial similarity', () => {
+  // 4-level-deep wrappers differing only at the innermost leaf kind.
+  // Tests the structural walker actually reaches the leaf rather than
+  // short-circuiting at some intermediate hash.
+  it('distinguishes 4-level-nested objects that differ only at the innermost leaf', () => {
+    const a = z.object({
+      a: z.object({ b: z.object({ c: z.object({ d: z.string() }) }) }),
+    })
+    const b = z.object({
+      a: z.object({ b: z.object({ c: z.object({ d: z.number() }) }) }),
+    })
+    expect(fingerprintZodSchema(a)).not.toBe(fingerprintZodSchema(b))
+  })
+
+  it('distinguishes 4-level-nested objects that differ only in an inner check argument', () => {
+    const a = z.object({
+      a: z.object({ b: z.object({ c: z.object({ d: z.string().min(3) }) }) }),
+    })
+    const b = z.object({
+      a: z.object({ b: z.object({ c: z.object({ d: z.string().min(5) }) }) }),
+    })
+    expect(fingerprintZodSchema(a)).not.toBe(fingerprintZodSchema(b))
+  })
+
+  it('distinguishes 3-level-deep array nesting with different leaf types', () => {
+    const a = z.array(z.array(z.array(z.string())))
+    const b = z.array(z.array(z.array(z.number())))
+    expect(fingerprintZodSchema(a)).not.toBe(fingerprintZodSchema(b))
+  })
+
+  it('matches 3-level-deep array nesting when leaves are structurally equal', () => {
+    const a = z.array(z.array(z.array(z.object({ v: z.string() }))))
+    const b = z.array(z.array(z.array(z.object({ v: z.string() }))))
+    expect(fingerprintZodSchema(a)).toBe(fingerprintZodSchema(b))
+  })
+
+  // Adversarial "one-thing-different" pairs at meaningful depth.
+  it('distinguishes unions that differ by one extra option', () => {
+    const base = [z.string(), z.number()] as const
+    const a = z.union([...base] as unknown as [z.ZodType, z.ZodType])
+    const b = z.union([...base, z.boolean()] as unknown as [z.ZodType, z.ZodType, z.ZodType])
+    expect(fingerprintZodSchema(a)).not.toBe(fingerprintZodSchema(b))
+  })
+
+  it('distinguishes tuples that differ at a single position', () => {
+    const a = z.tuple([z.string(), z.number(), z.object({ flag: z.boolean() })])
+    const b = z.tuple([z.string(), z.number(), z.object({ flag: z.string() })])
+    expect(fingerprintZodSchema(a)).not.toBe(fingerprintZodSchema(b))
+  })
+
+  it('distinguishes array-of-discriminated-union with one option leaf changed', () => {
+    const a = z.array(
+      z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('a'), x: z.number() }),
+        z.object({ kind: z.literal('b'), y: z.string() }),
+      ])
+    )
+    const b = z.array(
+      z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('a'), x: z.number() }),
+        z.object({ kind: z.literal('b'), y: z.boolean() }), // only y changed
+      ])
+    )
+    expect(fingerprintZodSchema(a)).not.toBe(fingerprintZodSchema(b))
+  })
+
+  it('distinguishes deeply-nested mixed structure that differs at one terminal', () => {
+    // object → array → dunion-option → nested object → leaf
+    const build = (leaf: z.ZodType) =>
+      z.object({
+        events: z.array(
+          z.discriminatedUnion('type', [
+            z.object({ type: z.literal('click'), pos: z.object({ x: z.number(), y: z.number() }) }),
+            z.object({
+              type: z.literal('key'),
+              key: z.object({ code: z.string(), payload: leaf }),
+            }),
+          ])
+        ),
+      })
+    const a = build(z.string())
+    const b = build(z.number())
+    expect(fingerprintZodSchema(a)).not.toBe(fingerprintZodSchema(b))
+  })
+})
+
+describe('fingerprintZodSchema — scale', () => {
+  // 30 fields is well above what the property-test generator covers
+  // (which caps at 4) but below the practical ceiling for real forms.
+  // Exercises the sort stability + serialisation path at a size where
+  // any O(n^2) accident would show up in runtime.
+  it('matches across 100 random key orderings of a 30-field object', () => {
+    const fields: Array<[string, z.ZodType]> = []
+    for (let i = 0; i < 30; i++) {
+      fields.push([`f${i}`, i % 3 === 0 ? z.string() : i % 3 === 1 ? z.number() : z.boolean()])
+    }
+    const canonicalShape: Record<string, z.ZodType> = Object.fromEntries(fields)
+    const canonicalFp = fingerprintZodSchema(z.object(canonicalShape))
+
+    // Deterministic PRNG so the test is reproducible.
+    let seed = 0xc0ffee
+    const rand = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff
+      return seed / 0x80000000
+    }
+
+    for (let trial = 0; trial < 100; trial++) {
+      const shuffled = [...fields]
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1))
+        ;[shuffled[i], shuffled[j]] = [
+          shuffled[j] as [string, z.ZodType],
+          shuffled[i] as [string, z.ZodType],
+        ]
+      }
+      const permuted: Record<string, z.ZodType> = Object.fromEntries(shuffled)
+      expect(fingerprintZodSchema(z.object(permuted))).toBe(canonicalFp)
+    }
+  })
+
+  it('distinguishes 30-field objects that differ in exactly one field type', () => {
+    const baseFields: Array<[string, z.ZodType]> = []
+    for (let i = 0; i < 30; i++) baseFields.push([`f${i}`, z.string()])
+
+    const a = z.object(Object.fromEntries(baseFields))
+    const mutated = [...baseFields]
+    mutated[15] = ['f15', z.number()] // swap middle field type
+    const b = z.object(Object.fromEntries(mutated))
+
+    expect(fingerprintZodSchema(a)).not.toBe(fingerprintZodSchema(b))
+  })
+})
+
 describe('fingerprintZodSchema — caching + cycles', () => {
   it('repeat calls on the same schema are cached', () => {
     const schema = z.object({ a: z.string(), b: z.number() })

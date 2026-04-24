@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h } from 'vue'
 import { useForm } from '../../src'
+import type { Path } from '../../src/runtime/core/paths'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { fakeSchema } from '../utils/fake-schema'
 
@@ -31,7 +32,7 @@ function mountWith(options: {
 
   const App = defineComponent({
     setup() {
-      const validator = (_data: unknown, _path: string | undefined) => {
+      const validator = (_data: unknown, _path: Path | undefined) => {
         const errors = options.errorsFor.map((k) => ({
           message: `${k} is bad`,
           path: [k as string],

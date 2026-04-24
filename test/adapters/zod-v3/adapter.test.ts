@@ -142,9 +142,9 @@ describe('zod v3 adapter — validateAtPath', () => {
   it('validates at a specific path', async () => {
     const schema = z.object({ email: z.string().email(), name: z.string() })
     const adapter = zodAdapter(schema)('f')
-    const good = await adapter.validateAtPath('a@b.co', 'email')
+    const good = await adapter.validateAtPath('a@b.co', ['email'])
     expect(good.success).toBe(true)
-    const bad = await adapter.validateAtPath('nope', 'email')
+    const bad = await adapter.validateAtPath('nope', ['email'])
     expect(bad.success).toBe(false)
   })
 
@@ -166,7 +166,7 @@ describe('zod v3 adapter — getSchemasAtPath', () => {
       user: z.object({ email: z.string() }),
     })
     const adapter = zodAdapter(schema)('f')
-    const schemas = adapter.getSchemasAtPath('user.email')
+    const schemas = adapter.getSchemasAtPath(['user', 'email'])
     expect(schemas.length).toBeGreaterThan(0)
     expect((await schemas[0]?.validateAtPath('hi', undefined))?.success).toBe(true)
     expect((await schemas[0]?.validateAtPath(42, undefined))?.success).toBe(false)
@@ -175,14 +175,14 @@ describe('zod v3 adapter — getSchemasAtPath', () => {
   it('descends through arrays by index', () => {
     const schema = z.object({ items: z.array(z.object({ name: z.string() })) })
     const adapter = zodAdapter(schema)('f')
-    const schemas = adapter.getSchemasAtPath('items.0.name')
+    const schemas = adapter.getSchemasAtPath(['items', 0, 'name'])
     expect(schemas.length).toBeGreaterThan(0)
   })
 
   it('returns empty for a non-existent path', () => {
     const schema = z.object({ a: z.string() })
     const adapter = zodAdapter(schema)('f')
-    expect(adapter.getSchemasAtPath('b')).toHaveLength(0)
+    expect(adapter.getSchemasAtPath(['b'])).toHaveLength(0)
   })
 })
 

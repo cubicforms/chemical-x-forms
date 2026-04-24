@@ -1,3 +1,4 @@
+import type { Path } from '../../src/runtime/core/paths'
 import type {
   AbstractSchema,
   InitialStateResponse,
@@ -30,7 +31,7 @@ export function fakeSchema<F extends GenericForm>(
   defaults: F,
   validator?: (
     data: unknown,
-    path: string | undefined
+    path: Path | undefined
   ) => ValidationResponse<F> | Promise<ValidationResponse<F>>
 ): AbstractSchema<F, F> {
   const schema: AbstractSchema<F, F> = {

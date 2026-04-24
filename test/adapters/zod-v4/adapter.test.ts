@@ -112,9 +112,9 @@ describe('zod v4 adapter', () => {
     it('validates at a specific path', async () => {
       const schema = z.object({ email: z.email(), name: z.string() })
       const adapter = zodAdapter(schema)('f')
-      const good = await adapter.validateAtPath('a@b.co', 'email')
+      const good = await adapter.validateAtPath('a@b.co', ['email'])
       expect(good.success).toBe(true)
-      const bad = await adapter.validateAtPath('nope', 'email')
+      const bad = await adapter.validateAtPath('nope', ['email'])
       expect(bad.success).toBe(false)
     })
   })
@@ -125,7 +125,7 @@ describe('zod v4 adapter', () => {
         user: z.object({ email: z.string() }),
       })
       const adapter = zodAdapter(schema)('f')
-      const schemas = adapter.getSchemasAtPath('user.email')
+      const schemas = adapter.getSchemasAtPath(['user', 'email'])
       expect(schemas).toHaveLength(1)
       // Validate that the resolved schema is the inner string schema.
       expect((await schemas[0]?.validateAtPath('hi', undefined))?.success).toBe(true)
@@ -135,14 +135,38 @@ describe('zod v4 adapter', () => {
     it('returns empty for a non-existent path', () => {
       const schema = z.object({ a: z.string() })
       const adapter = zodAdapter(schema)('f')
-      expect(adapter.getSchemasAtPath('b')).toHaveLength(0)
+      expect(adapter.getSchemasAtPath(['b'])).toHaveLength(0)
     })
 
     it('descends through arrays by index', () => {
       const schema = z.object({ items: z.array(z.object({ name: z.string() })) })
       const adapter = zodAdapter(schema)('f')
-      const schemas = adapter.getSchemasAtPath('items.0.name')
+      const schemas = adapter.getSchemasAtPath(['items', 0, 'name'])
       expect(schemas).toHaveLength(1)
+    })
+
+    it('distinguishes a literal-dot key from a sibling pair', async () => {
+      // The structured path `['user.name']` — a top-level key containing
+      // a literal `.` — must NOT collide with `['user', 'name']`. Before
+      // the AbstractSchema widening both collapsed to the same dotted
+      // string and the walker resolved whichever branch was first. We
+      // probe each resolved sub-schema with data the OTHER branch would
+      // reject to prove the disambiguation landed.
+      const schema = z.object({
+        'user.name': z.number(),
+        user: z.object({ name: z.string() }),
+      })
+      const adapter = zodAdapter(schema)('f')
+      const literalKey = adapter.getSchemasAtPath(['user.name'])
+      const siblingPair = adapter.getSchemasAtPath(['user', 'name'])
+      expect(literalKey).toHaveLength(1)
+      expect(siblingPair).toHaveLength(1)
+      // The literal-dot branch should accept a number and reject a string.
+      expect((await literalKey[0]?.validateAtPath(42, undefined))?.success).toBe(true)
+      expect((await literalKey[0]?.validateAtPath('forty-two', undefined))?.success).toBe(false)
+      // The sibling-pair branch is the opposite: string good, number bad.
+      expect((await siblingPair[0]?.validateAtPath('alice', undefined))?.success).toBe(true)
+      expect((await siblingPair[0]?.validateAtPath(42, undefined))?.success).toBe(false)
     })
   })
 })

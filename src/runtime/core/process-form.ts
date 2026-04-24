@@ -62,11 +62,7 @@ export function buildProcessForm<F extends GenericForm>(
 
     let gen = 0
 
-    async function kickoff(
-      data: unknown,
-      stringPath: string | undefined,
-      captured: number
-    ): Promise<void> {
+    async function kickoff(data: unknown, path: Path | undefined, captured: number): Promise<void> {
       // Runs on a microtask outside the watchEffect's sync frame. Reads
       // and writes to reactive state inside this function DO NOT track
       // against the effect — the activeEffect stack is empty here —
@@ -80,7 +76,7 @@ export function buildProcessForm<F extends GenericForm>(
         formKey: state.formKey,
       }
       try {
-        const response = await runValidation(data, stringPath)
+        const response = await runValidation(data, path)
         if (captured !== gen) return
         result.value = settled(response)
       } catch (err) {
@@ -106,12 +102,11 @@ export function buildProcessForm<F extends GenericForm>(
       // here — the writes in `kickoff` would otherwise re-trigger the
       // effect in a hot loop. Deferring via `queueMicrotask` puts the
       // writes on a clean task where `activeEffect` is null.
-      const dataAtPath =
-        pathInput === undefined ? state.form.value : state.getValueAtPath(toSegments(pathInput))
-      const stringPath = pathInput === undefined ? undefined : toDottedString(pathInput)
+      const segments = pathInput === undefined ? undefined : toSegments(pathInput)
+      const dataAtPath = segments === undefined ? state.form.value : state.getValueAtPath(segments)
       const localGen = ++gen
       queueMicrotask(() => {
-        void kickoff(dataAtPath, stringPath, localGen)
+        void kickoff(dataAtPath, segments, localGen)
       })
     })
     // Tie the watcher's lifetime to the caller's effect scope so
@@ -132,12 +127,11 @@ export function buildProcessForm<F extends GenericForm>(
   async function validateAsync(
     pathInput?: string | Path
   ): Promise<ValidationResponseWithoutValue<F>> {
-    const dataAtPath =
-      pathInput === undefined ? state.form.value : state.getValueAtPath(toSegments(pathInput))
-    const stringPath = pathInput === undefined ? undefined : toDottedString(pathInput)
+    const segments = pathInput === undefined ? undefined : toSegments(pathInput)
+    const dataAtPath = segments === undefined ? state.form.value : state.getValueAtPath(segments)
     state.activeValidations.value += 1
     try {
-      const response = await runValidation(dataAtPath, stringPath)
+      const response = await runValidation(dataAtPath, segments)
       return stripData(response)
     } finally {
       state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
@@ -146,12 +140,12 @@ export function buildProcessForm<F extends GenericForm>(
 
   async function runValidation(
     data: unknown,
-    stringPath: string | undefined
+    path: Path | undefined
   ): Promise<ValidationResponse<F>> {
-    // AbstractSchema.validateAtPath expects a dotted-string path; the zod
-    // adapter (Phase 1c / Phase 4) will be migrated to structured paths.
-    // For now bridge both worlds.
-    return (await state.schema.validateAtPath(data, stringPath)) as ValidationResponse<F>
+    // AbstractSchema.validateAtPath takes a canonical structured path
+    // — Segment[] — so literal-dot field keys can't collide with the
+    // sibling-pair form at the adapter boundary.
+    return (await state.schema.validateAtPath(data, path)) as ValidationResponse<F>
   }
 
   /**
@@ -294,20 +288,6 @@ export function buildProcessForm<F extends GenericForm>(
 
 function toSegments(pathInput: string | Path): Path {
   return canonicalizePath(pathInput).segments
-}
-
-/**
- * Collapses a structured path to the dotted form the AbstractSchema
- * contract currently expects. Known limitation: segments that carry a
- * literal `.` (`['user.name']`) collide with the two-segment form
- * (`['user', 'name']`). A schema that defines both at once can have
- * path-targeted validation hit the wrong branch. The fix requires
- * widening `AbstractSchema.validateAtPath` to take a structured path,
- * at which point this helper disappears — tracked for a future phase.
- */
-function toDottedString(pathInput: string | Path): string {
-  if (typeof pathInput === 'string') return pathInput
-  return pathInput.map(String).join('.')
 }
 
 function settled<F extends GenericForm>(

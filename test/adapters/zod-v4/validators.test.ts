@@ -170,7 +170,7 @@ describe('zod v4 adapter — validateAtPath forwards issue paths under a prefix'
       }),
     })
     const adapter = zodAdapter(schema)('f')
-    const result = await adapter.validateAtPath({ age: -1 }, 'profile')
+    const result = await adapter.validateAtPath({ age: -1 }, ['profile'])
     expect(result.success).toBe(false)
     expect(result.errors?.[0]?.path).toEqual(['age'])
     expect(result.errors?.[0]?.message).toBe('non-negative')

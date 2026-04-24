@@ -115,8 +115,8 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
             data: undefined,
             errors: [
               {
-                message: `Path '${path}' did not resolve to any schema`,
-                path: path.split(PATH_SEPARATOR),
+                message: `Path '${path.join(PATH_SEPARATOR)}' did not resolve to any schema`,
+                path: [...path],
                 formKey,
               },
             ],

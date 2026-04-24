@@ -33,9 +33,9 @@ const PATH_SEPARATOR = '.'
  */
 export function getNestedZodSchemasAtPath(
   schema: z.ZodType,
-  path: string | readonly string[]
+  path: string | readonly (string | number)[]
 ): z.ZodType[] {
-  if (Array.isArray(path)) return walkSegments(schema, path)
+  if (Array.isArray(path)) return walkSegments(schema, path.map(String))
   const pathString = path as string
   if (pathString.length === 0) return [schema]
   return walkSegments(schema, pathString.split(PATH_SEPARATOR))

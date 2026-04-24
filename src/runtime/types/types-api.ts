@@ -1,4 +1,5 @@
 import type { ComputedRef, ObjectDirective, Ref } from 'vue'
+import type { Path } from '../core/paths'
 import type {
   ArrayItem,
   ArrayPath,
@@ -59,16 +60,29 @@ type GetInitialStateConfig<Form> = {
 
 export type AbstractSchema<Form, GetValueFormType> = {
   getInitialState(config: GetInitialStateConfig<Form>): InitialStateResponse<Form>
-  getSchemasAtPath(path: string): AbstractSchema<NestedType<Form, typeof path>, GetValueFormType>[]
+  /**
+   * Return every sub-schema that could resolve at the given structured
+   * path. Multiple results are only expected for discriminated / union
+   * branches where the adapter can't decide a single winner until the
+   * data lands. `path` is the canonical `Segment[]` — adapters walk it
+   * segment-by-segment so literal-dot keys (`['user.name']`) don't
+   * collide with the sibling-pair form (`['user', 'name']`).
+   */
+  getSchemasAtPath(path: Path): AbstractSchema<unknown, GetValueFormType>[]
   /**
    * Validate a subtree (when `path` is provided) or the whole form (when
-   * `path` is `undefined`). Returns a `Promise` so adapters can back
-   * validation onto async parsers (`zod.safeParseAsync`) and consumers can
-   * express async refinements (`z.string().refine(async ...)`). Adapters
-   * MUST NOT throw — errors are returned as a `success: false` response
-   * with a populated `errors` array.
+   * `path` is `undefined`). `path` is the canonical `Segment[]`, not a
+   * dotted string — two schemas with otherwise-colliding dotted forms
+   * (`['user.name']` vs `['user', 'name']`) stay distinct at the
+   * adapter boundary.
+   *
+   * Returns a `Promise` so adapters can back validation onto async
+   * parsers (`zod.safeParseAsync`) and consumers can express async
+   * refinements (`z.string().refine(async ...)`). Adapters MUST NOT
+   * throw — errors are returned as a `success: false` response with a
+   * populated `errors` array.
    */
-  validateAtPath(data: unknown, path: string | undefined): Promise<ValidationResponse<Form>>
+  validateAtPath(data: unknown, path: Path | undefined): Promise<ValidationResponse<Form>>
 }
 
 /**

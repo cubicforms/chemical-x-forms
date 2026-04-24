@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { nextTick, type Ref } from 'vue'
 import { createFormState } from '../../src/runtime/core/create-form-state'
 import { SubmitErrorHandlerError } from '../../src/runtime/core/errors'
+import type { Path } from '../../src/runtime/core/paths'
 import { buildProcessForm } from '../../src/runtime/core/process-form'
 import type {
   ReactiveValidationStatus,
@@ -35,7 +36,7 @@ describe('buildProcessForm', () => {
   }
 
   function alwaysInvalid() {
-    const validator = (_data: unknown, _path: string | undefined): ValidationResponse<Signup> => ({
+    const validator = (_data: unknown, _path: Path | undefined): ValidationResponse<Signup> => ({
       data: undefined,
       errors: [{ message: 'Enter a valid email', path: ['email'], formKey: 'pf' }],
       success: false,

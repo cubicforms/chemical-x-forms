@@ -404,11 +404,10 @@ export function createFormState<F extends GenericForm, G extends GenericForm = F
     const run = () => {
       fresh.timer = null
       if (controller.signal.aborted) return
-      const stringPath = path.map(String).join('.')
       const data = getAtPath(form.value, path)
       activeValidations.value += 1
       void Promise.resolve()
-        .then(() => schema.validateAtPath(data, stringPath))
+        .then(() => schema.validateAtPath(data, path))
         .then((response) => {
           if (controller.signal.aborted) return
           // The adapter emits issue paths relative to the sub-schema it

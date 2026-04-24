@@ -25,7 +25,6 @@ function isPrimitive(input: unknown): boolean {
   return input === null
 }
 
-import type { NestedType } from '../../types/types-core'
 import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from './types-zod'
 import { isZodSchemaType } from './helpers'
 
@@ -106,11 +105,16 @@ export function zodAdapter<
         {
           // use error messages to dynamically construct correct initial state
           for (const issue of error.issues) {
-            const path = issue.path.join(PATH_SEPARATOR)
-            const schemasAtPath = getNestedZodSchemasAtPath(slimSchema, path)
+            const schemasAtPath = getNestedZodSchemasAtPath(slimSchema, issue.path)
+            // `set` from lodash accepts a Segment[] directly; keeps the
+            // literal-dot case (`['user.name']`) from being flattened
+            // into two key accesses.
+            const path = [...issue.path]
             if (!schemasAtPath.length) {
               console.error(
-                `Could not find any nested schemas belonging to form with key '${_formKey}' at path '${path}'`
+                `Could not find any nested schemas belonging to form with key '${_formKey}' at path '${issue.path.join(
+                  PATH_SEPARATOR
+                )}'`
               )
               continue
             }
@@ -225,8 +229,8 @@ export function zodAdapter<
         if (!nestedZodSchemas.length) return []
 
         return nestedZodSchemas.map((n) =>
-          getAbstractSchema(_formKey, n as NestedType<Form, typeof path>, false)
-        )
+          getAbstractSchema(_formKey, n as unknown as FormSchema, false)
+        ) as unknown as AbstractSchema<unknown, GetValueFormType>[]
       },
       async validateAtPath(data, path) {
         if (path === undefined) {
@@ -269,10 +273,7 @@ export function zodAdapter<
         if (!nestedZodSchemas.length) {
           return {
             data: undefined,
-            errors: NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA(
-              path.split(PATH_SEPARATOR),
-              _formKey
-            ),
+            errors: NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA([...path], _formKey),
             success: false,
             formKey: _formKey,
           }
@@ -340,10 +341,13 @@ const NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA = (path: (string | number)[], 
     },
   ] satisfies ValidationError[]
 
-// Note: this function assumes a sufficiently stripped schema
+// Note: this function assumes a sufficiently stripped schema.
+// Walks a canonical `Segment[]` directly — every literal-dot key is
+// treated as a single segment, so a field named `"user.email"` no
+// longer collides with the sibling pair `['user', 'email']`.
 function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
   zodSchema: Schema,
-  path: string
+  segments: readonly (string | number)[]
 ): z.ZodType<unknown, z.ZodTypeDef, unknown>[] {
   // ZodDiscriminator has multiple schemas in the options array
   // Check all of them for the key, and probe all possibilities
@@ -360,12 +364,11 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
 
     return successfulOptions
   }
-  const keys = path.split(PATH_SEPARATOR)
 
   let currentSchema: z.ZodSchema | undefined = zodSchema
 
-  for (let index = 0; index < keys.length; index++) {
-    const key = keys[index] ?? ''
+  for (let index = 0; index < segments.length; index++) {
+    const key = String(segments[index] ?? '')
     if (isZodSchemaType(currentSchema, 'ZodObject')) {
       const shape = currentSchema._def.shape() as z.ZodRawShape
       currentSchema = shape[key]
@@ -376,14 +379,13 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
     } else if (isZodSchemaType(currentSchema, 'ZodDiscriminatedUnion')) {
       const optionalSchemas = getOptionSchemasFromDiscriminatorByArbitraryKey(currentSchema, key)
 
-      const remainingKeys = keys.slice(index)
-      const remainingPath = remainingKeys.join(PATH_SEPARATOR)
-      if (!remainingKeys.length) return optionalSchemas
+      const remainingSegments = segments.slice(index)
+      if (!remainingSegments.length) return optionalSchemas
 
       // recursively check the option schemas
       const foundSchemas: z.ZodType<unknown, z.ZodTypeDef, unknown>[] = []
       for (const optionSchema of optionalSchemas) {
-        getNestedZodSchemasAtPath(optionSchema, remainingPath).forEach((schema) => {
+        getNestedZodSchemasAtPath(optionSchema, remainingSegments).forEach((schema) => {
           foundSchemas.push(schema)
         })
       }

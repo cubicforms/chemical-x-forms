@@ -180,7 +180,7 @@ function computeFingerprint(
 
     case 'default': {
       const inner = unwrapInner(schema)
-      return `default[${defaultValueRepr(schema)}](${inner === undefined ? '?' : recurse(inner)})`
+      return `default[${stableValueRepr(getDefaultValue, schema)}](${inner === undefined ? '?' : recurse(inner)})`
     }
 
     case 'readonly': {
@@ -195,7 +195,7 @@ function computeFingerprint(
 
     case 'catch': {
       const inner = unwrapInner(schema)
-      return `catch[${catchValueRepr(schema)}](${inner === undefined ? '?' : recurse(inner)})`
+      return `catch[${stableValueRepr(getCatchDefault, schema)}](${inner === undefined ? '?' : recurse(inner)})`
     }
 
     case 'lazy': {
@@ -237,36 +237,21 @@ function computeFingerprint(
 }
 
 /**
- * Render a schema's default value for the fingerprint. Detects
+ * Render a default/catch value for the fingerprint. Detects
  * non-deterministic factories (`.default(() => new Date())`) by
  * reading the value twice and comparing — zod v4's getter invokes
  * the factory fresh on each access, so two consecutive reads of a
  * factory-backed default produce distinct objects for any
  * heap-allocated return type. Object.is matches for primitive
  * returns (even from factories) and for literal defaults; in both
- * cases we emit the canonical representation.
- *
- * Without this the fingerprint is non-idempotent for schemas like
- * `.default(() => new Date())`: the Date's `getTime()` differs
- * across calls, so `canonicalStringify` produces different strings
- * and the same schema fingerprints differently on each call.
+ * cases we emit the canonical representation. Without this the
+ * fingerprint is non-idempotent for schemas like
+ * `.default(() => new Date())`.
  */
-function defaultValueRepr(schema: z.ZodType): string {
-  const first = getDefaultValue(schema)
-  const second = getDefaultValue(schema)
-  if (!Object.is(first, second)) {
-    // Non-deterministic factory — can't stabilise.
-    return 'fn:*'
-  }
-  if (typeof first === 'function') return 'fn:*'
-  return canonicalStringify(first)
-}
-
-function catchValueRepr(schema: z.ZodType): string {
-  const first = getCatchDefault(schema)
-  const second = getCatchDefault(schema)
-  if (!Object.is(first, second)) return 'fn:*'
-  if (typeof first === 'function') return 'fn:*'
+function stableValueRepr(get: (s: z.ZodType) => unknown, schema: z.ZodType): string {
+  const first = get(schema)
+  const second = get(schema)
+  if (!Object.is(first, second) || typeof first === 'function') return 'fn:*'
   return canonicalStringify(first)
 }
 

@@ -69,7 +69,7 @@ export function hasAtPath(root: unknown, path: Path): boolean {
   return key in (current as Record<string, unknown>)
 }
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
+export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== 'object') return false
   if (Array.isArray(value)) return false
   const proto = Object.getPrototypeOf(value) as object | null

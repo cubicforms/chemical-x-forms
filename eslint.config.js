@@ -16,8 +16,19 @@ const noCache = process.argv.includes('--no-cache')
 let cachedNuxtGlobals = null // cached per run, if called multiple times
 
 /**
- * Dynamically parse .nuxt/imports.d.ts to extract auto-imported globals.
+ * Dynamically parse playground/.nuxt/imports.d.ts to extract auto-
+ * imported globals. Nuxt's auto-imports are scoped to the playground
+ * app (that's where `nuxi prepare playground` writes them), so the
+ * globals they contribute to lint only matter for files under
+ * playground/**.
+ *
  * Caches by default for faster subsequent runs.
+ *
+ * Missing file is expected on a fresh clone (before `pnpm dev:prepare`
+ * runs) and on contributors who never touched the playground. We
+ * silently return `{}` in that case — eslint's `no-undef` for the
+ * remaining files still works via the common browser/node globals
+ * below, and CI runs `pnpm dev:prepare` before `pnpm check` anyway.
  */
 function getNuxtGlobals() {
   if (cachedNuxtGlobals && !noCache) {
@@ -25,9 +36,13 @@ function getNuxtGlobals() {
   }
 
   const finalGlobals = {}
-  let filePath = ''
+  const filePath = path.resolve(process.cwd(), 'playground', '.nuxt', 'imports.d.ts')
+  if (!fs.existsSync(filePath)) {
+    cachedNuxtGlobals = finalGlobals
+    return finalGlobals
+  }
+
   try {
-    filePath = path.resolve(process.cwd(), '.nuxt', 'imports.d.ts')
     const fileContent = fs.readFileSync(filePath, 'utf8')
 
     // Match export statements like: export { a, b, c } from '...';
@@ -46,11 +61,9 @@ function getNuxtGlobals() {
       }
     }
   } catch (error) {
-    const pathDetail = filePath ? ` at ${filePath}` : ''
-    console.error(
-      `Could not read imports.d.ts${pathDetail}. Have you generated Nuxt types?\nError:`,
-      error
-    )
+    // File exists but is unreadable (permissions, partial write). That's
+    // worth surfacing, unlike the "not yet generated" case above.
+    console.error(`Failed to parse ${filePath}:`, error)
     return {}
   }
 

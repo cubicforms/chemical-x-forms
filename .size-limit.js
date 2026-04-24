@@ -19,7 +19,11 @@ export default [
   },
   {
     path: 'dist/zod.mjs',
-    limit: '12 KB',
+    // Raised from 12 KB → 14.7 KB to accommodate the v4 fingerprint
+    // walker (src/runtime/adapters/zod-v4/fingerprint.ts, ~360 LOC of
+    // structural-equivalence code that backs the shared-key mismatch
+    // warning). Landed in 9bc2b5a / 590a03b / 7b89e64.
+    limit: '14.7 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,

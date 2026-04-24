@@ -21,9 +21,6 @@ export class SubmitErrorHandlerError extends Error {
 export class RegistryNotInstalledError extends Error {
   override readonly name = 'RegistryNotInstalledError'
   constructor() {
-    super(
-      '[@chemical-x/forms] Registry not found on this Vue app. ' +
-        'Install the plugin with `app.use(createChemicalXForms())` before calling any form composable.'
-    )
+    super('[@chemical-x/forms] Registry not found; install via `app.use(createChemicalXForms())`.')
   }
 }

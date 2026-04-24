@@ -182,11 +182,7 @@ function extractDetails(payload: Record<string, unknown>): ExtractResult {
   // Heuristic: if the payload has keys but none of them look like details,
   // it's probably a completely different shape. Reject.
   if (Object.keys(payload).length === 0) return { ok: true, details: {} }
-  return {
-    ok: false,
-    reason:
-      'payload shape not recognised (expected { details }, { error: { details } }, or a raw details record)',
-  }
+  return { ok: false, reason: 'unrecognised payload shape' }
 }
 
 function isDetailsRecord(value: unknown): value is ApiErrorDetails {

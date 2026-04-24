@@ -374,7 +374,7 @@ export function createFormState<F extends GenericForm, G extends GenericForm = F
       try {
         listener(next)
       } catch (err) {
-        console.error('[@chemical-x/forms] onFormChange listener threw:', err)
+        console.error('[@chemical-x/forms] onFormChange threw:', err)
       }
     }
   }
@@ -484,7 +484,7 @@ export function createFormState<F extends GenericForm, G extends GenericForm = F
       try {
         listener()
       } catch (err) {
-        console.error('[@chemical-x/forms] onSubmitSuccess listener threw:', err)
+        console.error('[@chemical-x/forms] onSubmitSuccess threw:', err)
       }
     }
   }
@@ -503,7 +503,7 @@ export function createFormState<F extends GenericForm, G extends GenericForm = F
       try {
         hook()
       } catch (err) {
-        console.error('[@chemical-x/forms] state cleanup hook threw:', err)
+        console.error('[@chemical-x/forms] cleanup threw:', err)
       }
     }
     cleanupHooks.length = 0
@@ -677,7 +677,7 @@ export function createFormState<F extends GenericForm, G extends GenericForm = F
       try {
         listener()
       } catch (err) {
-        console.error('[@chemical-x/forms] onReset listener threw:', err)
+        console.error('[@chemical-x/forms] onReset threw:', err)
       }
     }
   }

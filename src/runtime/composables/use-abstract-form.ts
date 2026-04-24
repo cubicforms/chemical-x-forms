@@ -206,14 +206,7 @@ function warnOnSchemaFingerprintMismatch(
   }
   if (existingFp === incomingFp) return
   console.warn(
-    `[@chemical-x/forms] Two useForm() calls with key "${key}" use ` +
-      'structurally-different schemas. Only the first caller wires the ' +
-      "form; the second caller's schema is silently ignored (shared " +
-      '"last-write" semantics). If the sharing is intentional, both ' +
-      'calls should use the same schema. If the collision is accidental, ' +
-      'pick a unique key for each form.\n' +
-      `  existing schema fingerprint: ${existingFp}\n` +
-      `  incoming schema fingerprint: ${incomingFp}`
+    `[@chemical-x/forms] useForm() calls with key "${key}" use different schemas; first wins, second is ignored. Use identical schemas or unique keys.\n  existing: ${existingFp}\n  incoming: ${incomingFp}`
   )
 }
 

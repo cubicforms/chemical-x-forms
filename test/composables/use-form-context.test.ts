@@ -151,7 +151,7 @@ describe('useFormContext — explicit key resolution', () => {
     const app = createApp(Orphan).use(createChemicalXForms({ override: true }))
     app.mount(document.createElement('div'))
     expect(captured).toBeInstanceOf(Error)
-    expect((captured as Error).message).toMatch(/no form registered under key 'never-registered'/)
+    expect((captured as Error).message).toMatch(/no form registered for key 'never-registered'/)
     app.unmount()
   })
 })

@@ -40,7 +40,7 @@ export function zodAdapter<
     _isRootSchema: boolean
   ): AbstractSchema<Form, GetValueFormType> {
     if (_isRootSchema) {
-      const [_schema, stripped] = stripRootSchema(_zodSchema, {
+      const [_schema] = stripRootSchema(_zodSchema, {
         stripDefaultValues: true,
         stripNullable: true,
         stripOptional: true,
@@ -48,19 +48,8 @@ export function zodAdapter<
         stripZodRefinements: true,
       })
       if (!isZodSchemaType(_schema, 'ZodObject')) {
-        const actualUnwrappedSchemaName = (_schema as ZodTypeWithInnerType)._def.typeName
-        const actualOriginalSchemaName = (_zodSchema as unknown as ZodTypeWithInnerType)._def
-          .typeName
-        const actualSchemaName = actualUnwrappedSchemaName
-        const unwrappedMessage =
-          actualUnwrappedSchemaName !== actualOriginalSchemaName ? 'unwrapped' : ''
-
-        const expectedUnwrappedMessage = stripped ? ' unwrapped ' : ' '
-        const actualSchemaMessage = `, got ${unwrappedMessage} schema of type '${actualSchemaName}' instead.`
-
-        throw new Error(
-          `Programming error: ZodAdapter expected${expectedUnwrappedMessage}schema of type 'ZodObject'${actualSchemaMessage}`
-        )
+        const name = (_schema as ZodTypeWithInnerType)._def.typeName
+        throw new Error(`ZodAdapter: expected ZodObject, got ${name}`)
       }
     }
     const abstractSchema: AbstractSchema<Form, GetValueFormType> = {
@@ -114,9 +103,7 @@ export function zodAdapter<
             const path = [...issue.path]
             if (!schemasAtPath.length) {
               console.error(
-                `Could not find any nested schemas belonging to form with key '${_formKey}' at path '${issue.path.join(
-                  PATH_SEPARATOR
-                )}'`
+                `No schemas at path '${issue.path.join(PATH_SEPARATOR)}' for key '${_formKey}'`
               )
               continue
             }
@@ -446,7 +433,7 @@ function getDefaultValue(
   const discriminatorContext = context.discriminator
   if (discriminatorContext.isDiscriminatorKey) {
     if (!discriminatorContext.schema) {
-      throw new Error('Programming error: discriminatorContext.schema is unspecified.')
+      throw new Error('discriminatorContext.schema unspecified')
     }
 
     if (!isZodSchemaType(discriminatorContext.schema, 'ZodDiscriminatedUnion')) {
@@ -462,7 +449,7 @@ function getDefaultValue(
     )
 
     if (!optionDiscriminator) {
-      throw new Error('Programming error: ZodDiscriminatedUnion default option schema not found.')
+      throw new Error('ZodDiscriminatedUnion: default option not found')
     }
 
     return getInitialStateFromZodSchema(
@@ -639,9 +626,7 @@ function getInitialStateFromZodSchema<
       return generateValue(discriminantSchema as z.ZodTypeAny)
     }
 
-    console.warn(
-      `Unsupported schema type: ${schema.constructor.name}. Check form schema with key '${formKey}'.`
-    )
+    console.warn(`Unsupported schema: ${schema.constructor.name} (key '${formKey}')`)
     return null
   }
 

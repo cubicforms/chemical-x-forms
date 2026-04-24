@@ -1,5 +1,22 @@
 # Releases
 
+## v0.9.0 — 2026-04-24
+
+## What's Changed
+* Claude/optional form key by @ozzyfromcubic in https://github.com/cubicforms/chemical-x-forms/pull/117
+* feat(schema): structural fingerprint() on AbstractSchema + shared-key warning by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/118
+* ci: enable Dependabot + GitHub Dependency Review on PRs by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/119
+* chore(ci): bump actions/upload-artifact from 5 to 7 by @dependabot[bot] in https://github.com/cubicforms/chemical-x-forms/pull/120
+* chore(ci): bump actions/checkout from 5 to 6 by @dependabot[bot] in https://github.com/cubicforms/chemical-x-forms/pull/123
+* chore(ci): bump actions/setup-node from 5 to 6 by @dependabot[bot] in https://github.com/cubicforms/chemical-x-forms/pull/121
+* chore(ci): bump pnpm/action-setup from 5 to 6 by @dependabot[bot] in https://github.com/cubicforms/chemical-x-forms/pull/122
+* ci: drop deprecated always-auth input from publish-npm workflow by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/124
+
+
+**Full Changelog**: https://github.com/cubicforms/chemical-x-forms/compare/v0.8.3...v0.9.0
+
+---
+
 ## v0.8.3 — 2026-04-24
 
 ## What's Changed

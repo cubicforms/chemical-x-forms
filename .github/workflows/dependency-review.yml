@@ -1,0 +1,47 @@
+name: Dependency Review
+
+# Runs GitHub's Dependency Review Action on every PR against main.
+# The action diffs the PR's dependency graph against the base branch and
+# fails the check when the PR introduces a dependency with a known
+# vulnerability at or above the configured severity threshold.
+#
+# This is the PR-time gate. Weekly Dependabot PRs (see .github/dependabot.yml)
+# handle the *maintenance* side — fixing known vulnerabilities in the current
+# graph. Together they cover "don't land new CVEs" + "fix existing CVEs."
+#
+# Reference:
+# https://docs.github.com/code-security/supply-chain-security/understanding-your-software-supply-chain/about-dependency-review
+
+on:
+  pull_request:
+    branches: ['main']
+
+permissions:
+  contents: read
+  # Required for the action to post a summary comment on the PR.
+  pull-requests: write
+
+jobs:
+  dependency-review:
+    name: Review dependency changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        with:
+          # Fail the PR when any newly introduced dependency has a known
+          # vulnerability at `moderate` or higher. Tighten to `high` if the
+          # noise-to-signal ratio is too low in practice; loosen to `low`
+          # for a stricter review surface.
+          fail-on-severity: moderate
+          # Post a human-readable summary as a PR comment so reviewers see
+          # the diff without clicking into the Actions log.
+          comment-summary-in-pr: on-failure
+          # License policy — deny copyleft licenses that would legally
+          # contaminate a library published under MIT. Extend this list if
+          # the ecosystem grows. (Consumers' own license audits are still
+          # their responsibility; this is a belt-and-braces check.)
+          deny-licenses: 'AGPL-3.0, AGPL-3.0-only, AGPL-3.0-or-later, GPL-3.0, GPL-3.0-only, GPL-3.0-or-later'

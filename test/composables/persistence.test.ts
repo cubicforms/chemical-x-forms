@@ -92,6 +92,30 @@ async function wait(ms: number): Promise<void> {
   await new Promise((r) => setTimeout(r, ms))
 }
 
+/**
+ * Poll `predicate` until it returns a non-null / non-undefined value or
+ * the timeout elapses. Avoids the classic `await wait(40)` flake: the
+ * debounced writer + adapter chain (dynamic-imported + Promise.then →
+ * adapter.setItem) can exceed a fixed sleep on a loaded CI runner,
+ * even for an expected 20 ms debounce window. Polling converges as
+ * soon as the write lands, with a generous ceiling (default 500 ms)
+ * so a genuinely broken write still fails the assertion instead of
+ * hanging the suite.
+ */
+async function waitUntil<T>(
+  predicate: () => T | null | undefined,
+  timeoutMs = 500,
+  intervalMs = 5
+): Promise<T | null> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const v = predicate()
+    if (v !== null && v !== undefined) return v
+    if (Date.now() >= deadline) return null
+    await wait(intervalMs)
+  }
+}
+
 describe('persistence — localStorage backend', () => {
   const apps: App[] = []
   beforeEach(() => localStorage.clear())
@@ -105,8 +129,7 @@ describe('persistence — localStorage backend', () => {
     apps.push(app)
     await drain()
     api.setValue('email', 'alice@example.com')
-    await wait(50)
-    const raw = localStorage.getItem('test-local')
+    const raw = await waitUntil(() => localStorage.getItem('test-local'))
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { v: number; data: { form: { email: string } } }
     expect(payload.v).toBe(1)
@@ -120,10 +143,11 @@ describe('persistence — localStorage backend', () => {
     )
     const { app, api } = mountForm({ storage: 'local', key: 'test-hydrate', debounceMs: 20 })
     apps.push(app)
-    // Hydration is async (dynamic import + adapter.getItem + apply) —
-    // drain microtasks AND a real-time wait so the full chain settles.
-    await wait(30)
-    await drain()
+    // Hydration is async (dynamic import + adapter.getItem + apply).
+    // Poll the getValue ref until the replacement lands rather than
+    // wagering a fixed sleep — the adapter's dynamic import alone can
+    // take a variable number of microtasks on a cold CI runner.
+    await waitUntil(() => (api.getValue('email').value === 'seed@example.com' ? true : null))
     expect(api.getValue('email').value).toBe('seed@example.com')
     expect(api.getValue('password').value).toBe('pw')
   })
@@ -152,15 +176,17 @@ describe('persistence — localStorage backend', () => {
     )
     const { app, api } = mountForm({ storage: 'local', key: 'test-clear', debounceMs: 20 })
     apps.push(app)
-    await wait(40)
-    await drain()
+    // The seed payload is in place before mount; hydration replays it
+    // and is async, so wait for the form to actually carry the seed
+    // value before we submit. Otherwise a submit-during-hydration
+    // races the clear-on-success path.
+    await waitUntil(() => (api.getValue('email').value === 'pre@x.com' ? true : null))
     const handler = api.handleSubmit(async () => {})
     await handler()
     // The onSubmitSuccess listener fires a fire-and-forget
-    // flush()→removeItem() chain; give real time for the microtask
-    // pipeline to settle and localStorage.removeItem to land.
-    await wait(40)
-    await drain()
+    // flush()→removeItem() chain; poll for the entry to disappear
+    // rather than wagering a fixed sleep.
+    await waitUntil(() => (localStorage.getItem('test-clear') === null ? true : null))
     expect(localStorage.getItem('test-clear')).toBeNull()
   })
 
@@ -174,12 +200,16 @@ describe('persistence — localStorage backend', () => {
     apps.push(app)
     await drain()
     api.setValue('email', 'user@x.com')
-    await wait(40)
+    await waitUntil(() => localStorage.getItem('test-noclear'))
     expect(localStorage.getItem('test-noclear')).not.toBeNull()
     const handler = api.handleSubmit(async () => {})
     await handler()
     await drain()
-    // Entry stayed — user opted out of clear-on-success.
+    // Entry stayed — user opted out of clear-on-success. Give a small
+    // wait afterwards to prove the clear path genuinely didn't run
+    // (otherwise a delayed removeItem would fail this after the
+    // assertion settles).
+    await wait(40)
     expect(localStorage.getItem('test-noclear')).not.toBeNull()
   })
 })
@@ -197,8 +227,7 @@ describe('persistence — sessionStorage backend', () => {
     apps.push(app)
     await drain()
     api.setValue('email', 'sess@example.com')
-    await wait(40)
-    const raw = sessionStorage.getItem('test-session')
+    const raw = await waitUntil(() => sessionStorage.getItem('test-session'))
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { data: { form: { email: string } } }
     expect(payload.data.form.email).toBe('sess@example.com')
@@ -217,17 +246,18 @@ describe('persistence — IndexedDB backend', () => {
     apps.push(app)
     await drain(16)
     api.setValue('email', 'idb@example.com')
+    // Wait for the debounced write to reach IDB. We can't peek IDB
+    // directly, but the second-mount hydration below IS what reads
+    // the stored value, so polling the hydrated ref is the reliable
+    // convergence signal. A small hold here lets the write's tx
+    // settle before we tear the db down.
     await wait(80)
     await drain(16)
-    // Remount a different form component with the same storage key —
-    // the payload should be in IDB and hydrate.
     app.unmount()
     __resetIndexedDbForTests()
     const second = mountForm({ storage: 'indexeddb', key: 'test-idb-rt', debounceMs: 20 })
     apps.push(second.app)
-    await drain(16)
-    await wait(40)
-    await drain(16)
+    await waitUntil(() => (second.api.getValue('email').value === 'idb@example.com' ? true : null))
     expect(second.api.getValue('email').value).toBe('idb@example.com')
   })
 })
@@ -254,8 +284,7 @@ describe('persistence — include=form+errors', () => {
     // persistence listens to onFormChange which IS the form channel.
     // To stage the error for persistence, trigger a form mutation too.
     api.setValue('password', 'trigger')
-    await wait(40)
-    const raw = localStorage.getItem('test-form-errors')
+    const raw = await waitUntil(() => localStorage.getItem('test-form-errors'))
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as {
       data: { errors?: ReadonlyArray<readonly [string, { message: string }[]]> }

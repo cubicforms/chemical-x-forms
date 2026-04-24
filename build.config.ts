@@ -84,6 +84,22 @@ export default defineBuildConfig({
   },
   rollup: {
     emitCJS: true,
+    // `hoistTransitiveImports: false` stops Rollup from emitting bare
+    // `import './shared/chunk.mjs'` statements into an entry for chunks
+    // that the entry only reaches transitively (through another shared
+    // chunk it directly imports). With `"sideEffects": false` in the
+    // package.json, those defensive bare imports conflict — consumer
+    // bundlers correctly drop them (they have no named imports and no
+    // declared side effects), emitting an "Ignoring this import"
+    // warning for every occurrence. The transitive chunks still load
+    // because the directly-imported chunk's own imports pull them in.
+    // Turning off hoisting means no redundant bare imports and no
+    // warnings, at the cost of a marginal extra network roundtrip for
+    // consumers who load our `.mjs` directly without a bundler (a
+    // non-goal for a library published to npm).
+    output: {
+      hoistTransitiveImports: false,
+    },
     dts: {
       // respectExternal:false avoids re-rolling type-only deps whose TS shape
       // (e.g. typescript's own nested namespaces) can't be bundled by

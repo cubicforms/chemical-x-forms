@@ -1,5 +1,15 @@
 # Releases
 
+## v0.8.2 — 2026-04-24
+
+## What's Changed
+* fix(eslint): point nuxt-globals loader at playground/.nuxt by @ozzyfromcubic in https://github.com/cubicforms/chemical-x-forms/pull/114
+
+
+**Full Changelog**: https://github.com/cubicforms/chemical-x-forms/compare/v0.8.1...v0.8.2
+
+---
+
 ## v0.8.1 — 2026-04-24
 
 ## What's Changed

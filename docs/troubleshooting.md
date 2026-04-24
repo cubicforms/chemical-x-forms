@@ -54,6 +54,38 @@ useForm({ schema, key: signupFormKey })
 Mount / unmount cycles are handled automatically — keys only
 collide when two forms with the same key live concurrently.
 
+In dev, a collision whose schemas disagree on shape surfaces as
+a `console.warn`:
+
+```
+[@chemical-x/forms] Two useForm() calls with key "signup" use
+structurally-different schemas. Only the first caller wires the
+form; the second caller's schema is silently ignored (shared
+"last-write" semantics). …
+  existing schema fingerprint: …
+  incoming schema fingerprint: …
+```
+
+If the sharing is intentional (both sites genuinely want the same
+store), pass the same schema to both. If it's accidental, give
+one of them a unique key. The warning is dev-only and never fires
+in production builds.
+
+## "Shared-key warning fires for schemas I think are identical"
+
+The fingerprint is a best-effort structural hash. Two known
+false-positive sources in custom adapters:
+
+- The adapter's `fingerprint()` builds a string whose contents
+  depend on a non-deterministic input (e.g. a factory default
+  getter that allocates a new value on every call). Make the
+  factory path collapse to an opaque sentinel.
+- Two declarations look identical in source but one has a
+  refinement the other doesn't. Refinements in the Zod adapters
+  intentionally collapse to `fn:*` so most refinement-only
+  deltas don't fire the warning, but shape deltas (wrapping
+  with `.optional()`, `.default(…)`, `.catch(…)`) do.
+
 ## "`register('email')` returns a `never`-typed value"
 
 The schema generic couldn't be inferred. Two likely causes:

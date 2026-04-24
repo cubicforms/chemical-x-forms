@@ -177,7 +177,7 @@ Bare Vue + `@vue/server-renderer`: `renderChemicalXState(app)` on the server, `h
 
 ### Bring your own schema library
 
-Zod v4 is the default. Valibot, ArkType, hand-rolled — implement three methods on `AbstractSchema` and `useForm` works against it. [Recipe →](./docs/recipes/custom-adapter.md)
+Zod v4 is the default. Valibot, ArkType, hand-rolled — implement four methods on `AbstractSchema` and `useForm` works against it. [Recipe →](./docs/recipes/custom-adapter.md)
 <br><br>
 
 ## 📚 Documentation

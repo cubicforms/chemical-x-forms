@@ -59,13 +59,23 @@ export default defineBuildConfig({
     esbuild: {
       format: 'esm',
       target: 'es2020',
-      minify: true,
-      sourcemap: false,
+      // Libraries should NOT minify for npm consumers:
+      //   - Consumer bundlers (Vite, Webpack, Rollup+Terser) minify in
+      //     production mode. Upstream minification saves no bytes.
+      //   - Minified output produces useless stack traces
+      //     (single-letter identifiers) and hostile `cd node_modules`
+      //     debugging for anyone investigating a bug in our code.
+      //   - Tarball gzip compression closes most of the on-disk delta
+      //     between minified and readable output.
+      // Tree-shaking stays on — it drops unreachable code without
+      // mangling what remains.
+      minify: false,
+      sourcemap: true,
       treeShaking: true,
-      legalComments: 'none',
+      legalComments: 'inline',
     },
   },
-  sourcemap: false,
+  sourcemap: true,
   parallel: false,
   name: '@chemical-x/forms',
 })

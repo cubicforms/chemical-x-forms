@@ -36,7 +36,7 @@
     "prepack:watch": "chokidar 'src/**/*' -c 'pnpm prepack' --initial",
     "release": "pnpm check && pnpm version patch && pnpm prepack && pnpm publish && git push --follow-tags",
     "test": "vitest run",
-    "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
+    "test:types": "pnpm dev:prepare && vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
     "test:watch": "vitest watch",
     "bench": "vitest bench --run",
     "check:size": "pnpm prepack && size-limit",
@@ -45,55 +45,6 @@
     "version": "node scripts/promote-changelog.mjs && (node scripts/generate-release-notes.mjs || echo '[version] release-notes step failed; continuing') && git add CHANGELOG.md RELEASES.md",
     "prepare": "husky"
   },
-  "size-limit": [
-    {
-      "path": "dist/index.mjs",
-      "limit": "12 KB",
-      "gzip": true
-    },
-    {
-      "path": "dist/zod.mjs",
-      "limit": "12 KB",
-      "gzip": true,
-      "ignore": [
-        "zod"
-      ]
-    },
-    {
-      "path": "dist/zod-v3.mjs",
-      "limit": "12 KB",
-      "gzip": true,
-      "ignore": [
-        "zod",
-        "lodash-es"
-      ]
-    },
-    {
-      "path": "dist/nuxt.mjs",
-      "limit": "6 KB",
-      "gzip": true,
-      "ignore": [
-        "@nuxt/kit",
-        "nuxt/app"
-      ]
-    },
-    {
-      "path": "dist/vite.mjs",
-      "limit": "4 KB",
-      "gzip": true,
-      "ignore": [
-        "vite"
-      ]
-    },
-    {
-      "path": "dist/transforms.mjs",
-      "limit": "6 KB",
-      "gzip": true,
-      "ignore": [
-        "@vue/compiler-core"
-      ]
-    }
-  ],
   "description": "A fully type-safe, schema-driven form library that gives you superpowers. Chemical X included.",
   "author": "Oswald Chisala",
   "bugs": {

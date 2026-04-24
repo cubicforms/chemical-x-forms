@@ -44,8 +44,11 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 22
+          # `registry-url` alone configures npm auth via NODE_AUTH_TOKEN
+          # for the npm whoami + publish steps below; `always-auth: true`
+          # was redundant and is no longer a valid input in setup-node@v6
+          # (it now emits "Unexpected input(s) 'always-auth'" warnings).
           registry-url: 'https://registry.npmjs.org/'
-          always-auth: true
 
       - name: Install dependencies
         # --frozen-lockfile aborts if pnpm-lock.yaml is stale, so the

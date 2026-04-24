@@ -296,6 +296,15 @@ function toSegments(pathInput: string | Path): Path {
   return canonicalizePath(pathInput).segments
 }
 
+/**
+ * Collapses a structured path to the dotted form the AbstractSchema
+ * contract currently expects. Known limitation: segments that carry a
+ * literal `.` (`['user.name']`) collide with the two-segment form
+ * (`['user', 'name']`). A schema that defines both at once can have
+ * path-targeted validation hit the wrong branch. The fix requires
+ * widening `AbstractSchema.validateAtPath` to take a structured path,
+ * at which point this helper disappears — tracked for a future phase.
+ */
 function toDottedString(pathInput: string | Path): string {
   if (typeof pathInput === 'string') return pathInput
   return pathInput.map(String).join('.')

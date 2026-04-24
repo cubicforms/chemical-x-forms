@@ -35,12 +35,29 @@ export default defineBuildConfig({
       // wrapper also silences the implicit-bundling warning for the
       // specific zod-v3 case.
       const originalExternal = options.external
+      // Rollup's `external` accepts string / RegExp / array of either /
+      // function. Collapse every shape to a boolean match so a future
+      // unbuild change that swaps the runtime shape doesn't silently
+      // turn every external into a bundled dependency.
+      const matchesOriginal = (
+        id: string,
+        parentId: string | undefined,
+        isResolved: boolean
+      ): boolean => {
+        if (originalExternal === undefined || originalExternal === null) return false
+        if (typeof originalExternal === 'function') {
+          return Boolean(originalExternal(id, parentId, isResolved))
+        }
+        const entries = Array.isArray(originalExternal) ? originalExternal : [originalExternal]
+        return entries.some((entry) => {
+          if (typeof entry === 'string') return entry === id
+          if (entry instanceof RegExp) return entry.test(id)
+          return false
+        })
+      }
       options.external = (id, parentId, isResolved) => {
         if (id === 'zod-v3') return false
-        if (typeof originalExternal === 'function') {
-          return originalExternal(id, parentId, isResolved)
-        }
-        return false
+        return matchesOriginal(id, parentId, isResolved)
       }
       options.plugins = [
         aliasPlugin({ entries: [{ find: 'zod-v3', replacement: 'zod' }] }),

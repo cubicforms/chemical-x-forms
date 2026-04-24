@@ -111,6 +111,16 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   }
 
   // --- Error store API — dotted-key record for back-compat ---
+  // `state.errors` is keyed by canonical `PathKey` (JSON-stringified
+  // Segment[]), so every entry here already represents a distinct
+  // structured path. The dotted-key derivation is best-effort: paths
+  // with a literal `.` inside a single segment (`['user.name']`)
+  // produce the same record key as the sibling pair (`['user',
+  // 'name']`). This collision only surfaces in pathological schemas
+  // that declare both shapes on the same form — in that case the
+  // errors merge under the shared dotted key. Consumers who need
+  // collision-free access read from `state.errors` via the validate()
+  // / getFieldState() paths instead of the legacy dotted record.
   const fieldErrors = computed<FormErrorRecord>(() => {
     const record: FormErrorRecord = {}
     for (const [, entries] of state.errors) {

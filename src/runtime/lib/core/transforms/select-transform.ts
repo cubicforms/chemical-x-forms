@@ -218,6 +218,20 @@ const RECURSABLE_NODE_TYPES: ReadonlySet<number> = new Set<number>([
 ])
 
 export const selectNodeTransform: NodeTransform = (node, context) => {
+  // Snapshot every prop array we're about to mutate so a throw
+  // mid-traversal rewinds to the pre-transform state. Without this,
+  // a partial transform leaves the template with some `<option
+  // :selected>` bindings rewritten and others not — worse than
+  // skipping the transform entirely, since the runtime directive
+  // would then miscompute initial state against a shape it doesn't
+  // recognise. `snapshotProps` is idempotent per target; calling
+  // twice records one snapshot.
+  type NodeProps = (AttributeNode | DirectiveNode)[]
+  const snapshots: Array<{ target: NodeProps; snapshot: NodeProps }> = []
+  const snapshotProps = (target: NodeProps): void => {
+    if (snapshots.some((entry) => entry.target === target)) return
+    snapshots.push({ target, snapshot: [...target] })
+  }
   try {
     const isSelect = node.type === NodeTypes.ELEMENT && node.tag === 'select'
     const isCustomComponent =
@@ -271,6 +285,7 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
       const optionValueSummarizedProp = optionProps[valueIndex]
 
       const props = _node.props
+      snapshotProps(props)
       removePropsByName(props, ['selected'])
 
       const newProp: DirectiveNode = {
@@ -298,6 +313,7 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
     // construct `:value` dynamic prop based on the existing `v-register` directive
     const selectProps = node.props
 
+    snapshotProps(selectProps)
     removePropsByName(selectProps, ['value']) // actively prevent an attribute collision
     const valuePropExpArray = Array.isArray(registerSummarizedProp?.value)
       ? registerSummarizedProp.value
@@ -351,9 +367,15 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
 
     node.props.push(customElementProp)
   } catch (err) {
-    // AST shape drift or malformed template: skip silently. Runtime directive
-    // alone still handles value binding; only SSR initial-render correctness
-    // is affected.
+    // AST shape drift or malformed template: rewind every prop array
+    // we mutated so the template falls back cleanly to the runtime
+    // directive. Reverse order mirrors the push order so later
+    // snapshots restore against the state their earlier siblings
+    // saw. Runtime directive alone still handles value binding; only
+    // SSR initial-render correctness is affected.
+    for (const { target, snapshot } of snapshots.slice().reverse()) {
+      target.splice(0, target.length, ...snapshot)
+    }
 
     console.error('[@chemical-x/forms] select transform failed, skipping:', err)
   }

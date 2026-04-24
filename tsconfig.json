@@ -1,11 +1,7 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "lib": [
-      "ESNext",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
@@ -28,21 +24,11 @@
     "verbatimModuleSyntax": true,
     "pretty": true,
     "paths": {
-      "@runtime/*": [
-        "./src/runtime/*"
-      ],
-      "@chemical-x/forms": [
-        "./src/index.ts"
-      ],
-      "@chemical-x/forms/types": [
-        "./src/runtime/types/types-api.ts"
-      ],
-      "@chemical-x/forms/zod": [
-        "./src/zod.ts"
-      ],
-      "@chemical-x/forms/zod-v3": [
-        "./src/zod-v3.ts"
-      ]
+      "@runtime/*": ["./src/runtime/*"],
+      "@chemical-x/forms": ["./src/index.ts"],
+      "@chemical-x/forms/types": ["./src/runtime/types/types-api.ts"],
+      "@chemical-x/forms/zod": ["./src/zod.ts"],
+      "@chemical-x/forms/zod-v3": ["./src/zod-v3.ts"]
     },
     "removeComments": false,
     "strictBuiltinIteratorReturn": true,
@@ -64,9 +50,5 @@
     "playground",
     "eslint-plugin-nuxt.d.ts"
   ],
-  "exclude": [
-    "dist",
-    "node_modules",
-    ".nuxt"
-  ]
+  "exclude": ["dist", "node_modules", ".nuxt"]
 }

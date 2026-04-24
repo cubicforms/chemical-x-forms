@@ -130,7 +130,7 @@ pnpm release
 
 Mirrors the CI flow: `pnpm check && pnpm version patch && pnpm
 prepack && pnpm publish && git push --follow-tags`. The local path
-publishes *without* `--provenance` (OIDC only works in CI), so the
+publishes _without_ `--provenance` (OIDC only works in CI), so the
 resulting tarball won't carry a signed statement. Prefer the
 workflow when you can.
 

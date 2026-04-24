@@ -16,11 +16,11 @@ const { handleSubmit } = useForm({
 
 Four policies:
 
-| Policy                    | What happens                                                                        |
-| ------------------------- | ----------------------------------------------------------------------------------- |
-| `'none'`                  | Default. No-op. Wire your own via `onError`.                                        |
-| `'focus-first-error'`     | Calls `.focus()` on the first errored field. The browser may scroll.                |
-| `'scroll-to-first-error'` | Calls `.scrollIntoView()` on it. No focus change.                                   |
+| Policy                    | What happens                                                                                                           |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `'none'`                  | Default. No-op. Wire your own via `onError`.                                                                           |
+| `'focus-first-error'`     | Calls `.focus()` on the first errored field. The browser may scroll.                                                   |
+| `'scroll-to-first-error'` | Calls `.scrollIntoView()` on it. No focus change.                                                                      |
 | `'both'`                  | Scrolls first, then focuses with `{ preventScroll: true }` so the browser doesn't re-scroll and undo the explicit one. |
 
 The policy fires after `fieldErrors` is populated and before your
@@ -35,20 +35,22 @@ directly:
 
 ```vue
 <script setup lang="ts">
-const { handleSubmit, setFieldErrorsFromApi, scrollToFirstError, focusFirstError } =
-  useForm({ schema, key: 'signup' })
+  const { handleSubmit, setFieldErrorsFromApi, scrollToFirstError, focusFirstError } = useForm({
+    schema,
+    key: 'signup',
+  })
 
-const onSubmit = handleSubmit(async (values) => {
-  try {
-    await $fetch('/api/signup', { method: 'POST', body: values })
-  } catch (err) {
-    if (err.statusCode === 422) {
-      setFieldErrorsFromApi(err.data)
-      scrollToFirstError({ block: 'center', behavior: 'smooth' })
-      focusFirstError({ preventScroll: true })
+  const onSubmit = handleSubmit(async (values) => {
+    try {
+      await $fetch('/api/signup', { method: 'POST', body: values })
+    } catch (err) {
+      if (err.statusCode === 422) {
+        setFieldErrorsFromApi(err.data)
+        scrollToFirstError({ block: 'center', behavior: 'smooth' })
+        focusFirstError({ preventScroll: true })
+      }
     }
-  }
-})
+  })
 </script>
 ```
 

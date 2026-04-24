@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSSRApp, defineComponent, h } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { useForm } from '../../src'
@@ -34,6 +34,20 @@ function mountWith(keyValue: unknown): Promise<string> {
 }
 
 describe('useForm — runtime requireFormKey guard', () => {
+  // Vue logs `[Vue warn]: Unhandled error during execution of setup`
+  // via `console.warn` when setup() throws during renderToString. The
+  // three throw-tests below intentionally exercise that throw; silencing
+  // the expected warn keeps test output clean without losing a
+  // real regression signal — Vue's native warn channel is the only
+  // thing we suppress.
+  let warnSpy: ReturnType<typeof vi.spyOn>
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  })
+  afterEach(() => {
+    warnSpy.mockRestore()
+  })
+
   it('throws when key is undefined', async () => {
     await expect(mountWith(undefined)).rejects.toThrow(/requires an explicit `key`/)
   })

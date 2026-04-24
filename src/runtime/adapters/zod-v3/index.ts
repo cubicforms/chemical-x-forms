@@ -206,12 +206,10 @@ export function zodAdapter<
         })
         const nestedZodSchemas = getNestedZodSchemasAtPath(slimSchema, path)
 
-        if (!nestedZodSchemas.length) {
-          console.error(
-            `Programming Error: Could not calculate nested schema at path '${path}' for form with key '${_formKey}'`
-          )
-          return []
-        }
+        // Empty list is a valid result for paths the schema doesn't
+        // declare — callers (getValue / register / custom introspection)
+        // treat `[]` as "no sub-schema here". No warning needed.
+        if (!nestedZodSchemas.length) return []
 
         return nestedZodSchemas.map((n) =>
           getAbstractSchema(_formKey, n as NestedType<Form, typeof path>, false)
@@ -253,11 +251,9 @@ export function zodAdapter<
         })
         const nestedZodSchemas = getNestedZodSchemasAtPath(slimSchema, path)
 
+        // The structured ValidationError in the return already tells
+        // the caller the path didn't resolve — no extra console noise.
         if (!nestedZodSchemas.length) {
-          console.error(
-            `Programming Error: Could not calculate nested schema at path '${path}' for form with key '${_formKey}'`
-          )
-
           return {
             data: undefined,
             errors: NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA(

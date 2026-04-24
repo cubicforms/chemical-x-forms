@@ -25,6 +25,7 @@ import {
 } from './vue-shared-shim'
 import type { DirectiveBinding, DirectiveHook, ObjectDirective, VNode } from 'vue'
 import { isRef, nextTick, warn } from 'vue'
+import { __DEV__ } from './dev'
 import type {
   CustomDirectiveRegisterAssignerFn,
   RegisterCheckboxCustomDirective,
@@ -400,7 +401,7 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
   const isArrayValue = isArray(baseValue)
 
   if (isMultiple && !isArrayValue && !isSet(baseValue)) {
-    if (import.meta.dev) {
+    if (__DEV__) {
       warn(
         `<select multiple v-register> expected an Array or Set value for its binding, ` +
           `but got ${Object.prototype.toString.call(baseValue).slice(8, -1)} instead.`
@@ -493,7 +494,7 @@ const vRegisterFileNoop: RegisterModelDynamicCustomDirective = {
   created(el, { value }) {
     if (!isRegisterValue(value)) return
     value.registerElement(el)
-    if (import.meta.dev) {
+    if (__DEV__) {
       warn(
         '[@chemical-x/forms] v-register on <input type="file"> is not supported. ' +
           'Handle uploads with a manual @change listener.'

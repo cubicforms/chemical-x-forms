@@ -79,7 +79,7 @@ jobs:
       # whose email is in the key's UID, otherwise GitHub still marks the
       # commit "Unverified".
       - name: Import GPG signing key
-        uses: crazy-max/ghaction-import-gpg@v6
+        uses: crazy-max/ghaction-import-gpg@v7
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}

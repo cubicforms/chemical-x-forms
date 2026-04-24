@@ -34,10 +34,13 @@ updates:
         update-types:
           - 'minor'
           - 'patch'
+    # Conventional-commit scope is embedded in the prefix directly
+    # (`chore(deps): …`, `chore(deps-dev): …`). Do NOT also set
+    # `include: 'scope'` — Dependabot concatenates the two, producing
+    # malformed `chore(deps)(deps): …` subjects that fail commitlint.
     commit-message:
       prefix: 'chore(deps)'
       prefix-development: 'chore(deps-dev)'
-      include: 'scope'
     labels:
       - 'dependencies'
 
@@ -47,9 +50,10 @@ updates:
       interval: 'weekly'
       day: 'monday'
     open-pull-requests-limit: 5
+    # Same pattern as the npm block: scope is in the prefix itself;
+    # `include: 'scope'` is intentionally omitted to avoid a double scope.
     commit-message:
       prefix: 'chore(ci)'
-      include: 'scope'
     labels:
       - 'dependencies'
       - 'github-actions'

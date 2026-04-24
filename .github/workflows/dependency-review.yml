@@ -12,13 +12,29 @@ name: Dependency Review
 # Reference:
 # https://docs.github.com/code-security/supply-chain-security/understanding-your-software-supply-chain/about-dependency-review
 
+# Forked-PR limitation: GitHub strips `pull-requests: write` from
+# workflows triggered by `pull_request` events from forks (security —
+# a malicious fork would otherwise be able to write to the PR). That
+# means `comment-summary-in-pr` below does NOT post a comment when
+# the PR originates from a fork. The failure itself is still
+# enforced — the workflow still fails the check — but reviewers have
+# to open the Actions log to see *why*. If fork-PR comments ever
+# become a hard requirement, the standard workaround is the two-
+# workflow pattern: keep this `pull_request` workflow for the check,
+# and add a companion `workflow_run` workflow (triggered on this
+# workflow's completion) that has the write scope and posts the
+# comment. See:
+#   https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run
+#   https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/
 on:
   pull_request:
     branches: ['main']
 
 permissions:
   contents: read
-  # Required for the action to post a summary comment on the PR.
+  # Needed for `comment-summary-in-pr: on-failure` below. GitHub
+  # automatically downgrades this to read-only for forked-PR runs,
+  # so the comment post silently no-ops on forks (see note above).
   pull-requests: write
 
 jobs:
@@ -41,7 +57,22 @@ jobs:
           # the diff without clicking into the Actions log.
           comment-summary-in-pr: on-failure
           # License policy — deny copyleft licenses that would legally
-          # contaminate a library published under MIT. Extend this list if
-          # the ecosystem grows. (Consumers' own license audits are still
-          # their responsibility; this is a belt-and-braces check.)
-          deny-licenses: 'AGPL-3.0, AGPL-3.0-only, AGPL-3.0-or-later, GPL-3.0, GPL-3.0-only, GPL-3.0-or-later'
+          # contaminate a library published under MIT. Consumers bundle
+          # npm packages statically (via Vite / Webpack / Rollup), so the
+          # "dynamic linking" exception that usually makes LGPL OK for
+          # *applications* does NOT apply here — LGPL contamination in a
+          # bundled JS library is equivalent to GPL. Hence LGPL is on the
+          # deny list too. SPDX 3.0+ deprecated the suffix-less forms
+          # (`GPL-3.0`, `AGPL-3.0`, etc.); only the `-only` / `-or-later`
+          # variants are listed.
+          # Consumers' own license audits remain their responsibility;
+          # this is a belt-and-braces check at dependency-introduction time.
+          deny-licenses: >-
+            AGPL-1.0-only, AGPL-1.0-or-later,
+            AGPL-3.0-only, AGPL-3.0-or-later,
+            GPL-1.0-only, GPL-1.0-or-later,
+            GPL-2.0-only, GPL-2.0-or-later,
+            GPL-3.0-only, GPL-3.0-or-later,
+            LGPL-2.0-only, LGPL-2.0-or-later,
+            LGPL-2.1-only, LGPL-2.1-or-later,
+            LGPL-3.0-only, LGPL-3.0-or-later

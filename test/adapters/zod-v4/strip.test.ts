@@ -116,3 +116,28 @@ describe('getSlimSchema — stripOptional / stripNullable flags', () => {
     expect(nullable.safeParse(null).success).toBe(true)
   })
 })
+
+describe('getSlimSchema — container-level constraints survive strict mode', () => {
+  it('preserves array .min() when stripRefinements is false', () => {
+    const schema = z.array(z.string()).min(1)
+    const slim = getSlimSchema(schema, { stripRefinements: false })
+    expect(slim.safeParse([]).success).toBe(false)
+    expect(slim.safeParse(['x']).success).toBe(true)
+  })
+
+  it('drops array .min() when stripRefinements is true', () => {
+    const schema = z.array(z.string()).min(1)
+    const slim = getSlimSchema(schema, { stripRefinements: true })
+    // With refinements stripped, the empty array should now pass.
+    expect(slim.safeParse([]).success).toBe(true)
+  })
+
+  it('preserves object refinements in strict mode', () => {
+    const schema = z
+      .object({ a: z.number(), b: z.number() })
+      .refine((v) => v.a < v.b, 'a must be less than b')
+    const slim = getSlimSchema(schema, { stripRefinements: false })
+    expect(slim.safeParse({ a: 2, b: 1 }).success).toBe(false)
+    expect(slim.safeParse({ a: 1, b: 2 }).success).toBe(true)
+  })
+})

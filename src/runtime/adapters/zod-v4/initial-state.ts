@@ -248,8 +248,10 @@ export function getInitialStateFromZodSchema<Form>(
       | string
       | number
     )[]
-    const dottedPath = pathSegments.join('.')
-    const candidates = getNestedZodSchemasAtPath(slimSchema, dottedPath)
+    // Pass the structured path directly — joining with '.' would merge
+    // a literal-dot key (`['profile.name']`) into two segments and
+    // target the wrong sub-schema during fix-up.
+    const candidates = getNestedZodSchemasAtPath(slimSchema, pathSegments)
     if (candidates.length === 0) continue
     const candidate = candidates[0]
     if (candidate === undefined) continue

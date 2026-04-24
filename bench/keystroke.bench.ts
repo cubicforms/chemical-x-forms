@@ -213,9 +213,15 @@ describe('keystroke: 100-leaf form, single-leaf mutation', () => {
     }
   }
 
+  // Clone ONCE outside the measured loop. oldApproach mutates its
+  // summary map, but current/previous don't change between iterations,
+  // so after the first run the map converges to a stable steady-state.
+  // Subsequent iterations still exercise the full algorithm (flatten,
+  // setDifference / setIntersection, persisted-keys rebuild) — big-O
+  // identical to the cold-start run. Cloning inside the bench inflated
+  // the ratio gate, charging clone overhead to `old:` runs only.
+  const summaryCopy = { ...summaryValues }
   bench('old: flatten + setDifference x3 + setIntersection x3 + key iteration', () => {
-    // Clone the seed map per run so oldApproach mutates don't accumulate.
-    const summaryCopy = { ...summaryValues }
     oldApproach(current, previous, summaryCopy)
   })
 
@@ -238,8 +244,8 @@ describe('keystroke: 500-leaf form, single-leaf mutation', () => {
     }
   }
 
+  const summaryCopy = { ...summaryValues }
   bench('old: 500-leaf form', () => {
-    const summaryCopy = { ...summaryValues }
     oldApproach(current, previous, summaryCopy)
   })
 

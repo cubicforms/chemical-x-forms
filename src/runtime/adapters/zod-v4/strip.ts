@@ -2,6 +2,7 @@ import { z } from 'zod'
 import {
   getArrayElement,
   getCatchDefault,
+  getChecks,
   getDefaultValue,
   getDiscriminatedOptions,
   getDiscriminator,
@@ -18,6 +19,40 @@ import {
   unwrapLazy,
   unwrapPipe,
 } from './introspect'
+
+type StripConfigInternal = Pick<StripConfig, 'stripRefinements'>
+
+/**
+ * Re-apply the container-level checks from `original` to `rebuilt`.
+ * Container constructors (`z.object`, `z.array`, `z.tuple`, `z.record`,
+ * `z.union`) don't accept checks in their factory signature, so
+ * rebuilding a container drops `.min(1)` / `.max(3)` / `.strict()` /
+ * etc. silently. Without this, a schema like
+ * `z.array(z.string()).min(1)` in strict mode (where
+ * `stripRefinements !== true`) would accept `[]` — the bug CR
+ * reported.
+ *
+ * `.check(...)` accepts raw check instances, which is exactly what
+ * the internal `def.checks` array holds. Skipping when
+ * `stripRefinements === true` matches the leaf branches at the bottom
+ * of `getSlimSchema`.
+ */
+function carryChecks<Rebuilt extends z.ZodType>(
+  rebuilt: Rebuilt,
+  original: z.ZodType,
+  stripConfig: StripConfigInternal
+): Rebuilt {
+  if (stripConfig.stripRefinements === true) return rebuilt
+  if (!hasChecks(original)) return rebuilt
+  const checks = getChecks(original)
+  // `.check` on a concrete ZodType accepts instances of `$ZodCheck`
+  // in Zod v4; the introspection helper returns exactly that shape,
+  // so the cast is the boundary between adapter-internal typing and
+  // Zod's public API.
+  return (rebuilt as z.ZodType<unknown>).check(
+    ...(checks as Parameters<z.ZodType<unknown>['check']>)
+  ) as Rebuilt
+}
 
 /**
  * stripRefinements: rebuild the schema tree with all refinement checks
@@ -171,14 +206,31 @@ export function getSlimSchema(schema: z.ZodType, stripConfig: StripConfig): z.Zo
       const defaultValue = getDefaultValue(schema)
       return (slimmedInner as z.ZodType).default(defaultValue as never)
     }
-    case 'readonly':
+    case 'readonly': {
+      // `.readonly()` wraps the output in `Object.freeze` — dropping the
+      // wrapper after slimming would hand callers a mutable default,
+      // which breaks invariants inside refinements that rely on the
+      // frozen shape. Re-wrap the slimmed inner so the observable parse
+      // behaviour matches the unstripped schema.
+      const inner = unwrapInner(schema)
+      return inner === undefined
+        ? schema
+        : (getSlimSchema(inner, stripConfig) as z.ZodType).readonly()
+    }
     case 'pipe': {
-      if (kind === 'pipe' && stripConfig.stripPipe === true) {
+      // `.pipe(...)` chains schemas sequentially — the output of one
+      // feeds the input of the next — and typically carries a
+      // `.transform(...)` that mutates the runtime shape. Slimming the
+      // inner and dropping the pipe wrapper would lose that
+      // transformation, so by default we return the original schema
+      // unchanged. Consumers who explicitly opt in via `stripPipe`
+      // (e.g. initial-state derivation, where a transform doesn't make
+      // sense) get the upstream leg of the pipe only.
+      if (stripConfig.stripPipe === true) {
         const inner = unwrapPipe(schema) ?? schema
         return getSlimSchema(inner, stripConfig)
       }
-      const inner = kind === 'pipe' ? unwrapPipe(schema) : unwrapInner(schema)
-      return inner === undefined ? schema : getSlimSchema(inner, stripConfig)
+      return schema
     }
     case 'object': {
       const shape = getObjectShape(schema as z.ZodObject)
@@ -186,24 +238,29 @@ export function getSlimSchema(schema: z.ZodType, stripConfig: StripConfig): z.Zo
       for (const [k, v] of Object.entries(shape)) {
         next[k] = getSlimSchema(v, stripConfig)
       }
-      return z.object(next)
+      return carryChecks(z.object(next), schema, stripConfig)
     }
     case 'array': {
       const element = getArrayElement(schema as z.ZodArray)
-      return z.array(getSlimSchema(element, stripConfig))
+      return carryChecks(z.array(getSlimSchema(element, stripConfig)), schema, stripConfig)
     }
     case 'tuple': {
       const items = getTupleItems(schema).map((it) => getSlimSchema(it, stripConfig))
-      return z.tuple(items as unknown as [z.ZodType, ...z.ZodType[]]) as unknown as z.ZodType
+      const rebuilt = z.tuple(
+        items as unknown as [z.ZodType, ...z.ZodType[]]
+      ) as unknown as z.ZodType
+      return carryChecks(rebuilt, schema, stripConfig)
     }
     case 'record': {
       const keyType = getRecordKeyType(schema)
       const valueType = getSlimSchema(getRecordValueType(schema), stripConfig)
-      return z.record(keyType as z.ZodType<string | number | symbol>, valueType)
+      const rebuilt = z.record(keyType as z.ZodType<string | number | symbol>, valueType)
+      return carryChecks(rebuilt, schema, stripConfig)
     }
     case 'union': {
       const options = getUnionOptions(schema).map((opt) => getSlimSchema(opt, stripConfig))
-      return z.union(options as unknown as readonly [z.ZodType, z.ZodType, ...z.ZodType[]])
+      const rebuilt = z.union(options as unknown as readonly [z.ZodType, z.ZodType, ...z.ZodType[]])
+      return carryChecks(rebuilt, schema, stripConfig)
     }
     case 'discriminated-union': {
       const options = getDiscriminatedOptions(schema).map(

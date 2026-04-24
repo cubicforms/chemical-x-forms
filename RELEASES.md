@@ -1,5 +1,16 @@
 # Releases
 
+## v0.8.3 — 2026-04-24
+
+## What's Changed
+* fix(test): poll for persistence writes instead of fixed-sleep waits by @ozzyfromcubic in https://github.com/cubicforms/chemical-x-forms/pull/115
+* ci: auto-create GitHub Release after npm publish + tag push by @ozzyfromcubic in https://github.com/cubicforms/chemical-x-forms/pull/116
+
+
+**Full Changelog**: https://github.com/cubicforms/chemical-x-forms/compare/v0.8.2...v0.8.3
+
+---
+
 ## v0.8.2 — 2026-04-24
 
 ## What's Changed

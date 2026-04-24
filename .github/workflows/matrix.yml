@@ -18,7 +18,10 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x, 20.x, 22.x, 'lts/*']
+        # Node 18 dropped after its 2025-04-30 EOL — several transitive
+        # dependencies (Nuxt 4's nuxi → @clack/core) now call
+        # `node:util.styleText`, which ships in Node 20.12+ only.
+        node-version: [20.x, 22.x, 'lts/*']
       fail-fast: false
 
     steps:

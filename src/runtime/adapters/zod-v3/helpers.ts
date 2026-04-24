@@ -23,6 +23,8 @@ type ZodTypeMap = {
   ZodTuple: z.ZodTuple<[z.ZodTypeAny, ...z.ZodTypeAny[]]>
   ZodString: z.ZodString
   ZodNumber: z.ZodNumber
+  ZodBigInt: z.ZodBigInt
+  ZodDate: z.ZodDate
 }
 
 /**

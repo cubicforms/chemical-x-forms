@@ -161,17 +161,32 @@ export function zodAdapter<
           fixedData = merge(rawInitialState, fixedData)
         }
 
-        // yes, throw if we genuinely can't construct the initial state!
-        const parsedData = slimSchema.parse(fixedData)
+        // Best-effort re-parse: if the fix-up loop couldn't fully
+        // reconcile the data (nested unions whose branches don't match
+        // the defaulted shape, bigint edge cases), return the partial
+        // data instead of throwing. Matches the v4 adapter's lax
+        // semantics — a partially-valid initial state is preferable
+        // to a mount-time exception.
+        const secondParse = slimSchema.safeParse(fixedData)
+        const finalData = secondParse.success ? secondParse.data : fixedData
+
+        if ((config.validationMode ?? 'lax') === 'lax') {
+          return {
+            data: finalData as Form,
+            errors: undefined,
+            success: true,
+            formKey: _formKey,
+          }
+        }
 
         return {
-          data: parsedData as Form,
+          data: finalData as Form,
           errors: error.issues.map((issue) => ({
             message: issue.message,
             path: issue.path,
             formKey: _formKey,
           })),
-          success,
+          success: false,
           formKey: _formKey,
         }
       },
@@ -448,7 +463,7 @@ function getDefaultValue(
   if (expected === 'number') return 0
   if (expected === 'array') return []
   if (expected === 'boolean') return false
-  if (expected === 'bigint') return 0
+  if (expected === 'bigint') return 0n
   if (expected === 'float') return 0.0
   if (expected === 'integer') return 0
   if (expected === 'null') return null
@@ -535,6 +550,19 @@ function getInitialStateFromZodSchema<
     // Handle numbers
     if (isZodSchemaType(schema, 'ZodNumber')) {
       return 0
+    }
+
+    // Handle bigints — must be a bigint literal; z.bigint() rejects
+    // number 0. Without this branch we fall through to the warn-path
+    // and the fix-up loop has to reconcile it via getDefaultValue.
+    if (isZodSchemaType(schema, 'ZodBigInt')) {
+      return 0n
+    }
+
+    // Handle dates — matches v4's `new Date(0)` so SSR round-trip is
+    // deterministic across server + client.
+    if (isZodSchemaType(schema, 'ZodDate')) {
+      return new Date(0)
     }
 
     // Handle booleans

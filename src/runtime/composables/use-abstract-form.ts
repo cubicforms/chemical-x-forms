@@ -54,18 +54,20 @@ export function useAbstractForm<
   const key = requireFormKey(configuration.key)
 
   // Resolve the schema (accepts either an AbstractSchema or a factory).
-  const resolvedSchema = getComputedSchema(key, configuration.schema) as unknown as AbstractSchema<
-    Form,
-    Form
-  >
+  // Preserve both generics — dropping `GetValueFormType` here would make
+  // `state.schema.getSchemasAtPath(...)` return `AbstractSchema<_, Form>[]`
+  // for consumers whose schema intentionally produces a different runtime
+  // shape (e.g. zod's `.transform(...)` narrowing).
+  const resolvedSchema = getComputedSchema(key, configuration.schema)
 
   // One FormState per (app, formKey). Multiple useForm calls with the same
   // key resolve to the same instance — matches the pre-rewrite "shared
   // store" semantic that forms with the same key were intended to share.
   const registry = useRegistry()
-  const existing = registry.forms.get(key) as FormState<Form> | undefined
-  const state: FormState<Form> =
-    existing ?? buildFreshState<Form>(key, resolvedSchema, configuration, registry)
+  const existing = registry.forms.get(key) as FormState<Form, GetValueFormType> | undefined
+  const state: FormState<Form, GetValueFormType> =
+    existing ??
+    buildFreshState<Form, GetValueFormType>(key, resolvedSchema, configuration, registry)
 
   // Ref-count this consumer. When the component's effect scope tears down,
   // release the count; the registry evicts the FormState once the last
@@ -85,7 +87,7 @@ export function useAbstractForm<
   // down only when the last consumer releases and the registry evicts
   // the state.
   if (existing === undefined && configuration.persist !== undefined && !registry.isSSR) {
-    const disposePersist = wirePersistence(state as FormState<Form>, configuration.persist)
+    const disposePersist = wirePersistence(state, configuration.persist)
     state.registerCleanup(disposePersist)
   }
 
@@ -96,7 +98,7 @@ export function useAbstractForm<
   // SAME instance, keeping `canUndo` / `canRedo` / `historySize` /
   // `undo` / `redo` consistent across mount order.
   if (existing === undefined && configuration.history !== undefined) {
-    const historyModule = createHistoryModule(state as FormState<Form>, configuration.history)
+    const historyModule = createHistoryModule(state, configuration.history)
     state.modules.set(HISTORY_MODULE_KEY, historyModule)
     state.registerCleanup(() => historyModule.dispose())
   }
@@ -124,15 +126,15 @@ export function useAbstractForm<
  */
 const HISTORY_MODULE_KEY = 'history'
 
-function buildFreshState<F extends GenericForm>(
+function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
   key: FormKey,
-  schema: AbstractSchema<F, F>,
-  configuration: UseFormConfiguration<F, F, AbstractSchema<F, F>, DeepPartial<F>>,
+  schema: AbstractSchema<F, G>,
+  configuration: UseFormConfiguration<F, G, AbstractSchema<F, G>, DeepPartial<F>>,
   registry: ReturnType<typeof useRegistry>
-): FormState<F> {
+): FormState<F, G> {
   const pending = registry.pendingHydration.get(key)
   if (pending !== undefined) registry.pendingHydration.delete(key)
-  const state = createFormState<F>({
+  const state = createFormState<F, G>({
     formKey: key,
     schema,
     initialState: configuration.initialState,
@@ -140,8 +142,11 @@ function buildFreshState<F extends GenericForm>(
     hydration: pending,
     fieldValidation: configuration.fieldValidation,
   })
-  // Storage type is FormState<GenericForm>; the lookup above narrows back to F
-  // via the `existing as FormState<Form>` cast.
+  // Storage type is FormState<GenericForm>; the lookup above narrows
+  // back to the caller's (F, G) via the `existing as FormState<Form,
+  // GetValueFormType>` cast. The registry Map is intentionally
+  // generic-erased — the alternative (parameterising the Map) would
+  // force every internal caller to carry both generics.
   ;(registry.forms as Map<FormKey, FormState<GenericForm>>).set(
     key,
     state as unknown as FormState<GenericForm>

@@ -53,14 +53,14 @@ export type OriginalsRecord = {
   readonly value: unknown
 }
 
-export type FormState<F extends GenericForm> = {
+export type FormState<F extends GenericForm, G extends GenericForm = F> = {
   readonly formKey: FormKey
   readonly form: Ref<F>
   readonly fields: Map<PathKey, FieldRecord>
   readonly elements: Map<PathKey, ElementRecord>
   readonly errors: Map<PathKey, ValidationError[]>
   readonly originals: Map<PathKey, OriginalsRecord>
-  readonly schema: AbstractSchema<F, F>
+  readonly schema: AbstractSchema<F, G>
 
   // --- submission lifecycle ---
   // Driven by buildProcessForm's handleSubmit wrapper. See use-abstract-form.ts
@@ -214,18 +214,18 @@ export type FormStateHydration = {
   readonly fields: ReadonlyArray<readonly [string, unknown]>
 }
 
-export type CreateFormStateOptions<F extends GenericForm> = {
+export type CreateFormStateOptions<F extends GenericForm, G extends GenericForm = F> = {
   readonly formKey: FormKey
-  readonly schema: AbstractSchema<F, F>
+  readonly schema: AbstractSchema<F, G>
   readonly initialState?: DeepPartial<F> | undefined
   readonly validationMode?: ValidationMode | undefined
   readonly hydration?: FormStateHydration | undefined
   readonly fieldValidation?: FieldValidationConfig | undefined
 }
 
-export function createFormState<F extends GenericForm>(
-  options: CreateFormStateOptions<F>
-): FormState<F> {
+export function createFormState<F extends GenericForm, G extends GenericForm = F>(
+  options: CreateFormStateOptions<F, G>
+): FormState<F, G> {
   const { formKey, schema, initialState, validationMode = 'lax', hydration } = options
   const fieldValidationMode: FieldValidationMode = options.fieldValidation?.on ?? 'none'
   const fieldValidationDebounceMs: number = options.fieldValidation?.debounceMs ?? 200

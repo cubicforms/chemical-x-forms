@@ -28,12 +28,6 @@ import {
  */
 const UNSUPPORTED: readonly ZodKind[] = ['promise', 'custom', 'template-literal']
 
-const SUPPORTED_SUMMARY =
-  'object, array, record, tuple, union, discriminated-union, ' +
-  'string, number, boolean, bigint, date, enum, literal, null, undefined, ' +
-  'optional, nullable, default, prefault, pipe, readonly, lazy (non-recursive), ' +
-  'intersection, catch, nan, any, unknown, void, never'
-
 function labelPath(path: readonly string[]): string {
   return path.length === 0 ? '<root>' : path.join('.')
 }
@@ -56,8 +50,7 @@ export function assertSupportedKinds(
 
   if (UNSUPPORTED.includes(kind)) {
     throw new UnsupportedSchemaError(
-      `[@chemical-x/forms/zod] Schema kind '${kind}' at path '${labelPath(path)}' ` +
-        `is not supported. Supported kinds: ${SUPPORTED_SUMMARY}.`
+      `[@chemical-x/forms/zod] unsupported kind '${kind}' at '${labelPath(path)}'`
     )
   }
 
@@ -108,10 +101,7 @@ export function assertSupportedKinds(
       const getter = getLazyGetter(schema)
       if (getter !== undefined && lazyGetters.includes(getter)) {
         throw new UnsupportedSchemaError(
-          `[@chemical-x/forms/zod] Recursive z.lazy() schema at path '${labelPath(path)}' ` +
-            `is not supported — the adapter cannot derive a finite initial state for ` +
-            `self-referential schemas. Model the recursion at runtime via ` +
-            `setValue / field-array helpers instead.`
+          `[@chemical-x/forms/zod] Recursive z.lazy() at '${labelPath(path)}'`
         )
       }
       const inner = unwrapLazy(schema)

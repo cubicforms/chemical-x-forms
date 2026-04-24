@@ -5,7 +5,24 @@ export default defineBuildConfig({
   // Multiple published entry points. `module` is the Nuxt module (used via
   // `@chemical-x/forms/nuxt`); `index` is the framework-agnostic core used
   // by bare Vue consumers; the rest are narrow-purpose subpaths.
-  entries: ['src/nuxt', 'src/index', 'src/vite', 'src/transforms', 'src/zod', 'src/zod-v3'],
+  //
+  // `src/runtime/plugins/chemical-x` is a Nuxt-only plugin file that
+  // `src/nuxt.ts` registers via `addPlugin({ src: resolver.resolve(...) })`.
+  // It needs to exist on disk at `dist/runtime/plugins/chemical-x.mjs` in
+  // the published package (otherwise the resolver raises ENOENT and the
+  // plugin never installs, leaving `useForm` to throw `Registry not
+  // found`). Unbuild's shared-chunk splitter deduplicates `core/plugin` +
+  // `core/serialize` across this entry and `src/zod` / `src/index`, so
+  // there's only one `registry` module instance at runtime.
+  entries: [
+    'src/nuxt',
+    'src/index',
+    'src/vite',
+    'src/transforms',
+    'src/zod',
+    'src/zod-v3',
+    'src/runtime/plugins/chemical-x',
+  ],
   externals: [
     '@vue/compiler-core',
     'nuxt',

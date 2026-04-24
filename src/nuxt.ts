@@ -1,4 +1,4 @@
-import { addImports, addPluginTemplate, addTypeTemplate, defineNuxtModule } from '@nuxt/kit'
+import { addImports, addPlugin, addTypeTemplate, createResolver, defineNuxtModule } from '@nuxt/kit'
 import { inputTextAreaNodeTransform } from './runtime/lib/core/transforms/input-text-area-transform'
 import { selectNodeTransform } from './runtime/lib/core/transforms/select-transform'
 
@@ -22,6 +22,8 @@ export default defineNuxtModule<CXModuleOptions>({
       inputTextAreaNodeTransform
     )
 
+    const resolver = createResolver(import.meta.url)
+
     // Auto-import `useForm` — the framework-agnostic core composable (same
     // binding as `@chemical-x/forms`'s top-level `useForm` export, which
     // is the abstract form composable). Consumers who want the zod-typed
@@ -29,54 +31,38 @@ export default defineNuxtModule<CXModuleOptions>({
     // explicitly.
     //
     // We point at the public package entry rather than a relative
-    // `./runtime/…` path on purpose: a relative path would cause Nuxt's
-    // bundler to treat the file as a standalone module graph — producing
-    // a second copy of the registry singleton, disjoint from the one
-    // bundled into `@chemical-x/forms/zod`. Two copies ⇒ two registries
-    // ⇒ `createChemicalXForms()` installs on one while `useForm({…})`
-    // looks in the other, and every call throws `Registry not found`.
-    // Importing from the package entry funnels every caller through the
-    // shared chunk.
+    // `./runtime/…` path on purpose: in the published package the
+    // `src/runtime/composables/use-abstract-form` path has no matching
+    // `dist/runtime/…` file (build.config's entries don't include it),
+    // so a `resolver.resolve(...)` would raise ENOENT at Nuxt's auto-
+    // import step. Importing from `@chemical-x/forms` resolves through
+    // the shared chunk, identical to what `@chemical-x/forms/zod`
+    // consumers bundle — single registry instance across both import
+    // surfaces.
     addImports([{ name: 'useForm', from: '@chemical-x/forms' }])
 
     // Plugin that installs `createChemicalXForms()` on the Vue app and
-    // wires the payload serialize/hydrate bridge. Emitted via
-    // `addPluginTemplate` rather than shipping a `dist/runtime/plugins/…`
-    // file for the same singleton reason: the template's imports resolve
-    // through the consumer's normal node-resolution to the same bundled
-    // `@chemical-x/forms` the rest of the app uses. Keeping the Nuxt-
-    // specific hook wiring inside this template (and out of
-    // `src/runtime/`) also preserves the bare-Vue path — nothing under
-    // `src/runtime/core/**` imports `nuxt/app` or `#app`.
+    // wires the payload serialize/hydrate bridge. Uses a physical
+    // `src/runtime/plugins/chemical-x.ts` file (shipped to
+    // `dist/runtime/plugins/chemical-x.mjs` via an explicit entry in
+    // build.config.ts) rather than an inline plugin template, because a
+    // template's `import { createChemicalXForms } from '@chemical-x/forms'`
+    // resolves through the `@chemical-x/forms` package entry — which in
+    // local dev (`unbuild --stub`) is a jiti runtime transpiler whose
+    // `node:module`/`createRequire` imports Nitro's Rollup build cannot
+    // bundle. A physical file lets Nitro follow its imports directly
+    // (TS source in dev, ESM in the published package), avoiding the
+    // jiti indirection entirely. Unbuild's shared-chunk splitter keeps
+    // `core/plugin` + `core/serialize` deduplicated with `src/zod` /
+    // `src/index`, so there's still only one `registry` module at runtime.
     //
-    // `addPluginTemplate` defaults to PREPEND so the plugin runs before
-    // any user plugin / page; `enforce: 'pre'` in the plugin body makes
+    // `addPlugin` defaults to PREPEND so the plugin runs before any
+    // user plugin / page; `enforce: 'pre'` inside the plugin body makes
     // that ordering explicit at the Nuxt-plugin layer too. Together
     // they guarantee the registry is installed (and SSR payload staged
     // into `pendingHydration`) before any `useForm` call runs.
-    addPluginTemplate({
-      filename: 'chemical-x-forms.plugin.mjs',
-      getContents: () => `
-import { defineNuxtPlugin } from '#app'
-import { createChemicalXForms, hydrateChemicalXState, renderChemicalXState } from '@chemical-x/forms'
-
-export default defineNuxtPlugin({
-  name: 'chemical-x-forms',
-  enforce: 'pre',
-  setup(nuxtApp) {
-    const isServer = import.meta.server
-    nuxtApp.vueApp.use(createChemicalXForms({ override: isServer }))
-
-    if (isServer) {
-      nuxtApp.hook('app:rendered', () => {
-        nuxtApp.payload.chemicalX = renderChemicalXState(nuxtApp.vueApp)
-      })
-    } else if (nuxtApp.payload.chemicalX !== undefined) {
-      hydrateChemicalXState(nuxtApp.vueApp, nuxtApp.payload.chemicalX)
-    }
-  },
-})
-`,
+    addPlugin({
+      src: resolver.resolve('./runtime/plugins/chemical-x'),
     })
 
     // v-register directive type. The directive itself is globally

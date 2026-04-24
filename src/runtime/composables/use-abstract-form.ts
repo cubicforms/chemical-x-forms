@@ -125,11 +125,13 @@ export function useAbstractForm<
   // Ambient mode is "last-provide wins": if two `useForm` calls run in the
   // same component, the second overwrites the first and descendants
   // reading via `useFormContext<F>()` (no key) see only the second form.
-  // The dev-mode check below flags that case so someone converting a
-  // multi-form component to anonymous keys doesn't get a silent
-  // regression. Descendants that want unambiguous access to a specific
-  // form should use `useFormContext<F>(key)` with an explicit key.
-  warnOnDuplicateAmbientProvide(key)
+  // We record the per-instance history here (silently) so that a
+  // descendant's `useFormContext<F>()` (no key) call can walk up, detect
+  // the collision, and warn lazily. Warning eagerly from every useForm()
+  // would spam components that have multiple forms but no keyless
+  // descendant consumer — a non-problem. Recording is skipped on SSR so
+  // the client-side warn fires once, not once-per-render-pass.
+  recordAmbientProvide(key, registry.isSSR)
   provide(kFormContext, state as FormState<GenericForm>)
 
   const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[1] = {}
@@ -195,13 +197,19 @@ let anonCounter = 0
  * A `WeakMap` keyed by the instance object lets Vue GC each
  * component's entry when it unmounts without us tracking
  * lifecycle.
+ *
+ * Exported so `useFormContext<F>()` (no key) can walk the parent
+ * chain and emit a collision warning only when a descendant
+ * actually consumes the ambient slot — eager warning in
+ * `useForm()` misfired on components that call useForm multiple
+ * times intentionally but have no keyless consumer.
  */
-const ambientProvideHistory: WeakMap<object, FormKey[]> | null = __DEV__
+export const ambientProvideHistory: WeakMap<object, FormKey[]> | null = __DEV__
   ? new WeakMap<object, FormKey[]>()
   : null
 
-function warnOnDuplicateAmbientProvide(key: FormKey): void {
-  if (!__DEV__ || ambientProvideHistory === null) return
+function recordAmbientProvide(key: FormKey, isSSR: boolean): void {
+  if (!__DEV__ || isSSR || ambientProvideHistory === null) return
   const instance = getCurrentInstance()
   if (instance === null) return
   const instanceKey = instance as unknown as object
@@ -210,14 +218,6 @@ function warnOnDuplicateAmbientProvide(key: FormKey): void {
     ambientProvideHistory.set(instanceKey, [key])
     return
   }
-  console.warn(
-    '[@chemical-x/forms] Multiple useForm() calls in the same component ' +
-      'provide ambient form context; descendants using useFormContext<F>() ' +
-      '(no key) will only see the last-provided form. Keys already ' +
-      `provided in this component: [${existing.join(', ')}]. Adding: "${key}". ` +
-      'Fix: pass a key to each useForm() and use useFormContext<F>(key) in ' +
-      'descendants, or split the forms across separate components.'
-  )
   existing.push(key)
 }
 

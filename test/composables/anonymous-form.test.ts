@@ -106,12 +106,14 @@ describe('anonymous useForm — ambient useFormContext access', () => {
 describe('anonymous useForm — ambient-overwrite dev warning', () => {
   // Two useForm calls in the same component overwrite each other's
   // ambient provide (Vue's provide/inject semantics — last write
-  // wins). The old "key is required" contract forced users to name
-  // both forms and prevented this from becoming a silent regression.
-  // Under the new optional-key contract the path of least resistance
+  // wins). Under the optional-key contract the path of least resistance
   // (two anonymous forms in one parent) hits this footgun, so the
-  // runtime emits a dev-mode warning when it sees a second ambient
-  // provide on the same component instance.
+  // runtime emits a dev-mode warning.
+  //
+  // The warning fires LAZILY from useFormContext<F>() (no key) — not
+  // eagerly from useForm() — so components with multiple forms but no
+  // keyless consumer stay quiet. The eager version spammed on dev /
+  // spike pages that piled forms into one component intentionally.
   let warnSpy: ReturnType<typeof vi.spyOn>
   beforeEach(() => {
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -120,7 +122,10 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     warnSpy.mockRestore()
   })
 
-  it('warns when a component calls useForm twice', () => {
+  it('stays quiet when a component calls useForm twice but no descendant consumes ambient', () => {
+    // Two useForm calls + NO keyless useFormContext consumer = no warn.
+    // This is the spike-page case: author knows what they're doing,
+    // lib should not spam.
     const App = defineComponent({
       setup() {
         useForm({ schema: fakeSchema<Form>(defaults) })
@@ -133,10 +138,59 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     document.body.appendChild(root)
     app.mount(root)
 
+    expect(warnSpy).not.toHaveBeenCalled()
+
+    app.unmount()
+  })
+
+  it('warns when a descendant reaches for ambient context against a duplicate-provide parent', () => {
+    const Child = defineComponent({
+      setup() {
+        useFormContext<Form>()
+        return () => h('span', 'child')
+      },
+    })
+    const App = defineComponent({
+      setup() {
+        useForm({ schema: fakeSchema<Form>(defaults) })
+        useForm({ schema: fakeSchema<Form>(defaults) })
+        return () => h('div', [h(Child)])
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+
     expect(warnSpy).toHaveBeenCalledTimes(1)
     const message = String(warnSpy.mock.calls[0]?.[0] ?? '')
-    expect(message).toContain('Multiple useForm() calls in the same component')
-    expect(message).toContain('useFormContext<F>(key)')
+    expect(message).toContain('useFormContext<F>() (no key)')
+    expect(message).toContain('useForm() multiple times')
+
+    app.unmount()
+  })
+
+  it('stays quiet when the ambient-provider only registered ONE form', () => {
+    // Single useForm + keyless descendant consumer = intended ambient
+    // usage; no warn.
+    const Child = defineComponent({
+      setup() {
+        useFormContext<Form>()
+        return () => h('span', 'child')
+      },
+    })
+    const App = defineComponent({
+      setup() {
+        useForm({ schema: fakeSchema<Form>(defaults) })
+        return () => h('div', [h(Child)])
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+
+    expect(warnSpy).not.toHaveBeenCalled()
 
     app.unmount()
   })
@@ -167,6 +221,41 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     expect(warnSpy).not.toHaveBeenCalled()
 
     app.unmount()
+  })
+
+  it('warns once, not twice, across SSR + client mount', async () => {
+    // The prior eager-warn version recorded ambient provides on BOTH
+    // the SSR pass and the client hydration pass, so every collision
+    // fired twice in Nuxt dev. `recordAmbientProvide` now skips SSR;
+    // only the client warn reaches devtools.
+    const Child = defineComponent({
+      setup() {
+        useFormContext<Form>()
+        return () => h('span', 'child')
+      },
+    })
+    const App = defineComponent({
+      setup() {
+        useForm({ schema: fakeSchema<Form>(defaults) })
+        useForm({ schema: fakeSchema<Form>(defaults) })
+        return () => h('div', [h(Child)])
+      },
+    })
+
+    const serverApp = createSSRApp(App)
+    serverApp.use(createChemicalXForms({ override: true }))
+    await renderToString(serverApp)
+
+    expect(warnSpy).not.toHaveBeenCalled()
+
+    const clientApp = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    clientApp.mount(root)
+
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+
+    clientApp.unmount()
   })
 })
 

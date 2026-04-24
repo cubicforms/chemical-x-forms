@@ -24,11 +24,14 @@ const defaults: Form = { name: '' }
 
 describe('schema-fingerprint shared-key warning', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>
+  let errorSpy: ReturnType<typeof vi.spyOn>
   beforeEach(() => {
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
   })
   afterEach(() => {
     warnSpy.mockRestore()
+    errorSpy.mockRestore()
   })
 
   function mountTwo(
@@ -69,17 +72,25 @@ describe('schema-fingerprint shared-key warning', () => {
     unmount()
   })
 
-  it('swallows adapter-thrown fingerprint exceptions (does not warn)', () => {
-    // A misbehaving adapter that throws from .fingerprint() should
-    // NOT surface as a crash in the form lifecycle — we'd rather
-    // miss the warning than break the form.
+  it('catches adapter-thrown fingerprint exceptions and surfaces them in dev', () => {
+    // A misbehaving adapter that throws from .fingerprint() must
+    // NOT crash the form lifecycle — we allow the inconsistency
+    // and skip the mismatch check. In dev the exception is logged
+    // via console.error so the adapter bug is visible; no mismatch
+    // warning fires because the comparison never ran.
     const throwing = fakeSchema<Form>(defaults, undefined, 'fp:base')
+    const thrown = new Error('adapter bug')
     throwing.fingerprint = () => {
-      throw new Error('adapter bug')
+      throw thrown
     }
     const second = fakeSchema<Form>(defaults, undefined, 'fp:other')
     const unmount = mountTwo(throwing, second)
     expect(warnSpy).not.toHaveBeenCalled()
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    const [message, errArg] = errorSpy.mock.calls[0] ?? []
+    expect(String(message)).toContain('shared-form')
+    expect(String(message)).toContain('fingerprint()')
+    expect(errArg).toBe(thrown)
     unmount()
   })
 

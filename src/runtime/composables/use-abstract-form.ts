@@ -181,9 +181,10 @@ function requireFormKey(key: FormKey | undefined): FormKey {
 /**
  * Dev-only: warn when a second `useForm` lands on the same key with
  * a structurally-different schema. Two schemas compute their own
- * fingerprints; we compare the strings and flag mismatches. A
- * fingerprint exception (adapter-implementation bug) is swallowed —
- * we'd rather miss a warning than crash a working form. See
+ * fingerprints; we compare the strings and flag mismatches. An
+ * adapter-thrown `fingerprint()` is caught (never crashes the form)
+ * and surfaced as a `console.error` in dev — the mismatch check is
+ * skipped, matching the "allow the inconsistency" failure mode. See
  * `AbstractSchema.fingerprint()` in types-api.ts for the contract.
  */
 function warnOnSchemaFingerprintMismatch(
@@ -196,7 +197,11 @@ function warnOnSchemaFingerprintMismatch(
   try {
     existingFp = existing.fingerprint()
     incomingFp = incoming.fingerprint()
-  } catch {
+  } catch (error) {
+    console.error(
+      `[@chemical-x/forms] fingerprint() threw for key "${key}"; skipping mismatch check.`,
+      error
+    )
     return
   }
   if (existingFp === incomingFp) return

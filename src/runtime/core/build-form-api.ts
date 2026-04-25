@@ -348,8 +348,8 @@ function contextualiseValue<F extends GenericForm>(
  *     scope, so Vue tracks the dependency exactly as it would for a
  *     direct `.value` read. Templates re-render on error changes.
  *   - Laziness is preserved: the underlying ComputedRef only recomputes
- *     when its inputs (state.errors) change AND a trap that reads
- *     `source.value` fires.
+ *     when its inputs (state.schemaErrors / state.userErrors) change
+ *     AND a trap that reads `source.value` fires.
  */
 function createReadonlyErrorView<T extends FormErrorRecord>(source: ComputedRef<T>): T {
   const target: T = Object.create(null) as T

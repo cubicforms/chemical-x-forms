@@ -71,12 +71,6 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    * successful submits — the consumer owns its lifetime explicitly.
    */
   readonly userErrors: Map<PathKey, ValidationError[]>
-  /**
-   * Compat alias for `schemaErrors` — same Map reference, same writes.
-   * Removed once the validation refactor lands fully (see migration guide
-   * 0.11 → 0.12).
-   */
-  readonly errors: Map<PathKey, ValidationError[]>
   readonly originals: Map<PathKey, OriginalsRecord>
   readonly schema: AbstractSchema<F, G>
 
@@ -147,15 +141,6 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    * top-level `fieldErrors` view.
    */
   getErrorsForPath(path: Path): ValidationError[]
-
-  // Compat shims — removed in 0.12. Each routes to the schema-store
-  // equivalent so build-form-api keeps working through step 1; step 2
-  // rewires its callers (setFieldErrors / addFieldErrors / clearFieldErrors)
-  // to the user-store writers above.
-  setErrorsForPath(path: Path, errors: ValidationError[]): void
-  setAllErrors(errors: readonly ValidationError[]): void
-  addErrors(errors: readonly ValidationError[]): void
-  clearErrors(path?: Path): void
 
   // --- DOM ---
   registerElement(path: Path, element: HTMLElement): boolean
@@ -358,9 +343,6 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     PathKey,
     ValidationError[]
   >
-  // Compat alias: same Map reference as `schemaErrors`. Step 6 of the
-  // refactor removes this from the FormStore type entirely.
-  const errors = schemaErrors
 
   // Originals are captured at init and on first appearance of a path; never
   // re-assigned. Not reactive — the set is append-only per form's lifetime.
@@ -718,28 +700,6 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     return [...schema, ...user]
   }
 
-  // --- Compat shims (removed in 0.12) ---
-  // Each one routes to the schema-store equivalent so existing callers
-  // (build-form-api, tests) keep working through step 1. Step 2 rewires
-  // setFieldErrors / addFieldErrors / clearFieldErrors / setFieldErrorsFromApi
-  // directly to the user-store writers above; step 6 deletes these.
-
-  function setErrorsForPath(path: Path, entries: ValidationError[]): void {
-    setSchemaErrorsForPath(path, entries)
-  }
-
-  function setAllErrors(entries: readonly ValidationError[]): void {
-    setAllSchemaErrors(entries)
-  }
-
-  function addErrors(entries: readonly ValidationError[]): void {
-    appendErrorsTo(schemaErrors, entries)
-  }
-
-  function clearErrors(path?: Path): void {
-    clearSchemaErrors(path)
-  }
-
   // --- DOM ---
 
   function registerElement(path: Path, element: HTMLElement): boolean {
@@ -1024,7 +984,6 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     elements,
     schemaErrors,
     userErrors,
-    errors,
     originals,
     schema,
     isSSR,
@@ -1049,11 +1008,6 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     addUserErrors,
     clearUserErrors,
     getErrorsForPath,
-
-    setErrorsForPath,
-    setAllErrors,
-    addErrors,
-    clearErrors,
 
     registerElement,
     deregisterElement,

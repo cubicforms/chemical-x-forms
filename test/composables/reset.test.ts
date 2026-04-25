@@ -87,7 +87,7 @@ describe('useForm — reset()', () => {
 
     form.reset()
     expect(form.isValid.value).toBe(true)
-    expect(form.fieldErrors.value).toEqual({})
+    expect(form.fieldErrors).toEqual({})
   })
 
   it('flips isDirty back to false after a mutation + reset', () => {
@@ -156,8 +156,8 @@ describe('useForm — resetField(path)', () => {
     ])
 
     form.resetField('email')
-    expect(form.fieldErrors.value).not.toHaveProperty('email')
-    expect(form.fieldErrors.value.password).toHaveLength(1)
+    expect(form.fieldErrors).not.toHaveProperty('email')
+    expect(form.fieldErrors.password).toHaveLength(1)
   })
 
   it('restores an entire sub-tree when path names a container', () => {

@@ -58,6 +58,7 @@ export type {
   FormErrorRecord,
   FormFieldErrors,
   FormKey,
+  FormState,
   FormStorage,
   FormStorageKind,
   HandleSubmit,

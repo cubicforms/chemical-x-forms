@@ -1,4 +1,4 @@
-import type { ComputedRef, ObjectDirective, Ref } from 'vue'
+import type { ObjectDirective, Ref } from 'vue'
 import type { Path } from '../core/paths'
 import type {
   ArrayItem,
@@ -548,6 +548,93 @@ export type ApiErrorEnvelope = {
   details?: ApiErrorDetails
 }
 
+/**
+ * Bundle of form-level reactive flags and counters returned as `state`
+ * on `useForm()`. Separate from per-field state (reached via
+ * `getFieldState(path)`) — this is the aggregate view.
+ *
+ * Internally backed by Vue's `reactive()` + `readonly()`:
+ *   - Refs inside a reactive object auto-unwrap at property access, so
+ *     `form.state.isSubmitting` returns `boolean`, not `Ref<boolean>`.
+ *     Templates bind to primitives directly — no nested-ref footgun.
+ *   - `readonly()` rejects writes at runtime and emits a dev-mode warning.
+ *   - Reactivity tracking still flows through the underlying ComputedRefs,
+ *     so `watch(() => form.state.isSubmitting, …)` fires on change.
+ *   - Destructuring (`const { isSubmitting } = form.state`) is a one-shot
+ *     snapshot — standard reactive() caveat. Use `toRefs()` if you need
+ *     individually-reactive handles.
+ *
+ * The history fields (`canUndo` / `canRedo` / `historySize`) are always
+ * present regardless of whether `history` is configured on `useForm`.
+ * When history is disabled they resolve to `false` / `0`.
+ */
+export interface FormState {
+  /**
+   * `true` when any tracked leaf's current value differs from the value it
+   * was initialised with. Returns `false` for a pristine form and for one
+   * where every mutation has been undone back to its original.
+   *
+   * Comparisons use `Object.is`; object/array leaves are reference-compared,
+   * so structural equality after a replace-with-equal-copy will still read
+   * as dirty. Reset via `reset()` to restore the pristine baseline.
+   */
+  readonly isDirty: boolean
+
+  /**
+   * `true` when the form has no recorded errors. Driven by the same error
+   * store `fieldErrors` exposes — a successful `validate()` / `handleSubmit`
+   * run clears errors and flips this to true; a failed run populates them
+   * and flips to false.
+   */
+  readonly isValid: boolean
+
+  /**
+   * `true` while a submit handler produced by `handleSubmit` is executing.
+   * Flips on entry to the handler and off in a `finally` block — covers
+   * both the validation phase and the user's async callback.
+   */
+  readonly isSubmitting: boolean
+
+  /**
+   * `true` while any validation run (reactive `validate()` re-run,
+   * imperative `validateAsync(...)`, or the pre-submit validation inside
+   * `handleSubmit`) is in flight. Drops back to `false` when every
+   * in-flight run has settled.
+   */
+  readonly isValidating: boolean
+
+  /**
+   * Increments once per call to a submit handler, regardless of outcome
+   * (validation failure, callback success, callback throw). Counts "how
+   * many times did the user click submit", not "how many succeeded".
+   */
+  readonly submitCount: number
+
+  /**
+   * Captures whatever the user's submit callback (or its `onError` handler)
+   * threw or rejected with. Cleared to `null` at the start of each new
+   * submission attempt; stays `null` on successful completion.
+   *
+   * The handler still re-throws — `submitError` is the reactive mirror for
+   * template consumers; imperative callers can use `try { await
+   * handler(event) }` as normal.
+   */
+  readonly submitError: unknown
+
+  /** `true` when the undo stack has at least one restorable snapshot. */
+  readonly canUndo: boolean
+
+  /** `true` when a prior `undo()` has pending replays on the redo stack. */
+  readonly canRedo: boolean
+
+  /**
+   * Total snapshot count across both stacks. Primarily for debug
+   * UIs — consumers driving undo/redo UI should use `canUndo` /
+   * `canRedo` instead.
+   */
+  readonly historySize: number
+}
+
 export type UseAbstractFormReturnType<
   Form extends GenericForm,
   GetValueFormType extends GenericForm = Form,
@@ -673,61 +760,19 @@ export type UseAbstractFormReturnType<
     limits?: { maxEntries?: number; maxPathDepth?: number }
   ) => ValidationError[]
 
-  // --- Form-level aggregates ---
+  // --- Form-level state ---
 
   /**
-   * `true` when any tracked leaf's current value differs from the value it
-   * was initialised with. Returns `false` for a pristine form and for one
-   * where every mutation has been undone back to its original.
+   * Bundled reactive flags and counters for the form as a whole — see
+   * the `FormState` type for the full shape and per-leaf semantics.
+   * Consumers access the leaves directly (e.g. `form.state.isSubmitting`)
+   * with no `.value` in scripts or templates.
    *
-   * Comparisons use `Object.is`; object/array leaves are reference-compared,
-   * so structural equality after a replace-with-equal-copy will still read
-   * as dirty. Reset via `reset()` to restore the pristine baseline.
+   * Per-field state (touched / focused / blurred / errors for one path)
+   * lives behind `getFieldState(path)`; this `state` is the aggregate
+   * view over the whole form.
    */
-  isDirty: Readonly<ComputedRef<boolean>>
-
-  /**
-   * `true` when the form has no recorded errors. Driven by the same error
-   * store `fieldErrors` exposes — a successful `validate()` / `handleSubmit`
-   * run clears errors and flips this to true; a failed run populates them
-   * and flips to false.
-   */
-  isValid: Readonly<ComputedRef<boolean>>
-
-  // --- Submission lifecycle ---
-
-  /**
-   * `true` while a submit handler produced by `handleSubmit` is executing.
-   * Flips on entry to the handler and off in a `finally` block — covers
-   * both the validation phase and the user's async callback.
-   */
-  isSubmitting: Readonly<ComputedRef<boolean>>
-
-  /**
-   * Increments once per call to a submit handler, regardless of outcome
-   * (validation failure, callback success, callback throw). Counts "how
-   * many times did the user click submit", not "how many succeeded".
-   */
-  submitCount: Readonly<ComputedRef<number>>
-
-  /**
-   * Captures whatever the user's submit callback (or its `onError` handler)
-   * threw or rejected with. Cleared to `null` at the start of each new
-   * submission attempt; stays `null` on successful completion.
-   *
-   * The handler still re-throws — `submitError` is the reactive mirror for
-   * template consumers; imperative callers can use `try { await
-   * handler(event) }` as normal.
-   */
-  submitError: Readonly<ComputedRef<unknown>>
-
-  /**
-   * `true` while any validation run (reactive `validate()` re-run,
-   * imperative `validateAsync(...)`, or the pre-submit validation inside
-   * `handleSubmit`) is in flight. Drops back to `false` when every
-   * in-flight run has settled.
-   */
-  isValidating: Readonly<ComputedRef<boolean>>
+  state: FormState
 
   // --- Reset ---
 
@@ -778,18 +823,7 @@ export type UseAbstractFormReturnType<
    */
   redo: () => boolean
 
-  /** `true` when the undo stack has at least one restorable snapshot. */
-  canUndo: Readonly<ComputedRef<boolean>>
-
-  /** `true` when a prior `undo()` has pending replays on the redo stack. */
-  canRedo: Readonly<ComputedRef<boolean>>
-
-  /**
-   * Total snapshot count across both stacks. Primarily for debug
-   * UIs — consumers driving undo/redo UI should use `canUndo` /
-   * `canRedo` instead.
-   */
-  historySize: Readonly<ComputedRef<number>>
+  // `canUndo`, `canRedo`, and `historySize` live on `state` — see above.
 
   // --- Focus / scroll to first error ---
 

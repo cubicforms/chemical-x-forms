@@ -1,10 +1,11 @@
-import { computed, type ComputedRef, type Ref } from 'vue'
+import { computed, reactive, readonly, type ComputedRef, type Ref } from 'vue'
 import type {
   CurrentValueContext,
   CurrentValueWithContext,
   FieldState,
   FormErrorRecord,
   FormFieldErrors,
+  FormState,
   OnInvalidSubmitPolicy,
   ReactiveValidationStatus,
   RegisterValue,
@@ -191,6 +192,30 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   const canRedo = history?.canRedo ?? computed(() => false)
   const historySize = history?.historySize ?? computed(() => 0)
 
+  // --- Form-level state bundle ---
+  // Vue auto-unwraps refs that are top-level on a setup return, but not
+  // refs nested in a return *object* — those render as their wrapper
+  // (always truthy) and silently break bindings like `:disabled`. We
+  // work around it by placing the 9 scalars inside `reactive()`, which
+  // unwraps ref values on property access at any depth; `readonly()`
+  // layers a runtime write-guard on top.
+  //
+  // Named `formState` locally to avoid shadowing the `state: FormStore<F>`
+  // param this function receives; exposed as `state` on the public return.
+  const formState = readonly(
+    reactive({
+      isDirty,
+      isValid,
+      isSubmitting,
+      isValidating,
+      submitCount,
+      submitError,
+      canUndo,
+      canRedo,
+      historySize,
+    })
+  ) as FormState
+
   // --- Reset ---
   const reset = (nextInitialState?: DeepPartial<Form>): void => {
     state.reset(nextInitialState)
@@ -239,21 +264,13 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     addFieldErrors,
     clearFieldErrors,
     setFieldErrorsFromApi,
-    isDirty,
-    isValid,
-    isSubmitting,
-    submitCount,
-    submitError,
-    isValidating,
+    state: formState,
     reset: reset as UseAbstractFormReturnType<Form, GetValueFormType>['reset'],
     resetField: resetField as UseAbstractFormReturnType<Form, GetValueFormType>['resetField'],
     focusFirstError,
     scrollToFirstError,
     undo,
     redo,
-    canUndo,
-    canRedo,
-    historySize,
     append: fieldArrays.append as UseAbstractFormReturnType<Form, GetValueFormType>['append'],
     prepend: fieldArrays.prepend as UseAbstractFormReturnType<Form, GetValueFormType>['prepend'],
     insert: fieldArrays.insert as UseAbstractFormReturnType<Form, GetValueFormType>['insert'],

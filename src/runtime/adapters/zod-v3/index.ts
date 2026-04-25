@@ -54,8 +54,8 @@ export function zodAdapter<
     }
     const abstractSchema: AbstractSchema<Form, GetValueFormType> = {
       fingerprint: () => fingerprintZodSchema(_zodSchema),
-      getInitialState(config) {
-        const initialStateWithoutConstraints = getInitialStateFromZodSchema(
+      getDefaultValues(config) {
+        const defaultValuesWithoutConstraints = getDefaultValuesFromZodSchema(
           _zodSchema,
           config.useDefaultSchemaValues,
           _formKey
@@ -70,15 +70,15 @@ export function zodAdapter<
           },
         })
 
-        let rawInitialState = initialStateWithoutConstraints
-        if (!isPrimitive(rawInitialState)) {
-          rawInitialState = merge(initialStateWithoutConstraints, config.constraints)
+        let rawDefaultValues = defaultValuesWithoutConstraints
+        if (!isPrimitive(rawDefaultValues)) {
+          rawDefaultValues = merge(defaultValuesWithoutConstraints, config.constraints)
         } else if (slimSchema.safeParse(config.constraints).success) {
-          // updated rawInitialState with config.constraints, which is compatible with the _zodSchema
-          rawInitialState = config.constraints
+          // updated rawDefaultValues with config.constraints, which is compatible with the _zodSchema
+          rawDefaultValues = config.constraints
         }
 
-        const { data, success, error } = slimSchema.safeParse(rawInitialState)
+        const { data, success, error } = slimSchema.safeParse(rawDefaultValues)
 
         if (success) {
           return {
@@ -151,7 +151,7 @@ export function zodAdapter<
               }
             }
           }
-          fixedData = merge(rawInitialState, fixedData)
+          fixedData = merge(rawDefaultValues, fixedData)
         }
 
         // Best-effort re-parse: if the fix-up loop couldn't fully
@@ -452,7 +452,7 @@ function getDefaultValue(
       throw new Error('ZodDiscriminatedUnion: default option not found')
     }
 
-    return getInitialStateFromZodSchema(
+    return getDefaultValuesFromZodSchema(
       optionDiscriminator,
       discriminatorContext.useDefaultSchemaValues,
       context.formKey
@@ -508,7 +508,7 @@ function unwrapDefault(schema: z.ZodTypeAny): [unknown, boolean] {
   return [null, false]
 }
 
-function getInitialStateFromZodSchema<
+function getDefaultValuesFromZodSchema<
   FormSchema extends z.ZodSchema,
   Form extends z.infer<FormSchema>,
 >(formSchema: FormSchema, useDefaultSchemaValues: boolean, formKey: FormKey): Form {

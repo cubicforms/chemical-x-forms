@@ -4,7 +4,7 @@ import type {
   FieldValidationConfig,
   FieldValidationMode,
   FormKey,
-  InitialStateResponse,
+  DefaultValuesResponse,
   ValidationError,
   ValidationMode,
 } from '../types/types-api'
@@ -100,7 +100,7 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   getValueAtPath(path: Path): unknown
 
   // --- reset ---
-  reset(nextInitialState?: DeepPartial<F>): void
+  reset(nextDefaultValues?: DeepPartial<F>): void
   resetField(path: Path): void
 
   // --- errors ---
@@ -214,7 +214,7 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
 
 /**
  * Hydration payload shape accepted by `createFormStore`. When provided, the
- * initial form value comes from here rather than from `schema.getInitialState`.
+ * initial form value comes from here rather than from `schema.getDefaultValues`.
  * Used to replay SSR state on the client; originals are reconstructed from
  * the schema because they're not serialised.
  */
@@ -227,7 +227,7 @@ export type FormStoreHydration = {
 export type CreateFormStoreOptions<F extends GenericForm, G extends GenericForm = F> = {
   readonly formKey: FormKey
   readonly schema: AbstractSchema<F, G>
-  readonly initialState?: DeepPartial<F> | undefined
+  readonly defaultValues?: DeepPartial<F> | undefined
   readonly validationMode?: ValidationMode | undefined
   readonly hydration?: FormStoreHydration | undefined
   readonly fieldValidation?: FieldValidationConfig | undefined
@@ -236,7 +236,7 @@ export type CreateFormStoreOptions<F extends GenericForm, G extends GenericForm 
 export function createFormStore<F extends GenericForm, G extends GenericForm = F>(
   options: CreateFormStoreOptions<F, G>
 ): FormStore<F, G> {
-  const { formKey, schema, initialState, validationMode = 'lax', hydration } = options
+  const { formKey, schema, defaultValues, validationMode = 'lax', hydration } = options
   const fieldValidationMode: FieldValidationMode = options.fieldValidation?.on ?? 'none'
   const fieldValidationDebounceMs: number = options.fieldValidation?.debounceMs ?? 200
 
@@ -262,9 +262,9 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // Schema is ALWAYS consulted: we need the schema-derived originals even
   // when hydrating, so pristine/dirty computation survives SSR round-trip.
   // The form's actual starting value, though, prefers hydration data.
-  const schemaResponse: InitialStateResponse<F> = schema.getInitialState({
+  const schemaResponse: DefaultValuesResponse<F> = schema.getDefaultValues({
     useDefaultSchemaValues: true,
-    constraints: initialState,
+    constraints: defaultValues,
     validationMode,
   })
   const schemaInitialData = schemaResponse.data
@@ -619,10 +619,10 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
 
   // --- Reset ---
 
-  function reset(nextInitialState?: DeepPartial<F>): void {
-    const next = schema.getInitialState({
+  function reset(nextDefaultValues?: DeepPartial<F>): void {
+    const next = schema.getDefaultValues({
       useDefaultSchemaValues: true,
-      constraints: nextInitialState,
+      constraints: nextDefaultValues,
       validationMode,
     }).data
     // Replace form in one shot — applyFormReplacement will emit diffAndApply

@@ -241,7 +241,7 @@ export function getIntersectionRight(schema: z.ZodType): z.ZodType | undefined {
  * Materialise the fallback value of a `z.catch(inner, value)` wrapper.
  * v4 stores the catch as a function `(ctx) => value` on `def.catchValue`;
  * we invoke it with a placeholder context. Consumer catch functions that
- * inspect `ctx.input` / `ctx.error` during initial-state derivation are
+ * inspect `ctx.input` / `ctx.error` during default-values derivation are
  * rare — if the function throws, we surface `undefined` and let the
  * validate-then-fix loop find a fallback.
  */
@@ -250,7 +250,7 @@ export function getCatchDefault(schema: z.ZodType): unknown {
   const cv = def?.catchValue
   if (typeof cv !== 'function') return undefined
   try {
-    return cv({ error: new Error('cx:initial-state'), input: undefined })
+    return cv({ error: new Error('cx:default-values'), input: undefined })
   } catch {
     return undefined
   }

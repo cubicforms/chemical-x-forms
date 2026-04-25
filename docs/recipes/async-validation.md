@@ -151,4 +151,4 @@ onMounted(async () => {
 ```
 
 `reset(next)` applies `next` over the schema's defaults — same
-precedence rules as the `initialState` option on `useForm`.
+precedence rules as the `defaultValues` option on `useForm`.

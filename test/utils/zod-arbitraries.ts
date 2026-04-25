@@ -61,7 +61,7 @@ export function buildZodLeafArbitrary(z: ZNs): fc.Arbitrary<ZNs> {
       .uniqueArray(fc.string({ minLength: 1, maxLength: 4 }), { minLength: 1, maxLength: 4 })
       .map((arr) => z.enum(arr as [string, ...string[]])),
     // Primitive schemas with .default() — exercises the default-derivation
-    // branch in initial-state.ts without requiring a container-shape
+    // branch in default-values.ts without requiring a container-shape
     // default (those would demand shape-matched arbitrary values, which
     // is overkill for this coverage).
     fc.string({ maxLength: 5 }).map((s) => z.string().default(s)),
@@ -72,8 +72,8 @@ export function buildZodLeafArbitrary(z: ZNs): fc.Arbitrary<ZNs> {
 
 /**
  * Options that narrow the set of zod kinds the schema arbitrary may emit.
- * The v3 adapter's current `getInitialState` throws on certain nested
- * `z.union([...])` shapes (initial-state derivation can't pick a branch
+ * The v3 adapter's current `getDefaultValues` throws on certain nested
+ * `z.union([...])` shapes (default-values derivation can't pick a branch
  * when neither matches the defaulted value). Phase 5.6's async rewrite
  * will make both adapters total on unions; until then, the v3 fuzz file
  * passes `{ includeUnion: false }` to stay within the current adapter's

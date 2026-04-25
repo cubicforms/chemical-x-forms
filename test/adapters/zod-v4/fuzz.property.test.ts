@@ -22,9 +22,9 @@ describe('zod v4 adapter — fuzz over arbitrary supported schemas', () => {
     expect(() => zodAdapter(schema as z.ZodObject)('f')).not.toThrow()
   })
 
-  test.prop([arbRootSchema])('getInitialState returns a success response', (schema) => {
+  test.prop([arbRootSchema])('getDefaultValues returns a success response', (schema) => {
     const adapter = zodAdapter(schema as z.ZodObject)('f')
-    const result = adapter.getInitialState({
+    const result = adapter.getDefaultValues({
       useDefaultSchemaValues: true,
       validationMode: 'lax',
     })
@@ -33,15 +33,15 @@ describe('zod v4 adapter — fuzz over arbitrary supported schemas', () => {
   })
 
   test.prop([arbRootSchema])(
-    'validateAtPath(initialState, undefined) passes in lax mode',
+    'validateAtPath(defaultValues, undefined) passes in lax mode',
     async (schema) => {
       // Lax mode round-trip: the shape the adapter derives for defaults
       // must validate against the slimmed (refinement-stripped) schema.
       // Since the arbitrary doesn't produce refinements, this reduces to
       // "does the shape match the shape" — any failure is a bug in the
-      // initial-state derivation.
+      // default-values derivation.
       const adapter = zodAdapter(schema as z.ZodObject)('f')
-      const initial = adapter.getInitialState({
+      const initial = adapter.getDefaultValues({
         useDefaultSchemaValues: true,
         validationMode: 'lax',
       })
@@ -55,11 +55,11 @@ describe('zod v4 adapter — fuzz over arbitrary supported schemas', () => {
     'every produced ValidationError (when constraints violate strict mode) carries the right formKey',
     (schema, formKey) => {
       const adapter = zodAdapter(schema as z.ZodObject)(formKey)
-      // Strict-mode getInitialState may surface errors for refinements that
+      // Strict-mode getDefaultValues may surface errors for refinements that
       // a derived blank shape doesn't satisfy. Since we don't generate
       // refinements the success path is the common outcome, but if the
       // adapter ever produces errors here they must carry our key.
-      const result = adapter.getInitialState({
+      const result = adapter.getDefaultValues({
         useDefaultSchemaValues: true,
         validationMode: 'strict',
       })

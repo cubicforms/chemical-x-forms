@@ -42,7 +42,7 @@ export type ValidationResponse<TData> =
   | ValidationResponseErrorWithData<TData>
   | ValidationResponseErrorWithoutData
 
-export type InitialStateResponse<TData> =
+export type DefaultValuesResponse<TData> =
   | ValidationResponseSuccess<TData>
   | ValidationResponseErrorWithData<TData>
 
@@ -52,7 +52,7 @@ export type ValidationResponseWithoutValue<Form> = Omit<ValidationResponse<Form>
 // lax: ONLY validate the shape of the data against the schema
 export type ValidationMode = 'strict' | 'lax'
 
-type GetInitialStateConfig<Form> = {
+type GetDefaultValuesConfig<Form> = {
   useDefaultSchemaValues: boolean
   validationMode?: ValidationMode
   constraints?: DeepPartial<Form> | undefined
@@ -92,7 +92,7 @@ export type AbstractSchema<Form, GetValueFormType> = {
    */
   fingerprint(): string
 
-  getInitialState(config: GetInitialStateConfig<Form>): InitialStateResponse<Form>
+  getDefaultValues(config: GetDefaultValuesConfig<Form>): DefaultValuesResponse<Form>
   /**
    * Return every sub-schema that could resolve at the given structured
    * path. Multiple results are only expected for discriminated / union
@@ -248,7 +248,7 @@ export type UseFormConfiguration<
   Form extends GenericForm,
   GetValueFormType,
   Schema extends AbstractSchema<Form, GetValueFormType>,
-  InitialState extends DeepPartial<Form>,
+  DefaultValues extends DeepPartial<Form>,
 > = {
   schema: Schema | ((key: FormKey) => Schema)
   /**
@@ -270,7 +270,7 @@ export type UseFormConfiguration<
    * not the registry's key space.
    */
   key?: FormKey
-  initialState?: InitialState
+  defaultValues?: DefaultValues
   validationMode?: ValidationMode
   /**
    * What to do when a submit attempt fails validation. Fires after the
@@ -778,9 +778,9 @@ export type UseAbstractFormReturnType<
 
   /**
    * Restore the form to its initial state. With no argument, re-evaluates
-   * the schema's defaults. With `nextInitialState`, applies those
+   * the schema's defaults. With `nextDefaultValues`, applies those
    * constraints over the schema defaults (same precedence rules as the
-   * `useForm({ initialState })` option).
+   * `useForm({ defaultValues })` option).
    *
    * Side-effects beyond replacing `form`:
    *   - `originals` is rebuilt against the new baseline (so a follow-up
@@ -791,7 +791,7 @@ export type UseAbstractFormReturnType<
    *   - submission lifecycle (`isSubmitting` / `submitCount` /
    *     `submitError`) resets to the "pre-submission" state.
    */
-  reset: (nextInitialState?: DeepPartial<Form>) => void
+  reset: (nextDefaultValues?: DeepPartial<Form>) => void
 
   /**
    * Restore a single field (or a whole sub-tree, when `path` names a

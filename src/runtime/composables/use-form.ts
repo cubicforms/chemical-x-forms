@@ -53,7 +53,7 @@ export function useForm<
 
   // Spread the full configuration so opt-in options (`onInvalidSubmit`,
   // `fieldValidation`, `persist`, `history`) reach useAbstractForm.
-  // The explicit overrides below narrow schema / initialState /
+  // The explicit overrides below narrow schema / defaultValues /
   // validationMode to the shapes useAbstractForm expects. `key` is
   // intentionally NOT re-listed — the spread carries it through, and
   // writing `key: configuration.key` would re-introduce an explicit
@@ -67,7 +67,7 @@ export function useForm<
       DeepPartial<Form>
     >),
     schema: abstractSchema,
-    initialState: configuration.initialState as DeepPartial<Form>,
+    defaultValues: configuration.defaultValues as DeepPartial<Form>,
     validationMode: configuration.validationMode ?? 'lax',
   })
 }

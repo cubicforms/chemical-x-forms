@@ -10,12 +10,12 @@ import { fakeSchema } from '../utils/fake-schema'
  *
  * The pre-fix runtime stored every form in `registry.forms` on mount but
  * never removed it. A long-lived SPA that mounts and unmounts form-heavy
- * pages would accumulate detached FormState instances (each holding a
+ * pages would accumulate detached FormStore instances (each holding a
  * reactive `form` ref, an `originals` Map, an `errors` Map, and field
  * records) for the lifetime of the app.
  *
  * Fix: `useForm` now pairs `registry.trackConsumer(key)` with an
- * `onScopeDispose` release. The registry evicts the FormState once the
+ * `onScopeDispose` release. The registry evicts the FormStore once the
  * last consumer disposes. These tests assert the two invariants:
  *   1. Sole consumer unmounts → entry is gone.
  *   2. Multiple consumers share a key → only the last unmount clears it.
@@ -40,7 +40,7 @@ function mountProbe(registry: ReturnType<typeof createRegistry>, key: string) {
 }
 
 describe('useForm — registry cleanup on scope dispose', () => {
-  it('releases the FormState when the sole consumer unmounts', () => {
+  it('releases the FormStore when the sole consumer unmounts', () => {
     const registry = createRegistry()
     const app = mountProbe(registry, 'gc-solo')
 
@@ -57,7 +57,7 @@ describe('useForm — registry cleanup on scope dispose', () => {
     expect(registry.forms.has('gc-shared')).toBe(true)
 
     app1.unmount()
-    // Second consumer still active; the FormState must stay reachable so
+    // Second consumer still active; the FormStore must stay reachable so
     // reactive subscriptions in app2 keep working.
     expect(registry.forms.has('gc-shared')).toBe(true)
 
@@ -76,7 +76,7 @@ describe('useForm — registry cleanup on scope dispose', () => {
     const app2 = mountProbe(registry, 'gc-remount')
     const secondState = registry.forms.get('gc-remount')
     expect(secondState).toBeDefined()
-    // Identity check: the new mount created a NEW FormState, not reused
+    // Identity check: the new mount created a NEW FormStore, not reused
     // the evicted one. Confirms the eviction + rebuild path is wired.
     expect(secondState).not.toBe(firstState)
     app2.unmount()

@@ -2,7 +2,7 @@ import type { App, InjectionKey } from 'vue'
 import { getCurrentInstance, inject, shallowReactive } from 'vue'
 import type { FormKey } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
-import type { FormState } from './create-form-state'
+import type { FormStore } from './create-form-store'
 import { RegistryNotInstalledError } from './errors'
 import { detectSSR, type SSRDetectOptions } from './ssr'
 
@@ -13,7 +13,7 @@ import { detectSSR, type SSRDetectOptions } from './ssr'
  * registry — making the library work under bare Vue 3 + SSR (via
  * `@vue/server-renderer`) as a first-class target, not just Nuxt.
  *
- * Each form's state lives in `forms: Map<FormKey, FormState<GenericForm>>`.
+ * Each form's state lives in `forms: Map<FormKey, FormStore<GenericForm>>`.
  * The type relaxation at storage time is necessary because different
  * forms in the same app have different `Form` generics; callers recover
  * the specific form type via `useForm`'s overloads.
@@ -28,13 +28,13 @@ export type SerializedFormData = {
 export type PendingHydration = Map<FormKey, SerializedFormData>
 
 export type ChemicalXRegistry = {
-  readonly forms: Map<FormKey, FormState<GenericForm>>
+  readonly forms: Map<FormKey, FormStore<GenericForm>>
   readonly pendingHydration: PendingHydration
   readonly isSSR: boolean
   /**
    * Ref-counts `useForm` consumers per key. Each `useForm` call pairs a
    * `trackConsumer(key)` on mount with the returned dispose on unmount.
-   * When the last consumer for a key disposes, the FormState is evicted
+   * When the last consumer for a key disposes, the FormStore is evicted
    * from `forms` — preventing long-lived SPAs from accumulating detached
    * form state across page navigations.
    */
@@ -47,15 +47,15 @@ export const kChemicalXRegistry: InjectionKey<ChemicalXRegistry> = Symbol(
 )
 
 /**
- * Provides the current form's FormState to descendants. Installed by
+ * Provides the current form's FormStore to descendants. Installed by
  * `useAbstractForm` after it resolves the state, so any nested component
  * can call `useFormContext()` without prop-threading the form API.
  *
- * Typed as `FormState<GenericForm>` — the descendant that re-emerges the
+ * Typed as `FormStore<GenericForm>` — the descendant that re-emerges the
  * shape must supply its own `Form` generic, because Vue's InjectionKey
  * erases the generic at the provide/inject boundary.
  */
-export const kFormContext: InjectionKey<FormState<GenericForm>> = Symbol(
+export const kFormContext: InjectionKey<FormStore<GenericForm>> = Symbol(
   'chemical-x-forms:form-context'
 )
 
@@ -71,8 +71,8 @@ export function createRegistry(options: SSRDetectOptions = {}): ChemicalXRegistr
   // The outer object is plain (it holds references we never rebind); inner
   // Maps are reactive via Vue's collection handlers so per-key reads track
   // per-key. `shallowReactive` avoids Vue's deep Ref-unwrapping, which would
-  // mangle FormState.form's Ref<F> type into F on lookup.
-  const forms = shallowReactive(new Map<FormKey, FormState<GenericForm>>())
+  // mangle FormStore.form's Ref<F> type into F on lookup.
+  const forms = shallowReactive(new Map<FormKey, FormStore<GenericForm>>())
   const pendingHydration = shallowReactive(new Map<FormKey, SerializedFormData>())
   // Consumer counts are bookkeeping — not reactive. No template should ever
   // depend on "how many useForm calls are live", and using a plain Map
@@ -87,7 +87,7 @@ export function createRegistry(options: SSRDetectOptions = {}): ChemicalXRegistr
       disposed = true
       const remaining = (consumers.get(key) ?? 1) - 1
       if (remaining <= 0) {
-        // Tear down non-reactive resources the FormState owns (field-
+        // Tear down non-reactive resources the FormStore owns (field-
         // validation timers, abort controllers) BEFORE dropping the
         // registry reference — once the Map entry is gone we can't
         // reach the state anymore.

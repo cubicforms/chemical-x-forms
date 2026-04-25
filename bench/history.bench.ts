@@ -12,7 +12,7 @@
  */
 
 import { bench, describe } from 'vitest'
-import { createFormState } from '../src/runtime/core/create-form-state'
+import { createFormStore } from '../src/runtime/core/create-form-store'
 import { createHistoryModule } from '../src/runtime/core/history'
 import { fakeSchema } from '../test/utils/fake-schema'
 
@@ -28,7 +28,7 @@ const defaults100 = buildLeaves(100)
 
 describe('history: applyFormReplacement with / without history', () => {
   bench('history disabled — applyFormReplacement baseline', () => {
-    const state = createFormState<Form>({
+    const state = createFormStore<Form>({
       formKey: 'bench',
       schema: fakeSchema<Form>(defaults100),
     })
@@ -38,7 +38,7 @@ describe('history: applyFormReplacement with / without history', () => {
   })
 
   bench('history enabled — 3 mutations, 3 snapshots pushed', () => {
-    const state = createFormState<Form>({
+    const state = createFormStore<Form>({
       formKey: 'bench',
       schema: fakeSchema<Form>(defaults100),
     })

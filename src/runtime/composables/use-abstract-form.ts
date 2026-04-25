@@ -1,6 +1,6 @@
 import { getCurrentInstance, getCurrentScope, onScopeDispose, provide, toRaw, useId } from 'vue'
 import { buildFormApi } from '../core/build-form-api'
-import { createFormState, type FormState } from '../core/create-form-state'
+import { createFormStore, type FormStore } from '../core/create-form-store'
 import { __DEV__ } from '../core/dev'
 import type { FieldStateView } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
@@ -30,11 +30,11 @@ import type { DeepPartial, GenericForm } from '../types/types-core'
  *
  * Wiring:
  * - Fetches the current Vue app's ChemicalXRegistry via useRegistry().
- * - Looks up (or creates) the FormState<F> for the configured key. If the
+ * - Looks up (or creates) the FormStore<F> for the configured key. If the
  *   registry has a pending hydration entry for the key, threads it into
- *   createFormState so the client side starts from the server's snapshot.
+ *   createFormStore so the client side starts from the server's snapshot.
  * - Builds register / getFieldState / validate / handleSubmit /
- *   setFieldErrorsFromApi from that FormState via the Phase 1b factories.
+ *   setFieldErrorsFromApi from that FormStore via the Phase 1b factories.
  *
  * The old pre-rewrite implementation stitched together five separate Nuxt
  * useState composables and a cache in register.ts. This file collapses all
@@ -61,11 +61,11 @@ export function useAbstractForm<
   // shape (e.g. zod's `.transform(...)` narrowing).
   const resolvedSchema = getComputedSchema(key, configuration.schema)
 
-  // One FormState per (app, formKey). Multiple useForm calls with the same
+  // One FormStore per (app, formKey). Multiple useForm calls with the same
   // key resolve to the same instance — matches the pre-rewrite "shared
   // store" semantic that forms with the same key were intended to share.
   const registry = useRegistry()
-  const existing = registry.forms.get(key) as FormState<Form, GetValueFormType> | undefined
+  const existing = registry.forms.get(key) as FormStore<Form, GetValueFormType> | undefined
   if (__DEV__ && existing !== undefined) {
     // Shared-key semantics are a feature when consumers OPT in to them
     // (two `useForm({ key: 'x' })` calls that genuinely want the same
@@ -76,15 +76,15 @@ export function useAbstractForm<
     // than the first's, the forms almost certainly shouldn't be
     // sharing. The second call's schema is then silently dropped in
     // favour of the first's — matching what already happens (only
-    // the first caller's config wires the FormState).
+    // the first caller's config wires the FormStore).
     warnOnSchemaFingerprintMismatch(key, existing.schema, resolvedSchema)
   }
-  const state: FormState<Form, GetValueFormType> =
+  const state: FormStore<Form, GetValueFormType> =
     existing ??
     buildFreshState<Form, GetValueFormType>(key, resolvedSchema, configuration, registry)
 
   // Ref-count this consumer. When the component's effect scope tears down,
-  // release the count; the registry evicts the FormState once the last
+  // release the count; the registry evicts the FormStore once the last
   // consumer disposes. Guarded on `getCurrentScope()` so callers without an
   // effect-scope context (defensive — setup() always provides one) don't
   // leak a pinned consumer. See registry.trackConsumer for the counter.
@@ -96,7 +96,7 @@ export function useAbstractForm<
   // Wire persistence (opt-in) — only on fresh state creation, skipped
   // on SSR. `existing` means a prior useForm() already mounted and
   // wired persistence; we don't double-subscribe. The disposer is
-  // registered on the FormState (not on this consumer's scope) so
+  // registered on the FormStore (not on this consumer's scope) so
   // persistence survives any single consumer unmounting — it tears
   // down only when the last consumer releases and the registry evicts
   // the state.
@@ -106,8 +106,8 @@ export function useAbstractForm<
   }
 
   // Wire history (opt-in). Fresh-state-only — the module subscribes
-  // to FormState events, so subscribing twice would double-push
-  // snapshots. Cache the module on the FormState so subsequent
+  // to FormStore events, so subscribing twice would double-push
+  // snapshots. Cache the module on the FormStore so subsequent
   // `useForm` / `useFormContext` calls for the same key retrieve the
   // SAME instance, keeping `canUndo` / `canRedo` / `historySize` /
   // `undo` / `redo` consistent across mount order.
@@ -117,7 +117,7 @@ export function useAbstractForm<
     state.registerCleanup(() => historyModule.dispose())
   }
 
-  // Provide the FormState to descendants via `kFormContext` so
+  // Provide the FormStore to descendants via `kFormContext` so
   // `useFormContext()` can resolve it without prop-threading. The key is
   // the already-canonicalised formKey; looking up a specific form by key
   // is possible via `useFormContext(key)` even without the ambient provide.
@@ -130,7 +130,7 @@ export function useAbstractForm<
   // regression. Descendants that want unambiguous access to a specific
   // form should use `useFormContext<F>(key)` with an explicit key.
   warnOnDuplicateAmbientProvide(key)
-  provide(kFormContext, state as FormState<GenericForm>)
+  provide(kFormContext, state as FormStore<GenericForm>)
 
   const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[1] = {}
   if (configuration.onInvalidSubmit !== undefined) {
@@ -154,10 +154,10 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
   schema: AbstractSchema<F, G>,
   configuration: UseFormConfiguration<F, G, AbstractSchema<F, G>, DeepPartial<F>>,
   registry: ReturnType<typeof useRegistry>
-): FormState<F, G> {
+): FormStore<F, G> {
   const pending = registry.pendingHydration.get(key)
   if (pending !== undefined) registry.pendingHydration.delete(key)
-  const state = createFormState<F, G>({
+  const state = createFormStore<F, G>({
     formKey: key,
     schema,
     initialState: configuration.initialState,
@@ -165,14 +165,14 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
     hydration: pending,
     fieldValidation: configuration.fieldValidation,
   })
-  // Storage type is FormState<GenericForm>; the lookup above narrows
-  // back to the caller's (F, G) via the `existing as FormState<Form,
+  // Storage type is FormStore<GenericForm>; the lookup above narrows
+  // back to the caller's (F, G) via the `existing as FormStore<Form,
   // GetValueFormType>` cast. The registry Map is intentionally
   // generic-erased — the alternative (parameterising the Map) would
   // force every internal caller to carry both generics.
-  ;(registry.forms as Map<FormKey, FormState<GenericForm>>).set(
+  ;(registry.forms as Map<FormKey, FormStore<GenericForm>>).set(
     key,
-    state as unknown as FormState<GenericForm>
+    state as unknown as FormStore<GenericForm>
   )
   return state
 }
@@ -230,7 +230,7 @@ function warnOnDuplicateAmbientProvide(key: FormKey): void {
  * share a flat namespace.
  *
  * Anonymous semantics: each `useForm({ schema })` call without a key
- * resolves to a distinct FormState. Descendant components reach it via
+ * resolves to a distinct FormStore. Descendant components reach it via
  * ambient `useFormContext<F>()`; cross-component lookup by key is not
  * possible (and not meaningful — the key is synthetic). Callers that
  * need shared state, distant lookup, persistence defaults, or a
@@ -282,7 +282,7 @@ function warnOnSchemaFingerprintMismatch(
 }
 
 /**
- * Wire persistence to a fresh FormState:
+ * Wire persistence to a fresh FormStore:
  *
  *   1. Resolve the storage adapter (dynamic-imported — `'local'` never
  *      pulls IDB code; tree-shakes cleanly).
@@ -299,7 +299,7 @@ function warnOnSchemaFingerprintMismatch(
  *      teardown.
  */
 function wirePersistence<F extends GenericForm>(
-  state: FormState<F>,
+  state: FormStore<F>,
   config: PersistConfig
 ): () => void {
   const key = resolveStorageKey(config, state.formKey)

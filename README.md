@@ -49,19 +49,28 @@ export default defineConfig({
 
 ```vue
 <script setup lang="ts">
-  import { useForm } from '@chemical-x/forms/zod' // zod v4; use /zod-v3 for v3
-  import { z } from 'zod'
+    import { useForm } from '@chemical-x/forms/zod' // zod v4; use /zod-v3 for v3
+    import { z } from 'zod'
 
-  const { register, handleSubmit, fieldErrors, isSubmitting } = useForm({
+  <<<<<<< HEAD
+  const { register, handleSubmit, fieldErrors, state } = useForm({
     schema: z.object({
       email: z.email(),
       password: z.string().min(8),
     }),
   })
+  =======
+    const { register, handleSubmit, fieldErrors, isSubmitting } = useForm({
+      schema: z.object({
+        email: z.email(),
+        password: z.string().min(8),
+      }),
+    })
+  >>>>>>> origin/main
 
-  const onSubmit = handleSubmit(async (values) => {
-    await fetch('/api/signup', { method: 'POST', body: JSON.stringify(values) })
-  })
+    const onSubmit = handleSubmit(async (values) => {
+      await fetch('/api/signup', { method: 'POST', body: JSON.stringify(values) })
+    })
 </script>
 
 <template>
@@ -72,22 +81,38 @@ export default defineConfig({
     <input v-register="register('password')" type="password" placeholder="Password" />
     <small v-if="fieldErrors.password?.[0]">{{ fieldErrors.password[0].message }}</small>
 
-    <button :disabled="isSubmitting">Sign up</button>
+    <button :disabled="state.isSubmitting">Sign up</button>
   </form>
 </template>
 ```
 
+<<<<<<< HEAD
+You get: schema-typed values, per-field errors, a submit handler that
+validates first, and a reactive `state` bundle (`isSubmitting`,
+`isDirty`, `isValid`, and six more — see below). Every leaf of
+`fieldErrors` and every branded path is inferred from your Zod schema.
+<br><br>
+=======
 Schema-typed values, per-field errors, a submit handler that validates first, and a reactive `isSubmitting` flag. `fieldErrors` keys and every branded path are inferred from the schema.
+
+> > > > > > > origin/main
 
 ## Core API
 
 On by default — no opt-in.
 
+<<<<<<< HEAD
+
+- **`register(path)` + `v-register`** — bind an input to a field in one directive. SSR-safe, no per-input `v-model` + `@input` boilerplate.
+- **`handleSubmit(onSubmit, onError?)`** — validates, then dispatches. Bind straight to `@submit.prevent`.
+- **`fieldErrors`** — reactive `Record<path, ValidationError[]>`. Auto-populated by `handleSubmit` on failure, cleared on success. Also writable from your own code.
+- # **`state`** — reactive bundle of form-level flags and counters: `state.isDirty` / `state.isValid` (gate a "Save" button on `state.isDirty && state.isValid` without wiring per-field watchers), `state.isSubmitting` / `state.submitCount` / `state.submitError` (full submission lifecycle — spinner, per-click counter, reactive error banner with zero extra refs), `state.isValidating` (async-validation flag), and `state.canUndo` / `state.canRedo` / `state.historySize` (undo/redo, always present; inert when `history` is off). Auto-unwraps in templates — no `.value`.
 - **`register(path)` + `v-register`** — bind an input to a field in one directive. SSR-safe.
 - **`handleSubmit(onSubmit, onError?)`** — validates, then dispatches. Bind to `@submit.prevent`.
 - **`fieldErrors`** — reactive `Record<path, ValidationError[]>`. Auto-populated on submit failure, cleared on success, writable from your code.
 - **`isDirty` / `isValid`** — computed refs. Gate a Save button on `isDirty && isValid` without per-field watchers.
 - **`isSubmitting` / `submitCount` / `submitError`** — full submission lifecycle.
+  > > > > > > > origin/main
 - **`getValue(path)` / `setValue(path, value)`** — read / write any field programmatically.
 - **`getFieldState(path)`** — value, errors, touched, focused, blurred, isConnected, updatedAt.
 - **`reset(next?)` / `resetField(path)`** — restore the form (or a subtree) to schema defaults, or override.
@@ -106,7 +131,12 @@ const schema = z.object({
 })
 ```
 
+<<<<<<< HEAD
+`validate()` / `validateAsync(path?)` / `state.isValidating` give you reactive + imperative surfaces for live validation UI. [Recipe →](./docs/recipes/async-validation.md)
+=======
 `handleSubmit` awaits async refinements; `validate()` / `validateAsync(path?)` / `isValidating` give imperative + reactive surfaces. [Recipe →](./docs/recipes/async-validation.md)
+
+> > > > > > > origin/main
 
 ### Live field validation
 
@@ -138,7 +168,12 @@ Backends: `'local'` / `'session'` / `'indexeddb'` or your own. Writes are deboun
 useForm({ schema, key, history: true })
 ```
 
+<<<<<<< HEAD
+Adds `undo()` / `redo()` methods plus `state.canUndo` / `state.canRedo` / `state.historySize` on a bounded snapshot stack (default 50). Wire it to <kbd>⌘Z</kbd> / <kbd>⌘⇧Z</kbd> in one line. [Recipe →](./docs/recipes/undo-redo.md)
+=======
 Adds `undo()` / `redo()` / `canUndo` / `canRedo` with a bounded snapshot stack (default 50). [Recipe →](./docs/recipes/undo-redo.md)
+
+> > > > > > > origin/main
 
 ### Nested form components
 

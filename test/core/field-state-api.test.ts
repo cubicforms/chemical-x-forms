@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { createFormState } from '../../src/runtime/core/create-form-state'
+import { createFormStore } from '../../src/runtime/core/create-form-store'
 import { buildFieldStateAccessor } from '../../src/runtime/core/field-state-api'
 import { fakeSchema } from '../utils/fake-schema'
 
 type F = { email: string; profile: { name: string } }
 
 function makeAccessor() {
-  const state = createFormState<F>({
+  const state = createFormStore<F>({
     formKey: 'fs',
     schema: fakeSchema<F>({ email: 'initial@x', profile: { name: '' } }),
   })

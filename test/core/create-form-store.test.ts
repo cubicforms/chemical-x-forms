@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { createFormState } from '../../src/runtime/core/create-form-state'
+import { createFormStore } from '../../src/runtime/core/create-form-store'
 import type { ValidationError } from '../../src/runtime/types/types-api'
 import { fakeSchema } from '../utils/fake-schema'
 
@@ -20,14 +20,14 @@ const defaults: SignupForm = {
 }
 
 function makeState(overrides?: Partial<{ formKey: string; initialState: Partial<SignupForm> }>) {
-  return createFormState<SignupForm>({
+  return createFormStore<SignupForm>({
     formKey: overrides?.formKey ?? 'test',
     schema: fakeSchema<SignupForm>(defaults),
     initialState: overrides?.initialState,
   })
 }
 
-describe('createFormState', () => {
+describe('createFormStore', () => {
   describe('initialisation', () => {
     it('populates form with defaults from the schema', () => {
       const state = makeState()
@@ -278,7 +278,7 @@ describe('createFormState', () => {
       type OddForm = GenericFormAlias & { 'profile.name': string }
       const oddDefaults: OddForm = { 'profile.name': 'literal-dot-key' }
       const oddSchema = fakeSchema<OddForm>(oddDefaults)
-      const state = createFormState({ formKey: 'odd', schema: oddSchema })
+      const state = createFormStore({ formKey: 'odd', schema: oddSchema })
       state.setErrorsForPath(
         ['profile.name'],
         [{ message: 'x', path: ['profile.name'], formKey: 'odd' }]

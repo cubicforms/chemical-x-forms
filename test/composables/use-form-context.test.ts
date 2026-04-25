@@ -43,7 +43,7 @@ describe('useFormContext — ambient provide/inject', () => {
     const root = document.createElement('div')
     app.mount(root)
 
-    // Both APIs must reflect the same underlying FormState — writing via
+    // Both APIs must reflect the same underlying FormStore — writing via
     // the parent's setValue should surface in the child's getValue.
     expect(shared.parent).toBeDefined()
     expect(shared.child).toBeDefined()

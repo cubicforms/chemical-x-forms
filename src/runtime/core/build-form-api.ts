@@ -1,10 +1,11 @@
-import { computed, type ComputedRef, type Ref } from 'vue'
+import { computed, reactive, readonly, type ComputedRef, type Ref } from 'vue'
 import type {
   CurrentValueContext,
   CurrentValueWithContext,
   FieldState,
   FormErrorRecord,
   FormFieldErrors,
+  FormState,
   OnInvalidSubmitPolicy,
   ReactiveValidationStatus,
   RegisterValue,
@@ -14,7 +15,7 @@ import type {
 } from '../types/types-api'
 import type { DeepPartial, GenericForm } from '../types/types-core'
 import { __DEV__ } from './dev'
-import type { FormState } from './create-form-state'
+import type { FormStore } from './create-form-store'
 import { buildFieldArrayApi } from './field-arrays'
 import { buildFieldStateAccessor } from './field-state-api'
 import type { HistoryModule } from './history'
@@ -36,7 +37,7 @@ export type BuildFormApiOptions = {
 }
 
 /**
- * Build the public form API from a FormState. Extracted from
+ * Build the public form API from a FormStore. Extracted from
  * `useAbstractForm` so that both the top-level form entry (which creates
  * a fresh state) and `useFormContext` (which resolves state from an
  * ambient provide/inject) produce identical API shapes without
@@ -44,10 +45,10 @@ export type BuildFormApiOptions = {
  *
  * `buildFormApi` does not interact with the registry, consumer ref-counts,
  * or the current Vue instance — those concerns belong to the caller. This
- * function is pure over (FormState, options) → api.
+ * function is pure over (FormStore, options) → api.
  */
 export function buildFormApi<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
-  state: FormState<Form>,
+  state: FormStore<Form>,
   options: BuildFormApiOptions = {}
 ): UseAbstractFormReturnType<Form, GetValueFormType> {
   const register = buildRegister(state) as (path: string | Path) => RegisterValue<unknown>
@@ -191,6 +192,30 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   const canRedo = history?.canRedo ?? computed(() => false)
   const historySize = history?.historySize ?? computed(() => 0)
 
+  // --- Form-level state bundle ---
+  // Vue auto-unwraps refs that are top-level on a setup return, but not
+  // refs nested in a return *object* — those render as their wrapper
+  // (always truthy) and silently break bindings like `:disabled`. We
+  // work around it by placing the 9 scalars inside `reactive()`, which
+  // unwraps ref values on property access at any depth; `readonly()`
+  // layers a runtime write-guard on top.
+  //
+  // Named `formState` locally to avoid shadowing the `state: FormStore<F>`
+  // param this function receives; exposed as `state` on the public return.
+  const formState = readonly(
+    reactive({
+      isDirty,
+      isValid,
+      isSubmitting,
+      isValidating,
+      submitCount,
+      submitError,
+      canUndo,
+      canRedo,
+      historySize,
+    })
+  ) as FormState
+
   // --- Reset ---
   const reset = (nextInitialState?: DeepPartial<Form>): void => {
     state.reset(nextInitialState)
@@ -239,21 +264,13 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     addFieldErrors,
     clearFieldErrors,
     setFieldErrorsFromApi,
-    isDirty,
-    isValid,
-    isSubmitting,
-    submitCount,
-    submitError,
-    isValidating,
+    state: formState,
     reset: reset as UseAbstractFormReturnType<Form, GetValueFormType>['reset'],
     resetField: resetField as UseAbstractFormReturnType<Form, GetValueFormType>['resetField'],
     focusFirstError,
     scrollToFirstError,
     undo,
     redo,
-    canUndo,
-    canRedo,
-    historySize,
     append: fieldArrays.append as UseAbstractFormReturnType<Form, GetValueFormType>['append'],
     prepend: fieldArrays.prepend as UseAbstractFormReturnType<Form, GetValueFormType>['prepend'],
     insert: fieldArrays.insert as UseAbstractFormReturnType<Form, GetValueFormType>['insert'],
@@ -265,7 +282,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
 }
 
 function contextualiseValue<F extends GenericForm>(
-  state: FormState<F>,
+  state: FormStore<F>,
   segments: Path,
   context: CurrentValueContext<boolean>
 ): unknown {

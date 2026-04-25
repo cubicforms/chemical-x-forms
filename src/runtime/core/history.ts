@@ -1,11 +1,11 @@
 import { computed, shallowRef, type ComputedRef } from 'vue'
 import type { HistoryConfig, ValidationError } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
-import type { FormState } from './create-form-state'
+import type { FormStore } from './create-form-store'
 import type { PathKey } from './paths'
 
 /**
- * Bounded undo/redo snapshot stack for a FormState. Subscribes to
+ * Bounded undo/redo snapshot stack for a FormStore. Subscribes to
  * `onFormChange` to push a snapshot on every mutation; `undo` /
  * `redo` restore via `applyFormReplacement` and `setAllErrors`.
  * `onReset` clears both stacks and seeds a fresh baseline.
@@ -39,7 +39,7 @@ export type HistoryModule = {
 }
 
 export function createHistoryModule<F extends GenericForm>(
-  state: FormState<F>,
+  state: FormStore<F>,
   config: HistoryConfig
 ): HistoryModule {
   const max = typeof config === 'object' ? (config.max ?? 50) : 50

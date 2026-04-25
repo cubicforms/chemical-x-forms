@@ -11,7 +11,7 @@ import { fakeSchema } from '../utils/fake-schema'
  * Shared-key collision detection.
  *
  * Two `useForm({ key: 'x', schema })` calls resolve to the same
- * `FormState` by design — the shared-store semantic. When the second
+ * `FormStore` by design — the shared-store semantic. When the second
  * call's schema has a different structural fingerprint from the
  * first's, the library emits a dev-mode `console.warn` naming both
  * fingerprints. The second call's schema is silently ignored in

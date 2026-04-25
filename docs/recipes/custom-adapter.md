@@ -63,9 +63,7 @@ import type {
 } from '@chemical-x/forms'
 import type { DeepPartial, GenericForm } from '@chemical-x/forms'
 
-export function myLibAdapter<F extends GenericForm>(
-  schema: MyLibSchema<F>,
-): AbstractSchema<F, F> {
+export function myLibAdapter<F extends GenericForm>(schema: MyLibSchema<F>): AbstractSchema<F, F> {
   return {
     fingerprint() {
       // If your library exposes structural metadata, walk it and

@@ -21,11 +21,11 @@ of leaves.
 
 ## Sizing guidance
 
-| Scale                  | Guidance                                                                 |
-| ---------------------- | ------------------------------------------------------------------------ |
-| ≤ 500 leaves           | Default. No tuning needed.                                                |
-| 500 – 5,000 leaves     | Still fine. Watch out for templates that render every leaf's `state.isDirty`.  |
-| 5,000+ leaves          | Consider splitting into sub-forms with distinct `key`s. One giant schema is not what the library is optimised for. |
+| Scale              | Guidance                                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| ≤ 500 leaves       | Default. No tuning needed.                                                                                         |
+| 500 – 5,000 leaves | Still fine. Watch out for templates that render every leaf's `state.isDirty`.                                      |
+| 5,000+ leaves      | Consider splitting into sub-forms with distinct `key`s. One giant schema is not what the library is optimised for. |
 
 ## Array helpers are O(N)
 
@@ -61,8 +61,8 @@ more specific predicate instead:
 
 ```ts
 // Faster than gating on the whole-form state.isDirty:
-const isEmailDirty = computed(() =>
-  form.getValue('email').value !== '' // or compare to originals
+const isEmailDirty = computed(
+  () => form.getValue('email').value !== '' // or compare to originals
 )
 ```
 

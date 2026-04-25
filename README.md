@@ -50,19 +50,19 @@ That's it. [Jump to your first form →](#-your-first-form)
 
 ```vue
 <script setup lang="ts">
-import { useForm } from '@chemical-x/forms/zod' // zod v4; use /zod-v3 for v3
-import { z } from 'zod'
+  import { useForm } from '@chemical-x/forms/zod' // zod v4; use /zod-v3 for v3
+  import { z } from 'zod'
 
-const { register, handleSubmit, fieldErrors, state } = useForm({
-  schema: z.object({
-    email: z.email(),
-    password: z.string().min(8),
-  }),
-})
+  const { register, handleSubmit, fieldErrors, state } = useForm({
+    schema: z.object({
+      email: z.email(),
+      password: z.string().min(8),
+    }),
+  })
 
-const onSubmit = handleSubmit(async (values) => {
-  await fetch('/api/signup', { method: 'POST', body: JSON.stringify(values) })
-})
+  const onSubmit = handleSubmit(async (values) => {
+    await fetch('/api/signup', { method: 'POST', body: JSON.stringify(values) })
+  })
 </script>
 
 <template>
@@ -207,14 +207,14 @@ lands with a migration note under [`docs/migration/`](./docs/migration). [Recent
 
 ### Subpath exports
 
-| Subpath                          | Purpose                                                   |
-| -------------------------------- | --------------------------------------------------------- |
-| `@chemical-x/forms`              | Framework-agnostic core (plugin, `useForm`, directive)    |
-| `@chemical-x/forms/nuxt`         | Nuxt 3 / 4 module                                         |
-| `@chemical-x/forms/vite`         | Vite plugin (registers node transforms)                   |
-| `@chemical-x/forms/transforms`   | Raw node transforms for custom bundlers                   |
-| `@chemical-x/forms/zod`          | Zod v4 adapter (recommended; requires `zod@^4`)           |
-| `@chemical-x/forms/zod-v3`       | Zod v3 adapter (legacy; requires `zod@^3`)                |
+| Subpath                        | Purpose                                                |
+| ------------------------------ | ------------------------------------------------------ |
+| `@chemical-x/forms`            | Framework-agnostic core (plugin, `useForm`, directive) |
+| `@chemical-x/forms/nuxt`       | Nuxt 3 / 4 module                                      |
+| `@chemical-x/forms/vite`       | Vite plugin (registers node transforms)                |
+| `@chemical-x/forms/transforms` | Raw node transforms for custom bundlers                |
+| `@chemical-x/forms/zod`        | Zod v4 adapter (recommended; requires `zod@^4`)        |
+| `@chemical-x/forms/zod-v3`     | Zod v3 adapter (legacy; requires `zod@^3`)             |
 
 <br>
 

@@ -22,7 +22,7 @@ export default defineNuxtConfig({
 
 ```vue
 <script setup lang="ts">
-const form = useForm({ schema, key: 'signup' })
+  const form = useForm({ schema, key: 'signup' })
 </script>
 ```
 

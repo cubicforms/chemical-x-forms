@@ -31,12 +31,12 @@ persist: {
 
 ## Picking a backend
 
-| Backend       | Size budget                 | Sync/async | Best for                                                                |
-| ------------- | --------------------------- | ---------- | ----------------------------------------------------------------------- |
-| `'local'`     | ~5 MB                       | sync       | Small forms, widest compatibility. Shared across same-origin tabs.      |
-| `'session'`   | ~5 MB                       | sync       | Tab-scoped scratch state. Closes with the tab.                          |
-| `'indexeddb'` | 50%+ of disk                | async      | Large forms. `Date` / `Map` / `Set` / typed arrays round-trip verbatim. |
-| `FormStorage` | You decide                  | You decide | Encrypted stores, cookie-backed, native-mobile bridges.                 |
+| Backend       | Size budget  | Sync/async | Best for                                                                |
+| ------------- | ------------ | ---------- | ----------------------------------------------------------------------- |
+| `'local'`     | ~5 MB        | sync       | Small forms, widest compatibility. Shared across same-origin tabs.      |
+| `'session'`   | ~5 MB        | sync       | Tab-scoped scratch state. Closes with the tab.                          |
+| `'indexeddb'` | 50%+ of disk | async      | Large forms. `Date` / `Map` / `Set` / typed arrays round-trip verbatim. |
+| `FormStorage` | You decide   | You decide | Encrypted stores, cookie-backed, native-mobile bridges.                 |
 
 `'local'` and `'session'` go through `JSON.stringify` — non-JSON
 leaves lose fidelity. `'indexeddb'` uses the browser's structured-

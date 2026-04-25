@@ -4,7 +4,7 @@
 const form = useForm({
   schema,
   key: 'signup',
-  history: true,       // default: 50-snapshot bounded stack
+  history: true, // default: 50-snapshot bounded stack
 })
 ```
 
@@ -16,13 +16,13 @@ useForm({ schema, key: 'signup', history: { max: 200 } })
 
 ## API
 
-| Member                | Type                | What it does                                                              |
-| --------------------- | ------------------- | ------------------------------------------------------------------------- |
-| `undo()`              | `() => boolean`     | Revert to the previous snapshot. `false` at baseline (nothing to undo).   |
-| `redo()`              | `() => boolean`     | Replay a previously-undone snapshot. `false` when nothing's queued.       |
-| `state.canUndo`       | `boolean`           | Gate an "Undo" button on this.                                            |
-| `state.canRedo`       | `boolean`           | Gate a "Redo" button on this.                                             |
-| `state.historySize`   | `number`            | Total snapshots across both stacks — useful for debug overlays.           |
+| Member              | Type            | What it does                                                            |
+| ------------------- | --------------- | ----------------------------------------------------------------------- |
+| `undo()`            | `() => boolean` | Revert to the previous snapshot. `false` at baseline (nothing to undo). |
+| `redo()`            | `() => boolean` | Replay a previously-undone snapshot. `false` when nothing's queued.     |
+| `state.canUndo`     | `boolean`       | Gate an "Undo" button on this.                                          |
+| `state.canRedo`     | `boolean`       | Gate a "Redo" button on this.                                           |
+| `state.historySize` | `number`        | Total snapshots across both stacks — useful for debug overlays.         |
 
 `undo()` and `redo()` are top-level methods; the three flags live
 on the `state` reactive bundle alongside the rest of the form-level
@@ -36,16 +36,18 @@ Not wired by default — do it in a line:
 
 ```vue
 <script setup lang="ts">
-const { undo, redo, state } = useForm({
-  schema, key: 'editor', history: true,
-})
+  const { undo, redo, state } = useForm({
+    schema,
+    key: 'editor',
+    history: true,
+  })
 
-function onKeydown(event: KeyboardEvent) {
-  if ((event.metaKey || event.ctrlKey) && event.key === 'z') {
-    event.preventDefault()
-    event.shiftKey ? redo() : undo()
+  function onKeydown(event: KeyboardEvent) {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'z') {
+      event.preventDefault()
+      event.shiftKey ? redo() : undo()
+    }
   }
-}
 </script>
 
 <template>

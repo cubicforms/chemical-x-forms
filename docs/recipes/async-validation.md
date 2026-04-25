@@ -11,13 +11,11 @@ import { z } from 'zod'
 import { useForm } from '@chemical-x/forms/zod'
 
 const signupSchema = z.object({
-  email: z
-    .email()
-    .refine(async (value) => {
-      const res = await fetch(`/api/email-available?e=${encodeURIComponent(value)}`)
-      const { available } = (await res.json()) as { available: boolean }
-      return available
-    }, 'Email already registered'),
+  email: z.email().refine(async (value) => {
+    const res = await fetch(`/api/email-available?e=${encodeURIComponent(value)}`)
+    const { available } = (await res.json()) as { available: boolean }
+    return available
+  }, 'Email already registered'),
   password: z.string().min(8),
 })
 
@@ -35,8 +33,8 @@ flag — use it to show a spinner while async validation is in flight.
 
 ```vue
 <script setup lang="ts">
-const { validate } = useForm({ schema: signupSchema, key: 'signup' })
-const status = validate()
+  const { validate } = useForm({ schema: signupSchema, key: 'signup' })
+  const status = validate()
 </script>
 
 <template>

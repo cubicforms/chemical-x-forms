@@ -11,23 +11,23 @@ Parent owns the form:
 ```vue
 <!-- SignupForm.vue -->
 <script setup lang="ts">
-import { useForm } from '@chemical-x/forms/zod'
-import { z } from 'zod'
+  import { useForm } from '@chemical-x/forms/zod'
+  import { z } from 'zod'
 
-interface Form {
-  email: string
-  profile: { name: string; age: number }
-}
+  interface Form {
+    email: string
+    profile: { name: string; age: number }
+  }
 
-const schema = z.object({
-  email: z.email(),
-  profile: z.object({ name: z.string(), age: z.number() }),
-})
+  const schema = z.object({
+    email: z.email(),
+    profile: z.object({ name: z.string(), age: z.number() }),
+  })
 
-const { handleSubmit } = useForm<Form>({ schema, key: 'signup' })
-const onSubmit = handleSubmit(async (values) => {
-  await api.post('/signup', values)
-})
+  const { handleSubmit } = useForm<Form>({ schema, key: 'signup' })
+  const onSubmit = handleSubmit(async (values) => {
+    await api.post('/signup', values)
+  })
 </script>
 
 <template>
@@ -44,14 +44,14 @@ Any descendant grabs the same form:
 ```vue
 <!-- EmailRow.vue -->
 <script setup lang="ts">
-import { useFormContext } from '@chemical-x/forms/zod'
+  import { useFormContext } from '@chemical-x/forms/zod'
 
-interface Form {
-  email: string
-  profile: { name: string; age: number }
-}
+  interface Form {
+    email: string
+    profile: { name: string; age: number }
+  }
 
-const { register, fieldErrors } = useFormContext<Form>()
+  const { register, fieldErrors } = useFormContext<Form>()
 </script>
 
 <template>
@@ -76,18 +76,17 @@ different branch of the component tree:
 ```vue
 <!-- FloatingSaveButton.vue (anywhere in the app) -->
 <script setup lang="ts">
-import { useFormContext } from '@chemical-x/forms/zod'
+  import { useFormContext } from '@chemical-x/forms/zod'
 
-interface Form { /* … */ }
+  interface Form {
+    /* … */
+  }
 
-const { state, handleSubmit } = useFormContext<Form>('signup')
+  const { state, handleSubmit } = useFormContext<Form>('signup')
 </script>
 
 <template>
-  <button
-    :disabled="!state.isDirty || state.isSubmitting"
-    @click="handleSubmit(onSave)()"
-  >
+  <button :disabled="!state.isDirty || state.isSubmitting" @click="handleSubmit(onSave)()">
     Save
   </button>
 </template>

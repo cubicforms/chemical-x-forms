@@ -204,7 +204,10 @@ export function buildProcessForm<F extends GenericForm>(
         validationSettled = true
         if (!result.success) {
           const errors = result.errors
-          state.setAllErrors(errors)
+          // Schema-only writer: user-injected errors (from setFieldErrors,
+          // addFieldErrors, setFieldErrorsFromApi) live in a separate store
+          // and are NOT clobbered by the submit-time validation result.
+          state.setAllSchemaErrors(errors)
           // Apply the invalid-submit focus/scroll policy AFTER populating
           // the error store (so getFirstErrorElement walks the fresh
           // entries) and BEFORE the user's onError callback (so consumer
@@ -219,7 +222,11 @@ export function buildProcessForm<F extends GenericForm>(
           }
           return
         }
-        state.clearErrors()
+        // Schema-only clear: a successful submit means schema validation
+        // passed, so the schema-error store goes empty. User-injected
+        // errors persist — consumers managing their own warning/info
+        // state via setFieldErrors keep ownership of that lifecycle.
+        state.clearSchemaErrors()
         await onSubmit(result.data)
         // Notify subscribers (persistence's clear-on-success handler,
         // future hooks). Fires only when the user callback resolved —

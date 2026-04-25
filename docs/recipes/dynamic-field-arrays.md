@@ -16,19 +16,19 @@ const schema = z.object({
     z.object({
       title: z.string(),
       views: z.number(),
-    }),
+    })
   ),
 })
 
 const form = useForm({ schema, key: 'blog-editor' })
 
-form.append('tags', 'new-tag')                // push
-form.prepend('tags', 'first-tag')             // unshift
-form.insert('tags', 2, 'at-index-two')        // splice-insert
-form.remove('tags', 0)                        // splice-remove
-form.swap('tags', 0, 2)                       // exchange two indices
-form.move('tags', 3, 1)                       // move from → to, shift others
-form.replace('tags', 0, 'replaced-in-place')  // in-place; never grows
+form.append('tags', 'new-tag') // push
+form.prepend('tags', 'first-tag') // unshift
+form.insert('tags', 2, 'at-index-two') // splice-insert
+form.remove('tags', 0) // splice-remove
+form.swap('tags', 0, 2) // exchange two indices
+form.move('tags', 3, 1) // move from → to, shift others
+form.replace('tags', 0, 'replaced-in-place') // in-place; never grows
 ```
 
 Every helper is type-narrowed:
@@ -46,20 +46,20 @@ Out-of-range behaviour:
 
 ```vue
 <script setup lang="ts">
-import { useForm } from '@chemical-x/forms/zod'
-import { z } from 'zod'
+  import { useForm } from '@chemical-x/forms/zod'
+  import { z } from 'zod'
 
-const schema = z.object({
-  posts: z.array(
-    z.object({
-      title: z.string(),
-      views: z.number(),
-    }),
-  ),
-})
+  const schema = z.object({
+    posts: z.array(
+      z.object({
+        title: z.string(),
+        views: z.number(),
+      })
+    ),
+  })
 
-const form = useForm({ schema, key: 'blog-editor' })
-const posts = form.getValue('posts')
+  const form = useForm({ schema, key: 'blog-editor' })
+  const posts = form.getValue('posts')
 </script>
 
 <template>
@@ -68,9 +68,7 @@ const posts = form.getValue('posts')
     <input v-register="form.register(`posts.${index}.views`)" type="number" />
     <button type="button" @click="form.remove('posts', index)">Remove</button>
   </div>
-  <button type="button" @click="form.append('posts', { title: '', views: 0 })">
-    Add post
-  </button>
+  <button type="button" @click="form.append('posts', { title: '', views: 0 })"> Add post </button>
 </template>
 ```
 
@@ -124,10 +122,7 @@ are OK.
 <template>
   <div v-for="(post, index) in posts" :key="post.id">
     <input v-register="form.register(`posts.${index}.title`)" />
-    <span
-      v-if="form.getFieldState(`posts.${index}.title`).value.errors.length > 0"
-      class="error"
-    >
+    <span v-if="form.getFieldState(`posts.${index}.title`).value.errors.length > 0" class="error">
       {{ form.getFieldState(`posts.${index}.title`).value.errors[0].message }}
     </span>
   </div>

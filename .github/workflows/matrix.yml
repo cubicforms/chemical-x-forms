@@ -12,6 +12,49 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Dedicated lint job — runs in parallel with the test matrix so a lint-only
+  # regression flips the PR red within ~30s instead of waiting on the full
+  # gate (typecheck + tests + size + bench + coverage). The matrix's
+  # `pnpm check` still runs lint + format:check too; the duplication is
+  # intentional (cheap, and keeps `pnpm check` as the single source-of-truth
+  # command for local dev).
+  lint:
+    name: Lint and format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 'lts/*'
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: ESLint
+        run: pnpm lint
+
+      - name: Prettier
+        run: pnpm format:check
+
   test:
     name: Full check on Node.js ${{ matrix.node-version }}
     runs-on: ubuntu-latest

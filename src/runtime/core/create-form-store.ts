@@ -389,7 +389,10 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     }
     // Hydration's flat `errors` field maps to schemaErrors for now —
     // step 5 expands the payload to carry schemaErrors + userErrors
-    // separately so hydrated user errors round-trip cleanly.
+    // separately so hydrated user errors round-trip cleanly. Hydration
+    // takes precedence over the construction-time seed below: the
+    // server already authored whatever error state the client should
+    // mirror, including (deliberately) the empty case.
     for (const [rawKey, errs] of hydration.errors) {
       schemaErrors.set(rawKey as PathKey, errs as ValidationError[])
     }
@@ -406,6 +409,20 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
         touched: null,
       })
     })
+    // No hydration — seed schemaErrors from the construction-time
+    // validation result IF the schema rejected the defaults AND the
+    // form was constructed in strict mode. Lax mode treats default
+    // values as "best-effort," so populating errors there would
+    // surprise consumers who explicitly opted out of strict checks.
+    //
+    // Async refines won't fire here — `getDefaultValues` is sync
+    // (`safeParse`, not `safeParseAsync`); they only fire on the
+    // first user mutation that re-triggers `scheduleFieldValidation`.
+    // Consumers needing async refines at construction can call
+    // `validateAsync()` once after mount.
+    if (validationMode === 'strict' && !schemaResponse.success) {
+      setAllSchemaErrors(schemaResponse.errors)
+    }
   }
 
   function touchFieldRecord(

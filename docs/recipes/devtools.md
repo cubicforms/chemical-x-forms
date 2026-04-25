@@ -46,8 +46,9 @@ Expand it to see one node per registered form (keyed by the form's
   the DevTools UI; your edit flows through `setValue` and drives
   the whole reactive pipeline (validation, persistence, history).
 - **Errors** — the error map keyed by path.
-- **Aggregates** — `isSubmitting`, `submitCount`, `submitError`,
-  `activeValidations`.
+- **Aggregates** — the `state` bundle (`isDirty`, `isValid`,
+  `isSubmitting`, `isValidating`, `submitCount`, `submitError`,
+  `canUndo`, `canRedo`, `historySize`).
 
 ### Timeline
 

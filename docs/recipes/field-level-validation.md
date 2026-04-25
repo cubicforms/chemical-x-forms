@@ -76,14 +76,14 @@ sneaked in afterwards".
 `reset()` does the same — field-level state is cancelled before the
 fresh form lands.
 
-## `isValidating` for UI
+## `state.isValidating` for UI
 
-`isValidating` is `true` while any validation is in flight — submit,
-reactive `validate()`, one-shot `validateAsync`, or a field-level
-run. Gate UI:
+`state.isValidating` is `true` while any validation is in flight —
+submit, reactive `validate()`, one-shot `validateAsync`, or a
+field-level run. Gate UI:
 
 ```vue
-<button :disabled="isValidating">Submit</button>
+<button :disabled="form.state.isValidating">Submit</button>
 ```
 
 ## Tuning `debounceMs`

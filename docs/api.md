@@ -266,27 +266,36 @@ piece of form state as a named field. Grouped by concern:
 
 | Member                                    | Type                                                                                      |
 | ----------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `fieldErrors`                             | `Readonly<ComputedRef<Record<path, ValidationError[]>>>`                                  |
+| `fieldErrors`                             | `Readonly<FormFieldErrors<Form>>` — Proxy view; dot-access leaves directly, no `.value`.  |
 | `setFieldErrors(errors)`                  | `(ValidationError[]) => void`                                                             |
 | `addFieldErrors(errors)`                  | `(ValidationError[]) => void`                                                             |
 | `clearFieldErrors(path?)`                 | `(path?) => void`                                                                         |
 | `setFieldErrorsFromApi(payload, limits?)` | Hydrates a server error envelope. See [server-errors recipe](./recipes/server-errors.md). |
 
-### Form-level aggregates
+### Form-level state
 
-| Member    | Type                             | What it does                                                   |
-| --------- | -------------------------------- | -------------------------------------------------------------- |
-| `isDirty` | `Readonly<ComputedRef<boolean>>` | `true` iff any leaf's current value differs from its original. |
-| `isValid` | `Readonly<ComputedRef<boolean>>` | `true` iff `fieldErrors` is empty.                             |
+The 9 form-level flags and counters live on a single `state` object
+(`reactive()` + `readonly()`). Vue's reactive auto-unwraps refs at
+property access, so `form.state.isSubmitting` is a primitive in
+both templates and scripts — no `.value`. The full type is the
+exported `FormState` interface.
 
-### Submission lifecycle
+| Member               | Type      | What it does                                                                        |
+| -------------------- | --------- | ----------------------------------------------------------------------------------- |
+| `state.isDirty`      | `boolean` | `true` iff any leaf's current value differs from its original.                      |
+| `state.isValid`      | `boolean` | `true` iff `fieldErrors` is empty.                                                  |
+| `state.isSubmitting` | `boolean` | `true` while the submit handler is running.                                         |
+| `state.isValidating` | `boolean` | `true` while any validation run is in flight (reactive, imperative, or pre-submit). |
+| `state.submitCount`  | `number`  | Incremented once per call, regardless of outcome.                                   |
+| `state.submitError`  | `unknown` | Whatever the callback threw; `null` on success. Cleared on every new submission.    |
+| `state.canUndo`      | `boolean` | Gate an "Undo" button on this. Always present; `false` when `history` is off.       |
+| `state.canRedo`      | `boolean` | Gate a "Redo" button on this. Always present; `false` when `history` is off.        |
+| `state.historySize`  | `number`  | Total snapshots across both stacks. `0` when `history` is off.                      |
 
-| Member         | Type                             | What it does                                                                        |
-| -------------- | -------------------------------- | ----------------------------------------------------------------------------------- |
-| `isSubmitting` | `Readonly<ComputedRef<boolean>>` | `true` while the submit handler is running.                                         |
-| `submitCount`  | `Readonly<ComputedRef<number>>`  | Incremented once per call, regardless of outcome.                                   |
-| `submitError`  | `Readonly<ComputedRef<unknown>>` | Whatever the callback threw; `null` on success. Cleared on every new submission.    |
-| `isValidating` | `Readonly<ComputedRef<boolean>>` | `true` while any validation run is in flight (reactive, imperative, or pre-submit). |
+`state` is read-only — `state.x = y` writes are rejected at runtime
+with a dev-mode warning (use `setValue` / `handleSubmit` /
+`reset` to mutate the form). Watchers use the getter form:
+`watch(() => form.state.isSubmitting, …)`.
 
 ### Focus + scroll
 
@@ -304,16 +313,15 @@ piece of form state as a named field. Grouped by concern:
 
 ### Undo / redo
 
-| Member        | Type                             | What it does                         |
-| ------------- | -------------------------------- | ------------------------------------ |
-| `undo()`      | `() => boolean`                  | Revert to the previous snapshot.     |
-| `redo()`      | `() => boolean`                  | Replay a previously-undone snapshot. |
-| `canUndo`     | `Readonly<ComputedRef<boolean>>` | Gate an "Undo" button.               |
-| `canRedo`     | `Readonly<ComputedRef<boolean>>` | Gate a "Redo" button.                |
-| `historySize` | `Readonly<ComputedRef<number>>`  | Total snapshots across both stacks.  |
+| Member   | Type            | What it does                         |
+| -------- | --------------- | ------------------------------------ |
+| `undo()` | `() => boolean` | Revert to the previous snapshot.     |
+| `redo()` | `() => boolean` | Replay a previously-undone snapshot. |
 
-Inert stubs when `history` isn't configured — consistent API shape,
-zero overhead.
+`undo()` and `redo()` are top-level methods. The matching flags
+(`state.canUndo`, `state.canRedo`, `state.historySize`) live on the
+`state` bundle above. Inert stubs when `history` isn't
+configured — consistent API shape, zero overhead.
 
 ### Field arrays (typed)
 

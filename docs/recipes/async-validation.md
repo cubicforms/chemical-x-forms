@@ -71,12 +71,12 @@ validates the whole form.
 
 ## Disabling buttons during validation
 
-`isValidating` is a reactive boolean that's `true` while ANY
+`state.isValidating` is a reactive boolean that's `true` while ANY
 validation run is in flight — submit, reactive `validate()`, or
 `validateAsync`. Gate UI off it:
 
 ```vue
-<button :disabled="isValidating || isSubmitting">Continue</button>
+<button :disabled="form.state.isValidating || form.state.isSubmitting">Continue</button>
 ```
 
 ## Combining with server errors
@@ -98,8 +98,9 @@ const onSubmit = handleSubmit(async (values) => {
 })
 ```
 
-`isSubmitting` stays `true` across the full handler (validation +
-server round-trip), so UI gated on it works without extra wiring.
+`state.isSubmitting` stays `true` across the full handler
+(validation + server round-trip), so UI gated on it works without
+extra wiring.
 
 ## Cross-field validation
 

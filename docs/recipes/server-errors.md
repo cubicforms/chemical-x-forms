@@ -28,7 +28,7 @@ payment provider" — and those come back as `fieldErrors` via
         form.setFieldErrorsFromApi(err.data)
         return
       }
-      throw err // Other errors flow through to `submitError`.
+      throw err // Other errors flow through to `state.submitError`.
     }
   })
 </script>
@@ -45,7 +45,7 @@ payment provider" — and those come back as `fieldErrors` via
       {{ form.fieldErrors.password[0].message }}
     </small>
 
-    <button :disabled="form.isSubmitting.value">Sign up</button>
+    <button :disabled="form.state.isSubmitting">Sign up</button>
   </form>
 </template>
 ```
@@ -134,7 +134,7 @@ finer control.
 ## Non-field errors
 
 Some server errors aren't tied to a field — rate limits, provider
-outages. They belong in `submitError`, not `fieldErrors`:
+outages. They belong in `state.submitError`, not `fieldErrors`:
 
 ```ts
 const onSubmit = form.handleSubmit(async (values) => {
@@ -147,8 +147,8 @@ const onSubmit = form.handleSubmit(async (values) => {
 
 ```vue
 <template>
-  <p v-if="form.submitError.value" role="alert">
-    {{ (form.submitError.value as Error).message }}
+  <p v-if="form.state.submitError" role="alert">
+    {{ (form.state.submitError as Error).message }}
   </p>
 </template>
 ```

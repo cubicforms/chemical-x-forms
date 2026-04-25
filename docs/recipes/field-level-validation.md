@@ -57,8 +57,8 @@ Type fast, validate once. Successive writes reset the debounce
 timer and cancel any in-flight validation for that path:
 
 ```ts
-form.setValue('email', 'a')   // schedules
-form.setValue('email', 'ab')  // cancels prior, reschedules
+form.setValue('email', 'a') // schedules
+form.setValue('email', 'ab') // cancels prior, reschedules
 form.setValue('email', 'abc') // cancels prior, reschedules
 // …debounceMs after the LAST write, validation runs once on 'abc'.
 ```

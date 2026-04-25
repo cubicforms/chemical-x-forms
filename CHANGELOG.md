@@ -2,7 +2,28 @@
 
 ## Unreleased
 
-_No unreleased changes yet._
+**Dev-mode ergonomics for the ambient `useFormContext` warning.**
+
+- **Lazy warning, not eager.** `useForm()` no longer prints the
+  duplicate-ambient-provide warning at every call site. Components
+  that intentionally pile multiple `useForm()` calls into one setup
+  (spike pages, exercise harnesses) stay silent unless a descendant
+  actually consumes the ambient slot. The warning fires once, at the
+  consume site (`useFormContext<F>()` with no key), and lists each
+  offending `useForm()` call by source frame for click-through in
+  DevTools.
+- **Keyed forms bypass the ambient slot.** `useForm({ schema, key })`
+  no longer fills the ambient `provide`/`inject` slot — keyed forms
+  are addressable explicitly via `useFormContext<F>(key)`, and the
+  ambient slot is reserved for anonymous siblings. This cleanly
+  separates the two resolution modes and stops keyed forms from
+  silently winning the ambient slot over a sibling anonymous form.
+
+  **Behaviour change** (technically a breaking dev-time semantic, no
+  type-system surface change): a descendant of a keyed-only parent
+  that calls `useFormContext<F>()` with no key now throws "no ambient
+  form context" instead of resolving to the keyed form. The throw is
+  the right error: the form has a name; address it.
 
 ## v0.11.0
 **What's new at a glance**

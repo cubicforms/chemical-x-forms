@@ -1,10 +1,12 @@
-import { getCurrentScope, inject, onScopeDispose } from 'vue'
+import { getCurrentInstance, getCurrentScope, inject, onScopeDispose } from 'vue'
 import { buildFormApi } from '../core/build-form-api'
 import type { FormStore } from '../core/create-form-store'
+import { __DEV__ } from '../core/dev'
 import type { HistoryModule } from '../core/history'
 import { kFormContext, useRegistry, type ChemicalXRegistry } from '../core/registry'
 import type { FormKey, UseAbstractFormReturnType } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
+import { ambientProvideHistory } from './use-abstract-form'
 
 /**
  * Access the ambient form's API from a descendant component without
@@ -85,5 +87,49 @@ function resolveState<Form extends GenericForm>(
       '[@chemical-x/forms] useFormContext: no ambient form context. Call useForm(...) in an ancestor or pass a key.'
     )
   }
+  warnIfAmbientProviderHadDuplicates()
   return ambient
+}
+
+/**
+ * Walk up from the current component to the nearest ancestor that
+ * registered an ambient provide (tracked in `ambientProvideHistory`).
+ * If that ancestor recorded more than one ANONYMOUS `useForm()` call,
+ * a descendant reaching for the ambient slot only sees the last one
+ * — warn so the author picks between adding a key and splitting the
+ * component.
+ *
+ * The eager version of this check lived at the `useForm()` call site
+ * and fired once per extra form regardless of whether any descendant
+ * actually used the ambient slot. That made spike / test pages wall-
+ * warn for a non-problem; this version fires at most once per
+ * `useFormContext()` consumer that genuinely collides.
+ *
+ * Keyed `useForm()` calls don't appear here — they don't fill the
+ * ambient slot at all (they're addressable explicitly via
+ * `useFormContext<F>(key)`), so they can't collide with each other
+ * or with anonymous siblings on this axis.
+ */
+function warnIfAmbientProviderHadDuplicates(): void {
+  if (!__DEV__ || ambientProvideHistory === null) return
+  let ancestor = getCurrentInstance()?.parent ?? null
+  while (ancestor !== null) {
+    const history = ambientProvideHistory.get(ancestor as unknown as object)
+    if (history !== undefined) {
+      if (history.length > 1) {
+        const lines = history.map((entry) => `  - ${entry.source ?? '<unknown location>'}`)
+        console.warn(
+          '[@chemical-x/forms] useFormContext<F>() (no key) resolved against ' +
+            'an ancestor with multiple anonymous useForm() calls; descendants ' +
+            'only see the last-provided form. Anonymous useForm() calls were:\n' +
+            lines.join('\n') +
+            '\nFix: pass a key to each call (e.g. useForm({ schema, key: "x" })) ' +
+            'and reach them via useFormContext<F>("x"), or split the forms ' +
+            'across separate components.'
+        )
+      }
+      return
+    }
+    ancestor = ancestor.parent
+  }
 }

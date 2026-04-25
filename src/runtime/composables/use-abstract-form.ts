@@ -118,19 +118,26 @@ export function useAbstractForm<
   }
 
   // Provide the FormStore to descendants via `kFormContext` so
-  // `useFormContext()` can resolve it without prop-threading. The key is
-  // the already-canonicalised formKey; looking up a specific form by key
-  // is possible via `useFormContext(key)` even without the ambient provide.
+  // `useFormContext()` can resolve it without prop-threading.
   //
-  // Ambient mode is "last-provide wins": if two `useForm` calls run in the
-  // same component, the second overwrites the first and descendants
-  // reading via `useFormContext<F>()` (no key) see only the second form.
-  // The dev-mode check below flags that case so someone converting a
-  // multi-form component to anonymous keys doesn't get a silent
-  // regression. Descendants that want unambiguous access to a specific
-  // form should use `useFormContext<F>(key)` with an explicit key.
-  warnOnDuplicateAmbientProvide(key)
-  provide(kFormContext, state as FormStore<GenericForm>)
+  // ONLY anonymous `useForm()` calls fill the ambient slot. Keyed forms
+  // are explicitly addressable via `useFormContext<F>(key)` and don't
+  // pollute the ambient context — keeping the two resolution modes
+  // semantically distinct. A descendant of a keyed-only parent that
+  // calls `useFormContext<F>()` (no key) gets the "no ambient form"
+  // throw, which is the right error: the form has a name; address it.
+  //
+  // Ambient mode is still "last-provide wins" among siblings: if two
+  // anonymous `useForm()` calls run in the same component, the second
+  // overwrites the first and descendants only see the second. We record
+  // the per-instance history of ANONYMOUS provides here (silently) so
+  // that a descendant's `useFormContext<F>()` call can walk up, detect
+  // the collision, and warn lazily. Recording is skipped on SSR so the
+  // client-side warn fires once, not once-per-render-pass.
+  if (configuration.key === undefined) {
+    recordAmbientProvide(registry.isSSR)
+    provide(kFormContext, state as FormStore<GenericForm>)
+  }
 
   const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[1] = {}
   if (configuration.onInvalidSubmit !== undefined) {
@@ -189,36 +196,132 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
 let anonCounter = 0
 
 /**
+ * One entry per ANONYMOUS `useForm()` call that landed in a
+ * component's ambient provide slot. Keyed forms aren't recorded —
+ * they don't fill the ambient slot in the first place. `source` is
+ * the best-effort user call site (first non-cx frame off
+ * `new Error().stack`) — printed in the collision warning so the
+ * author can navigate to each offending call site.
+ */
+export type AmbientProvideEntry = {
+  readonly source: string | undefined
+}
+
+/**
  * Tracks which Vue component instances have already run
  * `provide(kFormContext, ...)` via `useAbstractForm`. Dev-only —
  * `null` in production so the WeakMap allocation tree-shakes out.
  * A `WeakMap` keyed by the instance object lets Vue GC each
  * component's entry when it unmounts without us tracking
  * lifecycle.
+ *
+ * Exported so `useFormContext<F>()` (no key) can walk the parent
+ * chain and emit a collision warning only when a descendant
+ * actually consumes the ambient slot — eager warning in
+ * `useForm()` misfired on components that call useForm multiple
+ * times intentionally but have no keyless consumer.
  */
-const ambientProvideHistory: WeakMap<object, FormKey[]> | null = __DEV__
-  ? new WeakMap<object, FormKey[]>()
+export const ambientProvideHistory: WeakMap<object, AmbientProvideEntry[]> | null = __DEV__
+  ? new WeakMap<object, AmbientProvideEntry[]>()
   : null
 
-function warnOnDuplicateAmbientProvide(key: FormKey): void {
-  if (!__DEV__ || ambientProvideHistory === null) return
+function recordAmbientProvide(isSSR: boolean): void {
+  if (!__DEV__ || isSSR || ambientProvideHistory === null) return
   const instance = getCurrentInstance()
   if (instance === null) return
   const instanceKey = instance as unknown as object
+  // Caller already gated on `configuration.key === undefined`, so every
+  // recorded entry corresponds to an anonymous useForm() call. No need
+  // to carry a key — synthetic `cx:anon:<id>` keys aren't addressable
+  // by the author and would only add noise to the warning.
+  const entry: AmbientProvideEntry = {
+    source: captureUserCallSite(),
+  }
   const existing = ambientProvideHistory.get(instanceKey)
   if (existing === undefined) {
-    ambientProvideHistory.set(instanceKey, [key])
+    ambientProvideHistory.set(instanceKey, [entry])
     return
   }
-  console.warn(
-    '[@chemical-x/forms] Multiple useForm() calls in the same component ' +
-      'provide ambient form context; descendants using useFormContext<F>() ' +
-      '(no key) will only see the last-provided form. Keys already ' +
-      `provided in this component: [${existing.join(', ')}]. Adding: "${key}". ` +
-      'Fix: pass a key to each useForm() and use useFormContext<F>(key) in ' +
-      'descendants, or split the forms across separate components.'
-  )
-  existing.push(key)
+  existing.push(entry)
+}
+
+/**
+ * Best-effort capture of the caller's source frame, normalised to a
+ * short `<path>:<line>:<col>` form. Walks the stack past
+ * `@chemical-x/forms` internal frames, picks the first frame that
+ * looks like user code, then strips the dev-server scheme + host +
+ * Vite/Nuxt's `/_nuxt/` prefix so the warning doesn't carry a wall
+ * of `https://localhost:3000/_nuxt/...` noise. Returns `undefined`
+ * on engines that don't expose `.stack` or when parsing fails — the
+ * warning degrades to listing "<unknown location>" in that slot.
+ *
+ * Click-through navigation isn't sacrificed: `console.warn` already
+ * renders its own clickable stack trace below the message in
+ * Chrome / Firefox DevTools (V8 frame format → Sources tab). The
+ * inline list is purely for "which call sites collided", and short
+ * paths read better than full URLs there.
+ *
+ * Dev-only; guarded upstream in `recordAmbientProvide`. The cx-frame
+ * regex matches both the published path (`@chemical-x/forms/...`)
+ * and the linked / source path (`chemical-x-forms/...`) so local
+ * dev via `make link-cx` surfaces the same trimmed frames.
+ */
+function captureUserCallSite(): string | undefined {
+  const raw = new Error().stack
+  if (typeof raw !== 'string') return undefined
+  const lines = raw.split('\n')
+  // Skip the "Error" message line and any frame inside cx itself.
+  for (let i = 1; i < lines.length; i++) {
+    const frame = lines[i]
+    if (frame === undefined) continue
+    if (/chemical-x[/-]forms?/i.test(frame)) continue
+    if (/\bforms\.[A-Za-z0-9_-]+\.m?js\b/.test(frame)) continue
+    const trimmed = frame.trim()
+    if (trimmed.length === 0) continue
+    return shortenSourceFrame(trimmed)
+  }
+  return undefined
+}
+
+/**
+ * Reduce a raw stack frame to `<path>:<line>:<col>`.
+ *
+ * Inputs we expect (V8, with or without `at fn (…)` wrapper):
+ *   - `at setup (https://cubicforms.test/_nuxt/pages/spike-cx.vue:18:18)`
+ *   - `at https://example.com/foo.js:1:1`
+ *   - `at file:///Users/x/proj/spike.vue:18:18`
+ *   - `pages/foo.vue:18:18` (already path-like, no V8 wrapper)
+ *
+ * Outputs:
+ *   - `pages/spike-cx.vue:18:18`
+ *   - `foo.js:1:1`
+ *   - `Users/x/proj/spike.vue:18:18`
+ *   - `pages/foo.vue:18:18`
+ *
+ * If the frame doesn't match the trailing `…:line:col` shape at all,
+ * we return the original trimmed frame unchanged — better to surface
+ * something than nothing.
+ */
+function shortenSourceFrame(frame: string): string {
+  const match = /(?:^|\s|\()([^\s()]+):(\d+):(\d+)\)?$/.exec(frame)
+  if (match === null) return frame
+  const [, urlOrPath, line, col] = match
+  if (urlOrPath === undefined || line === undefined || col === undefined) return frame
+  let path = urlOrPath
+  // Strip `scheme://host/` (https://…, http://…). file:// gets the
+  // same treatment, leaving the absolute filesystem path; we then
+  // also strip its leading slash below so it reads as a relative path.
+  path = path.replace(/^[a-z]+:\/\/[^/]+\//i, '')
+  // Strip Vite/Nuxt's dev-server prefix.
+  path = path.replace(/^_nuxt\//, '')
+  // Strip leading slash (left over from file:// or absolute paths).
+  path = path.replace(/^\//, '')
+  // Wrap in parens. Chrome's console auto-linker partial-matches
+  // bare `pages/foo.vue:137:23` (it picks up `/foo.vue:137` and
+  // drops the `pages` prefix + `:23` suffix). Parens are the V8
+  // stack-frame convention and Chrome reliably auto-links them
+  // end-to-end.
+  return `(${path}:${line}:${col})`
 }
 
 /**

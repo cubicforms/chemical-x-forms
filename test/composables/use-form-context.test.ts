@@ -19,7 +19,7 @@ const defaults: Form = { email: '', profile: { name: '' } }
  * itself doesn't render anything interesting).
  */
 describe('useFormContext — ambient provide/inject', () => {
-  it('resolves the nearest ancestor form and shares state with it', () => {
+  it('resolves the nearest ancestor anonymous form and shares state with it', () => {
     const shared: {
       parent?: ReturnType<typeof useForm<Form>>
       child?: ReturnType<typeof useFormContext<Form>>
@@ -32,9 +32,12 @@ describe('useFormContext — ambient provide/inject', () => {
       },
     })
 
+    // Anonymous useForm — no key — fills the ambient slot. Keyed forms
+    // are not addressable via ambient `useFormContext()`; descendants
+    // must call `useFormContext<F>('that-key')` instead.
     const Parent = defineComponent({
       setup() {
-        shared.parent = useForm<Form>({ schema: fakeSchema(defaults), key: 'shared' })
+        shared.parent = useForm<Form>({ schema: fakeSchema(defaults) })
         return () => h(Child)
       },
     })
@@ -55,7 +58,7 @@ describe('useFormContext — ambient provide/inject', () => {
     app.unmount()
   })
 
-  it('exposes the same form key on both parent and child handles', () => {
+  it('parent and child handles share the same synthetic key', () => {
     const shared: { parent?: string; child?: string } = {}
 
     const Child = defineComponent({
@@ -66,15 +69,18 @@ describe('useFormContext — ambient provide/inject', () => {
     })
     const Parent = defineComponent({
       setup() {
-        shared.parent = useForm<Form>({ schema: fakeSchema(defaults), key: 'profile-form' }).key
+        // Anonymous form. The runtime allocates a `cx:anon:<id>` key
+        // via Vue's `useId()`; both handles must surface the SAME id.
+        shared.parent = useForm<Form>({ schema: fakeSchema(defaults) }).key
         return () => h(Child)
       },
     })
 
     const app = createApp(Parent).use(createChemicalXForms({ override: true }))
     app.mount(document.createElement('div'))
-    expect(shared.parent).toBe('profile-form')
-    expect(shared.child).toBe('profile-form')
+    expect(shared.parent).toBeDefined()
+    expect(shared.parent).toMatch(/^cx:anon:/)
+    expect(shared.child).toBe(shared.parent)
     app.unmount()
   })
 
@@ -95,6 +101,61 @@ describe('useFormContext — ambient provide/inject', () => {
     app.mount(document.createElement('div'))
     expect(captured).toBeInstanceOf(Error)
     expect((captured as Error).message).toMatch(/no ambient form context/)
+    app.unmount()
+  })
+
+  it('throws when the only ancestor form is keyed (ambient slot empty)', () => {
+    // Keyed useForm() does NOT fill the ambient slot — descendants must
+    // address it explicitly by key. A naive `useFormContext()` (no key)
+    // call inside such a subtree gets the same "no ambient" throw it
+    // would get with no parent at all.
+    let captured: unknown
+    const Child = defineComponent({
+      setup() {
+        try {
+          useFormContext<Form>()
+        } catch (err) {
+          captured = err
+        }
+        return () => h('div')
+      },
+    })
+    const Parent = defineComponent({
+      setup() {
+        useForm<Form>({ schema: fakeSchema(defaults), key: 'named-only' })
+        return () => h(Child)
+      },
+    })
+    const app = createApp(Parent).use(createChemicalXForms({ override: true }))
+    app.mount(document.createElement('div'))
+    expect(captured).toBeInstanceOf(Error)
+    expect((captured as Error).message).toMatch(/no ambient form context/)
+    app.unmount()
+  })
+
+  it('mixed keyed + anonymous: ambient resolves to the (only) anonymous form', () => {
+    // A parent that mixes keyed and anonymous useForm() calls: the keyed
+    // ones bypass ambient entirely, so a descendant's `useFormContext()`
+    // sees only the (single) anonymous form and resolves to it.
+    const shared: { childKey?: string } = {}
+    const Child = defineComponent({
+      setup() {
+        shared.childKey = useFormContext<Form>().key
+        return () => h('div')
+      },
+    })
+    const Parent = defineComponent({
+      setup() {
+        useForm<Form>({ schema: fakeSchema(defaults), key: 'named-a' })
+        useForm<Form>({ schema: fakeSchema(defaults), key: 'named-b' })
+        useForm<Form>({ schema: fakeSchema(defaults) }) // the only anon
+        return () => h(Child)
+      },
+    })
+    const app = createApp(Parent).use(createChemicalXForms({ override: true }))
+    app.mount(document.createElement('div'))
+    expect(shared.childKey).toBeDefined()
+    expect(shared.childKey).toMatch(/^cx:anon:/)
     app.unmount()
   })
 })
@@ -169,7 +230,7 @@ describe('useFormContext — consumer ref-counting', () => {
 
     const Child = defineComponent({
       setup() {
-        useFormContext<Form>()
+        useFormContext<Form>('lifetime-form')
         return () => h('span')
       },
     })

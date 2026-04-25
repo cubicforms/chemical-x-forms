@@ -14,12 +14,16 @@ export default [
   {
     path: 'dist/index.mjs',
     // Raised 12 → 12.5 KB after the anonymous-forms work (PR #117)
-    // + fingerprint warning landed in the shared core chunk. Text-
-    // shortening took this as low as 11.91 KB on its own; the
-    // shared-chunk footprint from both features pushes it back to
-    // 12.11 KB post-merge. 12.5 KB reflects the honest cost with
-    // ~400 B headroom.
-    limit: '12.5 KB',
+    // + fingerprint warning landed in the shared core chunk.
+    //
+    // Raised 12.5 → 14.7 KB on the quiet-ambient-warnings branch
+    // (PR #132): lazy ambient-collision walker in useFormContext +
+    // source-frame normalization in useAbstractForm. Both are
+    // __DEV__-guarded at runtime but bundle anyway since __DEV__ is
+    // a runtime const, not a build-time replacement. Measured at
+    // 12.74 KB; ~2 KB headroom for the next round of dev-quality
+    // additions.
+    limit: '14.7 KB',
     gzip: true,
     modifyEsbuildConfig: asEsm,
   },
@@ -36,12 +40,12 @@ export default [
   },
   {
     path: 'dist/zod-v3.mjs',
-    // Raised 12 → 12.5 KB for the same reason as index.mjs — the
-    // shared core chunk now carries anonymous-forms + fingerprint
-    // warning code, and zod-v3.mjs inherits that cost. Adapter-
-    // specific trims already applied; ~400 B headroom under the
-    // new cap.
-    limit: '12.5 KB',
+    // Raised 12 → 12.5 → 14.7 KB tracking index.mjs — the shared
+    // core chunk carries anonymous-forms + fingerprint warning +
+    // (now) lazy ambient-collision walker + source-frame
+    // normalization, all inherited by the v3 adapter entry.
+    // Measured at 12.63 KB on PR #132; ~2 KB headroom.
+    limit: '14.7 KB',
     gzip: true,
     ignore: ['zod', 'lodash-es'],
     modifyEsbuildConfig: asEsm,

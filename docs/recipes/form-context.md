@@ -24,7 +24,9 @@ Parent owns the form:
     profile: z.object({ name: z.string(), age: z.number() }),
   })
 
-  const { handleSubmit } = useForm<Form>({ schema, key: 'signup' })
+  // Anonymous useForm — ambient mode. Pass `key: 'signup'` instead
+  // when descendants should reach it via `useFormContext<Form>('signup')`.
+  const { handleSubmit } = useForm<Form>({ schema })
   const onSubmit = handleSubmit(async (values) => {
     await api.post('/signup', values)
   })
@@ -98,27 +100,27 @@ get a clear error naming the missing key.
 
 ## Do I need to pass a `key` to `useForm`?
 
-Only if something else needs to find the form by name:
+The two resolution modes are cleanly split:
 
-- **Ambient access is free.** `useFormContext<Form>()` with no
-  argument resolves via Vue's `provide`/`inject` and doesn't care
-  whether the owning `useForm` had a key. A key-less parent + a
-  key-less descendant call works identically to a named pair.
-- **Distant access needs a key.** `useFormContext<Form>('signup')`
-  looks the form up in the registry by name; if `useForm` didn't
-  supply one, the name isn't discoverable.
+- **Anonymous (no `key`) → ambient access.** `useForm({ schema })`
+  fills the parent's ambient slot. Any descendant's
+  `useFormContext<Form>()` (no key) resolves to it.
+- **Keyed (`key: 'x'`) → explicit access only.** `useForm({ schema,
+key: 'x' })` registers the form under `'x'` but does NOT fill the
+  ambient slot. Descendants reach it via `useFormContext<Form>('x')`,
+  not via the no-key form.
 
 Skip `key` for single-component one-off forms (login modal,
 settings panel). Supply one when you want cross-component lookup,
 multi-call-site shared state, a stable persistence default, or a
 legible DevTools label.
 
-### Gotcha: multiple `useForm` calls in the same component
+### Gotcha: multiple anonymous `useForm` calls in the same component
 
 Vue's `provide`/`inject` is last-write-wins per component. If a
-parent calls `useForm` twice, the second call overwrites the first
-in the ambient context, and descendants using
-`useFormContext<Form>()` (no key) will only see the second form.
+parent calls `useForm` twice without keys, the second overwrites
+the first in the ambient slot, and descendants using
+`useFormContext<Form>()` only see the second.
 
 ```ts
 // Parent component
@@ -127,12 +129,14 @@ const formB = useForm({ schema: schemaB }) // provides ambient → B (overwrites
 // Descendants' useFormContext<Form>() reads B. A is unreachable via ambient.
 ```
 
-The runtime emits a dev-mode `console.warn` when it detects a
-second ambient provide on the same component, naming both forms so
-the regression is visible at the site.
+The runtime emits a dev-mode `console.warn` lazily — when (and only
+when) a descendant actually consumes the ambient slot via
+`useFormContext<Form>()` with no key. The warning lists each
+anonymous `useForm()` call by source frame so you can navigate to
+the offending sites.
 
-**Fixes** — either give each form a key and use explicit lookup
-downstream:
+**Fix** — give each form a key (which removes them from the ambient
+slot entirely) and look them up explicitly:
 
 ```ts
 useForm({ schema: schemaA, key: 'a' })
@@ -142,8 +146,13 @@ const a = useFormContext<FormA>('a')
 const b = useFormContext<FormB>('b')
 ```
 
-…or split the two forms into their own components. Components
-owning a single form don't hit this.
+Mixing modes is fine — keyed forms don't interfere with an ambient
+sibling. A parent with three keyed forms plus one anonymous form
+produces no warning; the descendant's `useFormContext<F>()`
+unambiguously resolves to the (only) anonymous one.
+
+…or split the two anonymous forms into separate components, so each
+owns the ambient slot of its own subtree.
 
 ## Lifetime
 

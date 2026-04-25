@@ -18,14 +18,16 @@ import { fakeSchema } from '../utils/fake-schema'
  * favour of the first's (matching the existing "only first caller
  * wires the state" behaviour).
  *
- * NOTE: `useAbstractForm` also emits a separate `console.warn` from
- * `warnOnDuplicateAmbientProvide` when two `useForm()` calls run in
- * the same component (covers the anonymous-forms footgun — see PR
- * #117). The fixtures here deliberately use that pattern to drive
- * the shared-store resolution, so every test filters `warnSpy.mock.calls`
- * by the fingerprint-warning marker rather than asserting the spy's
- * raw call count. The fingerprint-warning marker is `"use different
- * schemas"` — unique to this subsystem.
+ * NOTE: `useFormContext()` (no key) emits a separate `console.warn`
+ * lazily when it walks up to an ancestor that registered multiple
+ * useForm() calls (covers the anonymous-forms footgun — see PR
+ * #117). The fixtures here drive shared-store resolution by calling
+ * `useForm()` twice with the same key in one component; that pattern
+ * doesn't itself trigger the ambient warning (which now only fires
+ * when a descendant consumes ambient context), but the filter on
+ * `warnSpy.mock.calls` by marker stays as a defensive guard. The
+ * fingerprint-warning marker is `"use different schemas"` — unique
+ * to this subsystem.
  */
 
 const FINGERPRINT_WARN_MARKER = 'use different schemas'

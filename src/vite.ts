@@ -28,6 +28,7 @@ import type { Plugin } from 'vite'
 import { inputTextAreaNodeTransform } from './runtime/lib/core/transforms/input-text-area-transform'
 import { selectNodeTransform } from './runtime/lib/core/transforms/select-transform'
 import { vRegisterHintTransform } from './runtime/lib/core/transforms/v-register-hint-transform'
+import { vRegisterPreambleTransform } from './runtime/lib/core/transforms/v-register-preamble-transform'
 
 /** Reserved for future options. Empty at the moment. */
 export type ChemicalXVitePluginOptions = Record<string, never>
@@ -60,10 +61,17 @@ export function chemicalXForms(_options: ChemicalXVitePluginOptions = {}): Plugi
       api.options.template ??= {}
       api.options.template.compilerOptions ??= {}
       const existing = api.options.template.compilerOptions.nodeTransforms ?? []
+      // vRegisterPreambleTransform MUST come before vRegisterHintTransform
+      // — the preamble's pre-order captures each `v-register` expression
+      // in its raw (un-wrapped) form, and the hint then mutates the same
+      // directive's `exp` to wrap it. Reversing the order would have the
+      // preamble pick up an already-wrapped IIFE, double-wrapping it
+      // when injected at the root.
       api.options.template.compilerOptions.nodeTransforms = [
         ...existing,
         selectNodeTransform,
         inputTextAreaNodeTransform,
+        vRegisterPreambleTransform,
         vRegisterHintTransform,
       ]
     },

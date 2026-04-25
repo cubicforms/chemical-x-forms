@@ -13,10 +13,19 @@
  *   import {
  *     selectNodeTransform,
  *     inputTextAreaNodeTransform,
+ *     vRegisterPreambleTransform,
  *     vRegisterHintTransform,
  *   } from '@chemical-x/forms/transforms'
+ *
+ * Order matters: `vRegisterPreambleTransform` MUST run before
+ * `vRegisterHintTransform`. The preamble's pre-order captures each
+ * `v-register` expression in its un-wrapped form; the hint transform
+ * then mutates the directive's expression to wrap it in the
+ * optimistic-mark IIFE. Reverse order would leak the IIFE wrapper
+ * into the preamble's collected text.
  */
 
 export { inputTextAreaNodeTransform } from './runtime/lib/core/transforms/input-text-area-transform'
 export { selectNodeTransform } from './runtime/lib/core/transforms/select-transform'
 export { vRegisterHintTransform } from './runtime/lib/core/transforms/v-register-hint-transform'
+export { vRegisterPreambleTransform } from './runtime/lib/core/transforms/v-register-preamble-transform'

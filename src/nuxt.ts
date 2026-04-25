@@ -2,6 +2,7 @@ import { addImports, addPlugin, addTypeTemplate, createResolver, defineNuxtModul
 import { inputTextAreaNodeTransform } from './runtime/lib/core/transforms/input-text-area-transform'
 import { selectNodeTransform } from './runtime/lib/core/transforms/select-transform'
 import { vRegisterHintTransform } from './runtime/lib/core/transforms/v-register-hint-transform'
+import { vRegisterPreambleTransform } from './runtime/lib/core/transforms/v-register-preamble-transform'
 
 // Module options TypeScript interface definition
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -17,10 +18,13 @@ export default defineNuxtModule<CXModuleOptions>({
   },
   defaults: {},
   setup(_options, nuxt) {
+    // vRegisterPreambleTransform MUST come before vRegisterHintTransform
+    // — see src/vite.ts for the ordering rationale.
     nuxt.options.vue.compilerOptions.nodeTransforms ??= []
     nuxt.options.vue.compilerOptions.nodeTransforms.push(
       selectNodeTransform,
       inputTextAreaNodeTransform,
+      vRegisterPreambleTransform,
       vRegisterHintTransform
     )
 

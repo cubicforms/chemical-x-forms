@@ -8,6 +8,7 @@ import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { getRegistryFromApp } from '../../src/runtime/core/registry'
 import { renderChemicalXState } from '../../src/runtime/core/serialize'
 import { vRegisterHintTransform } from '../../src/runtime/lib/core/transforms/v-register-hint-transform'
+import { vRegisterPreambleTransform } from '../../src/runtime/lib/core/transforms/v-register-preamble-transform'
 import { fakeSchema } from '../utils/fake-schema'
 
 /**
@@ -28,17 +29,25 @@ import { fakeSchema } from '../utils/fake-schema'
 
 type Form = { email: string; password: string }
 
+type CxTransformMode = 'none' | 'hint-only' | 'preamble+hint'
+
 function compileTemplate(
   template: string,
-  withHintTransform: boolean
+  mode: CxTransformMode
 ): (this: unknown, ctx: unknown) => unknown {
   // baseCompile (compiler-core) is sufficient for our directive-only
   // templates — we don't need the DOM-specific transforms (class/style
   // normalisation, v-html, etc.) that @vue/compiler-dom layers on top.
   // mode: 'function' produces a `const { … } = Vue ... return function render(...)`
   // string we evaluate in a scope where Vue resolves to the runtime module.
+  const transforms =
+    mode === 'none'
+      ? []
+      : mode === 'hint-only'
+        ? [vRegisterHintTransform]
+        : [vRegisterPreambleTransform, vRegisterHintTransform]
   const result = baseCompile(template, {
-    nodeTransforms: withHintTransform ? [vRegisterHintTransform] : [],
+    nodeTransforms: transforms,
     mode: 'function',
     prefixIdentifiers: true,
     hoistStatic: false,
@@ -47,8 +56,8 @@ function compileTemplate(
   return fn(Vue) as (this: unknown, ctx: unknown) => unknown
 }
 
-function makeAppWithTemplate(template: string, withHintTransform: boolean) {
-  const render = compileTemplate(template, withHintTransform)
+function makeAppWithTemplate(template: string, mode: CxTransformMode) {
+  const render = compileTemplate(template, mode)
   const App = defineComponent({
     setup() {
       const form = useForm<Form>({
@@ -71,7 +80,7 @@ describe('SSR isConnected via vRegisterHintTransform', () => {
          <input v-register="form.register('email')" />
          <input v-register="form.register('password')" />
        </div>`,
-      /* withHintTransform */ true
+      'hint-only'
     )
     await renderToString(app)
     const registry = getRegistryFromApp(app)
@@ -85,11 +94,11 @@ describe('SSR isConnected via vRegisterHintTransform', () => {
   it('without the transform, the same template leaves isConnected: false (regression baseline)', async () => {
     // This is the bug the transform fixes. If this test ever flips to
     // `true` without the transform, it means Vue started running
-    // directive lifecycle in SSR and the transform isn't load-bearing
-    // anymore — at which point we can rip it out.
+    // directive lifecycle in SSR and the transforms aren't load-bearing
+    // anymore — at which point we can rip them out.
     const app = makeAppWithTemplate(
       `<div><input v-register="form.register('email')" /></div>`,
-      /* withHintTransform */ false
+      'none'
     )
     await renderToString(app)
     const registry = getRegistryFromApp(app)
@@ -128,7 +137,7 @@ describe('SSR isConnected via vRegisterHintTransform', () => {
     // will reset to false and the flicker comes back.
     const app = makeAppWithTemplate(
       `<div><input v-register="form.register('email')" /></div>`,
-      /* withHintTransform */ true
+      'hint-only'
     )
     await renderToString(app)
     const payload = renderChemicalXState(app)
@@ -143,5 +152,74 @@ describe('SSR isConnected via vRegisterHintTransform', () => {
     )
     expect(emailField).toBeDefined()
     expect(emailField?.[1].isConnected).toBe(true)
+  })
+})
+
+describe('SSR isConnected — read-before-input (preamble) via both transforms', () => {
+  /**
+   * The hint transform alone fires marks at v-register evaluation
+   * time. If a template reads `getFieldState(path)` BEFORE the bound
+   * input renders (single-pass top-to-bottom SSR), the read still
+   * captures `isConnected: false` — the user observes a `false → true`
+   * flicker on hydration when the post-render steady state corrects.
+   *
+   * The preamble transform hoists the marks to the root element's
+   * props, which Vue evaluates BEFORE recursing into children. With
+   * both transforms registered, every static v-register-bound path
+   * is `isConnected: true` before the first descendant template
+   * expression runs.
+   */
+  it('serializes the read-before-input value as true with both transforms', async () => {
+    // Component reads its own field's state via a setup-returned ref
+    // (the ref reads getFieldState at render time). With the preamble,
+    // by the time the render expression evaluates, the mark has fired.
+    // We capture what the SSR-rendered HTML serialises by reading the
+    // FormStore's record directly after renderToString — which is
+    // exactly the state that gets serialised into the hydration
+    // payload.
+    const template = `<div>
+      <span class="readout">{{ JSON.stringify(form.getFieldState('password').value) }}</span>
+      <input v-register="form.register('password')" />
+    </div>`
+    const app = makeAppWithTemplate(template, 'preamble+hint')
+    const html = await renderToString(app)
+    // The text inside <span> goes through Vue's HTML escaping, so the
+    // JSON's quotes are entity-encoded. Match against either form to
+    // stay robust if Vue ever changes the escape policy.
+    const containsTrue =
+      html.includes('"isConnected":true') || html.includes('isConnected&quot;:true')
+    const containsFalse =
+      html.includes('"isConnected":false') || html.includes('isConnected&quot;:false')
+    expect(containsTrue).toBe(true)
+    expect(containsFalse).toBe(false)
+  })
+
+  it('without the preamble, the same template serialises false in the read-before-input span', async () => {
+    // Regression baseline: this is the flicker case the preamble
+    // fixes. Hint-only correctly marks the field by render-end, but
+    // an expression that reads the field state earlier in the
+    // top-to-bottom render pass captures the still-false value.
+    const template = `<div>
+      <span class="readout">{{ JSON.stringify(form.getFieldState('password').value) }}</span>
+      <input v-register="form.register('password')" />
+    </div>`
+    const app = makeAppWithTemplate(template, 'hint-only')
+    const html = await renderToString(app)
+    // The readout span captures the field BEFORE the input below
+    // renders, so without the preamble it serialises false.
+    const containsFalse =
+      html.includes('"isConnected":false') || html.includes('isConnected&quot;:false')
+    expect(containsFalse).toBe(true)
+  })
+
+  it('the data-cx-pre-mark attribute is dropped from the output (undefined → no attr)', async () => {
+    // The preamble's binding evaluates to undefined so Vue's SSR
+    // renderer omits the attribute. The user-visible HTML is unchanged
+    // — only the side effects of evaluating the binding (the marks)
+    // remain.
+    const template = `<div><input v-register="form.register('password')" /></div>`
+    const app = makeAppWithTemplate(template, 'preamble+hint')
+    const html = await renderToString(app)
+    expect(html).not.toContain('data-cx-pre-mark')
   })
 })

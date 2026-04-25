@@ -285,7 +285,12 @@ export function buildProcessForm<F extends GenericForm>(
       ...(limits ?? {}),
     })
     if (result.ok) {
-      state.setAllErrors(result.errors)
+      // API-injected errors go to the user store so they survive schema
+      // revalidation + successful submits. Consumers managing API
+      // warning/info state via this surface keep ownership of its
+      // lifecycle — clear them explicitly via clearFieldErrors when
+      // they're no longer relevant.
+      state.setAllUserErrors(result.errors)
     }
     return result
   }

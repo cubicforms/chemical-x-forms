@@ -40,12 +40,23 @@ export async function getStorageAdapter(
  * invalidates every existing entry — the reader drops entries whose
  * `v` doesn't match. `data` mirrors the SSR `SerializedFormData`
  * shape so one deserialiser handles both.
+ *
+ * Errors are stored source-segregated (matching FormStore's split):
+ *   - `schemaErrors` is validation-owned; cleared by reset / submit-success.
+ *   - `userErrors` is consumer-owned (written via setFieldErrors* APIs);
+ *     persists across schema revalidation and successful submits.
+ *
+ * The two are surfaced separately on the persisted payload so the
+ * lifecycle distinction round-trips through reload. Default
+ * `PersistConfig.version` bumped to 2 for the 0.12 release — older v1
+ * payloads (single flat `errors` field) are dropped silently on read.
  */
 export type PersistedPayload<Form> = {
   readonly v: number
   readonly data: {
     readonly form: Form
-    readonly errors?: ReadonlyArray<readonly [string, ValidationError[]]>
+    readonly schemaErrors?: ReadonlyArray<readonly [string, ValidationError[]]>
+    readonly userErrors?: ReadonlyArray<readonly [string, ValidationError[]]>
   }
 }
 
@@ -68,14 +79,19 @@ export function readPersistedPayload<Form>(
 export function buildPersistedPayload<Form>(
   form: Form,
   include: 'form' | 'form+errors',
-  errors: ReadonlyMap<string, ValidationError[]>,
+  schemaErrors: ReadonlyMap<string, ValidationError[]>,
+  userErrors: ReadonlyMap<string, ValidationError[]>,
   version: number
 ): PersistedPayload<Form> {
-  const data: PersistedPayload<Form>['data'] =
-    include === 'form+errors'
-      ? { form, errors: [...errors.entries()].map(([k, v]) => [k, [...v]] as const) }
-      : { form }
-  return { v: version, data }
+  if (include === 'form') return { v: version, data: { form } }
+  return {
+    v: version,
+    data: {
+      form,
+      schemaErrors: [...schemaErrors.entries()].map(([k, v]) => [k, [...v]] as const),
+      userErrors: [...userErrors.entries()].map(([k, v]) => [k, [...v]] as const),
+    },
+  }
 }
 
 /**

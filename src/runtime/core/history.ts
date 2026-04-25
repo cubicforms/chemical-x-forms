@@ -7,16 +7,17 @@ import type { PathKey } from './paths'
 /**
  * Bounded undo/redo snapshot stack for a FormStore. Subscribes to
  * `onFormChange` to push a snapshot on every mutation; `undo` /
- * `redo` restore via `applyFormReplacement` and `setAllErrors`.
- * `onReset` clears both stacks and seeds a fresh baseline.
+ * `redo` restore via `applyFormReplacement` plus the schema + user
+ * error writers. `onReset` clears both stacks and seeds a fresh baseline.
  *
  * Snapshots include:
  *  - `form` — the whole form value, captured by reference. Vue's
  *    form ref is replaced wholesale on every mutation, so the
  *    snapshot reference is stable: old references don't mutate.
- *  - `errors` — shallow-cloned Map entries. Consumers who have
- *    stale errors from before an undo want to see those errors
- *    again after the undo restores the prior form state.
+ *  - `schemaErrors` + `userErrors` — shallow-cloned Map entries from
+ *    each source-segregated store. Captured separately so undo
+ *    preserves the lifecycle distinction (schema errors are validation
+ *    output; user errors are consumer-owned).
  *
  * Field record state (touched / focused / blurred / isConnected) is
  * deliberately NOT snapshotted. Those flags represent UI
@@ -26,7 +27,8 @@ import type { PathKey } from './paths'
 
 export type HistorySnapshot<F> = {
   readonly form: F
-  readonly errors: ReadonlyArray<readonly [PathKey, ValidationError[]]>
+  readonly schemaErrors: ReadonlyArray<readonly [PathKey, ValidationError[]]>
+  readonly userErrors: ReadonlyArray<readonly [PathKey, ValidationError[]]>
 }
 
 export type HistoryModule = {
@@ -69,7 +71,8 @@ export function createHistoryModule<F extends GenericForm>(
     // the generic parameter the caller bound.
     return {
       form: state.form.value as unknown as F,
-      errors: [...state.errors.entries()].map(([k, v]) => [k, [...v]] as const),
+      schemaErrors: [...state.schemaErrors.entries()].map(([k, v]) => [k, [...v]] as const),
+      userErrors: [...state.userErrors.entries()].map(([k, v]) => [k, [...v]] as const),
     }
   }
 
@@ -109,10 +112,15 @@ export function createHistoryModule<F extends GenericForm>(
   function restore(snap: HistorySnapshot<F>): void {
     suppressNext = true
     state.applyFormReplacement(snap.form)
-    // Rebuild the error store from the snapshot. setAllErrors
-    // clears + repopulates in one shot.
-    const flat = snap.errors.flatMap(([, errs]) => errs)
-    state.setAllErrors(flat)
+    // Rebuild both error stores from the snapshot. Each writer clears +
+    // repopulates its own Map; the two sources stay isolated. Order is
+    // arbitrary because the writers touch separate Maps with no
+    // cross-dependency, but writing schema first keeps the per-key
+    // insertion order matching the schema-first iteration invariant.
+    const schemaFlat = snap.schemaErrors.flatMap(([, errs]) => errs)
+    const userFlat = snap.userErrors.flatMap(([, errs]) => errs)
+    state.setAllSchemaErrors(schemaFlat)
+    state.setAllUserErrors(userFlat)
   }
 
   function undo(): boolean {

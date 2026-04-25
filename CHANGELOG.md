@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+_No unreleased changes yet._
+
+## v0.11.1
 **Dev-mode ergonomics for the ambient `useFormContext` warning.**
 
 - **Lazy warning, not eager.** `useForm()` no longer prints the

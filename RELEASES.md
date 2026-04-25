@@ -1,5 +1,15 @@
 # Releases
 
+## v0.11.1 — 2026-04-25
+
+## What's Changed
+* fix(dev): quiet ambient-provide warning + add source frames by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/132
+
+
+**Full Changelog**: https://github.com/cubicforms/chemical-x-forms/compare/v0.11.0...v0.11.1
+
+---
+
 ## v0.11.0 — 2026-04-25
 
 ## What's Changed

@@ -316,7 +316,12 @@ function shortenSourceFrame(frame: string): string {
   path = path.replace(/^_nuxt\//, '')
   // Strip leading slash (left over from file:// or absolute paths).
   path = path.replace(/^\//, '')
-  return `${path}:${line}:${col}`
+  // Wrap in parens. Chrome's console auto-linker partial-matches
+  // bare `pages/foo.vue:137:23` (it picks up `/foo.vue:137` and
+  // drops the `pages` prefix + `:23` suffix). Parens are the V8
+  // stack-frame convention and Chrome reliably auto-links them
+  // end-to-end.
+  return `(${path}:${line}:${col})`
 }
 
 /**

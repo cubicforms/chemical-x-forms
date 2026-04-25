@@ -84,7 +84,7 @@ function defaultForKind(kind: ZodKind, schema: z.ZodType, useDefault: boolean): 
       return 0
     case 'bigint':
       // z.bigint() strictly rejects numbers; the default must be a bigint
-      // literal. Using `0` here causes initial-state derivation to fail
+      // literal. Using `0` here causes default-values derivation to fail
       // the schema's own validation.
       return 0n
     case 'boolean':
@@ -185,7 +185,7 @@ export function mergeDeep(base: unknown, override: unknown): unknown {
   return result
 }
 
-export type GetInitialStateOptions = {
+export type GetDefaultValuesOptions = {
   schema: z.ZodObject
   useDefaultSchemaValues: boolean
   validationMode: 'strict' | 'lax'
@@ -193,14 +193,14 @@ export type GetInitialStateOptions = {
   formKey: FormKey
 }
 
-export type InitialStateResult<Form> = {
+export type DefaultValuesResult<Form> = {
   data: Form
   success: boolean
   slimSchema: z.ZodType
 }
 
 /**
- * getInitialStateFromZodSchema — produces a form's starting value.
+ * getDefaultValuesFromZodSchema — produces a form's starting value.
  *
  * The algorithm mirrors v3's: walk the schema to derive blank defaults,
  * merge constraints, then run the schema's `safeParse`. On failure, walk
@@ -214,9 +214,9 @@ export type InitialStateResult<Form> = {
  * strict mode the slim still strips defaults/pipe but keeps refinements,
  * so callers get the full validation surface.
  */
-export function getInitialStateFromZodSchema<Form>(
-  opts: GetInitialStateOptions
-): InitialStateResult<Form> {
+export function getDefaultValuesFromZodSchema<Form>(
+  opts: GetDefaultValuesOptions
+): DefaultValuesResult<Form> {
   const { schema, useDefaultSchemaValues, validationMode, constraints } = opts
   const initial = deriveDefault(schema, useDefaultSchemaValues)
   const merged = mergeDeep(initial, constraints) as unknown

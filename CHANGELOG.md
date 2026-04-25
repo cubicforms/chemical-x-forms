@@ -43,9 +43,18 @@ unwrap, and our API was making consumers pay for it.
   freed for the new public `FormState` interface (the shape of
   `useForm().state`). Only breaks consumers who imported the
   internal type directly — unlikely but possible.
+- **`initialState` config key renamed to `defaultValues`.** Same
+  motivation: with `state` reserved for the form-level flag bundle,
+  `useForm({ initialState: {…} })` read ambiguously. The new name
+  matches RHF's vocabulary. Custom-adapter authors also need to
+  rename `AbstractSchema.getInitialState` → `getDefaultValues` (and
+  the matching `InitialStateResponse` / `GetInitialStateConfig`
+  types). The `runtime/adapters/zod-v4/initial-state` module file
+  is now `default-values`.
 
 See [`docs/migration/0.10-to-0.11.md`](docs/migration/0.10-to-0.11.md)
-for a full migration snippet with `sed` one-liners.
+for a full migration snippet with `sed` one-liners covering all four
+breakages.
 
 ## v0.10.0
 _No unreleased changes yet._

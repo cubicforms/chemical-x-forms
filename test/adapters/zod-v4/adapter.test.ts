@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { zodAdapter } from '../../../src/runtime/adapters/zod-v4'
 
 describe('zod v4 adapter', () => {
-  describe('getInitialState', () => {
+  describe('getDefaultValues', () => {
     it('produces defaults for a basic object schema', () => {
       const schema = z.object({
         email: z.string(),
@@ -11,7 +11,7 @@ describe('zod v4 adapter', () => {
         active: z.boolean(),
       })
       const adapter = zodAdapter(schema)('f')
-      const result = adapter.getInitialState({ useDefaultSchemaValues: true })
+      const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
       expect(result.success).toBe(true)
       expect(result.data).toEqual({ email: '', age: 0, active: false })
     })
@@ -22,7 +22,7 @@ describe('zod v4 adapter', () => {
         count: z.number().default(5),
       })
       const adapter = zodAdapter(schema)('f')
-      const result = adapter.getInitialState({ useDefaultSchemaValues: true })
+      const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
       expect(result.data).toEqual({ role: 'user', count: 5 })
     })
 
@@ -32,27 +32,27 @@ describe('zod v4 adapter', () => {
         nickname: z.string().optional(),
       })
       const adapter = zodAdapter(schema)('f')
-      const result = adapter.getInitialState({ useDefaultSchemaValues: true })
+      const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
       expect(result.data).toEqual({ email: '', nickname: undefined })
     })
 
     it('nullable fields default to null', () => {
       const schema = z.object({ profile: z.string().nullable() })
       const adapter = zodAdapter(schema)('f')
-      const result = adapter.getInitialState({ useDefaultSchemaValues: true })
+      const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
       expect(result.data).toEqual({ profile: null })
     })
 
     it('arrays default to empty', () => {
       const schema = z.object({ tags: z.array(z.string()) })
       const adapter = zodAdapter(schema)('f')
-      expect(adapter.getInitialState({ useDefaultSchemaValues: true }).data).toEqual({ tags: [] })
+      expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({ tags: [] })
     })
 
     it('enums default to the first value', () => {
       const schema = z.object({ color: z.enum(['red', 'green', 'blue']) })
       const adapter = zodAdapter(schema)('f')
-      expect(adapter.getInitialState({ useDefaultSchemaValues: true }).data).toEqual({
+      expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({
         color: 'red',
       })
     })
@@ -60,7 +60,7 @@ describe('zod v4 adapter', () => {
     it('literal fields default to the literal value', () => {
       const schema = z.object({ kind: z.literal('user') })
       const adapter = zodAdapter(schema)('f')
-      expect(adapter.getInitialState({ useDefaultSchemaValues: true }).data).toEqual({
+      expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({
         kind: 'user',
       })
     })
@@ -73,7 +73,7 @@ describe('zod v4 adapter', () => {
         }),
       })
       const adapter = zodAdapter(schema)('f')
-      expect(adapter.getInitialState({ useDefaultSchemaValues: true }).data).toEqual({
+      expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({
         profile: { name: '', age: 0 },
       })
     })
@@ -84,7 +84,7 @@ describe('zod v4 adapter', () => {
         count: z.number(),
       })
       const adapter = zodAdapter(schema)('f')
-      const result = adapter.getInitialState({
+      const result = adapter.getDefaultValues({
         useDefaultSchemaValues: true,
         constraints: { email: 'seeded@x' },
       })

@@ -41,7 +41,7 @@ Options:
 | ----------------- | --------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `schema`          | `z.ZodType`                                                                 | yes      | The Zod schema describing the form shape.                                                                                                                                                                                                                                                   |
 | `key`             | `string`                                                                    | no       | Form identity. Omit for one-off forms (runtime allocates a synthetic `cx:anon:<id>` via `useId()`). Pass a string when you need cross-component lookup via `useFormContext(key)`, shared state across call-sites, a stable `persist` storage-key default, or a recognisable DevTools label. |
-| `initialState`    | `DeepPartial<Form>`                                                         | no       | Constraints applied over schema defaults.                                                                                                                                                                                                                                                   |
+| `defaultValues`   | `DeepPartial<Form>`                                                         | no       | Constraints applied over schema defaults.                                                                                                                                                                                                                                                   |
 | `validationMode`  | `'lax'` \| `'strict'`                                                       | no       | Defaults to `'lax'`. See [Types](#types).                                                                                                                                                                                                                                                   |
 | `onInvalidSubmit` | `'none'` \| `'focus-first-error'` \| `'scroll-to-first-error'` \| `'both'`  | no       | What to do when submit fails validation. See [recipe](./recipes/focus-on-error.md).                                                                                                                                                                                                         |
 | `fieldValidation` | `{ on, debounceMs }`                                                        | no       | Enable live field validation. See [recipe](./recipes/field-level-validation.md).                                                                                                                                                                                                            |
@@ -361,7 +361,7 @@ import type {
   GenericForm,
   HandleSubmit,
   HistoryConfig,
-  InitialStateResponse,
+  DefaultValuesResponse,
   NestedType,
   OnError,
   OnInvalidSubmitPolicy,

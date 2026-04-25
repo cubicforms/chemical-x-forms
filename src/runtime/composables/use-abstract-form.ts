@@ -160,7 +160,7 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
   const state = createFormStore<F, G>({
     formKey: key,
     schema,
-    initialState: configuration.initialState,
+    defaultValues: configuration.defaultValues,
     validationMode: configuration.validationMode,
     hydration: pending,
     fieldValidation: configuration.fieldValidation,

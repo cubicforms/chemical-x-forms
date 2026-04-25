@@ -11,7 +11,7 @@ import { getRegistryFromApp, type SerializedFormData } from './registry'
  * Payload shape is JSON-safe tuples so consumers can pick their own
  * stringifier (JSON.stringify, devalue, whatever). `originals` and
  * `elements` are intentionally omitted: originals are derivable from
- * schema.getInitialState on the client; elements are DOM references that
+ * schema.getDefaultValues on the client; elements are DOM references that
  * can't round-trip anyway.
  */
 

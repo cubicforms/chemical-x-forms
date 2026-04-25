@@ -1,7 +1,7 @@
 import type { Path } from '../../src/runtime/core/paths'
 import type {
   AbstractSchema,
-  InitialStateResponse,
+  DefaultValuesResponse,
   ValidationResponse,
 } from '../../src/runtime/types/types-api'
 import type { DeepPartial, GenericForm } from '../../src/runtime/types/types-core'
@@ -44,7 +44,7 @@ export function fakeSchema<F extends GenericForm>(
 ): AbstractSchema<F, F> {
   const schema: AbstractSchema<F, F> = {
     fingerprint: () => fingerprint,
-    getInitialState(config): InitialStateResponse<F> {
+    getDefaultValues(config): DefaultValuesResponse<F> {
       const merged = mergeDeepPartial(defaults, config.constraints) as F
       return {
         data: merged,

@@ -10,7 +10,7 @@ import { buildZodRootObjectArbitrary } from '../../utils/zod-arbitraries'
  * `z.record` signature takes a single value type while v4 requires
  * both key and value — the `makeRecord` closure uses the v3 form.
  *
- * Properties mirror v4's post-fix shape (getInitialState is total in
+ * Properties mirror v4's post-fix shape (getDefaultValues is total in
  * lax mode, never throws, always returns success). The v3 adapter used
  * to throw a ZodError on nested unions + `z.bigint()` defaults; both
  * paths were fixed alongside these property tightenings.
@@ -23,15 +23,18 @@ describe('zod v3 adapter — fuzz over arbitrary supported schemas', () => {
     expect(() => zodAdapter(schema as z.ZodObject<z.ZodRawShape>)('f')).not.toThrow()
   })
 
-  test.prop([arbRootSchema])('getInitialState returns a success response in lax mode', (schema) => {
-    const adapter = zodAdapter(schema as z.ZodObject<z.ZodRawShape>)('f')
-    const result = adapter.getInitialState({
-      useDefaultSchemaValues: true,
-      validationMode: 'lax',
-    })
-    expect(result.success).toBe(true)
-    expect(result.data).toBeDefined()
-  })
+  test.prop([arbRootSchema])(
+    'getDefaultValues returns a success response in lax mode',
+    (schema) => {
+      const adapter = zodAdapter(schema as z.ZodObject<z.ZodRawShape>)('f')
+      const result = adapter.getDefaultValues({
+        useDefaultSchemaValues: true,
+        validationMode: 'lax',
+      })
+      expect(result.success).toBe(true)
+      expect(result.data).toBeDefined()
+    }
+  )
 
   test.prop([arbRootSchema])('validateAtPath is total — never rejects', async (schema) => {
     const adapter = zodAdapter(schema as z.ZodObject<z.ZodRawShape>)('f')

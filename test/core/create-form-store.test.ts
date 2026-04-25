@@ -19,11 +19,11 @@ const defaults: SignupForm = {
   profile: { name: '', age: 0 },
 }
 
-function makeState(overrides?: Partial<{ formKey: string; initialState: Partial<SignupForm> }>) {
+function makeState(overrides?: Partial<{ formKey: string; defaultValues: Partial<SignupForm> }>) {
   return createFormStore<SignupForm>({
     formKey: overrides?.formKey ?? 'test',
     schema: fakeSchema<SignupForm>(defaults),
-    initialState: overrides?.initialState,
+    defaultValues: overrides?.defaultValues,
   })
 }
 
@@ -34,8 +34,8 @@ describe('createFormStore', () => {
       expect(state.form.value).toEqual(defaults)
     })
 
-    it('merges initialState over defaults', () => {
-      const state = makeState({ initialState: { email: 'seeded@x' } })
+    it('merges defaultValues over defaults', () => {
+      const state = makeState({ defaultValues: { email: 'seeded@x' } })
       expect(state.form.value.email).toBe('seeded@x')
       expect(state.form.value.password).toBe('')
     })
@@ -97,14 +97,14 @@ describe('createFormStore', () => {
     })
 
     it('preserves sibling values when updating a nested path', () => {
-      const state = makeState({ initialState: { profile: { name: 'alice', age: 30 } } })
+      const state = makeState({ defaultValues: { profile: { name: 'alice', age: 30 } } })
       state.setValueAtPath(['profile', 'name'], 'bob')
       expect(state.form.value.profile.name).toBe('bob')
       expect(state.form.value.profile.age).toBe(30)
     })
 
     it('updates fields.updatedAt for the changed path', async () => {
-      const state = makeState({ initialState: { email: 'first@x' } })
+      const state = makeState({ defaultValues: { email: 'first@x' } })
       const initialStamp = state.getFieldRecord(['email'])?.updatedAt
       // Advance time enough for a new ISO timestamp
       await new Promise((resolve) => setTimeout(resolve, 5))
@@ -114,7 +114,7 @@ describe('createFormStore', () => {
     })
 
     it('does not emit patches for no-op writes (same value)', async () => {
-      const state = makeState({ initialState: { email: 'stable@x' } })
+      const state = makeState({ defaultValues: { email: 'stable@x' } })
       const initialStamp = state.getFieldRecord(['email'])?.updatedAt
       await new Promise((resolve) => setTimeout(resolve, 5))
       // Applying the same form value: Object.is bails out; no per-field touching.
@@ -126,18 +126,18 @@ describe('createFormStore', () => {
 
   describe('originals and pristine/dirty', () => {
     it('reports pristine=true when the field is untouched since init', () => {
-      const state = makeState({ initialState: { email: 'initial@x' } })
+      const state = makeState({ defaultValues: { email: 'initial@x' } })
       expect(state.isPristineAtPath(['email'])).toBe(true)
     })
 
     it('reports pristine=false after a change', () => {
-      const state = makeState({ initialState: { email: 'initial@x' } })
+      const state = makeState({ defaultValues: { email: 'initial@x' } })
       state.setValueAtPath(['email'], 'changed@x')
       expect(state.isPristineAtPath(['email'])).toBe(false)
     })
 
     it('reports pristine=true when the field is restored to its original value', () => {
-      const state = makeState({ initialState: { email: 'initial@x' } })
+      const state = makeState({ defaultValues: { email: 'initial@x' } })
       state.setValueAtPath(['email'], 'changed@x')
       state.setValueAtPath(['email'], 'initial@x')
       expect(state.isPristineAtPath(['email'])).toBe(true)

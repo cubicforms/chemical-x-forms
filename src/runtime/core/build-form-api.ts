@@ -217,8 +217,8 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   ) as FormState
 
   // --- Reset ---
-  const reset = (nextInitialState?: DeepPartial<Form>): void => {
-    state.reset(nextInitialState)
+  const reset = (nextDefaultValues?: DeepPartial<Form>): void => {
+    state.reset(nextDefaultValues)
   }
 
   const resetField = (pathInput: string): void => {

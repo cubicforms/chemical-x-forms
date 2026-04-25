@@ -11,7 +11,7 @@ without an inner refinement accepts anything. Double-check the
 schema is what you think it is.
 
 **You're in `validationMode: 'lax'` (the default) and watching
-`validate()`.** Lax mode strips refinements during initial-state
+`validate()`.** Lax mode strips refinements during default-values
 derivation so the form mounts with empty values without failing.
 Refinements re-apply on submit. If you want `validate()` to fire
 refinements immediately, switch to `'strict'`.

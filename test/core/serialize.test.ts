@@ -43,7 +43,7 @@ describe('renderChemicalXState', () => {
     expect(firstEntry).toBeDefined()
     if (firstEntry === undefined) return
     const data = firstEntry[1]
-    // Originals are derivable client-side from schema + initialState; elements
+    // Originals are derivable client-side from schema + defaultValues; elements
     // are DOM references that can't serialise. Serialisation omits both to
     // keep the wire format small and referentially clean.
     expect(data).not.toHaveProperty('originals')

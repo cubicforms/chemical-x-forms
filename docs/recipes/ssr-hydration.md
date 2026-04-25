@@ -116,7 +116,7 @@ values the server rendered.
 By design. Any mutation re-runs validation, which can replace the
 errors. To keep server-provided errors around until the user
 dirties the field, gate the display on `form.getFieldState(path)`'s
-`touched` or on `form.isDirty.value`.
+`touched` or on `form.state.isDirty`.
 
 **"Some fields look right, others don't."**
 

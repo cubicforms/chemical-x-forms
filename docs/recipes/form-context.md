@@ -80,12 +80,12 @@ import { useFormContext } from '@chemical-x/forms/zod'
 
 interface Form { /* … */ }
 
-const { isDirty, isSubmitting, handleSubmit } = useFormContext<Form>('signup')
+const { state, handleSubmit } = useFormContext<Form>('signup')
 </script>
 
 <template>
   <button
-    :disabled="!isDirty || isSubmitting"
+    :disabled="!state.isDirty || state.isSubmitting"
     @click="handleSubmit(onSave)()"
   >
     Save
@@ -175,5 +175,5 @@ directly. `useFormContext` is a small reactive overhead you don't
 need when there's nothing to share.
 
 Reach for it when field components are reusable across forms, or
-when a distant component needs read-only status (`isDirty`,
-`isSubmitting`, `fieldErrors`) of a form it doesn't own.
+when a distant component needs read-only status (`state.isDirty`,
+`state.isSubmitting`, `fieldErrors`) of a form it doesn't own.

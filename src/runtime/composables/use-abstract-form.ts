@@ -246,16 +246,25 @@ function recordAmbientProvide(isSSR: boolean): void {
 }
 
 /**
- * Best-effort capture of the caller's source frame. Walks the stack
- * past `@chemical-x/forms` internal frames and returns the first
- * frame that looks like user code. Returns `undefined` on engines
- * that don't expose `.stack` or when parsing fails — the warning
- * degrades to listing "<unknown location>" in that slot.
+ * Best-effort capture of the caller's source frame, normalised to a
+ * short `<path>:<line>:<col>` form. Walks the stack past
+ * `@chemical-x/forms` internal frames, picks the first frame that
+ * looks like user code, then strips the dev-server scheme + host +
+ * Vite/Nuxt's `/_nuxt/` prefix so the warning doesn't carry a wall
+ * of `https://localhost:3000/_nuxt/...` noise. Returns `undefined`
+ * on engines that don't expose `.stack` or when parsing fails — the
+ * warning degrades to listing "<unknown location>" in that slot.
  *
- * Dev-only; guarded upstream in `recordAmbientProvide`. The regex
- * matches both the published path (`@chemical-x/forms/...`) and
- * the linked / source path (`chemical-x-forms/...`) so local dev
- * via `make link-cx` surfaces the same trimmed frames.
+ * Click-through navigation isn't sacrificed: `console.warn` already
+ * renders its own clickable stack trace below the message in
+ * Chrome / Firefox DevTools (V8 frame format → Sources tab). The
+ * inline list is purely for "which call sites collided", and short
+ * paths read better than full URLs there.
+ *
+ * Dev-only; guarded upstream in `recordAmbientProvide`. The cx-frame
+ * regex matches both the published path (`@chemical-x/forms/...`)
+ * and the linked / source path (`chemical-x-forms/...`) so local
+ * dev via `make link-cx` surfaces the same trimmed frames.
  */
 function captureUserCallSite(): string | undefined {
   const raw = new Error().stack
@@ -269,9 +278,45 @@ function captureUserCallSite(): string | undefined {
     if (/\bforms\.[A-Za-z0-9_-]+\.m?js\b/.test(frame)) continue
     const trimmed = frame.trim()
     if (trimmed.length === 0) continue
-    return trimmed
+    return shortenSourceFrame(trimmed)
   }
   return undefined
+}
+
+/**
+ * Reduce a raw stack frame to `<path>:<line>:<col>`.
+ *
+ * Inputs we expect (V8, with or without `at fn (…)` wrapper):
+ *   - `at setup (https://cubicforms.test/_nuxt/pages/spike-cx.vue:18:18)`
+ *   - `at https://example.com/foo.js:1:1`
+ *   - `at file:///Users/x/proj/spike.vue:18:18`
+ *   - `pages/foo.vue:18:18` (already path-like, no V8 wrapper)
+ *
+ * Outputs:
+ *   - `pages/spike-cx.vue:18:18`
+ *   - `foo.js:1:1`
+ *   - `Users/x/proj/spike.vue:18:18`
+ *   - `pages/foo.vue:18:18`
+ *
+ * If the frame doesn't match the trailing `…:line:col` shape at all,
+ * we return the original trimmed frame unchanged — better to surface
+ * something than nothing.
+ */
+function shortenSourceFrame(frame: string): string {
+  const match = /(?:^|\s|\()([^\s()]+):(\d+):(\d+)\)?$/.exec(frame)
+  if (match === null) return frame
+  const [, urlOrPath, line, col] = match
+  if (urlOrPath === undefined || line === undefined || col === undefined) return frame
+  let path = urlOrPath
+  // Strip `scheme://host/` (https://…, http://…). file:// gets the
+  // same treatment, leaving the absolute filesystem path; we then
+  // also strip its leading slash below so it reads as a relative path.
+  path = path.replace(/^[a-z]+:\/\/[^/]+\//i, '')
+  // Strip Vite/Nuxt's dev-server prefix.
+  path = path.replace(/^_nuxt\//, '')
+  // Strip leading slash (left over from file:// or absolute paths).
+  path = path.replace(/^\//, '')
+  return `${path}:${line}:${col}`
 }
 
 /**

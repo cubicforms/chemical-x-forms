@@ -196,6 +196,14 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     expect(warnSpy).toHaveBeenCalledTimes(1)
     const message = String(warnSpy.mock.calls[0]?.[0] ?? '')
     expect(message).not.toMatch(/cx:anon:/)
+    // Source frames are normalised to `<path>:<line>:<col>` — no
+    // `at fn (URL:l:c)` wrapper, no `https://`/`http://` prefix, no
+    // Vite/Nuxt `_nuxt/` dev-server segment. Click-through stays
+    // available via console.warn's auto-rendered stack trace below
+    // the message; the inline list is for readability.
+    expect(message).not.toMatch(/https?:\/\//)
+    expect(message).not.toMatch(/\bat \w+ \(/)
+    expect(message).not.toMatch(/\b_nuxt\//)
     // Three bullet lines, one per useForm() call.
     const bulletCount = (message.match(/^ {2}- /gm) ?? []).length
     expect(bulletCount).toBe(3)

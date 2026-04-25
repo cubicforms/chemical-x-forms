@@ -295,7 +295,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
 ): FormStore<F, G> {
   const { formKey, schema, defaultValues, validationMode = 'lax', hydration } = options
   const isSSR = options.isSSR === true
-  const fieldValidationMode: FieldValidationMode = options.fieldValidation?.on ?? 'none'
+  const fieldValidationMode: FieldValidationMode = options.fieldValidation?.on ?? 'change'
   const fieldValidationDebounceMs: number = options.fieldValidation?.debounceMs ?? 200
 
   type FieldValidationEntry = {

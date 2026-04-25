@@ -6,11 +6,12 @@ import { z } from 'zod'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 
 /**
- * Phase 5.7 — debounced field-level validation.
+ * Debounced field-level validation.
  *
- * `fieldValidation: { on: 'change', debounceMs }` schedules validation
- * on every `setValueAtPath` write; `on: 'blur'` fires immediately on
- * blur; `on: 'none'` (default) disables the path entirely.
+ * `fieldValidation: { on: 'change', debounceMs }` (default) schedules
+ * validation on every `setValueAtPath` write; `on: 'blur'` fires
+ * immediately on blur; `on: 'none'` is the explicit opt-out — writes
+ * never schedule a field run, errors only update at submit time.
  *
  * Runs concurrently with handleSubmit — submit-entry aborts in-flight
  * field runs so submit's full-form result is authoritative.
@@ -117,9 +118,21 @@ describe('fieldValidation: { on: "change", debounceMs }', () => {
     expect(api.fieldErrors.password?.[0]?.message).toBe('min 8 chars')
   })
 
-  it('on="none" (default): writes never schedule a field run', async () => {
+  it('on="change" is the default: writes schedule a debounced field run', async () => {
     vi.useFakeTimers()
     const { app, api } = mountWith({})
+    apps.push(app)
+
+    api.setValue('email', 'not-an-email')
+    // Default debounceMs is 200; advance past it.
+    await vi.advanceTimersByTimeAsync(250)
+    await drainMicrotasks()
+    expect(api.fieldErrors.email?.[0]?.message).toBe('bad email')
+  })
+
+  it('explicit on="none" opts out: writes never schedule a field run', async () => {
+    vi.useFakeTimers()
+    const { app, api } = mountWith({ fieldValidation: { on: 'none' } })
     apps.push(app)
 
     api.setValue('email', 'not-an-email')

@@ -84,6 +84,18 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
         state.setValueAtPath(segments, value)
         return true
       },
+
+      // Called by the `vRegisterHint` compile-time transform's wrapping
+      // IIFE on every server-side render of `<element v-register="…">`.
+      // Without it, every SSR'd FieldState serialises `isConnected: false`
+      // (because Vue skips directive lifecycle during SSR) and the client
+      // briefly shows that stale flag until hydration runs the directive's
+      // `created` hook. The mark only takes effect when `state.isSSR` is
+      // true; on the client this is a no-op so the directive lifecycle
+      // remains the source of truth.
+      markConnectedOptimistically: (): void => {
+        state.markConnectedOptimistically(segments)
+      },
     }
   }
 }

@@ -171,6 +171,7 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
     validationMode: configuration.validationMode,
     hydration: pending,
     fieldValidation: configuration.fieldValidation,
+    isSSR: registry.isSSR,
   })
   // Storage type is FormStore<GenericForm>; the lookup above narrows
   // back to the caller's (F, G) via the `existing as FormStore<Form,

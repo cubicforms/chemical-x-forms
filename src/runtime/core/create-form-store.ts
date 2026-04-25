@@ -62,6 +62,14 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   readonly originals: Map<PathKey, OriginalsRecord>
   readonly schema: AbstractSchema<F, G>
 
+  /**
+   * Server-side flag, plumbed in from `registry.isSSR`. The
+   * `register()`-returned `markConnectedOptimistically()` reads this
+   * before flipping `isConnected: true`; on the client it's a no-op so
+   * the eventual directive lifecycle remains the source of truth.
+   */
+  readonly isSSR: boolean
+
   // --- submission lifecycle ---
   // Driven by buildProcessForm's handleSubmit wrapper. See use-abstract-form.ts
   // for the public readonly surface. Mutations happen in exactly one place
@@ -115,6 +123,15 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   deregisterElement(path: Path, element: HTMLElement): number
   markFocused(path: Path, focused: boolean): void
   markTouched(path: Path): void
+  /**
+   * SSR-only optimistic mark: flip `isConnected: true` on the field
+   * record without an actual DOM element. Called by the `vRegisterHint`
+   * compile-time transform via `RegisterValue.markConnectedOptimistically()`
+   * for every element rendered with `v-register`. Idempotent + no-op on
+   * the client (the directive's `created` hook is the authoritative
+   * source there).
+   */
+  markConnectedOptimistically(path: Path): void
 
   // --- derived ---
   /**
@@ -231,12 +248,14 @@ export type CreateFormStoreOptions<F extends GenericForm, G extends GenericForm 
   readonly validationMode?: ValidationMode | undefined
   readonly hydration?: FormStoreHydration | undefined
   readonly fieldValidation?: FieldValidationConfig | undefined
+  readonly isSSR?: boolean | undefined
 }
 
 export function createFormStore<F extends GenericForm, G extends GenericForm = F>(
   options: CreateFormStoreOptions<F, G>
 ): FormStore<F, G> {
   const { formKey, schema, defaultValues, validationMode = 'lax', hydration } = options
+  const isSSR = options.isSSR === true
   const fieldValidationMode: FieldValidationMode = options.fieldValidation?.on ?? 'none'
   const fieldValidationDebounceMs: number = options.fieldValidation?.debounceMs ?? 200
 
@@ -596,6 +615,18 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     return remaining
   }
 
+  function markConnectedOptimistically(path: Path): void {
+    // Client-side: the directive's `created` / `beforeUnmount` hooks are
+    // authoritative for `isConnected`, so this is a no-op there. SSR is
+    // the only environment where we can't observe the DOM and need an
+    // upfront hint that the field WILL be wired up after hydration.
+    if (!isSSR) return
+    const { key } = canonicalizePath(path)
+    const current = fields.get(key)
+    if (current?.isConnected === true) return
+    touchFieldRecord(key, path, { isConnected: true })
+  }
+
   function markFocused(path: Path, focused: boolean): void {
     const { key } = canonicalizePath(path)
     touchFieldRecord(key, path, {
@@ -818,6 +849,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     errors,
     originals,
     schema,
+    isSSR,
     isSubmitting,
     activeSubmissions,
     submitCount,
@@ -842,6 +874,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     deregisterElement,
     markFocused,
     markTouched,
+    markConnectedOptimistically,
 
     isPristineAtPath,
     getFieldRecord,

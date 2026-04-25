@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+_No unreleased changes yet._
+
+## v0.11.0
 **What's new at a glance**
 
 - **`state` — the form-level reactive bundle.** Nine form-level

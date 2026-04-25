@@ -1,5 +1,20 @@
 # Releases
 
+## v0.11.0 — 2026-04-25
+
+## What's Changed
+* docs: slim README, add Vue 3 / Nuxt 3 + 4 / TypeScript badges by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/126
+* ci: dedicated lint job + extend prettier scope to md/json/yml by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/127
+* feat(api)!: expose fieldErrors as a Proxy view, drop ComputedRef wrapper by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/128
+* feat(api)!: bundle 9 form-level scalars into reactive `state` by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/129
+* feat(api)!: rename initialState → defaultValues across config + adapters by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/130
+* docs: sweep recipes + api.md to the 0.11 `state` bundle vocabulary by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/131
+
+
+**Full Changelog**: https://github.com/cubicforms/chemical-x-forms/compare/v0.10.0...v0.11.0
+
+---
+
 ## v0.10.0 — 2026-04-24
 
 ## What's Changed

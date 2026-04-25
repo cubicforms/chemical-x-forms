@@ -39,7 +39,7 @@ function newPost(i: number): Post {
 /**
  * Mount a disposable SSR app so `useForm` can run inside a `setup()`
  * context, then expose the returned form handle to the bench. The
- * captured handle outlives the setup — its closures over `FormState`
+ * captured handle outlives the setup — its closures over `FormStore`
  * are what we're measuring.
  */
 function mountAndCaptureForm(seedCount: number) {

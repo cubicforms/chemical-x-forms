@@ -25,7 +25,7 @@ export default defineNuxtPlugin({
     nuxtApp.vueApp.use(createChemicalXForms({ override: isServer }))
 
     if (isServer) {
-      // After the app renders, capture every FormState into the Nuxt payload
+      // After the app renders, capture every FormStore into the Nuxt payload
       // so the client can hydrate with matching form values and errors.
       nuxtApp.hook('app:rendered', () => {
         const state = renderChemicalXState(nuxtApp.vueApp)

@@ -12,7 +12,7 @@ import type {
   ValidationResponseWithoutValue,
 } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
-import type { FormState } from './create-form-state'
+import type { FormStore } from './create-form-store'
 import { SubmitErrorHandlerError } from './errors'
 import {
   hydrateApiErrors,
@@ -23,7 +23,7 @@ import { canonicalizePath, type Path } from './paths'
 
 /**
  * validate + handleSubmit + setFieldErrorsFromApi, all built against a
- * FormState<F>. Replaces use-form-store's validation factory + the submit
+ * FormStore<F>. Replaces use-form-store's validation factory + the submit
  * wrapper in use-abstract-form.ts.
  *
  * Phase 5.6: validation is async end-to-end. `AbstractSchema.validateAtPath`
@@ -43,7 +43,7 @@ export type BuildProcessFormOptions = {
 }
 
 export function buildProcessForm<F extends GenericForm>(
-  state: FormState<F>,
+  state: FormStore<F>,
   options: BuildProcessFormOptions = {}
 ) {
   const invalidPolicy: OnInvalidSubmitPolicy = options.onInvalidSubmit ?? 'none'
@@ -157,7 +157,7 @@ export function buildProcessForm<F extends GenericForm>(
    * wrapped in SubmitErrorHandlerError — prior versions swallowed this
    * into a console.error, which masked real bugs.
    *
-   * Drives the submission-lifecycle refs on FormState:
+   * Drives the submission-lifecycle refs on FormStore:
    *   - `isSubmitting` flips true at entry, false in `finally`.
    *   - `submitCount` increments once per call, regardless of outcome —
    *     "how many times did the user click submit" is the consumer-facing
@@ -182,7 +182,7 @@ export function buildProcessForm<F extends GenericForm>(
       ) {
         event.preventDefault()
       }
-      // Use the in-flight counter on FormState so two overlapping submit
+      // Use the in-flight counter on FormStore so two overlapping submit
       // handlers don't clobber each other: the first completion only
       // flips isSubmitting to false when the counter reaches zero, not
       // unconditionally. submitError is shared across runs by design — a
@@ -314,7 +314,7 @@ function adapterThrowMessage(err: unknown): string {
 }
 
 function applyInvalidSubmitPolicy<F extends GenericForm>(
-  state: FormState<F>,
+  state: FormStore<F>,
   policy: OnInvalidSubmitPolicy
 ): void {
   if (policy === 'none') return

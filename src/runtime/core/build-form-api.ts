@@ -14,7 +14,7 @@ import type {
 } from '../types/types-api'
 import type { DeepPartial, GenericForm } from '../types/types-core'
 import { __DEV__ } from './dev'
-import type { FormState } from './create-form-state'
+import type { FormStore } from './create-form-store'
 import { buildFieldArrayApi } from './field-arrays'
 import { buildFieldStateAccessor } from './field-state-api'
 import type { HistoryModule } from './history'
@@ -36,7 +36,7 @@ export type BuildFormApiOptions = {
 }
 
 /**
- * Build the public form API from a FormState. Extracted from
+ * Build the public form API from a FormStore. Extracted from
  * `useAbstractForm` so that both the top-level form entry (which creates
  * a fresh state) and `useFormContext` (which resolves state from an
  * ambient provide/inject) produce identical API shapes without
@@ -44,10 +44,10 @@ export type BuildFormApiOptions = {
  *
  * `buildFormApi` does not interact with the registry, consumer ref-counts,
  * or the current Vue instance — those concerns belong to the caller. This
- * function is pure over (FormState, options) → api.
+ * function is pure over (FormStore, options) → api.
  */
 export function buildFormApi<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
-  state: FormState<Form>,
+  state: FormStore<Form>,
   options: BuildFormApiOptions = {}
 ): UseAbstractFormReturnType<Form, GetValueFormType> {
   const register = buildRegister(state) as (path: string | Path) => RegisterValue<unknown>
@@ -265,7 +265,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
 }
 
 function contextualiseValue<F extends GenericForm>(
-  state: FormState<F>,
+  state: FormStore<F>,
   segments: Path,
   context: CurrentValueContext<boolean>
 ): unknown {

@@ -1,5 +1,5 @@
 import type { App } from 'vue'
-import type { FormState } from './create-form-state'
+import type { FormStore } from './create-form-store'
 import type { ChemicalXRegistry } from './registry'
 import type { GenericForm } from '../types/types-core'
 import type { FormKey } from '../types/types-api'
@@ -136,7 +136,7 @@ function wire(api: UnsafeDevtoolsApi, app: App, registry: ChemicalXRegistry): vo
     api.sendInspectorState(INSPECTOR_ID)
   }
 
-  function subscribeForm(state: FormState<GenericForm>): void {
+  function subscribeForm(state: FormStore<GenericForm>): void {
     if (subscriberUnsubs.has(state.formKey)) return
     const unsubChange = state.onFormChange(() => {
       refreshState()

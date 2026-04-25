@@ -15,16 +15,16 @@
  */
 
 import { bench, describe } from 'vitest'
-import { createFormState } from '../src/runtime/core/create-form-state'
+import { createFormStore } from '../src/runtime/core/create-form-store'
 import { fakeSchema } from '../test/utils/fake-schema'
 
 type Form = { email: string; password: string; nickname: string }
 const defaults: Form = { email: '', password: '', nickname: '' }
 
 function makeState(
-  fieldValidation?: Parameters<typeof createFormState<Form>>[0]['fieldValidation']
+  fieldValidation?: Parameters<typeof createFormStore<Form>>[0]['fieldValidation']
 ) {
-  return createFormState<Form>({
+  return createFormStore<Form>({
     formKey: 'bench',
     schema: fakeSchema<Form>(defaults),
     ...(fieldValidation ? { fieldValidation } : {}),

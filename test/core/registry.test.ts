@@ -18,7 +18,7 @@ describe('createRegistry', () => {
     expect(a).not.toBe(b)
     expect(a.forms).not.toBe(b.forms)
     // Two separate maps: writing to one cannot be observable on the other.
-    // (We don't actually need to write a real FormState for this check; Map
+    // (We don't actually need to write a real FormStore for this check; Map
     // identity comparison is enough.)
     expect(a.pendingHydration).not.toBe(b.pendingHydration)
   })

@@ -20,7 +20,7 @@ import { getAtPath, setAtPath } from './path-walker'
  * doing so fixes the cross-form DOM state collision that stemmed from those
  * stores being keyed only by `path` instead of `(formKey, path)`.
  *
- * This is NOT a singleton. Each call to `useForm` creates its own FormState
+ * This is NOT a singleton. Each call to `useForm` creates its own FormStore
  * instance and holds onto it via closure. The registry (Phase 2) provides
  * SSR hydration; otherwise the state is per-component-per-form.
  */
@@ -53,7 +53,7 @@ export type OriginalsRecord = {
   readonly value: unknown
 }
 
-export type FormState<F extends GenericForm, G extends GenericForm = F> = {
+export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   readonly formKey: FormKey
   readonly form: Ref<F>
   readonly fields: Map<PathKey, FieldRecord>
@@ -66,7 +66,7 @@ export type FormState<F extends GenericForm, G extends GenericForm = F> = {
   // Driven by buildProcessForm's handleSubmit wrapper. See use-abstract-form.ts
   // for the public readonly surface. Mutations happen in exactly one place
   // (the submit handler) so there's no "source of truth" ambiguity — these
-  // refs live on FormState so a `reset()` can clear them too.
+  // refs live on FormStore so a `reset()` can clear them too.
   //
   // `activeSubmissions` is the source of truth for "is anything in flight".
   // `isSubmitting` mirrors `activeSubmissions > 0` and is what consumers
@@ -187,7 +187,7 @@ export type FormState<F extends GenericForm, G extends GenericForm = F> = {
 
   /**
    * Register a teardown function whose lifetime is bound to the
-   * FormState itself (not a consumer's Vue effect scope). Called by
+   * FormStore itself (not a consumer's Vue effect scope). Called by
    * `dispose()` when the last consumer unmounts. Used by persistence /
    * history wiring so their subscribers aren't detached prematurely
    * when only the first consumer unmounts but others remain.
@@ -204,7 +204,7 @@ export type FormState<F extends GenericForm, G extends GenericForm = F> = {
   readonly modules: Map<string, unknown>
 
   /**
-   * Tear down non-reactive resources owned by this FormState. Invoked
+   * Tear down non-reactive resources owned by this FormStore. Invoked
    * by the registry when the last consumer unmounts. Cancels pending
    * field-validation timers, drops every subscriber, and fires each
    * cleanup hook registered via `registerCleanup`.
@@ -213,29 +213,29 @@ export type FormState<F extends GenericForm, G extends GenericForm = F> = {
 }
 
 /**
- * Hydration payload shape accepted by `createFormState`. When provided, the
+ * Hydration payload shape accepted by `createFormStore`. When provided, the
  * initial form value comes from here rather than from `schema.getInitialState`.
  * Used to replay SSR state on the client; originals are reconstructed from
  * the schema because they're not serialised.
  */
-export type FormStateHydration = {
+export type FormStoreHydration = {
   readonly form: unknown
   readonly errors: ReadonlyArray<readonly [string, unknown]>
   readonly fields: ReadonlyArray<readonly [string, unknown]>
 }
 
-export type CreateFormStateOptions<F extends GenericForm, G extends GenericForm = F> = {
+export type CreateFormStoreOptions<F extends GenericForm, G extends GenericForm = F> = {
   readonly formKey: FormKey
   readonly schema: AbstractSchema<F, G>
   readonly initialState?: DeepPartial<F> | undefined
   readonly validationMode?: ValidationMode | undefined
-  readonly hydration?: FormStateHydration | undefined
+  readonly hydration?: FormStoreHydration | undefined
   readonly fieldValidation?: FieldValidationConfig | undefined
 }
 
-export function createFormState<F extends GenericForm, G extends GenericForm = F>(
-  options: CreateFormStateOptions<F, G>
-): FormState<F, G> {
+export function createFormStore<F extends GenericForm, G extends GenericForm = F>(
+  options: CreateFormStoreOptions<F, G>
+): FormStore<F, G> {
   const { formKey, schema, initialState, validationMode = 'lax', hydration } = options
   const fieldValidationMode: FieldValidationMode = options.fieldValidation?.on ?? 'none'
   const fieldValidationDebounceMs: number = options.fieldValidation?.debounceMs ?? 200
@@ -254,7 +254,7 @@ export function createFormState<F extends GenericForm, G extends GenericForm = F
 
   // State-scoped teardown hooks. Persistence / history / any other
   // per-state module registers its disposer here so the cleanup is
-  // bound to the FormState's own lifetime (`dispose()` call at
+  // bound to the FormStore's own lifetime (`dispose()` call at
   // registry-eviction) and not the first consumer's effect scope.
   const cleanupHooks: (() => void)[] = []
   const modules = new Map<string, unknown>()

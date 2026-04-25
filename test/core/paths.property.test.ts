@@ -5,7 +5,7 @@ import { canonicalizePath, type Segment } from '../../src/runtime/core/paths'
 /**
  * Properties for path canonicalisation. The invariants here are subtle —
  * the PathKey is a stable Map key, so collisions across "same path, two
- * forms" would cause FormState key lookups to miss. These properties
+ * forms" would cause FormStore key lookups to miss. These properties
  * guard the encoding.
  */
 

@@ -65,7 +65,7 @@ export type AbstractSchema<Form, GetValueFormType> = {
    *
    * The library uses this to detect schema mismatches at a shared
    * form key: two `useForm({ key: 'x', schema })` calls are allowed
-   * to land on the same `FormState` (the "shared store" semantic),
+   * to land on the same `FormStore` (the "shared store" semantic),
    * but only when their schemas agree. If the second call's
    * fingerprint differs from the first's, the library emits a
    * dev-mode warning — the first call's schema stays canonical and
@@ -255,7 +255,7 @@ export type UseFormConfiguration<
    * Optional — omit for one-off forms. When absent, the runtime
    * allocates a collision-free synthetic id via Vue's `useId()`
    * (SSR-safe, positional, stable across server→client hydration).
-   * Each anonymous `useForm` call resolves to a distinct `FormState`.
+   * Each anonymous `useForm` call resolves to a distinct `FormStore`.
    *
    * Pass an explicit string key when the form needs identity:
    * - cross-component lookup via `useFormContext(key)` (distant,

@@ -1,11 +1,11 @@
 import { computed, type Ref } from 'vue'
 import type { RegisterValue } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
-import type { FormState } from './create-form-state'
+import type { FormStore } from './create-form-store'
 import { canonicalizePath, type Path } from './paths'
 
 /**
- * Register API factory. Given a FormState, returns a `register(path)` that
+ * Register API factory. Given a FormStore, returns a `register(path)` that
  * produces a RegisterValue suitable for the v-register directive.
  *
  * Changes from the pre-rewrite register.ts:
@@ -20,7 +20,7 @@ import { canonicalizePath, type Path } from './paths'
  *   values to paper over reactive-update timing; with the new synchronous
  *   diff-apply writer, that's unnecessary.
  * - Cross-form isolation is by construction: every call to buildRegister
- *   closes over a FormState<F> unique to one form.
+ *   closes over a FormStore<F> unique to one form.
  */
 
 const INTERACTIVE_TAG_NAMES = new Set(['INPUT', 'SELECT', 'TEXTAREA'])
@@ -35,7 +35,7 @@ type ElementWithListeners = HTMLElement & {
 }
 
 function attachFocusListeners<F extends GenericForm>(
-  state: FormState<F>,
+  state: FormStore<F>,
   segments: Path,
   element: HTMLElement
 ): void {
@@ -57,7 +57,7 @@ function detachFocusListeners(element: HTMLElement): void {
   delete target[cxListenersSymbol]
 }
 
-export function buildRegister<F extends GenericForm>(state: FormState<F>) {
+export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
   return function register(pathInput: string | Path): RegisterValue<unknown> {
     const { segments } = canonicalizePath(pathInput)
 

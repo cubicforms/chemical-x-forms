@@ -146,7 +146,7 @@ one. The typing flows from your schema shape through
 ## Fingerprint implementation
 
 The library calls `fingerprint()` when a second `useForm({ key:
-'x', schema })` call lands on an already-resolved FormState.
+'x', schema })` call lands on an already-resolved FormStore.
 Matching strings → the shared-store semantic is intentional, stay
 silent. Differing strings → dev-mode warning that names both
 fingerprints; the first caller's schema stays canonical, the

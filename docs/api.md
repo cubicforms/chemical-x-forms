@@ -37,16 +37,16 @@ const form = useForm({ schema, key: 'signup' })
 
 Options:
 
-| Field             | Type                                                          | Required | Description                                                              |
-| ----------------- | ------------------------------------------------------------- | -------- | ------------------------------------------------------------------------ |
-| `schema`          | `z.ZodType`                                                   | yes      | The Zod schema describing the form shape.                                |
-| `key`             | `string`                                                      | no       | Form identity. Omit for one-off forms (runtime allocates a synthetic `cx:anon:<id>` via `useId()`). Pass a string when you need cross-component lookup via `useFormContext(key)`, shared state across call-sites, a stable `persist` storage-key default, or a recognisable DevTools label. |
-| `defaultValues`    | `DeepPartial<Form>`                                           | no       | Constraints applied over schema defaults.                                |
-| `validationMode`  | `'lax'` \| `'strict'`                                         | no       | Defaults to `'lax'`. See [Types](#types).                                |
-| `onInvalidSubmit` | `'none'` \| `'focus-first-error'` \| `'scroll-to-first-error'` \| `'both'` | no | What to do when submit fails validation. See [recipe](./recipes/focus-on-error.md). |
-| `fieldValidation` | `{ on, debounceMs }`                                          | no       | Enable live field validation. See [recipe](./recipes/field-level-validation.md). |
-| `persist`         | `{ storage, key?, debounceMs?, include?, version?, clearOnSubmitSuccess? }` | no | Persist draft state. See [recipe](./recipes/persistence.md). |
-| `history`         | `true` \| `{ max?: number }`                                  | no       | Enable undo/redo. See [recipe](./recipes/undo-redo.md).                  |
+| Field             | Type                                                                        | Required | Description                                                                                                                                                                                                                                                                                 |
+| ----------------- | --------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema`          | `z.ZodType`                                                                 | yes      | The Zod schema describing the form shape.                                                                                                                                                                                                                                                   |
+| `key`             | `string`                                                                    | no       | Form identity. Omit for one-off forms (runtime allocates a synthetic `cx:anon:<id>` via `useId()`). Pass a string when you need cross-component lookup via `useFormContext(key)`, shared state across call-sites, a stable `persist` storage-key default, or a recognisable DevTools label. |
+| `defaultValues`   | `DeepPartial<Form>`                                                         | no       | Constraints applied over schema defaults.                                                                                                                                                                                                                                                   |
+| `validationMode`  | `'lax'` \| `'strict'`                                                       | no       | Defaults to `'lax'`. See [Types](#types).                                                                                                                                                                                                                                                   |
+| `onInvalidSubmit` | `'none'` \| `'focus-first-error'` \| `'scroll-to-first-error'` \| `'both'`  | no       | What to do when submit fails validation. See [recipe](./recipes/focus-on-error.md).                                                                                                                                                                                                         |
+| `fieldValidation` | `{ on, debounceMs }`                                                        | no       | Enable live field validation. See [recipe](./recipes/field-level-validation.md).                                                                                                                                                                                                            |
+| `persist`         | `{ storage, key?, debounceMs?, include?, version?, clearOnSubmitSuccess? }` | no       | Persist draft state. See [recipe](./recipes/persistence.md).                                                                                                                                                                                                                                |
+| `history`         | `true` \| `{ max?: number }`                                                | no       | Enable undo/redo. See [recipe](./recipes/undo-redo.md).                                                                                                                                                                                                                                     |
 
 ### `zodAdapter(schema)`
 
@@ -93,7 +93,7 @@ schema library or wiring SSR by hand.
 ```ts
 import {
   createChemicalXForms,
-  useForm,           // re-export of useAbstractForm
+  useForm, // re-export of useAbstractForm
   useFormContext,
   useRegistry,
   renderChemicalXState,
@@ -114,9 +114,9 @@ createApp(App).use(createChemicalXForms()).mount('#app')
 
 Options:
 
-| Field      | Type      | Description                                                          |
-| ---------- | --------- | -------------------------------------------------------------------- |
-| `override` | `boolean` | Force `isSSR` to `true` / `false`. Auto-detected otherwise.          |
+| Field      | Type      | Description                                                                          |
+| ---------- | --------- | ------------------------------------------------------------------------------------ |
+| `override` | `boolean` | Force `isSSR` to `true` / `false`. Auto-detected otherwise.                          |
 | `devtools` | `boolean` | Enable the Vue DevTools plugin. Default `true`. See [recipe](./recipes/devtools.md). |
 
 ### `useForm<Form>({ schema, key, ... })`
@@ -235,28 +235,28 @@ piece of form state as a named field. Grouped by concern:
 
 ### Reading values
 
-| Member                      | Type                                         | What it does                                                  |
-| --------------------------- | -------------------------------------------- | ------------------------------------------------------------- |
-| `getValue()`                | `Readonly<Ref<Form>>`                        | Whole form reactive ref.                                      |
-| `getValue(path)`            | `Readonly<Ref<LeafOf<path>>>`                | Single-field ref. Path is `FlatPath<Form>`.                   |
-| `getValue({ withMeta })`    | `CurrentValueWithContext<Form>`              | Whole form with meta.                                         |
-| `getFieldState(path)`       | `Ref<FieldState>`                            | Per-field errors + touched / focused / blurred / isConnected flags. |
+| Member                   | Type                            | What it does                                                        |
+| ------------------------ | ------------------------------- | ------------------------------------------------------------------- |
+| `getValue()`             | `Readonly<Ref<Form>>`           | Whole form reactive ref.                                            |
+| `getValue(path)`         | `Readonly<Ref<LeafOf<path>>>`   | Single-field ref. Path is `FlatPath<Form>`.                         |
+| `getValue({ withMeta })` | `CurrentValueWithContext<Form>` | Whole form with meta.                                               |
+| `getFieldState(path)`    | `Ref<FieldState>`               | Per-field errors + touched / focused / blurred / isConnected flags. |
 
 ### Writing values
 
-| Member                      | Signature                                   | What it does                                                 |
-| --------------------------- | ------------------------------------------- | ------------------------------------------------------------ |
-| `setValue(value)`           | `(value: Form) => boolean`                  | Replace the whole form.                                      |
-| `setValue(path, value)`     | `(path, value) => boolean`                  | Replace a single leaf or sub-tree.                           |
-| `register(path)`            | `(path) => RegisterValue<LeafOf<path>>`     | Produces the binding the `v-register` directive consumes.    |
+| Member                  | Signature                               | What it does                                              |
+| ----------------------- | --------------------------------------- | --------------------------------------------------------- |
+| `setValue(value)`       | `(value: Form) => boolean`              | Replace the whole form.                                   |
+| `setValue(path, value)` | `(path, value) => boolean`              | Replace a single leaf or sub-tree.                        |
+| `register(path)`        | `(path) => RegisterValue<LeafOf<path>>` | Produces the binding the `v-register` directive consumes. |
 
 ### Validation + submission
 
-| Member                     | Signature                                                      | What it does                                                                            |
-| -------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `validate(path?)`          | `(path?) => Readonly<Ref<ReactiveValidationStatus<Form>>>`     | Reactive validation result. Re-runs on form mutation; value carries a `pending` flag.   |
-| `validateAsync(path?)`     | `(path?) => Promise<ValidationResponseWithoutValue<Form>>`     | Imperative one-shot. Resolves to the settled response.                                  |
-| `handleSubmit(cb, onErr?)` | `(cb, onErr?) => (event?) => Promise<void>`                    | Builds a submit handler. Awaits validation internally.                                  |
+| Member                     | Signature                                                  | What it does                                                                          |
+| -------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `validate(path?)`          | `(path?) => Readonly<Ref<ReactiveValidationStatus<Form>>>` | Reactive validation result. Re-runs on form mutation; value carries a `pending` flag. |
+| `validateAsync(path?)`     | `(path?) => Promise<ValidationResponseWithoutValue<Form>>` | Imperative one-shot. Resolves to the settled response.                                |
+| `handleSubmit(cb, onErr?)` | `(cb, onErr?) => (event?) => Promise<void>`                | Builds a submit handler. Awaits validation internally.                                |
 
 `ReactiveValidationStatus<Form>` is a discriminated union on
 `pending` — narrow on `status.pending` before trusting `success` /
@@ -264,20 +264,20 @@ piece of form state as a named field. Grouped by concern:
 
 ### Error store
 
-| Member                               | Type                                                                  |
-| ------------------------------------ | --------------------------------------------------------------------- |
-| `fieldErrors`                        | `Readonly<ComputedRef<Record<path, ValidationError[]>>>`              |
-| `setFieldErrors(errors)`             | `(ValidationError[]) => void`                                         |
-| `addFieldErrors(errors)`             | `(ValidationError[]) => void`                                         |
-| `clearFieldErrors(path?)`            | `(path?) => void`                                                     |
+| Member                                    | Type                                                                                      |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `fieldErrors`                             | `Readonly<ComputedRef<Record<path, ValidationError[]>>>`                                  |
+| `setFieldErrors(errors)`                  | `(ValidationError[]) => void`                                                             |
+| `addFieldErrors(errors)`                  | `(ValidationError[]) => void`                                                             |
+| `clearFieldErrors(path?)`                 | `(path?) => void`                                                                         |
 | `setFieldErrorsFromApi(payload, limits?)` | Hydrates a server error envelope. See [server-errors recipe](./recipes/server-errors.md). |
 
 ### Form-level aggregates
 
-| Member    | Type                             | What it does                                              |
-| --------- | -------------------------------- | --------------------------------------------------------- |
+| Member    | Type                             | What it does                                                   |
+| --------- | -------------------------------- | -------------------------------------------------------------- |
 | `isDirty` | `Readonly<ComputedRef<boolean>>` | `true` iff any leaf's current value differs from its original. |
-| `isValid` | `Readonly<ComputedRef<boolean>>` | `true` iff `fieldErrors` is empty.                        |
+| `isValid` | `Readonly<ComputedRef<boolean>>` | `true` iff `fieldErrors` is empty.                             |
 
 ### Submission lifecycle
 
@@ -290,42 +290,42 @@ piece of form state as a named field. Grouped by concern:
 
 ### Focus + scroll
 
-| Member                        | Signature                                     | What it does                                                                          |
-| ----------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `focusFirstError(options?)`   | `(options?) => boolean`                       | Focuses the first errored field's first connected, visible element. Returns `true` if an element was focused. |
-| `scrollToFirstError(options?)` | `(options?) => boolean`                       | Scrolls that element into view. Returns `true` on success.                            |
+| Member                         | Signature               | What it does                                                                                                  |
+| ------------------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `focusFirstError(options?)`    | `(options?) => boolean` | Focuses the first errored field's first connected, visible element. Returns `true` if an element was focused. |
+| `scrollToFirstError(options?)` | `(options?) => boolean` | Scrolls that element into view. Returns `true` on success.                                                    |
 
 ### Reset
 
-| Member             | Signature                            | What it does                                                                          |
-| ------------------ | ------------------------------------ | ------------------------------------------------------------------------------------- |
-| `reset(next?)`     | `(next?: DeepPartial<Form>) => void` | Re-seed the whole form. Rebuilds originals, clears errors + touched + submit state.   |
-| `resetField(path)` | `(path: FlatPath<Form>) => void`     | Restore one path (leaf or container) to its original value.                           |
+| Member             | Signature                            | What it does                                                                        |
+| ------------------ | ------------------------------------ | ----------------------------------------------------------------------------------- |
+| `reset(next?)`     | `(next?: DeepPartial<Form>) => void` | Re-seed the whole form. Rebuilds originals, clears errors + touched + submit state. |
+| `resetField(path)` | `(path: FlatPath<Form>) => void`     | Restore one path (leaf or container) to its original value.                         |
 
 ### Undo / redo
 
-| Member          | Type                             | What it does                                                 |
-| --------------- | -------------------------------- | ------------------------------------------------------------ |
-| `undo()`        | `() => boolean`                  | Revert to the previous snapshot.                             |
-| `redo()`        | `() => boolean`                  | Replay a previously-undone snapshot.                         |
-| `canUndo`       | `Readonly<ComputedRef<boolean>>` | Gate an "Undo" button.                                       |
-| `canRedo`       | `Readonly<ComputedRef<boolean>>` | Gate a "Redo" button.                                        |
-| `historySize`   | `Readonly<ComputedRef<number>>`  | Total snapshots across both stacks.                          |
+| Member        | Type                             | What it does                         |
+| ------------- | -------------------------------- | ------------------------------------ |
+| `undo()`      | `() => boolean`                  | Revert to the previous snapshot.     |
+| `redo()`      | `() => boolean`                  | Replay a previously-undone snapshot. |
+| `canUndo`     | `Readonly<ComputedRef<boolean>>` | Gate an "Undo" button.               |
+| `canRedo`     | `Readonly<ComputedRef<boolean>>` | Gate a "Redo" button.                |
+| `historySize` | `Readonly<ComputedRef<number>>`  | Total snapshots across both stacks.  |
 
 Inert stubs when `history` isn't configured — consistent API shape,
 zero overhead.
 
 ### Field arrays (typed)
 
-| Member                          | Signature                                                                 |
-| ------------------------------- | ------------------------------------------------------------------------- |
-| `append(path, value)`           | Path narrowed to `ArrayPath<Form>`; value narrowed to `ArrayItem<...>`.   |
-| `prepend(path, value)`          | Same typing as `append`.                                                  |
-| `insert(path, index, value)`    | Same typing as `append`; index numeric.                                   |
-| `remove(path, index)`           | Numeric index.                                                            |
-| `swap(path, a, b)`              | Two numeric indices.                                                      |
-| `move(path, from, to)`          | Two numeric indices.                                                      |
-| `replace(path, index, value)`   | Never grows the array.                                                    |
+| Member                        | Signature                                                               |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| `append(path, value)`         | Path narrowed to `ArrayPath<Form>`; value narrowed to `ArrayItem<...>`. |
+| `prepend(path, value)`        | Same typing as `append`.                                                |
+| `insert(path, index, value)`  | Same typing as `append`; index numeric.                                 |
+| `remove(path, index)`         | Numeric index.                                                          |
+| `swap(path, a, b)`            | Two numeric indices.                                                    |
+| `move(path, from, to)`        | Two numeric indices.                                                    |
+| `replace(path, index, value)` | Never grows the array.                                                  |
 
 See [dynamic-field-arrays recipe](./recipes/dynamic-field-arrays.md)
 for the `v-for` pattern.
@@ -392,9 +392,9 @@ The ones you'll touch most:
 - **`ArrayItem<Form, Path>`** — the element type of the array at
   `Path`.
 - **`ValidationError`** — `{ path: readonly Segment[]; message:
-  string; formKey: FormKey }`.
+string; formKey: FormKey }`.
 - **`FieldState`** — `{ value, errors, isConnected, touched,
-  focused, blurred, updatedAt }`.
+focused, blurred, updatedAt }`.
 - **`ValidationMode`** — `'lax' | 'strict'`. Most forms stay with
   `'lax'`.
 - **`AbstractSchema`** — the schema contract. See

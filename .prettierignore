@@ -2,3 +2,8 @@
 **/.nuxt/
 **/dist/
 **/coverage/
+
+# Auto-generated — touched by tooling, not by hand.
+pnpm-lock.yaml
+CHANGELOG.md
+RELEASES.md

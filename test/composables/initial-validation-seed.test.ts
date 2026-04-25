@@ -126,10 +126,11 @@ describe('initial validation seed — hydration takes precedence', () => {
       validationMode: 'strict',
       hydration: {
         form: { email: 'server@x.com', password: 'serverpw' },
-        // Empty errors — hydration says the server saw a valid form.
+        // Empty stores — hydration says the server saw a valid form.
         // The seed must NOT fire and overwrite this with the schema's
         // errors-on-empty-defaults.
-        errors: [],
+        schemaErrors: [],
+        userErrors: [],
         fields: [],
       },
     })
@@ -164,7 +165,8 @@ describe('initial validation seed — hydration takes precedence', () => {
       validationMode: 'strict',
       hydration: {
         form: { email: 'a@a', password: 'irrelevant' },
-        errors: [[emailKey, onlyServerError]],
+        schemaErrors: [[emailKey, onlyServerError]],
+        userErrors: [],
         fields: [],
       },
     })

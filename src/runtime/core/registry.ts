@@ -21,7 +21,19 @@ import { detectSSR, type SSRDetectOptions } from './ssr'
 
 export type SerializedFormData = {
   readonly form: unknown
-  readonly errors: ReadonlyArray<readonly [string, unknown]>
+  /**
+   * Schema-driven errors at SSR snapshot time. Replays into the
+   * client's `schemaErrors` Map at hydration. Cleared by reset and
+   * by submit-success on the client side.
+   */
+  readonly schemaErrors: ReadonlyArray<readonly [string, unknown]>
+  /**
+   * User-injected errors at SSR snapshot time (typically populated
+   * by `setFieldErrorsFromApi` or `addFieldErrors` during the server
+   * render). Replays into `userErrors` at hydration; persists across
+   * client-side schema revalidation and successful submits.
+   */
+  readonly userErrors: ReadonlyArray<readonly [string, unknown]>
   readonly fields: ReadonlyArray<readonly [string, unknown]>
 }
 

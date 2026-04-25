@@ -276,7 +276,17 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
  */
 export type FormStoreHydration = {
   readonly form: unknown
-  readonly errors: ReadonlyArray<readonly [string, unknown]>
+  /**
+   * Schema-driven errors snapshot. Replayed into `schemaErrors` at
+   * construction; takes precedence over the construction-time seed.
+   */
+  readonly schemaErrors: ReadonlyArray<readonly [string, unknown]>
+  /**
+   * User-injected errors snapshot. Replayed into `userErrors` at
+   * construction. Allows server-side `setFieldErrorsFromApi` /
+   * `addFieldErrors` calls to round-trip through hydration.
+   */
+  readonly userErrors: ReadonlyArray<readonly [string, unknown]>
   readonly fields: ReadonlyArray<readonly [string, unknown]>
 }
 
@@ -387,14 +397,16 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     for (const [rawKey, record] of hydration.fields) {
       fields.set(rawKey as PathKey, record as FieldRecord)
     }
-    // Hydration's flat `errors` field maps to schemaErrors for now —
-    // step 5 expands the payload to carry schemaErrors + userErrors
-    // separately so hydrated user errors round-trip cleanly. Hydration
-    // takes precedence over the construction-time seed below: the
-    // server already authored whatever error state the client should
-    // mirror, including (deliberately) the empty case.
-    for (const [rawKey, errs] of hydration.errors) {
+    // Hydration takes precedence over the construction-time seed
+    // below: the server already authored whatever error state the
+    // client should mirror, including (deliberately) the empty case.
+    // Each store replays from its own snapshot so the source-segregation
+    // invariant is preserved across SSR round-trip.
+    for (const [rawKey, errs] of hydration.schemaErrors) {
       schemaErrors.set(rawKey as PathKey, errs as ValidationError[])
+    }
+    for (const [rawKey, errs] of hydration.userErrors) {
+      userErrors.set(rawKey as PathKey, errs as ValidationError[])
     }
   } else {
     diffAndApply({}, initialData, [], (patch) => {

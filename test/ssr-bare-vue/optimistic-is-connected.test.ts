@@ -345,4 +345,169 @@ describe('SSR isConnected — cross-component sync via shared form key', () => {
     // there's only one store).
     expect(state?.getFieldRecord(['password'])?.isConnected).toBe(false)
   })
+
+  /**
+   * Case A: a sibling component does setup-only `register('email')`
+   * (no template binding) AND another sibling has the v-register
+   * binding. Sharing a form key means there's exactly one
+   * FormStore; the binding sibling's preamble fires the mark on the
+   * shared store, and the setup-only sibling — even though IT
+   * never called the optimistic mark itself — observes
+   * `isConnected: true`. This is the "implicit cross-component
+   * acknowledgement" working as the user intuited: not because
+   * setup-only register() has any opinion of its own, but because
+   * the store is genuinely shared and someone else established
+   * the DOM presence.
+   */
+  it('Case A: setup-only register() in one SFC sees isConnected: true when a sibling SFC v-registers the same path', async () => {
+    type SharedForm = { email: string }
+    const sharedSchema = () => fakeSchema<SharedForm>({ email: '' })
+    const SHARED_KEY = 'case-a-shared'
+
+    // Sibling 1: v-registers email in its template (the "real"
+    // binding — its preamble fires the mark on the shared store).
+    const Binder = defineComponent({
+      name: 'Binder',
+      setup() {
+        const form = useForm<SharedForm>({ schema: sharedSchema(), key: SHARED_KEY })
+        return { form }
+      },
+      render: compileTemplate(
+        `<div><input v-register="form.register('email')" /></div>`,
+        'preamble+hint'
+      ),
+    })
+
+    // Sibling 2: calls `register('email')` from setup (creates a
+    // RegisterValue) and reads getFieldState in its template, but
+    // never binds via v-register. With cross-component store
+    // sharing, this sibling's read of `isConnected` reflects the
+    // OTHER sibling's binding state.
+    const SetupOnlyReader = defineComponent({
+      name: 'SetupOnlyReader',
+      setup() {
+        const form = useForm<SharedForm>({ schema: sharedSchema(), key: SHARED_KEY })
+        // Setup-only register call. On its own this does NOT mark
+        // anything (it just constructs a RegisterValue closure). But
+        // because the Binder sibling's preamble already fired the
+        // mark on the shared store, when the template below reads
+        // getFieldState, it observes the marked value.
+        form.register('email')
+        return { form }
+      },
+      render: compileTemplate(
+        `<div class="setup-only-reader">{{ JSON.stringify(form.getFieldState('email').value) }}</div>`,
+        'preamble+hint'
+      ),
+    })
+
+    const Parent = defineComponent({
+      name: 'Parent',
+      components: { Binder, SetupOnlyReader },
+      setup() {
+        return {}
+      },
+      // Binder must render first so its preamble has fired before
+      // SetupOnlyReader's getFieldState evaluates.
+      render: compileTemplate(`<div><Binder /><SetupOnlyReader /></div>`, 'preamble+hint'),
+    })
+    const app = createSSRApp(Parent)
+    app.use(createChemicalXForms({ override: true }))
+
+    const html = await renderToString(app)
+    const readerMatch = html.match(/<div class="setup-only-reader">([\s\S]*?)<\/div>/)
+    expect(readerMatch).not.toBeNull()
+    if (readerMatch === null) return
+    const readerBody = readerMatch[1] ?? ''
+    const containsTrue =
+      readerBody.includes('"isConnected":true') || readerBody.includes('isConnected&quot;:true')
+    expect(containsTrue).toBe(true)
+
+    // One shared store, mark recorded once on it.
+    const registry = getRegistryFromApp(app)
+    expect(registry.forms.size).toBe(1)
+    const state = registry.forms.get(SHARED_KEY)
+    expect(state?.getFieldRecord(['email'])?.isConnected).toBe(true)
+  })
+
+  /**
+   * Case B: every SFC that touches the path uses setup-only
+   * `register()`, and NOT ONE binds via v-register. There's no DOM
+   * element anywhere — `isConnected: true` would be a lie. Multiple
+   * components agreeing in setup doesn't add up to a real DOM
+   * presence; the flag has to stay `false`.
+   *
+   * This guards the invariant that `markConnectedOptimistically`
+   * only fires from the AST-visible v-register binding path. If a
+   * future change starts marking on `register()` invocation
+   * (the path that was tempting in early design discussions),
+   * this test would catch the regression.
+   */
+  it('Case B: multiple SFCs all calling setup-only register() with no template binding stays isConnected: false', async () => {
+    type SharedForm = { email: string }
+    const sharedSchema = () => fakeSchema<SharedForm>({ email: '' })
+    const SHARED_KEY = 'case-b-shared'
+
+    const SetupOnlyA = defineComponent({
+      name: 'SetupOnlyA',
+      setup() {
+        const form = useForm<SharedForm>({ schema: sharedSchema(), key: SHARED_KEY })
+        form.register('email')
+        return { form }
+      },
+      render: compileTemplate(`<div class="a">A</div>`, 'preamble+hint'),
+    })
+
+    const SetupOnlyB = defineComponent({
+      name: 'SetupOnlyB',
+      setup() {
+        const form = useForm<SharedForm>({ schema: sharedSchema(), key: SHARED_KEY })
+        form.register('email')
+        return { form }
+      },
+      render: compileTemplate(`<div class="b">B</div>`, 'preamble+hint'),
+    })
+
+    // Reader reads the shared store's email field — should observe
+    // `isConnected: false` because nobody v-registered it.
+    const Reader = defineComponent({
+      name: 'Reader',
+      setup() {
+        const form = useForm<SharedForm>({ schema: sharedSchema(), key: SHARED_KEY })
+        return { form }
+      },
+      render: compileTemplate(
+        `<div class="case-b-reader">{{ JSON.stringify(form.getFieldState('email').value) }}</div>`,
+        'preamble+hint'
+      ),
+    })
+
+    const Parent = defineComponent({
+      name: 'Parent',
+      components: { SetupOnlyA, SetupOnlyB, Reader },
+      setup() {
+        return {}
+      },
+      render: compileTemplate(`<div><SetupOnlyA /><SetupOnlyB /><Reader /></div>`, 'preamble+hint'),
+    })
+    const app = createSSRApp(Parent)
+    app.use(createChemicalXForms({ override: true }))
+
+    const html = await renderToString(app)
+    const readerMatch = html.match(/<div class="case-b-reader">([\s\S]*?)<\/div>/)
+    expect(readerMatch).not.toBeNull()
+    if (readerMatch === null) return
+    const readerBody = readerMatch[1] ?? ''
+    const containsFalse =
+      readerBody.includes('"isConnected":false') || readerBody.includes('isConnected&quot;:false')
+    expect(containsFalse).toBe(true)
+
+    // Direct assertion on the shared store: no marker fired, flag
+    // stays at the init-time default. This is the canonical "no
+    // implicit registration" invariant.
+    const registry = getRegistryFromApp(app)
+    expect(registry.forms.size).toBe(1)
+    const state = registry.forms.get(SHARED_KEY)
+    expect(state?.getFieldRecord(['email'])?.isConnected).toBe(false)
+  })
 })

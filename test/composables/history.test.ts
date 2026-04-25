@@ -52,9 +52,9 @@ describe('history — default (history: true)', () => {
   it('canUndo starts false and flips true after first mutation', () => {
     const { app, api } = mountForm(true)
     apps.push(app)
-    expect(api.canUndo.value).toBe(false)
+    expect(api.state.canUndo).toBe(false)
     api.setValue('email', 'a@example.com')
-    expect(api.canUndo.value).toBe(true)
+    expect(api.state.canUndo).toBe(true)
   })
 
   it('undo restores the prior form value', () => {
@@ -78,7 +78,7 @@ describe('history — default (history: true)', () => {
     api.setValue('email', 'one@example.com')
     api.setValue('email', 'two@example.com')
     api.undo()
-    expect(api.canRedo.value).toBe(true)
+    expect(api.state.canRedo).toBe(true)
     expect(api.redo()).toBe(true)
     expect(api.getValue('email').value).toBe('two@example.com')
   })
@@ -88,9 +88,9 @@ describe('history — default (history: true)', () => {
     apps.push(app)
     api.setValue('email', 'one@example.com')
     api.undo()
-    expect(api.canRedo.value).toBe(true)
+    expect(api.state.canRedo).toBe(true)
     api.setValue('email', 'two@example.com')
-    expect(api.canRedo.value).toBe(false)
+    expect(api.state.canRedo).toBe(false)
     expect(api.redo()).toBe(false)
   })
 
@@ -99,10 +99,10 @@ describe('history — default (history: true)', () => {
     apps.push(app)
     api.setValue('email', 'a@example.com')
     api.setValue('email', 'b@example.com')
-    expect(api.canUndo.value).toBe(true)
+    expect(api.state.canUndo).toBe(true)
     api.reset()
-    expect(api.canUndo.value).toBe(false)
-    expect(api.canRedo.value).toBe(false)
+    expect(api.state.canUndo).toBe(false)
+    expect(api.state.canRedo).toBe(false)
   })
 
   it('restores errors alongside the form on undo', () => {
@@ -156,10 +156,10 @@ describe('history — bounded stack', () => {
     apps.push(app)
     api.setValue('email', 'a')
     api.setValue('email', 'b')
-    expect(api.historySize.value).toBe(3) // initial + 2 mutations
+    expect(api.state.historySize).toBe(3) // initial + 2 mutations
     api.undo()
     // One moved from undo stack to redo stack — total is still 3.
-    expect(api.historySize.value).toBe(3)
+    expect(api.state.historySize).toBe(3)
   })
 })
 
@@ -175,9 +175,9 @@ describe('history — disabled (no config)', () => {
     api.setValue('email', 'mutated')
     expect(api.undo()).toBe(false)
     expect(api.redo()).toBe(false)
-    expect(api.canUndo.value).toBe(false)
-    expect(api.canRedo.value).toBe(false)
-    expect(api.historySize.value).toBe(0)
+    expect(api.state.canUndo).toBe(false)
+    expect(api.state.canRedo).toBe(false)
+    expect(api.state.historySize).toBe(0)
     expect(api.getValue('email').value).toBe('mutated')
   })
 })

@@ -83,10 +83,10 @@ describe('useForm — reset()', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setFieldErrors([{ path: ['email'], message: 'taken', formKey: form.key }])
-    expect(form.isValid.value).toBe(false)
+    expect(form.state.isValid).toBe(false)
 
     form.reset()
-    expect(form.isValid.value).toBe(true)
+    expect(form.state.isValid).toBe(true)
     expect(form.fieldErrors).toEqual({})
   })
 
@@ -94,10 +94,10 @@ describe('useForm — reset()', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setValue('email', 'dirty@example.com')
-    expect(form.isDirty.value).toBe(true)
+    expect(form.state.isDirty).toBe(true)
 
     form.reset()
-    expect(form.isDirty.value).toBe(false)
+    expect(form.state.isDirty).toBe(false)
   })
 
   it('rebaselines originals so a post-reset mutation flips isDirty', () => {
@@ -105,11 +105,11 @@ describe('useForm — reset()', () => {
     apps.push(app)
     // Reset with a new baseline.
     form.reset({ email: 'baseline@example.com' })
-    expect(form.isDirty.value).toBe(false)
+    expect(form.state.isDirty).toBe(false)
     // Mutating back to the schema default is now a dirtying move — the
     // new baseline is the constrained value, not the original schema default.
     form.setValue('email', '')
-    expect(form.isDirty.value).toBe(true)
+    expect(form.state.isDirty).toBe(true)
   })
 
   it('clears submission lifecycle (count, error, in-flight)', async () => {
@@ -120,13 +120,13 @@ describe('useForm — reset()', () => {
       throw new Error('boom')
     })
     await expect(handler()).rejects.toThrow('boom')
-    expect(form.submitCount.value).toBe(1)
-    expect(form.submitError.value).toBeInstanceOf(Error)
+    expect(form.state.submitCount).toBe(1)
+    expect(form.state.submitError).toBeInstanceOf(Error)
 
     form.reset()
-    expect(form.submitCount.value).toBe(0)
-    expect(form.submitError.value).toBeNull()
-    expect(form.isSubmitting.value).toBe(false)
+    expect(form.state.submitCount).toBe(0)
+    expect(form.state.submitError).toBeNull()
+    expect(form.state.isSubmitting).toBe(false)
   })
 })
 

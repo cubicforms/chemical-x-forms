@@ -50,40 +50,40 @@ describe('useForm — isDirty / isValid form-level aggregates', () => {
   it('pristine form is !isDirty && isValid', () => {
     const { app, form } = harness()
     apps.push(app)
-    expect(form.isDirty.value).toBe(false)
-    expect(form.isValid.value).toBe(true)
+    expect(form.state.isDirty).toBe(false)
+    expect(form.state.isValid).toBe(true)
   })
 
   it('setValue on any leaf flips isDirty true', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setValue('email', 'user@example.com')
-    expect(form.isDirty.value).toBe(true)
+    expect(form.state.isDirty).toBe(true)
   })
 
   it('undoing all mutations flips isDirty back to false', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setValue('email', 'user@example.com')
-    expect(form.isDirty.value).toBe(true)
+    expect(form.state.isDirty).toBe(true)
     form.setValue('email', '')
-    expect(form.isDirty.value).toBe(false)
+    expect(form.state.isDirty).toBe(false)
   })
 
   it('recording errors via setFieldErrors flips isValid false', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setFieldErrors([{ path: ['email'], message: 'required', formKey: form.key }])
-    expect(form.isValid.value).toBe(false)
+    expect(form.state.isValid).toBe(false)
   })
 
   it('clearing errors flips isValid back to true', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setFieldErrors([{ path: ['email'], message: 'required', formKey: form.key }])
-    expect(form.isValid.value).toBe(false)
+    expect(form.state.isValid).toBe(false)
     form.clearFieldErrors()
-    expect(form.isValid.value).toBe(true)
+    expect(form.state.isValid).toBe(true)
   })
 
   it('isDirty and isValid are independent — dirty-but-valid is a real state', () => {
@@ -91,7 +91,7 @@ describe('useForm — isDirty / isValid form-level aggregates', () => {
     apps.push(app)
     form.setValue('email', 'a@b')
     // No errors recorded → still valid.
-    expect(form.isDirty.value).toBe(true)
-    expect(form.isValid.value).toBe(true)
+    expect(form.state.isDirty).toBe(true)
+    expect(form.state.isValid).toBe(true)
   })
 })

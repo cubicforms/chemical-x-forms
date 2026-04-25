@@ -223,3 +223,126 @@ describe('SSR isConnected — read-before-input (preamble) via both transforms',
     expect(html).not.toContain('data-cx-pre-mark')
   })
 })
+
+describe('SSR isConnected — fields the template never binds', () => {
+  it('a schema field with no matching v-register stays isConnected: false', async () => {
+    // The schema declares both `email` and `password`, but the
+    // template only renders `<input v-register="form.register('email')">`.
+    // The transforms (preamble + hint) have NO way to know about
+    // `password` — there's no binding to capture, no IIFE to evaluate.
+    // Result: email is optimistically marked, password is correctly
+    // left at its init-time `false`.
+    //
+    // Why this matters: marking a path as connected when no DOM
+    // element will ever back it is a lie. A later read of
+    // `getFieldState('password').isConnected` would mislead a
+    // consumer into thinking the field is rendered when it isn't.
+    const template = `<div>
+      <input v-register="form.register('email')" />
+    </div>`
+    const app = makeAppWithTemplate(template, 'preamble+hint')
+    await renderToString(app)
+    const registry = getRegistryFromApp(app)
+    const state = registry.forms.get('connected-test')
+    expect(state).toBeDefined()
+    if (state === undefined) return
+    expect(state.getFieldRecord(['email'])?.isConnected).toBe(true)
+    expect(state.getFieldRecord(['password'])?.isConnected).toBe(false)
+  })
+})
+
+describe('SSR isConnected — cross-component sync via shared form key', () => {
+  /**
+   * Two sibling components consume the same FormStore by key. One
+   * binds a field via `v-register`; the other reads `getFieldState`
+   * for that field. The optimistic mark fires on the SHARED store
+   * during the writer's render, and the reader's render — happening
+   * later in template-traversal order — sees the marked state.
+   *
+   * This is the proof that cx's by-key sharing semantics actually
+   * round-trip the optimistic mark correctly: the FormStore
+   * registered under `key: 'shared'` is one object across every
+   * `useForm` / `useFormContext` consumer in the app, so any mark
+   * fired by one consumer is visible to every other.
+   *
+   * Render-order caveat: Vue's SSR is single-pass top-to-bottom, so
+   * if the parent template rendered the reader BEFORE the writer,
+   * the reader's read would happen against an unmarked store. That's
+   * the same render-order limitation the preamble transform fixes
+   * within a SINGLE template — across components it's still up to
+   * the parent to render the writer first. We use that order here
+   * (writer → reader) because it's the natural composition.
+   */
+  it('reader sees isConnected: true when writer is rendered first under the same form key', async () => {
+    type SharedForm = { email: string; password: string }
+    const sharedSchema = () => fakeSchema<SharedForm>({ email: '', password: '' })
+    const SHARED_KEY = 'shared-form'
+
+    const writerRender = compileTemplate(
+      `<div><input v-register="form.register('email')" /></div>`,
+      'preamble+hint'
+    )
+    const Writer = defineComponent({
+      name: 'Writer',
+      setup() {
+        const form = useForm<SharedForm>({ schema: sharedSchema(), key: SHARED_KEY })
+        return { form }
+      },
+      render: writerRender,
+    })
+
+    const readerRender = compileTemplate(
+      `<div class="reader">{{ JSON.stringify(form.getFieldState('email').value) }}</div>`,
+      'preamble+hint'
+    )
+    const Reader = defineComponent({
+      name: 'Reader',
+      setup() {
+        // Same key → useForm returns the existing FormStore. The
+        // schema fingerprint matches (factory returns an equivalent
+        // shape) so no warning fires.
+        const form = useForm<SharedForm>({ schema: sharedSchema(), key: SHARED_KEY })
+        return { form }
+      },
+      render: readerRender,
+    })
+
+    const Parent = defineComponent({
+      name: 'Parent',
+      components: { Writer, Reader },
+      setup() {
+        return {}
+      },
+      // Render writer FIRST so its preamble has fired before the
+      // reader's render evaluates getFieldState. Reverse order would
+      // surface a stale `false` — that's a render-order limitation
+      // across components, not a sync problem.
+      render: compileTemplate(`<div><Writer /><Reader /></div>`, 'preamble+hint'),
+    })
+    const app = createSSRApp(Parent)
+    app.use(createChemicalXForms({ override: true }))
+
+    const html = await renderToString(app)
+    // Reader's div serialises the email field state. Both forms are
+    // backed by the shared FormStore, so the writer's optimistic
+    // mark is visible here.
+    const readerMatch = html.match(/<div class="reader">([\s\S]*?)<\/div>/)
+    expect(readerMatch).not.toBeNull()
+    if (readerMatch === null) return
+    const readerBody = readerMatch[1] ?? ''
+    const containsTrue =
+      readerBody.includes('"isConnected":true') || readerBody.includes('isConnected&quot;:true')
+    expect(containsTrue).toBe(true)
+
+    // Both consumers point at the same FormStore — a single registry
+    // entry under SHARED_KEY, with email marked.
+    const registry = getRegistryFromApp(app)
+    expect(registry.forms.size).toBe(1)
+    const state = registry.forms.get(SHARED_KEY)
+    expect(state?.getFieldRecord(['email'])?.isConnected).toBe(true)
+    // Password is in the schema but never bound — stays false (and
+    // both Writer and Reader observe the same false here, because
+    // there's only one store).
+    expect(state?.getFieldRecord(['password'])?.isConnected).toBe(false)
+  })
+})

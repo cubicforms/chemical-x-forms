@@ -10,8 +10,13 @@
  * Rspack, a custom Rollup pipeline, etc.) and needing to add the
  * transforms to Vue's template compiler manually:
  *
- *   import { selectNodeTransform, inputTextAreaNodeTransform } from '@chemical-x/forms/transforms'
+ *   import {
+ *     selectNodeTransform,
+ *     inputTextAreaNodeTransform,
+ *     vRegisterHintTransform,
+ *   } from '@chemical-x/forms/transforms'
  */
 
 export { inputTextAreaNodeTransform } from './runtime/lib/core/transforms/input-text-area-transform'
 export { selectNodeTransform } from './runtime/lib/core/transforms/select-transform'
+export { vRegisterHintTransform } from './runtime/lib/core/transforms/v-register-hint-transform'

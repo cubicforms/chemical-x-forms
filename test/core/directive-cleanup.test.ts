@@ -32,6 +32,7 @@ function makeRegisterValue<T>(initial: T): {
     registerElement: register,
     deregisterElement: deregister,
     setValueWithInternalPath: setValue,
+    markConnectedOptimistically: () => undefined,
   }
   return { value, register, deregister, setValue }
 }

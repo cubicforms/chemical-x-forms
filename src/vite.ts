@@ -27,6 +27,7 @@
 import type { Plugin } from 'vite'
 import { inputTextAreaNodeTransform } from './runtime/lib/core/transforms/input-text-area-transform'
 import { selectNodeTransform } from './runtime/lib/core/transforms/select-transform'
+import { vRegisterHintTransform } from './runtime/lib/core/transforms/v-register-hint-transform'
 
 /** Reserved for future options. Empty at the moment. */
 export type ChemicalXVitePluginOptions = Record<string, never>
@@ -63,6 +64,7 @@ export function chemicalXForms(_options: ChemicalXVitePluginOptions = {}): Plugi
         ...existing,
         selectNodeTransform,
         inputTextAreaNodeTransform,
+        vRegisterHintTransform,
       ]
     },
   }

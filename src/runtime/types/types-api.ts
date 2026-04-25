@@ -426,6 +426,15 @@ export type RegisterValue<Value = unknown> = {
   registerElement: (el: HTMLElement) => void
   deregisterElement: (el: HTMLElement) => void
   setValueWithInternalPath: (value: unknown) => boolean
+  /**
+   * Optimistic SSR-only mark. Called by the `vRegisterHint` template
+   * transform's wrapping IIFE so that any field bound to `v-register`
+   * starts life with `isConnected: true` server-side, preventing the
+   * `false → true` flicker that would otherwise show up when the
+   * directive's `created` hook (skipped during SSR) finally runs on
+   * hydration. No-op on the client; see `FormStore.markConnectedOptimistically`.
+   */
+  markConnectedOptimistically: () => void
 }
 
 export type CustomDirectiveRegisterAssignerFn = (value: unknown) => void

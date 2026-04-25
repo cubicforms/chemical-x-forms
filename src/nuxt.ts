@@ -1,6 +1,7 @@
 import { addImports, addPlugin, addTypeTemplate, createResolver, defineNuxtModule } from '@nuxt/kit'
 import { inputTextAreaNodeTransform } from './runtime/lib/core/transforms/input-text-area-transform'
 import { selectNodeTransform } from './runtime/lib/core/transforms/select-transform'
+import { vRegisterHintTransform } from './runtime/lib/core/transforms/v-register-hint-transform'
 
 // Module options TypeScript interface definition
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -19,7 +20,8 @@ export default defineNuxtModule<CXModuleOptions>({
     nuxt.options.vue.compilerOptions.nodeTransforms ??= []
     nuxt.options.vue.compilerOptions.nodeTransforms.push(
       selectNodeTransform,
-      inputTextAreaNodeTransform
+      inputTextAreaNodeTransform,
+      vRegisterHintTransform
     )
 
     const resolver = createResolver(import.meta.url)

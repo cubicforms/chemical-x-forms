@@ -616,16 +616,33 @@ export type UseAbstractFormReturnType<
   /**
    * Reactive map of field errors keyed by the dotted path. Populated
    * automatically by `handleSubmit` on validation failure and cleared on
-   * validation success. Also writable via `setFieldErrors` /
-   * `setFieldErrorsFromApi` for server-side hydration.
+   * validation success. Also writable (via the imperative methods below,
+   * not via direct mutation) — `setFieldErrors`, `addFieldErrors`,
+   * `clearFieldErrors`, `setFieldErrorsFromApi`.
    *
-   * Typed as `FormFieldErrors<Form>` — a mapped type over the form's
-   * own `FlatPath<Form>`. Dot access works for known top-level paths
-   * (`fieldErrors.email`); bracket access is required for dotted
-   * nested keys (`fieldErrors['user.profile.email']`) because JS dot
-   * notation splits on literal dots.
+   * Typed as `Readonly<FormFieldErrors<Form>>` — a frozen view over the
+   * form's own `FlatPath<Form>` mapped type. Dot access works for known
+   * top-level paths (`fieldErrors.email`); bracket access is required
+   * for dotted nested keys (`fieldErrors['user.profile.email']`)
+   * because JS dot notation splits on literal dots.
+   *
+   * Internally backed by a `ComputedRef` wrapped in a Proxy:
+   *   - **Templates** dot-access directly with no `.value` (the API
+   *     object isn't a top-level setup binding, so Vue's auto-unwrap
+   *     would not reach a nested ComputedRef otherwise).
+   *   - **Readonly** at compile time (the type) and at runtime (Proxy
+   *     `set` / `deleteProperty` traps reject writes; assignments fail
+   *     silently and emit a dev-mode console warning pointing at the
+   *     correct mutator).
+   *   - **Reactive**: reads inside a render or `watchEffect` track the
+   *     underlying ComputedRef as a dependency, exactly as a direct
+   *     `.value` read would. Re-renders fire on error-state changes.
+   *   - **Watchable from script** via the getter form:
+   *     `watch(() => api.fieldErrors.email, …)`. Direct
+   *     `watch(api.fieldErrors, …)` no longer works — `fieldErrors` is
+   *     a plain reactive view, not a `Ref`.
    */
-  fieldErrors: Readonly<ComputedRef<FormFieldErrors<Form>>>
+  fieldErrors: Readonly<FormFieldErrors<Form>>
 
   /** Replace all field errors for this form with the provided list. */
   setFieldErrors: (errors: ValidationError[]) => void

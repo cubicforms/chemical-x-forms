@@ -205,8 +205,12 @@ describe('useForm type inference — getFieldState + fieldErrors', () => {
     expectTypeOf(fs.value.errors).toMatchTypeOf<ReadonlyArray<{ message: string }>>()
   })
 
-  it('fieldErrors is a ComputedRef<FormErrorRecord>', () => {
-    expectTypeOf(form.fieldErrors.value).toMatchTypeOf<Record<string, unknown>>()
+  it('fieldErrors is a Readonly<FormFieldErrors<Form>> (Proxy view, no .value)', () => {
+    // Internally backed by a ComputedRef + Proxy; the public type is
+    // the unwrapped record so templates can dot-access without `.value`.
+    expectTypeOf(form.fieldErrors).toMatchTypeOf<Record<string, unknown>>()
+    // @ts-expect-error — fieldErrors is no longer a Ref, so `.value` is gone.
+    void form.fieldErrors.value
   })
 })
 

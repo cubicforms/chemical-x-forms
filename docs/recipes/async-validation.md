@@ -11,13 +11,11 @@ import { z } from 'zod'
 import { useForm } from '@chemical-x/forms/zod'
 
 const signupSchema = z.object({
-  email: z
-    .email()
-    .refine(async (value) => {
-      const res = await fetch(`/api/email-available?e=${encodeURIComponent(value)}`)
-      const { available } = (await res.json()) as { available: boolean }
-      return available
-    }, 'Email already registered'),
+  email: z.email().refine(async (value) => {
+    const res = await fetch(`/api/email-available?e=${encodeURIComponent(value)}`)
+    const { available } = (await res.json()) as { available: boolean }
+    return available
+  }, 'Email already registered'),
   password: z.string().min(8),
 })
 
@@ -35,8 +33,8 @@ flag — use it to show a spinner while async validation is in flight.
 
 ```vue
 <script setup lang="ts">
-const { validate } = useForm({ schema: signupSchema, key: 'signup' })
-const status = validate()
+  const { validate } = useForm({ schema: signupSchema, key: 'signup' })
+  const status = validate()
 </script>
 
 <template>
@@ -73,12 +71,12 @@ validates the whole form.
 
 ## Disabling buttons during validation
 
-`isValidating` is a reactive boolean that's `true` while ANY
+`state.isValidating` is a reactive boolean that's `true` while ANY
 validation run is in flight — submit, reactive `validate()`, or
 `validateAsync`. Gate UI off it:
 
 ```vue
-<button :disabled="isValidating || isSubmitting">Continue</button>
+<button :disabled="form.state.isValidating || form.state.isSubmitting">Continue</button>
 ```
 
 ## Combining with server errors
@@ -100,8 +98,9 @@ const onSubmit = handleSubmit(async (values) => {
 })
 ```
 
-`isSubmitting` stays `true` across the full handler (validation +
-server round-trip), so UI gated on it works without extra wiring.
+`state.isSubmitting` stays `true` across the full handler
+(validation + server round-trip), so UI gated on it works without
+extra wiring.
 
 ## Cross-field validation
 
@@ -151,4 +150,4 @@ onMounted(async () => {
 ```
 
 `reset(next)` applies `next` over the schema's defaults — same
-precedence rules as the `initialState` option on `useForm`.
+precedence rules as the `defaultValues` option on `useForm`.

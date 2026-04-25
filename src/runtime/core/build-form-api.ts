@@ -1,10 +1,11 @@
-import { computed, type ComputedRef, type Ref } from 'vue'
+import { computed, reactive, readonly, type ComputedRef, type Ref } from 'vue'
 import type {
   CurrentValueContext,
   CurrentValueWithContext,
   FieldState,
   FormErrorRecord,
   FormFieldErrors,
+  FormState,
   OnInvalidSubmitPolicy,
   ReactiveValidationStatus,
   RegisterValue,
@@ -13,7 +14,8 @@ import type {
   ValidationResponseWithoutValue,
 } from '../types/types-api'
 import type { DeepPartial, GenericForm } from '../types/types-core'
-import type { FormState } from './create-form-state'
+import { __DEV__ } from './dev'
+import type { FormStore } from './create-form-store'
 import { buildFieldArrayApi } from './field-arrays'
 import { buildFieldStateAccessor } from './field-state-api'
 import type { HistoryModule } from './history'
@@ -35,7 +37,7 @@ export type BuildFormApiOptions = {
 }
 
 /**
- * Build the public form API from a FormState. Extracted from
+ * Build the public form API from a FormStore. Extracted from
  * `useAbstractForm` so that both the top-level form entry (which creates
  * a fresh state) and `useFormContext` (which resolves state from an
  * ambient provide/inject) produce identical API shapes without
@@ -43,10 +45,10 @@ export type BuildFormApiOptions = {
  *
  * `buildFormApi` does not interact with the registry, consumer ref-counts,
  * or the current Vue instance — those concerns belong to the caller. This
- * function is pure over (FormState, options) → api.
+ * function is pure over (FormStore, options) → api.
  */
 export function buildFormApi<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
-  state: FormState<Form>,
+  state: FormStore<Form>,
   options: BuildFormApiOptions = {}
 ): UseAbstractFormReturnType<Form, GetValueFormType> {
   const register = buildRegister(state) as (path: string | Path) => RegisterValue<unknown>
@@ -121,7 +123,12 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // errors merge under the shared dotted key. Consumers who need
   // collision-free access read from `state.errors` via the validate()
   // / getFieldState() paths instead of the legacy dotted record.
-  const fieldErrors = computed<FormErrorRecord>(() => {
+  //
+  // The internal computed stays — laziness + dependency tracking are
+  // useful. The public surface wraps it in a Proxy (see fieldErrorsView
+  // below) so templates can dot-access directly without `.value`, and
+  // the readonly contract is enforced at runtime via set/delete traps.
+  const fieldErrorsComputed = computed<FormErrorRecord>(() => {
     const record: FormErrorRecord = {}
     for (const [, entries] of state.errors) {
       for (const err of entries) {
@@ -133,6 +140,8 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     }
     return record
   })
+
+  const fieldErrors = createReadonlyErrorView(fieldErrorsComputed)
 
   function setFieldErrors(errors: ValidationError[]): void {
     state.setAllErrors(errors)
@@ -183,9 +192,33 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   const canRedo = history?.canRedo ?? computed(() => false)
   const historySize = history?.historySize ?? computed(() => 0)
 
+  // --- Form-level state bundle ---
+  // Vue auto-unwraps refs that are top-level on a setup return, but not
+  // refs nested in a return *object* — those render as their wrapper
+  // (always truthy) and silently break bindings like `:disabled`. We
+  // work around it by placing the 9 scalars inside `reactive()`, which
+  // unwraps ref values on property access at any depth; `readonly()`
+  // layers a runtime write-guard on top.
+  //
+  // Named `formState` locally to avoid shadowing the `state: FormStore<F>`
+  // param this function receives; exposed as `state` on the public return.
+  const formState = readonly(
+    reactive({
+      isDirty,
+      isValid,
+      isSubmitting,
+      isValidating,
+      submitCount,
+      submitError,
+      canUndo,
+      canRedo,
+      historySize,
+    })
+  ) as FormState
+
   // --- Reset ---
-  const reset = (nextInitialState?: DeepPartial<Form>): void => {
-    state.reset(nextInitialState)
+  const reset = (nextDefaultValues?: DeepPartial<Form>): void => {
+    state.reset(nextDefaultValues)
   }
 
   const resetField = (pathInput: string): void => {
@@ -226,26 +259,18 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     >['validateAsync'],
     register: register as UseAbstractFormReturnType<Form, GetValueFormType>['register'],
     key: state.formKey,
-    fieldErrors: fieldErrors as unknown as Readonly<ComputedRef<FormFieldErrors<Form>>>,
+    fieldErrors: fieldErrors as unknown as Readonly<FormFieldErrors<Form>>,
     setFieldErrors,
     addFieldErrors,
     clearFieldErrors,
     setFieldErrorsFromApi,
-    isDirty,
-    isValid,
-    isSubmitting,
-    submitCount,
-    submitError,
-    isValidating,
+    state: formState,
     reset: reset as UseAbstractFormReturnType<Form, GetValueFormType>['reset'],
     resetField: resetField as UseAbstractFormReturnType<Form, GetValueFormType>['resetField'],
     focusFirstError,
     scrollToFirstError,
     undo,
     redo,
-    canUndo,
-    canRedo,
-    historySize,
     append: fieldArrays.append as UseAbstractFormReturnType<Form, GetValueFormType>['append'],
     prepend: fieldArrays.prepend as UseAbstractFormReturnType<Form, GetValueFormType>['prepend'],
     insert: fieldArrays.insert as UseAbstractFormReturnType<Form, GetValueFormType>['insert'],
@@ -257,7 +282,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
 }
 
 function contextualiseValue<F extends GenericForm>(
-  state: FormState<F>,
+  state: FormStore<F>,
   segments: Path,
   context: CurrentValueContext<boolean>
 ): unknown {
@@ -269,4 +294,71 @@ function contextualiseValue<F extends GenericForm>(
     } as unknown as CurrentValueWithContext<unknown>
   }
   return currentValue as Readonly<Ref<unknown>>
+}
+
+/**
+ * Wrap a `ComputedRef<FormErrorRecord>` in a Proxy that exposes the
+ * underlying record's keys directly on the public object.
+ *
+ * Why a Proxy and not the bare ComputedRef:
+ *   - Vue templates auto-unwrap refs only when they are top-level keys
+ *     of the setup return. `useForm()` returns an API object, so any
+ *     ref nested inside (`fieldErrors`, etc.) does NOT auto-unwrap.
+ *     Authors hit this as `anon.fieldErrors.value.email` in templates,
+ *     which is a footgun. The Proxy lets them write
+ *     `anon.fieldErrors.email` directly.
+ *   - Readonly is preserved: `set` / `deleteProperty` / `defineProperty`
+ *     traps reject writes. Consumers must go through `setFieldErrors`,
+ *     `addFieldErrors`, or `clearFieldErrors`. (Type-level `Readonly<>`
+ *     enforces this at compile time too.)
+ *   - Reactivity is preserved: every trap that delegates to
+ *     `source.value` reads the ComputedRef inside the consumer's render
+ *     scope, so Vue tracks the dependency exactly as it would for a
+ *     direct `.value` read. Templates re-render on error changes.
+ *   - Laziness is preserved: the underlying ComputedRef only recomputes
+ *     when its inputs (state.errors) change AND a trap that reads
+ *     `source.value` fires.
+ */
+function createReadonlyErrorView<T extends FormErrorRecord>(source: ComputedRef<T>): T {
+  const target: T = Object.create(null) as T
+  return new Proxy(target, {
+    get(_, key) {
+      return (source.value as Record<string | symbol, unknown>)[key as string]
+    },
+    has(_, key) {
+      return key in source.value
+    },
+    ownKeys() {
+      return Reflect.ownKeys(source.value as object)
+    },
+    getOwnPropertyDescriptor(_, key) {
+      const desc = Reflect.getOwnPropertyDescriptor(source.value as object, key)
+      // Proxy invariant: when the underlying target ({}) lacks the key,
+      // the descriptor we report MUST have configurable: true. The
+      // delegated descriptor inherits configurable: true from the plain
+      // object record, but we set it explicitly to be defensive.
+      if (desc !== undefined) desc.configurable = true
+      return desc
+    },
+    set() {
+      if (__DEV__) {
+        console.warn(
+          '[@chemical-x/forms] fieldErrors is read-only — write via setFieldErrors / addFieldErrors / clearFieldErrors.'
+        )
+      }
+      return false
+    },
+    deleteProperty() {
+      if (__DEV__) {
+        console.warn('[@chemical-x/forms] fieldErrors is read-only — clear via clearFieldErrors.')
+      }
+      return false
+    },
+    defineProperty() {
+      return false
+    },
+    setPrototypeOf() {
+      return false
+    },
+  })
 }

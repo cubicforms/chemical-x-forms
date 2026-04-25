@@ -4,19 +4,19 @@ import type { DeepPartial, GenericForm } from '../../types/types-core'
 import { assertSupportedKinds } from './assert-supported'
 import { zodIssuesToValidationErrors } from './errors'
 import { fingerprintZodSchema } from './fingerprint'
-import { deriveDefault, getInitialStateFromZodSchema } from './initial-state'
+import { deriveDefault, getDefaultValuesFromZodSchema } from './default-values'
 import { assertZodVersion } from './introspect'
 import { getNestedZodSchemasAtPath } from './path-walker'
 
 /**
  * Zod v4 adapter — implements `AbstractSchema` against Zod v4's public
  * surface. Internal (`def.*`) access is quarantined to introspect.ts and
- * the co-located modules (initial-state, strip, path-walker, discriminator,
+ * the co-located modules (default-values, strip, path-walker, discriminator,
  * errors). This file is the wiring layer between those modules and the
  * framework's AbstractSchema contract.
  *
  * Feature parity with the v3 adapter:
- * - getInitialState: validate-then-fix loop (delegated to initial-state.ts)
+ * - getDefaultValues: validate-then-fix loop (delegated to default-values.ts)
  *   with refinement stripping in lax mode; discriminated-union-aware
  *   first-option fallback for invalid_type issues.
  * - getSchemasAtPath: discriminated-union-aware path walker.
@@ -38,8 +38,8 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
     return {
       fingerprint: () => fingerprintZodSchema(rootSchema),
 
-      getInitialState(config): ReturnType<AbstractSchema<Form, Form>['getInitialState']> {
-        const { data } = getInitialStateFromZodSchema<Form>({
+      getDefaultValues(config): ReturnType<AbstractSchema<Form, Form>['getDefaultValues']> {
+        const { data } = getDefaultValuesFromZodSchema<Form>({
           schema: rootSchema,
           useDefaultSchemaValues: config.useDefaultSchemaValues,
           validationMode: config.validationMode ?? 'lax',
@@ -74,7 +74,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
           (schema) =>
             ({
               fingerprint: () => fingerprintZodSchema(schema),
-              getInitialState: () => ({
+              getDefaultValues: () => ({
                 data: deriveDefault(schema, true),
                 errors: undefined,
                 success: true,

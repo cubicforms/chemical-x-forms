@@ -28,9 +28,7 @@ Supports DevTools v6 and v7 (`@vue/devtools-api` v6.6+).
 Skip the wiring in production, keep it in dev:
 
 ```ts
-import.meta.env.PROD
-  ? createChemicalXForms({ devtools: false })
-  : createChemicalXForms()
+import.meta.env.PROD ? createChemicalXForms({ devtools: false }) : createChemicalXForms()
 ```
 
 If the peer dep isn't installed at runtime, nothing breaks — the
@@ -48,18 +46,19 @@ Expand it to see one node per registered form (keyed by the form's
   the DevTools UI; your edit flows through `setValue` and drives
   the whole reactive pipeline (validation, persistence, history).
 - **Errors** — the error map keyed by path.
-- **Aggregates** — `isSubmitting`, `submitCount`, `submitError`,
-  `activeValidations`.
+- **Aggregates** — the `state` bundle (`isDirty`, `isValid`,
+  `isSubmitting`, `isValidating`, `submitCount`, `submitError`,
+  `canUndo`, `canRedo`, `historySize`).
 
 ### Timeline
 
 A "Chemical X Forms" timeline layer logs:
 
-| Event            | Fires on                                          |
-| ---------------- | ------------------------------------------------- |
+| Event            | Fires on                                                                  |
+| ---------------- | ------------------------------------------------------------------------- |
 | `form.change`    | Every mutation — register inputs, `setValue`, array helpers, undo / redo. |
-| `submit.success` | A submit handler's `onSubmit` resolves.           |
-| `reset`          | `reset()` completes.                              |
+| `submit.success` | A submit handler's `onSubmit` resolves.                                   |
+| `reset`          | `reset()` completes.                                                      |
 
 Hover a timeline event to see the form state at that moment.
 

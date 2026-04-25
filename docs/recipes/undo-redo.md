@@ -4,7 +4,7 @@
 const form = useForm({
   schema,
   key: 'signup',
-  history: true,       // default: 50-snapshot bounded stack
+  history: true, // default: 50-snapshot bounded stack
 })
 ```
 
@@ -16,17 +16,19 @@ useForm({ schema, key: 'signup', history: { max: 200 } })
 
 ## API
 
-| Member          | Type                                       | What it does                                                              |
-| --------------- | ------------------------------------------ | ------------------------------------------------------------------------- |
-| `undo()`        | `() => boolean`                            | Revert to the previous snapshot. `false` at baseline (nothing to undo).   |
-| `redo()`        | `() => boolean`                            | Replay a previously-undone snapshot. `false` when nothing's queued.       |
-| `canUndo`       | `Readonly<ComputedRef<boolean>>`           | Gate an "Undo" button on this.                                            |
-| `canRedo`       | `Readonly<ComputedRef<boolean>>`           | Gate a "Redo" button on this.                                             |
-| `historySize`   | `Readonly<ComputedRef<number>>`            | Total snapshots across both stacks — useful for debug overlays.           |
+| Member              | Type            | What it does                                                            |
+| ------------------- | --------------- | ----------------------------------------------------------------------- |
+| `undo()`            | `() => boolean` | Revert to the previous snapshot. `false` at baseline (nothing to undo). |
+| `redo()`            | `() => boolean` | Replay a previously-undone snapshot. `false` when nothing's queued.     |
+| `state.canUndo`     | `boolean`       | Gate an "Undo" button on this.                                          |
+| `state.canRedo`     | `boolean`       | Gate a "Redo" button on this.                                           |
+| `state.historySize` | `number`        | Total snapshots across both stacks — useful for debug overlays.         |
 
-When `history` isn't configured, the five members are still present
-but inert: `undo()` / `redo()` return `false`, refs read `false` /
-`0`. Templates don't need conditional logic.
+`undo()` and `redo()` are top-level methods; the three flags live
+on the `state` reactive bundle alongside the rest of the form-level
+aggregates. When `history` isn't configured, all five members are
+still present but inert: methods return `false`, flags read `false`
+/ `0`. Templates don't need conditional logic.
 
 ## Keyboard shortcuts
 
@@ -34,22 +36,24 @@ Not wired by default — do it in a line:
 
 ```vue
 <script setup lang="ts">
-const { undo, redo, canUndo, canRedo } = useForm({
-  schema, key: 'editor', history: true,
-})
+  const { undo, redo, state } = useForm({
+    schema,
+    key: 'editor',
+    history: true,
+  })
 
-function onKeydown(event: KeyboardEvent) {
-  if ((event.metaKey || event.ctrlKey) && event.key === 'z') {
-    event.preventDefault()
-    event.shiftKey ? redo() : undo()
+  function onKeydown(event: KeyboardEvent) {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'z') {
+      event.preventDefault()
+      event.shiftKey ? redo() : undo()
+    }
   }
-}
 </script>
 
 <template>
   <div @keydown="onKeydown">
-    <button :disabled="!canUndo" @click="undo">Undo</button>
-    <button :disabled="!canRedo" @click="redo">Redo</button>
+    <button :disabled="!state.canUndo" @click="undo">Undo</button>
+    <button :disabled="!state.canRedo" @click="redo">Redo</button>
     <!-- …form fields… -->
   </div>
 </template>
@@ -65,7 +69,7 @@ What's NOT snapshotted:
 - **Field records** (touched / focused / blurred / isConnected) —
   UI interaction history, it shouldn't rewind. A field that was
   touched stays touched.
-- **Submission lifecycle** (`submitCount`, `submitError`).
+- **Submission lifecycle** (`state.submitCount`, `state.submitError`).
 - **Validation in-flight state**.
 
 ## What pushes a snapshot

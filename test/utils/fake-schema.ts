@@ -1,7 +1,7 @@
 import type { Path } from '../../src/runtime/core/paths'
 import type {
   AbstractSchema,
-  InitialStateResponse,
+  DefaultValuesResponse,
   ValidationResponse,
 } from '../../src/runtime/types/types-api'
 import type { DeepPartial, GenericForm } from '../../src/runtime/types/types-core'
@@ -14,7 +14,7 @@ import type { DeepPartial, GenericForm } from '../../src/runtime/types/types-cor
  *
  * Usage:
  *   const schema = fakeSchema<MyForm>({ user: { name: 'alice', age: 30 } })
- *   const state = createFormState({ formKey: 'test', schema })
+ *   const state = createFormStore({ formKey: 'test', schema })
  *
  * This schema:
  * - Accepts any form shape; no validation rules.
@@ -44,7 +44,7 @@ export function fakeSchema<F extends GenericForm>(
 ): AbstractSchema<F, F> {
   const schema: AbstractSchema<F, F> = {
     fingerprint: () => fingerprint,
-    getInitialState(config): InitialStateResponse<F> {
+    getDefaultValues(config): DefaultValuesResponse<F> {
       const merged = mergeDeepPartial(defaults, config.constraints) as F
       return {
         data: merged,

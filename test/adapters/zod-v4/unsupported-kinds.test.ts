@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { zodV4Adapter } from '../../../src/runtime/adapters/zod-v4/adapter'
 import { UnsupportedSchemaError } from '../../../src/runtime/adapters/zod-v4/errors'
-import { deriveDefault } from '../../../src/runtime/adapters/zod-v4/initial-state'
+import { deriveDefault } from '../../../src/runtime/adapters/zod-v4/default-values'
 
 /**
  * `assertSupportedKinds` runs at adapter construction. Every case below
@@ -75,7 +75,7 @@ describe('zod-v4 adapter — supported variants of lazy/intersection/catch', () 
     const schema = z.object({ wrap: z.lazy(() => inner) })
     expect(() => zodV4Adapter(schema)).not.toThrow()
     const adapter = zodV4Adapter(schema)('test')
-    const result = adapter.getInitialState({
+    const result = adapter.getDefaultValues({
       useDefaultSchemaValues: false,
       validationMode: 'lax',
       constraints: undefined,
@@ -89,7 +89,7 @@ describe('zod-v4 adapter — supported variants of lazy/intersection/catch', () 
     })
     expect(() => zodV4Adapter(schema)).not.toThrow()
     const adapter = zodV4Adapter(schema)('test')
-    const result = adapter.getInitialState({
+    const result = adapter.getDefaultValues({
       useDefaultSchemaValues: false,
       validationMode: 'lax',
       constraints: undefined,
@@ -100,7 +100,7 @@ describe('zod-v4 adapter — supported variants of lazy/intersection/catch', () 
   it('z.catch(schema, value) uses the catch value when useDefault=true', () => {
     const schema = z.object({ n: z.number().catch(42) })
     const adapter = zodV4Adapter(schema)('test')
-    const result = adapter.getInitialState({
+    const result = adapter.getDefaultValues({
       useDefaultSchemaValues: true,
       validationMode: 'lax',
       constraints: undefined,
@@ -111,7 +111,7 @@ describe('zod-v4 adapter — supported variants of lazy/intersection/catch', () 
   it('z.catch falls through to inner leaf default when useDefault=false', () => {
     const schema = z.object({ n: z.number().catch(42) })
     const adapter = zodV4Adapter(schema)('test')
-    const result = adapter.getInitialState({
+    const result = adapter.getDefaultValues({
       useDefaultSchemaValues: false,
       validationMode: 'lax',
       constraints: undefined,

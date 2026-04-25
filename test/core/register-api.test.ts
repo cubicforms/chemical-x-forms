@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { createFormState } from '../../src/runtime/core/create-form-state'
+import { createFormStore } from '../../src/runtime/core/create-form-store'
 import { buildRegister } from '../../src/runtime/core/register-api'
 import { fakeSchema } from '../utils/fake-schema'
 
 type F = { email: string; note: string }
 
 function makeRegister() {
-  const state = createFormState<F>({
+  const state = createFormStore<F>({
     formKey: 'r',
     schema: fakeSchema<F>({ email: '', note: '' }),
   })
@@ -99,11 +99,11 @@ describe('buildRegister', () => {
 
   describe('cross-form isolation', () => {
     it('two registers for different forms do not share DOM state', () => {
-      const stateA = createFormState<F>({
+      const stateA = createFormStore<F>({
         formKey: 'A',
         schema: fakeSchema<F>({ email: '', note: '' }),
       })
-      const stateB = createFormState<F>({
+      const stateB = createFormStore<F>({
         formKey: 'B',
         schema: fakeSchema<F>({ email: '', note: '' }),
       })

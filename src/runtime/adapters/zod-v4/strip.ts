@@ -58,7 +58,7 @@ function carryChecks<Rebuilt extends z.ZodType>(
  * stripRefinements: rebuild the schema tree with all refinement checks
  * (`z.string().min(3)`, `z.number().multipleOf(2)`, etc.) removed. The
  * validate-then-fix loop uses this so a default like `''` can satisfy a
- * `z.string().email()` during initial-state construction in lax mode.
+ * `z.string().email()` during default-values construction in lax mode.
  *
  * The semantics match v3's `stripRefinements`: descend through container
  * types and rebuild leaves without their checks.
@@ -202,7 +202,7 @@ export function getSlimSchema(schema: z.ZodType, stripConfig: StripConfig): z.Zo
       // reads it through the v4 getter and resolves to the materialised
       // value (lazy `.default(() => x)` getters fire here — we rewrap
       // as a fixed value, which is correct for the slim schema's
-      // single-shot use during initial-state derivation).
+      // single-shot use during default-values derivation).
       const defaultValue = getDefaultValue(schema)
       return (slimmedInner as z.ZodType).default(defaultValue as never)
     }
@@ -224,7 +224,7 @@ export function getSlimSchema(schema: z.ZodType, stripConfig: StripConfig): z.Zo
       // inner and dropping the pipe wrapper would lose that
       // transformation, so by default we return the original schema
       // unchanged. Consumers who explicitly opt in via `stripPipe`
-      // (e.g. initial-state derivation, where a transform doesn't make
+      // (e.g. default-values derivation, where a transform doesn't make
       // sense) get the upstream leg of the pipe only.
       if (stripConfig.stripPipe === true) {
         const inner = unwrapPipe(schema) ?? schema

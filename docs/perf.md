@@ -9,8 +9,8 @@ and what to do if you hit a wall.
 - **Keystrokes** — the register → form-state path has a CI gate
   requiring ≥3× the pre-rewrite baseline. Typical benches run
   6–12× faster.
-- **`isDirty`** — iterates only the tracked leaves, with no per-leaf
-  parse cost. Sub-millisecond on a 100-leaf form.
+- **`state.isDirty`** — iterates only the tracked leaves, with no
+  per-leaf parse cost. Sub-millisecond on a 100-leaf form.
 - **Path resolution** — dotted-string paths are LRU-cached (128
   entries). A typical form re-canonicalises a small set of paths
   thousands of times per session; the cache turns the repeat cost
@@ -21,11 +21,11 @@ of leaves.
 
 ## Sizing guidance
 
-| Scale                  | Guidance                                                                 |
-| ---------------------- | ------------------------------------------------------------------------ |
-| ≤ 500 leaves           | Default. No tuning needed.                                                |
-| 500 – 5,000 leaves     | Still fine. Watch out for templates that render every leaf's `isDirty`.  |
-| 5,000+ leaves          | Consider splitting into sub-forms with distinct `key`s. One giant schema is not what the library is optimised for. |
+| Scale              | Guidance                                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| ≤ 500 leaves       | Default. No tuning needed.                                                                                         |
+| 500 – 5,000 leaves | Still fine. Watch out for templates that render every leaf's `state.isDirty`.                                      |
+| 5,000+ leaves      | Consider splitting into sub-forms with distinct `key`s. One giant schema is not what the library is optimised for. |
 
 ## Array helpers are O(N)
 
@@ -52,17 +52,17 @@ Discriminated unions (`z.discriminatedUnion`) walk only the active
 branch. Plain unions (`z.union`) walk every branch unconditionally
 — use a DU when you have a shared key.
 
-## `isDirty` in hot templates
+## `state.isDirty` in hot templates
 
-`isDirty` is a whole-form aggregate — it invalidates whenever any
-tracked leaf's `updatedAt` ticks. If you render it in a hot path
-(e.g., a header that re-renders on every keystroke), derive a more
-specific predicate instead:
+`state.isDirty` is a whole-form aggregate — it invalidates whenever
+any tracked leaf's `updatedAt` ticks. If you render it in a hot
+path (e.g., a header that re-renders on every keystroke), derive a
+more specific predicate instead:
 
 ```ts
-// Faster than gating on the whole-form isDirty:
-const isEmailDirty = computed(() =>
-  form.getValue('email').value !== '' // or compare to originals
+// Faster than gating on the whole-form state.isDirty:
+const isEmailDirty = computed(
+  () => form.getValue('email').value !== '' // or compare to originals
 )
 ```
 

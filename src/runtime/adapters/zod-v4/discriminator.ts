@@ -4,7 +4,7 @@ import { getDiscriminatedOptions, kindOf, unwrapInner, unwrapPipe } from './intr
 /**
  * Peel optional/nullable/default/pipe wrappers off a schema, returning the
  * innermost discriminated union — or `undefined` if none is found. Used by
- * the initial-state walker so that e.g.
+ * the default-values walker so that e.g.
  *
  *   z.discriminatedUnion('status', [...]).optional().default({...})
  *
@@ -30,7 +30,7 @@ export function unwrapToDiscriminatedUnion(schema: z.ZodType): z.ZodType | undef
 
 /**
  * First option of a discriminated union — used as the default when no
- * discriminator value is known at initial-state construction time.
+ * discriminator value is known at default-values construction time.
  */
 export function getDiscriminatedUnionFirstOption(schema: z.ZodType): z.ZodObject | undefined {
   const options = getDiscriminatedOptions(schema)

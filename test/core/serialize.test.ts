@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { createApp } from 'vue'
-import { createFormState } from '../../src/runtime/core/create-form-state'
+import { createFormStore } from '../../src/runtime/core/create-form-store'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { getRegistryFromApp } from '../../src/runtime/core/registry'
 import { hydrateChemicalXState, renderChemicalXState } from '../../src/runtime/core/serialize'
@@ -13,7 +13,7 @@ function seedServerApp(formKey: string, initialEmail: string) {
   const app = createApp({ render: () => null })
   app.use(createChemicalXForms({ override: true }))
   const registry = getRegistryFromApp(app)
-  const state = createFormState<Signup>({
+  const state = createFormStore<Signup>({
     formKey,
     schema: fakeSchema<Signup>({ email: initialEmail, password: '' }),
   })
@@ -43,7 +43,7 @@ describe('renderChemicalXState', () => {
     expect(firstEntry).toBeDefined()
     if (firstEntry === undefined) return
     const data = firstEntry[1]
-    // Originals are derivable client-side from schema + initialState; elements
+    // Originals are derivable client-side from schema + defaultValues; elements
     // are DOM references that can't serialise. Serialisation omits both to
     // keep the wire format small and referentially clean.
     expect(data).not.toHaveProperty('originals')
@@ -78,7 +78,7 @@ describe('hydrateChemicalXState', () => {
     expect(registry.pendingHydration.has('stage')).toBe(true)
   })
 
-  it('reconstructs an equivalent FormState when the client creates a form with hydration', () => {
+  it('reconstructs an equivalent FormStore when the client creates a form with hydration', () => {
     const { app, state } = seedServerApp('rt2', 'server@x')
     state.setValueAtPath(['email'], 'server-edited@x')
     const payload = renderChemicalXState(app)
@@ -92,7 +92,7 @@ describe('hydrateChemicalXState', () => {
     expect(pending).toBeDefined()
     if (pending === undefined) return
 
-    const rehydratedState = createFormState<Signup>({
+    const rehydratedState = createFormStore<Signup>({
       formKey: 'rt2',
       schema: fakeSchema<Signup>({ email: '', password: '' }),
       hydration: pending,

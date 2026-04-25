@@ -57,8 +57,8 @@ Type fast, validate once. Successive writes reset the debounce
 timer and cancel any in-flight validation for that path:
 
 ```ts
-form.setValue('email', 'a')   // schedules
-form.setValue('email', 'ab')  // cancels prior, reschedules
+form.setValue('email', 'a') // schedules
+form.setValue('email', 'ab') // cancels prior, reschedules
 form.setValue('email', 'abc') // cancels prior, reschedules
 // …debounceMs after the LAST write, validation runs once on 'abc'.
 ```
@@ -76,14 +76,14 @@ sneaked in afterwards".
 `reset()` does the same — field-level state is cancelled before the
 fresh form lands.
 
-## `isValidating` for UI
+## `state.isValidating` for UI
 
-`isValidating` is `true` while any validation is in flight — submit,
-reactive `validate()`, one-shot `validateAsync`, or a field-level
-run. Gate UI:
+`state.isValidating` is `true` while any validation is in flight —
+submit, reactive `validate()`, one-shot `validateAsync`, or a
+field-level run. Gate UI:
 
 ```vue
-<button :disabled="isValidating">Submit</button>
+<button :disabled="form.state.isValidating">Submit</button>
 ```
 
 ## Tuning `debounceMs`

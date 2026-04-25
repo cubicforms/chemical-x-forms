@@ -85,7 +85,7 @@ describe('async validation — handleSubmit awaits async refinements', () => {
     )
     await handler()
     expect(onErrorFired).toBe(true)
-    const emailErrors = api.fieldErrors.value.email
+    const emailErrors = api.fieldErrors.email
     expect(emailErrors?.[0]?.message).toBe('Email already registered')
   })
 
@@ -99,9 +99,9 @@ describe('async validation — handleSubmit awaits async refinements', () => {
     const pending = handler()
     // At least one microtask in: validate has started.
     await Promise.resolve()
-    expect(api.isValidating.value).toBe(true)
+    expect(api.state.isValidating).toBe(true)
     await pending
-    expect(api.isValidating.value).toBe(false)
+    expect(api.state.isValidating).toBe(false)
   })
 })
 

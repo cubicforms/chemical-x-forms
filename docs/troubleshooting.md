@@ -11,7 +11,7 @@ without an inner refinement accepts anything. Double-check the
 schema is what you think it is.
 
 **You're in `validationMode: 'lax'` (the default) and watching
-`validate()`.** Lax mode strips refinements during initial-state
+`validate()`.** Lax mode strips refinements during default-values
 derivation so the form mounts with empty values without failing.
 Refinements re-apply on submit. If you want `validate()` to fire
 refinements immediately, switch to `'strict'`.
@@ -107,9 +107,9 @@ not a Promise. Bind the returned value:
 
 ```vue
 <script setup lang="ts">
-const submit = handleSubmit(async (values) => {
-  await api.signup(values)
-})
+  const submit = handleSubmit(async (values) => {
+    await api.signup(values)
+  })
 </script>
 
 <template>
@@ -140,7 +140,7 @@ uses. Mismatches between your adapter's path format and the rest
 of the app's usually stem from:
 
 - Mixing string / number types for array indices. Emit `['items',
-  0, 'name']` (number `0`), not `['items', '0', 'name']` (string).
+0, 'name']` (number `0`), not `['items', '0', 'name']` (string).
 - Paths relative to a sub-schema leaking through when the caller
   asked for an absolute path — re-stamp error paths with the
   field prefix before returning.

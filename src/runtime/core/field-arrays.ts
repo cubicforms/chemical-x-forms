@@ -1,9 +1,9 @@
 import type { GenericForm } from '../types/types-core'
-import type { FormState } from './create-form-state'
+import type { FormStore } from './create-form-store'
 import { canonicalizePath } from './paths'
 
 /**
- * Typed array helpers on top of FormState. Each helper reads the current
+ * Typed array helpers on top of FormStore. Each helper reads the current
  * array at the given path, produces a new copy (immutable, so that the
  * `form` ref's reactive notification goes out), and writes it back via
  * `setValueAtPath`. All downstream bookkeeping — diffAndApply patches,
@@ -33,7 +33,7 @@ export type FieldArrayApi = {
   replace(path: string, index: number, value: unknown): void
 }
 
-export function buildFieldArrayApi<F extends GenericForm>(state: FormState<F>): FieldArrayApi {
+export function buildFieldArrayApi<F extends GenericForm>(state: FormStore<F>): FieldArrayApi {
   function readArray(path: string): unknown[] {
     const segments = canonicalizePath(path).segments
     const current = state.getValueAtPath(segments)

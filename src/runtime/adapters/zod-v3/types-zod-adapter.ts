@@ -8,7 +8,7 @@ import type {
   ValidationMode,
 } from '../../types/types-api'
 
-export type UseFormConfigurationWithZod<Schema extends z.ZodType<unknown>, InitialState> = {
+export type UseFormConfigurationWithZod<Schema extends z.ZodType<unknown>, DefaultValues> = {
   schema: Schema extends z.ZodType<unknown>
     ? UnwrapZodObject<Schema> extends z.ZodObject<z.ZodRawShape>
       ? Schema
@@ -19,7 +19,7 @@ export type UseFormConfigurationWithZod<Schema extends z.ZodType<unknown>, Initi
   // state, distant lookup, persistence default, DevTools label). See
   // types-api.ts for the full rationale.
   key?: FormKey
-  initialState?: InitialState
+  defaultValues?: DefaultValues
   validationMode?: ValidationMode
   onInvalidSubmit?: OnInvalidSubmitPolicy
   fieldValidation?: FieldValidationConfig

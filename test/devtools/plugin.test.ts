@@ -142,9 +142,9 @@ describe('DevTools plugin — inspector + timeline wiring', () => {
     const registry = createRegistry({})
     attachRegistryToApp(regApp, registry)
     // Seed a form into the bare registry by hand (simulates useForm).
-    const { createFormState } = await import('../../src/runtime/core/create-form-state')
+    const { createFormStore } = await import('../../src/runtime/core/create-form-store')
     const { fakeSchema } = await import('../utils/fake-schema')
-    const state = createFormState<{ email: string }>({
+    const state = createFormStore<{ email: string }>({
       formKey: 'dev-tree',
       schema: fakeSchema<{ email: string }>({ email: '' }),
     })

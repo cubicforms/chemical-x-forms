@@ -10,27 +10,27 @@ payment provider" — and those come back as `fieldErrors` via
 
 ```vue
 <script setup lang="ts">
-import { useForm } from '@chemical-x/forms/zod'
-import { z } from 'zod'
+  import { useForm } from '@chemical-x/forms/zod'
+  import { z } from 'zod'
 
-const schema = z.object({
-  email: z.email(),
-  password: z.string().min(8),
-})
+  const schema = z.object({
+    email: z.email(),
+    password: z.string().min(8),
+  })
 
-const form = useForm({ schema, key: 'signup' })
+  const form = useForm({ schema, key: 'signup' })
 
-const onSubmit = form.handleSubmit(async (values) => {
-  try {
-    await $fetch('/api/signup', { method: 'POST', body: values })
-  } catch (err: any) {
-    if (err.statusCode === 422) {
-      form.setFieldErrorsFromApi(err.data)
-      return
+  const onSubmit = form.handleSubmit(async (values) => {
+    try {
+      await $fetch('/api/signup', { method: 'POST', body: values })
+    } catch (err: any) {
+      if (err.statusCode === 422) {
+        form.setFieldErrorsFromApi(err.data)
+        return
+      }
+      throw err // Other errors flow through to `state.submitError`.
     }
-    throw err // Other errors flow through to `submitError`.
-  }
-})
+  })
 </script>
 
 <template>
@@ -45,7 +45,7 @@ const onSubmit = form.handleSubmit(async (values) => {
       {{ form.fieldErrors.password[0].message }}
     </small>
 
-    <button :disabled="form.isSubmitting.value">Sign up</button>
+    <button :disabled="form.state.isSubmitting">Sign up</button>
   </form>
 </template>
 ```
@@ -91,7 +91,8 @@ return to branch on that case.
 
 A 422 with no visible focus is invisible to screen-reader users and
 easy to miss for sighted users scrolled past the error. Hydrate
-+ focus in the same block:
+
+- focus in the same block:
 
 ```ts
 import { focusFirstError } from '@chemical-x/forms'
@@ -121,7 +122,7 @@ if (err.statusCode === 422) {
       path: ['coupon'],
       message,
       formKey: form.key,
-    })),
+    }))
   )
 }
 ```
@@ -133,7 +134,7 @@ finer control.
 ## Non-field errors
 
 Some server errors aren't tied to a field — rate limits, provider
-outages. They belong in `submitError`, not `fieldErrors`:
+outages. They belong in `state.submitError`, not `fieldErrors`:
 
 ```ts
 const onSubmit = form.handleSubmit(async (values) => {
@@ -146,8 +147,8 @@ const onSubmit = form.handleSubmit(async (values) => {
 
 ```vue
 <template>
-  <p v-if="form.submitError.value" role="alert">
-    {{ (form.submitError.value as Error).message }}
+  <p v-if="form.state.submitError" role="alert">
+    {{ (form.state.submitError as Error).message }}
   </p>
 </template>
 ```
@@ -183,10 +184,7 @@ schema to reject anything unexpected:
 ```ts
 const ErrorPayload = z.object({
   error: z.object({
-    details: z.record(
-      z.string(),
-      z.union([z.string(), z.array(z.string())]),
-    ),
+    details: z.record(z.string(), z.union([z.string(), z.array(z.string())])),
   }),
 })
 

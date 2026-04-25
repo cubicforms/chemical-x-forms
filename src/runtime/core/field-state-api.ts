@@ -1,7 +1,7 @@
 import { computed, type ComputedRef } from 'vue'
 import type { ValidationError } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
-import type { FormState } from './create-form-state'
+import type { FormStore } from './create-form-store'
 import { canonicalizePath, type Path } from './paths'
 
 /**
@@ -30,7 +30,7 @@ export type FieldStateView = {
   readonly path: Path
 }
 
-export function buildFieldStateAccessor<F extends GenericForm>(state: FormState<F>) {
+export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<F>) {
   return function getFieldState(pathInput: string | Path): ComputedRef<FieldStateView> {
     const { segments, key } = canonicalizePath(pathInput)
     return computed<FieldStateView>(() => {

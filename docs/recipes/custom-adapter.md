@@ -12,7 +12,7 @@ Four methods:
 ```ts
 type AbstractSchema<Form, GetValueFormType = Form> = {
   fingerprint(): string
-  getInitialState(config): InitialStateResponse<Form>
+  getDefaultValues(config): DefaultValuesResponse<Form>
   getSchemasAtPath(path: Path): AbstractSchema<unknown, GetValueFormType>[]
   validateAtPath(data: unknown, path: Path | undefined): Promise<ValidationResponse<Form>>
 }
@@ -23,7 +23,7 @@ type AbstractSchema<Form, GetValueFormType = Form> = {
   schemas with different shapes should (best-effort) return
   different strings. Used to detect shared-key mismatches — see
   [Fingerprint implementation](#fingerprint-implementation).
-- **`getInitialState({ useDefaultSchemaValues, constraints, validationMode })`**
+- **`getDefaultValues({ useDefaultSchemaValues, constraints, validationMode })`**
   — returns `{ data, errors, success, formKey }`. Called at form
   creation and on `reset()`.
 - **`getSchemasAtPath(path)`** — returns the list of sub-schemas
@@ -57,15 +57,13 @@ Assume your library exposes:
 // adapter.ts
 import type {
   AbstractSchema,
-  InitialStateResponse,
+  DefaultValuesResponse,
   ValidationError,
   ValidationResponse,
 } from '@chemical-x/forms'
 import type { DeepPartial, GenericForm } from '@chemical-x/forms'
 
-export function myLibAdapter<F extends GenericForm>(
-  schema: MyLibSchema<F>,
-): AbstractSchema<F, F> {
+export function myLibAdapter<F extends GenericForm>(schema: MyLibSchema<F>): AbstractSchema<F, F> {
   return {
     fingerprint() {
       // If your library exposes structural metadata, walk it and
@@ -76,7 +74,7 @@ export function myLibAdapter<F extends GenericForm>(
       return schema.signature?.() ?? 'my-lib:v1'
     },
 
-    getInitialState({ constraints }): InitialStateResponse<F> {
+    getDefaultValues({ constraints }): DefaultValuesResponse<F> {
       const defaults = schema.defaultValues()
       const merged = mergeDeepPartial(defaults, constraints)
       return { data: merged, errors: undefined, success: true, formKey: '' }
@@ -127,13 +125,13 @@ import { myLibAdapter } from './adapter'
 export function useForm<F extends GenericForm>(options: {
   schema: MyLibSchema<F>
   key: string
-  initialState?: DeepPartial<F>
+  defaultValues?: DeepPartial<F>
   validationMode?: 'lax' | 'strict'
 }) {
   return useAbstractForm<F>({
     schema: myLibAdapter(options.schema),
     key: options.key,
-    initialState: options.initialState,
+    defaultValues: options.defaultValues,
     validationMode: options.validationMode,
   })
 }
@@ -146,7 +144,7 @@ one. The typing flows from your schema shape through
 ## Fingerprint implementation
 
 The library calls `fingerprint()` when a second `useForm({ key:
-'x', schema })` call lands on an already-resolved FormState.
+'x', schema })` call lands on an already-resolved FormStore.
 Matching strings → the shared-store semantic is intentional, stay
 silent. Differing strings → dev-mode warning that names both
 fingerprints; the first caller's schema stays canonical, the
@@ -220,8 +218,8 @@ identical regardless of adapter.
 
 Minimum coverage:
 
-- `getInitialState` returns schema defaults when no `constraints`.
-- `getInitialState` merges `constraints` over defaults.
+- `getDefaultValues` returns schema defaults when no `constraints`.
+- `getDefaultValues` merges `constraints` over defaults.
 - `validateAtPath` returns `{ success: true }` for valid input.
 - `validateAtPath` returns structured `ValidationError[]` for invalid input.
 - `validateAtPath(undefined)` validates the whole form.

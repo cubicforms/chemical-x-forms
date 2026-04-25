@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick, type Ref } from 'vue'
-import { createFormState } from '../../src/runtime/core/create-form-state'
+import { createFormStore } from '../../src/runtime/core/create-form-store'
 import { SubmitErrorHandlerError } from '../../src/runtime/core/errors'
 import type { Path } from '../../src/runtime/core/paths'
 import { buildProcessForm } from '../../src/runtime/core/process-form'
@@ -29,7 +29,7 @@ type Signup = { email: string; password: string }
 
 describe('buildProcessForm', () => {
   function alwaysValid() {
-    return createFormState<Signup>({
+    return createFormStore<Signup>({
       formKey: 'pf',
       schema: fakeSchema<Signup>({ email: 'a@b', password: 'secret1!' }),
     })
@@ -42,7 +42,7 @@ describe('buildProcessForm', () => {
       success: false,
       formKey: 'pf',
     })
-    return createFormState<Signup>({
+    return createFormStore<Signup>({
       formKey: 'pf',
       schema: fakeSchema<Signup>({ email: '', password: '' }, validator),
     })
@@ -289,7 +289,7 @@ describe('buildProcessForm', () => {
       // Regression: previously each handler invocation set isSubmitting
       // = false on its own completion, so the FIRST resolution prematurely
       // flipped the flag while a later submission was still in flight.
-      // The fix maintains an in-flight counter on FormState; isSubmitting
+      // The fix maintains an in-flight counter on FormStore; isSubmitting
       // is true iff the counter is > 0.
       const state = alwaysValid()
       const { handleSubmit } = buildProcessForm(state)

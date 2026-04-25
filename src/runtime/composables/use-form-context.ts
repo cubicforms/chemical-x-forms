@@ -1,6 +1,6 @@
 import { getCurrentInstance, getCurrentScope, inject, onScopeDispose } from 'vue'
 import { buildFormApi } from '../core/build-form-api'
-import type { FormState } from '../core/create-form-state'
+import type { FormStore } from '../core/create-form-store'
 import { __DEV__ } from '../core/dev'
 import type { HistoryModule } from '../core/history'
 import { kFormContext, useRegistry, type ChemicalXRegistry } from '../core/registry'
@@ -13,7 +13,7 @@ import { ambientProvideHistory } from './use-abstract-form'
  * prop-threading. Two resolution modes:
  *
  * - `useFormContext<Form>()` — resolves via `inject(kFormContext)`, the
- *   FormState that the nearest ancestor `useForm()` call provided.
+ *   FormStore that the nearest ancestor `useForm()` call provided.
  *   Throws a clear error if there's no ancestor form.
  *
  * - `useFormContext<Form>(key)` — looks the form up by its key in the
@@ -26,7 +26,7 @@ import { ambientProvideHistory } from './use-abstract-form'
  * recover the shape on the caller's behalf. The returned API is
  * type-identical to `useForm`'s return.
  *
- * Both resolution modes ref-count the consumer, so the FormState stays
+ * Both resolution modes ref-count the consumer, so the FormStore stays
  * alive for this component's effect scope and is released back to the
  * registry's eviction path on unmount. That means a form created by a
  * parent and accessed via this composable in a child component
@@ -39,9 +39,9 @@ export function useFormContext<
 >(key?: FormKey): UseAbstractFormReturnType<Form, GetValueFormType> {
   const registry = useRegistry()
 
-  const state: FormState<Form> = resolveState<Form>(key, registry)
+  const state: FormStore<Form> = resolveState<Form>(key, registry)
 
-  // Ref-count this consumer so the FormState survives until every nested
+  // Ref-count this consumer so the FormStore survives until every nested
   // component that reached it has torn down. Mirrors the behaviour in
   // useAbstractForm — see registry.trackConsumer for the counter semantics.
   if (getCurrentScope() !== undefined) {
@@ -71,9 +71,9 @@ export function useFormContext<
 function resolveState<Form extends GenericForm>(
   key: FormKey | undefined,
   registry: ChemicalXRegistry
-): FormState<Form> {
+): FormStore<Form> {
   if (key !== undefined) {
-    const stored = registry.forms.get(key) as FormState<Form> | undefined
+    const stored = registry.forms.get(key) as FormStore<Form> | undefined
     if (stored === undefined) {
       throw new Error(
         `[@chemical-x/forms] useFormContext: no form registered for key '${key}'. Call useForm({ key }) first.`
@@ -81,7 +81,7 @@ function resolveState<Form extends GenericForm>(
     }
     return stored
   }
-  const ambient = inject(kFormContext, null) as FormState<Form> | null
+  const ambient = inject(kFormContext, null) as FormStore<Form> | null
   if (ambient === null) {
     throw new Error(
       '[@chemical-x/forms] useFormContext: no ambient form context. Call useForm(...) in an ancestor or pass a key.'

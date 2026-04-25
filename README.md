@@ -50,19 +50,19 @@ That's it. [Jump to your first form →](#-your-first-form)
 
 ```vue
 <script setup lang="ts">
-import { useForm } from '@chemical-x/forms/zod' // zod v4; use /zod-v3 for v3
-import { z } from 'zod'
+  import { useForm } from '@chemical-x/forms/zod' // zod v4; use /zod-v3 for v3
+  import { z } from 'zod'
 
-const { register, handleSubmit, fieldErrors, isSubmitting } = useForm({
-  schema: z.object({
-    email: z.email(),
-    password: z.string().min(8),
-  }),
-})
+  const { register, handleSubmit, fieldErrors, state } = useForm({
+    schema: z.object({
+      email: z.email(),
+      password: z.string().min(8),
+    }),
+  })
 
-const onSubmit = handleSubmit(async (values) => {
-  await fetch('/api/signup', { method: 'POST', body: JSON.stringify(values) })
-})
+  const onSubmit = handleSubmit(async (values) => {
+    await fetch('/api/signup', { method: 'POST', body: JSON.stringify(values) })
+  })
 </script>
 
 <template>
@@ -73,13 +73,14 @@ const onSubmit = handleSubmit(async (values) => {
     <input v-register="register('password')" type="password" placeholder="Password" />
     <small v-if="fieldErrors.password?.[0]">{{ fieldErrors.password[0].message }}</small>
 
-    <button :disabled="isSubmitting">Sign up</button>
+    <button :disabled="state.isSubmitting">Sign up</button>
   </form>
 </template>
 ```
 
 You get: schema-typed values, per-field errors, a submit handler that
-validates first, and a reactive `isSubmitting` flag. Every leaf of
+validates first, and a reactive `state` bundle (`isSubmitting`,
+`isDirty`, `isValid`, and six more — see below). Every leaf of
 `fieldErrors` and every branded path is inferred from your Zod schema.
 <br><br>
 
@@ -90,8 +91,7 @@ Everything below is on by default — no opt-in needed:
 - **`register(path)` + `v-register`** — bind an input to a field in one directive. SSR-safe, no per-input `v-model` + `@input` boilerplate.
 - **`handleSubmit(onSubmit, onError?)`** — validates, then dispatches. Bind straight to `@submit.prevent`.
 - **`fieldErrors`** — reactive `Record<path, ValidationError[]>`. Auto-populated by `handleSubmit` on failure, cleared on success. Also writable from your own code.
-- **`isDirty` / `isValid`** — computed refs. Gate a "Save" button on `isDirty && isValid` without wiring per-field watchers.
-- **`isSubmitting` / `submitCount` / `submitError`** — full submission lifecycle. Spinner, per-click counter, reactive error banner with zero extra refs.
+- **`state`** — reactive bundle of form-level flags and counters: `state.isDirty` / `state.isValid` (gate a "Save" button on `state.isDirty && state.isValid` without wiring per-field watchers), `state.isSubmitting` / `state.submitCount` / `state.submitError` (full submission lifecycle — spinner, per-click counter, reactive error banner with zero extra refs), `state.isValidating` (async-validation flag), and `state.canUndo` / `state.canRedo` / `state.historySize` (undo/redo, always present; inert when `history` is off). Auto-unwraps in templates — no `.value`.
 - **`getValue(path)` / `setValue(path, value)`** — read / write any field programmatically.
 - **`getFieldState(path)`** — everything for one path: value, errors, touched, focused, blurred, isConnected, updatedAt.
 - **`reset(next?)` / `resetField(path)`** — restore the whole form, or a single subtree, back to schema defaults (or a partial override).
@@ -113,7 +113,7 @@ const schema = z.object({
 })
 ```
 
-`validate()` / `validateAsync(path?)` / `isValidating` give you reactive + imperative surfaces for live validation UI. [Recipe →](./docs/recipes/async-validation.md)
+`validate()` / `validateAsync(path?)` / `state.isValidating` give you reactive + imperative surfaces for live validation UI. [Recipe →](./docs/recipes/async-validation.md)
 
 ### Live field validation
 
@@ -147,7 +147,7 @@ Backends: `'local'` / `'session'` / `'indexeddb'` (or your own). Writes debounce
 useForm({ schema, key, history: true })
 ```
 
-Adds `undo()` / `redo()` / `canUndo` / `canRedo` with a bounded snapshot stack (default 50). Wire it to <kbd>⌘Z</kbd> / <kbd>⌘⇧Z</kbd> in one line. [Recipe →](./docs/recipes/undo-redo.md)
+Adds `undo()` / `redo()` methods plus `state.canUndo` / `state.canRedo` / `state.historySize` on a bounded snapshot stack (default 50). Wire it to <kbd>⌘Z</kbd> / <kbd>⌘⇧Z</kbd> in one line. [Recipe →](./docs/recipes/undo-redo.md)
 
 ### Nested form components
 
@@ -207,14 +207,14 @@ lands with a migration note under [`docs/migration/`](./docs/migration). [Recent
 
 ### Subpath exports
 
-| Subpath                          | Purpose                                                   |
-| -------------------------------- | --------------------------------------------------------- |
-| `@chemical-x/forms`              | Framework-agnostic core (plugin, `useForm`, directive)    |
-| `@chemical-x/forms/nuxt`         | Nuxt 3 / 4 module                                         |
-| `@chemical-x/forms/vite`         | Vite plugin (registers node transforms)                   |
-| `@chemical-x/forms/transforms`   | Raw node transforms for custom bundlers                   |
-| `@chemical-x/forms/zod`          | Zod v4 adapter (recommended; requires `zod@^4`)           |
-| `@chemical-x/forms/zod-v3`       | Zod v3 adapter (legacy; requires `zod@^3`)                |
+| Subpath                        | Purpose                                                |
+| ------------------------------ | ------------------------------------------------------ |
+| `@chemical-x/forms`            | Framework-agnostic core (plugin, `useForm`, directive) |
+| `@chemical-x/forms/nuxt`       | Nuxt 3 / 4 module                                      |
+| `@chemical-x/forms/vite`       | Vite plugin (registers node transforms)                |
+| `@chemical-x/forms/transforms` | Raw node transforms for custom bundlers                |
+| `@chemical-x/forms/zod`        | Zod v4 adapter (recommended; requires `zod@^4`)        |
+| `@chemical-x/forms/zod-v3`     | Zod v3 adapter (legacy; requires `zod@^3`)             |
 
 <br>
 

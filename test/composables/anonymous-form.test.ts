@@ -15,7 +15,7 @@ import { fakeSchema } from '../utils/fake-schema'
  *
  *   1. Two sibling `useForm({ schema })` calls no longer share
  *      state. Each call resolves to its own `cx:anon:` id and
- *      therefore its own FormState.
+ *      therefore its own FormStore.
  *   2. Descendant-only access still works via ambient
  *      `useFormContext<F>()`, which resolves through `provide`/
  *      `inject` and doesn't touch the registry's key space.
@@ -28,7 +28,7 @@ type Form = { name: string }
 const defaults: Form = { name: '' }
 
 describe('anonymous useForm — independent state per setup call', () => {
-  it('two sibling components get distinct FormStates', async () => {
+  it('two sibling components get distinct FormStores', async () => {
     type Api = ReturnType<typeof useForm<Form>>
     const captured: { a?: Api; b?: Api } = {}
 
@@ -69,7 +69,7 @@ describe('anonymous useForm — independent state per setup call', () => {
 })
 
 describe('anonymous useForm — ambient useFormContext access', () => {
-  it('descendant composable reads the same FormState via provide/inject', async () => {
+  it('descendant composable reads the same FormStore via provide/inject', async () => {
     type Api = ReturnType<typeof useForm<Form>>
     const captured: { owner?: Api; consumer?: Api } = {}
 

@@ -11,7 +11,7 @@ import { getRegistryFromApp, type SerializedFormData } from './registry'
  * Payload shape is JSON-safe tuples so consumers can pick their own
  * stringifier (JSON.stringify, devalue, whatever). `originals` and
  * `elements` are intentionally omitted: originals are derivable from
- * schema.getInitialState on the client; elements are DOM references that
+ * schema.getDefaultValues on the client; elements are DOM references that
  * can't round-trip anyway.
  */
 
@@ -38,7 +38,7 @@ export function renderChemicalXState(app: App): SerializedChemicalXState {
 export function hydrateChemicalXState(app: App, payload: SerializedChemicalXState): void {
   const registry = getRegistryFromApp(app)
   // Stage the data as pending hydration. Each useForm call will consume
-  // this entry when constructing its FormState so the client starts with
+  // this entry when constructing its FormStore so the client starts with
   // the same form value, fields, and errors that the server rendered.
   for (const [key, data] of payload.forms) {
     registry.pendingHydration.set(key, data)

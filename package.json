@@ -1,6 +1,6 @@
 {
   "name": "@chemical-x/forms",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "files": [
@@ -27,8 +27,8 @@
     "dev:prepare": "unbuild --stub && nuxi prepare playground",
     "lint": "eslint --ext .ts,.js,.vue .",
     "lint:fix": "eslint --ext .ts,.js,.vue . --fix",
-    "format": "prettier --write '**/*.{ts,js,vue,css,scss}'",
-    "format:check": "prettier --check '**/*.{ts,js,vue,css,scss}'",
+    "format": "prettier --write '**/*.{ts,js,vue,css,scss,md,json,yml,yaml}'",
+    "format:check": "prettier --check '**/*.{ts,js,vue,css,scss,md,json,yml,yaml}'",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm check:size && pnpm check:bench && pnpm check:coverage",
     "fix": "npm run lint:fix && npm run format",
     "typecheck": "tsc --noEmit",

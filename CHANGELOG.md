@@ -4,6 +4,61 @@
 
 _No unreleased changes yet._
 
+## v0.11.0
+**What's new at a glance**
+
+- **`state` — the form-level reactive bundle.** Nine form-level
+  scalars (`isDirty`, `isValid`, `isSubmitting`, `isValidating`,
+  `submitCount`, `submitError`, `canUndo`, `canRedo`, `historySize`)
+  previously lived as top-level `Readonly<ComputedRef<X>>` fields on
+  `useForm()`'s return. They're now collated on a single `state`
+  object (`reactive()` + `readonly()` under the hood). Templates
+  bind to primitives directly — `:disabled="form.state.isSubmitting"`
+  just works — and scripts read without `.value`.
+- **`fieldErrors` is a Proxy view.** The ComputedRef wrapper is gone.
+  Templates and scripts both dot-access through
+  `form.fieldErrors.email` without `.value`. Still readonly (compile
+  time via the type + runtime via Proxy traps that warn + reject).
+
+**Breaking changes**
+
+Three migrations since 0.10, all shaped by the same Vue template-
+auto-unwrap limitation — refs nested inside API *objects* don't
+unwrap, and our API was making consumers pay for it.
+
+- **`fieldErrors.value` is gone.** Drop `.value` everywhere. Watchers
+  must use the getter form: `watch(() => api.fieldErrors.email, …)`
+  rather than `watch(api.fieldErrors, …)`.
+- **9 top-level scalars moved to `state`.**
+
+  ```diff
+  - form.isDirty.value
+  - form.isSubmitting.value
+  - form.canUndo.value
+  + form.state.isDirty
+  + form.state.isSubmitting
+  + form.state.canUndo
+  ```
+
+  …for all 9 fields listed above. `undo()` and `redo()` stay at the
+  top level — they're methods, not state.
+- **Internal `FormState` type renamed to `FormStore`.** The name was
+  freed for the new public `FormState` interface (the shape of
+  `useForm().state`). Only breaks consumers who imported the
+  internal type directly — unlikely but possible.
+- **`initialState` config key renamed to `defaultValues`.** Same
+  motivation: with `state` reserved for the form-level flag bundle,
+  `useForm({ initialState: {…} })` read ambiguously. The new name
+  matches RHF's vocabulary. Custom-adapter authors also need to
+  rename `AbstractSchema.getInitialState` → `getDefaultValues` (and
+  the matching `InitialStateResponse` / `GetInitialStateConfig`
+  types). The `runtime/adapters/zod-v4/initial-state` module file
+  is now `default-values`.
+
+See [`docs/migration/0.10-to-0.11.md`](docs/migration/0.10-to-0.11.md)
+for a full migration snippet with `sed` one-liners covering all four
+breakages.
+
 ## v0.10.0
 _No unreleased changes yet._
 

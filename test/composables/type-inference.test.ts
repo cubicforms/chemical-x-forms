@@ -1,6 +1,7 @@
 import { describe, expectTypeOf, it } from 'vitest'
 import { z } from 'zod'
-import type { ComputedRef, Ref } from 'vue'
+import type { Ref } from 'vue'
+import type { FormState } from '../../src'
 import type { useForm } from '../../src/zod'
 
 /**
@@ -205,37 +206,49 @@ describe('useForm type inference — getFieldState + fieldErrors', () => {
     expectTypeOf(fs.value.errors).toMatchTypeOf<ReadonlyArray<{ message: string }>>()
   })
 
-  it('fieldErrors is a ComputedRef<FormErrorRecord>', () => {
-    expectTypeOf(form.fieldErrors.value).toMatchTypeOf<Record<string, unknown>>()
+  it('fieldErrors is a Readonly<FormFieldErrors<Form>> (Proxy view, no .value)', () => {
+    // Internally backed by a ComputedRef + Proxy; the public type is
+    // the unwrapped record so templates can dot-access without `.value`.
+    expectTypeOf(form.fieldErrors).toMatchTypeOf<Record<string, unknown>>()
+    // @ts-expect-error — fieldErrors is no longer a Ref, so `.value` is gone.
+    void form.fieldErrors.value
   })
 })
 
-describe('useForm type inference — form-level aggregates', () => {
-  it('isDirty is a Readonly<ComputedRef<boolean>>', () => {
-    expectTypeOf(form.isDirty).toEqualTypeOf<Readonly<ComputedRef<boolean>>>()
-    expectTypeOf(form.isDirty.value).toEqualTypeOf<boolean>()
+describe('useForm type inference — form-level state bundle', () => {
+  it('`state` matches the exported `FormState` shape exactly', () => {
+    // Pins the whole-bundle contract: any future refactor that drops a
+    // field, re-widens a type, or loses the auto-unwrap (re-exposing a
+    // Ref/ComputedRef at a leaf) fails this assertion at compile time.
+    expectTypeOf(form.state).toEqualTypeOf<FormState>()
   })
 
-  it('isValid is a Readonly<ComputedRef<boolean>>', () => {
-    expectTypeOf(form.isValid).toEqualTypeOf<Readonly<ComputedRef<boolean>>>()
-    expectTypeOf(form.isValid.value).toEqualTypeOf<boolean>()
+  it('scalar leaves are primitives, not Refs', () => {
+    // These are the 9 fields that used to live at the top level as
+    // `Readonly<ComputedRef<X>>`. Inside reactive() they auto-unwrap
+    // on access — so the template footgun (binding to the wrapper
+    // object instead of its .value) is gone at the type level too.
+    expectTypeOf(form.state.isDirty).toEqualTypeOf<boolean>()
+    expectTypeOf(form.state.isValid).toEqualTypeOf<boolean>()
+    expectTypeOf(form.state.isSubmitting).toEqualTypeOf<boolean>()
+    expectTypeOf(form.state.isValidating).toEqualTypeOf<boolean>()
+    expectTypeOf(form.state.submitCount).toEqualTypeOf<number>()
+    expectTypeOf(form.state.submitError).toEqualTypeOf<unknown>()
+    expectTypeOf(form.state.canUndo).toEqualTypeOf<boolean>()
+    expectTypeOf(form.state.canRedo).toEqualTypeOf<boolean>()
+    expectTypeOf(form.state.historySize).toEqualTypeOf<number>()
   })
-})
 
-describe('useForm type inference — submission lifecycle', () => {
-  it('isSubmitting is a Readonly<ComputedRef<boolean>>', () => {
-    expectTypeOf(form.isSubmitting).toEqualTypeOf<Readonly<ComputedRef<boolean>>>()
-    expectTypeOf(form.isSubmitting.value).toEqualTypeOf<boolean>()
+  it('rejects writes (state is readonly at the type level)', () => {
+    // @ts-expect-error — state is readonly; prefer setValue / handleSubmit
+    form.state.isSubmitting = true
+    // @ts-expect-error — same for counters
+    form.state.submitCount = 5
   })
 
-  it('submitCount is a Readonly<ComputedRef<number>>', () => {
-    expectTypeOf(form.submitCount).toEqualTypeOf<Readonly<ComputedRef<number>>>()
-    expectTypeOf(form.submitCount.value).toEqualTypeOf<number>()
-  })
-
-  it('submitError is a Readonly<ComputedRef<unknown>>', () => {
-    expectTypeOf(form.submitError).toEqualTypeOf<Readonly<ComputedRef<unknown>>>()
-    expectTypeOf(form.submitError.value).toEqualTypeOf<unknown>()
+  it('rejects unknown keys', () => {
+    // @ts-expect-error — `foo` is not a FormState key
+    void form.state.foo
   })
 })
 

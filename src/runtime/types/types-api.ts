@@ -1,4 +1,4 @@
-import type { ComputedRef, ObjectDirective, Ref } from 'vue'
+import type { ObjectDirective, Ref } from 'vue'
 import type { Path } from '../core/paths'
 import type {
   ArrayItem,
@@ -42,7 +42,7 @@ export type ValidationResponse<TData> =
   | ValidationResponseErrorWithData<TData>
   | ValidationResponseErrorWithoutData
 
-export type InitialStateResponse<TData> =
+export type DefaultValuesResponse<TData> =
   | ValidationResponseSuccess<TData>
   | ValidationResponseErrorWithData<TData>
 
@@ -52,7 +52,7 @@ export type ValidationResponseWithoutValue<Form> = Omit<ValidationResponse<Form>
 // lax: ONLY validate the shape of the data against the schema
 export type ValidationMode = 'strict' | 'lax'
 
-type GetInitialStateConfig<Form> = {
+type GetDefaultValuesConfig<Form> = {
   useDefaultSchemaValues: boolean
   validationMode?: ValidationMode
   constraints?: DeepPartial<Form> | undefined
@@ -65,7 +65,7 @@ export type AbstractSchema<Form, GetValueFormType> = {
    *
    * The library uses this to detect schema mismatches at a shared
    * form key: two `useForm({ key: 'x', schema })` calls are allowed
-   * to land on the same `FormState` (the "shared store" semantic),
+   * to land on the same `FormStore` (the "shared store" semantic),
    * but only when their schemas agree. If the second call's
    * fingerprint differs from the first's, the library emits a
    * dev-mode warning — the first call's schema stays canonical and
@@ -92,7 +92,7 @@ export type AbstractSchema<Form, GetValueFormType> = {
    */
   fingerprint(): string
 
-  getInitialState(config: GetInitialStateConfig<Form>): InitialStateResponse<Form>
+  getDefaultValues(config: GetDefaultValuesConfig<Form>): DefaultValuesResponse<Form>
   /**
    * Return every sub-schema that could resolve at the given structured
    * path. Multiple results are only expected for discriminated / union
@@ -248,14 +248,14 @@ export type UseFormConfiguration<
   Form extends GenericForm,
   GetValueFormType,
   Schema extends AbstractSchema<Form, GetValueFormType>,
-  InitialState extends DeepPartial<Form>,
+  DefaultValues extends DeepPartial<Form>,
 > = {
   schema: Schema | ((key: FormKey) => Schema)
   /**
    * Optional — omit for one-off forms. When absent, the runtime
    * allocates a collision-free synthetic id via Vue's `useId()`
    * (SSR-safe, positional, stable across server→client hydration).
-   * Each anonymous `useForm` call resolves to a distinct `FormState`.
+   * Each anonymous `useForm` call resolves to a distinct `FormStore`.
    *
    * Pass an explicit string key when the form needs identity:
    * - cross-component lookup via `useFormContext(key)` (distant,
@@ -270,7 +270,7 @@ export type UseFormConfiguration<
    * not the registry's key space.
    */
   key?: FormKey
-  initialState?: InitialState
+  defaultValues?: DefaultValues
   validationMode?: ValidationMode
   /**
    * What to do when a submit attempt fails validation. Fires after the
@@ -548,6 +548,93 @@ export type ApiErrorEnvelope = {
   details?: ApiErrorDetails
 }
 
+/**
+ * Bundle of form-level reactive flags and counters returned as `state`
+ * on `useForm()`. Separate from per-field state (reached via
+ * `getFieldState(path)`) — this is the aggregate view.
+ *
+ * Internally backed by Vue's `reactive()` + `readonly()`:
+ *   - Refs inside a reactive object auto-unwrap at property access, so
+ *     `form.state.isSubmitting` returns `boolean`, not `Ref<boolean>`.
+ *     Templates bind to primitives directly — no nested-ref footgun.
+ *   - `readonly()` rejects writes at runtime and emits a dev-mode warning.
+ *   - Reactivity tracking still flows through the underlying ComputedRefs,
+ *     so `watch(() => form.state.isSubmitting, …)` fires on change.
+ *   - Destructuring (`const { isSubmitting } = form.state`) is a one-shot
+ *     snapshot — standard reactive() caveat. Use `toRefs()` if you need
+ *     individually-reactive handles.
+ *
+ * The history fields (`canUndo` / `canRedo` / `historySize`) are always
+ * present regardless of whether `history` is configured on `useForm`.
+ * When history is disabled they resolve to `false` / `0`.
+ */
+export interface FormState {
+  /**
+   * `true` when any tracked leaf's current value differs from the value it
+   * was initialised with. Returns `false` for a pristine form and for one
+   * where every mutation has been undone back to its original.
+   *
+   * Comparisons use `Object.is`; object/array leaves are reference-compared,
+   * so structural equality after a replace-with-equal-copy will still read
+   * as dirty. Reset via `reset()` to restore the pristine baseline.
+   */
+  readonly isDirty: boolean
+
+  /**
+   * `true` when the form has no recorded errors. Driven by the same error
+   * store `fieldErrors` exposes — a successful `validate()` / `handleSubmit`
+   * run clears errors and flips this to true; a failed run populates them
+   * and flips to false.
+   */
+  readonly isValid: boolean
+
+  /**
+   * `true` while a submit handler produced by `handleSubmit` is executing.
+   * Flips on entry to the handler and off in a `finally` block — covers
+   * both the validation phase and the user's async callback.
+   */
+  readonly isSubmitting: boolean
+
+  /**
+   * `true` while any validation run (reactive `validate()` re-run,
+   * imperative `validateAsync(...)`, or the pre-submit validation inside
+   * `handleSubmit`) is in flight. Drops back to `false` when every
+   * in-flight run has settled.
+   */
+  readonly isValidating: boolean
+
+  /**
+   * Increments once per call to a submit handler, regardless of outcome
+   * (validation failure, callback success, callback throw). Counts "how
+   * many times did the user click submit", not "how many succeeded".
+   */
+  readonly submitCount: number
+
+  /**
+   * Captures whatever the user's submit callback (or its `onError` handler)
+   * threw or rejected with. Cleared to `null` at the start of each new
+   * submission attempt; stays `null` on successful completion.
+   *
+   * The handler still re-throws — `submitError` is the reactive mirror for
+   * template consumers; imperative callers can use `try { await
+   * handler(event) }` as normal.
+   */
+  readonly submitError: unknown
+
+  /** `true` when the undo stack has at least one restorable snapshot. */
+  readonly canUndo: boolean
+
+  /** `true` when a prior `undo()` has pending replays on the redo stack. */
+  readonly canRedo: boolean
+
+  /**
+   * Total snapshot count across both stacks. Primarily for debug
+   * UIs — consumers driving undo/redo UI should use `canUndo` /
+   * `canRedo` instead.
+   */
+  readonly historySize: number
+}
+
 export type UseAbstractFormReturnType<
   Form extends GenericForm,
   GetValueFormType extends GenericForm = Form,
@@ -616,16 +703,33 @@ export type UseAbstractFormReturnType<
   /**
    * Reactive map of field errors keyed by the dotted path. Populated
    * automatically by `handleSubmit` on validation failure and cleared on
-   * validation success. Also writable via `setFieldErrors` /
-   * `setFieldErrorsFromApi` for server-side hydration.
+   * validation success. Also writable (via the imperative methods below,
+   * not via direct mutation) — `setFieldErrors`, `addFieldErrors`,
+   * `clearFieldErrors`, `setFieldErrorsFromApi`.
    *
-   * Typed as `FormFieldErrors<Form>` — a mapped type over the form's
-   * own `FlatPath<Form>`. Dot access works for known top-level paths
-   * (`fieldErrors.email`); bracket access is required for dotted
-   * nested keys (`fieldErrors['user.profile.email']`) because JS dot
-   * notation splits on literal dots.
+   * Typed as `Readonly<FormFieldErrors<Form>>` — a frozen view over the
+   * form's own `FlatPath<Form>` mapped type. Dot access works for known
+   * top-level paths (`fieldErrors.email`); bracket access is required
+   * for dotted nested keys (`fieldErrors['user.profile.email']`)
+   * because JS dot notation splits on literal dots.
+   *
+   * Internally backed by a `ComputedRef` wrapped in a Proxy:
+   *   - **Templates** dot-access directly with no `.value` (the API
+   *     object isn't a top-level setup binding, so Vue's auto-unwrap
+   *     would not reach a nested ComputedRef otherwise).
+   *   - **Readonly** at compile time (the type) and at runtime (Proxy
+   *     `set` / `deleteProperty` traps reject writes; assignments fail
+   *     silently and emit a dev-mode console warning pointing at the
+   *     correct mutator).
+   *   - **Reactive**: reads inside a render or `watchEffect` track the
+   *     underlying ComputedRef as a dependency, exactly as a direct
+   *     `.value` read would. Re-renders fire on error-state changes.
+   *   - **Watchable from script** via the getter form:
+   *     `watch(() => api.fieldErrors.email, …)`. Direct
+   *     `watch(api.fieldErrors, …)` no longer works — `fieldErrors` is
+   *     a plain reactive view, not a `Ref`.
    */
-  fieldErrors: Readonly<ComputedRef<FormFieldErrors<Form>>>
+  fieldErrors: Readonly<FormFieldErrors<Form>>
 
   /** Replace all field errors for this form with the provided list. */
   setFieldErrors: (errors: ValidationError[]) => void
@@ -656,69 +760,27 @@ export type UseAbstractFormReturnType<
     limits?: { maxEntries?: number; maxPathDepth?: number }
   ) => ValidationError[]
 
-  // --- Form-level aggregates ---
+  // --- Form-level state ---
 
   /**
-   * `true` when any tracked leaf's current value differs from the value it
-   * was initialised with. Returns `false` for a pristine form and for one
-   * where every mutation has been undone back to its original.
+   * Bundled reactive flags and counters for the form as a whole — see
+   * the `FormState` type for the full shape and per-leaf semantics.
+   * Consumers access the leaves directly (e.g. `form.state.isSubmitting`)
+   * with no `.value` in scripts or templates.
    *
-   * Comparisons use `Object.is`; object/array leaves are reference-compared,
-   * so structural equality after a replace-with-equal-copy will still read
-   * as dirty. Reset via `reset()` to restore the pristine baseline.
+   * Per-field state (touched / focused / blurred / errors for one path)
+   * lives behind `getFieldState(path)`; this `state` is the aggregate
+   * view over the whole form.
    */
-  isDirty: Readonly<ComputedRef<boolean>>
-
-  /**
-   * `true` when the form has no recorded errors. Driven by the same error
-   * store `fieldErrors` exposes — a successful `validate()` / `handleSubmit`
-   * run clears errors and flips this to true; a failed run populates them
-   * and flips to false.
-   */
-  isValid: Readonly<ComputedRef<boolean>>
-
-  // --- Submission lifecycle ---
-
-  /**
-   * `true` while a submit handler produced by `handleSubmit` is executing.
-   * Flips on entry to the handler and off in a `finally` block — covers
-   * both the validation phase and the user's async callback.
-   */
-  isSubmitting: Readonly<ComputedRef<boolean>>
-
-  /**
-   * Increments once per call to a submit handler, regardless of outcome
-   * (validation failure, callback success, callback throw). Counts "how
-   * many times did the user click submit", not "how many succeeded".
-   */
-  submitCount: Readonly<ComputedRef<number>>
-
-  /**
-   * Captures whatever the user's submit callback (or its `onError` handler)
-   * threw or rejected with. Cleared to `null` at the start of each new
-   * submission attempt; stays `null` on successful completion.
-   *
-   * The handler still re-throws — `submitError` is the reactive mirror for
-   * template consumers; imperative callers can use `try { await
-   * handler(event) }` as normal.
-   */
-  submitError: Readonly<ComputedRef<unknown>>
-
-  /**
-   * `true` while any validation run (reactive `validate()` re-run,
-   * imperative `validateAsync(...)`, or the pre-submit validation inside
-   * `handleSubmit`) is in flight. Drops back to `false` when every
-   * in-flight run has settled.
-   */
-  isValidating: Readonly<ComputedRef<boolean>>
+  state: FormState
 
   // --- Reset ---
 
   /**
    * Restore the form to its initial state. With no argument, re-evaluates
-   * the schema's defaults. With `nextInitialState`, applies those
+   * the schema's defaults. With `nextDefaultValues`, applies those
    * constraints over the schema defaults (same precedence rules as the
-   * `useForm({ initialState })` option).
+   * `useForm({ defaultValues })` option).
    *
    * Side-effects beyond replacing `form`:
    *   - `originals` is rebuilt against the new baseline (so a follow-up
@@ -729,7 +791,7 @@ export type UseAbstractFormReturnType<
    *   - submission lifecycle (`isSubmitting` / `submitCount` /
    *     `submitError`) resets to the "pre-submission" state.
    */
-  reset: (nextInitialState?: DeepPartial<Form>) => void
+  reset: (nextDefaultValues?: DeepPartial<Form>) => void
 
   /**
    * Restore a single field (or a whole sub-tree, when `path` names a
@@ -761,18 +823,7 @@ export type UseAbstractFormReturnType<
    */
   redo: () => boolean
 
-  /** `true` when the undo stack has at least one restorable snapshot. */
-  canUndo: Readonly<ComputedRef<boolean>>
-
-  /** `true` when a prior `undo()` has pending replays on the redo stack. */
-  canRedo: Readonly<ComputedRef<boolean>>
-
-  /**
-   * Total snapshot count across both stacks. Primarily for debug
-   * UIs — consumers driving undo/redo UI should use `canUndo` /
-   * `canRedo` instead.
-   */
-  historySize: Readonly<ComputedRef<number>>
+  // `canUndo`, `canRedo`, and `historySize` live on `state` — see above.
 
   // --- Focus / scroll to first error ---
 

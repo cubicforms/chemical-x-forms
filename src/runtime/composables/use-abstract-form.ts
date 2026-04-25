@@ -118,21 +118,26 @@ export function useAbstractForm<
   }
 
   // Provide the FormStore to descendants via `kFormContext` so
-  // `useFormContext()` can resolve it without prop-threading. The key is
-  // the already-canonicalised formKey; looking up a specific form by key
-  // is possible via `useFormContext(key)` even without the ambient provide.
+  // `useFormContext()` can resolve it without prop-threading.
   //
-  // Ambient mode is "last-provide wins": if two `useForm` calls run in the
-  // same component, the second overwrites the first and descendants
-  // reading via `useFormContext<F>()` (no key) see only the second form.
-  // We record the per-instance history here (silently) so that a
-  // descendant's `useFormContext<F>()` (no key) call can walk up, detect
-  // the collision, and warn lazily. Warning eagerly from every useForm()
-  // would spam components that have multiple forms but no keyless
-  // descendant consumer — a non-problem. Recording is skipped on SSR so
-  // the client-side warn fires once, not once-per-render-pass.
-  recordAmbientProvide(key, configuration.key, registry.isSSR)
-  provide(kFormContext, state as FormStore<GenericForm>)
+  // ONLY anonymous `useForm()` calls fill the ambient slot. Keyed forms
+  // are explicitly addressable via `useFormContext<F>(key)` and don't
+  // pollute the ambient context — keeping the two resolution modes
+  // semantically distinct. A descendant of a keyed-only parent that
+  // calls `useFormContext<F>()` (no key) gets the "no ambient form"
+  // throw, which is the right error: the form has a name; address it.
+  //
+  // Ambient mode is still "last-provide wins" among siblings: if two
+  // anonymous `useForm()` calls run in the same component, the second
+  // overwrites the first and descendants only see the second. We record
+  // the per-instance history of ANONYMOUS provides here (silently) so
+  // that a descendant's `useFormContext<F>()` call can walk up, detect
+  // the collision, and warn lazily. Recording is skipped on SSR so the
+  // client-side warn fires once, not once-per-render-pass.
+  if (configuration.key === undefined) {
+    recordAmbientProvide(registry.isSSR)
+    provide(kFormContext, state as FormStore<GenericForm>)
+  }
 
   const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[1] = {}
   if (configuration.onInvalidSubmit !== undefined) {
@@ -191,18 +196,15 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
 let anonCounter = 0
 
 /**
- * One entry per `useForm()` call that landed in a component's
- * ambient provide slot. `source` is the best-effort user call site
- * (first non-cx frame off `new Error().stack`) — we print source
- * frames in the collision warning instead of the synthetic
- * `cx:anon:<id>` keys, which carry no information for the author.
- * `namedKey` is set only when the author passed an explicit key;
- * we surface those separately as addressable alternatives
- * (`useFormContext('that-key')`).
+ * One entry per ANONYMOUS `useForm()` call that landed in a
+ * component's ambient provide slot. Keyed forms aren't recorded —
+ * they don't fill the ambient slot in the first place. `source` is
+ * the best-effort user call site (first non-cx frame off
+ * `new Error().stack`) — printed in the collision warning so the
+ * author can navigate to each offending call site.
  */
 export type AmbientProvideEntry = {
   readonly source: string | undefined
-  readonly namedKey: string | undefined
 }
 
 /**
@@ -223,26 +225,17 @@ export const ambientProvideHistory: WeakMap<object, AmbientProvideEntry[]> | nul
   ? new WeakMap<object, AmbientProvideEntry[]>()
   : null
 
-function recordAmbientProvide(
-  key: FormKey,
-  userSuppliedKey: FormKey | undefined,
-  isSSR: boolean
-): void {
+function recordAmbientProvide(isSSR: boolean): void {
   if (!__DEV__ || isSSR || ambientProvideHistory === null) return
   const instance = getCurrentInstance()
   if (instance === null) return
   const instanceKey = instance as unknown as object
+  // Caller already gated on `configuration.key === undefined`, so every
+  // recorded entry corresponds to an anonymous useForm() call. No need
+  // to carry a key — synthetic `cx:anon:<id>` keys aren't addressable
+  // by the author and would only add noise to the warning.
   const entry: AmbientProvideEntry = {
     source: captureUserCallSite(),
-    // Only user-supplied keys are addressable by name — synthetic
-    // `cx:anon:<id>` keys exist but are hidden from the warning so
-    // authors aren't tempted to reference them. The full `key` is
-    // still what the registry indexes; this field is purely for the
-    // dev-warning text.
-    namedKey:
-      userSuppliedKey !== undefined && userSuppliedKey !== null && userSuppliedKey !== ''
-        ? String(userSuppliedKey)
-        : undefined,
   }
   const existing = ambientProvideHistory.get(instanceKey)
   if (existing === undefined) {
@@ -250,11 +243,6 @@ function recordAmbientProvide(
     return
   }
   existing.push(entry)
-  // `key` is accepted as a parameter to keep the call-site symmetric with
-  // `useAbstractForm`'s already-resolved key, and to leave room for future
-  // diagnostics that want to surface the resolved key. Referenced here only
-  // so the parameter isn't unused — no runtime effect.
-  void key
 }
 
 /**

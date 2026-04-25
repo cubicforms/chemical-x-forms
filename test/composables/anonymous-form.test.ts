@@ -165,7 +165,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     expect(warnSpy).toHaveBeenCalledTimes(1)
     const message = String(warnSpy.mock.calls[0]?.[0] ?? '')
     expect(message).toContain('useFormContext<F>() (no key)')
-    expect(message).toContain('useForm() was called at:')
+    expect(message).toContain('multiple anonymous useForm() calls')
 
     app.unmount()
   })
@@ -203,10 +203,11 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     app.unmount()
   })
 
-  it('surfaces user-supplied keys in the bullet list (anonymous ones show only source)', () => {
-    // Named keys ARE useful — the fix for a named form is
-    // `useFormContext('that-key')`, so we show it. Anonymous forms
-    // only get their source frame.
+  it('keyed siblings do NOT appear in the warning (they bypass the ambient slot)', () => {
+    // Keyed useForm() calls don't fill the ambient slot — they're
+    // addressable explicitly via useFormContext('key'). They must not
+    // appear in this warning, which is specifically about anonymous
+    // ambient collisions.
     const Child = defineComponent({
       setup() {
         useFormContext<Form>()
@@ -215,6 +216,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     })
     const App = defineComponent({
       setup() {
+        useForm({ schema: fakeSchema<Form>(defaults) })
         useForm({ schema: fakeSchema<Form>(defaults) })
         useForm({ schema: fakeSchema<Form>(defaults), key: 'my-named-form' })
         return () => h('div', [h(Child)])
@@ -227,10 +229,41 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
 
     expect(warnSpy).toHaveBeenCalledTimes(1)
     const message = String(warnSpy.mock.calls[0]?.[0] ?? '')
-    expect(message).toContain('[key: "my-named-form"]')
-    // Exactly one named-key annotation (the anonymous form has no [key: ...] suffix).
-    const keyAnnotations = (message.match(/\[key: "/g) ?? []).length
-    expect(keyAnnotations).toBe(1)
+    expect(message).not.toContain('my-named-form')
+    expect(message).not.toMatch(/\[key:/)
+    // Exactly two bullet lines — one per anonymous useForm. The keyed
+    // call is filtered out entirely.
+    const bulletCount = (message.match(/^ {2}- /gm) ?? []).length
+    expect(bulletCount).toBe(2)
+
+    app.unmount()
+  })
+
+  it('stays quiet when only one anonymous useForm sits beside any number of keyed ones', () => {
+    // A parent with N keyed + 1 anonymous useForm + an ambient consumer:
+    // the keyed forms don't enter the ambient slot, so the consumer sees
+    // a single anonymous form unambiguously. No warning.
+    const Child = defineComponent({
+      setup() {
+        useFormContext<Form>()
+        return () => h('span', 'child')
+      },
+    })
+    const App = defineComponent({
+      setup() {
+        useForm({ schema: fakeSchema<Form>(defaults), key: 'a' })
+        useForm({ schema: fakeSchema<Form>(defaults), key: 'b' })
+        useForm({ schema: fakeSchema<Form>(defaults), key: 'c' })
+        useForm({ schema: fakeSchema<Form>(defaults) }) // the only anon
+        return () => h('div', [h(Child)])
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+
+    expect(warnSpy).not.toHaveBeenCalled()
 
     app.unmount()
   })

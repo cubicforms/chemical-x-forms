@@ -94,9 +94,10 @@ function resolveState<Form extends GenericForm>(
 /**
  * Walk up from the current component to the nearest ancestor that
  * registered an ambient provide (tracked in `ambientProvideHistory`).
- * If that ancestor recorded more than one form, a descendant reaching
- * for the ambient slot only sees the last one — warn so the author
- * picks between explicit keys and splitting the component.
+ * If that ancestor recorded more than one ANONYMOUS `useForm()` call,
+ * a descendant reaching for the ambient slot only sees the last one
+ * — warn so the author picks between adding a key and splitting the
+ * component.
  *
  * The eager version of this check lived at the `useForm()` call site
  * and fired once per extra form regardless of whether any descendant
@@ -104,12 +105,10 @@ function resolveState<Form extends GenericForm>(
  * warn for a non-problem; this version fires at most once per
  * `useFormContext()` consumer that genuinely collides.
  *
- * Message format: one bullet per `useForm()` call on the offending
- * ancestor, showing the captured source frame (click-through in
- * DevTools) and, for calls that passed an explicit key, the key
- * itself — because `useFormContext('that-key')` is the escape hatch
- * for named forms. Synthetic `cx:anon:<id>` keys are deliberately
- * omitted; they're positional and carry no signal for the author.
+ * Keyed `useForm()` calls don't appear here — they don't fill the
+ * ambient slot at all (they're addressable explicitly via
+ * `useFormContext<F>(key)`), so they can't collide with each other
+ * or with anonymous siblings on this axis.
  */
 function warnIfAmbientProviderHadDuplicates(): void {
   if (!__DEV__ || ambientProvideHistory === null) return
@@ -118,20 +117,15 @@ function warnIfAmbientProviderHadDuplicates(): void {
     const history = ambientProvideHistory.get(ancestor as unknown as object)
     if (history !== undefined) {
       if (history.length > 1) {
-        const lines = history.map((entry) => {
-          const source = entry.source ?? '<unknown location>'
-          return entry.namedKey !== undefined
-            ? `  - ${source}  [key: "${entry.namedKey}"]`
-            : `  - ${source}`
-        })
+        const lines = history.map((entry) => `  - ${entry.source ?? '<unknown location>'}`)
         console.warn(
           '[@chemical-x/forms] useFormContext<F>() (no key) resolved against ' +
-            'an ancestor that called useForm() multiple times; descendants ' +
-            'only see the last-provided form. useForm() was called at:\n' +
+            'an ancestor with multiple anonymous useForm() calls; descendants ' +
+            'only see the last-provided form. Anonymous useForm() calls were:\n' +
             lines.join('\n') +
-            '\nFix: pass a key to useFormContext<F>(key) to target a specific ' +
-            'form (named entries above are already addressable by key), or ' +
-            'split the forms across separate components.'
+            '\nFix: pass a key to each call (e.g. useForm({ schema, key: "x" })) ' +
+            'and reach them via useFormContext<F>("x"), or split the forms ' +
+            'across separate components.'
         )
       }
       return

@@ -18,12 +18,17 @@ export default [
     //
     // Raised 12.5 → 14.7 KB on the quiet-ambient-warnings branch
     // (PR #132): lazy ambient-collision walker in useFormContext +
-    // source-frame normalization in useAbstractForm. Both are
-    // __DEV__-guarded at runtime but bundle anyway since __DEV__ is
-    // a runtime const, not a build-time replacement. Measured at
-    // 12.74 KB; ~2 KB headroom for the next round of dev-quality
-    // additions.
-    limit: '14.7 KB',
+    // source-frame normalization in useAbstractForm.
+    //
+    // Raised 14.7 → 16 KB on the per-element-persistence-opt-in
+    // branch: opt-in registry, sensitive-name regex set + heuristic,
+    // SensitivePersistFieldError, deleteAtPath copy-on-write,
+    // writePathImmediately + clearPersistedDraft + isEmptyContainer
+    // in the persistence layer, form.persist + form.clearPersistedDraft
+    // in build-form-api, syncPersistOptIn lifecycle in directive,
+    // PersistenceModule + PERSISTENCE_MODULE_KEY plumbing. Measured
+    // at 15.08 KB; ~1 KB headroom for the docs/test follow-up commit.
+    limit: '16 KB',
     gzip: true,
     modifyEsbuildConfig: asEsm,
   },
@@ -33,7 +38,10 @@ export default [
     // walker (src/runtime/adapters/zod-v4/fingerprint.ts, ~360 LOC of
     // structural-equivalence code that backs the shared-key mismatch
     // warning). Landed in 9bc2b5a / 590a03b / 7b89e64.
-    limit: '14.7 KB',
+    //
+    // Raised 14.7 → 16 KB on per-element-persistence-opt-in (mirrors
+    // index.mjs — same shared core chunk). Measured at 15.03 KB.
+    limit: '16 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
@@ -44,8 +52,10 @@ export default [
     // core chunk carries anonymous-forms + fingerprint warning +
     // (now) lazy ambient-collision walker + source-frame
     // normalization, all inherited by the v3 adapter entry.
-    // Measured at 12.63 KB on PR #132; ~2 KB headroom.
-    limit: '14.7 KB',
+    //
+    // Raised 14.7 → 16 KB on per-element-persistence-opt-in (mirrors
+    // index.mjs). Measured at 14.71 KB.
+    limit: '16 KB',
     gzip: true,
     ignore: ['zod', 'lodash-es'],
     modifyEsbuildConfig: asEsm,

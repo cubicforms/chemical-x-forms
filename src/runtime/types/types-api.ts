@@ -937,7 +937,11 @@ export type UseAbstractFormReturnType<
    *   - per-field `touched` / `focused` / `blurred` are cleared (the
    *     `isConnected` DOM flag is preserved);
    *   - submission lifecycle (`isSubmitting` / `submitCount` /
-   *     `submitError`) resets to the "pre-submission" state.
+   *     `submitError`) resets to the "pre-submission" state;
+   *   - the persisted draft (if `persist:` was configured) is wiped —
+   *     reset semantics are "fresh start across every layer". The
+   *     opt-in registry is NOT touched, so the next user keystroke on
+   *     a still-mounted opted-in input re-populates the entry naturally.
    */
   reset: (nextDefaultValues?: DeepPartial<Form>) => void
 
@@ -950,8 +954,49 @@ export type UseAbstractFormReturnType<
    *
    * No-ops if the path is not tracked (e.g. a freshly-named key that has
    * never been set or appeared in schema defaults).
+   *
+   * If `persist:` is configured, the persisted entry's matching subpath
+   * is removed too (and the whole entry is dropped if no opted-in paths
+   * remain). The opt-in registry is preserved.
    */
   resetField: (path: FlatPath<Form>) => void
+
+  // --- Persistence (imperative APIs) ---
+
+  /**
+   * Imperative one-shot write of the current value at `path` to the
+   * configured storage. Use case: explicit "Save Draft" button, a
+   * `beforeunload` handler, a multi-step checkpoint where the consumer
+   * wants the durable record refreshed without waiting for the
+   * debounced subscription to fire.
+   *
+   * - Bypasses the per-element opt-in gate (the consumer is taking
+   *   explicit responsibility for this checkpoint).
+   * - Bypasses the debouncer (write happens after a `flush()` of any
+   *   pending subscription write, so it can't be overwritten).
+   * - Read-merge-write: existing paths in the persisted entry are
+   *   preserved.
+   * - Throws `SensitivePersistFieldError` if `path` matches the
+   *   sensitive-name heuristic; pass `acknowledgeSensitive: true` to
+   *   override.
+   * - Silent no-op when `persist:` isn't configured on the form.
+   */
+  persist: (path: FlatPath<Form>, options?: { acknowledgeSensitive?: boolean }) => Promise<void>
+
+  /**
+   * Wipe the persisted entry. Without `path`, removes the entire
+   * draft. With `path`, removes only that subpath (and any matching
+   * persisted error entries). The entry is removed entirely if the
+   * resulting form is empty.
+   *
+   * Does NOT touch the in-memory form state (use `reset` /
+   * `resetField` for that — and they call this internally). Does NOT
+   * disable any active opt-ins; future writes from opted-in bindings
+   * will re-populate the storage entry.
+   *
+   * Silent no-op when `persist:` isn't configured.
+   */
+  clearPersistedDraft: (path?: FlatPath<Form>) => Promise<void>
 
   // --- Undo / redo ---
 

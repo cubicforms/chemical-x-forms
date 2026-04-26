@@ -15,9 +15,14 @@ import {
   buildPersistedPayload,
   createDebouncedWriter,
   getStorageAdapter,
+  PERSISTENCE_MODULE_KEY,
   readPersistedPayload,
   resolveStorageKey,
+  type PersistedPayload,
+  type PersistenceModule,
 } from '../core/persistence'
+import { canonicalizePath, type Path } from '../core/paths'
+import { deleteAtPath, getAtPath, setAtPath, isPlainRecord } from '../core/path-walker'
 import { kFormContext, useRegistry } from '../core/registry'
 import type {
   AbstractSchema,
@@ -26,6 +31,7 @@ import type {
   PersistConfig,
   UseAbstractFormReturnType,
   UseFormConfiguration,
+  ValidationError,
 } from '../types/types-api'
 import type { DeepPartial, GenericForm } from '../types/types-core'
 
@@ -109,14 +115,17 @@ export function useAbstractForm<
 
   // Wire persistence (opt-in) — only on fresh state creation, skipped
   // on SSR. `existing` means a prior useForm() already mounted and
-  // wired persistence; we don't double-subscribe. The disposer is
-  // registered on the FormStore (not on this consumer's scope) so
-  // persistence survives any single consumer unmounting — it tears
-  // down only when the last consumer releases and the registry evicts
-  // the state.
+  // wired persistence; we don't double-subscribe. The handle is cached
+  // on `state.modules` so `buildFormApi` can plug `form.persist` /
+  // `form.clearPersistedDraft` into the consumer-facing API. The
+  // disposer is registered on the FormStore (not on this consumer's
+  // scope) so persistence survives any single consumer unmounting — it
+  // tears down only when the last consumer releases and the registry
+  // evicts the state.
   if (existing === undefined && merged.persist !== undefined && !registry.isSSR) {
-    const disposePersist = wirePersistence(state, merged.persist)
-    state.registerCleanup(disposePersist)
+    const persistenceModule = wirePersistence(state, merged.persist)
+    state.modules.set(PERSISTENCE_MODULE_KEY, persistenceModule)
+    state.registerCleanup(() => persistenceModule.dispose())
   }
 
   // Wire history (opt-in). Fresh-state-only — the module subscribes
@@ -470,7 +479,7 @@ function warnOnSchemaFingerprintMismatch(
 function wirePersistence<F extends GenericForm>(
   state: FormStore<F>,
   config: PersistConfig
-): () => void {
+): PersistenceModule {
   const key = resolveStorageKey(config, state.formKey)
   const debounceMs = config.debounceMs ?? DEFAULT_PERSISTENCE_DEBOUNCE_MS
   const include = config.include ?? 'form'
@@ -567,7 +576,99 @@ function wirePersistence<F extends GenericForm>(
     }
   })()
 
-  return () => {
+  /**
+   * Imperative one-shot write. Read-merge-write strategy: flush any
+   * pending debounced write first (so it can't overwrite our update),
+   * read the existing payload, set the path's current value, optionally
+   * merge in this path's errors, and write back. Preserves untouched
+   * paths in storage.
+   */
+  async function writePathImmediately(path: Path): Promise<void> {
+    if (disposed) return
+    await writer.flush()
+    if (disposed) return
+    const adapter = await adapterPromise
+    if (disposed) return
+    const raw = await adapter.getItem(key)
+    const existing = readPersistedPayload<F>(raw, version)
+    const baseForm = existing?.data.form ?? ({} as F)
+    const value = getAtPath(toRaw(state.form.value), path)
+    const nextForm = setAtPath(baseForm, path, value) as F
+    if (include === 'form') {
+      await adapter.setItem(key, { v: version, data: { form: nextForm } })
+      return
+    }
+    // include === 'form+errors': preserve the rest of the persisted
+    // error map and refresh the entry for this path's canonical key.
+    const { key: pathKey } = canonicalizePath(path)
+    const schemaMap = new Map<string, ValidationError[]>(existing?.data.schemaErrors ?? [])
+    const userMap = new Map<string, ValidationError[]>(existing?.data.userErrors ?? [])
+    const currentSchema = state.schemaErrors.get(pathKey)
+    const currentUser = state.userErrors.get(pathKey)
+    if (currentSchema !== undefined && currentSchema.length > 0) {
+      schemaMap.set(pathKey, [...currentSchema])
+    } else {
+      schemaMap.delete(pathKey)
+    }
+    if (currentUser !== undefined && currentUser.length > 0) {
+      userMap.set(pathKey, [...currentUser])
+    } else {
+      userMap.delete(pathKey)
+    }
+    const payload: PersistedPayload<F> = {
+      v: version,
+      data: {
+        form: nextForm,
+        schemaErrors: [...schemaMap.entries()].map(([k, v]) => [k, [...v]] as const),
+        userErrors: [...userMap.entries()].map(([k, v]) => [k, [...v]] as const),
+      },
+    }
+    await adapter.setItem(key, payload)
+  }
+
+  /**
+   * Wipe the persisted entry. Without `path`, removes the whole key.
+   * With `path`, deletes only that subpath (and any matching error
+   * entries) and writes back; the entry is removed entirely if the
+   * resulting form value is empty.
+   */
+  async function clearPersistedDraft(path?: Path): Promise<void> {
+    if (disposed) return
+    await writer.flush()
+    if (disposed) return
+    const adapter = await adapterPromise
+    if (disposed) return
+    if (path === undefined) {
+      await adapter.removeItem(key)
+      return
+    }
+    const raw = await adapter.getItem(key)
+    const existing = readPersistedPayload<F>(raw, version)
+    if (existing === null) return
+    const nextForm = deleteAtPath(existing.data.form, path) as F
+    if (isEmptyContainer(nextForm)) {
+      await adapter.removeItem(key)
+      return
+    }
+    if (include === 'form') {
+      await adapter.setItem(key, { v: version, data: { form: nextForm } })
+      return
+    }
+    const { key: pathKey } = canonicalizePath(path)
+    const schemaErrors = (existing.data.schemaErrors ?? []).filter(([k]) => k !== pathKey)
+    const userErrors = (existing.data.userErrors ?? []).filter(([k]) => k !== pathKey)
+    const payload: PersistedPayload<F> = {
+      v: version,
+      data: {
+        form: nextForm,
+        schemaErrors: schemaErrors.map(([k, v]) => [k, [...v]] as const),
+        userErrors: userErrors.map(([k, v]) => [k, [...v]] as const),
+      },
+    }
+    await adapter.setItem(key, payload)
+  }
+
+  function dispose(): void {
     disposed = true
     unsubscribeChange()
     unsubscribeSuccess()
@@ -576,6 +677,24 @@ function wirePersistence<F extends GenericForm>(
     // works as a fire-and-forget.
     void writer.flush().catch(() => undefined)
   }
+
+  return {
+    writePathImmediately,
+    clearPersistedDraft,
+    dispose,
+  }
+}
+
+/**
+ * Treat `null`, `undefined`, `[]`, and `{}` as "nothing left to keep."
+ * Used by `clearPersistedDraft(path)` to decide whether to wipe the
+ * entire entry instead of writing a hollow envelope back.
+ */
+function isEmptyContainer(value: unknown): boolean {
+  if (value === undefined || value === null) return true
+  if (Array.isArray(value)) return value.length === 0
+  if (isPlainRecord(value)) return Object.keys(value).length === 0
+  return false
 }
 
 export type { FieldStateView }

@@ -106,7 +106,11 @@ function mountForm(persist: Parameters<typeof useForm<typeof schema>>[0]['persis
                 if (el !== null) inputs.password = el as HTMLInputElement
               },
             }),
-            [[vRegister, api.register('password', { persist: true })]]
+            // `password` matches the sensitive-name heuristic — tests
+            // intentionally opt in here to exercise the persistence
+            // pipeline. Real consumers should NOT persist passwords;
+            // the override forces a code-review trigger every time.
+            [[vRegister, api.register('password', { persist: true, acknowledgeSensitive: true })]]
           ),
         ])
     },
@@ -503,5 +507,331 @@ describe('persistence — per-element opt-in', () => {
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { data: { form: { email: string } } }
     expect(payload.data.form.email).toBe('from-a@example.com')
+  })
+})
+
+/**
+ * Sensitive-name heuristic: opting a sensitive-named path into
+ * persistence throws unless the consumer explicitly acknowledges. Same
+ * gate fires for the imperative `form.persist(path)` API.
+ */
+describe('persistence — sensitive-name heuristic', () => {
+  const apps: App[] = []
+  beforeEach(() => localStorage.clear())
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+    localStorage.clear()
+  })
+
+  it('register({ persist: true }) on a sensitive path throws SensitivePersistFieldError', () => {
+    // Mount throws synchronously inside the directive's `created` hook.
+    // Vue surfaces it through the app's errorHandler; install one that
+    // re-throws so the test sees the error.
+    const App = defineComponent({
+      setup() {
+        const api = useForm({
+          schema,
+          key: 'sensitive-throw',
+          persist: { storage: 'local', key: 'test-sensitive-throw', debounceMs: 20 },
+        })
+        return () =>
+          h('div', [
+            withDirectives(
+              h('input', { type: 'text' }),
+              // password is sensitive; no acknowledge → throw
+              [[vRegister, api.register('password', { persist: true })]]
+            ),
+          ])
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    let captured: unknown
+    app.config.errorHandler = (err): void => {
+      captured = err
+    }
+    // Silence Vue's warn that wraps the unhandled error.
+    app.config.warnHandler = (): void => undefined
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+
+    expect(captured).toBeInstanceOf(Error)
+    expect((captured as Error).name).toBe('SensitivePersistFieldError')
+    expect((captured as Error).message).toMatch(/sensitive-name pattern/)
+    expect((captured as Error).message).toMatch(/acknowledgeSensitive/)
+  })
+
+  it('acknowledgeSensitive: true on register() bypasses the throw', () => {
+    // Just mount — if the directive's enforceSensitiveCheck fires, the
+    // mount throws. No throw → assertion of clean mount is enough.
+    const App = defineComponent({
+      setup() {
+        const api = useForm({
+          schema,
+          key: 'sensitive-ack',
+          persist: { storage: 'local', key: 'test-sensitive-ack', debounceMs: 20 },
+        })
+        return () =>
+          h('div', [
+            withDirectives(h('input', { type: 'text' }), [
+              [vRegister, api.register('password', { persist: true, acknowledgeSensitive: true })],
+            ]),
+          ])
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    let captured: unknown
+    app.config.errorHandler = (err): void => {
+      captured = err
+    }
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    expect(captured).toBeUndefined()
+  })
+
+  it('form.persist() on a sensitive path throws (without acknowledge)', async () => {
+    const handle: { api?: ApiReturn } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema,
+          key: 'sensitive-imperative',
+          persist: { storage: 'local', key: 'test-sensitive-imp', debounceMs: 20 },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    await drain()
+    await expect(handle.api?.persist('password')).rejects.toThrow(/sensitive-name pattern/)
+  })
+
+  it('form.persist({ acknowledgeSensitive: true }) on a sensitive path is allowed', async () => {
+    const handle: { api?: ApiReturn } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema,
+          key: 'sensitive-imperative-ack',
+          persist: { storage: 'local', key: 'test-sensitive-imp-ack', debounceMs: 20 },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    await drain()
+    handle.api?.setValue('password', 'unsafe-but-acknowledged')
+    await expect(
+      handle.api?.persist('password', { acknowledgeSensitive: true })
+    ).resolves.toBeUndefined()
+    const raw = localStorage.getItem('test-sensitive-imp-ack')
+    expect(raw).not.toBeNull()
+    const payload = JSON.parse(raw as string) as { data: { form: { password?: string } } }
+    expect(payload.data.form.password).toBe('unsafe-but-acknowledged')
+  })
+})
+
+/**
+ * Imperative checkpoint via form.persist + wipe via
+ * form.clearPersistedDraft. Both APIs are silent no-ops when persist:
+ * isn't configured.
+ */
+describe('persistence — form.persist / form.clearPersistedDraft', () => {
+  const apps: App[] = []
+  beforeEach(() => localStorage.clear())
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+    localStorage.clear()
+  })
+
+  it('form.persist(path) writes the current value, bypassing the per-element gate', async () => {
+    // No v-register inputs at all → no opt-ins. setValue alone wouldn't
+    // persist. form.persist() is the explicit checkpoint API.
+    const handle: { api?: ApiReturn } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema,
+          key: 'imp-persist',
+          persist: { storage: 'local', key: 'test-imp-persist', debounceMs: 20 },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    await drain()
+
+    handle.api?.setValue('email', 'checkpoint@example.com')
+    await handle.api?.persist('email')
+    const raw = localStorage.getItem('test-imp-persist')
+    expect(raw).not.toBeNull()
+    const payload = JSON.parse(raw as string) as { data: { form: { email: string } } }
+    expect(payload.data.form.email).toBe('checkpoint@example.com')
+  })
+
+  it('form.persist() preserves prior persisted paths (read-merge-write)', async () => {
+    // Seed an entry with both fields populated, then persist only one
+    // path's update — the other field's persisted value must survive.
+    localStorage.setItem(
+      'test-imp-merge',
+      JSON.stringify({ v: 2, data: { form: { email: 'prev@x.com', password: 'prev-pw' } } })
+    )
+    const handle: { api?: ApiReturn } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema,
+          key: 'imp-merge',
+          persist: { storage: 'local', key: 'test-imp-merge', debounceMs: 20 },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    // Wait for hydration to land.
+    await waitUntil(() => (handle.api?.getValue('email').value === 'prev@x.com' ? true : null))
+
+    handle.api?.setValue('email', 'updated@example.com')
+    await handle.api?.persist('email')
+    const raw = localStorage.getItem('test-imp-merge')
+    const payload = JSON.parse(raw as string) as {
+      data: { form: { email: string; password: string } }
+    }
+    expect(payload.data.form.email).toBe('updated@example.com')
+    // Prior 'password' value preserved by the merge.
+    expect(payload.data.form.password).toBe('prev-pw')
+  })
+
+  it('form.clearPersistedDraft() wipes the entry; form.clearPersistedDraft(path) wipes only that subpath', async () => {
+    localStorage.setItem(
+      'test-clear-api',
+      JSON.stringify({ v: 2, data: { form: { email: 'a@x.com', password: 'pw' } } })
+    )
+    const handle: { api?: ApiReturn } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema,
+          key: 'clear-api',
+          persist: { storage: 'local', key: 'test-clear-api', debounceMs: 20 },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    await waitUntil(() => (handle.api?.getValue('email').value === 'a@x.com' ? true : null))
+
+    // Subpath wipe — email gone, password remains.
+    await handle.api?.clearPersistedDraft('email')
+    const after1 = JSON.parse(localStorage.getItem('test-clear-api') as string) as {
+      data: { form: Record<string, string> }
+    }
+    expect(after1.data.form['email']).toBeUndefined()
+    expect(after1.data.form['password']).toBe('pw')
+
+    // Whole-entry wipe.
+    await handle.api?.clearPersistedDraft()
+    expect(localStorage.getItem('test-clear-api')).toBeNull()
+  })
+
+  it('form.persist / form.clearPersistedDraft are silent no-ops when persist: not configured', async () => {
+    const handle: { api?: ApiReturn } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({ schema, key: 'no-persist-config' })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    await drain()
+    // Both should resolve without throwing or touching storage.
+    await expect(handle.api?.persist('email')).resolves.toBeUndefined()
+    await expect(handle.api?.clearPersistedDraft()).resolves.toBeUndefined()
+  })
+})
+
+/**
+ * Reset semantics: in-memory clear PLUS persisted-draft wipe. The
+ * opt-in registry is preserved so the next user keystroke
+ * re-populates the entry naturally.
+ */
+describe('persistence — reset wipes the persisted draft', () => {
+  const apps: App[] = []
+  beforeEach(() => localStorage.clear())
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+    localStorage.clear()
+  })
+
+  it('form.reset() wipes the storage entry and the in-memory state', async () => {
+    const { app, api, type } = mountForm({ storage: 'local', key: 'test-reset', debounceMs: 20 })
+    apps.push(app)
+    await drain()
+    type('email', 'before-reset@example.com')
+    await waitUntil(() => localStorage.getItem('test-reset'))
+    expect(localStorage.getItem('test-reset')).not.toBeNull()
+
+    api.reset()
+    // Storage wipe is fire-and-forget — poll for the entry to disappear.
+    await waitUntil(() => (localStorage.getItem('test-reset') === null ? true : null))
+    expect(localStorage.getItem('test-reset')).toBeNull()
+    expect(api.getValue('email').value).toBe('')
+  })
+
+  it('form.resetField(path) wipes only the matching subpath from storage', async () => {
+    // Seed both fields, mount with both opted in, then resetField just
+    // 'email'. Storage should drop email but keep password.
+    localStorage.setItem(
+      'test-reset-field',
+      JSON.stringify({ v: 2, data: { form: { email: 'seed@x.com', password: 'seed-pw' } } })
+    )
+    const { app, api } = mountForm({
+      storage: 'local',
+      key: 'test-reset-field',
+      debounceMs: 20,
+    })
+    apps.push(app)
+    await waitUntil(() => (api.getValue('email').value === 'seed@x.com' ? true : null))
+
+    api.resetField('email')
+    // Wait for the fire-and-forget clearPersistedDraft to land.
+    await waitUntil(() => {
+      const raw = localStorage.getItem('test-reset-field')
+      if (raw === null) return null
+      const parsed = JSON.parse(raw) as { data: { form: Record<string, unknown> } }
+      return parsed.data.form['email'] === undefined ? true : null
+    })
+    const final = JSON.parse(localStorage.getItem('test-reset-field') as string) as {
+      data: { form: Record<string, string> }
+    }
+    expect(final.data.form['email']).toBeUndefined()
+    expect(final.data.form['password']).toBe('seed-pw')
   })
 })

@@ -97,5 +97,6 @@ export {
   InvalidPathError,
   RegistryNotInstalledError,
   ReservedFormKeyError,
+  SensitivePersistFieldError,
   SubmitErrorHandlerError,
 } from './runtime/core/errors'

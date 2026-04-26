@@ -37,6 +37,7 @@ import type {
   WriteMeta,
 } from '../types/types-api'
 import { getOrAssignElementId } from './persistence/opt-in-registry'
+import { enforceSensitiveCheck } from './persistence/sensitive-names'
 
 export const assignKey: unique symbol = Symbol('_assign')
 
@@ -174,8 +175,11 @@ function syncPersistOptIn(el: HTMLElement, value: unknown, oldValue: unknown): v
   }
   // Attach the new opt-in. `add` is idempotent, so if oldValue already
   // had the same (path, registry) we just re-touch the same entry.
+  // The sensitive-name check fires here (not on every keystroke) — it's
+  // the act of OPTING IN that crosses the compliance threshold.
   if (wantsOptIn) {
     const v = value as RegisterValue
+    enforceSensitiveCheck(v.path, v.acknowledgeSensitive)
     v.persistOptIns.add(elementId, v.path)
   }
 }

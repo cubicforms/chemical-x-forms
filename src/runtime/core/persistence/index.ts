@@ -5,6 +5,39 @@ import type {
   ValidationError,
 } from '../../types/types-api'
 import { PERSISTENCE_KEY_PREFIX } from '../defaults'
+import type { Path } from '../paths'
+
+/**
+ * Public-ish handle returned by `wirePersistence`. Lives on
+ * `state.modules.get('persistence')` so `buildFormApi` can plug
+ * `form.persist(path)` and `form.clearPersistedDraft(path?)` into
+ * the consumer-facing API. Internal — consumers go through the API.
+ */
+export type PersistenceModule = {
+  /**
+   * Read-merge-write a single path's current value. Flushes any pending
+   * debounced write first so the imperative checkpoint can't be
+   * overwritten by a stale-data write that fires immediately after.
+   * No-op if the FormStore is disposed.
+   */
+  writePathImmediately(path: Path): Promise<void>
+  /**
+   * Wipe the persisted entry. With `path` provided, removes that
+   * subpath only (and any matching error entries) and writes back; the
+   * entry is removed entirely if the resulting form value is empty.
+   * Without `path`, calls the adapter's `removeItem` directly.
+   */
+  clearPersistedDraft(path?: Path): Promise<void>
+  /** Disposer — called from FormStore.dispose. */
+  dispose(): void
+}
+
+/**
+ * Cache key for `state.modules.get(...)`. Only the persistence layer
+ * itself + buildFormApi read this — exporting keeps the literal in one
+ * place rather than scattering 'persistence' across files.
+ */
+export const PERSISTENCE_MODULE_KEY = 'persistence'
 
 /**
  * Resolve a `FormStorage` adapter for the given storage kind. Built-in

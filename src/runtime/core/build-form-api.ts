@@ -21,6 +21,8 @@ import { buildFieldStateAccessor } from './field-state-api'
 import type { HistoryModule } from './history'
 import { getAtPath } from './path-walker'
 import { canonicalizePath, type Path, type Segment } from './paths'
+import { PERSISTENCE_MODULE_KEY, type PersistenceModule } from './persistence'
+import { enforceSensitiveCheck } from './persistence/sensitive-names'
 import { buildProcessForm } from './process-form'
 import { buildRegister } from './register-api'
 
@@ -225,14 +227,56 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     })
   ) as FormState
 
+  // --- Persistence handle (cached on FormStore by useAbstractForm
+  // when persist: is configured). The persist + clearPersistedDraft
+  // APIs below close over this; reset / resetField also poke it. ---
+  const persistence = state.modules.get(PERSISTENCE_MODULE_KEY) as PersistenceModule | undefined
+
   // --- Reset ---
+  // Reset semantics are "fresh start across every layer" — drafts are
+  // transient, so a reset that left stale storage behind would surprise
+  // on next mount (form would re-hydrate the discarded draft). The
+  // opt-in registry is NOT touched: directives are still mounted and
+  // the next user keystroke on an opted-in input re-populates the
+  // entry naturally.
   const reset = (nextDefaultValues?: DeepPartial<Form>): void => {
     state.reset(nextDefaultValues)
+    if (persistence !== undefined) {
+      // Fire-and-forget — reset is sync from the consumer's POV; the
+      // wipe lands a moment later. Errors are absorbed by the adapter
+      // contract (best-effort).
+      void persistence.clearPersistedDraft().catch(() => undefined)
+    }
   }
 
   const resetField = (pathInput: string): void => {
     const segments = canonicalizePath(pathInput).segments
     state.resetField(segments)
+    if (persistence !== undefined) {
+      void persistence.clearPersistedDraft(segments).catch(() => undefined)
+    }
+  }
+
+  // --- Persistence (imperative APIs) ---
+
+  const persist = async (
+    pathInput: string | Path,
+    options?: { acknowledgeSensitive?: boolean }
+  ): Promise<void> => {
+    const segments = canonicalizePath(pathInput).segments
+    enforceSensitiveCheck(segments, options?.acknowledgeSensitive === true)
+    if (persistence === undefined) return // persist: not configured → silent no-op
+    await persistence.writePathImmediately(segments)
+  }
+
+  const clearPersistedDraft = async (pathInput?: string | Path): Promise<void> => {
+    if (persistence === undefined) return
+    if (pathInput === undefined) {
+      await persistence.clearPersistedDraft()
+      return
+    }
+    const segments = canonicalizePath(pathInput).segments
+    await persistence.clearPersistedDraft(segments)
   }
 
   // --- Focus / scroll to first error ---
@@ -276,6 +320,11 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     state: formState,
     reset: reset as UseAbstractFormReturnType<Form, GetValueFormType>['reset'],
     resetField: resetField as UseAbstractFormReturnType<Form, GetValueFormType>['resetField'],
+    persist: persist as UseAbstractFormReturnType<Form, GetValueFormType>['persist'],
+    clearPersistedDraft: clearPersistedDraft as UseAbstractFormReturnType<
+      Form,
+      GetValueFormType
+    >['clearPersistedDraft'],
     focusFirstError,
     scrollToFirstError,
     undo,

@@ -129,8 +129,8 @@ describe('fieldValidation: { on: "change", debounceMs }', () => {
     apps.push(app)
 
     api.setValue('email', 'not-an-email')
-    // Default debounceMs is 200; advance past it.
-    await vi.advanceTimersByTimeAsync(250)
+    // Default debounceMs is 125; advance past it.
+    await vi.advanceTimersByTimeAsync(175)
     await drainMicrotasks()
     expect(api.fieldErrors.email?.[0]?.message).toBe('bad email')
   })

@@ -1,7 +1,7 @@
 # Live field validation
 
 cx validates as you type by default — `fieldValidation: { on: 'change',
-debounceMs: 200 }` is implicit. Errors at any path reflect the live
+debounceMs: 125 }` is implicit. Errors at any path reflect the live
 `(value, schema)` continuously, so consumers can render inline feedback
 without reaching for a separate "is this field valid?" query.
 

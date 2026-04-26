@@ -226,11 +226,13 @@ export type WriteMeta = {
 export type HistoryConfig = true | { max?: number }
 
 /**
- * Opt-in persistence for the form's draft state. The library writes
- * (debounced) on every mutation and reads back on mount. Off by
- * default — no config → no reads, no writes, zero overhead.
+ * Full options form for persistence. Use this when you need to override
+ * defaults beyond just picking the backend (debounce, key namespace,
+ * version, error inclusion, etc.). For backend-only configuration the
+ * shorthand `persist: 'local'` / `persist: customAdapter` is equivalent
+ * to `persist: { storage: 'local' }` / `persist: { storage: customAdapter }`.
  */
-export type PersistConfig = {
+export type PersistConfigOptions = {
   /**
    * Which backend to persist to. String shortcuts load built-in
    * adapters via dynamic import (tree-shakeable — a consumer who
@@ -263,6 +265,25 @@ export type PersistConfig = {
   /** Clear the persisted entry when a submit handler resolves. Default `true`. */
   clearOnSubmitSuccess?: boolean
 }
+
+/**
+ * Opt-in persistence for the form's draft state. The library writes
+ * (debounced) on every mutation and reads back on mount. Off by
+ * default — no config → no reads, no writes, zero overhead.
+ *
+ * Three input forms — pick the one that reads best at the call site:
+ *
+ * ```ts
+ * useForm({ persist: 'local' })                       // shorthand: built-in backend
+ * useForm({ persist: encryptedStorage })              // shorthand: custom adapter
+ * useForm({ persist: { storage: 'local', version: 3 } }) // full options bag
+ * ```
+ *
+ * The shorthand forms get the same defaults as the full bag — they
+ * exist purely to remove ceremony for the common "I just want to pick
+ * a backend" case.
+ */
+export type PersistConfig = FormStorageKind | FormStorage | PersistConfigOptions
 
 export type UseFormConfiguration<
   Form extends GenericForm,
@@ -363,14 +384,30 @@ export type UseFormConfiguration<
   /**
    * Opt-in persistence of the form's draft state. Off by default.
    * See `docs/recipes/persistence.md` for the tradeoff table and
-   * backend picker guidance. Key fields:
+   * backend picker guidance.
    *
-   * - `storage: 'local' | 'session' | 'indexeddb' | FormStorage`
-   * - `key?`: persisted entry key. Defaults to
-   *   `chemical-x-forms:${formKey}`.
-   * - `debounceMs?`: write debounce. Default `300` ms.
-   * - `version?`: bump to invalidate existing entries.
-   * - `clearOnSubmitSuccess?`: default `true`.
+   * Three input forms — pick the one that reads best at the call site:
+   *
+   * - `persist: 'local'` (shorthand for a built-in backend). Same
+   *   shape works for `'session'` and `'indexeddb'`.
+   * - `persist: encryptedStorage` (shorthand for a custom `FormStorage`
+   *   adapter — the object with `getItem` / `setItem` / `removeItem`).
+   * - `persist: { storage: 'local', version: 3, debounceMs: 500, ... }`
+   *   when you need to override anything beyond the backend.
+   *
+   * Cross-store cleanup: at mount, the library calls `removeItem(key)`
+   * on every standard backend (`'local'`, `'session'`, `'indexeddb'`)
+   * that's NOT the configured one — fire-and-forget. This means if a
+   * form was persisting to `'local'` and switches to `'session'` (or
+   * a custom encrypted adapter), the stale `'local'` entry can't
+   * orphan PII / sensitive data. Custom adapters can't be enumerated,
+   * so a custom→custom migration is on the consumer.
+   *
+   * Per-field opt-in: configuring `persist` is necessary but not
+   * sufficient — every field that should actually persist needs
+   * `register('foo', { persist: true })`. Adding `persist:` without
+   * any field opt-ins logs a dev-mode warning. See
+   * `docs/recipes/persistence.md` for the threat-model rationale.
    */
   persist?: PersistConfig
 

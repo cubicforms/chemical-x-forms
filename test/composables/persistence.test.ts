@@ -199,7 +199,7 @@ describe('persistence — localStorage backend', () => {
     expect(api.getValue('password').value).toBe('pw')
   })
 
-  it('drops a version-mismatched payload', async () => {
+  it('drops AND wipes a version-mismatched payload', async () => {
     localStorage.setItem(
       'test-vmismatch',
       JSON.stringify({ v: 99, data: { form: { email: 'stale@x.com', password: 'stale' } } })
@@ -211,8 +211,29 @@ describe('persistence — localStorage backend', () => {
       version: 1,
     })
     apps.push(app)
-    await drain()
     // Schema defaults (empty strings) — the stale payload was rejected.
+    // Hydration is async, so wait for the wipe to land before asserting.
+    await waitUntil(() => (localStorage.getItem('test-vmismatch') === null ? true : null))
+    expect(localStorage.getItem('test-vmismatch')).toBeNull()
+    expect(api.getValue('email').value).toBe('')
+  })
+
+  it('wipes a malformed-shape payload on mount', async () => {
+    // A non-null raw that doesn't match the expected envelope (no `v`,
+    // wrong type, etc.) is treated like a stale entry — auto-wiped so
+    // sensitive fields from a previous shape can't linger.
+    localStorage.setItem(
+      'test-malformed',
+      JSON.stringify({ totally: 'not the right shape', email: 'leak@x.com' })
+    )
+    const { app, api } = mountForm({
+      storage: 'local',
+      key: 'test-malformed',
+      debounceMs: 20,
+    })
+    apps.push(app)
+    await waitUntil(() => (localStorage.getItem('test-malformed') === null ? true : null))
+    expect(localStorage.getItem('test-malformed')).toBeNull()
     expect(api.getValue('email').value).toBe('')
   })
 
@@ -963,5 +984,241 @@ describe('persistence — reset wipes the persisted draft', () => {
     }
     expect(final.data.form['email']).toBeUndefined()
     expect(final.data.form['password']).toBe('seed-pw')
+  })
+})
+
+/**
+ * Shorthand input forms — `persist: 'local'` and
+ * `persist: customAdapter` skip the options-bag wrapper for the common
+ * "just pick a backend" case. Internally these normalise to
+ * `{ storage: ... }` with library defaults; everything downstream
+ * operates on the resolved shape.
+ */
+describe('persistence — shorthand config', () => {
+  const apps: App[] = []
+  beforeEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  it("persist: 'local' (string shorthand) writes to localStorage with default key", async () => {
+    // The default key is `chemical-x-forms:${formKey}` — mountForm
+    // generates a unique formKey, so the resolved storage key is unique
+    // per test and we read back via the same scheme.
+    const handle: { api?: ApiReturn; el?: HTMLInputElement } = {}
+    const formKey = `shorthand-${Math.random().toString(36).slice(2)}`
+    const App = defineComponent({
+      setup() {
+        const api = useForm({ schema, key: formKey, persist: 'local' })
+        handle.api = api
+        return () =>
+          h(
+            'div',
+            withDirectives(
+              h('input', {
+                type: 'text',
+                ref: (el): void => {
+                  if (el !== null) handle.el = el as HTMLInputElement
+                },
+              }),
+              [[vRegister, api.register('email', { persist: true })]]
+            )
+          )
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+
+    const el = handle.el as HTMLInputElement
+    el.value = 'shorthand@example.com'
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    // Default debounceMs is 300 — allow 600 ms for the timer + adapter chain.
+    const expectedKey = `chemical-x-forms:${formKey}`
+    const raw = await waitUntil(() => localStorage.getItem(expectedKey), 1000)
+    expect(raw).not.toBeNull()
+    const payload = JSON.parse(raw as string) as { v: number; data: { form: { email: string } } }
+    expect(payload.v).toBe(2)
+    expect(payload.data.form.email).toBe('shorthand@example.com')
+  })
+
+  it('persist: customAdapter (object shorthand) routes writes to the adapter', async () => {
+    // A custom FormStorage with no `storage` key — disambiguator picks
+    // it up as a custom adapter, NOT as a malformed options bag.
+    const writes: Array<[string, unknown]> = []
+    const customAdapter = {
+      getItem: (): Promise<unknown> => Promise.resolve(undefined),
+      setItem: (key: string, value: unknown): Promise<void> => {
+        writes.push([key, value])
+        return Promise.resolve()
+      },
+      removeItem: (): Promise<void> => Promise.resolve(),
+    }
+    const handle: { el?: HTMLInputElement } = {}
+    const formKey = `custom-${Math.random().toString(36).slice(2)}`
+    const App = defineComponent({
+      setup() {
+        const api = useForm({ schema, key: formKey, persist: customAdapter })
+        return () =>
+          h(
+            'div',
+            withDirectives(
+              h('input', {
+                type: 'text',
+                ref: (el): void => {
+                  if (el !== null) handle.el = el as HTMLInputElement
+                },
+              }),
+              [[vRegister, api.register('email', { persist: true })]]
+            )
+          )
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    const el = handle.el as HTMLInputElement
+    el.value = 'custom@example.com'
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    await waitUntil(() => (writes.length > 0 ? true : null), 1000)
+    expect(writes.length).toBeGreaterThan(0)
+    const [writtenKey, writtenValue] = writes[writes.length - 1]!
+    expect(writtenKey).toBe(`chemical-x-forms:${formKey}`)
+    const payload = writtenValue as { data: { form: { email: string } } }
+    expect(payload.data.form.email).toBe('custom@example.com')
+  })
+})
+
+/**
+ * Cross-store cleanup at mount: the configured backend is the source of
+ * truth. Stale entries in non-configured standard backends (under the
+ * same resolved key) get a fire-and-forget `removeItem` so a migration
+ * from `'local'` → `'session'` (or `'local'` → encrypted custom store)
+ * can't orphan PII / sensitive data in the abandoned backend.
+ *
+ * Custom adapters can't be enumerated, so a custom→custom migration is
+ * on the consumer; configuring a custom adapter sweeps all three
+ * standard backends.
+ */
+describe('persistence — cross-store cleanup at mount', () => {
+  const apps: App[] = []
+  beforeEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+    localStorage.clear()
+    sessionStorage.clear()
+    __resetIndexedDbForTests()
+  })
+
+  function mountMinimal(persist: Parameters<typeof useForm<typeof schema>>[0]['persist']): App {
+    const App = defineComponent({
+      setup() {
+        useForm({
+          schema,
+          key: `cleanup-${Math.random().toString(36).slice(2)}`,
+          ...(persist ? { persist } : {}),
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    return app
+  }
+
+  it("configured 'local' wipes the same-key entry from sessionStorage", async () => {
+    const key = 'cleanup-shared-key'
+    sessionStorage.setItem(key, JSON.stringify({ stale: 'data' }))
+    localStorage.setItem(key, JSON.stringify({ v: 2, data: { form: { email: 'keep' } } }))
+    expect(sessionStorage.getItem(key)).not.toBeNull()
+    mountMinimal({ storage: 'local', key })
+    // Cleanup is fire-and-forget; poll for the session entry to vanish.
+    await waitUntil(() => (sessionStorage.getItem(key) === null ? true : null), 500)
+    expect(sessionStorage.getItem(key)).toBeNull()
+    // The configured backend's entry must NOT be touched by the sweep.
+    expect(localStorage.getItem(key)).not.toBeNull()
+  })
+
+  it("configured 'session' wipes the same-key entry from localStorage", async () => {
+    const key = 'cleanup-shared-key-2'
+    localStorage.setItem(key, JSON.stringify({ stale: 'data' }))
+    sessionStorage.setItem(key, JSON.stringify({ v: 2, data: { form: { email: 'keep' } } }))
+    mountMinimal({ storage: 'session', key })
+    await waitUntil(() => (localStorage.getItem(key) === null ? true : null), 500)
+    expect(localStorage.getItem(key)).toBeNull()
+    expect(sessionStorage.getItem(key)).not.toBeNull()
+  })
+
+  it('configured custom adapter wipes both localStorage and sessionStorage', async () => {
+    // Custom adapters can't be reached by enumeration, so the cleanup
+    // sweeps ALL three standard backends — the dev might have migrated
+    // away from any of them.
+    const key = 'cleanup-custom'
+    localStorage.setItem(key, JSON.stringify({ stale: 'local' }))
+    sessionStorage.setItem(key, JSON.stringify({ stale: 'session' }))
+    const customAdapter = {
+      getItem: (): Promise<unknown> => Promise.resolve(undefined),
+      setItem: (): Promise<void> => Promise.resolve(),
+      removeItem: (): Promise<void> => Promise.resolve(),
+    }
+    mountMinimal({ storage: customAdapter, key })
+    await waitUntil(
+      () =>
+        localStorage.getItem(key) === null && sessionStorage.getItem(key) === null ? true : null,
+      500
+    )
+    expect(localStorage.getItem(key)).toBeNull()
+    expect(sessionStorage.getItem(key)).toBeNull()
+  })
+
+  it("shorthand persist: 'local' runs the same cleanup", async () => {
+    // The shorthand is normalised to { storage: 'local' } before the
+    // sweep — same code path, same behaviour.
+    const formKey = `shorthand-cleanup-${Math.random().toString(36).slice(2)}`
+    const expectedStorageKey = `chemical-x-forms:${formKey}`
+    sessionStorage.setItem(expectedStorageKey, JSON.stringify({ stale: 'session' }))
+    const App = defineComponent({
+      setup() {
+        useForm({ schema, key: formKey, persist: 'local' })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    await waitUntil(() => (sessionStorage.getItem(expectedStorageKey) === null ? true : null), 500)
+    expect(sessionStorage.getItem(expectedStorageKey)).toBeNull()
+  })
+
+  it('preserves entries under a DIFFERENT key in non-configured backends', async () => {
+    // Cleanup sweeps the configured key only — entries that another
+    // form (or another concern entirely) wrote to the same backend
+    // under a different key must survive.
+    const ourKey = 'cleanup-our-key'
+    const otherKey = 'someone-elses-key'
+    sessionStorage.setItem(ourKey, JSON.stringify({ stale: true }))
+    sessionStorage.setItem(otherKey, JSON.stringify({ unrelated: true }))
+    mountMinimal({ storage: 'local', key: ourKey })
+    await waitUntil(() => (sessionStorage.getItem(ourKey) === null ? true : null), 500)
+    expect(sessionStorage.getItem(ourKey)).toBeNull()
+    // The unrelated session entry stays.
+    expect(sessionStorage.getItem(otherKey)).not.toBeNull()
   })
 })

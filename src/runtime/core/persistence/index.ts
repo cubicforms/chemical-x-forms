@@ -2,6 +2,7 @@ import type {
   FormStorage,
   FormStorageKind,
   PersistConfig,
+  PersistConfigOptions,
   ValidationError,
 } from '../../types/types-api'
 import { PERSISTENCE_KEY_PREFIX } from '../defaults'
@@ -183,8 +184,141 @@ export function createDebouncedWriter(
  * `chemical-x-forms:${formKey}` — consumers who want a different
  * namespace (multi-tenant app, per-user prefix) pass `persist.key`.
  */
-export function resolveStorageKey(config: PersistConfig, formKey: string): string {
+export function resolveStorageKey(config: PersistConfigOptions, formKey: string): string {
   return config.key ?? `${PERSISTENCE_KEY_PREFIX}${formKey}`
+}
+
+/**
+ * The canonical list of built-in backends. Used by the cross-store
+ * cleanup sweep — any standard backend not matching the configured
+ * one gets a `removeItem(key)` at mount.
+ */
+export const STANDARD_STORAGE_KINDS = ['local', 'session', 'indexeddb'] as const
+
+/**
+ * Coerce the consumer-facing `PersistConfig` (which accepts shorthand
+ * forms — a string backend name, or a custom `FormStorage` adapter) into
+ * the resolved options bag the rest of the persistence layer expects.
+ *
+ * Discrimination rules (in order):
+ *
+ *   1. `typeof input === 'string'` — `FormStorageKind` shorthand.
+ *   2. `'storage' in input`         — already the full options bag.
+ *   3. otherwise                    — custom `FormStorage` adapter.
+ *
+ * Step 3 trusts the caller's type: a `FormStorage` is a duck-typed
+ * `{ getItem, setItem, removeItem }` object, and we don't validate
+ * the shape — TypeScript already covers that path on the call site.
+ *
+ * Returning `PersistConfigOptions` (not `PersistConfig`) means the
+ * normalized form is referentially distinct from the input — callers
+ * can be confident `result.storage` is always present.
+ */
+export function normalizePersistConfig(input: PersistConfig): PersistConfigOptions {
+  if (typeof input === 'string') return { storage: input }
+  if ('storage' in input) return input
+  return { storage: input }
+}
+
+/**
+ * Cross-store cleanup. Calls `removeItem(key)` on every standard
+ * backend that's NOT the configured one — fire-and-forget. Runs once
+ * at form mount.
+ *
+ * Why this matters: if a form was persisting to `'local'` and the dev
+ * later switches to `'session'` (or a custom encrypted adapter), the
+ * stale entry in `'local'` would otherwise sit there indefinitely,
+ * potentially holding sensitive data the dev thought they had moved
+ * to a safer store. The configured `storage` option is the source of
+ * truth for "where the draft lives now"; everything else is hysteresis
+ * from past app states and should be wiped.
+ *
+ * Implementation note: deletion is inlined per-backend rather than going
+ * through `getStorageAdapter`. Inlining avoids dynamic-importing the
+ * adapter chunks the consumer specifically chose NOT to use — a form
+ * configured for `'local'` shouldn't pull the IndexedDB chunk just to
+ * sweep it.
+ *
+ * If `configured` is a custom `FormStorage` adapter, all three standard
+ * backends are swept (we don't know which built-in the dev migrated
+ * away from, and we can't reach custom adapters by enumeration).
+ *
+ * Errors are swallowed — cleanup is best-effort. Backend unavailable
+ * (Node, Safari private mode, IDB blocked) is also a silent skip.
+ */
+export function sweepNonConfiguredStandardStores(
+  configured: FormStorageKind | FormStorage,
+  key: string
+): void {
+  const configuredKind = typeof configured === 'string' ? configured : null
+  for (const kind of STANDARD_STORAGE_KINDS) {
+    if (kind === configuredKind) continue
+    void removeFromStandardBackend(kind, key).catch(() => undefined)
+  }
+}
+
+async function removeFromStandardBackend(kind: FormStorageKind, key: string): Promise<void> {
+  if (kind === 'local') {
+    if (typeof localStorage === 'undefined') return
+    try {
+      localStorage.removeItem(key)
+    } catch {
+      // Private-mode write guards / SecurityError — swallow.
+    }
+    return
+  }
+  if (kind === 'session') {
+    if (typeof sessionStorage === 'undefined') return
+    try {
+      sessionStorage.removeItem(key)
+    } catch {
+      // Same guards as localStorage.
+    }
+    return
+  }
+  // kind === 'indexeddb'
+  if (typeof indexedDB === 'undefined') return
+  await new Promise<void>((resolve) => {
+    let request: IDBOpenDBRequest
+    try {
+      // Same DB / store / version as the full IDB adapter
+      // (see `./indexeddb.ts`). Opening at the same version skips the
+      // upgrade path entirely; if the DB doesn't yet exist (no
+      // persistence ever wrote here), `onupgradeneeded` creates the
+      // store and the subsequent `delete(key)` is a no-op — cheap.
+      request = indexedDB.open('chemical-x-forms', 1)
+    } catch {
+      return resolve()
+    }
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv')
+    }
+    request.onsuccess = () => {
+      const db = request.result
+      try {
+        const tx = db.transaction('kv', 'readwrite')
+        tx.objectStore('kv').delete(key)
+        tx.oncomplete = () => {
+          db.close()
+          resolve()
+        }
+        tx.onabort = () => {
+          db.close()
+          resolve()
+        }
+        tx.onerror = () => {
+          db.close()
+          resolve()
+        }
+      } catch {
+        db.close()
+        resolve()
+      }
+    }
+    request.onerror = () => resolve()
+    request.onblocked = () => resolve()
+  })
 }
 
 /**

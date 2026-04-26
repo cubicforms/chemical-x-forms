@@ -16,10 +16,12 @@ import {
   filterErrorsByPaths,
   getStorageAdapter,
   mergeSparseHydration,
+  normalizePersistConfig,
   PERSISTENCE_MODULE_KEY,
   pluckPaths,
   readPersistedPayload,
   resolveStorageKey,
+  sweepNonConfiguredStandardStores,
   type PersistedPayload,
   type PersistenceModule,
 } from '../core/persistence'
@@ -30,7 +32,7 @@ import type {
   AbstractSchema,
   ChemicalXFormsDefaults,
   FormKey,
-  PersistConfig,
+  PersistConfigOptions,
   UseAbstractFormReturnType,
   UseFormConfiguration,
   ValidationError,
@@ -124,8 +126,21 @@ export function useAbstractForm<
   // scope) so persistence survives any single consumer unmounting — it
   // tears down only when the last consumer releases and the registry
   // evicts the state.
+  //
+  // The shorthand input (`persist: 'local'`, `persist: customAdapter`)
+  // is normalised to the resolved options bag once at this boundary —
+  // everything below operates on the resolved shape.
   if (existing === undefined && merged.persist !== undefined && !registry.isSSR) {
-    const persistenceModule = wirePersistence(state, merged.persist)
+    const resolvedPersist = normalizePersistConfig(merged.persist)
+    const persistenceKey = resolveStorageKey(resolvedPersist, state.formKey)
+    // Cross-store cleanup. The configured backend is the source of
+    // truth — any standard backend not matching the configured one
+    // gets a `removeItem(key)` so historic entries can't orphan
+    // sensitive data when the dev migrates between backends. Inlined
+    // per-backend (see `sweepNonConfiguredStandardStores`) so this
+    // doesn't drag in adapter chunks the consumer didn't ask for.
+    sweepNonConfiguredStandardStores(resolvedPersist.storage, persistenceKey)
+    const persistenceModule = wirePersistence(state, resolvedPersist)
     state.modules.set(PERSISTENCE_MODULE_KEY, persistenceModule)
     state.registerCleanup(() => persistenceModule.dispose())
   }
@@ -480,7 +495,7 @@ function warnOnSchemaFingerprintMismatch(
  */
 function wirePersistence<F extends GenericForm>(
   state: FormStore<F>,
-  config: PersistConfig
+  config: PersistConfigOptions
 ): PersistenceModule {
   const key = resolveStorageKey(config, state.formKey)
   const debounceMs = config.debounceMs ?? DEFAULT_PERSISTENCE_DEBOUNCE_MS
@@ -578,7 +593,20 @@ function wirePersistence<F extends GenericForm>(
     try {
       const raw = await adapter.getItem(key)
       const payload = readPersistedPayload<F>(raw, version)
-      if (payload === null) return
+      if (payload === null) {
+        // Truly-absent entries are a no-op; we'd churn the adapter for
+        // nothing. But a non-null raw that didn't parse is a stale
+        // payload — wrong version, malformed shape, corrupted JSON —
+        // and leaving it on disk is the same hysteresis problem the
+        // cross-store cleanup avoids. The dev bumped `version` (or the
+        // shape drifted) to signal "old data is invalid"; auto-wipe so
+        // the next mount reads cleanly and so sensitive fields from a
+        // pre-version-bump deployment can't linger indefinitely.
+        if (raw !== null && raw !== undefined) {
+          await adapter.removeItem(key)
+        }
+        return
+      }
       if (disposed) return
       // Sparse-aware replacement: the persisted form may contain only
       // a subset of paths (the ones opted into persistence on the

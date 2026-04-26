@@ -101,6 +101,29 @@ for the full set of changes.
   [migration guide](./docs/migration/0.11-to-0.12.md#breaking-persistence-opt-in-moved-to-per-field)
   + [persistence recipe](./docs/recipes/persistence.md) for the full
   rewrite.
+- **New — shorthand `persist:` config.** `useForm({ persist: 'local' })`
+  is now equivalent to `useForm({ persist: { storage: 'local' } })`;
+  same shorthand for `'session'` / `'indexeddb'` and for custom
+  `FormStorage` adapters (`persist: encryptedStorage`). The full
+  options bag is still required to override `key`, `debounceMs`,
+  `version`, etc. New `PersistConfigOptions` type exported alongside
+  `PersistConfig` (which is now the union of all input forms).
+- **New — cross-store cleanup at mount.** The configured `storage` is
+  the source of truth for "where the draft lives now." Standard
+  backends (`'local'` / `'session'` / `'indexeddb'`) NOT matching the
+  configured one get a `removeItem(key)` (fire-and-forget). A
+  migration `'local'` → `'session'` (or `'local'` → encrypted custom
+  adapter) can no longer orphan PII / sensitive fields in the
+  abandoned backend. Configuring a custom adapter sweeps all three
+  standard backends. Inlined per-backend so it doesn't drag in the
+  adapter chunks the consumer didn't ask for.
+- **New — auto-wipe of stale persisted entries.** A non-empty raw
+  value that fails to parse on hydration (version mismatch,
+  malformed envelope, corrupted JSON) is now wiped from the
+  configured backend instead of being left on disk. Bumping
+  `persist.version` no longer leaves the old payload bytes lingering
+  indefinitely. "Truly absent" entries stay a no-op — the wipe only
+  fires when there's actually something to clean.
 
 ## v0.11.1
 **Dev-mode ergonomics for the ambient `useFormContext` warning.**

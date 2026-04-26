@@ -21,15 +21,27 @@ sensitive-named paths throw at mount unless explicitly acknowledged.
 ## Setup
 
 Configure `useForm` with the operational settings (backend, key,
-debounce window, version, etc.):
+debounce window, version, etc.). Three input forms — pick the one
+that reads best at the call site:
 
 ```ts
+// Shorthand: built-in backend with library defaults
+useForm({ schema, key: 'signup', persist: 'local' })
+
+// Shorthand: custom FormStorage adapter with library defaults
+useForm({ schema, key: 'signup', persist: encryptedStorage })
+
+// Full options: needed when you want to override anything beyond the backend
 useForm({
   schema,
   key: 'signup',
-  persist: { storage: 'local' },
+  persist: { storage: 'local', debounceMs: 500, version: 3 },
 })
 ```
+
+The shorthand forms are equivalent to `{ storage: 'local' }` and
+`{ storage: encryptedStorage }` — purely ergonomic sugar for the
+common "I just want to pick a backend" case.
 
 Then opt each field into persistence at its `register()` call site:
 
@@ -250,11 +262,43 @@ rehydration.
 
 When you rename a field or change a type, bump `persist.version`.
 Old payloads are dropped on read — users start from schema defaults
-instead of crashing on a shape mismatch.
+instead of crashing on a shape mismatch. The stale entry is wiped
+from storage at the same time, so old field values can't linger.
 
 ```ts
 persist: { storage: 'local', version: 3 }
 ```
+
+The same auto-wipe handles malformed-shape entries (corrupted JSON,
+wrong envelope, anything that doesn't match the expected payload
+contract). "Truly absent" entries (the key was never set) are a
+no-op — the wipe only fires when there's actually something to clean.
+
+## Switching backends safely
+
+The configured `storage` is the source of truth for "where the draft
+lives now." Any standard backend NOT matching the configured one gets
+a `removeItem(key)` at mount, fire-and-forget. So if a form was
+persisting to `'local'` and you switch to `'session'` (or to a custom
+encrypted adapter), the stale `'local'` entry can't orphan PII or
+sensitive fields.
+
+```ts
+// Before:
+useForm({ schema, key: 'signup', persist: 'local' })
+
+// After (next deploy): mount-time sweep wipes the old 'local' entry.
+useForm({ schema, key: 'signup', persist: encryptedStorage })
+```
+
+Custom adapters can't be enumerated, so a custom→custom migration is
+on the consumer. Configuring a custom adapter sweeps all three
+standard backends (the dev might have migrated away from any of them).
+
+The cleanup runs once at mount, only touches the `key` your form
+resolves to (default `chemical-x-forms:${formKey}`), and never
+touches the configured backend. Entries other forms wrote to the
+same backend under different keys are untouched.
 
 ## Keeping the draft after submit
 

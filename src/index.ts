@@ -70,6 +70,7 @@ export type {
   OnSubmit,
   PendingValidationStatus,
   PersistConfig,
+  PersistConfigOptions,
   PersistIncludeMode,
   ReactiveValidationStatus,
   RegisterOptions,

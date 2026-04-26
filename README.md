@@ -6,7 +6,7 @@
 [![Node.js Test Suite](https://github.com/cubicforms/chemical-x-forms/actions/workflows/matrix.yml/badge.svg)](https://github.com/cubicforms/chemical-x-forms/actions/workflows/matrix.yml)
 [![Nuxt][nuxt-src]][nuxt-href]
 
-Type-safe, schema-driven forms for Vue 3 and Nuxt. Bring a Zod schema (or your own validator); get typed values, per-field errors, a submit handler, and a reactive state bundle out of the box.
+**A fully type-safe, schema-driven form library that gives you superpowers.** A minimal composition API for Vue 3 and Nuxt — bring a Zod schema (or your own validator), get typed values, per-field errors, a submit handler, and a reactive state bundle out of the box. Built for developer experience and form correctness.
 
 ## Installation
 

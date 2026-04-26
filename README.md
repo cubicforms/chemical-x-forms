@@ -93,7 +93,7 @@ Errors track the live `(value, schema)` by default. Pass `fieldValidation: { on:
 - **End-to-end type safety** — every path, value, and error is inferred from your schema; no `any` in the public surface.
 - **Live validation** — debounced `'change'` mode by default; `'blur'` and `'none'` available; async refines work everywhere (`handleSubmit`, the reactive `validate()` ref, and `validateAsync(path?)`).
 - **Field arrays** — `append` / `prepend` / `insert` / `remove` / `swap` / `move` / `replace` with full type narrowing on path and element type.
-- **Drafts + undo / redo** — persist and hydrate from `localStorage`, `sessionStorage`, IndexedDB, or your own `FormStorage`; bounded snapshot stack wires to `⌘Z` / `⌘⇧Z` in one line.
+- **Drafts + undo / redo** — persist and hydrate from `localStorage`, `sessionStorage`, IndexedDB, or your own [`FormStorage`](./docs/recipes/persistence.md#custom-backend); bounded snapshot stack wires to `⌘Z` / `⌘⇧Z` in one line.
 - **Server errors** — `setFieldErrorsFromApi` accepts the common envelope shapes; user-injected errors persist across schema revalidation.
 - **SSR** — first-class for Nuxt and bare Vue + `@vue/server-renderer`; payload round-trip is automatic in Nuxt.
 

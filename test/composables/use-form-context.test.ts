@@ -110,7 +110,11 @@ describe('useFormContext — ambient provide/inject', () => {
         },
       })
 
-      const app = createApp(Child).use(createChemicalXForms({ override: true }))
+      // No `override: true` — the warn is suppressed in SSR mode (see
+      // warnMiss in use-form-context.ts). JSDOM has `window`, so the
+      // default detectSSR resolves to false and the warn fires as
+      // intended for client-side coverage.
+      const app = createApp(Child).use(createChemicalXForms())
       app.mount(document.createElement('div'))
       expect(captured).toBeNull()
       const calls = matchingWarnCalls()
@@ -137,7 +141,7 @@ describe('useFormContext — ambient provide/inject', () => {
           return () => h(Child)
         },
       })
-      const app = createApp(Parent).use(createChemicalXForms({ override: true }))
+      const app = createApp(Parent).use(createChemicalXForms())
       app.mount(document.createElement('div'))
       expect(captured).toBeNull()
       const calls = matchingWarnCalls()
@@ -154,7 +158,7 @@ describe('useFormContext — ambient provide/inject', () => {
           return () => h('div')
         },
       })
-      const app = createApp(Orphan).use(createChemicalXForms({ override: true }))
+      const app = createApp(Orphan).use(createChemicalXForms())
       app.mount(document.createElement('div'))
       expect(captured).toBeNull()
       const calls = matchingWarnCalls()
@@ -247,7 +251,7 @@ describe('useFormContext — explicit key resolution', () => {
         return () => h('div')
       },
     })
-    const app = createApp(Orphan).use(createChemicalXForms({ override: true }))
+    const app = createApp(Orphan).use(createChemicalXForms())
     app.mount(document.createElement('div'))
     expect(captured).toBeNull()
     const matching = warnSpy.mock.calls.filter((args: readonly unknown[]) =>

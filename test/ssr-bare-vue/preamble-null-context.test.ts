@@ -81,6 +81,14 @@ describe('SSR preamble null-safety', () => {
     expect(html).toContain('after')
     // The v-if guard meant the input never entered the rendered tree.
     expect(html).not.toContain('<input')
+
+    // SSR-side warn is suppressed — see warnMiss in use-form-context.ts.
+    // The client-hydration setup re-runs and surfaces the same warn
+    // there, so silencing the SSR pass is lossless and halves dev noise.
+    const ourWarns = warnSpy.mock.calls.filter((args: readonly unknown[]) =>
+      String(args[0] ?? '').includes('useFormContext')
+    )
+    expect(ourWarns).toHaveLength(0)
   })
 
   it('SSR continues evaluating later preamble entries even when an earlier one throws', async () => {

@@ -86,22 +86,30 @@ function resolveState<Form extends GenericForm>(
   if (key !== undefined) {
     const stored = registry.forms.get(key) as FormStore<Form> | undefined
     if (stored === undefined) {
-      warnMiss(`no form registered for key '${key}'`)
+      warnMiss(`no form registered for key '${key}'`, registry.isSSR)
       return null
     }
     return stored
   }
   const ambient = inject(kFormContext, null) as FormStore<Form> | null
   if (ambient === null) {
-    warnMiss('no ambient form context')
+    warnMiss('no ambient form context', registry.isSSR)
     return null
   }
   warnIfAmbientProviderHadDuplicates()
   return ambient
 }
 
-function warnMiss(detail: string): void {
-  if (!__DEV__) return
+/**
+ * Skipped on SSR — Nuxt's `dev:ssr-logs` hook forwards server warns to
+ * the browser console alongside the client-side warn that fires from
+ * the hydration setup, so the same miss would surface twice per page
+ * load. The signal is identical on both passes (registry state is
+ * deterministic across SSR/client), so emitting only on the client is
+ * lossless and halves dev-mode noise. Production stays silent on both.
+ */
+function warnMiss(detail: string, isSSR: boolean): void {
+  if (!__DEV__ || isSSR) return
   const frame = captureUserCallSite()
   console.warn(
     `[@chemical-x/forms] useFormContext: ${detail}. Returning null.` +

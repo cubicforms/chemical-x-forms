@@ -3,6 +3,7 @@ import type { RegisterOptions, RegisterValue, WriteMeta } from '../types/types-a
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { __DEV__ } from './dev'
+import { captureUserCallSite } from './dev-stack-trace'
 import { canonicalizePath, type Path } from './paths'
 import { PERSISTENCE_MODULE_KEY } from './persistence'
 
@@ -110,11 +111,17 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
       ) {
         warnedMissingPersistConfig.add(formStore)
         const display = segments.map((s) => String(s)).join('.')
+        // Source frame helps when the form key is synthetic
+        // (`__cx:anon:*`) — without a stable key the dev can't grep
+        // for the offending call. Trail-formatted as " at (path:line:col)"
+        // so Chrome's console auto-linker picks it up.
+        const callSite = captureUserCallSite()
+        const callSiteSuffix = callSite === undefined ? '' : ` at ${callSite}`
         console.warn(
           `[@chemical-x/forms] register('${display}', { persist: true }) was used on form ` +
-            `"${state.formKey}", but no \`persist:\` option is configured on useForm(). The ` +
-            `opt-in is recorded, but no writes will land in any storage backend. Add ` +
-            `\`persist: 'local'\` (or another backend) to your useForm() options. See ` +
+            `"${state.formKey}"${callSiteSuffix}, but no \`persist:\` option is configured on ` +
+            `useForm(). The opt-in is recorded, but no writes will land in any storage backend. ` +
+            `Add \`persist: 'local'\` (or another backend) to your useForm() options. See ` +
             `./docs/recipes/persistence.md.`
         )
       }

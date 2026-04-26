@@ -202,6 +202,23 @@ export type FormStorage = {
 export type PersistIncludeMode = 'form' | 'form+errors'
 
 /**
+ * Write metadata threaded through `setValueAtPath` / `applyFormReplacement`
+ * and surfaced to `onFormChange` listeners. Lets the call site (directive,
+ * field-array helper, history undo, devtools edit, programmatic
+ * `form.setValue`) declare whether THIS write should reach the persistence
+ * layer.
+ *
+ * The persistence subscription only writes when `meta?.persist === true`;
+ * an absent or `false` value bypasses the storage adapter entirely. This
+ * is the security gate behind the per-element opt-in model — only writes
+ * sourced from a binding that explicitly opted into persistence (via
+ * `register('foo', { persist: true })`) carry `persist: true`.
+ */
+export type WriteMeta = {
+  readonly persist?: boolean
+}
+
+/**
  * Undo/redo configuration. `true` enables with default `max: 50`.
  * Pass an object to tune the bounded snapshot stack size.
  */

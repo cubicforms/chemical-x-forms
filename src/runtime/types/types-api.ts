@@ -1,5 +1,6 @@
 import type { ObjectDirective, Ref } from 'vue'
-import type { Path } from '../core/paths'
+import type { Path, PathKey } from '../core/paths'
+import type { PersistOptInRegistry } from '../core/persistence/opt-in-registry'
 import type {
   ArrayItem,
   ArrayPath,
@@ -505,11 +506,46 @@ export type RegisterFlatPath<Form, Key extends keyof Form = keyof Form> =
         : never
     : never
 
+/**
+ * Per-binding options for `register(path, options)`. Lives at the binding
+ * layer (not the form layer) so adding a sensitive field doesn't auto-leak
+ * into a form-wide persistence config — every persisted path is announced
+ * at its own `register()` call site.
+ */
+export type RegisterOptions = {
+  /**
+   * Opt this binding into the form's persistence pipeline. Requires
+   * `persist:` configured on `useForm()` for any storage activity to
+   * actually happen. Throws `SensitivePersistFieldError` if the path
+   * matches a known sensitive-name pattern (password / cvv / ssn / …)
+   * unless `acknowledgeSensitive: true` is also passed.
+   *
+   * Persistence is bound to THIS binding's mount lifecycle: opt-in on
+   * mount, opt-out on unmount. Multiple bindings to the same path are
+   * tracked independently — the path keeps persisting as long as any
+   * opted-in binding is mounted.
+   */
+  persist?: boolean
+  /**
+   * Explicit acknowledgement that the persisted path is intentionally
+   * sensitive. Required override for paths matching the sensitive-name
+   * heuristic (password, cvv, ssn, etc.). Compliance dimension —
+   * forces a code-review trigger when a sensitive field reaches the
+   * persistence pipeline.
+   */
+  acknowledgeSensitive?: boolean
+}
+
 export type RegisterValue<Value = unknown> = {
   innerRef: Readonly<Ref<Value>>
   registerElement: (el: HTMLElement) => void
   deregisterElement: (el: HTMLElement) => void
-  setValueWithInternalPath: (value: unknown) => boolean
+  /**
+   * Internal write delegate. Optional `meta` is forwarded down through
+   * `state.setValueAtPath` to `onFormChange` listeners; the persistence
+   * subscription only writes when `meta?.persist === true`.
+   */
+  setValueWithInternalPath: (value: unknown, meta?: WriteMeta) => boolean
   /**
    * Optimistic SSR-only mark. Called by the `vRegisterHint` template
    * transform's wrapping IIFE so that any field bound to `v-register`
@@ -519,6 +555,24 @@ export type RegisterValue<Value = unknown> = {
    * hydration. No-op on the client; see `FormStore.markConnectedOptimistically`.
    */
   markConnectedOptimistically: () => void
+  // --- Persistence opt-in (internal — managed by the directive) ---
+  /**
+   * Canonical path key for this binding. Used by the directive when
+   * adding / removing entries in `persistOptIns`. Internal field; not
+   * part of the consumer-visible API surface.
+   */
+  path: PathKey
+  /** Opt-in flag from `register(path, { persist })`. Internal. */
+  persist: boolean
+  /** Opt-in flag from `register(path, { acknowledgeSensitive })`. Internal. */
+  acknowledgeSensitive: boolean
+  /**
+   * Reference to the FormStore's per-element opt-in registry. The
+   * directive's `created` / `updated` / `beforeUnmount` hooks add and
+   * remove entries here based on the binding's `persist` flag.
+   * Internal.
+   */
+  persistOptIns: PersistOptInRegistry
 }
 
 export type CustomDirectiveRegisterAssignerFn = (value: unknown) => void
@@ -787,7 +841,8 @@ export type UseAbstractFormReturnType<
   // to the full `RegisterFlatPath<Form>` union, and every register call
   // would produce a RegisterValue<union-of-every-leaf | undefined>.
   register: <Path extends RegisterFlatPath<Form, keyof Form>>(
-    path: Path
+    path: Path,
+    options?: RegisterOptions
   ) => RegisterValue<NestedType<Form, Path> | undefined>
   key: FormKey
 

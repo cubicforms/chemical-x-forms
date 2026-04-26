@@ -72,6 +72,7 @@ export type {
   PersistConfig,
   PersistIncludeMode,
   ReactiveValidationStatus,
+  RegisterOptions,
   RegisterValue,
   SettledValidationStatus,
   SubmitHandler,
@@ -81,6 +82,7 @@ export type {
   ValidationMode,
   ValidationResponse,
   ValidationResponseWithoutValue,
+  WriteMeta,
 } from './runtime/types/types-api'
 
 export type { DeepPartial, FlatPath, GenericForm, NestedType } from './runtime/types/types-core'

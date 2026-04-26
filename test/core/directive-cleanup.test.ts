@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DirectiveBinding } from 'vue'
 import { ref } from 'vue'
 import { assignKey, vRegister } from '../../src/runtime/core/directive'
+import { createPersistOptInRegistry } from '../../src/runtime/core/persistence/opt-in-registry'
+import type { PathKey } from '../../src/runtime/core/paths'
 import type { RegisterValue } from '../../src/runtime/types/types-api'
 
 /**
@@ -33,6 +35,13 @@ function makeRegisterValue<T>(initial: T): {
     deregisterElement: deregister,
     setValueWithInternalPath: setValue,
     markConnectedOptimistically: () => undefined,
+    // Mock the new persistence-opt-in fields. These tests don't exercise
+    // persist behavior; default to "not opted in" so the directive's
+    // syncPersistOptIn helper short-circuits.
+    path: 'mock' as PathKey,
+    persist: false,
+    acknowledgeSensitive: false,
+    persistOptIns: createPersistOptInRegistry(),
   }
   return { value, register, deregister, setValue }
 }

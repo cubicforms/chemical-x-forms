@@ -1,5 +1,5 @@
 import { computed, type Ref } from 'vue'
-import type { RegisterValue } from '../types/types-api'
+import type { RegisterOptions, RegisterValue, WriteMeta } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { canonicalizePath, type Path } from './paths'
@@ -58,10 +58,16 @@ function detachFocusListeners(element: HTMLElement): void {
 }
 
 export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
-  return function register(pathInput: string | Path): RegisterValue<unknown> {
-    const { segments } = canonicalizePath(pathInput)
+  return function register(
+    pathInput: string | Path,
+    options?: RegisterOptions
+  ): RegisterValue<unknown> {
+    const { segments, key: pathKey } = canonicalizePath(pathInput)
 
     const innerRef = computed(() => state.getValueAtPath(segments)) as Readonly<Ref<unknown>>
+
+    const persist = options?.persist === true
+    const acknowledgeSensitive = options?.acknowledgeSensitive === true
 
     return {
       innerRef,
@@ -80,8 +86,8 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
         state.deregisterElement(segments, element)
       },
 
-      setValueWithInternalPath: (value: unknown): boolean => {
-        state.setValueAtPath(segments, value)
+      setValueWithInternalPath: (value: unknown, meta?: WriteMeta): boolean => {
+        state.setValueAtPath(segments, value, meta)
         return true
       },
 
@@ -96,6 +102,13 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
       markConnectedOptimistically: (): void => {
         state.markConnectedOptimistically(segments)
       },
+
+      // --- Persistence opt-in (internal; the directive is the only
+      // legitimate consumer) ---
+      path: pathKey,
+      persist,
+      acknowledgeSensitive,
+      persistOptIns: state.persistOptIns,
     }
   }
 }

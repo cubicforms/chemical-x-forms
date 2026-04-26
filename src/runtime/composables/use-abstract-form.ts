@@ -507,8 +507,14 @@ function wirePersistence<F extends GenericForm>(
     await adapter.setItem(key, payload)
   }, debounceMs)
 
-  const unsubscribeChange = state.onFormChange(() => {
+  const unsubscribeChange = state.onFormChange((_next, meta) => {
     if (disposed) return
+    // Per-element opt-in: only writes whose source declared `persist: true`
+    // reach the storage adapter. Programmatic `form.setValue`, history
+    // undo without opt-ins, devtools edits to non-opted paths, and
+    // `reset()` all bypass this gate by passing no meta (or `persist:
+    // false`).
+    if (meta?.persist !== true) return
     writer.schedule()
   })
 

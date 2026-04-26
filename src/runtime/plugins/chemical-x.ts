@@ -8,10 +8,11 @@
  * for directive lifecycle hooks, so the same plugin works on both sides
  * without a stub.
  */
-import { defineNuxtPlugin } from 'nuxt/app'
+import { defineNuxtPlugin, useRuntimeConfig } from 'nuxt/app'
 import { createChemicalXForms } from '../core/plugin'
 import { hydrateChemicalXState, renderChemicalXState } from '../core/serialize'
 import type { SerializedChemicalXState } from '../core/serialize'
+import type { ChemicalXFormsDefaults } from '../types/types-api'
 
 export default defineNuxtPlugin({
   // `enforce: 'pre'` makes the "we run before any component's setup" claim
@@ -22,7 +23,23 @@ export default defineNuxtPlugin({
   enforce: 'pre',
   setup(nuxtApp) {
     const isServer = import.meta.server
-    nuxtApp.vueApp.use(createChemicalXForms({ override: isServer }))
+
+    // Read app-level defaults from the Nuxt module's runtime config slot
+    // (populated in src/nuxt.ts). The slot is always present when this
+    // plugin runs — the module installs both — but type the access
+    // defensively so the plugin doesn't assume a Nuxt-side change before
+    // the corresponding cx version is installed.
+    const runtimeConfig = useRuntimeConfig().public as
+      | { chemicalX?: { defaults?: ChemicalXFormsDefaults } }
+      | undefined
+    const defaults = runtimeConfig?.chemicalX?.defaults
+
+    nuxtApp.vueApp.use(
+      createChemicalXForms({
+        override: isServer,
+        ...(defaults === undefined ? {} : { defaults }),
+      })
+    )
 
     if (isServer) {
       // After the app renders, capture every FormStore into the Nuxt payload

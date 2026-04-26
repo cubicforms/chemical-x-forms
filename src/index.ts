@@ -52,6 +52,7 @@ export type {
   AbstractSchema,
   ApiErrorDetails,
   ApiErrorEnvelope,
+  ChemicalXFormsDefaults,
   DefaultValuesResponse,
   FieldState,
   FieldValidationConfig,

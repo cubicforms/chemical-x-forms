@@ -361,6 +361,40 @@ export type UseFormConfiguration<
   history?: HistoryConfig
 }
 
+/**
+ * App-level defaults — the subset of `useForm` options that make sense
+ * to set once per Vue app rather than per-form. Pass via
+ * `createChemicalXForms({ defaults })` (bare Vue) or the Nuxt module's
+ * `chemicalX.defaults` config option.
+ *
+ * Resolution order (per-form wins):
+ *
+ *   useForm({ … })  >  createChemicalXForms({ defaults })  >  library default
+ *
+ * Merge semantics:
+ * - Scalars (`validationMode`, `onInvalidSubmit`, `history`): per-form
+ *   value replaces the default outright.
+ * - `fieldValidation`: shallow-merged at the field level so consumers
+ *   can set `debounceMs` globally and override `on` per-form without
+ *   losing the global debounce. Example:
+ *
+ *     defaults: { fieldValidation: { debounceMs: 100 } }
+ *     useForm({ schema, fieldValidation: { on: 'blur' } })
+ *       // → { on: 'blur', debounceMs: 100 }
+ *
+ * Options NOT supported as app-level defaults:
+ * - `schema`, `key`, `defaultValues` — per-form by definition.
+ * - `persist` — opt-in per form already; cross-form storage defaults
+ *   are ambiguous (key-prefix collisions, adapter selection). May be
+ *   added in a follow-up if a use case appears.
+ */
+export type ChemicalXFormsDefaults = {
+  validationMode?: ValidationMode
+  onInvalidSubmit?: OnInvalidSubmitPolicy
+  fieldValidation?: FieldValidationConfig
+  history?: HistoryConfig
+}
+
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>
 
 export type FormSummaryValue = {

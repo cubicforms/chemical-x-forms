@@ -16,6 +16,7 @@ import {
 import { kFormContext, useRegistry } from '../core/registry'
 import type {
   AbstractSchema,
+  ChemicalXFormsDefaults,
   FormKey,
   PersistConfig,
   UseAbstractFormReturnType,
@@ -66,6 +67,14 @@ export function useAbstractForm<
   // key resolve to the same instance — matches the pre-rewrite "shared
   // store" semantic that forms with the same key were intended to share.
   const registry = useRegistry()
+
+  // Merge app-level defaults from the registry over per-form options.
+  // Per-form values always win for scalars; `fieldValidation` is
+  // shallow-merged at the field level so consumers can set
+  // `debounceMs` globally and override `on` per-form. Every downstream
+  // read uses `merged` so the merge happens exactly once.
+  const merged = mergeWithDefaults(registry.defaults, configuration)
+
   const existing = registry.forms.get(key) as FormStore<Form, GetValueFormType> | undefined
   if (__DEV__ && existing !== undefined) {
     // Shared-key semantics are a feature when consumers OPT in to them
@@ -81,8 +90,7 @@ export function useAbstractForm<
     warnOnSchemaFingerprintMismatch(key, existing.schema, resolvedSchema)
   }
   const state: FormStore<Form, GetValueFormType> =
-    existing ??
-    buildFreshState<Form, GetValueFormType>(key, resolvedSchema, configuration, registry)
+    existing ?? buildFreshState<Form, GetValueFormType>(key, resolvedSchema, merged, registry)
 
   // Ref-count this consumer. When the component's effect scope tears down,
   // release the count; the registry evicts the FormStore once the last
@@ -101,8 +109,8 @@ export function useAbstractForm<
   // persistence survives any single consumer unmounting — it tears
   // down only when the last consumer releases and the registry evicts
   // the state.
-  if (existing === undefined && configuration.persist !== undefined && !registry.isSSR) {
-    const disposePersist = wirePersistence(state, configuration.persist)
+  if (existing === undefined && merged.persist !== undefined && !registry.isSSR) {
+    const disposePersist = wirePersistence(state, merged.persist)
     state.registerCleanup(disposePersist)
   }
 
@@ -112,8 +120,8 @@ export function useAbstractForm<
   // `useForm` / `useFormContext` calls for the same key retrieve the
   // SAME instance, keeping `canUndo` / `canRedo` / `historySize` /
   // `undo` / `redo` consistent across mount order.
-  if (existing === undefined && configuration.history !== undefined) {
-    const historyModule = createHistoryModule(state, configuration.history)
+  if (existing === undefined && merged.history !== undefined) {
+    const historyModule = createHistoryModule(state, merged.history)
     state.modules.set(HISTORY_MODULE_KEY, historyModule)
     state.registerCleanup(() => historyModule.dispose())
   }
@@ -141,14 +149,50 @@ export function useAbstractForm<
   }
 
   const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[1] = {}
-  if (configuration.onInvalidSubmit !== undefined) {
-    apiOptions.onInvalidSubmit = configuration.onInvalidSubmit
+  if (merged.onInvalidSubmit !== undefined) {
+    apiOptions.onInvalidSubmit = merged.onInvalidSubmit
   }
   const history = state.modules.get(HISTORY_MODULE_KEY) as HistoryModule | undefined
   if (history !== undefined) {
     apiOptions.history = history
   }
   return buildFormApi<Form, GetValueFormType>(state, apiOptions)
+}
+
+/**
+ * Merge app-level defaults from the registry over a per-form
+ * configuration. Per-form values always win for scalars; the
+ * `fieldValidation` field is shallow-merged so defaults like
+ * `{ debounceMs: 100 }` carry through even when the per-form call
+ * passes `{ on: 'blur' }`. See `ChemicalXFormsDefaults` for the full
+ * merge contract.
+ */
+function mergeWithDefaults<
+  Form extends GenericForm,
+  GetValueFormType extends GenericForm,
+  Schema extends AbstractSchema<Form, GetValueFormType>,
+  Defaults extends DeepPartial<Form>,
+>(
+  defaults: ChemicalXFormsDefaults,
+  configuration: UseFormConfiguration<Form, GetValueFormType, Schema, Defaults>
+): UseFormConfiguration<Form, GetValueFormType, Schema, Defaults> {
+  // exactOptionalPropertyTypes rejects explicit `undefined` on optional
+  // properties (different from omitting), so conditionally spread each
+  // resolved value rather than assigning undefined into the field.
+  const validationMode = configuration.validationMode ?? defaults.validationMode
+  const onInvalidSubmit = configuration.onInvalidSubmit ?? defaults.onInvalidSubmit
+  const history = configuration.history ?? defaults.history
+  const fieldValidation =
+    configuration.fieldValidation === undefined && defaults.fieldValidation === undefined
+      ? undefined
+      : { ...defaults.fieldValidation, ...configuration.fieldValidation }
+  return {
+    ...configuration,
+    ...(validationMode === undefined ? {} : { validationMode }),
+    ...(onInvalidSubmit === undefined ? {} : { onInvalidSubmit }),
+    ...(history === undefined ? {} : { history }),
+    ...(fieldValidation === undefined ? {} : { fieldValidation }),
+  }
 }
 
 /**

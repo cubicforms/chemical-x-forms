@@ -1,6 +1,6 @@
 import type { App, InjectionKey } from 'vue'
 import { getCurrentInstance, inject, shallowReactive } from 'vue'
-import type { FormKey } from '../types/types-api'
+import type { ChemicalXFormsDefaults, FormKey } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { RegistryNotInstalledError } from './errors'
@@ -44,6 +44,12 @@ export type ChemicalXRegistry = {
   readonly pendingHydration: PendingHydration
   readonly isSSR: boolean
   /**
+   * App-level defaults applied to every `useForm` call. Frozen-empty
+   * when the consumer doesn't pass `defaults` — `useAbstractForm`
+   * always reads from this slot, so a sentinel beats `?.` everywhere.
+   */
+  readonly defaults: ChemicalXFormsDefaults
+  /**
    * Ref-counts `useForm` consumers per key. Each `useForm` call pairs a
    * `trackConsumer(key)` on mount with the returned dispose on unmount.
    * When the last consumer for a key disposes, the FormStore is evicted
@@ -78,8 +84,23 @@ declare module 'vue' {
   }
 }
 
-export function createRegistry(options: SSRDetectOptions = {}): ChemicalXRegistry {
+export type CreateRegistryOptions = SSRDetectOptions & {
+  /**
+   * App-level defaults stored on the registry and merged into every
+   * `useForm` call. Per-form options always win. Omit to use the
+   * library-level fallbacks (an empty object is equivalent).
+   */
+  defaults?: ChemicalXFormsDefaults
+}
+
+export function createRegistry(options: CreateRegistryOptions = {}): ChemicalXRegistry {
   const isSSR = detectSSR(options)
+  // Frozen so accidental writes downstream throw in dev. Public surface
+  // (`createChemicalXForms({ defaults })`) treats this as data, not as
+  // a mutation point — there's no public API to update defaults after
+  // install, and adding one would invite race conditions with already-
+  // mounted forms.
+  const defaults: ChemicalXFormsDefaults = Object.freeze({ ...(options.defaults ?? {}) })
   // The outer object is plain (it holds references we never rebind); inner
   // Maps are reactive via Vue's collection handlers so per-key reads track
   // per-key. `shallowReactive` avoids Vue's deep Ref-unwrapping, which would
@@ -113,7 +134,7 @@ export function createRegistry(options: SSRDetectOptions = {}): ChemicalXRegistr
     }
   }
 
-  return { forms, pendingHydration, isSSR, trackConsumer }
+  return { forms, pendingHydration, isSSR, defaults, trackConsumer }
 }
 
 /**

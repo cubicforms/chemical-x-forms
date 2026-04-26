@@ -24,3 +24,14 @@ export class RegistryNotInstalledError extends Error {
     super('[@chemical-x/forms] Registry not found; install via `app.use(createChemicalXForms())`.')
   }
 }
+
+export class ReservedFormKeyError extends Error {
+  override readonly name = 'ReservedFormKeyError'
+  constructor(key: string) {
+    super(
+      `[@chemical-x/forms] The form key "${key}" uses the reserved "__cx:" namespace. ` +
+        `This prefix is reserved for the library's internal synthetic keys (anonymous useForm calls). ` +
+        `Pick a different prefix for your form.`
+    )
+  }
+}

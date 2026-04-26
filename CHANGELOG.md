@@ -70,6 +70,15 @@ for the full set of changes.
   consumers can set `debounceMs` globally and override `on` per-form.
   See [recipe](./docs/recipes/app-defaults.md). Additive — existing
   apps that don't pass `defaults` are unchanged.
+- **Breaking — synthetic-key namespace reserved.** `useForm({ key })`
+  now throws `ReservedFormKeyError` when the consumer-supplied key
+  starts with `__cx:`. The library uses the `__cx:` prefix for its
+  internal synthetic keys, and synthetic anonymous-form keys are now
+  `__cx:anon:<id>` (was `cx:anon:<id>`). Consumers using either prefix
+  at any call site need to rename. Reserves the `__cx:` namespace for
+  future internal use; with the entry-reject in place, collisions
+  between consumer keys and library-allocated keys are now impossible
+  by construction.
 
 ## v0.11.1
 **Dev-mode ergonomics for the ambient `useFormContext` warning.**

@@ -161,6 +161,26 @@ describe('useForm type inference — setValue', () => {
     // @ts-expect-error - path not in schema
     form.setValue('missing', 'x')
   })
+
+  it('accepts callbacks whose signature matches the path leaf', () => {
+    form.setValue('email', (prev) => prev + '!')
+    form.setValue('age', (prev) => prev + 1)
+    form.setValue('active', (prev) => !prev)
+    form.setValue('profile.name', (prev) => prev.trim())
+    form.setValue('tags.0', (prev) => prev.toUpperCase())
+    form.setValue('posts.0.views', (prev) => prev + 1)
+    // Whole-form callback: receives DeepPartial<Form>, returns same.
+    form.setValue((prev) => ({ ...prev, email: 'z@z.z' }))
+  })
+
+  it('rejects callbacks whose return type does not match the path leaf', () => {
+    // @ts-expect-error - email is string, callback returns number
+    form.setValue('email', () => 123)
+    // @ts-expect-error - age is number, callback returns string
+    form.setValue('age', () => '30')
+    // @ts-expect-error - whole-form callback must return an object, not a string
+    form.setValue(() => 'not an object')
+  })
 })
 
 describe('useForm type inference — register', () => {

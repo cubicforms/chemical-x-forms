@@ -93,7 +93,16 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
     // together they cover both halves of the misuse space. Deduped per
     // FormStore so a template with N opted-in paths produces one warning,
     // not N.
-    if (__DEV__ && persist && warnedMissingPersistConfig !== null) {
+    //
+    // Skipped during SSR: `wirePersistence` is intentionally not run on
+    // the server (persistence is a client-only concern), so
+    // `state.modules.has(PERSISTENCE_MODULE_KEY)` is always false during
+    // SSR — even for forms that DID configure `persist:`. Without this
+    // gate the warning would falsely fire on every server-rendered
+    // `register({ persist: true })`. The client-side hydration pass
+    // re-runs the check against a freshly-wired module and warns
+    // correctly if the misuse is real.
+    if (__DEV__ && persist && !state.isSSR && warnedMissingPersistConfig !== null) {
       const formStore = state as FormStore<GenericForm>
       if (
         !state.modules.has(PERSISTENCE_MODULE_KEY) &&

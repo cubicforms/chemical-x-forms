@@ -4,6 +4,7 @@ import type {
   PersistConfig,
   ValidationError,
 } from '../../types/types-api'
+import { PERSISTENCE_KEY_PREFIX } from '../defaults'
 
 /**
  * Resolve a `FormStorage` adapter for the given storage kind. Built-in
@@ -149,5 +150,5 @@ export function createDebouncedWriter(
  * namespace (multi-tenant app, per-user prefix) pass `persist.key`.
  */
 export function resolveStorageKey(config: PersistConfig, formKey: string): string {
-  return config.key ?? `chemical-x-forms:${formKey}`
+  return config.key ?? `${PERSISTENCE_KEY_PREFIX}${formKey}`
 }

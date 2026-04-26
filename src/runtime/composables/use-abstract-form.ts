@@ -1,6 +1,7 @@
 import { getCurrentInstance, getCurrentScope, onScopeDispose, provide, toRaw, useId } from 'vue'
 import { buildFormApi } from '../core/build-form-api'
 import { createFormStore, type FormStore } from '../core/create-form-store'
+import { ANONYMOUS_FORM_KEY_PREFIX, DEFAULT_PERSISTENCE_DEBOUNCE_MS } from '../core/defaults'
 import { __DEV__ } from '../core/dev'
 import type { FieldStateView } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
@@ -346,11 +347,11 @@ function resolveFormKey(key: FormKey | undefined): FormKey {
   // so server-rendered and client-hydrated trees agree on the same
   // synthetic key.
   if (getCurrentInstance() !== null) {
-    return `cx:anon:${useId()}`
+    return `${ANONYMOUS_FORM_KEY_PREFIX}${useId()}`
   }
   // Outside setup (tests, ad-hoc composable use) there's no Vue
   // instance to draw from; fall back to a module-local counter.
-  return `cx:anon:${anonCounter++}`
+  return `${ANONYMOUS_FORM_KEY_PREFIX}${anonCounter++}`
 }
 
 /**
@@ -407,7 +408,7 @@ function wirePersistence<F extends GenericForm>(
   config: PersistConfig
 ): () => void {
   const key = resolveStorageKey(config, state.formKey)
-  const debounceMs = config.debounceMs ?? 300
+  const debounceMs = config.debounceMs ?? DEFAULT_PERSISTENCE_DEBOUNCE_MS
   const include = config.include ?? 'form'
   // Default version bumped 1 → 2 in the 0.12 release: errors split into
   // schemaErrors + userErrors at the payload level. Old v1 payloads

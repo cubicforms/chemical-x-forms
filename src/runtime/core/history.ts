@@ -2,6 +2,7 @@ import { computed, shallowRef, type ComputedRef } from 'vue'
 import type { HistoryConfig, ValidationError } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
+import { DEFAULT_HISTORY_MAX_SNAPSHOTS } from './defaults'
 import type { PathKey } from './paths'
 
 /**
@@ -44,7 +45,10 @@ export function createHistoryModule<F extends GenericForm>(
   state: FormStore<F>,
   config: HistoryConfig
 ): HistoryModule {
-  const max = typeof config === 'object' ? (config.max ?? 50) : 50
+  const max =
+    typeof config === 'object'
+      ? (config.max ?? DEFAULT_HISTORY_MAX_SNAPSHOTS)
+      : DEFAULT_HISTORY_MAX_SNAPSHOTS
 
   // undoStack[-1] is the CURRENT state. undo() pops that onto redo
   // and restores undoStack[-2]. redoStack[-1] is the next-available

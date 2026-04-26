@@ -25,6 +25,18 @@ function isPrimitive(input: unknown): boolean {
   return input === null
 }
 
+// Probe whether a primitive constraint passes the slim schema. Wrapped
+// in try/catch because strict mode keeps refinements on the slim schema,
+// and `safeParse` throws synchronously if any refine on the root is
+// async.
+function constraintsAreSlimValid(slimSchema: z.ZodSchema, constraints: unknown): boolean {
+  try {
+    return slimSchema.safeParse(constraints).success
+  } catch {
+    return false
+  }
+}
+
 import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from './types-zod'
 import { fingerprintZodSchema } from './fingerprint'
 import { isZodSchemaType } from './helpers'
@@ -66,19 +78,40 @@ export function zodAdapter<
           stripConfig: {
             stripZodEffects: true,
             stripDefaultValues: true,
-            stripZodRefinements: (config.validationMode ?? 'lax') === 'lax', // default to lax (strip refinements like string.min etc)
+            // Lax strips refinements (so empty defaults pass); strict
+            // keeps them so the slim parse below surfaces refinement
+            // errors. Async refines are guarded by the try/catch
+            // below — they can't be surfaced synchronously regardless.
+            stripZodRefinements: (config.validationMode ?? 'lax') === 'lax',
           },
         })
 
         let rawDefaultValues = defaultValuesWithoutConstraints
         if (!isPrimitive(rawDefaultValues)) {
           rawDefaultValues = merge(defaultValuesWithoutConstraints, config.constraints)
-        } else if (slimSchema.safeParse(config.constraints).success) {
-          // updated rawDefaultValues with config.constraints, which is compatible with the _zodSchema
+        } else if (constraintsAreSlimValid(slimSchema, config.constraints)) {
           rawDefaultValues = config.constraints
         }
 
-        const { data, success, error } = slimSchema.safeParse(rawDefaultValues)
+        // `safeParse` throws synchronously when the schema contains an
+        // async refine ("Async refinement encountered during synchronous
+        // parse"). Async refines can't be surfaced synchronously
+        // regardless — the abstract `getDefaultValues` contract is sync.
+        // Degrade gracefully: treat the schema as if it parsed cleanly,
+        // so the form mounts. The first user mutation kicks off
+        // `validateAtPath`, which uses `safeParseAsync`.
+        let parseResult: ReturnType<typeof slimSchema.safeParse>
+        try {
+          parseResult = slimSchema.safeParse(rawDefaultValues)
+        } catch {
+          return {
+            data: rawDefaultValues as Form,
+            errors: undefined,
+            success: true,
+            formKey: _formKey,
+          }
+        }
+        const { data, success, error } = parseResult
 
         if (success) {
           return {

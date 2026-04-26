@@ -42,23 +42,36 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         const { data } = getDefaultValuesFromZodSchema<Form>({
           schema: rootSchema,
           useDefaultSchemaValues: config.useDefaultSchemaValues,
-          validationMode: config.validationMode ?? 'lax',
           constraints: config.constraints,
-          formKey,
         })
 
         if (config.validationMode === 'strict') {
           // Strict mode: run the *full* schema (not the slim one) so
           // refinement-level errors surface. If that passes, we're fine.
-          const strictResult = rootSchema.safeParse(data) as z.ZodSafeParseResult<Form>
-          if (strictResult.success) {
-            return { data: strictResult.data, errors: undefined, success: true, formKey }
-          }
-          return {
-            data,
-            errors: zodIssuesToValidationErrors(strictResult.error.issues, formKey),
-            success: false,
-            formKey,
+          //
+          // `safeParse` throws synchronously when the schema contains an
+          // async refine — `z.string().refine(async (v) => …)` produces a
+          // Promise that the sync parser can't handle. Async refines
+          // fundamentally can't seed errors at construction (the
+          // `getDefaultValues` contract is sync); degrade gracefully and
+          // let the runtime's first mutation kick off `validateAtPath`,
+          // which uses `safeParseAsync`.
+          try {
+            const strictResult = rootSchema.safeParse(data) as z.ZodSafeParseResult<Form>
+            if (strictResult.success) {
+              return { data: strictResult.data, errors: undefined, success: true, formKey }
+            }
+            return {
+              data,
+              errors: zodIssuesToValidationErrors(strictResult.error.issues, formKey),
+              success: false,
+              formKey,
+            }
+          } catch {
+            // Async-refine throw — fall through to the lax-mode return.
+            // The form mounts cleanly; the user can call `validateAsync()`
+            // after mount to surface async-refinement errors.
+            return { data, errors: undefined, success: true, formKey }
           }
         }
 

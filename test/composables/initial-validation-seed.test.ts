@@ -59,6 +59,40 @@ describe('initial validation seed — strict mode', () => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
+  it('strict mode + async refine degrades gracefully — form mounts cleanly', () => {
+    // Regression: strict mode's seed pass calls `rootSchema.safeParse(data)`
+    // synchronously, which throws when the schema contains an async refine
+    // (zod's "Encountered Promise during synchronous parse"). The adapter
+    // catches the throw and returns success so the form still mounts;
+    // async refines fire on first mutation or via `validateAsync()`.
+    // Without this fallback, strict-default useForm calls would crash
+    // setup for any form using `z.string().refine(async ...)`.
+    const asyncSchema = z.object({
+      email: z.email().refine(async () => Promise.resolve(true), 'taken'),
+    })
+    type AsyncApi = ReturnType<typeof useForm<typeof asyncSchema>>
+    const handle: { api?: AsyncApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: asyncSchema,
+          key: 'init-seed-async',
+          defaultValues: { email: '' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    expect(typeof handle.api?.register).toBe('function')
+    // No construction-time errors for async refines — they need
+    // validateAsync() or a user mutation to fire.
+    expect(handle.api?.fieldErrors.email).toBeUndefined()
+  })
+
   it('strict is the default — omitting validationMode populates schemaErrors', () => {
     // Pin: useForm({ schema, ... }) with no explicit validationMode
     // must resolve to 'strict'. Flipping the default back to 'lax'

@@ -1,6 +1,5 @@
 import type { z } from 'zod'
 import { isPlainRecord, setAtPath } from '../../core/path-walker'
-import type { FormKey } from '../../types/types-api'
 import { getDiscriminatedUnionFirstOption, unwrapToDiscriminatedUnion } from './discriminator'
 import {
   getCatchDefault,
@@ -188,9 +187,7 @@ export function mergeDeep(base: unknown, override: unknown): unknown {
 export type GetDefaultValuesOptions = {
   schema: z.ZodObject
   useDefaultSchemaValues: boolean
-  validationMode: 'strict' | 'lax'
   constraints: unknown
-  formKey: FormKey
 }
 
 export type DefaultValuesResult<Form> = {
@@ -209,24 +206,34 @@ export type DefaultValuesResult<Form> = {
  * fills in `''`, `invalid_value` picks the first allowed value, etc. Re-
  * parse and return.
  *
- * In **lax** mode the schema is first slimmed (refinements stripped) so
- * that e.g. `z.string().email()` accepts `''` as an initial value. In
- * strict mode the slim still strips defaults/pipe but keeps refinements,
- * so callers get the full validation surface.
+ * Refinements are always stripped from the slim schema — this helper's
+ * concern is producing usable starting data, not surfacing refinement
+ * errors. Refinement enforcement (in strict mode) lives upstream in
+ * `adapter.ts`'s `rootSchema.safeParse(data)` pass, which uses the full
+ * schema. Stripping here is also what keeps `safeParse` from throwing
+ * synchronously when the schema contains an async refine.
  */
 export function getDefaultValuesFromZodSchema<Form>(
   opts: GetDefaultValuesOptions
 ): DefaultValuesResult<Form> {
-  const { schema, useDefaultSchemaValues, validationMode, constraints } = opts
+  const { schema, useDefaultSchemaValues, constraints } = opts
   const initial = deriveDefault(schema, useDefaultSchemaValues)
   const merged = mergeDeep(initial, constraints) as unknown
 
-  // Strip wrappers per validation mode. Lax mode also strips refinements
-  // so walker-produced empties pass `safeParse`; strict keeps them.
+  // Strip wrappers, including refinements. The slim schema is for
+  // *default-value derivation* — its job is to produce usable starting
+  // data, not to surface refinement errors. Refinement errors are the
+  // domain of the strict-mode pass downstream (`adapter.ts`'s
+  // `rootSchema.safeParse(data)`), which uses the full schema.
+  //
+  // Crucially, this also avoids `safeParse` throwing synchronously when
+  // the schema contains an async refine (zod's "Encountered Promise
+  // during synchronous parse" error) — which would otherwise crash
+  // construction for any strict-mode form with `z.string().refine(async …)`.
   const slimSchema = getSlimSchema(schema, {
     stripDefaultValues: true,
     stripPipe: true,
-    stripRefinements: validationMode === 'lax',
+    stripRefinements: true,
   })
 
   const firstParse = slimSchema.safeParse(merged)

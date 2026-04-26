@@ -52,8 +52,20 @@ payment provider" — and those come back as `fieldErrors` via
 
 By the time your callback runs, client-side schema validation has
 already passed — `setFieldErrorsFromApi` is genuinely for server-
-only failures. The previous run's errors stay put until you
-explicitly clear them or the user interacts.
+only failures.
+
+**API-injected errors persist** across schema revalidation and
+successful submits. `setFieldErrors`, `addFieldErrors`, and
+`setFieldErrorsFromApi` all write to a separate user-error store
+(internally distinct from the schema-validation pipeline's store);
+nothing automatically clears them. The user's next keystroke will
+re-run schema validation against the field — that updates the
+schema-error half, but your API entries stay until you call
+`clearFieldErrors(path)` (or unmount the form).
+
+The two flavours surface together in `fieldErrors[path]` (schema
+entries first, user entries second), so templates render both
+without branching.
 
 ## Payload shapes
 

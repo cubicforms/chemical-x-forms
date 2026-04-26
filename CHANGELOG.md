@@ -2,7 +2,56 @@
 
 ## Unreleased
 
-_No unreleased changes yet._
+**Validation refactor: errors as a pure function of `(value, schema) +
+injected user errors`.** The data layer (errors as state) is now fully
+separable from the rendering layer (when to show them). Schema-driven
+errors and consumer-injected errors live in distinct internal stores;
+each has its own lifecycle, and the merged read view stays unchanged
+for consumers. See the [migration guide](./docs/migration/0.11-to-0.12.md)
+for the full set of changes.
+
+- **Breaking — live validation by default.** `fieldValidation.on`
+  defaulted to `'none'` in 0.11; it now defaults to `'change'`.
+  Errors track the live `(value, schema)` instead of going stale
+  until the next submit. `'none'` remains as the explicit opt-out
+  for "submit-only" workflows. Migration: pass
+  `fieldValidation: { on: 'none' }` to keep the old behaviour.
+- **Breaking — errors split by source.** `setFieldErrors` /
+  `addFieldErrors` / `setFieldErrorsFromApi` write to a separate
+  user-error store internally; their entries now SURVIVE schema
+  revalidation AND successful submits (only `clearFieldErrors` /
+  `reset` / `resetField` remove them). Public surfaces (`fieldErrors`,
+  `state.isValid`, `getFieldState(path).errors`) merge schema +
+  user transparently — schema first, user second.
+  `clearFieldErrors(path?)` deliberately clears both stores at the
+  given path (pragmatic "make these errors go away" semantic).
+- **Breaking — persistence payload v2.** `PersistConfig.version`
+  defaults to `2` (was `1`). On-disk shape: `data.errors` is gone,
+  replaced by `data.schemaErrors` + `data.userErrors`. Old v1
+  payloads are dropped silently on read; users see one fresh-defaults
+  render after upgrading.
+- **Breaking — SSR / hydration payload split.** `SerializedFormData`
+  and `FormStoreHydration` types now carry `schemaErrors` +
+  `userErrors` separately. Nuxt + bare-Vue serialize/hydrate
+  bridges handle this transparently; only consumers reading the
+  payload struct directly need to update.
+- **Breaking — legacy `state.errors` writers removed.** The `errors`
+  Map alias and `setErrorsForPath` / `setAllErrors` / `addErrors` /
+  `clearErrors` methods on `FormStore` are gone. Replacements:
+  `state.schemaErrors` + `state.userErrors` for direct access;
+  `state.setSchemaErrorsForPath` + `state.setAllSchemaErrors` /
+  `state.setAllUserErrors` / `state.addUserErrors` /
+  `state.clearSchemaErrors` / `state.clearUserErrors` for writes.
+  Most consumers never touched these — the public
+  `setFieldErrors*` + `clearFieldErrors` surfaces still cover the
+  standard use cases.
+- **New — construction-time schema-error seed.** Strict-mode forms
+  whose default values fail schema validation now report errors
+  immediately at construction (no user mutation or `validateAsync`
+  call required). Lax-mode forms still skip the seed; hydration
+  takes precedence over the seed when present. Mostly a quality-of-
+  life win for SSR — `<pre>{{ form.fieldErrors }}</pre>` now
+  matches the client's first frame.
 
 ## v0.11.1
 **Dev-mode ergonomics for the ambient `useFormContext` warning.**

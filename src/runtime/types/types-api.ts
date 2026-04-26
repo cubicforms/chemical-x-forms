@@ -150,20 +150,22 @@ export type OnInvalidSubmitPolicy = 'none' | 'focus-first-error' | 'scroll-to-fi
 /**
  * Field-level validation trigger mode.
  *
- * - `'none'` (default): no field-level validation. `handleSubmit` and
- *   explicit `validate()` / `validateAsync()` calls are the only
- *   validation surface.
- * - `'change'`: on every mutation via `setValueAtPath` (register,
- *   `setValue(path, ...)`, array helpers), schedule a debounced
- *   validation for the written path.
+ * - `'change'` (default): on every mutation via `setValueAtPath`
+ *   (register, `setValue(path, ...)`, array helpers), schedule a
+ *   debounced validation for the written path. Errors track the
+ *   live `(value, schema)` continuously so consumers can render
+ *   inline feedback without waiting for submit.
  * - `'blur'`: on `markFocused(path, false)` — i.e. when the user
  *   tabs away from a field — validate immediately (no debounce) for
  *   that path.
+ * - `'none'`: explicit opt-out. `handleSubmit` and explicit
+ *   `validate()` / `validateAsync()` calls are the only validation
+ *   surface; the per-keystroke / per-blur path is disabled entirely.
  */
 export type FieldValidationMode = 'change' | 'blur' | 'none'
 
 export type FieldValidationConfig = {
-  /** Trigger mode. Default `'none'`. */
+  /** Trigger mode. Default `'change'`. */
   on?: FieldValidationMode
   /**
    * Debounce window for `on: 'change'`. Ignored when `on` is `'blur'`

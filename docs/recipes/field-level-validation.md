@@ -1,17 +1,33 @@
 # Live field validation
 
-By default, validation runs on submit. Opt into per-field validation
-when you want inline feedback — "passwords don't match", "email
-looks invalid", "this username is taken" — before the user clicks
-submit.
+cx validates as you type by default — `fieldValidation: { on: 'change',
+debounceMs: 200 }` is implicit. Errors at any path reflect the live
+`(value, schema)` continuously, so consumers can render inline feedback
+without reaching for a separate "is this field valid?" query.
 
-## Turn it on
+The data layer (errors as a function of value) and the rendering layer
+(when to **show** errors) are separate concerns: the merged `fieldErrors`
+store is always current; gating display on `state.touched` /
+`state.submitCount` / etc. is your call.
+
+## Default in action
+
+No configuration needed:
+
+```ts
+useForm({ schema, key: 'signup' })
+```
+
+Type into an `<input v-register="register('email')" />`, see
+`fieldErrors.email` populate (or clear) within 200 ms of stopping.
+
+## Tune or opt out
 
 ```ts
 useForm({
   schema,
   key: 'signup',
-  fieldValidation: { on: 'change', debounceMs: 200 },
+  fieldValidation: { on: 'change', debounceMs: 500 },  // slower debounce
 })
 ```
 
@@ -19,18 +35,22 @@ Three modes:
 
 | `on`       | When it fires                                    | Debounced?          |
 | ---------- | ------------------------------------------------ | ------------------- |
-| `'none'`   | Never (default). Submit is the only validator.   | —                   |
-| `'change'` | Every mutation: register input, `setValue`, etc. | Yes — `debounceMs`. |
+| `'change'` | (default) Every mutation: register input, `setValue`, etc. | Yes — `debounceMs`. |
 | `'blur'`   | Tab away from a field.                           | No — immediate.     |
+| `'none'`   | Explicit opt-out — submit is the only validator. | —                   |
 
 ## Which mode?
 
-- **`'change'`** — best when your schema includes async checks
-  (email uniqueness, username lookup). Users get immediate
-  feedback; the server isn't hit on every keystroke.
-- **`'blur'`** — best for simple field rules (required, min length,
-  format). No wait, but only after the user leaves the field.
-- **`'none'`** — default. Small forms + fast-to-submit flows.
+- **`'change'`** — the default. Inline feedback as the user types;
+  expensive async refines (email uniqueness, server-side lookups)
+  ride on the same `debounceMs` window so the network isn't hit on
+  every keystroke.
+- **`'blur'`** — quieter — feedback only after the user leaves the
+  field. Best when the schema is simple and per-keystroke checks
+  feel noisy.
+- **`'none'`** — the explicit opt-out. Submit is the only validator.
+  Use for small forms + fast-to-submit flows where live feedback
+  would distract.
 
 ## What you get
 

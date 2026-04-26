@@ -245,8 +245,16 @@ function flattenExpression(exp: ExpressionNode): string {
 function injectPreamble(element: ElementNode, captured: readonly string[]): void {
   if (hasPreamble(element)) return
 
+  // Each entry is wrapped in a try/catch IIFE: the preamble is best-
+  // effort optimisation (only matters for the read-before-input edge,
+  // see the file header), and any throw inside one entry must not
+  // prevent the rest from firing or break SSR. Common throw paths the
+  // catch covers: a v-register against a null `ctx` (e.g. when
+  // `useFormContext` returned null and the input is gated by a v-if
+  // the AST walker can't see — the v-if check fires later, so the
+  // preamble would otherwise dereference null here).
   const callList = captured
-    .map((source) => `(${source})?.markConnectedOptimistically?.()`)
+    .map((source) => `(()=>{try{(${source})?.markConnectedOptimistically?.()}catch{}})()`)
     .join(', ')
   const expressionText = `(${callList}, undefined)`
   const exp: SimpleExpressionNode = createSimpleExpression(expressionText, false /* not static */)

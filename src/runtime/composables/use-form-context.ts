@@ -2,6 +2,7 @@ import { getCurrentInstance, getCurrentScope, inject, onScopeDispose } from 'vue
 import { buildFormApi } from '../core/build-form-api'
 import type { FormStore } from '../core/create-form-store'
 import { __DEV__ } from '../core/dev'
+import { captureUserCallSite } from '../core/dev-stack-trace'
 import type { HistoryModule } from '../core/history'
 import { kFormContext, useRegistry, type ChemicalXRegistry } from '../core/registry'
 import type { FormKey, UseAbstractFormReturnType } from '../types/types-api'
@@ -14,17 +15,22 @@ import { ambientProvideHistory } from './use-abstract-form'
  *
  * - `useFormContext<Form>()` — resolves via `inject(kFormContext)`, the
  *   FormStore that the nearest ancestor `useForm()` call provided.
- *   Throws a clear error if there's no ancestor form.
+ *   Anonymous forms fill the ambient slot; keyed forms do not.
  *
  * - `useFormContext<Form>(key)` — looks the form up by its key in the
- *   app registry. Lets a distant component reach a specific form without
- *   being a descendant of its `useForm` owner. Throws if the key isn't
- *   registered.
+ *   app registry. Lets a distant component reach a specific form
+ *   without being a descendant of its `useForm` owner.
+ *
+ * Both modes return `null` on miss (no ambient form, or the named key
+ * isn't registered) and emit a dev-mode `console.warn` pointing at the
+ * call site. Production is silent. The nullable return forces narrowing
+ * — `if (ctx) ctx.register(...)` — so a typo'd key or a parent that
+ * unmounts mid-render degrades gracefully instead of throwing.
  *
  * The consumer supplies the `Form` generic — Vue's InjectionKey erases
  * generics across the provide/inject boundary, so the library can't
- * recover the shape on the caller's behalf. The returned API is
- * type-identical to `useForm`'s return.
+ * recover the shape on the caller's behalf. The returned API (when
+ * non-null) is type-identical to `useForm`'s return.
  *
  * Both resolution modes ref-count the consumer, so the FormStore stays
  * alive for this component's effect scope and is released back to the
@@ -36,10 +42,11 @@ import { ambientProvideHistory } from './use-abstract-form'
 export function useFormContext<
   Form extends GenericForm,
   GetValueFormType extends GenericForm = Form,
->(key?: FormKey): UseAbstractFormReturnType<Form, GetValueFormType> {
+>(key?: FormKey): UseAbstractFormReturnType<Form, GetValueFormType> | null {
   const registry = useRegistry()
 
-  const state: FormStore<Form> = resolveState<Form>(key, registry)
+  const state = resolveState<Form>(key, registry)
+  if (state === null) return null
 
   // Ref-count this consumer so the FormStore survives until every nested
   // component that reached it has torn down. Mirrors the behaviour in
@@ -63,32 +70,43 @@ export function useFormContext<
 }
 
 /**
- * Split out so each branch `return`s — lets the caller hold `state` as
- * a plain `const` and keeps ESLint's `no-useless-assignment` rule
- * happy (the prior shape declared `let state = null` and re-assigned
- * in both branches).
+ * Resolves the FormStore for the requested key (or the ambient slot
+ * when no key was passed). Returns `null` on miss; the caller propagates
+ * that null straight out to the consumer.
+ *
+ * Both miss modes log a dev-mode warning carrying the user's call-site
+ * frame — a typo'd key reads as "[cx] useFormContext: no form registered
+ * for key 'userz'. Returning null. (pages/profile.vue:42)" rather than
+ * as a stack trace from inside cx internals.
  */
 function resolveState<Form extends GenericForm>(
   key: FormKey | undefined,
   registry: ChemicalXRegistry
-): FormStore<Form> {
+): FormStore<Form> | null {
   if (key !== undefined) {
     const stored = registry.forms.get(key) as FormStore<Form> | undefined
     if (stored === undefined) {
-      throw new Error(
-        `[@chemical-x/forms] useFormContext: no form registered for key '${key}'. Call useForm({ key }) first.`
-      )
+      warnMiss(`no form registered for key '${key}'`)
+      return null
     }
     return stored
   }
   const ambient = inject(kFormContext, null) as FormStore<Form> | null
   if (ambient === null) {
-    throw new Error(
-      '[@chemical-x/forms] useFormContext: no ambient form context. Call useForm(...) in an ancestor or pass a key.'
-    )
+    warnMiss('no ambient form context')
+    return null
   }
   warnIfAmbientProviderHadDuplicates()
   return ambient
+}
+
+function warnMiss(detail: string): void {
+  if (!__DEV__) return
+  const frame = captureUserCallSite()
+  console.warn(
+    `[@chemical-x/forms] useFormContext: ${detail}. Returning null.` +
+      (frame !== undefined ? ` ${frame}` : '')
+  )
 }
 
 /**

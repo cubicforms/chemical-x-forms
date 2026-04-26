@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h } from 'vue'
 import { useForm } from '../../src'
 import { useFormContext } from '../../src/runtime/composables/use-form-context'
 import { ANONYMOUS_FORM_KEY_PREFIX } from '../../src/runtime/core/defaults'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { fakeSchema } from '../utils/fake-schema'
+
+const NULL_WARN_MARKER = '[@chemical-x/forms] useFormContext'
 
 type Form = {
   email: string
@@ -60,11 +62,11 @@ describe('useFormContext — ambient provide/inject', () => {
   })
 
   it('parent and child handles share the same synthetic key', () => {
-    const shared: { parent?: string; child?: string } = {}
+    const shared: { parent?: string; child?: string | undefined } = {}
 
     const Child = defineComponent({
       setup() {
-        shared.child = useFormContext<Form>().key
+        shared.child = useFormContext<Form>()?.key
         return () => h('div')
       },
     })
@@ -85,63 +87,93 @@ describe('useFormContext — ambient provide/inject', () => {
     app.unmount()
   })
 
-  it('throws a clear error when there is no ancestor form', () => {
-    let captured: unknown
-    const Child = defineComponent({
-      setup() {
-        try {
-          useFormContext<Form>()
-        } catch (err) {
-          captured = err
-        }
-        return () => h('div')
-      },
+  describe('miss modes — return null + dev warn', () => {
+    let warnSpy: ReturnType<typeof vi.spyOn>
+    beforeEach(() => {
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    })
+    afterEach(() => {
+      warnSpy.mockRestore()
     })
 
-    const app = createApp(Child).use(createChemicalXForms({ override: true }))
-    app.mount(document.createElement('div'))
-    expect(captured).toBeInstanceOf(Error)
-    expect((captured as Error).message).toMatch(/no ambient form context/)
-    app.unmount()
-  })
+    const matchingWarnCalls = (): readonly unknown[][] =>
+      warnSpy.mock.calls.filter((args: readonly unknown[]) =>
+        String(args[0] ?? '').includes(NULL_WARN_MARKER)
+      )
 
-  it('throws when the only ancestor form is keyed (ambient slot empty)', () => {
-    // Keyed useForm() does NOT fill the ambient slot — descendants must
-    // address it explicitly by key. A naive `useFormContext()` (no key)
-    // call inside such a subtree gets the same "no ambient" throw it
-    // would get with no parent at all.
-    let captured: unknown
-    const Child = defineComponent({
-      setup() {
-        try {
-          useFormContext<Form>()
-        } catch (err) {
-          captured = err
-        }
-        return () => h('div')
-      },
+    it('returns null and warns when there is no ancestor form', () => {
+      let captured: ReturnType<typeof useFormContext<Form>> | undefined
+      const Child = defineComponent({
+        setup() {
+          captured = useFormContext<Form>()
+          return () => h('div')
+        },
+      })
+
+      const app = createApp(Child).use(createChemicalXForms({ override: true }))
+      app.mount(document.createElement('div'))
+      expect(captured).toBeNull()
+      const calls = matchingWarnCalls()
+      expect(calls).toHaveLength(1)
+      expect(String(calls[0]?.[0] ?? '')).toMatch(/no ambient form context/)
+      app.unmount()
     })
-    const Parent = defineComponent({
-      setup() {
-        useForm<Form>({ schema: fakeSchema(defaults), key: 'named-only' })
-        return () => h(Child)
-      },
+
+    it('returns null and warns when the only ancestor form is keyed', () => {
+      // Keyed useForm() does NOT fill the ambient slot — descendants must
+      // address it explicitly by key. A naive `useFormContext()` (no key)
+      // call inside such a subtree gets the same "no ambient" warn + null
+      // it would get with no parent at all.
+      let captured: ReturnType<typeof useFormContext<Form>> | undefined
+      const Child = defineComponent({
+        setup() {
+          captured = useFormContext<Form>()
+          return () => h('div')
+        },
+      })
+      const Parent = defineComponent({
+        setup() {
+          useForm<Form>({ schema: fakeSchema(defaults), key: 'named-only' })
+          return () => h(Child)
+        },
+      })
+      const app = createApp(Parent).use(createChemicalXForms({ override: true }))
+      app.mount(document.createElement('div'))
+      expect(captured).toBeNull()
+      const calls = matchingWarnCalls()
+      expect(calls).toHaveLength(1)
+      expect(String(calls[0]?.[0] ?? '')).toMatch(/no ambient form context/)
+      app.unmount()
     })
-    const app = createApp(Parent).use(createChemicalXForms({ override: true }))
-    app.mount(document.createElement('div'))
-    expect(captured).toBeInstanceOf(Error)
-    expect((captured as Error).message).toMatch(/no ambient form context/)
-    app.unmount()
+
+    it("warning message names the missing key when it's an explicit-key miss", () => {
+      let captured: ReturnType<typeof useFormContext<Form>> | undefined
+      const Orphan = defineComponent({
+        setup() {
+          captured = useFormContext<Form>('never-registered')
+          return () => h('div')
+        },
+      })
+      const app = createApp(Orphan).use(createChemicalXForms({ override: true }))
+      app.mount(document.createElement('div'))
+      expect(captured).toBeNull()
+      const calls = matchingWarnCalls()
+      expect(calls).toHaveLength(1)
+      const message = String(calls[0]?.[0] ?? '')
+      expect(message).toMatch(/no form registered/)
+      expect(message).toContain("'never-registered'")
+      app.unmount()
+    })
   })
 
   it('mixed keyed + anonymous: ambient resolves to the (only) anonymous form', () => {
     // A parent that mixes keyed and anonymous useForm() calls: the keyed
     // ones bypass ambient entirely, so a descendant's `useFormContext()`
     // sees only the (single) anonymous form and resolves to it.
-    const shared: { childKey?: string } = {}
+    const shared: { childKey?: string | undefined } = {}
     const Child = defineComponent({
       setup() {
-        shared.childKey = useFormContext<Form>().key
+        shared.childKey = useFormContext<Form>()?.key
         return () => h('div')
       },
     })
@@ -198,23 +230,25 @@ describe('useFormContext — explicit key resolution', () => {
     app.unmount()
   })
 
-  it('throws when the explicit key is not registered', () => {
-    let captured: unknown
+  it('returns null and warns when the explicit key is not registered', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    let captured: ReturnType<typeof useFormContext<Form>> | undefined
     const Orphan = defineComponent({
       setup() {
-        try {
-          useFormContext<Form>('never-registered')
-        } catch (err) {
-          captured = err
-        }
+        captured = useFormContext<Form>('never-registered')
         return () => h('div')
       },
     })
     const app = createApp(Orphan).use(createChemicalXForms({ override: true }))
     app.mount(document.createElement('div'))
-    expect(captured).toBeInstanceOf(Error)
-    expect((captured as Error).message).toMatch(/no form registered for key 'never-registered'/)
+    expect(captured).toBeNull()
+    const matching = warnSpy.mock.calls.filter((args: readonly unknown[]) =>
+      String(args[0] ?? '').includes(NULL_WARN_MARKER)
+    )
+    expect(matching).toHaveLength(1)
+    expect(String(matching[0]?.[0] ?? '')).toMatch(/no form registered/)
     app.unmount()
+    warnSpy.mockRestore()
   })
 })
 

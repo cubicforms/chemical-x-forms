@@ -73,7 +73,7 @@ describe('anonymous useForm — independent state per setup call', () => {
 describe('anonymous useForm — ambient useFormContext access', () => {
   it('descendant composable reads the same FormStore via provide/inject', async () => {
     type Api = ReturnType<typeof useForm<Form>>
-    const captured: { owner?: Api; consumer?: Api } = {}
+    const captured: { owner?: Api; consumer?: Api | null } = {}
 
     const Child = defineComponent({
       setup() {

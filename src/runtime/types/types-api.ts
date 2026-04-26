@@ -169,7 +169,7 @@ export type FieldValidationConfig = {
   on?: FieldValidationMode
   /**
    * Debounce window for `on: 'change'`. Ignored when `on` is `'blur'`
-   * or `'none'`. Default `200` ms.
+   * or `'none'`. Default `125` ms.
    */
   debounceMs?: number
 }
@@ -316,7 +316,7 @@ export type UseFormConfiguration<
    * Configure per-field validation that fires between submit attempts.
    * Default `{ on: 'none' }` — no field validation.
    *
-   * - `{ on: 'change', debounceMs: 200 }` — every mutation via
+   * - `{ on: 'change', debounceMs: 125 }` — every mutation via
    *   `setValueAtPath` schedules validation for that path after the
    *   debounce elapses. Rapid successive mutations reset the timer;
    *   in-flight runs are cancelled via `AbortController` so stale

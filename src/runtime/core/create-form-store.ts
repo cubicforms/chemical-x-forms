@@ -291,7 +291,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   const { formKey, schema, defaultValues, validationMode = 'strict', hydration } = options
   const isSSR = options.isSSR === true
   const fieldValidationMode: FieldValidationMode = options.fieldValidation?.on ?? 'change'
-  const fieldValidationDebounceMs: number = options.fieldValidation?.debounceMs ?? 200
+  const fieldValidationDebounceMs: number = options.fieldValidation?.debounceMs ?? 125
 
   type FieldValidationEntry = {
     controller: AbortController

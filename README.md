@@ -10,11 +10,11 @@
 
 ## Installation
 
+**Nuxt 3 / 4**
+
 ```bash
 npm install @chemical-x/forms zod
 ```
-
-**Nuxt 3 / 4** — register the module:
 
 ```ts
 // nuxt.config.ts
@@ -23,7 +23,8 @@ export default defineNuxtConfig({
 })
 ```
 
-**Bare Vue 3** — install the plugin and the Vite transform:
+<details>
+<summary><strong>Bare Vue 3</strong></summary>
 
 ```ts
 // main.ts
@@ -42,6 +43,8 @@ export default defineConfig({
   plugins: [vue(), chemicalXForms()],
 })
 ```
+
+</details>
 
 ## Quick start
 
@@ -76,22 +79,23 @@ export default defineConfig({
 </template>
 ```
 
-Errors track the live `(value, schema)` by default — type into a field, see the error appear and disappear without a submit. Pass `fieldValidation: { on: 'none' }` to validate only on submit.
+**What you get from `useForm({ schema })`:**
+
+- `register` — typed two-way binding for any field path, paired with the `v-register` directive
+- `fieldErrors` — live per-field errors, schema-driven
+- `handleSubmit` — async-aware submit wrapper that validates first
+- `state` — reactive form-wide flags (`isSubmitting`, `isValid`, `isDirty`, `submitCount`, …)
+
+Errors track the live `(value, schema)` by default. Pass `fieldValidation: { on: 'none' }` to validate only on submit.
 
 ## Features
 
 - **End-to-end type safety** — every path, value, and error is inferred from your schema; no `any` in the public surface.
-- **Schema-agnostic** — Zod v4 and v3 adapters built-in; bring your own validator by implementing four methods on `AbstractSchema`.
-- **Live validation** — debounced `'change'` mode by default; `'blur'` and `'none'` available; rapid typing is debounced and auto-cancelled.
-- **Async refines** — `z.refine(async ...)` works with `handleSubmit`, the reactive `validate()` ref, and imperative `validateAsync(path?)`.
+- **Live validation** — debounced `'change'` mode by default; `'blur'` and `'none'` available; async refines work everywhere (`handleSubmit`, the reactive `validate()` ref, and `validateAsync(path?)`).
 - **Field arrays** — `append` / `prepend` / `insert` / `remove` / `swap` / `move` / `replace` with full type narrowing on path and element type.
-- **Drafts** — persist and hydrate from `localStorage`, `sessionStorage`, IndexedDB, or your own `FormStorage` adapter.
-- **Undo / redo** — bounded snapshot stack with `state.canUndo` / `state.canRedo`; wires to `⌘Z` / `⌘⇧Z` in one line.
+- **Drafts + undo / redo** — persist and hydrate from `localStorage`, `sessionStorage`, IndexedDB, or your own `FormStorage`; bounded snapshot stack wires to `⌘Z` / `⌘⇧Z` in one line.
 - **Server errors** — `setFieldErrorsFromApi` accepts the common envelope shapes; user-injected errors persist across schema revalidation.
 - **SSR** — first-class for Nuxt and bare Vue + `@vue/server-renderer`; payload round-trip is automatic in Nuxt.
-- **Vue DevTools** — every form appears in the inspector with timeline events for submit / reset / mutation.
-- **Focus / scroll on error** — declarative `onInvalidSubmit` policy or imperative helpers.
-- **Nested form components** — descendants reach an ancestor form via `useFormContext()` without prop-threading.
 
 ## Documentation
 

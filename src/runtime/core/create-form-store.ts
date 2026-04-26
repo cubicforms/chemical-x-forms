@@ -301,8 +301,9 @@ export type FormStoreHydration = {
   readonly schemaErrors: ReadonlyArray<readonly [string, unknown]>
   /**
    * User-injected errors snapshot. Replayed into `userErrors` at
-   * construction. Allows server-side `setFieldErrorsFromApi` /
-   * `addFieldErrors` calls to round-trip through hydration.
+   * construction. Allows server-side `setFieldErrors` /
+   * `addFieldErrors` calls (typically fed from `parseApiErrors`) to
+   * round-trip through hydration.
    */
   readonly userErrors: ReadonlyArray<readonly [string, unknown]>
   readonly fields: ReadonlyArray<readonly [string, unknown]>

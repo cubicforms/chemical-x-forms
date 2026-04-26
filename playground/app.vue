@@ -3,6 +3,7 @@
   // the Nuxt-auto-imported `useForm` is now the schema-agnostic abstract
   // composable. Use the /zod subpath (v4) or /zod-v3 for zod-typed forms.
   import { useForm } from '@chemical-x/forms/zod'
+  import { parseApiErrors } from '@chemical-x/forms'
   import { z } from 'zod'
 
   // -- Original demo: register + getValue across multiple inputs --
@@ -15,26 +16,30 @@
     email: z.string().email('Enter a valid email'),
     password: z.string().min(8, 'At least 8 characters'),
   })
+  const signupForm = useForm({ schema: signupSchema, key: 'signup' })
   const {
     register: registerSignup,
     fieldErrors: signupErrors,
     handleSubmit: handleSignupSubmit,
-    setFieldErrorsFromApi,
+    setFieldErrors,
     clearFieldErrors,
     getFieldState,
-  } = useForm({ schema: signupSchema, key: 'signup' })
+  } = signupForm
 
   const emailReg = registerSignup('email')
   const passwordReg = registerSignup('password')
 
   // handleSubmit wraps the user callback: validation failure auto-populates
-  // signupErrors, success clears it. The user's onSubmit can then call
-  // setFieldErrorsFromApi(...) to layer server-side errors on top.
+  // signupErrors, success clears it. The user's onSubmit can then parse
+  // a server response via parseApiErrors() and write the result with
+  // setFieldErrors(...) to layer server-side errors on top.
   const onSubmit = handleSignupSubmit(async (values) => {
     // simulate server returning a 422
-    setFieldErrorsFromApi({
-      error: { details: { email: ['Already taken'] } },
-    })
+    const apiResult = parseApiErrors(
+      { error: { details: { email: ['Already taken'] } } },
+      { formKey: signupForm.key }
+    )
+    if (apiResult.ok) setFieldErrors(apiResult.errors)
     // eslint-disable-next-line no-console
     console.log('client-validated values:', values)
   })

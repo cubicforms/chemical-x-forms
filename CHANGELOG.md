@@ -25,14 +25,25 @@ for the full set of changes.
   intentional. Migration: pass `validationMode: 'lax'` to keep the
   old behaviour.
 - **Breaking — errors split by source.** `setFieldErrors` /
-  `addFieldErrors` / `setFieldErrorsFromApi` write to a separate
-  user-error store internally; their entries now SURVIVE schema
-  revalidation AND successful submits (only `clearFieldErrors` /
-  `reset` / `resetField` remove them). Public surfaces (`fieldErrors`,
-  `state.isValid`, `getFieldState(path).errors`) merge schema +
-  user transparently — schema first, user second.
-  `clearFieldErrors(path?)` deliberately clears both stores at the
-  given path (pragmatic "make these errors go away" semantic).
+  `addFieldErrors` write to a separate user-error store internally;
+  their entries now SURVIVE schema revalidation AND successful
+  submits (only `clearFieldErrors` / `reset` / `resetField` remove
+  them). Public surfaces (`fieldErrors`, `state.isValid`,
+  `getFieldState(path).errors`) merge schema + user transparently —
+  schema first, user second. `clearFieldErrors(path?)` deliberately
+  clears both stores at the given path (pragmatic "make these
+  errors go away" semantic).
+- **Breaking — `setFieldErrorsFromApi` retired.** Replaced by the
+  pure `parseApiErrors(payload, { formKey })` exported helper +
+  `setFieldErrors(result.errors)`. The form's setter surface is now
+  one canonical write; shape adapters live as composable parsers.
+  Old: `form.setFieldErrorsFromApi(payload)`. New:
+  `const r = parseApiErrors(payload, { formKey: form.key }); if (r.ok) form.setFieldErrors(r.errors)`.
+  New exports: `parseApiErrors`, `PARSE_API_ERRORS_DEFAULTS`,
+  `ParseApiErrorsOptions`, `ParseApiErrorsResult`. The parser
+  returns a discriminated `{ ok, errors, rejected? }` so malformed
+  payloads are visible (vs. the old "returns empty array" silent
+  failure).
 - **Breaking — persistence payload v2.** `PersistConfig.version`
   defaults to `2` (was `1`). On-disk shape: `data.errors` is gone,
   replaced by `data.schemaErrors` + `data.userErrors`. Old v1

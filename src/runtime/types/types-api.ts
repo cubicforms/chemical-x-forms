@@ -686,7 +686,8 @@ export type FieldState = DeepFlatten<
     /**
      * Validation errors for this field's path. Populated automatically when
      * `handleSubmit` validates, and manually via `setFieldErrors` /
-     * `setFieldErrorsFromApi`. Empty array when there are no errors for the
+     * `addFieldErrors` (typically fed from `parseApiErrors(payload)` for
+     * server-side responses). Empty array when there are no errors for the
      * field — safe to read without a null check.
      */
     errors: ValidationError[]
@@ -890,7 +891,9 @@ export type UseAbstractFormReturnType<
    * automatically by `handleSubmit` on validation failure and cleared on
    * validation success. Also writable (via the imperative methods below,
    * not via direct mutation) — `setFieldErrors`, `addFieldErrors`,
-   * `clearFieldErrors`, `setFieldErrorsFromApi`.
+   * `clearFieldErrors`. For server / API responses, parse the envelope
+   * via `parseApiErrors(payload)` and feed the result into
+   * `setFieldErrors` / `addFieldErrors`.
    *
    * Typed as `Readonly<FormFieldErrors<Form>>` — a frozen view over the
    * form's own `FlatPath<Form>` mapped type. Dot access works for known
@@ -927,23 +930,6 @@ export type UseAbstractFormReturnType<
    * with no arguments — clear every field error for this form.
    */
   clearFieldErrors: (path?: string | (string | number)[]) => void
-
-  /**
-   * Convenience for server-error hydration: accepts either the wrapped
-   * `{ error: { details } }` envelope or a raw `{ path: [msg] }` record,
-   * maps it to `ValidationError[]`, stamps the current form key, and calls
-   * `setFieldErrors`. Returns the produced errors for downstream use.
-   *
-   * The optional `limits` object caps entry count and path depth so
-   * attacker-controlled payloads (gateway passthroughs, untrusted
-   * microservices) can't DoS the form. Defaults: 1 000 entries, depth 32.
-   * Over-budget payloads are rejected wholesale; over-depth individual
-   * keys are dropped but the rest of the payload still applies.
-   */
-  setFieldErrorsFromApi: (
-    payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined,
-    limits?: { maxEntries?: number; maxPathDepth?: number }
-  ) => ValidationError[]
 
   // --- Form-level state ---
 

@@ -53,8 +53,8 @@ import type { DeepPartial, GenericForm } from '../types/types-core'
  * - Looks up (or creates) the FormStore<F> for the configured key. If the
  *   registry has a pending hydration entry for the key, threads it into
  *   createFormStore so the client side starts from the server's snapshot.
- * - Builds register / getFieldState / validate / handleSubmit /
- *   setFieldErrorsFromApi from that FormStore via the Phase 1b factories.
+ * - Builds register / getFieldState / validate / handleSubmit from that
+ *   FormStore via the Phase 1b factories.
  *
  * The old pre-rewrite implementation stitched together five separate Nuxt
  * useState composables and a cache in register.ts. This file collapses all

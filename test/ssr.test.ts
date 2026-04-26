@@ -187,9 +187,10 @@ describe('SSR behavior of useForm', async () => {
 
   /*
     Test Suite: Reactive field-error API in SSR
-    Focus: Errors set on the server (via setFieldErrors / setFieldErrorsFromApi)
-    must serialise into the rendered HTML and survive hydration. Also covers
-    that getFieldState(path).value.errors mirrors the underlying store.
+    Focus: Errors set on the server (via setFieldErrors, including ones
+    parsed from API responses via parseApiErrors) must serialise into
+    the rendered HTML and survive hydration. Also covers that
+    getFieldState(path).value.errors mirrors the underlying store.
   */
   describe('SSR behavior of error API >>', () => {
     it('renders direct setFieldErrors output for each path', async () => {

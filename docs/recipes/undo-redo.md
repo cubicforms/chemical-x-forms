@@ -78,8 +78,8 @@ Every form mutation: `setValue`, `register`-backed input edits, any
 array helper (`append`, `prepend`, `insert`, `remove`, `swap`,
 `move`, `replace`), or a programmatic write.
 
-Calling `setFieldErrors` / `setFieldErrorsFromApi` /
-`clearFieldErrors` does NOT push — those only touch the error map.
+Calling `setFieldErrors` / `addFieldErrors` / `clearFieldErrors`
+does NOT push — those only touch the error map.
 Whatever errors are live when the next mutation lands go into that
 mutation's snapshot.
 

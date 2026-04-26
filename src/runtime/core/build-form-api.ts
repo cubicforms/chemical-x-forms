@@ -64,7 +64,6 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     validate: validateBuilt,
     validateAsync: validateAsyncBuilt,
     handleSubmit,
-    setFieldErrorsFromApi: setFromApiBuilt,
   } = buildProcessForm(state, processOptions)
 
   const getFieldState = (pathInput: string) =>
@@ -75,16 +74,6 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
 
   const validateAsync = (pathInput?: string) =>
     validateAsyncBuilt(pathInput) as Promise<ValidationResponseWithoutValue<Form>>
-
-  // Back-compat: setFieldErrorsFromApi previously returned ValidationError[].
-  // New implementation returns the structured HydrateApiErrorsResult but we
-  // still emit the errors array to match the documented return — consumers
-  // wanting the structured result should call the underlying hydrate helper
-  // directly.
-  const setFieldErrorsFromApi = (
-    payload: Parameters<typeof setFromApiBuilt>[0],
-    limits?: Parameters<typeof setFromApiBuilt>[1]
-  ): ValidationError[] => setFromApiBuilt(payload, limits).errors
 
   // --- getValue / setValue (overloaded) ---
   function getValueImpl(
@@ -316,7 +305,6 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     setFieldErrors,
     addFieldErrors,
     clearFieldErrors,
-    setFieldErrorsFromApi,
     state: formState,
     reset: reset as UseAbstractFormReturnType<Form, GetValueFormType>['reset'],
     resetField: resetField as UseAbstractFormReturnType<Form, GetValueFormType>['resetField'],

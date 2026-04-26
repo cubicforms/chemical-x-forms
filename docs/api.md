@@ -101,6 +101,7 @@ import {
   escapeForInlineScript,
   vRegister,
   canonicalizePath,
+  parseApiErrors,
 } from '@chemical-x/forms'
 ```
 
@@ -172,12 +173,37 @@ manually.
 Normalise a dotted-string or array path into a structured `Path`
 plus a stable `PathKey`. Use when building custom adapters.
 
+### `parseApiErrors(payload, options) → ParseApiErrorsResult`
+
+Pure transformation: takes a server response in the common shapes
+(`{ error: { details } }`, `{ details }`, or a raw `{ path: msg[] }`
+record) and returns `{ ok, errors, rejected? }`. Pair with
+`form.setFieldErrors(result.errors)` to apply. The form's setter
+surface deliberately doesn't include a `…FromApi` shortcut — keeping
+the parse step explicit makes the data flow obvious and the parser
+unit-testable in isolation.
+
+```ts
+const result = parseApiErrors(response, {
+  formKey: form.key,
+  // Optional caps for untrusted gateway-passthrough payloads:
+  maxEntries: 200, // default 1000
+  maxPathDepth: 8, // default 32
+})
+if (result.ok) form.setFieldErrors(result.errors)
+else console.warn('Bad payload:', result.rejected)
+```
+
+See [server-errors recipe](./recipes/server-errors.md) for the full
+pattern.
+
 ### Other exports
 
 - `parseDottedPath(s)` — string → `Segment[]`
 - `assignKey(el, key)` — low-level DOM marking used by `vRegister`
 - `isRegisterValue(x)` — type guard for the object `register` returns
 - `ROOT_PATH` / `ROOT_PATH_KEY` — the empty path and its key
+- `PARSE_API_ERRORS_DEFAULTS` — `{ maxEntries: 1000, maxPathDepth: 32 }` constant
 - `InvalidPathError` / `RegistryNotInstalledError` / `ReservedFormKeyError` / `SensitivePersistFieldError` / `SubmitErrorHandlerError` — error classes
 
 ---
@@ -273,13 +299,12 @@ revalidation and successful submits — the consumer owns their lifecycle
 explicitly. See the [migration guide](./migration/0.11-to-0.12.md) for
 the rationale.
 
-| Member                                    | Type                                                                                                                                                                                       |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `fieldErrors`                             | `Readonly<FormFieldErrors<Form>>` — Proxy view; dot-access leaves directly, no `.value`. Merges schema + user; schema entries first.                                                       |
-| `setFieldErrors(errors)`                  | `(ValidationError[]) => void` — replaces the user-error store.                                                                                                                             |
-| `addFieldErrors(errors)`                  | `(ValidationError[]) => void` — appends to the user-error store.                                                                                                                           |
-| `clearFieldErrors(path?)`                 | `(path?) => void` — clears BOTH stores at the given path (or all paths if omitted). With live validation, the schema half re-populates on the next mutation if the value is still invalid. |
-| `setFieldErrorsFromApi(payload, limits?)` | Hydrates a server error envelope into the user-error store. Survives subsequent schema revalidation. See [server-errors recipe](./recipes/server-errors.md).                               |
+| Member                    | Type                                                                                                                                                                                                                                   |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fieldErrors`             | `Readonly<FormFieldErrors<Form>>` — Proxy view; dot-access leaves directly, no `.value`. Merges schema + user; schema entries first.                                                                                                   |
+| `setFieldErrors(errors)`  | `(ValidationError[]) => void` — replaces the user-error store. For server / API responses, parse the payload via `parseApiErrors` (top-level helper) and feed the result here. See [server-errors recipe](./recipes/server-errors.md). |
+| `addFieldErrors(errors)`  | `(ValidationError[]) => void` — appends to the user-error store.                                                                                                                                                                       |
+| `clearFieldErrors(path?)` | `(path?) => void` — clears BOTH stores at the given path (or all paths if omitted). With live validation, the schema half re-populates on the next mutation if the value is still invalid.                                             |
 
 ### Form-level state
 
@@ -394,6 +419,8 @@ import type {
   OnInvalidSubmitPolicy,
   OnSubmit,
   PendingValidationStatus,
+  ParseApiErrorsOptions,
+  ParseApiErrorsResult,
   PersistConfig,
   PersistConfigOptions,
   PersistIncludeMode,

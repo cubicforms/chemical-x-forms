@@ -1,7 +1,5 @@
 import { getCurrentScope, onScopeDispose, ref, watchEffect, type Ref } from 'vue'
 import type {
-  ApiErrorDetails,
-  ApiErrorEnvelope,
   HandleSubmit,
   OnError,
   OnInvalidSubmitPolicy,
@@ -14,17 +12,12 @@ import type {
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { SubmitErrorHandlerError } from './errors'
-import {
-  hydrateApiErrors,
-  type HydrateApiErrorsOptions,
-  type HydrateApiErrorsResult,
-} from './hydrate-api-errors'
 import { canonicalizePath, type Path } from './paths'
 
 /**
- * validate + handleSubmit + setFieldErrorsFromApi, all built against a
- * FormStore<F>. Replaces use-form-store's validation factory + the submit
- * wrapper in use-abstract-form.ts.
+ * validate + handleSubmit, both built against a FormStore<F>. Replaces
+ * use-form-store's validation factory + the submit wrapper in
+ * use-abstract-form.ts.
  *
  * Phase 5.6: validation is async end-to-end. `AbstractSchema.validateAtPath`
  * returns `Promise<ValidationResponse<F>>`, so every caller here awaits.
@@ -204,9 +197,10 @@ export function buildProcessForm<F extends GenericForm>(
         validationSettled = true
         if (!result.success) {
           const errors = result.errors
-          // Schema-only writer: user-injected errors (from setFieldErrors,
-          // addFieldErrors, setFieldErrorsFromApi) live in a separate store
-          // and are NOT clobbered by the submit-time validation result.
+          // Schema-only writer: user-injected errors (from
+          // setFieldErrors / addFieldErrors / parseApiErrors-fed
+          // entries) live in a separate store and are NOT clobbered by
+          // the submit-time validation result.
           state.setAllSchemaErrors(errors)
           // Apply the invalid-submit focus/scroll policy AFTER populating
           // the error store (so getFirstErrorElement walks the fresh
@@ -265,37 +259,7 @@ export function buildProcessForm<F extends GenericForm>(
     return submitHandler
   }
 
-  /**
-   * setFieldErrorsFromApi accepts an API-shaped payload, hydrates it, and
-   * populates the form's error map. Returns the structured hydrate result
-   * so the caller can detect malformed payloads.
-   *
-   * The optional `limits` object caps entries and path depth — see
-   * `HydrateApiErrorsOptions`. Passing untrusted / gateway-passthrough
-   * payloads without narrower caps is a DoS surface; defaults (1 000
-   * entries, depth 32) are conservative but consumers who know their
-   * server should tune them.
-   */
-  function setFieldErrorsFromApi(
-    payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined,
-    limits?: Omit<HydrateApiErrorsOptions, 'formKey'>
-  ): HydrateApiErrorsResult {
-    const result = hydrateApiErrors(payload, {
-      formKey: state.formKey,
-      ...(limits ?? {}),
-    })
-    if (result.ok) {
-      // API-injected errors go to the user store so they survive schema
-      // revalidation + successful submits. Consumers managing API
-      // warning/info state via this surface keep ownership of its
-      // lifecycle — clear them explicitly via clearFieldErrors when
-      // they're no longer relevant.
-      state.setAllUserErrors(result.errors)
-    }
-    return result
-  }
-
-  return { validate, validateAsync, handleSubmit, setFieldErrorsFromApi }
+  return { validate, validateAsync, handleSubmit }
 }
 
 function toSegments(pathInput: string | Path): Path {

@@ -83,16 +83,22 @@ validation run is in flight — submit, reactive `validate()`, or
 
 Async validation covers what the **schema** knows. Real server
 errors (payment declined, coupon expired) still arrive after a real
-POST — handle them with `setFieldErrorsFromApi` in your `catch`:
+POST — parse them via `parseApiErrors` and write them with
+`setFieldErrors` in your `catch`:
 
 ```ts
+import { parseApiErrors } from '@chemical-x/forms'
+
 const onSubmit = handleSubmit(async (values) => {
   try {
     await $fetch('/api/signup', { method: 'POST', body: values })
   } catch (err) {
     if (err.statusCode === 422) {
-      setFieldErrorsFromApi(err.data)
-      focusFirstError({ preventScroll: true })
+      const result = parseApiErrors(err.data, { formKey: form.key })
+      if (result.ok) {
+        setFieldErrors(result.errors)
+        focusFirstError({ preventScroll: true })
+      }
     }
   }
 })

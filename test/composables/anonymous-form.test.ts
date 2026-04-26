@@ -420,6 +420,17 @@ describe('reserved key namespace', () => {
       },
     })
     const app = createApp(App).use(createChemicalXForms({ override: true }))
+    // The throw IS the test's signal — vitest captures it via
+    // `.toThrow(...)`. Vue still emits a `[Vue warn]: Unhandled error
+    // during execution of setup function` to stderr before re-throwing,
+    // which makes CI output noisy and obscures real warnings in the
+    // log. Silence the per-app handlers; the error continues to
+    // propagate to the caller as expected (errorHandler re-throws,
+    // matching Vue's default behaviour minus the warn).
+    app.config.warnHandler = () => {}
+    app.config.errorHandler = (err) => {
+      throw err
+    }
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

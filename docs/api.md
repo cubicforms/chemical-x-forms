@@ -45,7 +45,7 @@ Options:
 | `validationMode`  | `'lax'` \| `'strict'`                                                       | no       | Defaults to `'strict'` — defaults that fail the schema seed `schemaErrors` at construction. Pass `'lax'` to opt out (multi-step wizards, placeholder rows). See [Types](#types).                                                                                                                                                                                                                                                     |
 | `onInvalidSubmit` | `'none'` \| `'focus-first-error'` \| `'scroll-to-first-error'` \| `'both'`  | no       | What to do when submit fails validation. See [recipe](./recipes/focus-on-error.md).                                                                                                                                                                                                                                                                                                                                                  |
 | `fieldValidation` | `{ on, debounceMs }`                                                        | no       | Live field validation. Default `{ on: 'change', debounceMs: 125 }` — errors track live. Pass `{ on: 'none' }` to opt out (submit-only). See [recipe](./recipes/field-level-validation.md).                                                                                                                                                                                                                                           |
-| `persist`         | `{ storage, key?, debounceMs?, include?, version?, clearOnSubmitSuccess? }` | no       | Persist draft state. See [recipe](./recipes/persistence.md).                                                                                                                                                                                                                                                                                                                                                                         |
+| `persist`         | `{ storage, key?, debounceMs?, include?, version?, clearOnSubmitSuccess? }` | no       | Operational config for the persistence pipeline (storage backend, debounce, version, etc.). Per-field opt-in lives at every `register('foo', { persist: true })` call site — this config alone never causes any field to persist. See [recipe](./recipes/persistence.md).                                                                                                                                                            |
 | `history`         | `true` \| `{ max?: number }`                                                | no       | Enable undo/redo. See [recipe](./recipes/undo-redo.md).                                                                                                                                                                                                                                                                                                                                                                              |
 
 ### `zodAdapter(schema)`
@@ -178,7 +178,7 @@ plus a stable `PathKey`. Use when building custom adapters.
 - `assignKey(el, key)` — low-level DOM marking used by `vRegister`
 - `isRegisterValue(x)` — type guard for the object `register` returns
 - `ROOT_PATH` / `ROOT_PATH_KEY` — the empty path and its key
-- `InvalidPathError` / `RegistryNotInstalledError` / `ReservedFormKeyError` / `SubmitErrorHandlerError` — error classes
+- `InvalidPathError` / `RegistryNotInstalledError` / `ReservedFormKeyError` / `SensitivePersistFieldError` / `SubmitErrorHandlerError` — error classes
 
 ---
 
@@ -245,11 +245,11 @@ piece of form state as a named field. Grouped by concern:
 
 ### Writing values
 
-| Member                  | Signature                               | What it does                                              |
-| ----------------------- | --------------------------------------- | --------------------------------------------------------- |
-| `setValue(value)`       | `(value: Form) => boolean`              | Replace the whole form.                                   |
-| `setValue(path, value)` | `(path, value) => boolean`              | Replace a single leaf or sub-tree.                        |
-| `register(path)`        | `(path) => RegisterValue<LeafOf<path>>` | Produces the binding the `v-register` directive consumes. |
+| Member                     | Signature                                                          | What it does                                                                                                                                                                                                                                                     |
+| -------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setValue(value)`          | `(value: Form) => boolean`                                         | Replace the whole form. Programmatic — does NOT trigger persistence.                                                                                                                                                                                             |
+| `setValue(path, value)`    | `(path, value) => boolean`                                         | Replace a single leaf or sub-tree. Programmatic — does NOT trigger persistence.                                                                                                                                                                                  |
+| `register(path, options?)` | `(path, options?: RegisterOptions) => RegisterValue<LeafOf<path>>` | Produces the binding the `v-register` directive consumes. `options.persist: true` opts the field into the persistence pipeline; `options.acknowledgeSensitive: true` overrides the sensitive-name heuristic. See [persistence recipe](./recipes/persistence.md). |
 
 ### Validation + submission
 
@@ -315,10 +315,20 @@ with a dev-mode warning (use `setValue` / `handleSubmit` /
 
 ### Reset
 
-| Member             | Signature                            | What it does                                                                        |
-| ------------------ | ------------------------------------ | ----------------------------------------------------------------------------------- |
-| `reset(next?)`     | `(next?: DeepPartial<Form>) => void` | Re-seed the whole form. Rebuilds originals, clears errors + touched + submit state. |
-| `resetField(path)` | `(path: FlatPath<Form>) => void`     | Restore one path (leaf or container) to its original value.                         |
+| Member             | Signature                            | What it does                                                                                                                               |
+| ------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `reset(next?)`     | `(next?: DeepPartial<Form>) => void` | Re-seed the whole form. Rebuilds originals, clears errors + touched + submit state. Wipes the persisted draft if `persist:` is configured. |
+| `resetField(path)` | `(path: FlatPath<Form>) => void`     | Restore one path (leaf or container) to its original value. Wipes the matching subpath from storage if `persist:` is configured.           |
+
+### Persistence (imperative)
+
+| Member                       | Signature                                                                               | What it does                                                                                                                                                                                                                            |
+| ---------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `persist(path, options?)`    | `(path: FlatPath<Form>, options?: { acknowledgeSensitive?: boolean }) => Promise<void>` | One-shot read-merge-write of `path`'s current value. Bypasses the per-element opt-in gate and the debouncer. Throws `SensitivePersistFieldError` on sensitive paths unless acknowledged. Silent no-op when `persist:` isn't configured. |
+| `clearPersistedDraft(path?)` | `(path?: FlatPath<Form>) => Promise<void>`                                              | Wipe the persisted entry. With `path`, removes only that subpath. Does NOT touch in-memory state or active opt-ins. Silent no-op when `persist:` isn't configured.                                                                      |
+
+See [persistence recipe](./recipes/persistence.md) for the per-field
+opt-in model these APIs sit on top of.
 
 ### Undo / redo
 

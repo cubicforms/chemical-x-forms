@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
@@ -803,6 +803,136 @@ describe('persistence — reset wipes the persisted draft', () => {
     await waitUntil(() => (localStorage.getItem('test-reset') === null ? true : null))
     expect(localStorage.getItem('test-reset')).toBeNull()
     expect(api.getValue('email').value).toBe('')
+  })
+
+  it('sparse payload — only opted-in paths reach storage', async () => {
+    // Schema has both `email` and `password`, but only `email` opts in.
+    // Storage payload should contain `email` only — the `password` field
+    // (the user typed something, since it's a real input) stays in
+    // memory but never lands in localStorage.
+    const handle: { api?: ApiReturn; emailEl?: HTMLInputElement; passwordEl?: HTMLInputElement } =
+      {}
+    const App = defineComponent({
+      setup() {
+        const api = useForm({
+          schema,
+          key: 'sparse-payload',
+          persist: { storage: 'local', key: 'test-sparse', debounceMs: 20 },
+        })
+        handle.api = api
+        return () =>
+          h('div', [
+            withDirectives(
+              h('input', {
+                type: 'text',
+                ref: (el): void => {
+                  if (el !== null) handle.emailEl = el as HTMLInputElement
+                },
+              }),
+              [[vRegister, api.register('email', { persist: true })]]
+            ),
+            withDirectives(
+              h('input', {
+                type: 'text',
+                ref: (el): void => {
+                  if (el !== null) handle.passwordEl = el as HTMLInputElement
+                },
+              }),
+              // No persist opt-in for password — value will land in
+              // memory but NOT in storage.
+              [[vRegister, api.register('password')]]
+            ),
+          ])
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+
+    // Type into both inputs.
+    const emailEl = handle.emailEl as HTMLInputElement
+    emailEl.value = 'opted-in@example.com'
+    emailEl.dispatchEvent(new Event('input', { bubbles: true }))
+    const passwordEl = handle.passwordEl as HTMLInputElement
+    passwordEl.value = 'never-persisted'
+    passwordEl.dispatchEvent(new Event('input', { bubbles: true }))
+    const raw = await waitUntil(() => localStorage.getItem('test-sparse'))
+    expect(raw).not.toBeNull()
+    const payload = JSON.parse(raw as string) as { data: { form: Record<string, unknown> } }
+    expect(payload.data.form['email']).toBe('opted-in@example.com')
+    // password is in the form value (in memory) but NOT in the
+    // persisted payload — sparse payload contract.
+    expect('password' in payload.data.form).toBe(false)
+    expect(handle.api?.getValue('password').value).toBe('never-persisted')
+  })
+
+  it('sparse hydration — opted-in paths restore; non-opted paths come from schema defaults', async () => {
+    // Seed a sparse payload (only email present). On mount, email
+    // hydrates from the seed, password falls back to schema default.
+    localStorage.setItem(
+      'test-sparse-hydrate',
+      JSON.stringify({ v: 2, data: { form: { email: 'sparse-seed@x.com' } } })
+    )
+    const { app, api } = mountForm({
+      storage: 'local',
+      key: 'test-sparse-hydrate',
+      debounceMs: 20,
+    })
+    apps.push(app)
+    await waitUntil(() => (api.getValue('email').value === 'sparse-seed@x.com' ? true : null))
+    expect(api.getValue('email').value).toBe('sparse-seed@x.com')
+    // password wasn't in the persisted payload → schema default ('').
+    expect(api.getValue('password').value).toBe('')
+  })
+
+  it('dev warns when persist is configured but no field opted in', async () => {
+    // No <input v-register> at all → no opt-ins. The dev warning should
+    // fire one microtask after construction.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const App = defineComponent({
+        setup() {
+          useForm({
+            schema,
+            key: 'no-opt-ins-warn',
+            persist: { storage: 'local', key: 'test-no-opt-warn', debounceMs: 20 },
+          })
+          return () => h('div')
+        },
+      })
+      const app = createApp(App).use(createChemicalXForms())
+      const root = document.createElement('div')
+      document.body.appendChild(root)
+      app.mount(root)
+      apps.push(app)
+      // Drain the microtasks so the deferred warning fires.
+      await drain()
+      const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
+      const matched = warnCalls.find((msg) =>
+        /Persistence is configured.*no fields opted in/.test(msg)
+      )
+      expect(matched).toBeDefined()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('does NOT warn when at least one field opted in', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const { app } = mountForm({ storage: 'local', key: 'test-warn-skip', debounceMs: 20 })
+      apps.push(app)
+      await drain()
+      const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
+      const matched = warnCalls.find((msg) =>
+        /Persistence is configured.*no fields opted in/.test(msg)
+      )
+      expect(matched).toBeUndefined()
+    } finally {
+      warnSpy.mockRestore()
+    }
   })
 
   it('form.resetField(path) wipes only the matching subpath from storage', async () => {

@@ -5,7 +5,8 @@ import type {
   ValidationError,
 } from '../../types/types-api'
 import { PERSISTENCE_KEY_PREFIX } from '../defaults'
-import type { Path } from '../paths'
+import { isPlainRecord, setAtPath, getAtPath } from '../path-walker'
+import type { Path, PathKey, Segment } from '../paths'
 
 /**
  * Public-ish handle returned by `wirePersistence`. Lives on
@@ -184,4 +185,89 @@ export function createDebouncedWriter(
  */
 export function resolveStorageKey(config: PersistConfig, formKey: string): string {
   return config.key ?? `${PERSISTENCE_KEY_PREFIX}${formKey}`
+}
+
+/**
+ * Build a sparse object containing only the values at `pathKeys` from
+ * `form`. Each PathKey is the canonical JSON-array form
+ * (`'["profile","name"]'`) emitted by `canonicalizePath`. Paths whose
+ * value is `undefined` in the source (e.g. an optional schema field
+ * the user never touched) are skipped — the caller's
+ * `mergeSparseHydration` re-fills from schema defaults on read.
+ *
+ * The returned object structurally-shares with the source: a path that
+ * names a container (e.g. `'contacts'` resolving to a whole array) is
+ * copied by reference into the sparse output. Per-leaf opt-ins
+ * (`'contacts.0.name'`) construct intermediate containers via
+ * `setAtPath`.
+ */
+export function pluckPaths(form: unknown, pathKeys: Iterable<PathKey>): unknown {
+  let sparse: unknown = undefined
+  for (const pathKey of pathKeys) {
+    const segments = parsePathKey(pathKey)
+    if (segments === null) continue
+    const value = getAtPath(form, segments)
+    if (value === undefined) continue
+    sparse = setAtPath(sparse ?? {}, segments, value)
+  }
+  return sparse ?? {}
+}
+
+/**
+ * Restrict a `(PathKey → ValidationError[])` map to entries whose key
+ * appears in `pathKeys`. Used by the persistence writer to drop errors
+ * on non-opted-in paths from the persisted envelope — a persisted
+ * error without a persisted value would dangle on rehydration (the
+ * form would resurrect with no value but a complaint about it).
+ */
+export function filterErrorsByPaths(
+  errors: ReadonlyMap<string, ValidationError[]>,
+  pathKeys: ReadonlySet<PathKey>
+): Map<string, ValidationError[]> {
+  const out = new Map<string, ValidationError[]>()
+  for (const [key, value] of errors) {
+    if (pathKeys.has(key as PathKey)) out.set(key, value)
+  }
+  return out
+}
+
+/**
+ * Merge a sparse persisted form over schema defaults. Returns a new
+ * object — neither input is mutated. Used by hydration replay when
+ * the persisted payload only contains opted-in paths.
+ *
+ * Object keys are merged recursively (sparse keys override defaults).
+ * Arrays are REPLACED wholesale: if a path resolves to an array in the
+ * sparse persisted form, it overrides the schema's array entirely. This
+ * is the simpler rule for the common cases (whole-array opt-in via
+ * `'contacts'` works; per-leaf opt-in implicitly accepts that schema
+ * defaults for sibling leaves at the same array index won't be filled).
+ *
+ * Primitives in the sparse form override defaults. `null` and explicit
+ * primitive values pass through (a persisted `null` is meaningful).
+ */
+export function mergeSparseHydration<F>(schemaDefaults: F, sparse: unknown): F {
+  return mergeDeep(schemaDefaults, sparse) as F
+}
+
+function mergeDeep(target: unknown, source: unknown): unknown {
+  if (source === undefined) return target
+  if (source === null || typeof source !== 'object') return source
+  if (Array.isArray(source)) return source
+  if (!isPlainRecord(source)) return source
+  const out: Record<string, unknown> = isPlainRecord(target) ? { ...target } : {}
+  for (const key of Object.keys(source)) {
+    out[key] = mergeDeep(out[key], (source as Record<string, unknown>)[key])
+  }
+  return out
+}
+
+function parsePathKey(pathKey: PathKey): readonly Segment[] | null {
+  try {
+    const parsed = JSON.parse(pathKey) as unknown
+    if (!Array.isArray(parsed)) return null
+    return parsed as readonly Segment[]
+  } catch {
+    return null
+  }
 }

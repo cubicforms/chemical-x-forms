@@ -12,16 +12,18 @@ import type { FieldStateView } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
 import { createHistoryModule, type HistoryModule } from '../core/history'
 import {
-  buildPersistedPayload,
   createDebouncedWriter,
+  filterErrorsByPaths,
   getStorageAdapter,
+  mergeSparseHydration,
   PERSISTENCE_MODULE_KEY,
+  pluckPaths,
   readPersistedPayload,
   resolveStorageKey,
   type PersistedPayload,
   type PersistenceModule,
 } from '../core/persistence'
-import { canonicalizePath, type Path } from '../core/paths'
+import { canonicalizePath, type Path, type PathKey } from '../core/paths'
 import { deleteAtPath, getAtPath, setAtPath, isPlainRecord } from '../core/path-walker'
 import { kFormContext, useRegistry } from '../core/registry'
 import type {
@@ -501,18 +503,40 @@ function wirePersistence<F extends GenericForm>(
     if (disposed) return
     const adapter = await adapterPromise
     if (disposed) return
+    // Sparse-payload reshape: the persisted form contains only paths
+    // that were opted in via `register('foo', { persist: true })`. If
+    // every opt-in has been torn down, wipe the entry rather than
+    // write a hollow envelope (matches the per-element security model
+    // — no opt-ins → nothing to persist).
+    const optedInPaths = new Set<PathKey>(state.persistOptIns.optedInPaths())
+    if (optedInPaths.size === 0) {
+      await adapter.removeItem(key)
+      return
+    }
     // Unwrap the reactive form to a plain object before handing it to
     // the adapter — IDB's `structuredClone` can't serialise Vue
     // proxies (DATA_CLONE_ERR), and local/session stringify the
     // proxy's own-enumerable keys anyway.
     const rawForm = toRaw(state.form.value)
-    const payload = buildPersistedPayload(
-      rawForm,
-      include,
-      state.schemaErrors,
-      state.userErrors,
-      version
-    )
+    const filteredForm = pluckPaths(rawForm, optedInPaths) as F
+    if (include === 'form') {
+      await adapter.setItem(key, { v: version, data: { form: filteredForm } })
+      return
+    }
+    // include === 'form+errors': filter both error stores to the
+    // opted-in paths only. A persisted error without a persisted
+    // value would dangle on rehydration; dropping is the consistent
+    // contract.
+    const filteredSchemaErrors = filterErrorsByPaths(state.schemaErrors, optedInPaths)
+    const filteredUserErrors = filterErrorsByPaths(state.userErrors, optedInPaths)
+    const payload: PersistedPayload<F> = {
+      v: version,
+      data: {
+        form: filteredForm,
+        schemaErrors: [...filteredSchemaErrors.entries()].map(([k, v]) => [k, [...v]] as const),
+        userErrors: [...filteredUserErrors.entries()].map(([k, v]) => [k, [...v]] as const),
+      },
+    }
     await adapter.setItem(key, payload)
   }, debounceMs)
 
@@ -556,7 +580,14 @@ function wirePersistence<F extends GenericForm>(
       const payload = readPersistedPayload<F>(raw, version)
       if (payload === null) return
       if (disposed) return
-      state.applyFormReplacement(payload.data.form)
+      // Sparse-aware replacement: the persisted form may contain only
+      // a subset of paths (the ones opted into persistence on the
+      // previous mount). Merge over the current form (which carries
+      // schema defaults at this point — wirePersistence runs before
+      // any user mutation could have happened) so non-persisted paths
+      // keep their schema defaults.
+      const merged = mergeSparseHydration(toRaw(state.form.value) as F, payload.data.form)
+      state.applyFormReplacement(merged)
       if (include === 'form+errors') {
         // Each store rebuilds independently from its persisted entries.
         // Consumers who bumped `version` already had their payload
@@ -575,6 +606,35 @@ function wirePersistence<F extends GenericForm>(
       // "best-effort" and already log their own warnings.
     }
   })()
+
+  // Dev-mode warning: persistence is configured but no field opted in.
+  // Common confusion mode — `persist: { storage: 'local' }` is set on
+  // the form but every `register()` call omits `{ persist: true }`, so
+  // drafts mysteriously never save. Wait one microtask AFTER the
+  // initial mount task settles so the directive's `created` hooks have
+  // had a chance to populate opt-ins; then check once. One-shot —
+  // re-mounts within the same FormStore lifetime don't re-warn.
+  if (__DEV__) {
+    void Promise.resolve().then(() => {
+      if (disposed) return
+      // Two microtask hops: the first lets the current setup() return
+      // and Vue mount the directive subtree; the second runs after
+      // Vue's own queued effects so any `register({ persist: true })`
+      // has landed in the registry.
+      void Promise.resolve().then(() => {
+        if (disposed) return
+        if (state.persistOptIns.isEmpty()) {
+          console.warn(
+            `[@chemical-x/forms] Persistence is configured for form ` +
+              `"${state.formKey}" but no fields opted in. Each persisted ` +
+              `field needs \`register('foo', { persist: true })\`, or call ` +
+              `\`form.persist('foo')\` for an explicit checkpoint. ` +
+              `See ./docs/recipes/persistence.md.`
+          )
+        }
+      })
+    })
+  }
 
   /**
    * Imperative one-shot write. Read-merge-write strategy: flush any

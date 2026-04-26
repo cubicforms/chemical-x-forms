@@ -79,6 +79,28 @@ for the full set of changes.
   future internal use; with the entry-reject in place, collisions
   between consumer keys and library-allocated keys are now impossible
   by construction.
+- **Breaking — persistence opt-in moved to per-field.** Form-level
+  `persist: { storage: 'local' }` no longer auto-persists every
+  field. Each persisted field opts in explicitly at its `register()`
+  call site: `register('email', { persist: true })`. Programmatic
+  `form.setValue` no longer reaches storage; use new `form.persist(path)`
+  for an explicit one-shot checkpoint. Sensitive-named paths
+  (password / cvv / ssn / token / api-key / etc.) throw
+  `SensitivePersistFieldError` at mount unless
+  `acknowledgeSensitive: true` is also passed. Persisted payloads
+  are sparse — only opted-in paths land in storage; hydration
+  merges over schema defaults. `reset()` and `resetField(path)` now
+  wipe the persisted draft alongside the in-memory clear.
+  New APIs: `form.persist(path, opts?)`,
+  `form.clearPersistedDraft(path?)`, `RegisterOptions`, `WriteMeta`,
+  `SensitivePersistFieldError`. Dev-mode warning if persist is
+  configured but no field opts in. The `assignKey` symbol on
+  v-register elements gains an optional `meta` parameter (clean
+  break for the rare consumer who supplied a custom assigner via
+  `onUpdate:registerValue`). See the
+  [migration guide](./docs/migration/0.11-to-0.12.md#breaking-persistence-opt-in-moved-to-per-field)
+  + [persistence recipe](./docs/recipes/persistence.md) for the full
+  rewrite.
 
 ## v0.11.1
 **Dev-mode ergonomics for the ambient `useFormContext` warning.**

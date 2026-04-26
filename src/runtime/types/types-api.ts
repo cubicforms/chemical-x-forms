@@ -270,6 +270,13 @@ export type UseFormConfiguration<
    * Descendant-only access via ambient `useFormContext<F>()` works
    * for anonymous forms too — it resolves via `provide`/`inject`,
    * not the registry's key space.
+   *
+   * Reserved namespace: any key starting with `__cx:` throws
+   * `ReservedFormKeyError` at construction. The library uses the
+   * `__cx:` prefix for its internal synthetic keys (anonymous
+   * `useForm()` calls allocate `__cx:anon:<id>` keys) — rejecting
+   * the namespace at the entry guarantees zero collision between
+   * consumer keys and library-allocated keys.
    */
   key?: FormKey
   defaultValues?: DefaultValues

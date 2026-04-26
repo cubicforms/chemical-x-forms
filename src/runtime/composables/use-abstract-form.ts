@@ -1,8 +1,13 @@
 import { getCurrentInstance, getCurrentScope, onScopeDispose, provide, toRaw, useId } from 'vue'
 import { buildFormApi } from '../core/build-form-api'
 import { createFormStore, type FormStore } from '../core/create-form-store'
-import { ANONYMOUS_FORM_KEY_PREFIX, DEFAULT_PERSISTENCE_DEBOUNCE_MS } from '../core/defaults'
+import {
+  ANONYMOUS_FORM_KEY_PREFIX,
+  DEFAULT_PERSISTENCE_DEBOUNCE_MS,
+  RESERVED_KEY_PREFIX,
+} from '../core/defaults'
 import { __DEV__ } from '../core/dev'
+import { ReservedFormKeyError } from '../core/errors'
 import type { FieldStateView } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
 import { createHistoryModule, type HistoryModule } from '../core/history'
@@ -233,7 +238,9 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
 /**
  * Module-local counter for the "no Vue instance in scope" fallback
  * (tests, raw composable calls outside setup). Collisions with
- * user-supplied keys are avoided by the `cx:anon:` prefix. Inside
+ * user-supplied keys are avoided by the reserved `__cx:anon:` prefix
+ * (consumer keys starting with `__cx:` are rejected at construction).
+ * Inside
  * setup — the common path — `useId()` produces a tree-position-stable
  * id that matches across SSR hydration, so two mounts of the same
  * component tree resolve to the same anonymous key and hydration
@@ -278,7 +285,7 @@ function recordAmbientProvide(isSSR: boolean): void {
   const instanceKey = instance as unknown as object
   // Caller already gated on `configuration.key === undefined`, so every
   // recorded entry corresponds to an anonymous useForm() call. No need
-  // to carry a key — synthetic `cx:anon:<id>` keys aren't addressable
+  // to carry a key — synthetic `__cx:anon:<id>` keys aren't addressable
   // by the author and would only add noise to the warning.
   const entry: AmbientProvideEntry = {
     source: captureUserCallSite(),
@@ -372,11 +379,12 @@ function shortenSourceFrame(frame: string): string {
 
 /**
  * Normalise `configuration.key` into a concrete FormKey. Explicit keys
- * pass through; empty / nullish keys are treated as anonymous and
- * allocated a unique id. `cx:anon:` prefix makes the origin obvious in
- * DevTools, ValidationError payloads, and the registry's key space —
- * and guarantees no collision with the (user-chosen) string keys that
- * share a flat namespace.
+ * pass through after a reserved-namespace check (anything starting
+ * with `__cx:` is rejected with `ReservedFormKeyError`); empty /
+ * nullish keys are treated as anonymous and allocated a unique id
+ * under the `__cx:anon:` prefix. The reserved-prefix reject + the
+ * synthetic-prefix reservation together guarantee zero collision
+ * between consumer-chosen keys and library-allocated synthetic ones.
  *
  * Anonymous semantics: each `useForm({ schema })` call without a key
  * resolves to a distinct FormStore. Descendant components reach it via
@@ -386,7 +394,19 @@ function shortenSourceFrame(frame: string): string {
  * recognisable DevTools label should pass an explicit `key`.
  */
 function resolveFormKey(key: FormKey | undefined): FormKey {
-  if (key !== undefined && key !== null && key !== '') return key
+  if (key !== undefined && key !== null && key !== '') {
+    // Reject any consumer-supplied key in the reserved `__cx:`
+    // namespace. Without this, a consumer key like `__cx:anon:0`
+    // could silently collide with the synthetic anonymous-key
+    // allocation below — both would land on the same FormStore in
+    // the registry, and the dev-mode schema-fingerprint warning
+    // only catches collisions when schemas differ. Throwing here
+    // makes the collision impossible by construction.
+    if (key.startsWith(RESERVED_KEY_PREFIX)) {
+      throw new ReservedFormKeyError(key)
+    }
+    return key
+  }
   // In setup context, `useId()` threads through Vue's SSR id-allocator
   // so server-rendered and client-hydrated trees agree on the same
   // synthetic key.

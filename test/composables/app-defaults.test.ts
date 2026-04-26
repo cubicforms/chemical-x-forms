@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { useForm as useFormV3 } from '../../src/zod-v3'
+import { ANONYMOUS_FORM_KEY_PREFIX } from '../../src/runtime/core/defaults'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
 import { useForm } from '../../src/zod'
@@ -189,13 +190,13 @@ describe('app-level defaults — anonymous + multi-form', () => {
   })
 
   it('anonymous useForm() (no key) picks up app-level defaults', () => {
-    // No `key` passed → synthetic `cx:anon:` key allocated; defaults
+    // No `key` passed → synthetic `__cx:anon:` key allocated; defaults
     // should still apply.
     const { app, api } = mountWithDefaults({ validationMode: 'lax' }, {})
     apps.push(app)
     expect(api.fieldErrors.email).toBeUndefined()
     // Sanity: this anonymous form's key starts with the reserved prefix.
-    expect(api.key.startsWith('cx:anon:')).toBe(true)
+    expect(api.key.startsWith(ANONYMOUS_FORM_KEY_PREFIX)).toBe(true)
   })
 
   it('multiple useForm calls in the same app share the same defaults', () => {

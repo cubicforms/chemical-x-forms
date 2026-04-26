@@ -94,5 +94,6 @@ export type { Path, PathKey, Segment } from './runtime/core/paths'
 export {
   InvalidPathError,
   RegistryNotInstalledError,
+  ReservedFormKeyError,
   SubmitErrorHandlerError,
 } from './runtime/core/errors'

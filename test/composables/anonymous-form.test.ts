@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, createSSRApp, defineComponent, h } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { useForm, useFormContext } from '../../src'
+import { ANONYMOUS_FORM_KEY_PREFIX, RESERVED_KEY_PREFIX } from '../../src/runtime/core/defaults'
+import { ReservedFormKeyError } from '../../src/runtime/core/errors'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { fakeSchema } from '../utils/fake-schema'
 
@@ -10,11 +12,11 @@ import { fakeSchema } from '../utils/fake-schema'
  * Semantic coverage for anonymous (key-less) forms.
  *
  * The post-0.8.3 contract treats `key` as optional and allocates a
- * synthetic `cx:anon:<id>` id via Vue's `useId()` when absent. That
+ * synthetic `__cx:anon:<id>` id via Vue's `useId()` when absent. That
  * shifts two behaviours relative to the old "key required" contract:
  *
  *   1. Two sibling `useForm({ schema })` calls no longer share
- *      state. Each call resolves to its own `cx:anon:` id and
+ *      state. Each call resolves to its own `__cx:anon:` id and
  *      therefore its own FormStore.
  *   2. Descendant-only access still works via ambient
  *      `useFormContext<F>()`, which resolves through `provide`/
@@ -56,8 +58,8 @@ describe('anonymous useForm — independent state per setup call', () => {
     app.mount(root)
 
     expect(captured.a?.key).not.toBe(captured.b?.key)
-    expect(captured.a?.key).toMatch(/^cx:anon:/)
-    expect(captured.b?.key).toMatch(/^cx:anon:/)
+    expect(captured.a?.key.startsWith(ANONYMOUS_FORM_KEY_PREFIX)).toBe(true)
+    expect(captured.b?.key.startsWith(ANONYMOUS_FORM_KEY_PREFIX)).toBe(true)
 
     // Writing to one form must not leak into the other.
     captured.a?.setValue('name', 'Alice')
@@ -171,7 +173,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
   })
 
   it('lists source frames rather than synthetic cx:anon keys', () => {
-    // The synthetic `cx:anon:<id>` keys carry no signal for authors —
+    // The synthetic `__cx:anon:<id>` keys carry no signal for authors —
     // they never typed them. The warning should show call sites (click-
     // through in DevTools) and stay silent about the anon-key space.
     const Child = defineComponent({
@@ -195,7 +197,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
 
     expect(warnSpy).toHaveBeenCalledTimes(1)
     const message = String(warnSpy.mock.calls[0]?.[0] ?? '')
-    expect(message).not.toMatch(/cx:anon:/)
+    expect(message.includes(ANONYMOUS_FORM_KEY_PREFIX)).toBe(false)
     // Source frames are normalised to `<path>:<line>:<col>` — no
     // `at fn (URL:l:c)` wrapper, no `https://`/`http://` prefix, no
     // Vite/Nuxt `_nuxt/` dev-server segment. Click-through stays
@@ -399,5 +401,54 @@ describe('anonymous useForm — SSR determinism', () => {
     expect(clientApi?.key).toBe(serverApi?.key)
 
     clientApp.unmount()
+  })
+})
+
+/**
+ * Reserved-namespace reject: any consumer-supplied key starting with
+ * `__cx:` (the library's reserved internal-key namespace) throws
+ * `ReservedFormKeyError` at construction time. This makes it
+ * impossible by construction for a consumer key to collide with the
+ * synthetic anonymous-form keys allocated under `__cx:anon:`.
+ */
+describe('reserved key namespace', () => {
+  function mountWithKey(key: string): void {
+    const App = defineComponent({
+      setup() {
+        useForm<{ name: string }>({ schema: fakeSchema<{ name: string }>(defaults), key })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+  }
+
+  it('throws ReservedFormKeyError when consumer key matches the synthetic anon prefix', () => {
+    expect(() => mountWithKey(`${ANONYMOUS_FORM_KEY_PREFIX}my-form`)).toThrow(ReservedFormKeyError)
+  })
+
+  it('throws on any consumer key in the broader __cx: namespace, not just __cx:anon:', () => {
+    // Reserves the full __cx: prefix so future internal-key uses
+    // (devtools-injected forms, alternative anon-key shapes, etc.)
+    // can land without breaking consumers a second time.
+    expect(() => mountWithKey(`${RESERVED_KEY_PREFIX}future-internal-thing`)).toThrow(
+      ReservedFormKeyError
+    )
+  })
+
+  it('does NOT throw when __cx: appears mid-key (only the prefix is reserved)', () => {
+    expect(() => mountWithKey(`user-form-${RESERVED_KEY_PREFIX}should-be-fine`)).not.toThrow()
+  })
+
+  it('error message names the offending key so the developer can find it', () => {
+    const offendingKey = `${ANONYMOUS_FORM_KEY_PREFIX}colliding-with-internal`
+    try {
+      mountWithKey(offendingKey)
+    } catch (e) {
+      expect(e).toBeInstanceOf(ReservedFormKeyError)
+      expect((e as Error).message).toContain(offendingKey)
+    }
   })
 })

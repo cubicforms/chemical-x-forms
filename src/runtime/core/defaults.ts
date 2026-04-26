@@ -46,9 +46,21 @@ export const DEFAULT_HISTORY_MAX_SNAPSHOTS = 50
 export const PERSISTENCE_KEY_PREFIX = 'chemical-x-forms:'
 
 /**
- * Synthetic-key prefix for `useForm()` calls without an explicit
- * `key`. Reserved namespace — collisions with consumer-supplied keys
- * are possible only if the consumer also uses `cx:anon:…`, which
- * isn't documented as a supported pattern.
+ * Reserved namespace for the library's internal synthetic keys
+ * (anonymous forms today, plus any future internal-key uses).
+ * `useAbstractForm` rejects any consumer-supplied key starting with
+ * this prefix at construction time, throwing `ReservedFormKeyError` —
+ * so collisions with the synthetic-key namespace are impossible by
+ * construction. The double-underscore convention reads as "internal"
+ * universally, lowering the chance a consumer would naturally pick
+ * a key from this space anyway.
  */
-export const ANONYMOUS_FORM_KEY_PREFIX = 'cx:anon:'
+export const RESERVED_KEY_PREFIX = '__cx:'
+
+/**
+ * Synthetic-key prefix for `useForm()` calls without an explicit
+ * `key`. Lives inside the reserved `__cx:` namespace so the entry-
+ * level reject in `resolveFormKey` covers it automatically — see
+ * `RESERVED_KEY_PREFIX` for the enforcement story.
+ */
+export const ANONYMOUS_FORM_KEY_PREFIX = `${RESERVED_KEY_PREFIX}anon:`

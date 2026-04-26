@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h } from 'vue'
 import { useForm } from '../../src'
 import { useFormContext } from '../../src/runtime/composables/use-form-context'
+import { ANONYMOUS_FORM_KEY_PREFIX } from '../../src/runtime/core/defaults'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { fakeSchema } from '../utils/fake-schema'
 
@@ -69,7 +70,7 @@ describe('useFormContext — ambient provide/inject', () => {
     })
     const Parent = defineComponent({
       setup() {
-        // Anonymous form. The runtime allocates a `cx:anon:<id>` key
+        // Anonymous form. The runtime allocates a `__cx:anon:<id>` key
         // via Vue's `useId()`; both handles must surface the SAME id.
         shared.parent = useForm<Form>({ schema: fakeSchema(defaults) }).key
         return () => h(Child)
@@ -79,7 +80,7 @@ describe('useFormContext — ambient provide/inject', () => {
     const app = createApp(Parent).use(createChemicalXForms({ override: true }))
     app.mount(document.createElement('div'))
     expect(shared.parent).toBeDefined()
-    expect(shared.parent).toMatch(/^cx:anon:/)
+    expect(shared.parent?.startsWith(ANONYMOUS_FORM_KEY_PREFIX)).toBe(true)
     expect(shared.child).toBe(shared.parent)
     app.unmount()
   })
@@ -155,7 +156,7 @@ describe('useFormContext — ambient provide/inject', () => {
     const app = createApp(Parent).use(createChemicalXForms({ override: true }))
     app.mount(document.createElement('div'))
     expect(shared.childKey).toBeDefined()
-    expect(shared.childKey).toMatch(/^cx:anon:/)
+    expect(shared.childKey?.startsWith(ANONYMOUS_FORM_KEY_PREFIX)).toBe(true)
     app.unmount()
   })
 })

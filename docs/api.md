@@ -272,13 +272,13 @@ revalidation and successful submits — the consumer owns their lifecycle
 explicitly. See the [migration guide](./migration/0.11-to-0.12.md) for
 the rationale.
 
-| Member                                    | Type                                                                                      |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `fieldErrors`                             | `Readonly<FormFieldErrors<Form>>` — Proxy view; dot-access leaves directly, no `.value`. Merges schema + user; schema entries first. |
-| `setFieldErrors(errors)`                  | `(ValidationError[]) => void` — replaces the user-error store.                            |
-| `addFieldErrors(errors)`                  | `(ValidationError[]) => void` — appends to the user-error store.                          |
+| Member                                    | Type                                                                                                                                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `fieldErrors`                             | `Readonly<FormFieldErrors<Form>>` — Proxy view; dot-access leaves directly, no `.value`. Merges schema + user; schema entries first.                                                       |
+| `setFieldErrors(errors)`                  | `(ValidationError[]) => void` — replaces the user-error store.                                                                                                                             |
+| `addFieldErrors(errors)`                  | `(ValidationError[]) => void` — appends to the user-error store.                                                                                                                           |
 | `clearFieldErrors(path?)`                 | `(path?) => void` — clears BOTH stores at the given path (or all paths if omitted). With live validation, the schema half re-populates on the next mutation if the value is still invalid. |
-| `setFieldErrorsFromApi(payload, limits?)` | Hydrates a server error envelope into the user-error store. Survives subsequent schema revalidation. See [server-errors recipe](./recipes/server-errors.md). |
+| `setFieldErrorsFromApi(payload, limits?)` | Hydrates a server error envelope into the user-error store. Survives subsequent schema revalidation. See [server-errors recipe](./recipes/server-errors.md).                               |
 
 ### Form-level state
 

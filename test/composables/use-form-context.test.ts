@@ -164,6 +164,14 @@ describe('useFormContext — ambient provide/inject', () => {
       expect(message).toContain("'never-registered'")
       app.unmount()
     })
+
+    // The warn embeds a `(<path>:<line>)` user call-site frame via
+    // `captureUserCallSite()`. We don't unit-test that here: the
+    // capture's regex deliberately skips any frame matching
+    // `/chemical-x[/-]forms?/i`, which includes this very test file
+    // — there's no "user frame" outside the lib workspace to attach.
+    // End-to-end verification lives in the cubic-forms spike, where
+    // the warn renders as e.g. `(.../SpikeCxChild.vue:19)`.
   })
 
   it('mixed keyed + anonymous: ambient resolves to the (only) anonymous form', () => {

@@ -59,6 +59,18 @@ describe('initial validation seed — strict mode', () => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
+  it('strict is the default — omitting validationMode populates schemaErrors', () => {
+    // Pin: useForm({ schema, ... }) with no explicit validationMode
+    // must resolve to 'strict'. Flipping the default back to 'lax'
+    // would silently regress consumers who expect "errors are a pure
+    // function of (value, schema) at all times."
+    const { app, api } = mountWithZod({})
+    apps.push(app)
+    expect(api.fieldErrors.email?.[0]?.message).toBe('bad email')
+    expect(api.fieldErrors.password?.[0]?.message).toBe('min 8 chars')
+    expect(api.state.isValid).toBe(false)
+  })
+
   it('populates schemaErrors at construction when defaults fail validation', () => {
     const { app, api } = mountWithZod({ validationMode: 'strict' })
     apps.push(app)

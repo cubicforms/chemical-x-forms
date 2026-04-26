@@ -273,6 +273,26 @@ export type UseFormConfiguration<
    */
   key?: FormKey
   defaultValues?: DefaultValues
+  /**
+   * How strictly to validate the schema's default values at
+   * construction.
+   *
+   * - `'strict'` (default): the schema validates its derived defaults
+   *   immediately. If validation fails, the resulting errors seed
+   *   `schemaErrors` so `fieldErrors` is populated from the first
+   *   frame — keeps the data layer honest about the schema's verdict
+   *   without requiring a user mutation. The UI decides when to
+   *   *show* errors (gate on `state.touched`, `state.submitCount`,
+   *   etc.).
+   * - `'lax'`: refinements are stripped during default-values
+   *   derivation and the construction-time seed is skipped. Use this
+   *   for multi-step wizards, field arrays with placeholder rows, or
+   *   any form where mounting with invalid data is intentional.
+   *
+   * Runtime validation (per-field on mutation, full-form on submit)
+   * is identical in both modes; the difference is purely about
+   * construction-time behaviour.
+   */
   validationMode?: ValidationMode
   /**
    * What to do when a submit attempt fails validation. Fires after the

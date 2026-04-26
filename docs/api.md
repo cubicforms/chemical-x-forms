@@ -42,7 +42,7 @@ Options:
 | `schema`          | `z.ZodType`                                                                 | yes      | The Zod schema describing the form shape.                                                                                                                                                                                                                                                   |
 | `key`             | `string`                                                                    | no       | Form identity. Omit for one-off forms (runtime allocates a synthetic `cx:anon:<id>` via `useId()`). Pass a string when you need cross-component lookup via `useFormContext(key)`, shared state across call-sites, a stable `persist` storage-key default, or a recognisable DevTools label. |
 | `defaultValues`   | `DeepPartial<Form>`                                                         | no       | Constraints applied over schema defaults.                                                                                                                                                                                                                                                   |
-| `validationMode`  | `'lax'` \| `'strict'`                                                       | no       | Defaults to `'lax'`. See [Types](#types).                                                                                                                                                                                                                                                   |
+| `validationMode`  | `'lax'` \| `'strict'`                                                       | no       | Defaults to `'strict'` — defaults that fail the schema seed `schemaErrors` at construction. Pass `'lax'` to opt out (multi-step wizards, placeholder rows). See [Types](#types).                                                                                                            |
 | `onInvalidSubmit` | `'none'` \| `'focus-first-error'` \| `'scroll-to-first-error'` \| `'both'`  | no       | What to do when submit fails validation. See [recipe](./recipes/focus-on-error.md).                                                                                                                                                                                                         |
 | `fieldValidation` | `{ on, debounceMs }`                                                        | no       | Live field validation. Default `{ on: 'change', debounceMs: 200 }` — errors track live. Pass `{ on: 'none' }` to opt out (submit-only). See [recipe](./recipes/field-level-validation.md).                                                                                                  |
 | `persist`         | `{ storage, key?, debounceMs?, include?, version?, clearOnSubmitSuccess? }` | no       | Persist draft state. See [recipe](./recipes/persistence.md).                                                                                                                                                                                                                                |
@@ -411,7 +411,9 @@ The ones you'll touch most:
 string; formKey: FormKey }`.
 - **`FieldState`** — `{ value, errors, isConnected, touched,
 focused, blurred, updatedAt }`.
-- **`ValidationMode`** — `'lax' | 'strict'`. Most forms stay with
-  `'lax'`.
+- **`ValidationMode`** — `'lax' | 'strict'`. Defaults to `'strict'` —
+  the data layer reports schema errors immediately when defaults fail.
+  Use `'lax'` to opt out (multi-step wizards, placeholder rows in field
+  arrays, any case where mounting with invalid data is expected).
 - **`AbstractSchema`** — the schema contract. See
   [custom-adapter recipe](./recipes/custom-adapter.md).

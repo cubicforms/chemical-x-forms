@@ -38,7 +38,11 @@ function mount(): { app: App; api: Api } {
   const handle: { api?: Api } = {}
   const App = defineComponent({
     setup() {
-      handle.api = useForm({ schema, key: 'fielderrs-view' })
+      // Pin lax: this file tests the fieldErrors Proxy view, not the
+      // construction-time strict-mode seed. Lax keeps the form mount-
+      // clean so each test can assert the user-error round-trip
+      // without the schema seed pre-populating entries.
+      handle.api = useForm({ schema, key: 'fielderrs-view', validationMode: 'lax' })
       return () => h('div')
     },
   })
@@ -176,7 +180,7 @@ describe('fieldErrors — reactivity in render scope', () => {
     let renderedMessage = ''
     const Reader = defineComponent({
       setup() {
-        api = useForm({ schema, key: 'fielderrs-reactive' })
+        api = useForm({ schema, key: 'fielderrs-reactive', validationMode: 'lax' })
         return () => {
           renderedMessage = api.fieldErrors.email?.[0]?.message ?? ''
           return h('div', renderedMessage)

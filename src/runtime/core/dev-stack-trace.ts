@@ -41,7 +41,7 @@ export function captureUserCallSite(): string | undefined {
 }
 
 /**
- * Reduce a raw stack frame to `(<path>:<line>:<col>)`.
+ * Reduce a raw stack frame to `(<path>:<line>)`.
  *
  * Inputs we expect (V8, with or without `at fn (…)` wrapper):
  *   - `at setup (https://cubicforms.test/_nuxt/pages/spike-cx.vue:18:18)`
@@ -50,20 +50,29 @@ export function captureUserCallSite(): string | undefined {
  *   - `pages/foo.vue:18:18` (already path-like, no V8 wrapper)
  *
  * Outputs:
- *   - `(pages/spike-cx.vue:18:18)`
- *   - `(foo.js:1:1)`
- *   - `(Users/x/proj/spike.vue:18:18)`
- *   - `(pages/foo.vue:18:18)`
+ *   - `(pages/spike-cx.vue:18)`
+ *   - `(foo.js:1)`
+ *   - `(Users/x/proj/spike.vue:18)`
+ *   - `(pages/foo.vue:18)`
+ *
+ * Why drop the column: Vite's sourcemaps round-trip line accurately
+ * but column resolution is fuzzy in compiled contexts (Vue render
+ * functions, JSX, anywhere the source-to-output mapping isn't
+ * 1-to-1 per character). For a script-setup `useForm()` call the
+ * column is meaningful; for a template-inlined `register(...)` it
+ * lands somewhere mid-compiled-blob and is actively misleading. The
+ * uniform `path:line` format avoids that asymmetry — line is enough
+ * to navigate, the editor lands on the right region either way.
  *
  * If the frame doesn't match the trailing `…:line:col` shape at all,
  * the original trimmed frame is returned unchanged — better to
  * surface something than nothing.
  */
 export function shortenSourceFrame(frame: string): string {
-  const match = /(?:^|\s|\()([^\s()]+):(\d+):(\d+)\)?$/.exec(frame)
+  const match = /(?:^|\s|\()([^\s()]+):(\d+):\d+\)?$/.exec(frame)
   if (match === null) return frame
-  const [, urlOrPath, line, col] = match
-  if (urlOrPath === undefined || line === undefined || col === undefined) return frame
+  const [, urlOrPath, line] = match
+  if (urlOrPath === undefined || line === undefined) return frame
   let path = urlOrPath
   // Strip `scheme://host/` (https://…, http://…). file:// gets the
   // same treatment, leaving the absolute filesystem path; we then
@@ -74,9 +83,8 @@ export function shortenSourceFrame(frame: string): string {
   // Strip leading slash (left over from file:// or absolute paths).
   path = path.replace(/^\//, '')
   // Wrap in parens. Chrome's console auto-linker partial-matches
-  // bare `pages/foo.vue:137:23` (it picks up `/foo.vue:137` and
-  // drops the `pages` prefix + `:23` suffix). Parens are the V8
-  // stack-frame convention and Chrome reliably auto-links them
-  // end-to-end.
-  return `(${path}:${line}:${col})`
+  // bare `pages/foo.vue:137` (it picks up `/foo.vue:137` and
+  // drops the `pages` prefix). Parens are the V8 stack-frame
+  // convention and Chrome reliably auto-links them end-to-end.
+  return `(${path}:${line})`
 }

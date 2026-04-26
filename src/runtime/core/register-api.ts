@@ -3,7 +3,6 @@ import type { RegisterOptions, RegisterValue, WriteMeta } from '../types/types-a
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { __DEV__ } from './dev'
-import { captureUserCallSite } from './dev-stack-trace'
 import { canonicalizePath, type Path } from './paths'
 import { PERSISTENCE_MODULE_KEY } from './persistence'
 
@@ -111,17 +110,22 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
       ) {
         warnedMissingPersistConfig.add(formStore)
         const display = segments.map((s) => String(s)).join('.')
-        // Source frame helps when the form key is synthetic
-        // (`__cx:anon:*`) — without a stable key the dev can't grep
-        // for the offending call. Trail-formatted as " at (path:line:col)"
-        // so Chrome's console auto-linker picks it up.
-        const callSite = captureUserCallSite()
-        const callSiteSuffix = callSite === undefined ? '' : ` at ${callSite}`
+        // No inline source frame here. `register()` is overwhelmingly
+        // called from compiled `<template>` render functions, where
+        // Vite's sourcemap for attribute-value expressions
+        // (`v-register="register(...)"`) maps back to the surrounding
+        // element / closing-tag region, not the actual `register(`
+        // token — adding a frame would be actively misleading. The
+        // path name in the message (`'${display}'`) is the reliable
+        // anchor: `grep "register('${display}'"` finds the call site.
+        // The console auto-renders its own clickable stack below the
+        // message anyway.
         console.warn(
           `[@chemical-x/forms] register('${display}', { persist: true }) was used on form ` +
-            `"${state.formKey}"${callSiteSuffix}, but no \`persist:\` option is configured on ` +
-            `useForm(). The opt-in is recorded, but no writes will land in any storage backend. ` +
-            `Add \`persist: 'local'\` (or another backend) to your useForm() options. See ` +
+            `"${state.formKey}", but no \`persist:\` option is configured on useForm(). The ` +
+            `opt-in is recorded, but no writes will land in any storage backend. Add ` +
+            `\`persist: 'local'\` (or another backend) to your useForm() options. To find the ` +
+            `offending call, search your codebase for \`register('${display}'\`. See ` +
             `./docs/recipes/persistence.md.`
         )
       }

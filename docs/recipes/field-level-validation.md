@@ -27,17 +27,17 @@ Type into an `<input v-register="register('email')" />`, see
 useForm({
   schema,
   key: 'signup',
-  fieldValidation: { on: 'change', debounceMs: 500 },  // slower debounce
+  fieldValidation: { on: 'change', debounceMs: 500 }, // slower debounce
 })
 ```
 
 Three modes:
 
-| `on`       | When it fires                                    | Debounced?          |
-| ---------- | ------------------------------------------------ | ------------------- |
+| `on`       | When it fires                                              | Debounced?          |
+| ---------- | ---------------------------------------------------------- | ------------------- |
 | `'change'` | (default) Every mutation: register input, `setValue`, etc. | Yes — `debounceMs`. |
-| `'blur'`   | Tab away from a field.                           | No — immediate.     |
-| `'none'`   | Explicit opt-out — submit is the only validator. | —                   |
+| `'blur'`   | Tab away from a field.                                     | No — immediate.     |
+| `'none'`   | Explicit opt-out — submit is the only validator.           | —                   |
 
 ## Which mode?
 

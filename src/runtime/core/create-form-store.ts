@@ -9,6 +9,7 @@ import type {
   ValidationMode,
 } from '../types/types-api'
 import type { DeepPartial, GenericForm } from '../types/types-core'
+import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS } from './defaults'
 import { diffAndApply } from './diff-apply'
 import { canonicalizePath, type Path, type PathKey, type Segment } from './paths'
 import { getAtPath, setAtPath } from './path-walker'
@@ -291,7 +292,8 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   const { formKey, schema, defaultValues, validationMode = 'strict', hydration } = options
   const isSSR = options.isSSR === true
   const fieldValidationMode: FieldValidationMode = options.fieldValidation?.on ?? 'change'
-  const fieldValidationDebounceMs: number = options.fieldValidation?.debounceMs ?? 125
+  const fieldValidationDebounceMs: number =
+    options.fieldValidation?.debounceMs ?? DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS
 
   type FieldValidationEntry = {
     controller: AbortController

@@ -3,10 +3,34 @@ import { inputTextAreaNodeTransform } from './runtime/lib/core/transforms/input-
 import { selectNodeTransform } from './runtime/lib/core/transforms/select-transform'
 import { vRegisterHintTransform } from './runtime/lib/core/transforms/v-register-hint-transform'
 import { vRegisterPreambleTransform } from './runtime/lib/core/transforms/v-register-preamble-transform'
+import type { ChemicalXFormsDefaults } from './runtime/types/types-api'
 
 // Module options TypeScript interface definition
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface CXModuleOptions {}
+export interface CXModuleOptions {
+  /**
+   * App-level defaults applied to every `useForm` call. Per-form
+   * options always win. See `ChemicalXFormsDefaults` for the
+   * supported option set and merge semantics.
+   *
+   * Configure via `nuxt.config.ts`:
+   *
+   *   export default defineNuxtConfig({
+   *     modules: ['@chemical-x/forms/nuxt'],
+   *     chemicalX: {
+   *       defaults: { fieldValidation: { debounceMs: 100 } },
+   *     },
+   *   })
+   */
+  defaults?: ChemicalXFormsDefaults
+}
+
+/**
+ * Shape of the Nuxt runtime-config slot the module populates. Read by
+ * `runtime/plugins/chemical-x.ts` via `useRuntimeConfig().public.chemicalX`.
+ */
+export type CXRuntimeConfig = {
+  defaults: ChemicalXFormsDefaults
+}
 
 export default defineNuxtModule<CXModuleOptions>({
   meta: {
@@ -27,6 +51,15 @@ export default defineNuxtModule<CXModuleOptions>({
       vRegisterPreambleTransform,
       vRegisterHintTransform
     )
+
+    // Publish module options to public runtime config so the plugin can
+    // read them at install time on both server and client. Frozen-empty
+    // by default — the plugin's merge code reads this slot directly
+    // without a `?? {}` guard at every call site.
+    const runtimePublic = nuxt.options.runtimeConfig.public as Record<string, unknown>
+    runtimePublic['chemicalX'] = {
+      defaults: _options.defaults ?? {},
+    } satisfies CXRuntimeConfig
 
     const resolver = createResolver(import.meta.url)
 

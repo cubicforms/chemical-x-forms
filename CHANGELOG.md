@@ -60,6 +60,16 @@ for the full set of changes.
   takes precedence over the seed when present. Mostly a quality-of-
   life win for SSR — `<pre>{{ form.fieldErrors }}</pre>` now
   matches the client's first frame.
+- **New — app-level defaults on the plugin.** Pass
+  `createChemicalXForms({ defaults: { ... } })` (or
+  `chemicalX: { defaults: { ... } }` on the Nuxt module) to set
+  cx-wide preferences once instead of repeating them at every
+  `useForm` call. Supported defaults: `validationMode`,
+  `onInvalidSubmit`, `fieldValidation`, `history`. Per-form options
+  always win; `fieldValidation` shallow-merges at the field level so
+  consumers can set `debounceMs` globally and override `on` per-form.
+  See [recipe](./docs/recipes/app-defaults.md). Additive — existing
+  apps that don't pass `defaults` are unchanged.
 
 ## v0.11.1
 **Dev-mode ergonomics for the ambient `useFormContext` warning.**

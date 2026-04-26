@@ -2,6 +2,7 @@ import type { App, Plugin } from 'vue'
 import { attachRegistryToApp, createRegistry } from './registry'
 import { vRegister } from './directive'
 import type { SSRDetectOptions } from './ssr'
+import type { ChemicalXFormsDefaults } from '../types/types-api'
 
 /**
  * Create the `@chemical-x/forms` Vue plugin. Install once per app:
@@ -28,6 +29,12 @@ export type ChemicalXFormsPluginOptions = SSRDetectOptions & {
    * you're shipping a minified build with DevTools disabled).
    */
   devtools?: boolean
+  /**
+   * App-level defaults applied to every `useForm` call in this app.
+   * Per-form options always win. See `ChemicalXFormsDefaults` for the
+   * supported option set and the merge semantics.
+   */
+  defaults?: ChemicalXFormsDefaults
 }
 
 export function createChemicalXForms(options: ChemicalXFormsPluginOptions = {}): Plugin {

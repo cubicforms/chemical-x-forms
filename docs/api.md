@@ -114,10 +114,11 @@ createApp(App).use(createChemicalXForms()).mount('#app')
 
 Options:
 
-| Field      | Type      | Description                                                                          |
-| ---------- | --------- | ------------------------------------------------------------------------------------ |
-| `override` | `boolean` | Force `isSSR` to `true` / `false`. Auto-detected otherwise.                          |
-| `devtools` | `boolean` | Enable the Vue DevTools plugin. Default `true`. See [recipe](./recipes/devtools.md). |
+| Field      | Type                     | Description                                                                                         |
+| ---------- | ------------------------ | --------------------------------------------------------------------------------------------------- |
+| `override` | `boolean`                | Force `isSSR` to `true` / `false`. Auto-detected otherwise.                                         |
+| `devtools` | `boolean`                | Enable the Vue DevTools plugin. Default `true`. See [recipe](./recipes/devtools.md).                |
+| `defaults` | `ChemicalXFormsDefaults` | App-level option defaults applied to every `useForm` call. See [recipe](./recipes/app-defaults.md). |
 
 ### `useForm<Form>({ schema, key, ... })`
 

@@ -124,6 +124,13 @@ for the full set of changes.
   `persist.version` no longer leaves the old payload bytes lingering
   indefinitely. "Truly absent" entries stay a no-op — the wipe only
   fires when there's actually something to clean.
+- **New — symmetric dev-mode warning for the inverse misuse.**
+  `register('foo', { persist: true })` on a form with no `persist:`
+  option configured on `useForm()` now logs a one-time warning in
+  development pointing at the offending call. Pairs with the
+  existing "persist configured but no opt-ins" warning so both halves
+  of the wire-up problem produce a clear signal at the right call
+  site. Production is silent.
 
 ## v0.11.1
 **Dev-mode ergonomics for the ambient `useFormContext` warning.**

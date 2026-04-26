@@ -2,7 +2,9 @@ import { computed, type Ref } from 'vue'
 import type { RegisterOptions, RegisterValue, WriteMeta } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
+import { __DEV__ } from './dev'
 import { canonicalizePath, type Path } from './paths'
+import { PERSISTENCE_MODULE_KEY } from './persistence'
 
 /**
  * Register API factory. Given a FormStore, returns a `register(path)` that
@@ -57,6 +59,20 @@ function detachFocusListeners(element: HTMLElement): void {
   delete target[cxListenersSymbol]
 }
 
+/**
+ * Dedupes the dev-mode "register({ persist: true }) without `persist:`
+ * configured" warning. Keyed by FormStore so each form warns at most
+ * once across all of its `register()` call sites — multiple paths
+ * opting in produce one warning, not N. WeakSet auto-clears when the
+ * FormStore is GC'd, so a remount with a different config gets a
+ * fresh check.
+ *
+ * `null` in production so the WeakSet allocation tree-shakes out.
+ */
+const warnedMissingPersistConfig: WeakSet<FormStore<GenericForm>> | null = __DEV__
+  ? new WeakSet<FormStore<GenericForm>>()
+  : null
+
 export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
   return function register(
     pathInput: string | Path,
@@ -68,6 +84,32 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
 
     const persist = options?.persist === true
     const acknowledgeSensitive = options?.acknowledgeSensitive === true
+
+    // Dev-only: opt-in declared but the form has no persistence wired.
+    // Without this warning the directive silently records the opt-in,
+    // no writes ever land, and the dev concludes "persistence is broken"
+    // when the actual issue is a missing `persist:` option on `useForm()`.
+    // Symmetric to wirePersistence's "configured but no opt-ins" warning;
+    // together they cover both halves of the misuse space. Deduped per
+    // FormStore so a template with N opted-in paths produces one warning,
+    // not N.
+    if (__DEV__ && persist && warnedMissingPersistConfig !== null) {
+      const formStore = state as FormStore<GenericForm>
+      if (
+        !state.modules.has(PERSISTENCE_MODULE_KEY) &&
+        !warnedMissingPersistConfig.has(formStore)
+      ) {
+        warnedMissingPersistConfig.add(formStore)
+        const display = segments.map((s) => String(s)).join('.')
+        console.warn(
+          `[@chemical-x/forms] register('${display}', { persist: true }) was used on form ` +
+            `"${state.formKey}", but no \`persist:\` option is configured on useForm(). The ` +
+            `opt-in is recorded, but no writes will land in any storage backend. Add ` +
+            `\`persist: 'local'\` (or another backend) to your useForm() options. See ` +
+            `./docs/recipes/persistence.md.`
+        )
+      }
+    }
 
     return {
       innerRef,

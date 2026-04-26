@@ -4,6 +4,7 @@ import { createFormStore, type FormStore } from '../core/create-form-store'
 import {
   ANONYMOUS_FORM_KEY_PREFIX,
   DEFAULT_PERSISTENCE_DEBOUNCE_MS,
+  PERSISTENCE_KEY_PREFIX,
   RESERVED_KEY_PREFIX,
 } from '../core/defaults'
 import { __DEV__ } from '../core/dev'
@@ -21,6 +22,7 @@ import {
   pluckPaths,
   readPersistedPayload,
   resolveStorageKey,
+  sweepAllStandardStores,
   sweepNonConfiguredStandardStores,
   type PersistedPayload,
   type PersistenceModule,
@@ -130,19 +132,36 @@ export function useAbstractForm<
   // The shorthand input (`persist: 'local'`, `persist: customAdapter`)
   // is normalised to the resolved options bag once at this boundary —
   // everything below operates on the resolved shape.
-  if (existing === undefined && merged.persist !== undefined && !registry.isSSR) {
-    const resolvedPersist = normalizePersistConfig(merged.persist)
-    const persistenceKey = resolveStorageKey(resolvedPersist, state.formKey)
-    // Cross-store cleanup. The configured backend is the source of
-    // truth — any standard backend not matching the configured one
-    // gets a `removeItem(key)` so historic entries can't orphan
-    // sensitive data when the dev migrates between backends. Inlined
-    // per-backend (see `sweepNonConfiguredStandardStores`) so this
-    // doesn't drag in adapter chunks the consumer didn't ask for.
-    sweepNonConfiguredStandardStores(resolvedPersist.storage, persistenceKey)
-    const persistenceModule = wirePersistence(state, resolvedPersist)
-    state.modules.set(PERSISTENCE_MODULE_KEY, persistenceModule)
-    state.registerCleanup(() => persistenceModule.dispose())
+  if (existing === undefined && !registry.isSSR) {
+    if (merged.persist !== undefined) {
+      const resolvedPersist = normalizePersistConfig(merged.persist)
+      const persistenceKey = resolveStorageKey(resolvedPersist, state.formKey)
+      // Cross-store cleanup. The configured backend is the source of
+      // truth — any standard backend not matching the configured one
+      // gets a `removeItem(key)` so historic entries can't orphan
+      // sensitive data when the dev migrates between backends. Inlined
+      // per-backend (see `sweepNonConfiguredStandardStores`) so this
+      // doesn't drag in adapter chunks the consumer didn't ask for.
+      sweepNonConfiguredStandardStores(resolvedPersist.storage, persistenceKey)
+      const persistenceModule = wirePersistence(state, resolvedPersist)
+      state.modules.set(PERSISTENCE_MODULE_KEY, persistenceModule)
+      state.registerCleanup(() => persistenceModule.dispose())
+    } else {
+      // No `persist:` configured. The form might have HAD persistence
+      // in a prior deployment that the dev has since removed
+      // (compliance pivot, simplification). Sweep the default-key
+      // entry from every standard backend so removing the option
+      // actually removes the on-disk artifact — without this, sensitive
+      // draft data from a "we used to persist this" past can linger
+      // indefinitely. We can only reach the default key
+      // (`chemical-x-forms:${formKey}`); a previous deployment that
+      // used a custom `persist.key` is on the consumer to clean up via
+      // an explicit migration. Anonymous forms (`__cx:anon:*`) don't
+      // have a stable key across sessions, so the sweep is mostly
+      // wasted for them — but the cost is bounded (3 fire-and-forget
+      // calls) and the security guarantee is consistent.
+      sweepAllStandardStores(`${PERSISTENCE_KEY_PREFIX}${state.formKey}`)
+    }
   }
 
   // Wire history (opt-in). Fresh-state-only — the module subscribes

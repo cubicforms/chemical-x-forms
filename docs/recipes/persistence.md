@@ -300,6 +300,20 @@ resolves to (default `chemical-x-forms:${formKey}`), and never
 touches the configured backend. Entries other forms wrote to the
 same backend under different keys are untouched.
 
+### Removing `persist:` entirely
+
+Removing the `persist:` option from `useForm()` is the same hygiene
+problem one step further. Cx sweeps all three standard backends for
+the form's default key whenever `useForm()` is called without a
+`persist:` option, so a deployment that disables persistence (for
+compliance, simplification, whatever) actually clears the on-disk
+artifact instead of leaving a stale entry under
+`chemical-x-forms:${formKey}` indefinitely.
+
+Caveat: only the default key is reachable. If a previous deployment
+used a custom `persist.key`, that's an explicit migration on the
+consumer.
+
 ## Keeping the draft after submit
 
 Default: a successful submit clears the entry wholesale. Set
@@ -352,11 +366,24 @@ if both are present.
 
 ## Dev-mode warnings
 
-If you configure `persist:` but no field opts in (every `register()`
-call omits `{ persist: true }`), cx logs a one-time warning in dev.
-Common confusion mode — the framework is wired up but drafts
-mysteriously never save. The warning points at the missing opt-ins
-and links back to this doc. Production is silent.
+Two symmetric warnings catch the common "wired half the pipeline"
+footguns. Both fire once per form in development and are silently
+no-op'd in production.
+
+- **`persist:` configured but no field opts in.** Every `register()`
+  call omits `{ persist: true }` — the framework is wired up but
+  drafts mysteriously never save. Add `register(path, { persist:
+true })` on at least one field, or remove the `persist:` option if
+  you didn't mean to enable it.
+- **`register({ persist: true })` used but no `persist:` configured.**
+  A binding asks for persistence but `useForm()` has no `persist:`
+  option — the opt-in is recorded, but no writes will land in any
+  storage backend. Add `persist: 'local'` (or another backend) to
+  your `useForm()` options.
+
+The warnings include the form key and (where applicable) the path
+that triggered them, so you can navigate to the offending call site
+without grepping.
 
 ## What persistence is NOT for
 

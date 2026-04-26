@@ -956,6 +956,99 @@ describe('persistence — reset wipes the persisted draft', () => {
     }
   })
 
+  it('dev warns when register({ persist: true }) is used on a form with no persist: configured', async () => {
+    // Symmetric to the "persist configured but no opt-ins" warning:
+    // user opted into persistence at the register() call site but
+    // forgot the `persist:` option on useForm(). Without this warning,
+    // the opt-in records silently and nothing ever lands in storage.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const App = defineComponent({
+        setup() {
+          const api = useForm({ schema, key: 'opt-in-without-persist-config' })
+          // No persist option on useForm() — but the binding asks for it.
+          return () =>
+            h(
+              'div',
+              withDirectives(h('input', { type: 'text' }), [
+                [vRegister, api.register('email', { persist: true })],
+              ])
+            )
+        },
+      })
+      const app = createApp(App).use(createChemicalXForms())
+      const root = document.createElement('div')
+      document.body.appendChild(root)
+      app.mount(root)
+      apps.push(app)
+      await drain()
+      const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
+      const matched = warnCalls.find((msg) =>
+        /register\('email', \{ persist: true \}\).*no `persist:` option is configured/.test(msg)
+      )
+      expect(matched).toBeDefined()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('does NOT fire the symmetric warning when persist: IS configured', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      // mountForm wires `persist: { storage: 'local', ... }` AND opts in
+      // both fields — so neither warning should fire.
+      const { app } = mountForm({
+        storage: 'local',
+        key: 'test-no-symmetric-warn',
+        debounceMs: 20,
+      })
+      apps.push(app)
+      await drain()
+      const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
+      const matched = warnCalls.find((msg) => /no `persist:` option is configured/.test(msg))
+      expect(matched).toBeUndefined()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('warns once per form even when multiple paths opt in', async () => {
+    // Dedupe: a template with N opted-in paths should produce ONE warning,
+    // not N. Keyed by FormStore.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const App = defineComponent({
+        setup() {
+          const api = useForm({ schema, key: 'opt-in-dedupe' })
+          return () =>
+            h('div', [
+              withDirectives(h('input', { type: 'text' }), [
+                [vRegister, api.register('email', { persist: true })],
+              ]),
+              withDirectives(h('input', { type: 'text' }), [
+                [
+                  vRegister,
+                  api.register('password', { persist: true, acknowledgeSensitive: true }),
+                ],
+              ]),
+            ])
+        },
+      })
+      const app = createApp(App).use(createChemicalXForms())
+      const root = document.createElement('div')
+      document.body.appendChild(root)
+      app.mount(root)
+      apps.push(app)
+      await drain()
+      const matchCount = warnSpy.mock.calls
+        .map((args) => args.join(' '))
+        .filter((msg) => /no `persist:` option is configured/.test(msg)).length
+      expect(matchCount).toBe(1)
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
   it('form.resetField(path) wipes only the matching subpath from storage', async () => {
     // Seed both fields, mount with both opted in, then resetField just
     // 'email'. Storage should drop email but keep password.
@@ -1220,5 +1313,58 @@ describe('persistence — cross-store cleanup at mount', () => {
     expect(sessionStorage.getItem(ourKey)).toBeNull()
     // The unrelated session entry stays.
     expect(sessionStorage.getItem(otherKey)).not.toBeNull()
+  })
+
+  it('removing persist: from useForm() entirely wipes the previously-persisted entry', async () => {
+    // The "I disabled persistence in this deployment" scenario.
+    //
+    // Deployment N had `useForm({ key: 'signup', persist: 'local' })` and
+    // wrote an entry under `chemical-x-forms:signup`. Deployment N+1
+    // removed the `persist:` option entirely (compliance pivot,
+    // simplification, whatever) but kept the same form `key`. On next
+    // mount, the orphaned entry from deployment N must be wiped from
+    // every standard backend — leaving sensitive draft data lingering
+    // because "we removed persistence" would silently betray the dev's
+    // intent.
+    //
+    // This test simulates that gap directly: pre-seed a stale entry,
+    // mount with NO persist option, expect the entry gone.
+    const formKey = 'persist-removed'
+    const expectedStorageKey = `chemical-x-forms:${formKey}`
+    localStorage.setItem(
+      expectedStorageKey,
+      JSON.stringify({ v: 2, data: { form: { email: 'old@x.com' } } })
+    )
+    sessionStorage.setItem(
+      expectedStorageKey,
+      JSON.stringify({ v: 2, data: { form: { email: 'older@x.com' } } })
+    )
+    expect(localStorage.getItem(expectedStorageKey)).not.toBeNull()
+    expect(sessionStorage.getItem(expectedStorageKey)).not.toBeNull()
+
+    // Mount WITHOUT persist option — same form key as the deployment
+    // that wrote the entry.
+    const App = defineComponent({
+      setup() {
+        useForm({ schema, key: formKey })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+
+    await waitUntil(
+      () =>
+        localStorage.getItem(expectedStorageKey) === null &&
+        sessionStorage.getItem(expectedStorageKey) === null
+          ? true
+          : null,
+      500
+    )
+    expect(localStorage.getItem(expectedStorageKey)).toBeNull()
+    expect(sessionStorage.getItem(expectedStorageKey)).toBeNull()
   })
 })

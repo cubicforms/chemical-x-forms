@@ -221,6 +221,21 @@ export function normalizePersistConfig(input: PersistConfig): PersistConfigOptio
 }
 
 /**
+ * Calls `removeItem(key)` on every standard backend (`'local'` /
+ * `'session'` / `'indexeddb'`) — fire-and-forget. Used when no
+ * `persist:` is configured on the form: a previous deployment may
+ * have written an entry under this key, and the dev removing
+ * persistence should mean the on-disk artifact is gone too. Same
+ * fire-and-forget posture as `sweepNonConfiguredStandardStores`;
+ * errors are swallowed.
+ */
+export function sweepAllStandardStores(key: string): void {
+  for (const kind of STANDARD_STORAGE_KINDS) {
+    void removeFromStandardBackend(kind, key).catch(() => undefined)
+  }
+}
+
+/**
  * Cross-store cleanup. Calls `removeItem(key)` on every standard
  * backend that's NOT the configured one — fire-and-forget. Runs once
  * at form mount.

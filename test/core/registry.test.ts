@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { defineComponent, h, createApp } from 'vue'
-import { RegistryNotInstalledError } from '../../src/runtime/core/errors'
+import { OutsideSetupError, RegistryNotInstalledError } from '../../src/runtime/core/errors'
 import {
   attachRegistryToApp,
   createRegistry,
@@ -36,9 +36,45 @@ describe('createRegistry', () => {
 })
 
 describe('useRegistry', () => {
-  it('throws a helpful error when the plugin is not installed', () => {
-    // Outside a setup(), useRegistry cannot resolve an instance.
-    expect(() => useRegistry()).toThrow(RegistryNotInstalledError)
+  it('throws OutsideSetupError when called outside a Vue setup context', () => {
+    // No `getCurrentInstance()` on the active call stack — typical when
+    // a consumer (mistakenly) calls useForm / useFormContext from a
+    // click handler, watcher, or async callback after mount.
+    expect(() => useRegistry()).toThrow(OutsideSetupError)
+  })
+
+  it('throws RegistryNotInstalledError when called inside setup but no plugin attached', () => {
+    // Inside setup, `getCurrentInstance()` resolves — but the `inject`
+    // for `kChemicalXRegistry` returns null because `app.use(...)` was
+    // never called. Different cause, different fix from the case above.
+    let captured: unknown
+    const Probe = defineComponent({
+      setup() {
+        try {
+          useRegistry()
+        } catch (err) {
+          captured = err
+        }
+        return () => h('div')
+      },
+    })
+    const app = createApp(Probe)
+    // Note: NO attachRegistryToApp call — that's the point of the test.
+    const host = document.createElement('div')
+    app.mount(host)
+    expect(captured).toBeInstanceOf(RegistryNotInstalledError)
+    app.unmount()
+  })
+
+  it('OutsideSetupError and RegistryNotInstalledError are distinct types', () => {
+    // Sanity: each error is instance-checkable separately. Consumers
+    // that want different recovery for each cause can `instanceof` test.
+    const outside = new OutsideSetupError()
+    const missing = new RegistryNotInstalledError()
+    expect(outside).toBeInstanceOf(OutsideSetupError)
+    expect(outside).not.toBeInstanceOf(RegistryNotInstalledError)
+    expect(missing).toBeInstanceOf(RegistryNotInstalledError)
+    expect(missing).not.toBeInstanceOf(OutsideSetupError)
   })
 
   it('returns the attached registry when called inside setup()', () => {

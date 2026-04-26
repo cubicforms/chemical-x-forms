@@ -3,7 +3,7 @@ import { getCurrentInstance, inject, shallowReactive } from 'vue'
 import type { ChemicalXFormsDefaults, FormKey } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
-import { RegistryNotInstalledError } from './errors'
+import { OutsideSetupError, RegistryNotInstalledError } from './errors'
 import { detectSSR, type SSRDetectOptions } from './ssr'
 
 /**
@@ -140,13 +140,25 @@ export function createRegistry(options: CreateRegistryOptions = {}): ChemicalXRe
 
 /**
  * Inside a component's setup() (or any synchronous code called during
- * setup), returns the current Vue app's registry. Throws a clear error
- * when the plugin isn't installed.
+ * setup), returns the current Vue app's registry. Throws a typed error
+ * for each of the two distinct failure modes:
+ *
+ * - `OutsideSetupError` — called from outside a Vue setup context (an
+ *   event handler, watcher, or async callback after mount). The fix is
+ *   to move the call into setup or mount a child component whose setup
+ *   runs the composable.
+ *
+ * - `RegistryNotInstalledError` — called inside setup, but the plugin
+ *   wasn't installed on the app. The fix is `app.use(createChemicalXForms())`.
+ *
+ * The split matters because pre-disambiguation a single error message
+ * mixed both fixes ("install via app.use(...)") even when the plugin
+ * was already installed and the real cause was lifecycle.
  */
 export function useRegistry(): ChemicalXRegistry {
   const instance = getCurrentInstance()
   if (instance === null) {
-    throw new RegistryNotInstalledError()
+    throw new OutsideSetupError()
   }
   const registry = inject(kChemicalXRegistry, null)
   if (registry === null) {

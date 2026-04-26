@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   InvalidPathError,
+  OutsideSetupError,
   RegistryNotInstalledError,
   SubmitErrorHandlerError,
 } from '../../src/runtime/core/errors'
@@ -47,6 +48,24 @@ describe('error classes', () => {
       const err = new RegistryNotInstalledError()
       expect(err.message).toContain('createChemicalXForms')
       expect(err.name).toBe('RegistryNotInstalledError')
+    })
+  })
+
+  describe('OutsideSetupError', () => {
+    it('extends Error with correct name', () => {
+      const err = new OutsideSetupError()
+      expect(err).toBeInstanceOf(Error)
+      expect(err).toBeInstanceOf(OutsideSetupError)
+      expect(err.name).toBe('OutsideSetupError')
+    })
+
+    it('message names the lifecycle constraint and the recommended fix', () => {
+      const err = new OutsideSetupError()
+      // Surface the actual cause — not "install the plugin", which was
+      // the misleading message before the disambiguation.
+      expect(err.message).toContain('outside Vue setup')
+      // Point at the recovery path users actually need.
+      expect(err.message).toContain('child component')
     })
   })
 })

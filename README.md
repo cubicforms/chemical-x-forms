@@ -106,17 +106,6 @@ Errors track the live `(value, schema)` by default. Pass `fieldValidation: { on:
 - [**Performance**](./docs/perf.md) — how it scales; when to worry
 - [**Changelog**](./CHANGELOG.md) — full release history
 
-## Subpath exports
-
-| Subpath                        | Purpose                                                |
-| ------------------------------ | ------------------------------------------------------ |
-| `@chemical-x/forms`            | Framework-agnostic core (plugin, `useForm`, directive) |
-| `@chemical-x/forms/nuxt`       | Nuxt 3 / 4 module                                      |
-| `@chemical-x/forms/vite`       | Vite plugin (registers node transforms)                |
-| `@chemical-x/forms/transforms` | Raw node transforms for custom bundlers                |
-| `@chemical-x/forms/zod`        | Zod v4 adapter (recommended; requires `zod@^4`)        |
-| `@chemical-x/forms/zod-v3`     | Zod v3 adapter (legacy; requires `zod@^3`)             |
-
 ## Status
 
 Pre-1.0. The API is stable and follows SemVer from `v1.0` onward — 0.x minor bumps may still include small breaking changes, each documented under [`docs/migration/`](./docs/migration).

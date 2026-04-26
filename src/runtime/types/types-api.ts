@@ -314,7 +314,8 @@ export type UseFormConfiguration<
 
   /**
    * Configure per-field validation that fires between submit attempts.
-   * Default `{ on: 'none' }` — no field validation.
+   * Default `{ on: 'change', debounceMs: 125 }` — errors track the
+   * live `(value, schema)` continuously.
    *
    * - `{ on: 'change', debounceMs: 125 }` — every mutation via
    *   `setValueAtPath` schedules validation for that path after the
@@ -324,6 +325,9 @@ export type UseFormConfiguration<
    * - `{ on: 'blur' }` — validation fires immediately (no debounce)
    *   when the user tabs away from a registered field. Ignores
    *   `debounceMs`.
+   * - `{ on: 'none' }` — explicit opt-out. `handleSubmit` and
+   *   explicit `validate()` / `validateAsync()` calls are the only
+   *   validation surface; per-keystroke / per-blur runs are disabled.
    *
    * Runs concurrently with `handleSubmit`'s full-form validation:
    * field runs in flight are aborted at submit entry so the submit

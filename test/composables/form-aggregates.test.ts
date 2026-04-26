@@ -12,9 +12,10 @@ import { fakeSchema } from '../utils/fake-schema'
  * test/composables/type-inference.test.ts.
  *
  * The aggregates are thin wrappers around existing reactive stores
- * (`state.originals` for dirty comparisons, `state.errors` for the
- * validity check) — the tests pin their semantics so a future refactor
- * of those stores can't silently break the aggregates.
+ * (`state.originals` for dirty comparisons, `state.schemaErrors` +
+ * `state.userErrors` for the validity check) — the tests pin their
+ * semantics so a future refactor of those stores can't silently break
+ * the aggregates.
  */
 
 type SignupForm = {

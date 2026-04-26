@@ -217,8 +217,19 @@ function wire(api: UnsafeDevtoolsApi, app: App, registry: ChemicalXRegistry): vo
     payload.state['Form value'] = [
       { key: 'form', value: state.form.value as unknown, editable: true },
     ]
-    payload.state['Errors'] = [
-      ...[...state.errors.entries()].map(([k, v]) => ({
+    // Schema-driven and user-injected errors land in separate inspector
+    // sections so devs can see the source distinction at a glance — a
+    // user-injected entry surviving a successful submit, or a schema
+    // entry that should have cleared after a value fix, are immediately
+    // visible without cross-referencing call sites.
+    payload.state['Schema Errors'] = [
+      ...[...state.schemaErrors.entries()].map(([k, v]) => ({
+        key: String(k),
+        value: v as unknown,
+      })),
+    ]
+    payload.state['User Errors'] = [
+      ...[...state.userErrors.entries()].map(([k, v]) => ({
         key: String(k),
         value: v as unknown,
       })),

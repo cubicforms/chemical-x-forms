@@ -27,7 +27,8 @@ export function renderChemicalXState(app: App): SerializedChemicalXState {
       key,
       {
         form: state.form.value,
-        errors: Array.from(state.errors.entries()),
+        schemaErrors: Array.from(state.schemaErrors.entries()),
+        userErrors: Array.from(state.userErrors.entries()),
         fields: Array.from(state.fields.entries()),
       },
     ])

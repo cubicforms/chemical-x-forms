@@ -38,6 +38,21 @@ export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<
       const value = state.getValueAtPath(segments)
       const original = state.originals.get(key)?.value
       const pristine = state.isPristineAtPath(segments)
+      // Read both schema + user errors at this key directly so this
+      // computed depends only on the two specific Map keys (Vue's
+      // collection handlers track per-key reads). Going through
+      // `state.getErrorsForPath` would work too, but inline reads keep
+      // the dependency graph trivially obvious.
+      const schemaForKey = state.schemaErrors.get(key)
+      const userForKey = state.userErrors.get(key)
+      const errors =
+        schemaForKey === undefined
+          ? userForKey === undefined
+            ? []
+            : [...userForKey]
+          : userForKey === undefined
+            ? [...schemaForKey]
+            : [...schemaForKey, ...userForKey]
       return {
         value,
         original,
@@ -48,7 +63,7 @@ export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<
         touched: record?.touched ?? null,
         isConnected: record?.isConnected ?? false,
         updatedAt: record?.updatedAt ?? null,
-        errors: state.errors.get(key) ?? [],
+        errors,
         path: segments,
       }
     })

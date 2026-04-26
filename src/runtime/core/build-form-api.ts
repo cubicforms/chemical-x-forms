@@ -113,16 +113,21 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   }
 
   // --- Error store API — dotted-key record for back-compat ---
-  // `state.errors` is keyed by canonical `PathKey` (JSON-stringified
-  // Segment[]), so every entry here already represents a distinct
-  // structured path. The dotted-key derivation is best-effort: paths
-  // with a literal `.` inside a single segment (`['user.name']`)
-  // produce the same record key as the sibling pair (`['user',
-  // 'name']`). This collision only surfaces in pathological schemas
-  // that declare both shapes on the same form — in that case the
-  // errors merge under the shared dotted key. Consumers who need
-  // collision-free access read from `state.errors` via the validate()
-  // / getFieldState() paths instead of the legacy dotted record.
+  // The view merges `schemaErrors` (validation-owned) and `userErrors`
+  // (API-injected) into a single dotted-key record per path. Iteration
+  // order is schema-first then user — matching the "structural validation
+  // before business logic" UX expectation. Consumers reading
+  // `fieldErrors.email` see schema issues at index 0 and any user-injected
+  // entries appended after.
+  //
+  // The dotted-key derivation is best-effort: paths with a literal `.`
+  // inside a single segment (`['user.name']`) produce the same record key
+  // as the sibling pair (`['user', 'name']`). This collision only surfaces
+  // in pathological schemas that declare both shapes on the same form —
+  // in that case the errors merge under the shared dotted key. Consumers
+  // who need collision-free access read via `getFieldState(path).errors`
+  // (or the underlying `state.getErrorsForPath`) instead of the legacy
+  // dotted record.
   //
   // The internal computed stays — laziness + dependency tracking are
   // useful. The public surface wraps it in a Proxy (see fieldErrorsView
@@ -130,34 +135,36 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // the readonly contract is enforced at runtime via set/delete traps.
   const fieldErrorsComputed = computed<FormErrorRecord>(() => {
     const record: FormErrorRecord = {}
-    for (const [, entries] of state.errors) {
-      for (const err of entries) {
-        const dottedKey = (err.path as ReadonlyArray<Segment>).map(String).join('.')
-        const existingForKey = record[dottedKey]
-        if (existingForKey === undefined) record[dottedKey] = [err]
-        else existingForKey.push(err)
-      }
-    }
+    appendStoreToRecord(record, state.schemaErrors)
+    appendStoreToRecord(record, state.userErrors)
     return record
   })
 
   const fieldErrors = createReadonlyErrorView(fieldErrorsComputed)
 
   function setFieldErrors(errors: ValidationError[]): void {
-    state.setAllErrors(errors)
+    state.setAllUserErrors(errors)
   }
 
   function addFieldErrors(errors: ValidationError[]): void {
-    state.addErrors(errors)
+    state.addUserErrors(errors)
   }
 
   function clearFieldErrors(path?: string | (string | number)[]): void {
+    // Pragmatic semantic: "make the errors at this path go away" —
+    // clears both the schema-owned and user-owned stores. With always-on
+    // validation the schema half re-populates on the next mutation if
+    // the value is still invalid, so the inconsistency is short-lived
+    // and confined to "before the next keystroke / submit." See
+    // docs/migration/0.11-to-0.12.md for the rationale.
     if (path === undefined) {
-      state.clearErrors()
+      state.clearSchemaErrors()
+      state.clearUserErrors()
       return
     }
     const segments = canonicalizePath(path as string | Path).segments
-    state.clearErrors(segments)
+    state.clearSchemaErrors(segments)
+    state.clearUserErrors(segments)
   }
 
   // --- Form-level aggregates ---
@@ -171,7 +178,9 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     return false
   })
 
-  const isValid = computed<boolean>(() => state.errors.size === 0)
+  const isValid = computed<boolean>(
+    () => state.schemaErrors.size === 0 && state.userErrors.size === 0
+  )
 
   // --- Submission lifecycle ---
   const isSubmitting = computed<boolean>(() => state.isSubmitting.value)
@@ -281,6 +290,29 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   }
 }
 
+/**
+ * Append every entry in `store` to `record`, keyed by the entry's dotted
+ * path. Used by the merged `fieldErrors` view: callers invoke it twice —
+ * first with `schemaErrors`, then with `userErrors` — so each per-key
+ * array reflects schema-first-then-user order.
+ *
+ * Mutates `record` in place to avoid allocating an intermediate per call;
+ * the wrapping computed allocates one record per recompute.
+ */
+function appendStoreToRecord(
+  record: FormErrorRecord,
+  store: Map<unknown, ValidationError[]>
+): void {
+  for (const [, entries] of store) {
+    for (const err of entries) {
+      const dottedKey = (err.path as ReadonlyArray<Segment>).map(String).join('.')
+      const existingForKey = record[dottedKey]
+      if (existingForKey === undefined) record[dottedKey] = [err]
+      else existingForKey.push(err)
+    }
+  }
+}
+
 function contextualiseValue<F extends GenericForm>(
   state: FormStore<F>,
   segments: Path,
@@ -316,8 +348,8 @@ function contextualiseValue<F extends GenericForm>(
  *     scope, so Vue tracks the dependency exactly as it would for a
  *     direct `.value` read. Templates re-render on error changes.
  *   - Laziness is preserved: the underlying ComputedRef only recomputes
- *     when its inputs (state.errors) change AND a trap that reads
- *     `source.value` fires.
+ *     when its inputs (state.schemaErrors / state.userErrors) change
+ *     AND a trap that reads `source.value` fires.
  */
 function createReadonlyErrorView<T extends FormErrorRecord>(source: ComputedRef<T>): T {
   const target: T = Object.create(null) as T

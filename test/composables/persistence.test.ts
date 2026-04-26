@@ -132,14 +132,14 @@ describe('persistence — localStorage backend', () => {
     const raw = await waitUntil(() => localStorage.getItem('test-local'))
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { v: number; data: { form: { email: string } } }
-    expect(payload.v).toBe(1)
+    expect(payload.v).toBe(2)
     expect(payload.data.form.email).toBe('alice@example.com')
   })
 
   it('hydrates from a persisted payload on mount', async () => {
     localStorage.setItem(
       'test-hydrate',
-      JSON.stringify({ v: 1, data: { form: { email: 'seed@example.com', password: 'pw' } } })
+      JSON.stringify({ v: 2, data: { form: { email: 'seed@example.com', password: 'pw' } } })
     )
     const { app, api } = mountForm({ storage: 'local', key: 'test-hydrate', debounceMs: 20 })
     apps.push(app)
@@ -172,7 +172,7 @@ describe('persistence — localStorage backend', () => {
   it('clears the persisted entry on submit success', async () => {
     localStorage.setItem(
       'test-clear',
-      JSON.stringify({ v: 1, data: { form: { email: 'pre@x.com', password: 'pw' } } })
+      JSON.stringify({ v: 2, data: { form: { email: 'pre@x.com', password: 'pw' } } })
     )
     const { app, api } = mountForm({ storage: 'local', key: 'test-clear', debounceMs: 20 })
     apps.push(app)
@@ -270,7 +270,7 @@ describe('persistence — include=form+errors', () => {
     localStorage.clear()
   })
 
-  it('persists fieldErrors when include=form+errors is set', async () => {
+  it('persists user-injected errors under userErrors when include=form+errors is set', async () => {
     const { app, api } = mountForm({
       storage: 'local',
       key: 'test-form-errors',
@@ -287,10 +287,21 @@ describe('persistence — include=form+errors', () => {
     const raw = await waitUntil(() => localStorage.getItem('test-form-errors'))
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as {
-      data: { errors?: ReadonlyArray<readonly [string, { message: string }[]]> }
+      data: {
+        schemaErrors?: ReadonlyArray<readonly [string, { message: string }[]]>
+        userErrors?: ReadonlyArray<readonly [string, { message: string }[]]>
+      }
     }
-    expect(payload.data.errors).toBeDefined()
-    const flatMessages = payload.data.errors!.flatMap(([, errs]) => errs.map((e) => e.message))
-    expect(flatMessages).toContain('bad')
+    // setFieldErrors routes to the user-error store, so the persisted
+    // payload carries the entry under `userErrors`. Schema errors stay
+    // an empty array (no validation errors fired here).
+    expect(payload.data.userErrors).toBeDefined()
+    const userMessages = payload.data.userErrors!.flatMap(([, errs]) => errs.map((e) => e.message))
+    expect(userMessages).toContain('bad')
+    expect(payload.data.schemaErrors).toBeDefined()
+    const schemaMessages = payload.data.schemaErrors!.flatMap(([, errs]) =>
+      errs.map((e) => e.message)
+    )
+    expect(schemaMessages).not.toContain('bad')
   })
 })

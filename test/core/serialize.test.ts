@@ -22,9 +22,16 @@ function seedServerApp(formKey: string, initialEmail: string) {
 }
 
 describe('renderChemicalXState', () => {
-  it('extracts form data and errors for every registered form', () => {
+  it('extracts form data and source-segregated errors for every registered form', () => {
     const { app, state } = seedServerApp('signup', 'a@a')
-    state.setErrorsForPath(['email'], [{ message: 'taken', path: ['email'], formKey: 'signup' }])
+    // Schema validation populates the schema-error store directly via
+    // setSchemaErrorsForPath. setFieldErrors-style API calls would
+    // populate userErrors; here we test both round-trip independently.
+    state.setSchemaErrorsForPath(
+      ['email'],
+      [{ message: 'taken', path: ['email'], formKey: 'signup' }]
+    )
+    state.setAllUserErrors([{ message: 'banned-domain', path: ['email'], formKey: 'signup' }])
     const payload = renderChemicalXState(app)
     expect(payload.forms).toHaveLength(1)
     const entry = payload.forms[0]
@@ -33,7 +40,8 @@ describe('renderChemicalXState', () => {
     const [key, data] = entry
     expect(key).toBe('signup')
     expect(data.form).toEqual({ email: 'a@a', password: '' })
-    expect(data.errors).toHaveLength(1)
+    expect(data.schemaErrors).toHaveLength(1)
+    expect(data.userErrors).toHaveLength(1)
   })
 
   it('does not include originals or elements in the payload', () => {

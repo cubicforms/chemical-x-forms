@@ -83,7 +83,10 @@ describe('createFormStore', () => {
     it('errors in one form do not leak into another form with the same field name', () => {
       const stateA = makeState({ formKey: 'formA' })
       const stateB = makeState({ formKey: 'formB' })
-      stateA.setErrorsForPath(['email'], [{ message: 'bad', path: ['email'], formKey: 'formA' }])
+      stateA.setSchemaErrorsForPath(
+        ['email'],
+        [{ message: 'bad', path: ['email'], formKey: 'formA' }]
+      )
       expect(stateA.getErrorsForPath(['email'])).toHaveLength(1)
       expect(stateB.getErrorsForPath(['email'])).toHaveLength(0)
     })
@@ -157,48 +160,111 @@ describe('createFormStore', () => {
   })
 
   describe('errors', () => {
-    it('setErrorsForPath stores and clears per path', () => {
+    it('setSchemaErrorsForPath stores and clears per path', () => {
       const state = makeState()
       const errs: ValidationError[] = [{ message: 'bad', path: ['email'], formKey: 'test' }]
-      state.setErrorsForPath(['email'], errs)
+      state.setSchemaErrorsForPath(['email'], errs)
       expect(state.getErrorsForPath(['email'])).toEqual(errs)
-      state.setErrorsForPath(['email'], [])
+      state.setSchemaErrorsForPath(['email'], [])
       expect(state.getErrorsForPath(['email'])).toEqual([])
     })
 
-    it('setAllErrors replaces the entire error set', () => {
+    it('setAllSchemaErrors replaces the entire schema-error set', () => {
       const state = makeState()
-      state.setErrorsForPath(['email'], [{ message: 'old', path: ['email'], formKey: 'test' }])
-      state.setAllErrors([{ message: 'new', path: ['password'], formKey: 'test' }])
+      state.setSchemaErrorsForPath(
+        ['email'],
+        [{ message: 'old', path: ['email'], formKey: 'test' }]
+      )
+      state.setAllSchemaErrors([{ message: 'new', path: ['password'], formKey: 'test' }])
       expect(state.getErrorsForPath(['email'])).toEqual([])
       expect(state.getErrorsForPath(['password'])).toEqual([
         { message: 'new', path: ['password'], formKey: 'test' },
       ])
     })
 
-    it('addErrors appends to existing entries at the same path', () => {
+    it('addUserErrors appends to existing user entries at the same path', () => {
       const state = makeState()
-      state.addErrors([{ message: 'first', path: ['email'], formKey: 'test' }])
-      state.addErrors([{ message: 'second', path: ['email'], formKey: 'test' }])
+      state.addUserErrors([{ message: 'first', path: ['email'], formKey: 'test' }])
+      state.addUserErrors([{ message: 'second', path: ['email'], formKey: 'test' }])
       expect(state.getErrorsForPath(['email'])).toHaveLength(2)
     })
 
-    it('clearErrors() with no args removes all errors for this form', () => {
+    it('clearSchemaErrors() with no args removes all schema errors for this form', () => {
       const state = makeState()
-      state.setErrorsForPath(['email'], [{ message: 'a', path: ['email'], formKey: 'test' }])
-      state.setErrorsForPath(['password'], [{ message: 'b', path: ['password'], formKey: 'test' }])
-      state.clearErrors()
+      state.setSchemaErrorsForPath(['email'], [{ message: 'a', path: ['email'], formKey: 'test' }])
+      state.setSchemaErrorsForPath(
+        ['password'],
+        [{ message: 'b', path: ['password'], formKey: 'test' }]
+      )
+      state.clearSchemaErrors()
       expect(state.getErrorsForPath(['email'])).toEqual([])
       expect(state.getErrorsForPath(['password'])).toEqual([])
     })
 
-    it('clearErrors(path) targets a specific path', () => {
+    it('clearSchemaErrors(path) targets a specific path', () => {
       const state = makeState()
-      state.setErrorsForPath(['email'], [{ message: 'a', path: ['email'], formKey: 'test' }])
-      state.setErrorsForPath(['password'], [{ message: 'b', path: ['password'], formKey: 'test' }])
-      state.clearErrors(['email'])
+      state.setSchemaErrorsForPath(['email'], [{ message: 'a', path: ['email'], formKey: 'test' }])
+      state.setSchemaErrorsForPath(
+        ['password'],
+        [{ message: 'b', path: ['password'], formKey: 'test' }]
+      )
+      state.clearSchemaErrors(['email'])
       expect(state.getErrorsForPath(['email'])).toEqual([])
       expect(state.getErrorsForPath(['password'])).toHaveLength(1)
+    })
+
+    // --- Source-isolation locks ---
+    // The whole point of the schemaErrors / userErrors split: each
+    // writer touches exactly one Map. The asserts below fail loudly if
+    // a future refactor accidentally cross-routes a writer.
+
+    it('setSchemaErrorsForPath does NOT touch userErrors', () => {
+      const state = makeState()
+      state.setAllUserErrors([{ message: 'user', path: ['email'], formKey: 'test' }])
+      state.setSchemaErrorsForPath(
+        ['email'],
+        [{ message: 'schema', path: ['email'], formKey: 'test' }]
+      )
+      expect(state.userErrors.size).toBe(1)
+      expect(state.schemaErrors.size).toBe(1)
+      // Merged read returns schema first, then user (per the documented
+      // ordering invariant exercised throughout the public API).
+      expect(state.getErrorsForPath(['email']).map((e) => e.message)).toEqual(['schema', 'user'])
+    })
+
+    it('setAllUserErrors does NOT touch schemaErrors', () => {
+      const state = makeState()
+      state.setSchemaErrorsForPath(
+        ['email'],
+        [{ message: 'schema', path: ['email'], formKey: 'test' }]
+      )
+      state.setAllUserErrors([{ message: 'user', path: ['email'], formKey: 'test' }])
+      expect(state.schemaErrors.size).toBe(1)
+      expect(state.userErrors.size).toBe(1)
+    })
+
+    it('clearSchemaErrors leaves userErrors intact', () => {
+      const state = makeState()
+      state.setSchemaErrorsForPath(
+        ['email'],
+        [{ message: 'schema', path: ['email'], formKey: 'test' }]
+      )
+      state.setAllUserErrors([{ message: 'user', path: ['email'], formKey: 'test' }])
+      state.clearSchemaErrors()
+      expect(state.schemaErrors.size).toBe(0)
+      expect(state.userErrors.size).toBe(1)
+    })
+
+    it('clearUserErrors leaves schemaErrors intact', () => {
+      const state = makeState()
+      state.setSchemaErrorsForPath(
+        ['email'],
+        [{ message: 'schema', path: ['email'], formKey: 'test' }]
+      )
+      state.setAllUserErrors([{ message: 'user', path: ['email'], formKey: 'test' }])
+      state.clearUserErrors()
+      expect(state.userErrors.size).toBe(0)
+      expect(state.schemaErrors.size).toBe(1)
     })
   })
 
@@ -266,7 +332,7 @@ describe('createFormStore', () => {
   describe('structured-path key collisions', () => {
     it("treats 'user.name' (dotted) and ['user', 'name'] (array) as the same path", () => {
       const state = makeState()
-      state.setErrorsForPath(
+      state.setSchemaErrorsForPath(
         ['profile', 'name'],
         [{ message: 'x', path: ['profile', 'name'], formKey: 'test' }]
       )
@@ -279,7 +345,7 @@ describe('createFormStore', () => {
       const oddDefaults: OddForm = { 'profile.name': 'literal-dot-key' }
       const oddSchema = fakeSchema<OddForm>(oddDefaults)
       const state = createFormStore({ formKey: 'odd', schema: oddSchema })
-      state.setErrorsForPath(
+      state.setSchemaErrorsForPath(
         ['profile.name'],
         [{ message: 'x', path: ['profile.name'], formKey: 'odd' }]
       )

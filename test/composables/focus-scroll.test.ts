@@ -17,8 +17,9 @@ const defaults: Form = { email: '', password: '', nickname: '' }
  * The focus/scroll helpers operate on the DOM elements registered via
  * v-register. This suite mounts a real tree against jsdom so
  * registerElement sees actual HTMLElements; the helpers walk
- * state.errors → state.elements to pick the first visible, connected
- * target.
+ * schemaErrors → userErrors → state.elements to pick the first visible,
+ * connected target. Schema errors take focus priority over user errors
+ * at the same path (matches the merged-read iteration order).
  */
 
 function mountWith(options: {

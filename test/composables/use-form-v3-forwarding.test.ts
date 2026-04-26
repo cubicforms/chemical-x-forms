@@ -103,7 +103,7 @@ describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
     const [key, payload] = setItem.mock.calls[0] ?? []
     expect(key).toBe('chemical-x-forms:v3-persist')
     expect(payload).toMatchObject({
-      v: 1,
+      v: 2,
       data: { form: { email: 'alice@example.com' } },
     })
   })

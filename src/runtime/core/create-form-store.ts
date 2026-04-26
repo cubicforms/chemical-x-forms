@@ -58,7 +58,19 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   readonly form: Ref<F>
   readonly fields: Map<PathKey, FieldRecord>
   readonly elements: Map<PathKey, ElementRecord>
-  readonly errors: Map<PathKey, ValidationError[]>
+  /**
+   * Schema-driven errors. Written ONLY by the schema validation pipeline:
+   * `scheduleFieldValidation`, `handleSubmit`, the construction-time seed,
+   * history restore, and hydration. Cleared by `reset` / `resetField` and by
+   * a successful submit. `setFieldErrors*` APIs do NOT touch this Map.
+   */
+  readonly schemaErrors: Map<PathKey, ValidationError[]>
+  /**
+   * User-injected errors. Written ONLY by the `setFieldErrors*` API surfaces
+   * (and history / hydration replay). Survives schema revalidation and
+   * successful submits — the consumer owns its lifetime explicitly.
+   */
+  readonly userErrors: Map<PathKey, ValidationError[]>
   readonly originals: Map<PathKey, OriginalsRecord>
   readonly schema: AbstractSchema<F, G>
 
@@ -112,10 +124,22 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   resetField(path: Path): void
 
   // --- errors ---
-  setErrorsForPath(path: Path, errors: ValidationError[]): void
-  setAllErrors(errors: readonly ValidationError[]): void
-  addErrors(errors: readonly ValidationError[]): void
-  clearErrors(path?: Path): void
+  // Schema-driven writers. Used by the validation pipeline + handleSubmit.
+  setSchemaErrorsForPath(path: Path, errors: ValidationError[]): void
+  setAllSchemaErrors(errors: readonly ValidationError[]): void
+  clearSchemaErrors(path?: Path): void
+
+  // User-driven writers. Used by build-form-api's setFieldErrors* surfaces.
+  setAllUserErrors(errors: readonly ValidationError[]): void
+  addUserErrors(errors: readonly ValidationError[]): void
+  clearUserErrors(path?: Path): void
+
+  /**
+   * Merged read — returns `[...schemaErrors[path], ...userErrors[path]]`.
+   * Schema errors come first (structural validation before business logic),
+   * matching the iteration order for `getFirstErrorElement` and the
+   * top-level `fieldErrors` view.
+   */
   getErrorsForPath(path: Path): ValidationError[]
 
   // --- DOM ---
@@ -237,7 +261,17 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
  */
 export type FormStoreHydration = {
   readonly form: unknown
-  readonly errors: ReadonlyArray<readonly [string, unknown]>
+  /**
+   * Schema-driven errors snapshot. Replayed into `schemaErrors` at
+   * construction; takes precedence over the construction-time seed.
+   */
+  readonly schemaErrors: ReadonlyArray<readonly [string, unknown]>
+  /**
+   * User-injected errors snapshot. Replayed into `userErrors` at
+   * construction. Allows server-side `setFieldErrorsFromApi` /
+   * `addFieldErrors` calls to round-trip through hydration.
+   */
+  readonly userErrors: ReadonlyArray<readonly [string, unknown]>
   readonly fields: ReadonlyArray<readonly [string, unknown]>
 }
 
@@ -256,7 +290,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
 ): FormStore<F, G> {
   const { formKey, schema, defaultValues, validationMode = 'lax', hydration } = options
   const isSSR = options.isSSR === true
-  const fieldValidationMode: FieldValidationMode = options.fieldValidation?.on ?? 'none'
+  const fieldValidationMode: FieldValidationMode = options.fieldValidation?.on ?? 'change'
   const fieldValidationDebounceMs: number = options.fieldValidation?.debounceMs ?? 200
 
   type FieldValidationEntry = {
@@ -297,7 +331,18 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // doesn't invalidate computeds watching another.
   const fields = reactive(new Map<PathKey, FieldRecord>()) as Map<PathKey, FieldRecord>
   const elements = reactive(new Map<PathKey, ElementRecord>()) as Map<PathKey, ElementRecord>
-  const errors = reactive(new Map<PathKey, ValidationError[]>()) as Map<PathKey, ValidationError[]>
+  // Errors are split by source so each writer touches exactly one slot.
+  // Schema validation owns `schemaErrors`; the `setFieldErrors*` APIs own
+  // `userErrors`. The two stores merge on read via `getErrorsForPath` and
+  // the top-level `fieldErrors` view in build-form-api.
+  const schemaErrors = reactive(new Map<PathKey, ValidationError[]>()) as Map<
+    PathKey,
+    ValidationError[]
+  >
+  const userErrors = reactive(new Map<PathKey, ValidationError[]>()) as Map<
+    PathKey,
+    ValidationError[]
+  >
 
   // Originals are captured at init and on first appearance of a path; never
   // re-assigned. Not reactive — the set is append-only per form's lifetime.
@@ -334,8 +379,16 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     for (const [rawKey, record] of hydration.fields) {
       fields.set(rawKey as PathKey, record as FieldRecord)
     }
-    for (const [rawKey, errs] of hydration.errors) {
-      errors.set(rawKey as PathKey, errs as ValidationError[])
+    // Hydration takes precedence over the construction-time seed
+    // below: the server already authored whatever error state the
+    // client should mirror, including (deliberately) the empty case.
+    // Each store replays from its own snapshot so the source-segregation
+    // invariant is preserved across SSR round-trip.
+    for (const [rawKey, errs] of hydration.schemaErrors) {
+      schemaErrors.set(rawKey as PathKey, errs as ValidationError[])
+    }
+    for (const [rawKey, errs] of hydration.userErrors) {
+      userErrors.set(rawKey as PathKey, errs as ValidationError[])
     }
   } else {
     diffAndApply({}, initialData, [], (patch) => {
@@ -350,6 +403,20 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
         touched: null,
       })
     })
+    // No hydration — seed schemaErrors from the construction-time
+    // validation result IF the schema rejected the defaults AND the
+    // form was constructed in strict mode. Lax mode treats default
+    // values as "best-effort," so populating errors there would
+    // surprise consumers who explicitly opted out of strict checks.
+    //
+    // Async refines won't fire here — `getDefaultValues` is sync
+    // (`safeParse`, not `safeParseAsync`); they only fire on the
+    // first user mutation that re-triggers `scheduleFieldValidation`.
+    // Consumers needing async refines at construction can call
+    // `validateAsync()` once after mount.
+    if (validationMode === 'strict' && !schemaResponse.success) {
+      setAllSchemaErrors(schemaResponse.errors)
+    }
   }
 
   function touchFieldRecord(
@@ -449,7 +516,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
                 ...err,
                 path: [...path, ...(err.path as Segment[])],
               }))
-          setErrorsForPath(path, nextErrors)
+          setSchemaErrorsForPath(path, nextErrors)
         })
         .catch(() => {
           // Adapter contract forbids throws — swallow here so a misbehaving
@@ -538,53 +605,99 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   }
 
   // --- Errors ---
+  // Two source-segregated stores: `schemaErrors` (validation-owned) and
+  // `userErrors` (API-injected). Writers below are strict — each function
+  // touches exactly one Map. The merged view is exposed via
+  // `getErrorsForPath` and the top-level `fieldErrors` computed.
 
-  function setErrorsForPath(path: Path, entries: ValidationError[]): void {
+  /**
+   * Append every entry in `entries` to its target Map at the canonical
+   * path key. Existing entries at that key are preserved (merge-append),
+   * which matches the documented `addFieldErrors` semantics. Allocates a
+   * fresh array per target key to keep the reactive trigger surface
+   * obvious — Vue's collection handlers fire on `.set`, not on in-place
+   * push.
+   */
+  function appendErrorsTo(
+    map: Map<PathKey, ValidationError[]>,
+    entries: readonly ValidationError[]
+  ): void {
+    for (const err of entries) {
+      const { key } = canonicalizePath(err.path as Path)
+      const current = map.get(key)
+      if (current === undefined) {
+        map.set(key, [err])
+      } else {
+        map.set(key, [...current, err])
+      }
+    }
+  }
+
+  /**
+   * Clear `map` and rebuild it from `entries`. Two reactive notifications
+   * fire (one for `.clear`, one per `.set`), but Vue's microtask batching
+   * collapses the burst so subscribers see one re-render. A diff-and-patch
+   * variant is a deferred follow-up — profile first.
+   */
+  function replaceErrorsIn(
+    map: Map<PathKey, ValidationError[]>,
+    entries: readonly ValidationError[]
+  ): void {
+    map.clear()
+    appendErrorsTo(map, entries)
+  }
+
+  function clearErrorsIn(map: Map<PathKey, ValidationError[]>, path: Path | undefined): void {
+    if (path === undefined) {
+      map.clear()
+      return
+    }
+    const { key } = canonicalizePath(path)
+    map.delete(key)
+  }
+
+  // --- Schema writers (validation pipeline + handleSubmit + history/hydration) ---
+
+  function setSchemaErrorsForPath(path: Path, entries: ValidationError[]): void {
     const { key } = canonicalizePath(path)
     if (entries.length === 0) {
-      errors.delete(key)
+      schemaErrors.delete(key)
       return
     }
-    errors.set(key, [...entries])
+    schemaErrors.set(key, [...entries])
   }
 
-  function setAllErrors(entries: readonly ValidationError[]): void {
-    errors.clear()
-    for (const err of entries) {
-      const { key } = canonicalizePath(err.path as Path)
-      const current = errors.get(key)
-      if (current === undefined) {
-        errors.set(key, [err])
-      } else {
-        errors.set(key, [...current, err])
-      }
-    }
+  function setAllSchemaErrors(entries: readonly ValidationError[]): void {
+    replaceErrorsIn(schemaErrors, entries)
   }
 
-  function addErrors(entries: readonly ValidationError[]): void {
-    for (const err of entries) {
-      const { key } = canonicalizePath(err.path as Path)
-      const current = errors.get(key)
-      if (current === undefined) {
-        errors.set(key, [err])
-      } else {
-        errors.set(key, [...current, err])
-      }
-    }
+  function clearSchemaErrors(path?: Path): void {
+    clearErrorsIn(schemaErrors, path)
   }
 
-  function clearErrors(path?: Path): void {
-    if (path === undefined) {
-      errors.clear()
-      return
-    }
-    const { key } = canonicalizePath(path)
-    errors.delete(key)
+  // --- User writers (setFieldErrors* surfaces + history/hydration) ---
+
+  function setAllUserErrors(entries: readonly ValidationError[]): void {
+    replaceErrorsIn(userErrors, entries)
   }
+
+  function addUserErrors(entries: readonly ValidationError[]): void {
+    appendErrorsTo(userErrors, entries)
+  }
+
+  function clearUserErrors(path?: Path): void {
+    clearErrorsIn(userErrors, path)
+  }
+
+  // --- Merged read ---
 
   function getErrorsForPath(path: Path): ValidationError[] {
     const { key } = canonicalizePath(path)
-    return errors.get(key) ?? []
+    const schema = schemaErrors.get(key)
+    const user = userErrors.get(key)
+    if (schema === undefined) return user === undefined ? [] : [...user]
+    if (user === undefined) return [...schema]
+    return [...schema, ...user]
   }
 
   // --- DOM ---
@@ -669,7 +782,11 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       originals.set(key, { segments: patch.path, value: patch.newValue })
     })
     // Drop every recorded error — the form is a fresh surface again.
-    errors.clear()
+    // Both stores clear: reset is "fresh start" semantics, so user-injected
+    // errors are not preserved across a reset (different from submit-success,
+    // which preserves them).
+    schemaErrors.clear()
+    userErrors.clear()
     // Blow away touched/focused/blurred per field. isConnected stays as-is
     // (the DOM elements haven't detached — that's a separate concern from
     // form state) and updatedAt stamps to now.
@@ -720,7 +837,8 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     const leafEntry = originals.get(targetKey)
     if (leafEntry !== undefined) {
       setValueAtPath(targetSegments, leafEntry.value)
-      errors.delete(targetKey)
+      schemaErrors.delete(targetKey)
+      userErrors.delete(targetKey)
       clearFieldRecordFlags(targetKey)
       return
     }
@@ -756,16 +874,26 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // Clear errors and reset field-record flags for the target + every
     // descendant. Segments come from the stored records (each ValidationError
     // carries its own `path`, each FieldRecord carries `path`), so neither
-    // loop has to `JSON.parse` the Map key.
-    for (const [errorKey, errs] of Array.from(errors.entries())) {
-      const first = errs[0]
-      if (first === undefined) continue
-      if (isPathPrefix(targetSegments, first.path as readonly Segment[])) {
-        errors.delete(errorKey)
-      }
-    }
+    // loop has to `JSON.parse` the Map key. Both error stores walk in
+    // parallel — resetField is "fresh start at this subtree" semantics, so
+    // user-injected errors under the prefix go too.
+    deleteErrorsUnderPrefix(schemaErrors, targetSegments)
+    deleteErrorsUnderPrefix(userErrors, targetSegments)
     for (const [fieldKey, record] of Array.from(fields.entries())) {
       if (isPathPrefix(targetSegments, record.path)) clearFieldRecordFlags(fieldKey)
+    }
+  }
+
+  function deleteErrorsUnderPrefix(
+    map: Map<PathKey, ValidationError[]>,
+    prefix: readonly Segment[]
+  ): void {
+    for (const [errorKey, errs] of Array.from(map.entries())) {
+      const first = errs[0]
+      if (first === undefined) continue
+      if (isPathPrefix(prefix, first.path as readonly Segment[])) {
+        map.delete(errorKey)
+      }
     }
   }
 
@@ -817,11 +945,19 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   }
 
   function getFirstErrorElement(): { path: Path; element: HTMLElement } | null {
-    // Iterate errors in insertion-order (Map preserves it). Insertion
-    // order matches the order the schema reported issues, so the "first
-    // error" is the one the user would most-likely expect to be scrolled
-    // to: the topmost failing field on the form.
-    for (const [, errs] of errors) {
+    // Walk schema errors first, then user errors. Within each Map,
+    // insertion order matches the order the schema (or the consumer)
+    // reported issues. Schema-first matches the "structural validation
+    // first, business-logic second" UX expectation: a missing-required
+    // error should focus before a custom server warning at the same path.
+    const hit = firstAttachedErrorElement(schemaErrors) ?? firstAttachedErrorElement(userErrors)
+    return hit
+  }
+
+  function firstAttachedErrorElement(
+    map: Map<PathKey, ValidationError[]>
+  ): { path: Path; element: HTMLElement } | null {
+    for (const [, errs] of map) {
       const first = errs[0]
       if (first === undefined) continue // defensive — invariant says non-empty
       const { key } = canonicalizePath(first.path as readonly Segment[])
@@ -846,7 +982,8 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     form,
     fields,
     elements,
-    errors,
+    schemaErrors,
+    userErrors,
     originals,
     schema,
     isSSR,
@@ -864,10 +1001,12 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     reset,
     resetField,
 
-    setErrorsForPath,
-    setAllErrors,
-    addErrors,
-    clearErrors,
+    setSchemaErrorsForPath,
+    setAllSchemaErrors,
+    clearSchemaErrors,
+    setAllUserErrors,
+    addUserErrors,
+    clearUserErrors,
     getErrorsForPath,
 
     registerElement,

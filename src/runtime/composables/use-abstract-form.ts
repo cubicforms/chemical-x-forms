@@ -409,7 +409,11 @@ function wirePersistence<F extends GenericForm>(
   const key = resolveStorageKey(config, state.formKey)
   const debounceMs = config.debounceMs ?? 300
   const include = config.include ?? 'form'
-  const version = config.version ?? 1
+  // Default version bumped 1 → 2 in the 0.12 release: errors split into
+  // schemaErrors + userErrors at the payload level. Old v1 payloads
+  // (single flat `errors` field) get rejected by readPersistedPayload's
+  // version-mismatch check, falling back to schema defaults on next load.
+  const version = config.version ?? 2
   const clearOnSubmitSuccess = config.clearOnSubmitSuccess ?? true
 
   // Single shared adapter promise — both the hydration path and the
@@ -428,7 +432,13 @@ function wirePersistence<F extends GenericForm>(
     // proxies (DATA_CLONE_ERR), and local/session stringify the
     // proxy's own-enumerable keys anyway.
     const rawForm = toRaw(state.form.value)
-    const payload = buildPersistedPayload(rawForm, include, state.errors, version)
+    const payload = buildPersistedPayload(
+      rawForm,
+      include,
+      state.schemaErrors,
+      state.userErrors,
+      version
+    )
     await adapter.setItem(key, payload)
   }, debounceMs)
 
@@ -467,12 +477,18 @@ function wirePersistence<F extends GenericForm>(
       if (payload === null) return
       if (disposed) return
       state.applyFormReplacement(payload.data.form)
-      if (payload.data.errors !== undefined && include === 'form+errors') {
-        // Flatten to a ValidationError[] so setAllErrors rebuilds the
-        // Map by path. Consumers who bumped `version` already had
-        // their payload rejected above.
-        const flat = payload.data.errors.flatMap(([, errs]) => errs)
-        state.setAllErrors(flat)
+      if (include === 'form+errors') {
+        // Each store rebuilds independently from its persisted entries.
+        // Consumers who bumped `version` already had their payload
+        // rejected above.
+        if (payload.data.schemaErrors !== undefined) {
+          const flat = payload.data.schemaErrors.flatMap(([, errs]) => errs)
+          state.setAllSchemaErrors(flat)
+        }
+        if (payload.data.userErrors !== undefined) {
+          const flat = payload.data.userErrors.flatMap(([, errs]) => errs)
+          state.setAllUserErrors(flat)
+        }
       }
     } catch {
       // Adapter IO errors shouldn't surface; storage adapters are

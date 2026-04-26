@@ -44,7 +44,7 @@ Options:
 | `defaultValues`   | `DeepPartial<Form>`                                                         | no       | Constraints applied over schema defaults.                                                                                                                                                                                                                                                   |
 | `validationMode`  | `'lax'` \| `'strict'`                                                       | no       | Defaults to `'lax'`. See [Types](#types).                                                                                                                                                                                                                                                   |
 | `onInvalidSubmit` | `'none'` \| `'focus-first-error'` \| `'scroll-to-first-error'` \| `'both'`  | no       | What to do when submit fails validation. See [recipe](./recipes/focus-on-error.md).                                                                                                                                                                                                         |
-| `fieldValidation` | `{ on, debounceMs }`                                                        | no       | Enable live field validation. See [recipe](./recipes/field-level-validation.md).                                                                                                                                                                                                            |
+| `fieldValidation` | `{ on, debounceMs }`                                                        | no       | Live field validation. Default `{ on: 'change', debounceMs: 200 }` — errors track live. Pass `{ on: 'none' }` to opt out (submit-only). See [recipe](./recipes/field-level-validation.md).                                                                                                  |
 | `persist`         | `{ storage, key?, debounceMs?, include?, version?, clearOnSubmitSuccess? }` | no       | Persist draft state. See [recipe](./recipes/persistence.md).                                                                                                                                                                                                                                |
 | `history`         | `true` \| `{ max?: number }`                                                | no       | Enable undo/redo. See [recipe](./recipes/undo-redo.md).                                                                                                                                                                                                                                     |
 
@@ -264,13 +264,21 @@ piece of form state as a named field. Grouped by concern:
 
 ### Error store
 
+Errors are stored source-segregated under the hood — `schemaErrors`
+(written by the validation pipeline) and `userErrors` (written by the
+APIs below). The public surfaces below merge both transparently
+(schema-first, user-second). User-injected errors **survive** schema
+revalidation and successful submits — the consumer owns their lifecycle
+explicitly. See the [migration guide](./migration/0.11-to-0.12.md) for
+the rationale.
+
 | Member                                    | Type                                                                                      |
 | ----------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `fieldErrors`                             | `Readonly<FormFieldErrors<Form>>` — Proxy view; dot-access leaves directly, no `.value`.  |
-| `setFieldErrors(errors)`                  | `(ValidationError[]) => void`                                                             |
-| `addFieldErrors(errors)`                  | `(ValidationError[]) => void`                                                             |
-| `clearFieldErrors(path?)`                 | `(path?) => void`                                                                         |
-| `setFieldErrorsFromApi(payload, limits?)` | Hydrates a server error envelope. See [server-errors recipe](./recipes/server-errors.md). |
+| `fieldErrors`                             | `Readonly<FormFieldErrors<Form>>` — Proxy view; dot-access leaves directly, no `.value`. Merges schema + user; schema entries first. |
+| `setFieldErrors(errors)`                  | `(ValidationError[]) => void` — replaces the user-error store.                            |
+| `addFieldErrors(errors)`                  | `(ValidationError[]) => void` — appends to the user-error store.                          |
+| `clearFieldErrors(path?)`                 | `(path?) => void` — clears BOTH stores at the given path (or all paths if omitted). With live validation, the schema half re-populates on the next mutation if the value is still invalid. |
+| `setFieldErrorsFromApi(payload, limits?)` | Hydrates a server error envelope into the user-error store. Survives subsequent schema revalidation. See [server-errors recipe](./recipes/server-errors.md). |
 
 ### Form-level state
 
@@ -283,7 +291,7 @@ exported `FormState` interface.
 | Member               | Type      | What it does                                                                        |
 | -------------------- | --------- | ----------------------------------------------------------------------------------- |
 | `state.isDirty`      | `boolean` | `true` iff any leaf's current value differs from its original.                      |
-| `state.isValid`      | `boolean` | `true` iff `fieldErrors` is empty.                                                  |
+| `state.isValid`      | `boolean` | `true` iff both the schema-error and user-error stores are empty.                   |
 | `state.isSubmitting` | `boolean` | `true` while the submit handler is running.                                         |
 | `state.isValidating` | `boolean` | `true` while any validation run is in flight (reactive, imperative, or pre-submit). |
 | `state.submitCount`  | `number`  | Incremented once per call, regardless of outcome.                                   |

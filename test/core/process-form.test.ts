@@ -143,7 +143,10 @@ describe('buildProcessForm', () => {
     it('clears errors on successful submit', async () => {
       const state = alwaysValid()
       const { handleSubmit } = buildProcessForm(state)
-      state.setErrorsForPath(['email'], [{ message: 'stale', path: ['email'], formKey: 'pf' }])
+      state.setSchemaErrorsForPath(
+        ['email'],
+        [{ message: 'stale', path: ['email'], formKey: 'pf' }]
+      )
 
       await handleSubmit(async () => {})()
       expect(state.getErrorsForPath(['email'])).toEqual([])
@@ -440,10 +443,9 @@ describe('buildProcessForm', () => {
     it('returns ok:false with reason on malformed payload and does not mutate state', () => {
       const state = alwaysValid()
       const { setFieldErrorsFromApi } = buildProcessForm(state)
-      state.setErrorsForPath(
-        ['password'],
-        [{ message: 'existing', path: ['password'], formKey: 'pf' }]
-      )
+      // Existing user-injected error — proves a malformed payload bail
+      // doesn't accidentally clobber prior state.
+      state.setAllUserErrors([{ message: 'existing', path: ['password'], formKey: 'pf' }])
       const result = setFieldErrorsFromApi(
         'oops' as unknown as Parameters<typeof setFieldErrorsFromApi>[0]
       )

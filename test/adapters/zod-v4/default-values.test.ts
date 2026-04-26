@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { getDefaultValuesFromZodSchema } from '../../../src/runtime/adapters/zod-v4/default-values'
+import { zodAdapter } from '../../../src/runtime/adapters/zod-v4'
 
 type Options = {
   useDefaultSchemaValues?: boolean
-  validationMode?: 'strict' | 'lax'
   constraints?: unknown
 }
 
@@ -12,9 +12,7 @@ function run<T extends z.ZodObject>(schema: T, opts: Options = {}) {
   return getDefaultValuesFromZodSchema<z.infer<T>>({
     schema,
     useDefaultSchemaValues: opts.useDefaultSchemaValues ?? false,
-    validationMode: opts.validationMode ?? 'lax',
     constraints: opts.constraints,
-    formKey: 'test-form',
   })
 }
 
@@ -92,17 +90,53 @@ describe('getDefaultValuesFromZodSchema — discriminated unions', () => {
 })
 
 describe('getDefaultValuesFromZodSchema — refinement-heavy schemas', () => {
-  it('lax mode: email refinement passes (walker returns "")', () => {
+  it('strips refinements (slim schema is for derivation, not enforcement)', () => {
+    // The helper's job is to produce usable starting data — refinement
+    // enforcement lives at the adapter layer (see the next describe).
+    // The slim schema has refinements stripped; this also avoids
+    // `safeParse` throwing synchronously when the schema contains an
+    // async refine.
     const schema = z.object({ email: z.string().email() })
-    const { data, success } = run(schema, { validationMode: 'lax' })
-    expect(data.email).toBe('')
-    expect(success).toBe(true)
+    const result = run(schema)
+    expect(result.data.email).toBe('')
+    expect(result.success).toBe(true)
+  })
+})
+
+describe('zodAdapter.getDefaultValues — strict-mode refinement enforcement', () => {
+  it('strict mode surfaces refinement errors via the outer rootSchema pass', () => {
+    // Strict mode's contract: the *adapter's* getDefaultValues runs the
+    // FULL schema (refinements intact) over the derived data. When
+    // defaults fail, errors flow back so `createFormStore` can seed
+    // `schemaErrors` at construction.
+    const schema = z.object({ email: z.string().email() })
+    const adapter = zodAdapter(schema)('test-form')
+    const result = adapter.getDefaultValues({
+      useDefaultSchemaValues: true,
+      validationMode: 'strict',
+      constraints: undefined,
+    })
+    expect(result.success).toBe(false)
+    expect(result.errors?.[0]?.path).toEqual(['email'])
   })
 
-  it('strict mode: email refinement fails because "" is not an email', () => {
-    const schema = z.object({ email: z.string().email() })
-    const { success } = run(schema, { validationMode: 'strict' })
-    expect(success).toBe(false)
+  it('strict mode + async refine degrades gracefully (no construction-time errors)', () => {
+    // Async refines can't be surfaced synchronously — `safeParse` throws
+    // on them. The adapter catches the throw and returns success so the
+    // form still mounts. Async refines fire on first user mutation via
+    // `validateAtPath` (which uses `safeParseAsync`), or via an explicit
+    // `validateAsync()` call after mount.
+    const schema = z.object({
+      email: z.email().refine(async () => Promise.resolve(true), 'taken'),
+    })
+    const adapter = zodAdapter(schema)('test-form')
+    const result = adapter.getDefaultValues({
+      useDefaultSchemaValues: true,
+      validationMode: 'strict',
+      constraints: undefined,
+    })
+    expect(result.success).toBe(true)
+    expect(result.errors).toBeUndefined()
   })
 })
 
@@ -126,12 +160,12 @@ describe('getDefaultValuesFromZodSchema — constraints', () => {
 })
 
 describe('getDefaultValuesFromZodSchema — validate-then-fix recovery', () => {
-  it('succeeds in lax mode even with unusual leaf types', () => {
+  it('succeeds even with unusual leaf types', () => {
     const schema = z.object({
       enumField: z.enum(['red', 'green', 'blue']),
       literalField: z.literal('fixed'),
     })
-    const { data, success } = run(schema, { validationMode: 'lax' })
+    const { data, success } = run(schema)
     expect(data.enumField).toBe('red')
     expect(data.literalField).toBe('fixed')
     expect(success).toBe(true)

@@ -16,6 +16,14 @@ for the full set of changes.
   until the next submit. `'none'` remains as the explicit opt-out
   for "submit-only" workflows. Migration: pass
   `fieldValidation: { on: 'none' }` to keep the old behaviour.
+- **Breaking — `validationMode` defaults to `'strict'`.** Was `'lax'`
+  in 0.11. Combined with the construction-time seed below, forms
+  whose default values fail validation now report errors immediately
+  — no user mutation or `validateAsync` call required. Lax remains
+  as the explicit opt-out for multi-step wizards, placeholder rows
+  in field arrays, and any case where mounting with invalid data is
+  intentional. Migration: pass `validationMode: 'lax'` to keep the
+  old behaviour.
 - **Breaking — errors split by source.** `setFieldErrors` /
   `addFieldErrors` / `setFieldErrorsFromApi` write to a separate
   user-error store internally; their entries now SURVIVE schema

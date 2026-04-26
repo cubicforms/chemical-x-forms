@@ -32,6 +32,11 @@ function mountWith(options: {
       handle.api = useForm({
         schema: baseSchema,
         key: 'field-validation',
+        // Pin lax: tests here exercise debounced field validation, not
+        // the construction-time strict-mode seed. Keeping the form
+        // mount-clean lets each test set the invalid value itself and
+        // assert the debounced run lands.
+        validationMode: 'lax',
         ...(options.fieldValidation ? { fieldValidation: options.fieldValidation } : {}),
       })
       return () => h('div')

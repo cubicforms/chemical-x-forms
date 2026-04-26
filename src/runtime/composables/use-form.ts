@@ -68,6 +68,6 @@ export function useForm<
     >),
     schema: abstractSchema,
     defaultValues: configuration.defaultValues as DeepPartial<Form>,
-    validationMode: configuration.validationMode ?? 'lax',
+    validationMode: configuration.validationMode ?? 'strict',
   })
 }

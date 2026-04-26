@@ -10,11 +10,11 @@ Three independent causes.
 without an inner refinement accepts anything. Double-check the
 schema is what you think it is.
 
-**You're in `validationMode: 'lax'` (the default) and watching
-`validate()`.** Lax mode strips refinements during default-values
-derivation so the form mounts with empty values without failing.
-Refinements re-apply on submit. If you want `validate()` to fire
-refinements immediately, switch to `'strict'`.
+**You're in `validationMode: 'lax'` and watching `validate()`.** Lax
+mode strips refinements during default-values derivation so the form
+mounts with empty values without failing. Refinements re-apply on
+submit. If you want `validate()` to fire refinements immediately, drop
+the `validationMode: 'lax'` opt-out — strict is the default.
 
 **The path doesn't match the schema.** `'items.0.name'` and
 `['items', 0, 'name']` canonicalise to the same path. But

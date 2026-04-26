@@ -28,6 +28,11 @@
   } = useForm({
     schema: directErrorSchema,
     key: 'errors-direct',
+    // Pin lax: this fixture proves user-injected errors render across
+    // the SSR boundary. Strict-mode default would also seed schema
+    // errors from the empty defaults, displacing the user-injected
+    // entries at fieldErrors[0] (schema-first ordering).
+    validationMode: 'lax',
   })
   setDirectErrors([
     { message: 'Email already in use', path: ['email'], formKey: 'errors-direct' },

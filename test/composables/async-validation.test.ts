@@ -36,7 +36,15 @@ function mountForm(onCreated: (form: ReturnType<typeof useForm<typeof signupSche
   const handle: { api?: Returned } = {}
   const App = defineComponent({
     setup() {
-      handle.api = useForm({ schema: signupSchema, key: 'async-validation' })
+      // Pin lax: these tests exercise async refinements via handleSubmit /
+      // validate() / validateAsync, not the construction-time strict-mode
+      // seed. Lax keeps the form mount-clean so each test drives the
+      // async path explicitly.
+      handle.api = useForm({
+        schema: signupSchema,
+        key: 'async-validation',
+        validationMode: 'lax',
+      })
       onCreated(handle.api)
       return () => h('div')
     },

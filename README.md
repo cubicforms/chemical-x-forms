@@ -45,26 +45,21 @@ export default defineConfig({
 
 ## Quick start
 
-```ts
-// signup-schema.ts
-import { z } from 'zod'
-
-export const signupSchema = z.object({
-  email: z.email(),
-  password: z.string().min(8),
-})
-```
-
 ```vue
 <!-- Signup.vue -->
 <script setup lang="ts">
+  import { z } from 'zod'
   import { useForm } from '@chemical-x/forms/zod' // zod v4; use /zod-v3 for v3
-  import { signupSchema } from './signup-schema'
 
-  const { register, handleSubmit, fieldErrors, state } = useForm({ schema: signupSchema })
+  const schema = z.object({
+    email: z.email(),
+    password: z.string().min(8),
+  })
+
+  const { register, handleSubmit, fieldErrors, state } = useForm({ schema })
 
   const onSubmit = handleSubmit(async (values) => {
-    await fetch('/api/signup', { method: 'POST', body: JSON.stringify(values) })
+    await $fetch('/api/signup', { method: 'POST', body: JSON.stringify(values) })
   })
 </script>
 

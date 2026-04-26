@@ -10,11 +10,11 @@
 
 ## Installation
 
-**Nuxt 3 / 4**
-
 ```bash
 npm install @chemical-x/forms zod
 ```
+
+**Nuxt 3 / 4**
 
 ```ts
 // nuxt.config.ts
@@ -23,8 +23,7 @@ export default defineNuxtConfig({
 })
 ```
 
-<details>
-<summary><strong>Bare Vue 3</strong></summary>
+**Bare Vue 3**
 
 ```ts
 // main.ts
@@ -43,8 +42,6 @@ export default defineConfig({
   plugins: [vue(), chemicalXForms()],
 })
 ```
-
-</details>
 
 ## Quick start
 

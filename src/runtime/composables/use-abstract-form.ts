@@ -146,6 +146,11 @@ export function useAbstractForm<
       void sweepNonConfiguredStandardStoresForOrphans(resolvedPersist.storage, persistenceBase)
       const persistenceModule = wirePersistence(state, resolvedPersist)
       state.modules.set(PERSISTENCE_MODULE_KEY, persistenceModule)
+      // Drain BEFORE the synchronous teardown: the registry will await
+      // `awaitPendingWrites` before calling `dispose`, so the last
+      // debounced keystroke gets to disk before the FormStore is
+      // evicted from the registry's `forms` map.
+      state.registerDrain(() => persistenceModule.awaitPendingWrites())
       state.registerCleanup(() => persistenceModule.dispose())
     } else {
       // No `persist:` configured. The form might have HAD persistence
@@ -449,9 +454,33 @@ function wirePersistence<F extends GenericForm>(
   // because the dynamic-import hadn't resolved yet.
   const adapterPromise = getStorageAdapter(config.storage)
   let disposed = false
+  // Tracks the in-flight final flush kicked off by `dispose()`. Returned
+  // by `awaitPendingWrites` so the registry can drain pending storage
+  // writes before evicting the FormStore — without this, the last
+  // debounced keystroke is silently dropped on unmount.
+  let inFlightFinalFlush: Promise<void> | null = null
+  // Snapshot of opt-in paths captured at SCHEDULE time. Vue's unmount
+  // lifecycle runs directive `beforeUnmount` (which clears per-element
+  // opt-ins) BEFORE the effect-scope dispose that triggers our drain.
+  // Without a snapshot, a write flushed during the drain sees zero
+  // opt-ins and wipes the storage entry. The snapshot lets the eventual
+  // write reflect the moment-in-time opt-ins as the user typed.
+  let pendingOptedInPaths: Set<PathKey> | null = null
 
   const writer = createDebouncedWriter(async () => {
-    if (disposed) return
+    // No bail at entry: this closure runs from two paths — the
+    // debounce timer firing (which already gated on `disposed` via the
+    // schedule call) and the final flush from `dispose()`. The final
+    // flush's invocation order (flush BEFORE disposed flips) lets this
+    // write complete; the post-await guards below catch the rare case
+    // where adapter resolution is slow enough to overlap with the
+    // disposed flip.
+    //
+    // Use the schedule-time snapshot if present (handles the unmount
+    // race where beforeUnmount has cleared the live registry). Falls
+    // back to the live registry for any non-listener-triggered path.
+    const optedInPaths = pendingOptedInPaths ?? new Set<PathKey>(state.persistOptIns.optedInPaths())
+    pendingOptedInPaths = null
     const adapter = await adapterPromise
     if (disposed) return
     // Sparse-payload reshape: the persisted form contains only paths
@@ -459,7 +488,6 @@ function wirePersistence<F extends GenericForm>(
     // every opt-in has been torn down, wipe the entry rather than
     // write a hollow envelope (matches the per-element security model
     // — no opt-ins → nothing to persist).
-    const optedInPaths = new Set<PathKey>(state.persistOptIns.optedInPaths())
     if (optedInPaths.size === 0) {
       await adapter.removeItem(key)
       return
@@ -486,13 +514,19 @@ function wirePersistence<F extends GenericForm>(
   }, debounceMs)
 
   const unsubscribeChange = state.onFormChange((_next, meta) => {
-    if (disposed) return
+    if (disposed || inFlightFinalFlush !== null) return
     // Per-element opt-in: only writes whose source declared `persist: true`
     // reach the storage adapter. Programmatic `form.setValue`, history
     // undo without opt-ins, devtools edits to non-opted paths, and
     // `reset()` all bypass this gate by passing no meta (or `persist:
     // false`).
     if (meta?.persist !== true) return
+    // Snapshot opt-in paths NOW — Vue's unmount fires directive
+    // beforeUnmount (which calls persistOptIns.removeAllFor) BEFORE
+    // the scope-dispose that drives our drain. Capturing at schedule
+    // time means the eventual write sees the opt-ins as they were
+    // when the user typed, not as they were stripped.
+    pendingOptedInPaths = new Set<PathKey>(state.persistOptIns.optedInPaths())
     writer.schedule()
   })
 
@@ -678,19 +712,42 @@ function wirePersistence<F extends GenericForm>(
     )
   }
 
+  function awaitPendingWrites(): Promise<void> {
+    // If dispose() already kicked off the final flush, return THAT
+    // promise so the registry awaits the same drain instead of
+    // scheduling a parallel one.
+    if (inFlightFinalFlush !== null) return inFlightFinalFlush
+    if (disposed) return Promise.resolve()
+    return writer.flush().catch(() => undefined)
+  }
+
   function dispose(): void {
-    disposed = true
+    if (disposed || inFlightFinalFlush !== null) return
     unsubscribeChange()
     unsubscribeSuccess()
-    // Flush pending write so the last-typed state makes it to disk
-    // before unmount. Caller shouldn't await here, but the flush
-    // works as a fire-and-forget.
-    void writer.flush().catch(() => undefined)
+    // CRITICAL: flush BEFORE flipping `disposed`. The previous order
+    // (set disposed=true, then call writer.flush()) caused the writer
+    // closure to bail immediately, silently dropping the last
+    // keystroke whenever a component unmounted within the debounce
+    // window. Now we kick off the flush, then flip `disposed` only
+    // after the in-flight write finishes.
+    inFlightFinalFlush = writer
+      .flush()
+      .catch(() => undefined)
+      .finally(() => {
+        disposed = true
+        inFlightFinalFlush = null
+      })
+    // Fire-and-forget — `awaitPendingWrites` exposes the promise for
+    // callers that need to drain (the registry on consumer-eviction;
+    // SSR shutdown).
+    void inFlightFinalFlush
   }
 
   return {
     writePathImmediately,
     clearPersistedDraft,
+    awaitPendingWrites,
     dispose,
   }
 }

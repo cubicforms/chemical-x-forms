@@ -1517,3 +1517,66 @@ describe('FormStorage.listKeys — per-backend', () => {
     __resetIndexedDbForTests()
   })
 })
+
+describe('persistence — dispose race (B1)', () => {
+  const apps: App[] = []
+  beforeEach(() => localStorage.clear())
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+    localStorage.clear()
+  })
+
+  it('drains the last debounced keystroke when the component unmounts mid-debounce', async () => {
+    const { app, type } = mountForm({
+      storage: 'local',
+      key: 'test-drain',
+      debounceMs: 200, // long enough that unmount races the timer
+    })
+    apps.push(app)
+    await drain()
+    // Type a value, then immediately unmount — well before the debounce
+    // window expires. Pre-fix, dispose() set `disposed=true` BEFORE
+    // calling writer.flush(), so the closure bailed at its first guard
+    // and the value was silently lost.
+    type('email', 'race-condition@example.com')
+    apps.pop()?.unmount()
+    // The eviction path drains pending writes asynchronously. Poll
+    // until the storage entry materialises (or fail the timeout).
+    const raw = await waitUntil(() => localStorage.getItem(fpKey('test-drain')), 1000)
+    expect(raw).not.toBeNull()
+    const payload = JSON.parse(raw as string) as { data: { form: { email?: string } } }
+    expect(payload.data.form.email).toBe('race-condition@example.com')
+  })
+
+  it('exposes registry.shutdown() that drains every form before resolving', async () => {
+    // Two forms with overlapping pending debounced writes. shutdown()
+    // should resolve only after both writes have landed in storage.
+    const { app: app1, type: type1 } = mountForm({
+      storage: 'local',
+      key: 'test-shutdown-a',
+      debounceMs: 100,
+    })
+    const { app: app2, type: type2 } = mountForm({
+      storage: 'local',
+      key: 'test-shutdown-b',
+      debounceMs: 100,
+    })
+    apps.push(app1, app2)
+    await drain()
+    type1('email', 'one@example.com')
+    type2('email', 'two@example.com')
+    // Use the registry from app1 (any of them works — both share the
+    // create-app pattern but have separate registries; we drain each
+    // by calling its registry's shutdown).
+    const registry1 = app1._chemicalX
+    const registry2 = app2._chemicalX
+    expect(registry1).toBeDefined()
+    expect(registry2).toBeDefined()
+    await Promise.all([registry1?.shutdown(), registry2?.shutdown()])
+    // After the shutdown promise settles, both writes are in storage.
+    const a = localStorage.getItem(fpKey('test-shutdown-a'))
+    const b = localStorage.getItem(fpKey('test-shutdown-b'))
+    expect(a).not.toBeNull()
+    expect(b).not.toBeNull()
+  })
+})

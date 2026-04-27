@@ -58,6 +58,14 @@ export type ChemicalXRegistry = {
    * form state across page navigations.
    */
   readonly trackConsumer: (key: FormKey) => () => void
+  /**
+   * Drain async work registered on every live FormStore, then resolve.
+   * Used by SSR shutdown helpers and tests that need to deterministically
+   * settle pending storage writes before tearing down the app. Eviction
+   * via `trackConsumer` already drains per-form; this is the global
+   * variant for "drain everything, the app is going away."
+   */
+  readonly shutdown: () => Promise<void>
 }
 
 /** Registry is placed on the Vue app via `app.provide(kChemicalXRegistry, …)`. */
@@ -126,16 +134,36 @@ export function createRegistry(options: CreateRegistryOptions = {}): ChemicalXRe
         // registry reference — once the Map entry is gone we can't
         // reach the state anymore.
         const state = forms.get(key)
-        state?.dispose()
         consumers.delete(key)
+        // Eviction from `forms` stays synchronous: any consumer that
+        // reads `registry.forms` after unmount (tests, devtools) sees
+        // the form gone immediately. Drain-then-dispose runs async in
+        // the background so the persistence layer's debounced final
+        // write can complete — the FormStore is reachable through the
+        // closure here even after `forms.delete`.
         forms.delete(key)
+        if (state !== undefined) {
+          void state
+            .awaitPendingWrites()
+            .catch(() => undefined)
+            .finally(() => {
+              state.dispose()
+            })
+        }
       } else {
         consumers.set(key, remaining)
       }
     }
   }
 
-  return { forms, pendingHydration, isSSR, defaults, trackConsumer }
+  async function shutdown(): Promise<void> {
+    // Snapshot the keys — `awaitPendingWrites` may resolve mid-iteration
+    // and trigger eviction that mutates `forms` while we're walking.
+    const states = Array.from(forms.values())
+    await Promise.allSettled(states.map((state) => state.awaitPendingWrites()))
+  }
+
+  return { forms, pendingHydration, isSSR, defaults, trackConsumer, shutdown }
 }
 
 /**

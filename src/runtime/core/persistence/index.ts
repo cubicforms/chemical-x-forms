@@ -30,6 +30,15 @@ export type PersistenceModule = {
    * Without `path`, calls the adapter's `removeItem` directly.
    */
   clearPersistedDraft(path?: Path): Promise<void>
+  /**
+   * Drains any pending debounced or in-flight write. Resolves once
+   * storage has the latest opted-in form value. Called by the registry
+   * before evicting a FormStore so the last keystroke isn't lost when
+   * a component unmounts mid-debounce.
+   *
+   * Safe to call after `dispose()` — resolves immediately as a no-op.
+   */
+  awaitPendingWrites(): Promise<void>
   /** Disposer — called from FormStore.dispose. */
   dispose(): void
 }

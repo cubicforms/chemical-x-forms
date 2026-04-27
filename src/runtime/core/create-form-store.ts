@@ -259,6 +259,22 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   registerCleanup(fn: () => void): void
 
   /**
+   * Register an async drain function. Called by the registry before
+   * `dispose()` so async background work — chiefly the persistence
+   * layer's debounced storage writes — has a chance to settle without
+   * losing the last keystroke. Each registered function is awaited in
+   * parallel; failures are swallowed to keep eviction reliable.
+   */
+  registerDrain(fn: () => Promise<void>): void
+
+  /**
+   * Drain async work registered via `registerDrain`. Resolves once
+   * every registered drain has settled (in parallel). Safe to call
+   * repeatedly — registered drains decide their own idempotency.
+   */
+  awaitPendingWrites(): Promise<void>
+
+  /**
    * Cache for per-state modules (history, persistence) that must
    * outlive any single consumer. Subsequent `useForm` / `useFormContext`
    * calls for the same key read from this map so the public API shape
@@ -644,6 +660,19 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     cleanupHooks.push(fn)
   }
 
+  const drainHooks: (() => Promise<void>)[] = []
+
+  function registerDrain(fn: () => Promise<void>): void {
+    drainHooks.push(fn)
+  }
+
+  async function awaitPendingWrites(): Promise<void> {
+    if (drainHooks.length === 0) return
+    // Run drains in parallel — each owns its own retry / failure
+    // semantics; we just need to know when all have settled.
+    await Promise.allSettled(drainHooks.map((fn) => fn()))
+  }
+
   function dispose(): void {
     // Run state-scoped teardowns BEFORE clearing listener sets, so a
     // module that wants to flush something by emitting one last event
@@ -658,6 +687,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       }
     }
     cleanupHooks.length = 0
+    drainHooks.length = 0
     modules.clear()
     cancelFieldValidation()
     formChangeListeners.clear()
@@ -1100,6 +1130,8 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     onReset,
     emitSubmitSuccess,
     registerCleanup,
+    registerDrain,
+    awaitPendingWrites,
     modules,
     persistOptIns,
     dispose,

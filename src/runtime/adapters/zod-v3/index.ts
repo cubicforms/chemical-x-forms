@@ -437,24 +437,51 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
 }
 
 /**
- * Peel `.optional()` / `.nullable()` wrappers off a leaf schema so
- * `getDefaultAtPath` returns the STRUCTURAL inner default — what the
- * runtime structural-completeness fill consumes. `.default(x)` and
- * `ZodEffects` stay intact so `getDefaultValuesFromZodSchema` resolves
- * the explicit default / effect-source default correctly.
+ * Peel `.optional()` / `.nullable()` wrappers off a leaf schema ONLY
+ * when the inner type is structurally fillable (object, array, tuple,
+ * record, discriminated/plain union — or itself a peelable wrapper
+ * that resolves to one of those). For primitive inner (ZodString,
+ * ZodNumber, etc.), the wrapper IS the meaningful schema:
+ * `.optional()` means "absent is allowed" → undefined; peeling to
+ * the inner string default `''` would let mergeStructural overwrite
+ * the optional's honest "absent" with a non-empty marker when filling
+ * sibling keys at the parent object. See v4's matching helper for
+ * the long-form rationale.
  */
 function unwrapStructuralLeafV3(schema: z.ZodTypeAny): z.ZodTypeAny {
   let current: z.ZodTypeAny = schema
   for (let i = 0; i < 64; i++) {
-    if (isZodSchemaType(current, 'ZodOptional') || isZodSchemaType(current, 'ZodNullable')) {
-      const inner = current._def.innerType as z.ZodTypeAny | undefined
-      if (!inner) return current
-      current = inner
-      continue
+    if (!(isZodSchemaType(current, 'ZodOptional') || isZodSchemaType(current, 'ZodNullable'))) {
+      break
     }
-    break
+    const inner = current._def.innerType as z.ZodTypeAny | undefined
+    if (!inner) return current
+    if (!isStructuralV3Kind(inner)) break
+    current = inner
   }
   return current
+}
+
+/**
+ * v3 mirror of v4's `isStructuralKind` — kinds for which the inner is
+ * recursable by mergeStructural. Anything else is a primitive leaf
+ * where the wrapper carries the meaningful default semantic.
+ */
+function isStructuralV3Kind(schema: z.ZodTypeAny): boolean {
+  return (
+    isZodSchemaType(schema, 'ZodObject') ||
+    isZodSchemaType(schema, 'ZodArray') ||
+    isZodSchemaType(schema, 'ZodRecord') ||
+    isZodSchemaType(schema, 'ZodTuple') ||
+    isZodSchemaType(schema, 'ZodUnion') ||
+    isZodSchemaType(schema, 'ZodDiscriminatedUnion') ||
+    // Wrappers that themselves resolve to a structural type — keep
+    // peeling at the next iteration.
+    isZodSchemaType(schema, 'ZodOptional') ||
+    isZodSchemaType(schema, 'ZodNullable') ||
+    isZodSchemaType(schema, 'ZodDefault') ||
+    isZodSchemaType(schema, 'ZodEffects')
+  )
 }
 
 /**

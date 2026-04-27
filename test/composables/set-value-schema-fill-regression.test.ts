@@ -361,6 +361,146 @@ describe('setValue — combined: object + array intermediate fill via callback',
 })
 
 /**
+ * Deep cascade — three levels of intermediate fill in one write:
+ * `object → array → object → array → object → leaf`. The original
+ * implementation got the OUTERMOST array fill right (people[0..1])
+ * but lost sibling fields on the slot at the cascading boundary —
+ * people[2] was emitted as `{ addresses: [...] }` (no name / age)
+ * because the array branch failed to fill arr[head] before recursing
+ * past the existing length, and the next level built a fresh `{}`
+ * populated only by the keys the path actually touched.
+ *
+ * Same bug at the inner array boundary: addresses[3] landed as
+ * `{ street: 'X' }` only — `city` dropped.
+ *
+ * Regression: every slot the path traverses is structurally complete,
+ * end-to-end, regardless of cascade depth.
+ */
+
+const cascadeSchema = z.object({
+  people: z.array(
+    z.object({
+      name: z.string(),
+      age: z.number(),
+      addresses: z.array(
+        z.object({
+          street: z.string(),
+          city: z.string(),
+          notes: z.string().optional(),
+        })
+      ),
+    })
+  ),
+})
+
+type CascadeForm = z.output<typeof cascadeSchema>
+
+function cascadeHarness() {
+  let captured!: ReturnType<typeof useForm<typeof cascadeSchema>>
+  const Probe = defineComponent({
+    setup() {
+      captured = useForm({
+        schema: cascadeSchema,
+        key: `cascade-fill-${Math.random().toString(36).slice(2)}`,
+        defaultValues: { people: [] as CascadeForm['people'] },
+      })
+      return () => h('div')
+    },
+  })
+  const app = createApp(Probe)
+  app.use(createChemicalXForms())
+  app.mount(document.createElement('div'))
+  return { app, form: captured }
+}
+
+describe('setValue — deep cascade fills every traversed slot completely', () => {
+  const apps: App[] = []
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+  })
+
+  it('setValue("people.2.addresses.3.street", x) against empty people produces a structurally complete tree', () => {
+    const { app, form } = cascadeHarness()
+    apps.push(app)
+
+    form.setValue('people.2.addresses.3.street', 'Diagonal Drive')
+
+    // people[0..1] are full Person defaults (each with empty addresses
+    // — the inner array's natural default).
+    // people[2] is a Person populated through addresses[3]: the array
+    // branch pre-fills the slot with the schema element default before
+    // recursing, so name/age survive even though the path only writes
+    // through addresses.
+    // addresses[0..2] are full Address defaults.
+    // addresses[3] is a structurally complete Address with the
+    // consumer's `street` overlaid — `city` was filled from the schema
+    // element default, NOT dropped just because the path didn't name
+    // it.
+    expect(form.getValue('people').value).toEqual([
+      { name: '', age: 0, addresses: [] },
+      { name: '', age: 0, addresses: [] },
+      {
+        name: '',
+        age: 0,
+        addresses: [
+          { street: '', city: '' },
+          { street: '', city: '' },
+          { street: '', city: '' },
+          { street: 'Diagonal Drive', city: '' },
+        ],
+      },
+    ])
+  })
+
+  it('callback form: setValue("people.2.addresses.3", (a) => ({...a, street: x})) preserves siblings at every cascade level', () => {
+    const { app, form } = cascadeHarness()
+    apps.push(app)
+
+    let receivedPrev: unknown
+    form.setValue('people.2.addresses.3', (prev) => {
+      receivedPrev = prev
+      return { ...prev, street: 'Callback Street' }
+    })
+
+    // Path-form callback prev is auto-defaulted from
+    // schema.getDefaultAtPath(['people', 2, 'addresses', 3]) — the
+    // inner Address default. notes is optional → omitted.
+    expect(receivedPrev).toEqual({ street: '', city: '' })
+
+    // Same shape guarantee as the value-form variant above.
+    expect(form.getValue('people').value).toEqual([
+      { name: '', age: 0, addresses: [] },
+      { name: '', age: 0, addresses: [] },
+      {
+        name: '',
+        age: 0,
+        addresses: [
+          { street: '', city: '' },
+          { street: '', city: '' },
+          { street: '', city: '' },
+          { street: 'Callback Street', city: '' },
+        ],
+      },
+    ])
+  })
+
+  it('writing the SAME deep path twice is idempotent (no double-fill / no overwrite)', () => {
+    const { app, form } = cascadeHarness()
+    apps.push(app)
+
+    form.setValue('people.2.addresses.3.street', 'First')
+    form.setValue('people.2.addresses.3.street', 'Second')
+
+    // Second write should only touch the leaf — every intermediate
+    // already exists, no fill triggers, and the value lands cleanly.
+    const people = form.getValue('people').value
+    expect(people).toHaveLength(3)
+    const target = (people as CascadeForm['people'])[2]?.addresses[3]
+    expect(target).toEqual({ street: 'Second', city: '' })
+  })
+})
+
+/**
  * Tuples (positional arrays). Same structural-completeness invariant
  * as regular arrays: writing past the current length must fill the
  * intermediate positions with the schema-prescribed defaults for those

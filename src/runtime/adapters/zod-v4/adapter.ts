@@ -26,26 +26,70 @@ import { getNestedZodSchemasAtPath } from './path-walker'
 const PATH_SEPARATOR = '.'
 
 /**
- * Peel `.optional()` / `.nullable()` wrappers off a leaf schema so
- * `getDefaultAtPath` returns the STRUCTURAL inner default — the slim
- * shape the runtime needs for structural-completeness fill — rather
- * than the wrapper-aware `undefined`/`null`. `.default(x)` is left
- * intact so `deriveDefault` returns the explicit default value.
- * Bounded iteration cap as a runaway guard for pathological wrappers.
+ * Peel `.optional()` / `.nullable()` wrappers off a leaf schema ONLY
+ * when the inner type is structurally fillable (object, array, tuple,
+ * record, discriminated/plain union, intersection — or itself a
+ * peelable wrapper that resolves to one of those). Peeling exposes
+ * the inner shape's default so consumer-supplied partial writes
+ * through optional sub-schemas (`{ profile: z.object({...}).optional() }`,
+ * `setValue('profile', { name: 'X' })`) get the inner shape's
+ * structural defaults filled in.
+ *
+ * For PRIMITIVE inner (ZodString, ZodNumber, ZodBoolean, ZodLiteral,
+ * etc.), the wrapper IS the meaningful schema — `optional` means
+ * "missing is allowed", `nullable` means "null is allowed". Peeling
+ * an optional string to its inner string would default the leaf to
+ * `''` and cause mergeStructural to write `notes: ''` instead of
+ * `notes: undefined` when filling sibling keys at the parent object
+ * — the runtime would silently overwrite the optional's "absent"
+ * intent with a non-empty marker.
+ *
+ * `.default(x)` is left intact at every level so deriveDefault
+ * returns the explicit default value. Bounded iteration cap as a
+ * runaway guard for pathological wrappers.
  */
 function unwrapStructuralWrappers(schema: z.ZodType): z.ZodType {
   let current: z.ZodType = schema
   for (let i = 0; i < 64; i++) {
-    const k = kindOf(current)
-    if (k === 'optional' || k === 'nullable') {
-      const inner = unwrapInner(current)
-      if (inner === undefined) return current
-      current = inner
-      continue
-    }
-    break
+    const outerKind = kindOf(current)
+    if (outerKind !== 'optional' && outerKind !== 'nullable') break
+    const inner = unwrapInner(current)
+    if (inner === undefined) return current
+    if (!isStructuralKind(kindOf(inner))) break
+    current = inner
   }
   return current
+}
+
+/**
+ * Kinds for which mergeStructural can recurse to fill missing keys
+ * or pad missing positions. Primitive leaves (string / number / etc.)
+ * and opaque non-recursable wrappers fall outside this set, so
+ * peeling Optional / Nullable around them would lose information
+ * (the wrapper's "absent / null" semantic) without enabling any fill.
+ *
+ * Wrappers themselves count as structural — `unwrapStructuralWrappers`
+ * recurses to re-check their inner kind.
+ */
+const STRUCTURAL_KINDS: ReadonlySet<ReturnType<typeof kindOf>> = new Set([
+  'object',
+  'array',
+  'tuple',
+  'record',
+  'discriminated-union',
+  'union',
+  'intersection',
+  'optional',
+  'nullable',
+  'default',
+  'readonly',
+  'catch',
+  'pipe',
+  'lazy',
+])
+
+function isStructuralKind(kind: ReturnType<typeof kindOf>): boolean {
+  return STRUCTURAL_KINDS.has(kind)
 }
 
 export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infer<FormSchema>>(

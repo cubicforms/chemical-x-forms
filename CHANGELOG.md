@@ -143,6 +143,130 @@ for the full set of changes.
   of the wire-up problem produce a clear signal at the right call
   site. Production is silent.
 
+**Structural-completeness invariant + fingerprint persistence + read-
+type honesty.** Three intertwined gaps closed in one pass — every
+`setValue` write now leaves the form satisfying the slim schema (so
+consumer code can read `prev.first.toUpperCase()` without optional-
+chaining), persisted-draft keys carry a schema fingerprint that
+auto-invalidates across deploys with no manual `version` bump, and
+the read-type for `getValue` / `register` now reports `T | undefined`
+once the path crosses an array index (out-of-bounds is an honest
+runtime case, not a type-system lie). See the
+[migration guide](./docs/migration/0.11-to-0.12.md) for the full set
+of related changes.
+
+- **Breaking — `AbstractSchema.getDefaultAtPath(path)` is now
+  required.** Custom-adapter authors implement a fifth method that
+  returns the schema-prescribed default at a structured path
+  (object property → property's default; array index → element
+  default; tuple position → position default; optional/nullable
+  around a structural inner → inner default; primitive
+  optional/nullable → `undefined`/`null`). The runtime calls this
+  on every `setValue` to fill structural gaps; without it, partial
+  writes leak through and break the new invariant. Migration: see
+  [custom-adapter recipe](./docs/recipes/custom-adapter.md). Both
+  Zod adapters ship the implementation out of the box.
+- **Breaking — `FormStorage.listKeys(prefix)` is now required.**
+  Custom storage adapters implement a fourth method that returns
+  every key whose name starts with `prefix`. The persistence layer
+  uses it to find and clean up orphaned fingerprint-suffixed keys
+  on mount. Adapters that can't enumerate (HTTP-backed drafts,
+  cookie-backed) can return `[]` — orphan cleanup degrades
+  gracefully on those backends.
+- **Breaking — `setValue` drops `DeepPartial` from both forms.**
+  `setValue(value)` and `setValue(path, value)` now expect the full
+  write shape at the type level, both for direct writes and for the
+  callback form's return. Runtime mergeStructural still completes
+  partials so dynamic / typecast inputs don't crash, but the type
+  system now leads with strictness — the IDE points consumers at
+  the canonical "give me the whole shape" pattern. Path-form
+  callback `prev` is now `NonNullable<T>` (the runtime auto-defaults
+  missing slots from the schema before invoking the callback);
+  whole-form callback `prev` is `WithIndexedUndefined<Form>` (array
+  reads are honest about returning `Item | undefined`). Migration:
+  switch partial value-form writes to the callback form, or spread
+  the existing value (`setValue('user', { ...prev, name: 'X' })`).
+- **Breaking — `getValue` and `register` use `NestedReadType<F, P>`
+  instead of `NestedType<F, P>`.** Once a path crosses an array
+  index segment (e.g. `'posts.0.title'`), every result is
+  `T | undefined`. Strict (no taint) for paths that don't cross
+  arrays. Tuple positions stay strict — a tuple's length is static
+  so out-of-bounds is a compile error, not a runtime case. Whole-
+  form `getValue()` returns `Readonly<Ref<WithIndexedUndefined<Form>>>`
+  (every unbounded array's elements get `| undefined`). Migration:
+  consumers narrow at array-crossing paths with `?.` / `??` or a
+  conditional check; non-crossing paths are unchanged.
+- **Breaking — `PersistConfig.version` is gone.** The schema's
+  `fingerprint()` is the canonical "shape changed" signal — passing
+  a manual version is redundant and decoupled from the actual
+  schema state. Storage keys now resolve to
+  `${base}:${fingerprint}` automatically; a schema change produces
+  a different fingerprint, the old key becomes orphaned, and the
+  next mount's `listKeys`-driven cleanup pass wipes it. Migration:
+  delete the `version: N` line from your `persist:` config; the
+  typechecker flags it. The cx-internal envelope version (the `v`
+  field on serialized payloads) stays as an internal storage-format
+  invariant — bumped only when cx itself changes the on-disk shape,
+  never by consumers.
+- **Breaking — `AbstractSchema` parameter rename: `getInitialState`
+  → `getDefaultValues`** has already shipped (0.11.0); the new
+  break is `getDefaultAtPath`'s required-method status. The
+  five-method contract is now: `fingerprint`, `getDefaultValues`,
+  `getDefaultAtPath`, `getSchemasAtPath`, `validateAtPath`.
+- **New — structural-completeness invariant on every `setValue`.**
+  After every `setValue` write, the form is guaranteed to satisfy
+  the slim schema (objects/arrays/primitives without refines).
+  Three concrete consequences:
+  - Sparse array writes (`setValue('posts.21', cb)` against an
+    empty array) auto-pad indices `0..20` with the schema's
+    element default. The runtime walks the path, fills missing
+    intermediates from `getDefaultAtPath`, and writes the value at
+    the leaf.
+  - Partial value-form writes (`setValue('user', { name: 'X' })`
+    when the schema requires `{ name, age, email }`) get
+    structurally completed via `mergeStructural` against the
+    schema's default — sibling keys appear with their schema-
+    prescribed defaults. Consumer-only keys (validation flags,
+    metadata) are preserved.
+  - Path-form callback writes (`setValue('user', prev => ({ ...prev,
+    name: 'X' }))`) now receive a strict, fully-defaulted `prev` —
+    even when the slot was previously empty. The callback no
+    longer needs `prev?.name ?? ''` defensive reads.
+  Performance: the fast path (writes to existing slots) skips the
+  schema entirely. Schema lookups fire only when a write actually
+  hits a structural gap, with element-default caching to keep
+  sparse-array padding O(N) instead of O(N×schema-traversal).
+- **New — fingerprint-keyed persistence + active orphan cleanup.**
+  Storage keys are now `${base}:${fingerprint}` automatically —
+  changing the schema produces a different fingerprint, the old
+  key becomes unreachable, and on the next mount the new
+  `listKeys`-driven cleanup pass removes the orphaned entry. No
+  manual `version` bumps, no stale drafts accumulating across
+  redeploys. Cleanup uses exact-or-`:`-prefix match scoped to
+  `${PERSISTENCE_KEY_PREFIX}${formKey}` (or the consumer's custom
+  `key`) — sibling forms with overlapping prefixes (e.g.
+  `'my-form'` vs `'my-form-2'`) don't collide. Cross-store
+  cleanup on the non-configured standard backends extends to
+  orphan-key sweeping symmetrically.
+- **New — `WithIndexedUndefined<T>`, `NestedReadType<F, P>`, and
+  `IsTuple<T>` type transforms** are exported from
+  `@chemical-x/forms`. `WithIndexedUndefined` taints every
+  unbounded array's element type with `| undefined`; tuples,
+  `Date`, `RegExp`, `Map`, `Set`, and functions pass through
+  untouched. `NestedReadType` walks a `FlatPath` and tracks
+  whether a numeric segment was crossed — once tainted, all
+  subsequent results are `T | undefined`. Use these directly when
+  building wrappers / utility types around the form API.
+- **New — `SetValuePayload<Write, Read = Write>` is parameterised**
+  to support honest read-vs-write shape distinction in callbacks.
+  `Write` is what the callback returns / what direct writes
+  accept; `Read` is what the callback's `prev` receives. The
+  whole-form `setValue` parameterises `Read` to
+  `WithIndexedUndefined<Form>` so consumer reads of `prev.posts[5]`
+  are honest. The path-form parameterises `Read` to
+  `NonNullable<NestedType<Form, Path>>` because the runtime
+  auto-defaults missing slots before the callback fires.
+
 ## v0.11.1
 **Dev-mode ergonomics for the ambient `useFormContext` warning.**
 

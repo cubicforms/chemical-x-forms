@@ -75,6 +75,8 @@ export type {
   ReactiveValidationStatus,
   RegisterOptions,
   RegisterValue,
+  SetValueCallback,
+  SetValuePayload,
   SettledValidationStatus,
   SubmitHandler,
   UseAbstractFormReturnType,
@@ -86,7 +88,15 @@ export type {
   WriteMeta,
 } from './runtime/types/types-api'
 
-export type { DeepPartial, FlatPath, GenericForm, NestedType } from './runtime/types/types-core'
+export type {
+  DeepPartial,
+  FlatPath,
+  GenericForm,
+  IsTuple,
+  NestedReadType,
+  NestedType,
+  WithIndexedUndefined,
+} from './runtime/types/types-core'
 
 // Path primitives — exposed for consumers writing custom adapters that
 // need to canonicalise user-provided paths.

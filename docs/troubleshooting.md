@@ -192,6 +192,26 @@ of the app's usually stem from:
   asked for an absolute path — re-stamp error paths with the
   field prefix before returning.
 
+## "Dev warnings don't fire — am I in production?"
+
+The library uses a `__DEV__` flag that resolves from
+`process.env.NODE_ENV !== 'production'` at module load. Standard
+bundlers (Vite, Webpack, Rollup with `@rollup/plugin-replace`)
+inline `process.env.NODE_ENV` at build time so the flag becomes
+a constant the compiler can dead-code-eliminate.
+
+**If you're importing the library directly from a browser-native
+ESM CDN (esm.sh, Skypack, unpkg) without a bundler,** `process`
+is undefined and `__DEV__` is permanently `false` — every dev-mode
+warning is silenced even though you're clearly in development.
+The library works correctly; only the diagnostic surface degrades.
+
+The fix is to put a bundler in your pipeline (or use a CDN that
+serves a bundled distribution). For production apps, this is
+already the case; for prototype-style CDN imports, it's a
+deliberate trade-off: no `process.env.NODE_ENV` replacement, no
+dev warnings.
+
 ## Still stuck?
 
 Reproduce in `test/` — vitest is configured, jsdom is set up for

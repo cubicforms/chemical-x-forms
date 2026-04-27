@@ -229,6 +229,19 @@ export function zodAdapter<
           formKey: _formKey,
         }
       },
+      getDefaultAtPath(path) {
+        // Empty path → root default. Reuses the same generator used at
+        // form construction so refines / wrappers behave consistently.
+        if (path.length === 0) {
+          return getDefaultValuesFromZodSchema(_zodSchema, true, _formKey)
+        }
+        const leaf = walkV3ToLeafSchema(_zodSchema, path)
+        if (!leaf) return undefined
+        // The leaf may still carry ZodDefault / ZodOptional / etc.;
+        // generateValue handles those. Pass `true` for useDefaultSchemaValues
+        // so any nested .default(x) values are preserved.
+        return getDefaultValuesFromZodSchema(leaf as z.ZodSchema, true, _formKey)
+      },
       getSchemasAtPath(path) {
         const [strippedSchema] = stripRootSchema(_zodSchema, {
           stripDefaultValues: true,
@@ -418,6 +431,120 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
 
   if (!currentSchema) return []
   return [currentSchema]
+}
+
+/**
+ * Peel transparent wrappers off a v3 schema to reach the structural
+ * "core" — used by the schema-aware path walker that powers
+ * `getDefaultAtPath`. Mirrors v4's `unwrapInner` chain so `getDefaultAtPath`
+ * resolves the same sub-schemas across both adapters for shapes like
+ * `{ profile: z.object({...}).optional() }`.
+ *
+ * Bounded by 64 iterations as a cycle/runaway guard. Returns the original
+ * schema unchanged if it has no peelable wrapper. ZodDefault / ZodOptional /
+ * ZodNullable / ZodEffects all peel; unrecognised wrappers (Catch /
+ * Pipeline / Branded / Readonly — rarer in form schemas) fall through and
+ * remain visible at the leaf, where `getDefaultValuesFromZodSchema`'s
+ * `generateValue` handles them best-effort.
+ */
+function peelV3Wrappers(schema: z.ZodTypeAny): z.ZodTypeAny {
+  let current: z.ZodTypeAny = schema
+  for (let i = 0; i < 64; i++) {
+    if (
+      isZodSchemaType(current, 'ZodOptional') ||
+      isZodSchemaType(current, 'ZodNullable') ||
+      isZodSchemaType(current, 'ZodDefault')
+    ) {
+      const inner = current._def.innerType as z.ZodTypeAny | undefined
+      if (!inner) return current
+      current = inner
+      continue
+    }
+    if (isZodSchemaType(current, 'ZodEffects')) {
+      // v3 ZodEffects: source schema is at `_def.schema`; v4 parity'd
+      // helpers also expose `.innerType()` on some shapes. Prefer the
+      // structural source.
+      const inner = current._def.schema as z.ZodTypeAny | undefined
+      if (!inner) return current
+      current = inner
+      continue
+    }
+    break
+  }
+  return current
+}
+
+/**
+ * Walk a structured path through a v3 schema, peeling wrappers at each
+ * step before descending. Returns the schema at the final segment, or
+ * `undefined` if the path doesn't exist in the schema (object key
+ * missing, tuple index out of range, leaf with segments remaining).
+ *
+ * Discriminated and plain unions: takes the first matching option (or
+ * first option when no match). Matches `validateAtPath`'s first-success
+ * semantic at the path-walker layer.
+ */
+function walkV3ToLeafSchema(
+  schema: z.ZodTypeAny,
+  segments: readonly (string | number)[]
+): z.ZodTypeAny | undefined {
+  let current: z.ZodTypeAny | undefined = schema
+  let i = 0
+  // Iteration cap prevents pathological unions / lazy loops from hanging.
+  let safetyTicks = 0
+  while (i < segments.length && current && safetyTicks < segments.length * 64 + 64) {
+    safetyTicks++
+    current = peelV3Wrappers(current)
+    const key = String(segments[i] ?? '')
+
+    if (isZodSchemaType(current, 'ZodObject')) {
+      const shape = current._def.shape() as z.ZodRawShape
+      current = shape[key]
+      i++
+      continue
+    }
+    if (isZodSchemaType(current, 'ZodArray')) {
+      current = current._def.type as z.ZodTypeAny
+      i++
+      continue
+    }
+    if (isZodSchemaType(current, 'ZodRecord')) {
+      current = current._def.valueType as z.ZodTypeAny
+      i++
+      continue
+    }
+    if (isZodSchemaType(current, 'ZodTuple')) {
+      const idx = Number(key)
+      if (!Number.isInteger(idx) || idx < 0) return undefined
+      const items = current._def.items as readonly z.ZodTypeAny[]
+      const item = items[idx]
+      if (!item) return undefined
+      current = item
+      i++
+      continue
+    }
+    if (isZodSchemaType(current, 'ZodDiscriminatedUnion')) {
+      const options = current._def.options as readonly z.AnyZodObject[]
+      const matching = options.filter((o) => key in o.shape)
+      const candidates = matching.length > 0 ? matching : options
+      const first = candidates[0]
+      if (!first) return undefined
+      current = first
+      // Don't advance i — re-process this segment within the option.
+      continue
+    }
+    if (isZodSchemaType(current, 'ZodUnion')) {
+      const options = current._def.options as readonly z.ZodTypeAny[]
+      const first = options[0]
+      if (!first) return undefined
+      current = first
+      // Don't advance i — re-process this segment within the option.
+      continue
+    }
+    // Leaf type with segments remaining — can't descend.
+    return undefined
+  }
+  return current
 }
 
 function unwrapToDiscriminatedUnion(

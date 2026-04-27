@@ -195,18 +195,31 @@ export function buildProcessForm<F extends GenericForm>(
         const result = await runValidation(state.form.value, undefined)
         state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
         validationSettled = true
+        // Generation guard: if `reset()` fired while we were awaiting
+        // validation, the consumer just zeroed the submission surface
+        // — the validation result is for state that's been replaced.
+        // Skip the schema-error write so reset's empty store stays
+        // empty; still run the user's onError so they get the result
+        // (it's their data, not ours, to discard).
+        const generationStillValid = state.submissionGeneration.value === genAtEntry
         if (!result.success) {
           const errors = result.errors
           // Schema-only writer: user-injected errors (from
           // setFieldErrors / addFieldErrors / parseApiErrors-fed
           // entries) live in a separate store and are NOT clobbered by
           // the submit-time validation result.
-          state.setAllSchemaErrors(errors)
+          if (generationStillValid) {
+            state.setAllSchemaErrors(errors)
+          }
           // Apply the invalid-submit focus/scroll policy AFTER populating
           // the error store (so getFirstErrorElement walks the fresh
           // entries) and BEFORE the user's onError callback (so consumer
           // logic can override by calling .focus on something else).
-          applyInvalidSubmitPolicy(state, invalidPolicy)
+          // Skip the policy too on a stale generation — the post-reset
+          // form has no errors to focus.
+          if (generationStillValid) {
+            applyInvalidSubmitPolicy(state, invalidPolicy)
+          }
           if (onError !== undefined) {
             try {
               await onError(errors)
@@ -220,7 +233,12 @@ export function buildProcessForm<F extends GenericForm>(
         // passed, so the schema-error store goes empty. User-injected
         // errors persist — consumers managing their own warning/info
         // state via setFieldErrors keep ownership of that lifecycle.
-        state.clearSchemaErrors()
+        // Skip the clear when reset already cleared (and bumped gen) —
+        // any errors injected by post-reset user mutations would be
+        // wrongly wiped otherwise.
+        if (generationStillValid) {
+          state.clearSchemaErrors()
+        }
         await onSubmit(result.data)
         // Notify subscribers (persistence's clear-on-success handler,
         // future hooks). Fires only when the user callback resolved —

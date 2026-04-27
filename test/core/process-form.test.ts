@@ -426,6 +426,72 @@ describe('buildProcessForm', () => {
       expect(state.submitError.value).toBe(err)
       expect(state.submitCount.value).toBe(1)
     })
+
+    // C2 — generation guard on schema-error writes during validation.
+    // Pre-fix, the validation completion AFTER reset wrote the stale
+    // schema errors back, undoing the consumer's "fresh start" intent.
+    it('reset() during async validation drops the late schemaErrors write', async () => {
+      // Build a schema whose validate is controllable from outside.
+      let releaseValidate!: (resp: ValidationResponse<Signup>) => void
+      const validatePromise = new Promise<ValidationResponse<Signup>>((resolve) => {
+        releaseValidate = resolve
+      })
+      const schema = fakeSchema<Signup>({ email: '', password: '' }, async () => validatePromise)
+      const state = createFormStore<Signup>({ formKey: 'pf', schema })
+      const { handleSubmit } = buildProcessForm(state)
+
+      // Start a submit; awaits validation.
+      const submitPromise = handleSubmit(async () => {})()
+      await Promise.resolve()
+      // Reset while validation is in-flight — bumps generation.
+      state.reset()
+      expect(state.submissionGeneration.value).toBe(1)
+
+      // Validation finishes with a failure that — pre-fix — would
+      // overwrite reset's empty schemaErrors.
+      releaseValidate({
+        data: undefined,
+        errors: [{ message: 'Invalid', path: ['email'], formKey: 'pf' }],
+        success: false,
+        formKey: 'pf',
+      })
+      await submitPromise.catch(() => undefined)
+
+      // Reset's empty error store wins — no stale write.
+      expect(state.schemaErrors.size).toBe(0)
+    })
+
+    it('submit-success after reset() does NOT clear schemaErrors set by post-reset writers', async () => {
+      // Symmetry case: a successful submit's `clearSchemaErrors()` would
+      // wipe entries that a post-reset code path (e.g. user
+      // `setFieldErrors` between reset and submit-resolution) had
+      // legitimately written. Same generation guard prevents that.
+      let releaseValidate!: (resp: ValidationResponse<Signup>) => void
+      const validatePromise = new Promise<ValidationResponse<Signup>>((resolve) => {
+        releaseValidate = resolve
+      })
+      const schema = fakeSchema<Signup>({ email: '', password: '' }, async () => validatePromise)
+      const state = createFormStore<Signup>({ formKey: 'pf', schema })
+      const { handleSubmit } = buildProcessForm(state)
+
+      const submitPromise = handleSubmit(async () => {})()
+      await Promise.resolve()
+      state.reset()
+      // Consumer writes a fresh schema error after reset.
+      state.setAllSchemaErrors([{ message: 'Server-rejected', path: ['email'], formKey: 'pf' }])
+      // Validation now resolves SUCCESS; pre-fix the success path would
+      // call clearSchemaErrors and erase the entry above.
+      const successData: Signup = { email: '', password: '' }
+      releaseValidate({
+        data: successData,
+        errors: undefined,
+        success: true,
+        formKey: 'pf',
+      })
+      await submitPromise.catch(() => undefined)
+
+      expect(state.schemaErrors.size).toBe(1)
+    })
   })
 
   // The `setFieldErrorsFromApi` factory was retired in 0.12 in favour of

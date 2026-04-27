@@ -128,3 +128,54 @@ describe('zod v3 adapter — transparent wrapper kinds', () => {
     expect(adapter.getDefaultAtPath(['profile', 'name'])).toBe('Ada')
   })
 })
+
+describe('zod v3 adapter — ZodCatch fallback', () => {
+  it('produces the caught fallback as the construction-time default', () => {
+    const schema = z.object({
+      handle: z.string().catch('anonymous'),
+      count: z.number().catch(42),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
+    expect(result.success).toBe(true)
+    expect(result.data).toEqual({ handle: 'anonymous', count: 42 })
+  })
+
+  it('honours .catch() over .default() when both are present', () => {
+    // `.catch()` is the more emphatic statement: it replaces ANY parse
+    // failure, where `.default()` only fires for `undefined`. The
+    // adapter's order of checks (catch before default-recursion) gives
+    // the catch precedence at the level where it sits in the wrapper
+    // chain.
+    const schema = z.object({
+      role: z.string().default('user').catch('guest'),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
+    expect(result.data).toEqual({ role: 'guest' })
+  })
+
+  it('surfaces the catch fallback even when useDefaultSchemaValues is false', () => {
+    const schema = z.object({
+      handle: z.string().catch('anonymous'),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: false })
+    // .catch() is an explicit consumer statement; suppressing schema
+    // defaults shouldn't suppress it.
+    expect((result.data as { handle: string }).handle).toBe('anonymous')
+  })
+
+  it('walks getDefaultAtPath through a ZodCatch on an object', () => {
+    const schema = z.object({
+      profile: z
+        .object({
+          name: z.string().default('Ada'),
+        })
+        .catch({ name: 'fallback' }),
+    })
+    const adapter = zodAdapter(schema)('f')
+    // Catch's fallback object IS the default at that path.
+    expect(adapter.getDefaultAtPath(['profile'])).toEqual({ name: 'fallback' })
+  })
+})

@@ -772,6 +772,24 @@ function unwrapDefault(schema: z.ZodTypeAny): [unknown, boolean] {
       const defaultValue = (current._def as { defaultValue: () => unknown }).defaultValue()
       return [defaultValue, true]
     }
+    if (isZodSchemaType(current, 'ZodCatch')) {
+      // ZodCatch supplies a fallback value when its inner schema rejects
+      // parse. For default extraction the caught fallback IS the
+      // construction-time default — it's the consumer's explicit
+      // statement of "this is what to render when nothing else fits."
+      // Preserves the value across submit failures, hydration, and
+      // history (a `.catch()` should resurface the same fallback).
+      const catchValue = (current._def as { catchValue?: (ctx: unknown) => unknown }).catchValue
+      if (typeof catchValue === 'function') {
+        return [catchValue({ error: null, input: undefined }), true]
+      }
+      // Defensive: fall through to the inner schema if the field is
+      // missing on this v3 minor version.
+      const inner = (current._def as { innerType?: z.ZodTypeAny }).innerType
+      if (!inner) break
+      current = inner
+      continue
+    }
     if (isZodSchemaType(current, 'ZodNullable') || isZodSchemaType(current, 'ZodOptional')) {
       current = (current._def as { innerType: z.ZodTypeAny }).innerType
       continue
@@ -932,6 +950,20 @@ function getDefaultValuesFromZodSchema<
       const discriminantKey = undefined // select default option schema
       const discriminantSchema = getSchemaByDiscriminatorKey(schema, discriminantKey)
       return generateValue(discriminantSchema as z.ZodTypeAny)
+    }
+
+    // ZodCatch — even when default extraction is suppressed
+    // (`useDefaultSchemaValues=false`), the consumer-supplied fallback
+    // is the most reasonable construction-time value to surface; the
+    // alternative is the inner schema's bare default, which the
+    // .catch() author specifically chose to override.
+    if (isZodSchemaType(schema, 'ZodCatch')) {
+      const catchValue = (schema._def as { catchValue?: (ctx: unknown) => unknown }).catchValue
+      if (typeof catchValue === 'function') {
+        return catchValue({ error: null, input: undefined })
+      }
+      const inner = (schema._def as { innerType?: z.ZodTypeAny }).innerType
+      if (inner) return generateValue(inner)
     }
 
     // Newer transparent wrappers (v3.23+ for Pipeline/Readonly; Branded

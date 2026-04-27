@@ -5,7 +5,7 @@ import { assertSupportedKinds } from './assert-supported'
 import { zodIssuesToValidationErrors } from './errors'
 import { fingerprintZodSchema } from './fingerprint'
 import { deriveDefault, getDefaultValuesFromZodSchema } from './default-values'
-import { assertZodVersion } from './introspect'
+import { assertZodVersion, kindOf, unwrapInner } from './introspect'
 import { getNestedZodSchemasAtPath } from './path-walker'
 
 /**
@@ -24,6 +24,29 @@ import { getNestedZodSchemasAtPath } from './path-walker'
  */
 
 const PATH_SEPARATOR = '.'
+
+/**
+ * Peel `.optional()` / `.nullable()` wrappers off a leaf schema so
+ * `getDefaultAtPath` returns the STRUCTURAL inner default — the slim
+ * shape the runtime needs for structural-completeness fill — rather
+ * than the wrapper-aware `undefined`/`null`. `.default(x)` is left
+ * intact so `deriveDefault` returns the explicit default value.
+ * Bounded iteration cap as a runaway guard for pathological wrappers.
+ */
+function unwrapStructuralWrappers(schema: z.ZodType): z.ZodType {
+  let current: z.ZodType = schema
+  for (let i = 0; i < 64; i++) {
+    const k = kindOf(current)
+    if (k === 'optional' || k === 'nullable') {
+      const inner = unwrapInner(current)
+      if (inner === undefined) return current
+      current = inner
+      continue
+    }
+    break
+  }
+  return current
+}
 
 export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infer<FormSchema>>(
   rootSchema: FormSchema
@@ -88,13 +111,19 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         if (path.length === 0) return deriveDefault(rootSchema, true)
         const [first] = getNestedZodSchemasAtPath(rootSchema, path)
         if (first === undefined) return undefined
+        // STRUCTURAL default: peel `.optional()` / `.nullable()` so the
+        // result is the inner shape's default (`''` for an optional
+        // string, `{ name: '' }` for an optional object). This is what
+        // the runtime structural-completeness invariant needs: when a
+        // consumer writes a partial object at an optional path, the lib
+        // fills missing keys from the inner shape's structural defaults.
+        // `.default(x)` is NOT peeled — the explicit default is the
+        // canonical "fresh" value at that path. ZodReadonly / ZodCatch /
+        // ZodPipe are handled inside `deriveDefault` itself.
         // First candidate matches validateAtPath's first-success semantic
         // and getDefaultValuesFromZodSchema's line-256 first-candidate
-        // behavior. For discriminated unions the candidate set is filtered
-        // by the path-walker; for plain unions the first option's default
-        // is the canonical "fresh" value (matches deriveDefault's union
-        // branch).
-        return deriveDefault(first, true)
+        // behavior.
+        return deriveDefault(unwrapStructuralWrappers(first), true)
       },
 
       getSchemasAtPath(path) {

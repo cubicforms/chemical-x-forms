@@ -127,15 +127,35 @@ describe('zod v4: getDefaultAtPath', () => {
       expect(adapter.getDefaultAtPath(['prefs'])).toEqual({ theme: 'dark' })
     })
 
-    it('returns the inner default when wrapper has no .default()', () => {
+    it('peels Optional at the LEAF and returns structural inner default', () => {
+      // The runtime uses this to fill partial writes through optional
+      // sub-schemas: `setValue('user.profile', { name: 'Carol' })` against
+      // `profile: z.object({...}).optional()` needs the inner default
+      // `{ name: '', age: 0 }` to fill missing keys.
       const schema = z.object({
-        profile: z.object({ name: z.string() }).optional(),
+        profile: z.object({ name: z.string(), age: z.number() }).optional(),
       })
       const adapter = zodAdapter(schema)('f')
-      // Wrapper level: ZodOptional → undefined (matches deriveDefault).
-      expect(adapter.getDefaultAtPath(['profile'])).toBeUndefined()
-      // But sub-paths still resolve through the wrapper.
+      // Structural default at the wrapper level: inner shape's default.
+      expect(adapter.getDefaultAtPath(['profile'])).toEqual({ name: '', age: 0 })
+      // Sub-paths also resolve through the wrapper.
       expect(adapter.getDefaultAtPath(['profile', 'name'])).toBe('')
+    })
+
+    it('peels Nullable at the LEAF and returns structural inner default', () => {
+      const schema = z.object({ name: z.string().nullable() })
+      const adapter = zodAdapter(schema)('f')
+      // Structural default: '' (slim view), not null.
+      expect(adapter.getDefaultAtPath(['name'])).toBe('')
+    })
+
+    it('preserves .default(x) at wrapper level — not peeled', () => {
+      // `.default(x)` is the explicit "fresh" value; it stays.
+      const schema = z.object({
+        prefs: z.object({ theme: z.string() }).default({ theme: 'dark' }),
+      })
+      const adapter = zodAdapter(schema)('f')
+      expect(adapter.getDefaultAtPath(['prefs'])).toEqual({ theme: 'dark' })
     })
   })
 

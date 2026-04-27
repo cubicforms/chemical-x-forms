@@ -237,10 +237,13 @@ export function zodAdapter<
         }
         const leaf = walkV3ToLeafSchema(_zodSchema, path)
         if (!leaf) return undefined
-        // The leaf may still carry ZodDefault / ZodOptional / etc.;
-        // generateValue handles those. Pass `true` for useDefaultSchemaValues
-        // so any nested .default(x) values are preserved.
-        return getDefaultValuesFromZodSchema(leaf as z.ZodSchema, true, _formKey)
+        // STRUCTURAL default: peel `.optional()` / `.nullable()` at the
+        // leaf so partial-object writes through optional sub-schemas
+        // (`{ profile: z.object({...}).optional() }`) get the inner
+        // shape's defaults filled in. `.default(x)` is preserved so
+        // `getDefaultValuesFromZodSchema` returns the explicit default.
+        const peeled = unwrapStructuralLeafV3(leaf)
+        return getDefaultValuesFromZodSchema(peeled as z.ZodSchema, true, _formKey)
       },
       getSchemasAtPath(path) {
         const [strippedSchema] = stripRootSchema(_zodSchema, {
@@ -431,6 +434,27 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
 
   if (!currentSchema) return []
   return [currentSchema]
+}
+
+/**
+ * Peel `.optional()` / `.nullable()` wrappers off a leaf schema so
+ * `getDefaultAtPath` returns the STRUCTURAL inner default — what the
+ * runtime structural-completeness fill consumes. `.default(x)` and
+ * `ZodEffects` stay intact so `getDefaultValuesFromZodSchema` resolves
+ * the explicit default / effect-source default correctly.
+ */
+function unwrapStructuralLeafV3(schema: z.ZodTypeAny): z.ZodTypeAny {
+  let current: z.ZodTypeAny = schema
+  for (let i = 0; i < 64; i++) {
+    if (isZodSchemaType(current, 'ZodOptional') || isZodSchemaType(current, 'ZodNullable')) {
+      const inner = current._def.innerType as z.ZodTypeAny | undefined
+      if (!inner) return current
+      current = inner
+      continue
+    }
+    break
+  }
+  return current
 }
 
 /**

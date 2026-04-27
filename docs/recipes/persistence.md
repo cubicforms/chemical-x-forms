@@ -571,6 +571,25 @@ The `| undefined` is intentional: a child rendered standalone (no
 parent passing `v-register`) gets a no-op binding plus a dev-warn,
 not a crash.
 
+`useRegister()` also implicitly sets `inheritAttrs: false` on the
+component options. The bridge props the select-transform injects on
+the parent's component vnode (`:value` and `:registerValue`) would
+otherwise fall through to the rendered root and pollute the DOM as
+stringified attributes. The implicit flip suppresses that. If you
+need `class` / `style` / `aria-*` to land on the wrapper, forward
+them explicitly:
+
+```vue
+<template>
+  <div class="wrapper" v-bind="$attrs">
+    <input v-register="register" />
+  </div>
+</template>
+```
+
+An explicit `defineOptions({ inheritAttrs: true })` is respected (you
+opt back into the leak; useful for advanced cases).
+
 ### 3. Compound components → `useFormContext`
 
 For components that touch multiple fields (e.g. an `AddressBlock`

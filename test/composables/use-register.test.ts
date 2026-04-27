@@ -385,3 +385,87 @@ describe('useRegister — inner v-register receives full directive lifecycle', (
     expect(captured.api.getFieldState('email').value.focused).toBe(true)
   })
 })
+
+describe('useRegister — implicit inheritAttrs:false', () => {
+  let app: App | undefined
+
+  afterEach(() => {
+    app?.unmount()
+    app = undefined
+    document.body.innerHTML = ''
+  })
+
+  it('sets inheritAttrs:false on the component options when undefined', async () => {
+    // Child does NOT set `inheritAttrs` explicitly. useRegister should
+    // flip it to false during setup so the bridge props (`:value`,
+    // `:registerValue`) the parent injected don't fall through to the
+    // <label> root and pollute the DOM.
+    const Child = defineComponent({
+      name: 'Child',
+      setup() {
+        useRegister()
+        return () => h('label', { class: 'wrapper' }, [h('input', { type: 'text' })])
+      },
+    })
+
+    const Parent = defineComponent({
+      setup() {
+        const form = useForm({ schema, key: 'inherit-attrs-test' })
+        const rv = form.register('email')
+        return () =>
+          withDirectives(h(Child, { registerValue: rv, value: rv.innerRef.value }), [
+            [vRegister, rv],
+          ])
+      },
+    })
+
+    app = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+
+    // Options object mutation persists post-setup. Read it directly off
+    // the Child component definition.
+    expect((Child as unknown as { inheritAttrs?: boolean }).inheritAttrs).toBe(false)
+
+    // Direct DOM check: the wrapper <label> should NOT carry the bridge
+    // props as stringified attributes. (Falls through if inheritAttrs
+    // is left at its default.)
+    const label = root.querySelector('label.wrapper')
+    expect(label).not.toBeNull()
+    expect(label?.hasAttribute('registerValue')).toBe(false)
+  })
+
+  it('respects an explicit inheritAttrs:true (does not override)', async () => {
+    const Child = defineComponent({
+      name: 'Child',
+      inheritAttrs: true,
+      setup() {
+        useRegister()
+        return () => h('label', { class: 'wrapper' }, [h('input', { type: 'text' })])
+      },
+    })
+
+    const Parent = defineComponent({
+      setup() {
+        const form = useForm({ schema, key: 'inherit-attrs-explicit-true' })
+        const rv = form.register('email')
+        return () =>
+          withDirectives(h(Child, { registerValue: rv, value: rv.innerRef.value }), [
+            [vRegister, rv],
+          ])
+      },
+    })
+
+    app = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+
+    // Explicit `true` is preserved — the consumer opted in and accepts
+    // any attribute leak that follows.
+    expect((Child as unknown as { inheritAttrs?: boolean }).inheritAttrs).toBe(true)
+  })
+})

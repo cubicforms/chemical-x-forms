@@ -1,3 +1,4 @@
+import { __DEV__ } from '../dev'
 import type { FormStorage } from '../../types/types-api'
 
 /**
@@ -14,9 +15,18 @@ import type { FormStorage } from '../../types/types-api'
  * Missing / unavailable `localStorage` (Node, Safari private mode in
  * older versions, disabled by the user) is handled by a `typeof` gate;
  * every method becomes a no-op so the form stays usable.
+ *
+ * On the FIRST `setItem` failure (quota exceeded, security error in
+ * private mode), the adapter logs a one-shot dev warning so the
+ * developer notices instead of silently losing data. Subsequent
+ * failures stay silent — bouncing a warning per keystroke would be
+ * worse than the original silent-fail behavior.
  */
 export function createLocalStorageAdapter(): FormStorage {
   const available = typeof localStorage !== 'undefined'
+  // Per-adapter flag: trips on the first setItem failure and stays
+  // tripped for the lifetime of the adapter instance.
+  let warnedOnFailure = false
   return {
     getItem(key) {
       if (!available) return Promise.resolve(undefined)
@@ -35,9 +45,20 @@ export function createLocalStorageAdapter(): FormStorage {
       if (!available) return Promise.resolve()
       try {
         localStorage.setItem(key, JSON.stringify(value))
-      } catch {
-        // Quota-exceeded or SecurityError — swallow. See recipe for
-        // guidance (move to indexedDB for large forms).
+      } catch (err) {
+        // Quota-exceeded or SecurityError — swallow at runtime. In dev,
+        // surface the first failure so the developer knows persistence
+        // has degraded. Silent on subsequent failures (debounced writes
+        // would otherwise spam the console once per keystroke).
+        if (__DEV__ && !warnedOnFailure) {
+          warnedOnFailure = true
+          console.warn(
+            '[@chemical-x/forms] localStorage write failed; subsequent writes will silently no-op for this form. ' +
+              'Common causes: quota exceeded, private-mode storage lock. ' +
+              'Switch to `persist: "indexeddb"` for larger payloads.',
+            err
+          )
+        }
       }
       return Promise.resolve()
     },

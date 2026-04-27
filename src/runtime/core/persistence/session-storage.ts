@@ -1,3 +1,4 @@
+import { __DEV__ } from '../dev'
 import type { FormStorage } from '../../types/types-api'
 
 /**
@@ -5,9 +6,13 @@ import type { FormStorage } from '../../types/types-api'
  * adapter, different backing store. Tab-scoped: closing the tab
  * drops the entry. Useful for multi-step flows where the user
  * shouldn't see last-session state on a fresh open.
+ *
+ * Same one-shot dev-warn semantic on setItem failure as the
+ * localStorage adapter — see that file's header for rationale.
  */
 export function createSessionStorageAdapter(): FormStorage {
   const available = typeof sessionStorage !== 'undefined'
+  let warnedOnFailure = false
   return {
     getItem(key) {
       if (!available) return Promise.resolve(undefined)
@@ -23,8 +28,15 @@ export function createSessionStorageAdapter(): FormStorage {
       if (!available) return Promise.resolve()
       try {
         sessionStorage.setItem(key, JSON.stringify(value))
-      } catch {
-        // Quota-exceeded or SecurityError — swallow.
+      } catch (err) {
+        if (__DEV__ && !warnedOnFailure) {
+          warnedOnFailure = true
+          console.warn(
+            '[@chemical-x/forms] sessionStorage write failed; subsequent writes will silently no-op for this form. ' +
+              'Common causes: quota exceeded, private-mode storage lock.',
+            err
+          )
+        }
       }
       return Promise.resolve()
     },

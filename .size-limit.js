@@ -28,7 +28,15 @@ export default [
     // in build-form-api, syncPersistOptIn lifecycle in directive,
     // PersistenceModule + PERSISTENCE_MODULE_KEY plumbing. Measured
     // at 15.08 KB; ~1 KB headroom for the docs/test follow-up commit.
-    limit: '16 KB',
+    //
+    // Raised 16 → 17 KB on the structural-completeness +
+    // fingerprint-persistence branch: mergeStructural +
+    // setAtPathWithSchemaFill in path-walker, schema.getDefaultAtPath
+    // plumbing, cleanupOrphanKeys + sweepNonConfiguredStandardStores-
+    // ForOrphans + sweepAllOrphansAcrossStandardStores, FormStorage
+    // listKeys across three backends, fingerprint-suffixed key
+    // composition.
+    limit: '17 KB',
     gzip: true,
     modifyEsbuildConfig: asEsm,
   },
@@ -41,7 +49,10 @@ export default [
     //
     // Raised 14.7 → 16 KB on per-element-persistence-opt-in (mirrors
     // index.mjs — same shared core chunk). Measured at 15.03 KB.
-    limit: '16 KB',
+    //
+    // Raised 16 → 17 KB tracking index.mjs's structural-completeness +
+    // fingerprint-persistence bump.
+    limit: '17 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
@@ -55,7 +66,10 @@ export default [
     //
     // Raised 14.7 → 16 KB on per-element-persistence-opt-in (mirrors
     // index.mjs). Measured at 14.71 KB.
-    limit: '16 KB',
+    //
+    // Raised 16 → 17 KB tracking index.mjs's structural-completeness +
+    // fingerprint-persistence bump.
+    limit: '17 KB',
     gzip: true,
     ignore: ['zod', 'lodash-es'],
     modifyEsbuildConfig: asEsm,

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { Ref } from 'vue'
 import type { FormState } from '../../src'
 import type { useForm } from '../../src/zod'
+import type { WithIndexedUndefined } from '../../src/runtime/types/types-core'
 
 /**
  * Type-inference tests for `useForm` via the Zod v4 adapter.
@@ -96,9 +97,12 @@ describe('useForm type inference — factory signature', () => {
     void missingSchemaConfig
   })
 
-  it('returns the inferred Form shape at the top-level getValue()', () => {
+  it('returns the inferred Form shape at the top-level getValue() (with array taint)', () => {
+    // After the Phase-4 read-type honesty pass, `getValue()` returns the
+    // form wrapped in `WithIndexedUndefined` — `value.tags[N]` etc. is
+    // `string | undefined` since arrays can be out-of-bounds at runtime.
     const whole = form.getValue()
-    expectTypeOf(whole.value).toEqualTypeOf<ExpectedForm>()
+    expectTypeOf(whole.value).toEqualTypeOf<WithIndexedUndefined<ExpectedForm>>()
   })
 })
 
@@ -117,13 +121,16 @@ describe('useForm type inference — getValue', () => {
     expectTypeOf(form.getValue('profile.bio')).toEqualTypeOf<Readonly<Ref<string | undefined>>>()
   })
 
-  it('array index path', () => {
-    expectTypeOf(form.getValue('tags.0')).toEqualTypeOf<Readonly<Ref<string>>>()
+  it('array index path is undefined-tainted (out-of-bounds is honest)', () => {
+    // After Phase 4, paths through a numeric segment yield `T | undefined`
+    // — `tags[5]` against a length-2 array returns `undefined` at runtime,
+    // and the type now reflects that.
+    expectTypeOf(form.getValue('tags.0')).toEqualTypeOf<Readonly<Ref<string | undefined>>>()
   })
 
-  it('array-of-object nested path (posts.N.field)', () => {
-    expectTypeOf(form.getValue('posts.0.title')).toEqualTypeOf<Readonly<Ref<string>>>()
-    expectTypeOf(form.getValue('posts.0.views')).toEqualTypeOf<Readonly<Ref<number>>>()
+  it('array-of-object nested path (posts.N.field) is tainted past the array boundary', () => {
+    expectTypeOf(form.getValue('posts.0.title')).toEqualTypeOf<Readonly<Ref<string | undefined>>>()
+    expectTypeOf(form.getValue('posts.0.views')).toEqualTypeOf<Readonly<Ref<number | undefined>>>()
   })
 
   it('rejects paths not present in the schema', () => {
@@ -184,19 +191,70 @@ describe('useForm type inference — setValue', () => {
 })
 
 describe('useForm type inference — register', () => {
-  it('innerRef is typed as `| undefined` of the path leaf', () => {
+  it('non-array paths are STRICT — register returns the leaf type without taint', () => {
+    // Phase 4: register read shape is now `NestedReadType<Form, Path>`.
+    // Paths that don't cross a numeric segment stay strict — runtime
+    // structural-completeness guarantees the slot is populated.
     const r = form.register('email')
-    expectTypeOf(r.innerRef.value).toEqualTypeOf<string | undefined>()
+    expectTypeOf(r.innerRef.value).toEqualTypeOf<string>()
   })
 
-  it('nested object path', () => {
+  it('nested object path stays strict (no array crossing)', () => {
     const r = form.register('profile.name')
-    expectTypeOf(r.innerRef.value).toEqualTypeOf<string | undefined>()
+    expectTypeOf(r.innerRef.value).toEqualTypeOf<string>()
   })
 
-  it('array-index nested path', () => {
+  it('array-index nested path is undefined-tainted (out-of-bounds at runtime)', () => {
     const r = form.register('posts.0.title')
     expectTypeOf(r.innerRef.value).toEqualTypeOf<string | undefined>()
+  })
+})
+
+describe('Phase 4: WithIndexedUndefined + strict SetValuePayload', () => {
+  it('whole-form callback prev sees array elements as `T | undefined`', () => {
+    form.setValue((prev) => {
+      // Array index reads are honestly tainted. `prev.posts[5]` could
+      // be out-of-bounds at runtime, so the type must include undefined.
+      expectTypeOf(prev.posts[5]).toEqualTypeOf<{ title: string; views: number } | undefined>()
+      expectTypeOf(prev.tags[0]).toEqualTypeOf<string | undefined>()
+      // Non-array properties remain strict.
+      expectTypeOf(prev.email).toEqualTypeOf<string>()
+      // Spread is fine — the return type matches the read shape and
+      // mergeStructural fills any structural gaps at the runtime layer.
+      return { ...prev, email: 'updated@example.com' }
+    })
+  })
+
+  it('path-form callback prev is STRICT (runtime auto-defaults)', () => {
+    // The runtime hands the consumer the schema default at the path
+    // when the slot is unpopulated, so prev is genuinely populated —
+    // strict NestedType (not undefined-tainted) is honest.
+    form.setValue('posts.0', (prev) => {
+      expectTypeOf(prev).toEqualTypeOf<{ title: string; views: number }>()
+      // No `?.` or fallback needed — `prev.title` is `string`, not
+      // `string | undefined`.
+      return { ...prev, title: prev.title.toUpperCase() }
+    })
+  })
+
+  it('value form is STRICT — drops DeepPartial', () => {
+    // Phase 4 dropped `DeepPartial<Payload>` from `SetValuePayload`. A
+    // partial object at a strict path is now a TYPE ERROR; consumers
+    // either provide the complete shape or use the callback form. The
+    // runtime mergeStructural still fills any gaps that slip through
+    // via casts.
+    form.setValue('profile.name', 'alice')
+    // @ts-expect-error - profile requires { name, bio? }; partial wrong-shape rejected.
+    form.setValue('profile', { unknown: 'field' })
+  })
+
+  it('register read shape uses NestedReadType — taint after numeric segment', () => {
+    // Path doesn't cross a numeric segment.
+    expectTypeOf(form.register('email').innerRef.value).toEqualTypeOf<string>()
+    // Path crosses a numeric segment ('0').
+    expectTypeOf(form.register('posts.0.title').innerRef.value).toEqualTypeOf<string | undefined>()
+    // Bare array element path.
+    expectTypeOf(form.register('tags.0').innerRef.value).toEqualTypeOf<string | undefined>()
   })
 })
 

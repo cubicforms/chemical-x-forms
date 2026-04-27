@@ -139,11 +139,12 @@ export function zodAdapter<
             const schemasAtPath = getNestedZodSchemasAtPath(slimSchema, issue.path)
             // `set` from lodash accepts a Segment[] directly; keeps the
             // literal-dot case (`['user.name']`) from being flattened
-            // into two key accesses.
-            const path = [...issue.path]
+            // into two key accesses. Coerce in case a custom check
+            // smuggled a Symbol — `path.join` would throw on it.
+            const path = coercePathSegments(issue.path)
             if (!schemasAtPath.length) {
               console.error(
-                `No schemas at path '${issue.path.join(PATH_SEPARATOR)}' for key '${_formKey}'`
+                `No schemas at path '${path.join(PATH_SEPARATOR)}' for key '${_formKey}'`
               )
               continue
             }
@@ -229,7 +230,7 @@ export function zodAdapter<
           data: finalData as Form,
           errors: error.issues.map((issue) => ({
             message: issue.message,
-            path: issue.path,
+            path: coercePathSegments(issue.path),
             formKey: _formKey,
           })),
           success: false,
@@ -369,12 +370,26 @@ function zodIssuesToValidationErrors(issues: z.ZodIssue[], formKey: FormKey): Va
   for (const issue of issues) {
     validationErrors.push({
       message: issue.message,
-      path: issue.path,
+      // `ValidationError.path` is `(string | number)[]` per the
+      // public type. v3's `issue.path` is the same in the standard
+      // case, but a custom check via `ctx.addIssue({ path: [...] })`
+      // can smuggle a Symbol through — the public surface promised
+      // strings/numbers, so coerce defensively to keep the contract.
+      // Mirrors v4's behaviour at the same site.
+      path: coercePathSegments(issue.path),
       formKey: formKey,
     })
   }
 
   return validationErrors
+}
+
+function coercePathSegments(path: readonly (string | number | symbol)[]): (string | number)[] {
+  const out: (string | number)[] = []
+  for (const seg of path) {
+    out.push(typeof seg === 'number' ? seg : typeof seg === 'string' ? seg : String(seg))
+  }
+  return out
 }
 
 const NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA = (path: (string | number)[], formKey: FormKey) =>

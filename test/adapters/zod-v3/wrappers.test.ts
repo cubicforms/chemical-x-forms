@@ -179,3 +179,37 @@ describe('zod v3 adapter — ZodCatch fallback', () => {
     expect(adapter.getDefaultAtPath(['profile'])).toEqual({ name: 'fallback' })
   })
 })
+
+describe('zod v3 adapter — symbol-segment coercion in ValidationError.path', () => {
+  it('coerces a Symbol path segment to a string at validateAtPath', async () => {
+    const symbolKey = Symbol('weird')
+    // A custom check that emits a Symbol path segment. v3 issue paths
+    // are typed `(string | number)[]` but the runtime allows custom
+    // checks to push anything via `ctx.addIssue`.
+    const schema = z.object({
+      handle: z.string().superRefine((value, ctx) => {
+        if (value.length === 0) {
+          ctx.addIssue({
+            // Using `as never` to pass the Symbol past the type check —
+            // this mimics what a misbehaving custom check would do.
+            path: [symbolKey as never],
+            code: z.ZodIssueCode.custom,
+            message: 'symbol path',
+          })
+        }
+      }),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = await adapter.validateAtPath({ handle: '' }, [])
+    expect(result.success).toBe(false)
+    if (result.success) return
+    // Every segment in every emitted error must be string|number; never
+    // a Symbol. The contract is that `ValidationError.path` matches its
+    // declared type at runtime.
+    for (const err of result.errors) {
+      for (const seg of err.path) {
+        expect(typeof seg).toMatch(/string|number/)
+      }
+    }
+  })
+})

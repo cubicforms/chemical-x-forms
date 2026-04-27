@@ -142,11 +142,43 @@ describe('zod v4: getDefaultAtPath', () => {
       expect(adapter.getDefaultAtPath(['profile', 'name'])).toBe('')
     })
 
-    it('peels Nullable at the LEAF and returns structural inner default', () => {
+    it('preserves Optional around a PRIMITIVE leaf — returns undefined, not the inner default', () => {
+      // Regression guard: peeling an optional primitive to its inner
+      // default `''` would silently overwrite the optional's "absent"
+      // semantic. mergeStructural would write `notes: ''` into a sibling
+      // fill instead of leaving notes undefined / unset, and downstream
+      // consumers reading `notes` would see an empty string they didn't
+      // ask for.
+      const schema = z.object({
+        notes: z.string().optional(),
+        score: z.number().optional(),
+        active: z.boolean().optional(),
+      })
+      const adapter = zodAdapter(schema)('f')
+      expect(adapter.getDefaultAtPath(['notes'])).toBeUndefined()
+      expect(adapter.getDefaultAtPath(['score'])).toBeUndefined()
+      expect(adapter.getDefaultAtPath(['active'])).toBeUndefined()
+    })
+
+    it('preserves Nullable around a PRIMITIVE leaf — returns null, not the inner default', () => {
+      // The wrapper IS the meaningful schema for primitive leaves:
+      // `.nullable()` means "null is allowed". Peeling to `''` would
+      // let mergeStructural overwrite an honest null with an empty
+      // string when filling sibling keys at a parent object.
       const schema = z.object({ name: z.string().nullable() })
       const adapter = zodAdapter(schema)('f')
-      // Structural default: '' (slim view), not null.
-      expect(adapter.getDefaultAtPath(['name'])).toBe('')
+      expect(adapter.getDefaultAtPath(['name'])).toBeNull()
+    })
+
+    it('peels Nullable around a STRUCTURAL inner — returns the inner default', () => {
+      // Nullable around an object: we DO peel so `setValue('user',
+      // { name: 'Alice' })` against `user: z.object({...}).nullable()`
+      // can fill the inner shape's missing keys.
+      const schema = z.object({
+        user: z.object({ name: z.string(), age: z.number() }).nullable(),
+      })
+      const adapter = zodAdapter(schema)('f')
+      expect(adapter.getDefaultAtPath(['user'])).toEqual({ name: '', age: 0 })
     })
 
     it('preserves .default(x) at wrapper level — not peeled', () => {

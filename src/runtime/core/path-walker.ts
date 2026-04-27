@@ -307,40 +307,45 @@ function setAtPathWithSchemaFillImpl(
 
   if (typeof head === 'number') {
     const arr = Array.isArray(root) ? [...root] : []
-    // Pad with element defaults if extending past length. For arrays
-    // every position resolves to the same element default; we cache
-    // the lookup (via `padDefault`) rather than re-asking the schema
-    // per pad index. For tuples per-position defaults differ — query
-    // the schema each iteration.
+    const prefix = fullPath.slice(0, startIdx)
+    // Pad with element defaults if extending past length. Tuple-vs-
+    // array detection mirrors mergeStructural: probe at a high index
+    // — tuples return `undefined` (out of range), unbounded arrays
+    // return the element default. The previous heuristic (compare two
+    // adjacent defaults via Object.is) gave wrong answers for arrays
+    // of objects (each call yields a fresh object, identity differs)
+    // AND for tuples of identical primitives (Object.is(0, 0) === true).
     if (arr.length < head) {
-      // Detect tuple vs array by probing two adjacent positions: if
-      // they yield distinct, both-present defaults the schema is a
-      // tuple-like; else cache once. The probe path uses the slot the
-      // pad would occupy, never the existing slots.
-      const padPath0: Segment[] = [...fullPath.slice(0, startIdx), arr.length]
-      const padDefault0 = schema.getDefaultAtPath(padPath0)
-      const padPath1: Segment[] = [...fullPath.slice(0, startIdx), arr.length + 1]
-      const padDefault1 = schema.getDefaultAtPath(padPath1)
-      const tupleLike =
-        padDefault0 !== undefined &&
-        padDefault1 !== undefined &&
-        !Object.is(padDefault0, padDefault1)
+      const TUPLE_PROBE_INDEX = 1_000_000
+      const probe = schema.getDefaultAtPath([...prefix, TUPLE_PROBE_INDEX])
+      const tupleLike = probe === undefined
+      // For unbounded arrays, every position resolves to the same
+      // element default — cache the lookup once. For tuples, query
+      // per-position so each slot's default lands at its own index.
+      const cachedArrayDefault = tupleLike ? undefined : schema.getDefaultAtPath([...prefix, 0])
       while (arr.length < head) {
         const idx = arr.length
-        if (tupleLike) {
-          arr.push(schema.getDefaultAtPath([...fullPath.slice(0, startIdx), idx]))
-        } else {
-          arr.push(padDefault0)
-        }
+        arr.push(tupleLike ? schema.getDefaultAtPath([...prefix, idx]) : cachedArrayDefault)
       }
     }
 
     if (isLeafStep) {
       arr[head] = value
-    } else {
-      const childRoot = arr[head]
-      arr[head] = setAtPathWithSchemaFillImpl(childRoot, schema, fullPath, value, startIdx + 1)
+      return arr
     }
+
+    // Intermediate step: ensure the slot at `head` is structurally
+    // complete BEFORE recursing into the rest of the path. Without
+    // this fill, recursion starts from `undefined` and the next level
+    // builds a fresh `{}` populated only by the keys the path
+    // actually touches — sibling fields (other Person keys, other
+    // Address keys) get silently dropped. Same intermediate-fill
+    // semantic the object branch applies a few lines below.
+    let childRoot = arr[head]
+    if (childRoot === undefined || (childRoot !== null && typeof childRoot !== 'object')) {
+      childRoot = schema.getDefaultAtPath([...prefix, head])
+    }
+    arr[head] = setAtPathWithSchemaFillImpl(childRoot, schema, fullPath, value, startIdx + 1)
     return arr
   }
 

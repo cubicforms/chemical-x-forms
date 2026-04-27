@@ -198,3 +198,114 @@ describe('DevTools plugin — inspector + timeline wiring', () => {
     expect(submitEvents[0]?.event.subtitle).toBe('dev-timeline')
   })
 })
+
+describe('DevTools plugin — sensitive-name redaction (B5)', () => {
+  const apps: App[] = []
+
+  beforeEach(() => {
+    currentMock.api = createMockApi()
+  })
+
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+    currentMock.api = null
+  })
+
+  it("redacts sensitive leaves in the inspector's Form value panel", async () => {
+    const regApp = createApp(defineComponent({ setup: () => () => h('div') }))
+    const registry = createRegistry({})
+    attachRegistryToApp(regApp, registry)
+    const { createFormStore } = await import('../../src/runtime/core/create-form-store')
+    const { fakeSchema } = await import('../utils/fake-schema')
+    const state = createFormStore<{ email: string; password: string; profile: { name: string } }>({
+      formKey: 'redact-form',
+      schema: fakeSchema({ email: '', password: '', profile: { name: '' } }),
+    })
+    state.applyFormReplacement({
+      email: 'alice@example.com',
+      password: 'super-secret',
+      profile: { name: 'Alice' },
+    })
+    registry.forms.set('redact-form', state)
+
+    await setupChemicalXDevtools(regApp, registry)
+
+    const payload = {
+      inspectorId: 'chemical-x-forms',
+      nodeId: 'form:redact-form',
+      state: {} as Record<string, Array<{ key: string; value: unknown; editable?: boolean }>>,
+    }
+    currentMock.api!._handlers.getInspectorState!(payload)
+    const formEntry = payload.state['Form value']?.[0]
+    expect(formEntry).toBeDefined()
+    const value = formEntry?.value as {
+      email: string
+      password: string
+      profile: { name: string }
+    }
+    expect(value.email).toBe('alice@example.com') // not sensitive
+    expect(value.password).toBe('[redacted]') // sensitive — masked
+    expect(value.profile.name).toBe('Alice') // nested but not sensitive
+  })
+
+  it('redacts sensitive leaves in form.change timeline events', async () => {
+    const handle: {
+      api?: ReturnType<typeof useForm<z.ZodObject<{ email: z.ZodString; password: z.ZodString }>>>
+    } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: z.object({ email: z.string(), password: z.string() }),
+          key: 'redact-timeline',
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms({ devtools: false }))
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+
+    const { getRegistryFromApp } = await import('../../src/runtime/core/registry')
+    const registry = getRegistryFromApp(app)
+    await setupChemicalXDevtools(app, registry)
+    await Promise.resolve()
+
+    handle.api!.setValue('password', 'super-secret')
+    await Promise.resolve()
+
+    const changes = currentMock.api!._events.filter((e) => e.event.title === 'form.change')
+    expect(changes.length).toBeGreaterThan(0)
+    const last = changes[changes.length - 1]!
+    const form = last.event.data?.['form'] as { password?: unknown; email?: unknown }
+    expect(form.password).toBe('[redacted]')
+    expect(form.email).toBe('') // schema default; not sensitive
+  })
+
+  it('refuses sensitive-path edits via the inspector', async () => {
+    const regApp = createApp(defineComponent({ setup: () => () => h('div') }))
+    const registry = createRegistry({})
+    attachRegistryToApp(regApp, registry)
+    const { createFormStore } = await import('../../src/runtime/core/create-form-store')
+    const { fakeSchema } = await import('../utils/fake-schema')
+    const state = createFormStore<{ password: string }>({
+      formKey: 'edit-block',
+      schema: fakeSchema<{ password: string }>({ password: '' }),
+    })
+    state.applyFormReplacement({ password: 'original' })
+    registry.forms.set('edit-block', state)
+
+    await setupChemicalXDevtools(regApp, registry)
+
+    currentMock.api!._handlers.editInspectorState!({
+      inspectorId: 'chemical-x-forms',
+      nodeId: 'form:edit-block',
+      // path = ['Form value', 'form', 'password']
+      path: ['Form value', 'form', 'password'],
+      state: { value: '[redacted]' }, // simulating "user confirmed redacted view"
+    })
+    // The original value must NOT be overwritten by the redacted literal.
+    expect(state.form.value.password).toBe('original')
+  })
+})

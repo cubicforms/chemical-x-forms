@@ -4,6 +4,7 @@ import type { ChemicalXRegistry } from './registry'
 import type { GenericForm } from '../types/types-core'
 import type { FormKey } from '../types/types-api'
 import { canonicalizePath } from './paths'
+import { isSensitivePath } from './persistence/sensitive-names'
 
 /**
  * Vue DevTools plugin wiring for @chemical-x/forms. Lazy-imported by
@@ -26,6 +27,49 @@ import { canonicalizePath } from './paths'
 
 const INSPECTOR_ID = 'chemical-x-forms'
 const TIMELINE_LAYER_ID = 'chemical-x-forms:events'
+
+const REDACTED = '[redacted]'
+
+/**
+ * Walk `value` and replace any leaf whose enclosing path matches the
+ * sensitive-name heuristic with the string `'[redacted]'`. Returns a
+ * new tree (no mutation of the input). Object keys + array indices
+ * are preserved; only the leaf payloads change.
+ *
+ * Applied to BOTH the DevTools timeline events and the inspector
+ * `Form value` panel — leaks via either surface are treatable as
+ * "any developer with the panel open during user testing can read
+ * a customer's password," which is exactly the failure mode the
+ * sensitive-name guard exists to prevent on the storage side.
+ *
+ * Leaves whose path doesn't match a pattern pass through untouched.
+ * `acknowledgeSensitive: true` on persistence does NOT bypass this —
+ * if the consumer opted into persisting the value, they still
+ * shouldn't see it in DevTools timelines that grow unbounded.
+ */
+function redactSensitiveLeaves(
+  value: unknown,
+  pathSoFar: ReadonlyArray<string | number> = []
+): unknown {
+  if (value === null || value === undefined) return value
+  if (typeof value !== 'object') {
+    // Primitive leaf — redact if the enclosing path is sensitive.
+    return isSensitivePath([...pathSoFar]) ? REDACTED : value
+  }
+  if (Array.isArray(value)) {
+    return value.map((item, idx) => redactSensitiveLeaves(item, [...pathSoFar, idx]))
+  }
+  // Plain object (Map / Set / Date / etc. fall through to "treat as
+  // primitive" — DevTools rendering of those is already heuristic).
+  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+    return isSensitivePath([...pathSoFar]) ? REDACTED : value
+  }
+  const out: Record<string, unknown> = {}
+  for (const key of Object.keys(value as Record<string, unknown>)) {
+    out[key] = redactSensitiveLeaves((value as Record<string, unknown>)[key], [...pathSoFar, key])
+  }
+  return out
+}
 
 type UnsafeDevtoolsApi = {
   addInspector(opts: { id: string; label: string; icon?: string; app: App }): void
@@ -146,7 +190,12 @@ function wire(api: UnsafeDevtoolsApi, app: App, registry: ChemicalXRegistry): vo
           time: Date.now(),
           title: 'form.change',
           subtitle: state.formKey,
-          data: { form: state.form.value as unknown as Record<string, unknown> },
+          // Redact sensitive-named leaves before they land in the
+          // timeline event log — events accumulate for the whole
+          // session and a screen-share / paired-debugging session
+          // would otherwise expose any password / token / etc. the
+          // user typed since DevTools was opened.
+          data: { form: redactSensitiveLeaves(state.form.value) as Record<string, unknown> },
         },
       })
     })
@@ -157,7 +206,7 @@ function wire(api: UnsafeDevtoolsApi, app: App, registry: ChemicalXRegistry): vo
           time: Date.now(),
           title: 'submit.success',
           subtitle: state.formKey,
-          data: { form: state.form.value as unknown as Record<string, unknown> },
+          data: { form: redactSensitiveLeaves(state.form.value) as Record<string, unknown> },
         },
       })
     })
@@ -214,8 +263,15 @@ function wire(api: UnsafeDevtoolsApi, app: App, registry: ChemicalXRegistry): vo
     const formKey = payload.nodeId.slice('form:'.length)
     const state = registry.forms.get(formKey)
     if (state === undefined) return
+    // Redact sensitive-named leaves in the inspector panel for the
+    // same reason as the timeline events: a screen-share with an
+    // open DevTools panel shouldn't expose passwords / tokens.
+    // Editing stays enabled at the section level — the editInspector
+    // handler refuses sensitive-path edits at write time so a dev
+    // can't accidentally write the literal string `'[redacted]'` over
+    // a real value.
     payload.state['Form value'] = [
-      { key: 'form', value: state.form.value as unknown, editable: true },
+      { key: 'form', value: redactSensitiveLeaves(state.form.value), editable: true },
     ]
     // Schema-driven and user-injected errors land in separate inspector
     // sections so devs can see the source distinction at a glance — a
@@ -259,6 +315,11 @@ function wire(api: UnsafeDevtoolsApi, app: App, registry: ChemicalXRegistry): vo
     if (section !== 'Form value') return
     const segments = payload.path.slice(2)
     const { segments: canonicalPath, key: canonicalKey } = canonicalizePath(segments)
+    // Refuse edits on sensitive-named paths. The inspector renders
+    // them as `'[redacted]'`, so a dev who confirms the field would
+    // overwrite the real value with the literal masked string. Edits
+    // to sensitive paths must go through the bound input element.
+    if (isSensitivePath([...canonicalPath])) return
     // A devtools edit on a path that any element has opted in to should
     // persist (matches the user's expectation: editing via the inspector
     // should be indistinguishable from typing into the bound input).

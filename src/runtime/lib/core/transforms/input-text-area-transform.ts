@@ -1,16 +1,13 @@
 import type {
   AttributeNode,
-  ComponentNode,
   CompoundExpressionNode,
   DirectiveNode,
   ExpressionNode,
   NodeTransform,
   PlainElementNode,
   RootNode,
-  SlotOutletNode,
   SourceLocation,
   TemplateChildNode,
-  TemplateNode,
 } from '@vue/compiler-core'
 import { createCompoundExpression, NodeTypes } from '@vue/compiler-core'
 
@@ -206,8 +203,12 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
       ") ? 'checked' : 'value'",
     ])
 
+    // Narrowed from `PlainElementNode | ComponentNode | SlotOutletNode |
+    // TemplateNode` — `<input>` / `<textarea>` are always PlainElementNode
+    // in Vue's AST. The previous wide union let a TemplateNode slip
+    // through and crash on `_node.props`.
     function computeProps(
-      _node: PlainElementNode | ComponentNode | SlotOutletNode | TemplateNode,
+      _node: PlainElementNode,
       registerSummarizedProp: SummarizedProp,
       elementValueSummarizedProp: SummarizedProp
     ): void {
@@ -252,7 +253,10 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
       props.push(valueOrCheckedProp)
     }
 
-    computeProps(node, registerSummarizedProp, elementValueSummarizedProp)
+    // The outer guards (`node.type === NodeTypes.ELEMENT` + `node.tag
+    // === 'input' | 'textarea'`) narrow `node` to a PlainElementNode
+    // at runtime; the cast records that for the type system.
+    computeProps(node as PlainElementNode, registerSummarizedProp, elementValueSummarizedProp)
   } catch (err) {
     // AST shapes can shift with minor Vue compiler updates. If we hit
     // anything unexpected, skip this transform — the runtime directive

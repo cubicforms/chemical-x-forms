@@ -13,7 +13,7 @@ import type { DeepPartial, GenericForm } from '../types/types-core'
 import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS } from './defaults'
 import { diffAndApply } from './diff-apply'
 import { canonicalizePath, type Path, type PathKey, type Segment } from './paths'
-import { getAtPath, setAtPath } from './path-walker'
+import { getAtPath, mergeStructural, setAtPath, setAtPathWithSchemaFill } from './path-walker'
 import {
   createPersistOptInRegistry,
   type PersistOptInRegistry,
@@ -356,9 +356,19 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // Schema is ALWAYS consulted: we need the schema-derived originals even
   // when hydrating, so pristine/dirty computation survives SSR round-trip.
   // The form's actual starting value, though, prefers hydration data.
+  //
+  // Run consumer-supplied `defaultValues` through `mergeStructural` first
+  // so partial constraints against tuple shapes (e.g. `coords: [42]` for
+  // `z.tuple([_, _, _])`) get padded with position defaults BEFORE the
+  // adapter's validate-then-fix loop sees them. Without this, the
+  // adapter's wholesale-replace fix-up would lose the consumer's data.
+  const completedConstraints =
+    defaultValues === undefined
+      ? undefined
+      : (mergeStructural(schema, [], defaultValues) as DeepPartial<F>)
   const schemaResponse: DefaultValuesResponse<F> = schema.getDefaultValues({
     useDefaultSchemaValues: true,
-    constraints: defaultValues,
+    constraints: completedConstraints,
     validationMode,
   })
   const schemaInitialData = schemaResponse.data
@@ -508,7 +518,20 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   }
 
   function setValueAtPath(path: Path, value: unknown, meta?: WriteMeta): void {
-    const nextForm = setAtPath(form.value, path, value) as F
+    // Structural-completeness invariant: every write must leave the
+    // form satisfying the slim schema. Two ingress points to fill:
+    //   1. The target value (consumer may have passed a partial; the
+    //      schema's element default fills missing keys / array
+    //      elements via mergeStructural).
+    //   2. Intermediate gaps along the path (missing object property,
+    //      array length below target index — setAtPathWithSchemaFill
+    //      asks the schema for defaults at each gap site).
+    // The common case (write to existing slot with a complete value)
+    // hits no schema lookups: mergeStructural short-circuits on
+    // ref-equal sub-trees, and the fill walker only queries the
+    // schema at gap sites.
+    const completedValue = mergeStructural(schema, path, value)
+    const nextForm = setAtPathWithSchemaFill(form.value, schema, path, completedValue) as F
     applyFormReplacement(nextForm, meta)
     if (fieldValidationMode === 'change') {
       scheduleFieldValidation(path, false /* debounced */)
@@ -810,9 +833,15 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // --- Reset ---
 
   function reset(nextDefaultValues?: DeepPartial<F>): void {
+    // Fall back to construction-time `defaultValues` when the caller
+    // doesn't provide a fresh override. Otherwise `reset()` produces
+    // schema-only defaults — losing the consumer's initial state from
+    // `useForm({ defaultValues: ... })`. The structural-completeness
+    // invariant covers post-write correctness; preserving construction
+    // defaults across reset is a separate semantic the consumer expects.
     const next = schema.getDefaultValues({
       useDefaultSchemaValues: true,
-      constraints: nextDefaultValues,
+      constraints: nextDefaultValues ?? defaultValues,
       validationMode,
     }).data
     // Replace form in one shot — applyFormReplacement will emit diffAndApply

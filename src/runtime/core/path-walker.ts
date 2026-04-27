@@ -1,6 +1,17 @@
 import type { Path, Segment } from './paths'
 
 /**
+ * The minimal slice of `AbstractSchema` the structural-completeness
+ * helpers need. Declared inline (not imported from types-api) so this
+ * file stays free of cyclic imports — types-api imports types-core,
+ * types-core does not import types-api, and this file is consumed by
+ * core/create-form-store.ts which sits between the two.
+ */
+export type SchemaForFill = {
+  getDefaultAtPath(path: Path): unknown
+}
+
+/**
  * Structured-path get/set primitives. Replace `lodash-es/get` and
  * `lodash-es/set` for internal callers that speak `Path` rather than
  * dotted strings.
@@ -137,5 +148,220 @@ export function deleteAtPath(root: unknown, path: Path): unknown {
   if (!(head in root)) return root
   const rec: Record<string, unknown> = { ...root }
   rec[head] = deleteAtPath(rec[head], rest)
+  return rec
+}
+
+/**
+ * Recursive merge that fills consumer-supplied gaps with the schema's
+ * prescribed defaults. The runtime calls this on every `setValueAtPath`
+ * write (and on whole-form callback returns) so the form remains
+ * structurally complete after the write.
+ *
+ * Semantics:
+ * - Plain object: every schema-default key not present in `consumer`
+ *   is filled with the schema default's value at that key. Schema-only
+ *   keys recurse into structural completeness; consumer-only keys (not
+ *   in the schema) survive untouched (validation flags them).
+ * - Array: each consumer element is merged with the SCHEMA element
+ *   default (looked up via `schema.getDefaultAtPath([...path, i])`).
+ *   Length follows the consumer — padding past the consumer's length
+ *   is `setAtPathWithSchemaFill`'s job, not this function's.
+ * - `null` consumer wins (a deliberate "clear" signal — validation
+ *   catches misuse against non-nullable shapes).
+ * - `undefined` consumer falls back to the schema default (treats
+ *   undefined as "missing"). When the schema default is also
+ *   undefined the result is undefined — schema and consumer agree.
+ * - Primitives, Date, RegExp, Map, Set, class instances: consumer
+ *   wins; no recursion (these are leaves under `isPlainRecord`).
+ *
+ * Idempotent short-circuit: when consumer is structurally complete
+ * relative to defaults the function returns `consumer` by reference,
+ * so common-case writes (consumer already complete) allocate nothing.
+ */
+export function mergeStructural(
+  schema: SchemaForFill,
+  path: Path,
+  consumer: unknown,
+  defaultValue: unknown = schema.getDefaultAtPath(path)
+): unknown {
+  // Consumer is missing — fall back to the schema default. When the
+  // schema default itself is `undefined` (path doesn't exist in the
+  // schema), the result is `undefined` and we don't fight it.
+  if (consumer === undefined) return defaultValue
+
+  // Null wins: deliberate consumer signal. Schema-validation catches
+  // null-vs-non-nullable; runtime doesn't override consumer intent.
+  if (consumer === null) return null
+
+  // Array branch: distinguish tuple-like (fixed length) from array
+  // (unbounded). Probe at a high index — tuples return `undefined`,
+  // arrays return the element default. For tuple-like, pad consumer
+  // up to the structural length; for arrays, length tracks consumer.
+  if (Array.isArray(consumer)) {
+    const TUPLE_PROBE_INDEX = 1_000_000
+    const probe = schema.getDefaultAtPath([...path, TUPLE_PROBE_INDEX])
+    let targetLen = consumer.length
+    if (probe === undefined) {
+      // Tuple-like: find structural length via sequential probe. Cap
+      // protects against pathological recursive lazies.
+      let n = consumer.length
+      while (n < 1024 && schema.getDefaultAtPath([...path, n]) !== undefined) n++
+      targetLen = n
+    }
+    let mutated = targetLen > consumer.length
+    const out = consumer.slice() as unknown[]
+    while (out.length < targetLen) out.push(undefined)
+    for (let i = 0; i < targetLen; i++) {
+      const elemDefault = schema.getDefaultAtPath([...path, i])
+      const consumerElem = i < consumer.length ? consumer[i] : undefined
+      const merged = mergeStructural(schema, [...path, i], consumerElem, elemDefault)
+      if (merged !== consumerElem) {
+        out[i] = merged
+        mutated = true
+      }
+    }
+    return mutated ? out : consumer
+  }
+
+  // Plain object: fill missing keys from default, recurse on present
+  // keys. Consumer-only keys pass through.
+  if (isPlainRecord(consumer)) {
+    if (!isPlainRecord(defaultValue)) {
+      // Default is non-record (or undefined / leaf) — nothing to fill;
+      // consumer wins as-is. Recurse just in case consumer holds nested
+      // keys that the schema knows about at deeper paths (rare).
+      return consumer
+    }
+    let mutated = false
+    const out: Record<string, unknown> = { ...consumer }
+    // Fill schema-default keys missing from consumer.
+    for (const key of Object.keys(defaultValue)) {
+      if (!(key in consumer) || consumer[key] === undefined) {
+        const defAtKey = defaultValue[key]
+        // Recurse so that filling produces a structurally-complete
+        // sub-tree (covers nested-object defaults that themselves
+        // contain wrappers / unions).
+        const filled = mergeStructural(schema, [...path, key], undefined, defAtKey)
+        if (filled !== undefined) {
+          out[key] = filled
+          mutated = true
+        }
+      }
+    }
+    // Recurse into consumer-supplied keys to catch nested gaps.
+    for (const key of Object.keys(consumer)) {
+      const merged = mergeStructural(schema, [...path, key], consumer[key], defaultValue[key])
+      if (merged !== consumer[key]) {
+        out[key] = merged
+        mutated = true
+      }
+    }
+    return mutated ? out : consumer
+  }
+
+  // Leaf-ish (primitives, Date, RegExp, Map, Set, class instances) —
+  // consumer wins, no recursion.
+  return consumer
+}
+
+/**
+ * Schema-aware variant of `setAtPath`. When extending past array
+ * length, pads new positions with the schema's element default
+ * instead of `undefined`. When descending into an object whose
+ * intermediate property is missing, fills the intermediate with
+ * the schema's default at that sub-path.
+ *
+ * `value` is the already-mergeStructural'd target value — this
+ * function only handles INTERMEDIATE fill. The caller (typically
+ * `setValueAtPath` on the form store) is responsible for completing
+ * the leaf.
+ *
+ * Performance: schema lookups happen only at gap sites. The common
+ * case (write to existing slot) does a copy-on-write spread without
+ * touching the schema. Misuse (`setValue('posts.21', x)` against an
+ * empty array) costs `getDefaultAtPath` once for the array element
+ * default (cached via `lastArrayDefault`/`lastArrayPathPrefix` for
+ * the duration of the call) and N pad inserts.
+ */
+export function setAtPathWithSchemaFill(
+  root: unknown,
+  schema: SchemaForFill,
+  fullPath: Path,
+  value: unknown
+): unknown {
+  if (fullPath.length === 0) return value
+  return setAtPathWithSchemaFillImpl(root, schema, fullPath, value, 0)
+}
+
+function setAtPathWithSchemaFillImpl(
+  root: unknown,
+  schema: SchemaForFill,
+  fullPath: Path,
+  value: unknown,
+  startIdx: number
+): unknown {
+  if (startIdx >= fullPath.length) return value
+
+  const head = fullPath[startIdx] as Segment
+  const isLeafStep = startIdx === fullPath.length - 1
+
+  if (typeof head === 'number') {
+    const arr = Array.isArray(root) ? [...root] : []
+    // Pad with element defaults if extending past length. For arrays
+    // every position resolves to the same element default; we cache
+    // the lookup (via `padDefault`) rather than re-asking the schema
+    // per pad index. For tuples per-position defaults differ — query
+    // the schema each iteration.
+    if (arr.length < head) {
+      // Detect tuple vs array by probing two adjacent positions: if
+      // they yield distinct, both-present defaults the schema is a
+      // tuple-like; else cache once. The probe path uses the slot the
+      // pad would occupy, never the existing slots.
+      const padPath0: Segment[] = [...fullPath.slice(0, startIdx), arr.length]
+      const padDefault0 = schema.getDefaultAtPath(padPath0)
+      const padPath1: Segment[] = [...fullPath.slice(0, startIdx), arr.length + 1]
+      const padDefault1 = schema.getDefaultAtPath(padPath1)
+      const tupleLike =
+        padDefault0 !== undefined &&
+        padDefault1 !== undefined &&
+        !Object.is(padDefault0, padDefault1)
+      while (arr.length < head) {
+        const idx = arr.length
+        if (tupleLike) {
+          arr.push(schema.getDefaultAtPath([...fullPath.slice(0, startIdx), idx]))
+        } else {
+          arr.push(padDefault0)
+        }
+      }
+    }
+
+    if (isLeafStep) {
+      arr[head] = value
+    } else {
+      const childRoot = arr[head]
+      arr[head] = setAtPathWithSchemaFillImpl(childRoot, schema, fullPath, value, startIdx + 1)
+    }
+    return arr
+  }
+
+  // Object key.
+  const rec: Record<string, unknown> = isPlainRecord(root) ? { ...root } : {}
+  if (isLeafStep) {
+    rec[head] = value
+    return rec
+  }
+
+  // Intermediate: ensure the child exists, filling from the schema
+  // default if missing or non-descendable.
+  const existing = rec[head]
+  let childRoot: unknown
+  if (existing === undefined || (existing !== null && typeof existing !== 'object')) {
+    const intermPath: Segment[] = [...fullPath.slice(0, startIdx + 1)]
+    const intermDefault = schema.getDefaultAtPath(intermPath)
+    childRoot = intermDefault
+  } else {
+    childRoot = existing
+  }
+  rec[head] = setAtPathWithSchemaFillImpl(childRoot, schema, fullPath, value, startIdx + 1)
   return rec
 }

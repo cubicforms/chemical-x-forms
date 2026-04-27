@@ -136,15 +136,19 @@ describe('zod v3: getDefaultAtPath', () => {
       expect(adapter.getDefaultAtPath(['validated', 'age'])).toBe(0)
     })
 
-    it('returns undefined at wrapper level when wrapper has no .default()', () => {
+    it('peels Optional at the LEAF and returns structural inner default', () => {
       const schema = z.object({
-        profile: z.object({ name: z.string() }).optional(),
+        profile: z.object({ name: z.string(), age: z.number() }).optional(),
       })
       const adapter = zodAdapter(schema)('f')
-      // Wrapper level: ZodOptional unwraps to undefined per generateValue.
-      expect(adapter.getDefaultAtPath(['profile'])).toBeUndefined()
-      // Sub-paths still resolve through the wrapper.
+      expect(adapter.getDefaultAtPath(['profile'])).toEqual({ name: '', age: 0 })
       expect(adapter.getDefaultAtPath(['profile', 'name'])).toBe('')
+    })
+
+    it('peels Nullable at the LEAF and returns structural inner default', () => {
+      const schema = z.object({ name: z.string().nullable() })
+      const adapter = zodAdapter(schema)('f')
+      expect(adapter.getDefaultAtPath(['name'])).toBe('')
     })
   })
 

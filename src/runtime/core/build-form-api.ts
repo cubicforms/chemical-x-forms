@@ -95,11 +95,19 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
 
   function setValueImpl(pathOrValue: unknown, maybeValue?: unknown): boolean {
     if (arguments.length === 1) {
-      state.applyFormReplacement(pathOrValue as Form)
+      const next =
+        typeof pathOrValue === 'function'
+          ? (pathOrValue as (prev: unknown) => unknown)(state.form.value)
+          : pathOrValue
+      state.applyFormReplacement(next as Form)
       return true
     }
     const segments = canonicalizePath(pathOrValue as string | Path).segments
-    state.setValueAtPath(segments, maybeValue)
+    const resolvedValue =
+      typeof maybeValue === 'function'
+        ? (maybeValue as (prev: unknown) => unknown)(state.getValueAtPath(segments))
+        : maybeValue
+    state.setValueAtPath(segments, resolvedValue)
     return true
   }
 

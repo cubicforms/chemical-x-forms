@@ -88,7 +88,7 @@ export function buildFieldArrayApi<F extends GenericForm>(state: FormStore<F>): 
       if (b < 0 || b >= next.length) return
       if (a === b) return
       const tmp = next[a]
-      next[a] = next[b] as unknown
+      next[a] = next[b]
       next[b] = tmp
       writeArray(path, next)
     },

@@ -121,9 +121,56 @@ See [0.6 → 0.7 migration](./migration/0.6-to-0.7.md).
 
 ## "Persisted state is gone after a schema change"
 
-Bump `persist.version` when you rename a field or change a type —
-old payloads with a mismatched version are dropped on read. See
-[persistence recipe](./recipes/persistence.md).
+Working as intended. As of 0.12, storage keys carry the schema's
+fingerprint (`${base}:${fingerprint}`). When the schema changes
+shape, the fingerprint changes, the old key becomes unreachable,
+and the orphan-cleanup pass on the next mount removes it. No
+manual `version` bump needed — it's automatic.
+
+If the schema didn't change shape but state was wiped anyway, the
+fingerprint is over-sensitive. Common causes in custom adapters:
+
+- The adapter's `fingerprint()` mixes function-valued metadata
+  (refinement bodies, transform fns) into the hash without
+  collapsing to a sentinel. Two refines of the same shape produce
+  different hashes; consumers see drafts vanish on every refine
+  edit. Collapse functions to `'fn:*'`.
+- The fingerprint includes a timestamp or per-call random ID. It
+  must be a pure function of the schema's structure.
+
+If you genuinely need to invalidate drafts without changing the
+schema (e.g. shipping a security fix that requires fresh state),
+call `form.clearPersistedDraft()` on mount or evict the registry
+entry programmatically.
+
+## "I see `prev?.first ?? ''` getting flagged as redundant"
+
+Working as intended. As of 0.12, the path-form `setValue` callback
+receives a fully-defaulted `prev` — the runtime calls
+`getDefaultAtPath` on missing slots before invoking the callback,
+so consumer code can read `prev.first.toUpperCase()` directly. Drop
+the optional chain.
+
+Whole-form callback `prev` is `WithIndexedUndefined<Form>`, so
+array reads (`prev.posts[5]`) DO carry `| undefined` and need
+narrowing — that's the only case where defensive reads are still
+correct.
+
+## "`getValue('posts.0.title').value.toUpperCase()` started type-erroring"
+
+`NestedReadType` lands in 0.12. Once a `getValue` / `register` path
+crosses an array index, the result carries `| undefined` (the
+runtime can return undefined for out-of-bounds reads). Narrow:
+
+```ts
+form.getValue('posts.0.title').value?.toUpperCase() ?? ''
+```
+
+Or use `getFieldState(...)` if you want errors + presence flags
+alongside the value.
+
+Tuple positions stay strict — out-of-bounds is a type-system error
+on tuples, not a runtime case.
 
 ## "Undo brought back stale field errors"
 

@@ -8,7 +8,9 @@ import type {
   FlatPath,
   GenericForm,
   IsObjectOrArray,
+  NestedReadType,
   NestedType,
+  WithIndexedUndefined,
 } from './types-core'
 
 export type FormKey = string
@@ -690,8 +692,35 @@ export type RegisterDirective =
   | RegisterRadioCustomDirective
   | RegisterModelDynamicCustomDirective
 
-export type SetValueCallback<Payload> = (value: DeepPartial<Payload>) => DeepPartial<Payload>
-export type SetValuePayload<Payload> = DeepPartial<Payload> | SetValueCallback<Payload>
+/**
+ * Callback form of `setValue`'s value argument. The callback receives
+ * `prev` as the consumer-facing READ shape (may differ from the write
+ * shape — see SetValuePayload below) and returns the same READ shape.
+ * The runtime mergeStructural's the return value back against the
+ * schema default, filling any structural gaps.
+ *
+ * Returning the read shape (rather than a stricter write shape) is
+ * deliberate: it lets consumers do `({ ...prev, foo: bar })` without
+ * fighting TypeScript over array element undefinedness on the spread.
+ * The runtime guarantees structural completeness AFTER the write
+ * regardless of what shape the consumer returns.
+ */
+export type SetValueCallback<Read> = (prev: Read) => Read
+
+/**
+ * Union of value-form and callback-form for `setValue`'s value
+ * argument. Strict on the value-form — `DeepPartial` was dropped in
+ * favour of the runtime mergeStructural completing partial writes
+ * against the schema default.
+ *
+ * `Write` is the shape required for the value form (typically strict
+ * `Form` or `NestedType<Form, Path>`). `Read` is the shape `prev`
+ * exposes to a callback and the shape the callback returns; defaults
+ * to `Write`. Whole-form `setValue` parameterises `Read` to
+ * `WithIndexedUndefined<Form>` so consumer reads of `prev.posts[5]`
+ * are honest about returning `Post | undefined`.
+ */
+export type SetValuePayload<Write, Read = Write> = Write | SetValueCallback<Read>
 
 type DeepFlatten<T> =
   // If it's not an object, just leave it as-is
@@ -852,24 +881,40 @@ export type UseAbstractFormReturnType<
 > = {
   getFieldState: (path: FlatPath<Form, keyof Form, true>) => Ref<FieldState>
   handleSubmit: HandleSubmit<Form>
+  // getValue READS the form. At array sub-paths the runtime can return
+  // undefined (out-of-bounds index), so the read shape uses
+  // `NestedReadType` — once the path crosses a numeric segment, every
+  // result is `T | undefined`. Strict (no taint) for paths that don't
+  // cross arrays.
   getValue: {
-    (): Readonly<Ref<GetValueFormType>>
-    <Path extends FlatPath<Form>>(path: Path): Readonly<Ref<NestedType<GetValueFormType, Path>>>
+    (): Readonly<Ref<WithIndexedUndefined<GetValueFormType>>>
+    <Path extends FlatPath<Form>>(path: Path): Readonly<Ref<NestedReadType<GetValueFormType, Path>>>
     <WithMeta extends boolean>(
       context: CurrentValueContext<WithMeta>
     ): WithMeta extends true
-      ? CurrentValueWithContext<GetValueFormType>
-      : Readonly<Ref<GetValueFormType>>
+      ? CurrentValueWithContext<WithIndexedUndefined<GetValueFormType>>
+      : Readonly<Ref<WithIndexedUndefined<GetValueFormType>>>
     <Path extends FlatPath<Form>, WithMeta extends boolean>(
       path: Path,
       context: CurrentValueContext<WithMeta>
     ): WithMeta extends true
-      ? CurrentValueWithContext<NestedType<GetValueFormType, Path>>
-      : Readonly<Ref<NestedType<GetValueFormType, Path>>>
+      ? CurrentValueWithContext<NestedReadType<GetValueFormType, Path>>
+      : Readonly<Ref<NestedReadType<GetValueFormType, Path>>>
   }
+  // setValue WRITES the form. Both forms drop `DeepPartial` — write
+  // shapes lead with the strict NestedType. The runtime mergeStructural
+  // completes any partial writes, so casts still work; types are honest
+  // about what consumers SHOULD pass.
+  //
+  // Whole-form: `prev` is undefined-tainted (read shape); return is
+  // strict (write shape). Path-form: both prev and return are strict
+  // (runtime auto-defaults prev when the slot is missing).
   setValue: {
-    <Value extends SetValuePayload<Form>>(value: Value): boolean
-    <Path extends FlatPath<Form>, Value extends SetValuePayload<NestedType<Form, Path>>>(
+    <Value extends SetValuePayload<Form, WithIndexedUndefined<Form>>>(value: Value): boolean
+    <
+      Path extends FlatPath<Form>,
+      Value extends SetValuePayload<NestedType<Form, Path>, NonNullable<NestedType<Form, Path>>>,
+    >(
       path: Path,
       value: Value
     ): boolean
@@ -907,7 +952,7 @@ export type UseAbstractFormReturnType<
   register: <Path extends RegisterFlatPath<Form, keyof Form>>(
     path: Path,
     options?: RegisterOptions
-  ) => RegisterValue<NestedType<Form, Path> | undefined>
+  ) => RegisterValue<NestedReadType<Form, Path>>
   key: FormKey
 
   // --- Reactive field-error API ---

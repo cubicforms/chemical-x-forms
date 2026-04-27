@@ -119,6 +119,103 @@ export type NestedType<
 type Primitive = string | number | boolean | symbol | bigint | null | undefined
 
 /**
+ * Distinguish a tuple from a regular array. Tuples have a literal
+ * `length` (`2`, `3`, ...); arrays have `length: number`.
+ *
+ *   IsTuple<[string, number]>  // true
+ *   IsTuple<string[]>          // false
+ *
+ * Used by `WithIndexedUndefined` to skip taint on tuple positions
+ * (which are guaranteed to be defined at runtime once the tuple is
+ * structurally complete) while still tainting unbounded array
+ * elements (where `arr[N]` can return `undefined` for out-of-bounds
+ * reads).
+ */
+export type IsTuple<T extends readonly unknown[]> = number extends T['length'] ? false : true
+
+/**
+ * "Honest read shape" for a form value. Tags every UNBOUNDED array's
+ * element type with `| undefined` so consumer code that touches
+ * `prev.posts[5]` or similar must narrow before using the result —
+ * matching the runtime reality that array index reads can fall off
+ * the end. Recurses into objects and tuple positions; leaves Date /
+ * RegExp / Map / Set / class instances untouched.
+ *
+ * Used for:
+ * - Whole-form callback `prev` in `setValue(cb)` (the live form is
+ *   read; the runtime structural-completeness invariant guarantees
+ *   the form is structurally complete after every write, but doesn't
+ *   guarantee any particular array LENGTH).
+ * - `getValue(path)` returns at array sub-paths.
+ *
+ * NOT applied to:
+ * - Path-form callback `prev` in `setValue(path, cb)` — the runtime
+ *   auto-defaults `prev` from `schema.getDefaultAtPath(path)` when
+ *   the slot is missing, so the strict `NestedType` is honest there.
+ * - `setValue` value form — write shapes stay strict so consumers
+ *   can't accidentally pass partial-array values that the type
+ *   system promises but the validation layer rejects.
+ */
+export type WithIndexedUndefined<T> = T extends
+  | Date
+  | RegExp
+  | Map<unknown, unknown>
+  | Set<unknown>
+  | ((...args: never) => unknown)
+  ? T
+  : T extends ReadonlyArray<infer Item>
+    ? IsTuple<T> extends true
+      ? { -readonly [K in keyof T]: WithIndexedUndefined<T[K]> }
+      : ReadonlyArray<WithIndexedUndefined<Item> | undefined>
+    : T extends object
+      ? { [K in keyof T]: WithIndexedUndefined<T[K]> }
+      : T
+
+/**
+ * Like `NestedType` but tracks whether a numerical-index segment was
+ * crossed during the walk. Once tainted, every subsequent result is
+ * `T | undefined`. Use for the READ side of path-walking APIs
+ * (`getValue`, `register`'s value ref) where the runtime can return
+ * `undefined` if the array index is out of bounds.
+ *
+ * The strict `NestedType` stays in place for write-side APIs and for
+ * path-form callback prev (which is auto-defaulted at runtime).
+ */
+export type NestedReadType<
+  RootValue,
+  FlattenedPath extends string,
+  _Tainted extends boolean = false,
+  _RootValue = NonNullable<RootValue>,
+> =
+  IsObjectOrArray<_RootValue> extends false
+    ? never
+    : FlattenedPath extends `${infer Key}.${infer Rest}`
+      ? Key extends `${number}`
+        ? Key extends keyof _RootValue
+          ? NestedReadType<_RootValue[Key], Rest, true>
+          : Key extends `${infer NumericKey extends number}`
+            ? NumericKey extends keyof _RootValue
+              ? NestedReadType<_RootValue[NumericKey], Rest, true>
+              : never
+            : never
+        : Key extends keyof _RootValue
+          ? NestedReadType<_RootValue[Key], Rest, _Tainted>
+          : never
+      : FlattenedPath extends `${number}`
+        ? FlattenedPath extends keyof _RootValue
+          ? _RootValue[FlattenedPath] | undefined
+          : FlattenedPath extends `${infer NumericKey extends number}`
+            ? NumericKey extends keyof _RootValue
+              ? _RootValue[NumericKey] | undefined
+              : never
+            : never
+        : FlattenedPath extends keyof _RootValue
+          ? _Tainted extends true
+            ? _RootValue[FlattenedPath] | undefined
+            : _RootValue[FlattenedPath]
+          : never
+
+/**
  * Filter FlatPath<Form> down to the subset of paths whose resolved leaf
  * is an array. Used by the typed field-array helpers (append / remove /
  * swap / ...) so those helpers only accept paths that actually address

@@ -487,7 +487,12 @@ function isStructuralV3Kind(schema: z.ZodTypeAny): boolean {
     isZodSchemaType(schema, 'ZodOptional') ||
     isZodSchemaType(schema, 'ZodNullable') ||
     isZodSchemaType(schema, 'ZodDefault') ||
-    isZodSchemaType(schema, 'ZodEffects')
+    isZodSchemaType(schema, 'ZodEffects') ||
+    // Newer transparent wrappers (v3.23+). Each wraps a single inner
+    // schema with no structural impact — `peelV3Wrappers` resolves them.
+    isZodSchemaType(schema, 'ZodPipeline') ||
+    isZodSchemaType(schema, 'ZodReadonly') ||
+    isZodSchemaType(schema, 'ZodBranded')
   )
 }
 
@@ -498,12 +503,19 @@ function isStructuralV3Kind(schema: z.ZodTypeAny): boolean {
  * resolves the same sub-schemas across both adapters for shapes like
  * `{ profile: z.object({...}).optional() }`.
  *
- * Bounded by 64 iterations as a cycle/runaway guard. Returns the original
- * schema unchanged if it has no peelable wrapper. ZodDefault / ZodOptional /
- * ZodNullable / ZodEffects all peel; unrecognised wrappers (Catch /
- * Pipeline / Branded / Readonly — rarer in form schemas) fall through and
- * remain visible at the leaf, where `getDefaultValuesFromZodSchema`'s
- * `generateValue` handles them best-effort.
+ * Bounded by `MAX_UNWRAP_STEPS` as a cycle/runaway guard. Returns the
+ * original schema unchanged if it has no peelable wrapper.
+ *
+ * Peeled wrappers:
+ *   - `ZodOptional` / `ZodNullable` / `ZodDefault` — `_def.innerType`
+ *   - `ZodEffects` — `_def.schema` (the structural source)
+ *   - `ZodPipeline` — `_def.in` (input shape; consumers see structural form)
+ *   - `ZodReadonly` — `_def.innerType`
+ *   - `ZodBranded` — `_def.type`
+ *
+ * `ZodCatch` is intentionally NOT peeled here — its presence carries
+ * load-bearing semantic (the caught fallback), and `unwrapDefault`
+ * reads it directly. See A3 fix.
  */
 function peelV3Wrappers(schema: z.ZodTypeAny): z.ZodTypeAny {
   let current: z.ZodTypeAny = schema
@@ -513,7 +525,7 @@ function peelV3Wrappers(schema: z.ZodTypeAny): z.ZodTypeAny {
       isZodSchemaType(current, 'ZodNullable') ||
       isZodSchemaType(current, 'ZodDefault')
     ) {
-      const inner = current._def.innerType as z.ZodTypeAny | undefined
+      const inner = (current._def as { innerType?: z.ZodTypeAny }).innerType
       if (!inner) return current
       current = inner
       continue
@@ -522,7 +534,31 @@ function peelV3Wrappers(schema: z.ZodTypeAny): z.ZodTypeAny {
       // v3 ZodEffects: source schema is at `_def.schema`; v4 parity'd
       // helpers also expose `.innerType()` on some shapes. Prefer the
       // structural source.
-      const inner = current._def.schema as z.ZodTypeAny | undefined
+      const inner = (current._def as { schema?: z.ZodTypeAny }).schema
+      if (!inner) return current
+      current = inner
+      continue
+    }
+    if (isZodSchemaType(current, 'ZodPipeline')) {
+      // ZodPipeline transforms `in -> out`; for default extraction and
+      // structural traversal, the input schema is the right anchor —
+      // it's what the consumer wrote, and the output is a derived
+      // shape they don't construct values for directly.
+      const inner = (current._def as { in?: z.ZodTypeAny }).in
+      if (!inner) return current
+      current = inner
+      continue
+    }
+    if (isZodSchemaType(current, 'ZodReadonly')) {
+      const inner = (current._def as { innerType?: z.ZodTypeAny }).innerType
+      if (!inner) return current
+      current = inner
+      continue
+    }
+    if (isZodSchemaType(current, 'ZodBranded')) {
+      // ZodBranded annotates a brand at the type level; runtime is the
+      // wrapped schema unchanged.
+      const inner = (current._def as { type?: z.ZodTypeAny }).type
       if (!inner) return current
       current = inner
       continue
@@ -629,7 +665,27 @@ function unwrapToDiscriminatedUnion(
       isZodSchemaType(currentSchema, 'ZodOptional') ||
       isZodSchemaType(currentSchema, 'ZodNullable')
     ) {
-      currentSchema = currentSchema._def.innerType
+      currentSchema = (currentSchema._def as { innerType: z.ZodTypeAny }).innerType
+      continue
+    }
+    // Newer transparent wrappers — peel through to expose any
+    // discriminated union that lives at the structural core.
+    if (isZodSchemaType(currentSchema, 'ZodReadonly')) {
+      const inner = (currentSchema._def as { innerType?: z.ZodTypeAny }).innerType
+      if (!inner) return undefined
+      currentSchema = inner
+      continue
+    }
+    if (isZodSchemaType(currentSchema, 'ZodBranded')) {
+      const inner = (currentSchema._def as { type?: z.ZodTypeAny }).type
+      if (!inner) return undefined
+      currentSchema = inner
+      continue
+    }
+    if (isZodSchemaType(currentSchema, 'ZodPipeline')) {
+      const inner = (currentSchema._def as { in?: z.ZodTypeAny }).in
+      if (!inner) return undefined
+      currentSchema = inner
       continue
     }
 
@@ -713,11 +769,29 @@ function unwrapDefault(schema: z.ZodTypeAny): [unknown, boolean] {
   let current: z.ZodTypeAny = schema
   for (let i = 0; i < MAX_UNWRAP_STEPS; i++) {
     if (isZodSchemaType(current, 'ZodDefault')) {
-      const defaultValue = current._def.defaultValue()
+      const defaultValue = (current._def as { defaultValue: () => unknown }).defaultValue()
       return [defaultValue, true]
     }
     if (isZodSchemaType(current, 'ZodNullable') || isZodSchemaType(current, 'ZodOptional')) {
-      current = current._def.innerType
+      current = (current._def as { innerType: z.ZodTypeAny }).innerType
+      continue
+    }
+    if (isZodSchemaType(current, 'ZodReadonly')) {
+      const inner = (current._def as { innerType?: z.ZodTypeAny }).innerType
+      if (!inner) break
+      current = inner
+      continue
+    }
+    if (isZodSchemaType(current, 'ZodBranded')) {
+      const inner = (current._def as { type?: z.ZodTypeAny }).type
+      if (!inner) break
+      current = inner
+      continue
+    }
+    if (isZodSchemaType(current, 'ZodPipeline')) {
+      const inner = (current._def as { in?: z.ZodTypeAny }).in
+      if (!inner) break
+      current = inner
       continue
     }
     if (isZodSchemaType(current, 'ZodEffects')) {
@@ -725,7 +799,7 @@ function unwrapDefault(schema: z.ZodTypeAny): [unknown, boolean] {
       // effect itself was constructed from a ZodType (older v3 shape),
       // otherwise at `.innerType()` (newer v3). Probe both — whichever
       // resolves to a ZodTypeAny is the schema we keep unwrapping.
-      const effect = current._def.effect as unknown
+      const effect = (current._def as { effect?: unknown }).effect
       if (effect !== null && typeof effect === 'object' && '_def' in effect) {
         current = effect as z.ZodTypeAny
         continue
@@ -860,6 +934,24 @@ function getDefaultValuesFromZodSchema<
       return generateValue(discriminantSchema as z.ZodTypeAny)
     }
 
+    // Newer transparent wrappers (v3.23+ for Pipeline/Readonly; Branded
+    // pre-existed). Each wraps a single inner schema with no structural
+    // impact at value-construction time.
+    if (isZodSchemaType(schema, 'ZodReadonly')) {
+      const inner = (schema._def as { innerType?: z.ZodTypeAny }).innerType
+      if (inner) return generateValue(inner)
+    }
+    if (isZodSchemaType(schema, 'ZodBranded')) {
+      const inner = (schema._def as { type?: z.ZodTypeAny }).type
+      if (inner) return generateValue(inner)
+    }
+    if (isZodSchemaType(schema, 'ZodPipeline')) {
+      // Pipeline transforms in -> out; pre-transform default is the
+      // input schema's natural default.
+      const inner = (schema._def as { in?: z.ZodTypeAny }).in
+      if (inner) return generateValue(inner)
+    }
+
     console.warn(`Unsupported schema: ${schema.constructor.name} (key '${formKey}')`)
     return null
   }
@@ -963,6 +1055,28 @@ function stripRefinements<T extends z.ZodTypeAny>(schema: T) {
     if (isZodSchemaType(_schema, 'ZodNullable')) {
       // Recursively strip nullable's inner type
       return z.nullable(_stripRefinements(_schema.unwrap(), depth + 1))
+    }
+
+    // Newer transparent wrappers — descend into their inner schema and
+    // return that. We don't reconstruct the wrapper because its
+    // refinement/branding/pipeline metadata isn't load-bearing for the
+    // slim-parse pass that consumes the stripped schema.
+    if (isZodSchemaType(_schema, 'ZodReadonly')) {
+      const inner = (_schema._def as { innerType?: z.ZodTypeAny }).innerType
+      if (!inner) return _schema
+      return _stripRefinements(inner, depth + 1)
+    }
+
+    if (isZodSchemaType(_schema, 'ZodBranded')) {
+      const inner = (_schema._def as { type?: z.ZodTypeAny }).type
+      if (!inner) return _schema
+      return _stripRefinements(inner, depth + 1)
+    }
+
+    if (isZodSchemaType(_schema, 'ZodPipeline')) {
+      const inner = (_schema._def as { in?: z.ZodTypeAny }).in
+      if (!inner) return _schema
+      return _stripRefinements(inner, depth + 1)
     }
 
     // Return other schema types as-is

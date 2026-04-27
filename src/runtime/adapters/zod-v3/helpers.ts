@@ -25,6 +25,15 @@ type ZodTypeMap = {
   ZodNumber: z.ZodNumber
   ZodBigInt: z.ZodBigInt
   ZodDate: z.ZodDate
+  // Newer wrappers (v3.23+ for Pipeline/Readonly; Branded/Catch
+  // pre-existed). Use proper class generics so the predicate's
+  // narrowing target is structurally distinct from the existing
+  // entries — falling back to `z.ZodTypeAny` collapses TS's flow
+  // analysis through later branches into `never`.
+  ZodPipeline: z.ZodPipeline<z.ZodTypeAny, z.ZodTypeAny>
+  ZodReadonly: z.ZodReadonly<z.ZodTypeAny>
+  ZodBranded: z.ZodBranded<z.ZodTypeAny, string | number | symbol>
+  ZodCatch: z.ZodCatch<z.ZodTypeAny>
 }
 
 /**

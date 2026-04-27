@@ -61,3 +61,70 @@ describe('zod v3 adapter — bounded wrapper recursion', () => {
     expect(fp.length).toBeGreaterThan(0)
   })
 })
+
+describe('zod v3 adapter — transparent wrapper kinds', () => {
+  it('produces a default for a ZodReadonly leaf', () => {
+    const schema = z.object({
+      handle: z.string().readonly(),
+      count: z.number().readonly(),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
+    expect(result.success).toBe(true)
+    expect(result.data).toEqual({ handle: '', count: 0 })
+  })
+
+  it('produces a default for a ZodBranded leaf', () => {
+    const schema = z.object({
+      id: z.string().brand<'Id'>(),
+      seq: z.number().brand<'Seq'>(),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
+    expect(result.success).toBe(true)
+    expect(result.data).toEqual({ id: '', seq: 0 })
+  })
+
+  it('produces a default for a ZodPipeline (uses input schema)', () => {
+    const schema = z.object({
+      email: z.string().pipe(z.string().email()),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
+    // Input schema default (pre-transform) is `''` — `email` validation
+    // would reject it but the slim-parse rebuilds a checks-free copy
+    // for default extraction.
+    expect(result.success).toBe(true)
+    expect((result.data as { email: string }).email).toBe('')
+  })
+
+  it('honours .default() through a ZodReadonly wrapper', () => {
+    const schema = z.object({
+      role: z.string().default('user').readonly(),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
+    expect(result.data).toEqual({ role: 'user' })
+  })
+
+  it('honours .default() through a ZodBranded wrapper', () => {
+    const schema = z.object({
+      handle: z.string().default('anon').brand<'Handle'>(),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
+    expect(result.data).toEqual({ handle: 'anon' })
+  })
+
+  it('walks getDefaultAtPath through a ZodPipeline + ZodReadonly chain', () => {
+    const schema = z.object({
+      profile: z
+        .object({
+          name: z.string().default('Ada'),
+        })
+        .readonly(),
+    })
+    const adapter = zodAdapter(schema)('f')
+    expect(adapter.getDefaultAtPath(['profile', 'name'])).toBe('Ada')
+  })
+})

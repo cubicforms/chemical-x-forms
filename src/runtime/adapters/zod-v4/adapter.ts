@@ -5,7 +5,7 @@ import { assertSupportedKinds } from './assert-supported'
 import { zodIssuesToValidationErrors } from './errors'
 import { fingerprintZodSchema } from './fingerprint'
 import { deriveDefault, getDefaultValuesFromZodSchema } from './default-values'
-import { assertZodVersion } from './introspect'
+import { assertZodVersion, kindOf, unwrapInner } from './introspect'
 import { getNestedZodSchemasAtPath } from './path-walker'
 
 /**
@@ -24,6 +24,73 @@ import { getNestedZodSchemasAtPath } from './path-walker'
  */
 
 const PATH_SEPARATOR = '.'
+
+/**
+ * Peel `.optional()` / `.nullable()` wrappers off a leaf schema ONLY
+ * when the inner type is structurally fillable (object, array, tuple,
+ * record, discriminated/plain union, intersection — or itself a
+ * peelable wrapper that resolves to one of those). Peeling exposes
+ * the inner shape's default so consumer-supplied partial writes
+ * through optional sub-schemas (`{ profile: z.object({...}).optional() }`,
+ * `setValue('profile', { name: 'X' })`) get the inner shape's
+ * structural defaults filled in.
+ *
+ * For PRIMITIVE inner (ZodString, ZodNumber, ZodBoolean, ZodLiteral,
+ * etc.), the wrapper IS the meaningful schema — `optional` means
+ * "missing is allowed", `nullable` means "null is allowed". Peeling
+ * an optional string to its inner string would default the leaf to
+ * `''` and cause mergeStructural to write `notes: ''` instead of
+ * `notes: undefined` when filling sibling keys at the parent object
+ * — the runtime would silently overwrite the optional's "absent"
+ * intent with a non-empty marker.
+ *
+ * `.default(x)` is left intact at every level so deriveDefault
+ * returns the explicit default value. Bounded iteration cap as a
+ * runaway guard for pathological wrappers.
+ */
+function unwrapStructuralWrappers(schema: z.ZodType): z.ZodType {
+  let current: z.ZodType = schema
+  for (let i = 0; i < 64; i++) {
+    const outerKind = kindOf(current)
+    if (outerKind !== 'optional' && outerKind !== 'nullable') break
+    const inner = unwrapInner(current)
+    if (inner === undefined) return current
+    if (!isStructuralKind(kindOf(inner))) break
+    current = inner
+  }
+  return current
+}
+
+/**
+ * Kinds for which mergeStructural can recurse to fill missing keys
+ * or pad missing positions. Primitive leaves (string / number / etc.)
+ * and opaque non-recursable wrappers fall outside this set, so
+ * peeling Optional / Nullable around them would lose information
+ * (the wrapper's "absent / null" semantic) without enabling any fill.
+ *
+ * Wrappers themselves count as structural — `unwrapStructuralWrappers`
+ * recurses to re-check their inner kind.
+ */
+const STRUCTURAL_KINDS: ReadonlySet<ReturnType<typeof kindOf>> = new Set([
+  'object',
+  'array',
+  'tuple',
+  'record',
+  'discriminated-union',
+  'union',
+  'intersection',
+  'optional',
+  'nullable',
+  'default',
+  'readonly',
+  'catch',
+  'pipe',
+  'lazy',
+])
+
+function isStructuralKind(kind: ReturnType<typeof kindOf>): boolean {
+  return STRUCTURAL_KINDS.has(kind)
+}
 
 export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infer<FormSchema>>(
   rootSchema: FormSchema
@@ -79,6 +146,28 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         // a partially-valid initial state is preferable to a mount-time
         // exception. Matches v3's lax semantics.
         return { data, errors: undefined, success: true, formKey }
+      },
+
+      getDefaultAtPath(path) {
+        // For empty path, the "default at root" is the schema's full
+        // default — return the deriveDefault of the root, not the slim-
+        // schema validate-then-fix loop (that's getDefaultValues' job).
+        if (path.length === 0) return deriveDefault(rootSchema, true)
+        const [first] = getNestedZodSchemasAtPath(rootSchema, path)
+        if (first === undefined) return undefined
+        // STRUCTURAL default: peel `.optional()` / `.nullable()` so the
+        // result is the inner shape's default (`''` for an optional
+        // string, `{ name: '' }` for an optional object). This is what
+        // the runtime structural-completeness invariant needs: when a
+        // consumer writes a partial object at an optional path, the lib
+        // fills missing keys from the inner shape's structural defaults.
+        // `.default(x)` is NOT peeled — the explicit default is the
+        // canonical "fresh" value at that path. ZodReadonly / ZodCatch /
+        // ZodPipe are handled inside `deriveDefault` itself.
+        // First candidate matches validateAtPath's first-success semantic
+        // and getDefaultValuesFromZodSchema's line-256 first-candidate
+        // behavior.
+        return deriveDefault(unwrapStructuralWrappers(first), true)
       },
 
       getSchemasAtPath(path) {

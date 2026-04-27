@@ -113,8 +113,11 @@ are OK.
 
 ## getValue vs getFieldState
 
-- `getValue('posts.0.title')` → `Readonly<Ref<string>>`. Use for the
-  value.
+- `getValue('posts.0.title')` → `Readonly<Ref<string | undefined>>`.
+  Reads carry `| undefined` once a path crosses an array index — at
+  runtime, `posts[0]` could be missing (sparse, deleted, fresh-mount
+  empty). Narrow with `?.` / optional checks before non-null
+  operations. Tuple positions stay strict (their length is static).
 - `getFieldState('posts.0.title')` → `Ref<FieldState>`. Use for
   errors + touched / focused / blurred.
 
@@ -127,6 +130,16 @@ are OK.
     </span>
   </div>
 </template>
+```
+
+The directive's `v-register` binding handles `undefined` correctly
+(renders empty), so most templates don't need defensive narrowing.
+Defensive narrowing matters when scripts read the value:
+
+```ts
+const title = form.getValue('posts.0.title')
+// title.value is `string | undefined`.
+const upper = title.value?.toUpperCase() ?? ''
 ```
 
 ## Stale state on removal
@@ -152,3 +165,39 @@ the whole array. For a large seed, assign in one shot:
 ```ts
 form.setValue('items', nextArray) // O(N), one assignment
 ```
+
+`setValue` types lead with the full element shape — pass elements
+matching the schema's element type. If you have partial elements
+from a server payload (some keys missing), the runtime
+mergeStructural fills missing keys from the schema's element
+default, so the bulk assignment still produces a structurally
+complete array. The type system points the IDE at the canonical
+"give me the whole shape" pattern at the call site; the runtime
+backstop catches dynamic / server-shaped inputs.
+
+## Sparse-index writes auto-pad
+
+`setValue('posts.21', { ... })` against an empty `posts` array
+fills indices `0..20` with the schema's element default before
+writing index `21`. The structural-completeness invariant means
+the array is never sparse on disk — every index `< length` is a
+fully-shaped element matching the schema:
+
+```ts
+const form = useForm({
+  schema: z.object({ posts: z.array(z.object({ title: z.string() })) }),
+  key: 'blog',
+})
+
+// posts is initially []
+form.setValue('posts.5.title', 'sixth post')
+// posts.length === 6
+// posts[0..4] are { title: '' } (the schema's element default)
+// posts[5] is { title: 'sixth post' }
+```
+
+This makes `posts.length` honest and lets `v-for` over `posts`
+render N rows without filtering for `undefined`. Most consumers
+never write sparse indices intentionally — the invariant just
+means the framework no longer has to guess what to do when one
+slips through.

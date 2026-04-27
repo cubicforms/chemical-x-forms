@@ -53,6 +53,27 @@ export function fakeSchema<F extends GenericForm>(
         formKey: '',
       }
     },
+    getDefaultAtPath(path) {
+      // fakeSchema is data-keyed, not schema-keyed — it can't distinguish
+      // tuple from unbounded array. To keep the structural-completeness
+      // machinery honest in tests:
+      //   - Object paths: return the value at the path (lookup).
+      //   - Once any intermediate is an array, return undefined: the test
+      //     util doesn't model element schemas.
+      //   - Empty path: return the whole defaults tree.
+      // Tests that need array element defaults (e.g. element-fill on
+      // sparse writes) should use a Zod adapter instead, or override
+      // this method on the returned object.
+      if (path.length === 0) return defaults
+      let current: unknown = defaults
+      for (const seg of path) {
+        if (Array.isArray(current)) return undefined
+        if (current === null || typeof current !== 'object') return undefined
+        const key = typeof seg === 'number' ? String(seg) : seg
+        current = (current as Record<string, unknown>)[key]
+      }
+      return current
+    },
     getSchemasAtPath(path) {
       void path
       return []

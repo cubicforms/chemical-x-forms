@@ -21,8 +21,8 @@ sensitive-named paths throw at mount unless explicitly acknowledged.
 ## Setup
 
 Configure `useForm` with the operational settings (backend, key,
-debounce window, version, etc.). Three input forms — pick the one
-that reads best at the call site:
+debounce window, etc.). Three input forms — pick the one that reads
+best at the call site:
 
 ```ts
 // Shorthand: built-in backend with library defaults
@@ -35,7 +35,7 @@ useForm({ schema, key: 'signup', persist: encryptedStorage })
 useForm({
   schema,
   key: 'signup',
-  persist: { storage: 'local', debounceMs: 500, version: 3 },
+  persist: { storage: 'local', debounceMs: 500 },
 })
 ```
 
@@ -211,17 +211,19 @@ for the IndexedDB code.
 persist: {
   storage: 'local' | 'session' | 'indexeddb' | FormStorage,
   key?: string,                     // default: chemical-x-forms:${formKey}
+                                    // (the resolved storage key adds a :${fingerprint} suffix automatically)
   debounceMs?: number,              // default 300
   include?: 'form' | 'form+errors', // default 'form'
-  version?: number,                 // default 2 — bump to invalidate old entries
   clearOnSubmitSuccess?: boolean,   // default true
 }
 ```
 
 Note what's NOT here. There's no `fields:` allowlist, no `paths:`
-allowlist, no `redactFields:` blocklist. Persisted fields are
-announced at the `register()` call site — that's the entire opt-in
-surface. The form-level `persist:` config is operational only.
+allowlist, no `redactFields:` blocklist, and no `version:` knob.
+Persisted fields are announced at the `register()` call site —
+that's the entire opt-in surface. Schema-change invalidation flows
+from the schema's fingerprint, not a manual version field. The
+form-level `persist:` config is operational only.
 
 ## Sparse payloads
 
@@ -233,12 +235,16 @@ The persisted payload contains only opted-in paths:
 // register('phone', { persist: true })
 // register('cvv')                     ← no opt-in
 
-// Persisted payload:
+// Persisted payload, written under key chemical-x-forms:signup:${fingerprint}
 {
-  v: 2,
-  data: { form: { email: '…', phone: '…' } }   // no `cvv`
+  v: 2,                                          // cx-internal envelope version
+  data: { form: { email: '…', phone: '…' } }     // no `cvv`
 }
 ```
+
+The `v: 2` field on the envelope is internal to cx — it tracks the
+on-disk format and is bumped only when cx itself changes the
+serialised shape. Consumers don't (and now can't) set it.
 
 On hydration, opted-in fields restore from storage; non-opted fields
 come from schema defaults. The opt-in set can change between mounts
@@ -258,27 +264,55 @@ Errors on non-opted-in paths are dropped from the persisted envelope
 — a persisted error without a persisted value would dangle on
 rehydration.
 
-## Bumping the version on schema change
+## Auto-invalidation on schema change
 
-When you rename a field or change a type, bump `persist.version`.
-Old payloads are dropped on read — users start from schema defaults
-instead of crashing on a shape mismatch. The stale entry is wiped
-from storage at the same time, so old field values can't linger.
+Storage keys carry the schema's structural fingerprint:
 
-```ts
-persist: { storage: 'local', version: 3 }
+```text
+chemical-x-forms:signup:7c3a0b   ← key on disk
+                       └────┘
+                       fingerprint of the current schema
 ```
 
-The same auto-wipe handles malformed-shape entries (corrupted JSON,
-wrong envelope, anything that doesn't match the expected payload
-contract). "Truly absent" entries (the key was never set) are a
-no-op — the wipe only fires when there's actually something to clean.
+When the schema changes shape — adding / removing / renaming a
+field, changing a leaf type, restructuring nested objects — the
+fingerprint changes. New writes go to a new key
+(`chemical-x-forms:signup:9d2b1f`); the old key
+(`chemical-x-forms:signup:7c3a0b`) becomes unreachable.
+
+On the next mount, the orphan-cleanup pass enumerates keys under
+`chemical-x-forms:signup` (via `FormStorage.listKeys`), keeps the
+current-fingerprint entry, and removes the rest. No manual `version`
+bump, no possibility of forgetting it, no draft drops when only
+refinement logic changed (refinements collapse to opaque sentinels
+in the fingerprint).
+
+The same orphan pass also wipes pre-fingerprint legacy entries
+written by older library versions, so upgrading from 0.11 to 0.12
+cleans up cleanly on the next mount.
+
+Malformed-shape entries (corrupted JSON, cx-internal envelope-version
+mismatch, anything that doesn't match the expected payload contract)
+are wiped on read. "Truly absent" entries (the key was never set)
+are a no-op — the wipe only fires when there's actually something to
+clean.
+
+If you need to force-invalidate a draft without changing the schema
+(e.g. shipping an unrelated field-validation tweak that you want
+users to retest from scratch), call `form.clearPersistedDraft()` at
+mount or wrap the schema in a thin no-op layer that perturbs the
+fingerprint. The library deliberately doesn't expose a
+"force-version" knob — most consumers don't need it, and the schema
+fingerprint already captures every legitimate "shape changed"
+signal.
 
 ## Switching backends safely
 
 The configured `storage` is the source of truth for "where the draft
-lives now." Any standard backend NOT matching the configured one gets
-a `removeItem(key)` at mount, fire-and-forget. So if a form was
+lives now." On every mount, the orphan-cleanup pass scans the three
+standard backends (`'local'`, `'session'`, `'indexeddb'`) under the
+form's `key` prefix and removes anything that doesn't match the
+configured backend's current-fingerprint entry. So if a form was
 persisting to `'local'` and you switch to `'session'` (or to a custom
 encrypted adapter), the stale `'local'` entry can't orphan PII or
 sensitive fields.
@@ -291,14 +325,21 @@ useForm({ schema, key: 'signup', persist: 'local' })
 useForm({ schema, key: 'signup', persist: encryptedStorage })
 ```
 
-Custom adapters can't be enumerated, so a custom→custom migration is
-on the consumer. Configuring a custom adapter sweeps all three
-standard backends (the dev might have migrated away from any of them).
+Custom adapters can't be enumerated by the runtime, but cx still
+calls each custom adapter's `listKeys(prefix)` for orphan-suffix
+sweeping on the configured backend itself (see
+[Auto-invalidation on schema change](#auto-invalidation-on-schema-change)).
+Adapters that can't enumerate (HTTP-backed, cookie-backed) return
+`[]` and the sweep degrades gracefully on those backends.
+Configuring a custom adapter still sweeps all three standard
+backends — the dev might have migrated away from any of them.
 
-The cleanup runs once at mount, only touches the `key` your form
-resolves to (default `chemical-x-forms:${formKey}`), and never
-touches the configured backend. Entries other forms wrote to the
-same backend under different keys are untouched.
+The cleanup runs once at mount, only touches the `key` prefix your
+form resolves to (default `chemical-x-forms:${formKey}`), and never
+touches keys outside that prefix. Entries other forms wrote to the
+same backend under different keys are untouched. The exact-or-`:`-
+prefix match prevents collision with sibling forms whose keys share
+a string prefix (e.g. custom keys `my-form` vs `my-form-2`).
 
 ### Removing `persist:` entirely
 
@@ -322,7 +363,7 @@ review pages, or if submit might return a retryable server error).
 
 ## Custom backend
 
-The escape hatch — implement the three-method contract and pass the
+The escape hatch — implement the four-method contract and pass the
 object directly:
 
 ```ts
@@ -339,14 +380,32 @@ const encryptedStorage: FormStorage = {
   async removeItem(key) {
     await fetch(`/api/drafts/${key}`, { method: 'DELETE' })
   },
+  async listKeys(prefix) {
+    // Used by the orphan-cleanup pass to find stale fingerprint-suffixed keys.
+    // Return every key whose name starts with `prefix`. If your backend
+    // can't enumerate (no list endpoint, opaque cookies), return [].
+    const r = await fetch(`/api/drafts?prefix=${encodeURIComponent(prefix)}`)
+    return (await r.json()) as string[]
+  },
 }
 
 useForm({ schema, key: 'signup', persist: { storage: encryptedStorage } })
 ```
 
-All three methods are Promise-returning so sync and async backends
+All four methods are Promise-returning so sync and async backends
 share one shape. `getItem` returns `unknown` so your backend can
 hand back whatever `setItem` received.
+
+`listKeys(prefix)` is what powers schema-change auto-invalidation:
+when the schema's fingerprint changes, the orphan cleanup pass
+enumerates keys under the form's `${base}` prefix and removes any
+that don't match the current fingerprint. Adapters that can't
+enumerate (no list endpoint, cookie-backed, native bridges without
+a list API) return `[]` — orphan cleanup degrades gracefully on
+those backends. Keys still rotate cleanly because writes go to the
+new fingerprint key on every schema change; the only thing missed
+is active sweep of the old key, which the consumer can do manually
+via `form.clearPersistedDraft()` if it matters.
 
 ## Async backends + the "flash of default state"
 
@@ -397,10 +456,14 @@ without grepping.
 - **Cross-form coordination.** Each form persists independently.
   Multiple forms can share a key (and so a FormStore + a persistence
   entry), but they're still one form to the persistence layer.
-- **Schema migrations.** Bumping `version` drops old payloads
-  wholesale. If you need to rename a field without losing state,
-  read the raw entry yourself and massage it before calling
-  `reset()`.
+- **Schema migrations.** Schema changes auto-invalidate old payloads
+  via the fingerprint (the old key becomes unreachable and is swept
+  on the next mount). If you need to rename a field without losing
+  state, read the raw entry yourself before the schema change ships
+  and massage it into the new shape before calling `reset()`. The
+  library deliberately doesn't ship a renaming-aware migration
+  helper — schemas are the contract; renames are a write-once
+  transformation the consumer owns.
 
 ## Gotchas
 

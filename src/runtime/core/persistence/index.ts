@@ -72,20 +72,21 @@ export async function getStorageAdapter(
 }
 
 /**
- * Versioned payload shape. A consumer who bumps `persist.version`
- * invalidates every existing entry — the reader drops entries whose
- * `v` doesn't match. `data` mirrors the SSR `SerializedFormData`
- * shape so one deserialiser handles both.
+ * Persisted payload envelope.
+ *
+ * `v` is a CX-INTERNAL storage-format version — bumped only when the
+ * library's persisted payload schema itself changes (e.g. adding a new
+ * field, restructuring `data`). It is NOT consumer-controlled.
+ * Schema-driven invalidation uses the storage key's `:${fingerprint}`
+ * suffix instead, so consumers don't need to manage versioning at all.
+ *
+ * `data` mirrors the SSR `SerializedFormData` shape so one deserialiser
+ * handles both.
  *
  * Errors are stored source-segregated (matching FormStore's split):
  *   - `schemaErrors` is validation-owned; cleared by reset / submit-success.
  *   - `userErrors` is consumer-owned (written via setFieldErrors* APIs);
  *     persists across schema revalidation and successful submits.
- *
- * The two are surfaced separately on the persisted payload so the
- * lifecycle distinction round-trips through reload. Default
- * `PersistConfig.version` bumped to 2 for the 0.12 release — older v1
- * payloads (single flat `errors` field) are dropped silently on read.
  */
 export type PersistedPayload<Form> = {
   readonly v: number
@@ -97,17 +98,28 @@ export type PersistedPayload<Form> = {
 }
 
 /**
+ * Current CX-internal envelope version. Bumped only when the library
+ * changes the persisted payload's structural shape — readers reject
+ * envelopes with a different `v`. Schema-content invalidation is
+ * handled at the storage key level (the `:${fingerprint}` suffix), so
+ * consumers shouldn't see this number.
+ */
+export const PERSISTED_ENVELOPE_VERSION = 2
+
+/**
  * `value` is expected to be a raw `PersistedPayload` (parsed JSON or
  * structured-cloned object). Returns `null` if the shape doesn't match
  * — the caller falls back to schema defaults.
+ *
+ * The cx-internal envelope `v` must match `PERSISTED_ENVELOPE_VERSION`;
+ * mismatches (older library versions' payloads) are dropped. Schema
+ * change detection lives at the storage-key level via the fingerprint
+ * suffix.
  */
-export function readPersistedPayload<Form>(
-  value: unknown,
-  expectedVersion: number
-): PersistedPayload<Form> | null {
+export function readPersistedPayload<Form>(value: unknown): PersistedPayload<Form> | null {
   if (value === null || value === undefined || typeof value !== 'object') return null
   const envelope = value as Partial<PersistedPayload<Form>>
-  if (typeof envelope.v !== 'number' || envelope.v !== expectedVersion) return null
+  if (typeof envelope.v !== 'number' || envelope.v !== PERSISTED_ENVELOPE_VERSION) return null
   if (envelope.data === undefined || typeof envelope.data !== 'object') return null
   return envelope as PersistedPayload<Form>
 }
@@ -116,12 +128,11 @@ export function buildPersistedPayload<Form>(
   form: Form,
   include: 'form' | 'form+errors',
   schemaErrors: ReadonlyMap<string, ValidationError[]>,
-  userErrors: ReadonlyMap<string, ValidationError[]>,
-  version: number
+  userErrors: ReadonlyMap<string, ValidationError[]>
 ): PersistedPayload<Form> {
-  if (include === 'form') return { v: version, data: { form } }
+  if (include === 'form') return { v: PERSISTED_ENVELOPE_VERSION, data: { form } }
   return {
-    v: version,
+    v: PERSISTED_ENVELOPE_VERSION,
     data: {
       form,
       schemaErrors: [...schemaErrors.entries()].map(([k, v]) => [k, [...v]] as const),
@@ -180,12 +191,69 @@ export function createDebouncedWriter(
 }
 
 /**
- * Resolve the per-form storage key. Default is
+ * Resolve the per-form storage KEY BASE. Default is
  * `chemical-x-forms:${formKey}` — consumers who want a different
  * namespace (multi-tenant app, per-user prefix) pass `persist.key`.
+ *
+ * The full storage key is `${base}:${fingerprint}` (see
+ * `resolveStorageKey`). The base is exposed separately so the
+ * orphan-cleanup pass can `listKeys(base)` and prune any entry under
+ * an old fingerprint.
  */
-export function resolveStorageKey(config: PersistConfigOptions, formKey: string): string {
+export function resolveStorageKeyBase(config: PersistConfigOptions, formKey: string): string {
   return config.key ?? `${PERSISTENCE_KEY_PREFIX}${formKey}`
+}
+
+/**
+ * Resolve the full per-form storage key, composed of the base and the
+ * schema's structural fingerprint. The fingerprint suffix gives free
+ * automatic invalidation: any structural schema change produces a new
+ * fingerprint, so the new mount looks up a fresh key and the old
+ * draft becomes an orphan (cleaned up on the same mount via
+ * `cleanupOrphanKeys`).
+ */
+export function resolveStorageKey(
+  config: PersistConfigOptions,
+  formKey: string,
+  fingerprint: string
+): string {
+  return `${resolveStorageKeyBase(config, formKey)}:${fingerprint}`
+}
+
+/**
+ * Delete every cx-managed key under `base` that's not the current
+ * fingerprint key. Includes:
+ *   - Pre-fingerprint legacy keys (no `:` suffix at all) — left
+ *     behind by older library versions.
+ *   - New-format keys whose fingerprint suffix doesn't match the
+ *     current schema.
+ *
+ * Exact-or-`:`-prefix match prevents collision with sibling forms
+ * whose `config.key` shares a string prefix (e.g. `'my-form'` vs
+ * `'my-form-2'`).
+ *
+ * Fire-and-forget; never throws. SSR-guarded by the caller (cleanup
+ * runs inside `wirePersistence`, which is itself client-only).
+ */
+export async function cleanupOrphanKeys(
+  adapter: FormStorage,
+  base: string,
+  currentKey: string
+): Promise<void> {
+  let keys: string[]
+  try {
+    keys = await adapter.listKeys(base)
+  } catch {
+    return
+  }
+  for (const key of keys) {
+    if (key === currentKey) continue
+    // Match either the exact base (legacy pre-fingerprint key) or
+    // an explicit `:` continuation (new-format with stale fingerprint).
+    if (key === base || key.startsWith(`${base}:`)) {
+      void adapter.removeItem(key).catch(() => undefined)
+    }
+  }
 }
 
 /**
@@ -221,17 +289,28 @@ export function normalizePersistConfig(input: PersistConfig): PersistConfigOptio
 }
 
 /**
- * Calls `removeItem(key)` on every standard backend (`'local'` /
- * `'session'` / `'indexeddb'`) — fire-and-forget. Used when no
- * `persist:` is configured on the form: a previous deployment may
- * have written an entry under this key, and the dev removing
- * persistence should mean the on-disk artifact is gone too. Same
- * fire-and-forget posture as `sweepNonConfiguredStandardStores`;
- * errors are swallowed.
+ * Wipe every cx-managed key under `base` from every standard backend.
+ * Fire-and-forget. Used when no `persist:` is configured on the form:
+ * a previous deployment may have written entries under this base
+ * (any fingerprint), and the dev removing persistence should mean the
+ * on-disk artifact is gone too — for every fingerprint that ever ran.
+ *
+ * Includes pre-fingerprint legacy keys (no `:` suffix) and
+ * fingerprint-suffixed keys equally. Errors per backend are swallowed.
  */
-export function sweepAllStandardStores(key: string): void {
+export async function sweepAllOrphansAcrossStandardStores(base: string): Promise<void> {
   for (const kind of STANDARD_STORAGE_KINDS) {
-    void removeFromStandardBackend(kind, key).catch(() => undefined)
+    try {
+      const adapter = await getStorageAdapter(kind)
+      const keys = await adapter.listKeys(base)
+      for (const key of keys) {
+        if (key === base || key.startsWith(`${base}:`)) {
+          void adapter.removeItem(key).catch(() => undefined)
+        }
+      }
+    } catch {
+      // Backend unavailable (Node, Safari private mode, IDB blocked).
+    }
   }
 }
 
@@ -261,79 +340,39 @@ export function sweepAllStandardStores(key: string): void {
  * Errors are swallowed — cleanup is best-effort. Backend unavailable
  * (Node, Safari private mode, IDB blocked) is also a silent skip.
  */
-export function sweepNonConfiguredStandardStores(
+/**
+ * Cross-store orphan cleanup: wipe every cx-managed key under `base`
+ * from each standard backend that's NOT the configured one. Symmetric
+ * with `cleanupOrphanKeys` on the configured store: ensures stale
+ * drafts don't survive in stores the dev migrated AWAY from. Includes
+ * legacy pre-fingerprint keys and stale-fingerprint keys equally.
+ *
+ * If `configured` is a custom `FormStorage` adapter, all three
+ * standard backends are swept (we don't know which built-in the dev
+ * migrated away from, and we can't reach custom adapters by
+ * enumeration).
+ *
+ * Fire-and-forget. Per-backend errors swallowed.
+ */
+export async function sweepNonConfiguredStandardStoresForOrphans(
   configured: FormStorageKind | FormStorage,
-  key: string
-): void {
+  base: string
+): Promise<void> {
   const configuredKind = typeof configured === 'string' ? configured : null
   for (const kind of STANDARD_STORAGE_KINDS) {
     if (kind === configuredKind) continue
-    void removeFromStandardBackend(kind, key).catch(() => undefined)
-  }
-}
-
-async function removeFromStandardBackend(kind: FormStorageKind, key: string): Promise<void> {
-  if (kind === 'local') {
-    if (typeof localStorage === 'undefined') return
     try {
-      localStorage.removeItem(key)
-    } catch {
-      // Private-mode write guards / SecurityError — swallow.
-    }
-    return
-  }
-  if (kind === 'session') {
-    if (typeof sessionStorage === 'undefined') return
-    try {
-      sessionStorage.removeItem(key)
-    } catch {
-      // Same guards as localStorage.
-    }
-    return
-  }
-  // kind === 'indexeddb'
-  if (typeof indexedDB === 'undefined') return
-  await new Promise<void>((resolve) => {
-    let request: IDBOpenDBRequest
-    try {
-      // Same DB / store / version as the full IDB adapter
-      // (see `./indexeddb.ts`). Opening at the same version skips the
-      // upgrade path entirely; if the DB doesn't yet exist (no
-      // persistence ever wrote here), `onupgradeneeded` creates the
-      // store and the subsequent `delete(key)` is a no-op — cheap.
-      request = indexedDB.open('chemical-x-forms', 1)
-    } catch {
-      return resolve()
-    }
-    request.onupgradeneeded = () => {
-      const db = request.result
-      if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv')
-    }
-    request.onsuccess = () => {
-      const db = request.result
-      try {
-        const tx = db.transaction('kv', 'readwrite')
-        tx.objectStore('kv').delete(key)
-        tx.oncomplete = () => {
-          db.close()
-          resolve()
+      const adapter = await getStorageAdapter(kind)
+      const keys = await adapter.listKeys(base)
+      for (const key of keys) {
+        if (key === base || key.startsWith(`${base}:`)) {
+          void adapter.removeItem(key).catch(() => undefined)
         }
-        tx.onabort = () => {
-          db.close()
-          resolve()
-        }
-        tx.onerror = () => {
-          db.close()
-          resolve()
-        }
-      } catch {
-        db.close()
-        resolve()
       }
+    } catch {
+      // Backend unavailable.
     }
-    request.onerror = () => resolve()
-    request.onblocked = () => resolve()
-  })
+  }
 }
 
 /**

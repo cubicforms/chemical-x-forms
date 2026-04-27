@@ -114,6 +114,21 @@ export function createIndexedDbAdapter(): FormStorage {
     async removeItem(key) {
       await runWriteOp((store) => void store.delete(key))
     },
+    async listKeys(prefix) {
+      // `IDBKeyRange.bound(prefix, prefix + '￿')` would skip cx
+      // keys that contain the U+FFFF code unit; safer to fetch all
+      // keys and filter in-process. The cx-managed key namespace is
+      // tiny in practice, so the cost is negligible.
+      const all = await runReadOp<IDBValidKey[]>(
+        (store) => store.getAllKeys() as IDBRequest<IDBValidKey[]>
+      )
+      if (all === undefined) return []
+      const out: string[] = []
+      for (const k of all) {
+        if (typeof k === 'string' && k.startsWith(prefix)) out.push(k)
+      }
+      return out
+    },
   }
 }
 

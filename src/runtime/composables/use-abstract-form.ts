@@ -14,6 +14,8 @@ import type { FieldStateView } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
 import { createHistoryModule, type HistoryModule } from '../core/history'
 import {
+  buildPersistedPayload,
+  cleanupOrphanKeys,
   createDebouncedWriter,
   filterErrorsByPaths,
   getStorageAdapter,
@@ -22,10 +24,9 @@ import {
   PERSISTENCE_MODULE_KEY,
   pluckPaths,
   readPersistedPayload,
-  resolveStorageKey,
-  sweepAllStandardStores,
-  sweepNonConfiguredStandardStores,
-  type PersistedPayload,
+  resolveStorageKeyBase,
+  sweepAllOrphansAcrossStandardStores,
+  sweepNonConfiguredStandardStoresForOrphans,
   type PersistenceModule,
 } from '../core/persistence'
 import { canonicalizePath, type Path, type PathKey } from '../core/paths'
@@ -136,32 +137,23 @@ export function useAbstractForm<
   if (existing === undefined && !registry.isSSR) {
     if (merged.persist !== undefined) {
       const resolvedPersist = normalizePersistConfig(merged.persist)
-      const persistenceKey = resolveStorageKey(resolvedPersist, state.formKey)
-      // Cross-store cleanup. The configured backend is the source of
-      // truth — any standard backend not matching the configured one
-      // gets a `removeItem(key)` so historic entries can't orphan
-      // sensitive data when the dev migrates between backends. Inlined
-      // per-backend (see `sweepNonConfiguredStandardStores`) so this
-      // doesn't drag in adapter chunks the consumer didn't ask for.
-      sweepNonConfiguredStandardStores(resolvedPersist.storage, persistenceKey)
+      const persistenceBase = resolveStorageKeyBase(resolvedPersist, state.formKey)
+      // Cross-store orphan cleanup: any standard backend not matching
+      // the configured one gets every cx-managed key under the base
+      // wiped (legacy pre-fingerprint AND stale fingerprints alike).
+      // Ensures stale drafts can't survive in stores the dev migrated
+      // AWAY from. Fire-and-forget; backend unavailability is silent.
+      void sweepNonConfiguredStandardStoresForOrphans(resolvedPersist.storage, persistenceBase)
       const persistenceModule = wirePersistence(state, resolvedPersist)
       state.modules.set(PERSISTENCE_MODULE_KEY, persistenceModule)
       state.registerCleanup(() => persistenceModule.dispose())
     } else {
       // No `persist:` configured. The form might have HAD persistence
-      // in a prior deployment that the dev has since removed
-      // (compliance pivot, simplification). Sweep the default-key
-      // entry from every standard backend so removing the option
-      // actually removes the on-disk artifact — without this, sensitive
-      // draft data from a "we used to persist this" past can linger
-      // indefinitely. We can only reach the default key
-      // (`chemical-x-forms:${formKey}`); a previous deployment that
-      // used a custom `persist.key` is on the consumer to clean up via
-      // an explicit migration. Anonymous forms (`__cx:anon:*`) don't
-      // have a stable key across sessions, so the sweep is mostly
-      // wasted for them — but the cost is bounded (3 fire-and-forget
-      // calls) and the security guarantee is consistent.
-      sweepAllStandardStores(`${PERSISTENCE_KEY_PREFIX}${state.formKey}`)
+      // in a prior deployment that the dev has since removed. Sweep
+      // every cx-managed key under the default base from every
+      // standard backend so removing the option actually removes the
+      // on-disk artifact across all fingerprints that ever ran.
+      void sweepAllOrphansAcrossStandardStores(`${PERSISTENCE_KEY_PREFIX}${state.formKey}`)
     }
   }
 
@@ -438,14 +430,17 @@ function wirePersistence<F extends GenericForm>(
   state: FormStore<F>,
   config: PersistConfigOptions
 ): PersistenceModule {
-  const key = resolveStorageKey(config, state.formKey)
+  // Fingerprint the schema once and bake it into the storage key. Any
+  // structural schema change (added/removed/renamed field, type swap)
+  // produces a different fingerprint, so the new mount looks up a fresh
+  // key — the old draft becomes an orphan, cleaned up in the same mount
+  // by `cleanupOrphanKeys` below. Replaces the manual `version: number`
+  // protocol that was previously the consumer's responsibility.
+  const fingerprint = state.schema.fingerprint()
+  const base = resolveStorageKeyBase(config, state.formKey)
+  const key = `${base}:${fingerprint}`
   const debounceMs = config.debounceMs ?? DEFAULT_PERSISTENCE_DEBOUNCE_MS
   const include = config.include ?? 'form'
-  // Default version bumped 1 → 2 in the 0.12 release: errors split into
-  // schemaErrors + userErrors at the payload level. Old v1 payloads
-  // (single flat `errors` field) get rejected by readPersistedPayload's
-  // version-mismatch check, falling back to schema defaults on next load.
-  const version = config.version ?? 2
   const clearOnSubmitSuccess = config.clearOnSubmitSuccess ?? true
 
   // Single shared adapter promise — both the hydration path and the
@@ -475,24 +470,18 @@ function wirePersistence<F extends GenericForm>(
     // proxy's own-enumerable keys anyway.
     const rawForm = toRaw(state.form.value)
     const filteredForm = pluckPaths(rawForm, optedInPaths) as F
-    if (include === 'form') {
-      await adapter.setItem(key, { v: version, data: { form: filteredForm } })
-      return
-    }
-    // include === 'form+errors': filter both error stores to the
-    // opted-in paths only. A persisted error without a persisted
-    // value would dangle on rehydration; dropping is the consistent
-    // contract.
+    // Build the envelope with the cx-internal envelope version baked
+    // in by `buildPersistedPayload`. Consumers no longer manage `v` —
+    // schema-content invalidation lives at the storage-key level via
+    // the fingerprint suffix.
     const filteredSchemaErrors = filterErrorsByPaths(state.schemaErrors, optedInPaths)
     const filteredUserErrors = filterErrorsByPaths(state.userErrors, optedInPaths)
-    const payload: PersistedPayload<F> = {
-      v: version,
-      data: {
-        form: filteredForm,
-        schemaErrors: [...filteredSchemaErrors.entries()].map(([k, v]) => [k, [...v]] as const),
-        userErrors: [...filteredUserErrors.entries()].map(([k, v]) => [k, [...v]] as const),
-      },
-    }
+    const payload = buildPersistedPayload<F>(
+      filteredForm,
+      include,
+      filteredSchemaErrors,
+      filteredUserErrors
+    )
     await adapter.setItem(key, payload)
   }, debounceMs)
 
@@ -531,18 +520,18 @@ function wirePersistence<F extends GenericForm>(
   void (async () => {
     const adapter = await adapterPromise
     if (disposed) return
+    // Orphan cleanup: delete any cx-managed key under the same base
+    // whose fingerprint suffix doesn't match the current schema. Runs
+    // once per mount, fire-and-forget. Bounded cost: typically 0-1
+    // orphans per form.
+    void cleanupOrphanKeys(adapter, base, key)
     try {
       const raw = await adapter.getItem(key)
-      const payload = readPersistedPayload<F>(raw, version)
+      const payload = readPersistedPayload<F>(raw)
       if (payload === null) {
-        // Truly-absent entries are a no-op; we'd churn the adapter for
-        // nothing. But a non-null raw that didn't parse is a stale
-        // payload — wrong version, malformed shape, corrupted JSON —
-        // and leaving it on disk is the same hysteresis problem the
-        // cross-store cleanup avoids. The dev bumped `version` (or the
-        // shape drifted) to signal "old data is invalid"; auto-wipe so
-        // the next mount reads cleanly and so sensitive fields from a
-        // pre-version-bump deployment can't linger indefinitely.
+        // Truly-absent entries are a no-op. A non-null raw that didn't
+        // parse is a stale payload — wrong cx envelope version, or
+        // malformed shape — wipe so the next mount reads cleanly.
         if (raw !== null && raw !== undefined) {
           await adapter.removeItem(key)
         }
@@ -619,12 +608,12 @@ function wirePersistence<F extends GenericForm>(
     const adapter = await adapterPromise
     if (disposed) return
     const raw = await adapter.getItem(key)
-    const existing = readPersistedPayload<F>(raw, version)
+    const existing = readPersistedPayload<F>(raw)
     const baseForm = existing?.data.form ?? ({} as F)
     const value = getAtPath(toRaw(state.form.value), path)
     const nextForm = setAtPath(baseForm, path, value) as F
     if (include === 'form') {
-      await adapter.setItem(key, { v: version, data: { form: nextForm } })
+      await adapter.setItem(key, buildPersistedPayload<F>(nextForm, 'form', new Map(), new Map()))
       return
     }
     // include === 'form+errors': preserve the rest of the persisted
@@ -644,15 +633,10 @@ function wirePersistence<F extends GenericForm>(
     } else {
       userMap.delete(pathKey)
     }
-    const payload: PersistedPayload<F> = {
-      v: version,
-      data: {
-        form: nextForm,
-        schemaErrors: [...schemaMap.entries()].map(([k, v]) => [k, [...v]] as const),
-        userErrors: [...userMap.entries()].map(([k, v]) => [k, [...v]] as const),
-      },
-    }
-    await adapter.setItem(key, payload)
+    await adapter.setItem(
+      key,
+      buildPersistedPayload<F>(nextForm, 'form+errors', schemaMap, userMap)
+    )
   }
 
   /**
@@ -672,7 +656,7 @@ function wirePersistence<F extends GenericForm>(
       return
     }
     const raw = await adapter.getItem(key)
-    const existing = readPersistedPayload<F>(raw, version)
+    const existing = readPersistedPayload<F>(raw)
     if (existing === null) return
     const nextForm = deleteAtPath(existing.data.form, path) as F
     if (isEmptyContainer(nextForm)) {
@@ -680,21 +664,18 @@ function wirePersistence<F extends GenericForm>(
       return
     }
     if (include === 'form') {
-      await adapter.setItem(key, { v: version, data: { form: nextForm } })
+      await adapter.setItem(key, buildPersistedPayload<F>(nextForm, 'form', new Map(), new Map()))
       return
     }
     const { key: pathKey } = canonicalizePath(path)
     const schemaErrors = (existing.data.schemaErrors ?? []).filter(([k]) => k !== pathKey)
     const userErrors = (existing.data.userErrors ?? []).filter(([k]) => k !== pathKey)
-    const payload: PersistedPayload<F> = {
-      v: version,
-      data: {
-        form: nextForm,
-        schemaErrors: schemaErrors.map(([k, v]) => [k, [...v]] as const),
-        userErrors: userErrors.map(([k, v]) => [k, [...v]] as const),
-      },
-    }
-    await adapter.setItem(key, payload)
+    const schemaMap = new Map<string, ValidationError[]>(schemaErrors.map(([k, v]) => [k, [...v]]))
+    const userMap = new Map<string, ValidationError[]>(userErrors.map(([k, v]) => [k, [...v]]))
+    await adapter.setItem(
+      key,
+      buildPersistedPayload<F>(nextForm, 'form+errors', schemaMap, userMap)
+    )
   }
 
   function dispose(): void {

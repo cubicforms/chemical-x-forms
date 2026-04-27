@@ -7,12 +7,13 @@ without forking the library.
 
 ## The contract
 
-Four methods:
+Five methods:
 
 ```ts
 type AbstractSchema<Form, GetValueFormType = Form> = {
   fingerprint(): string
   getDefaultValues(config): DefaultValuesResponse<Form>
+  getDefaultAtPath(path: Path): unknown
   getSchemasAtPath(path: Path): AbstractSchema<unknown, GetValueFormType>[]
   validateAtPath(data: unknown, path: Path | undefined): Promise<ValidationResponse<Form>>
 }
@@ -21,11 +22,16 @@ type AbstractSchema<Form, GetValueFormType = Form> = {
 - **`fingerprint()`** — structural signature of the schema. Two
   schemas with the same shape must return the same string; two
   schemas with different shapes should (best-effort) return
-  different strings. Used to detect shared-key mismatches — see
+  different strings. Used to detect shared-key mismatches AND to
+  key persisted drafts — see
   [Fingerprint implementation](#fingerprint-implementation).
 - **`getDefaultValues({ useDefaultSchemaValues, constraints, validationMode })`**
   — returns `{ data, errors, success, formKey }`. Called at form
   creation and on `reset()`.
+- **`getDefaultAtPath(path)`** — returns the schema-prescribed
+  default at a structured path. The runtime calls this on every
+  `setValue` to fill structural gaps. See
+  [getDefaultAtPath](#getdefaultatpath) below.
 - **`getSchemasAtPath(path)`** — returns the list of sub-schemas
   at `path`. `path` is the canonical `Segment[]`, not a dotted
   string. Advanced introspection hook; return `[]` if you don't
@@ -42,7 +48,14 @@ error only if your parser is genuinely misbehaving.
 catches the exception, logs it via `console.error` in dev, and
 skips the shared-key mismatch check for that call. An opaque
 stable string (`'custom-adapter:v1'`) is a valid fallback when
-your schema library is hard to introspect.
+your schema library is hard to introspect — note that opaque
+fingerprints disable schema-change auto-invalidation for
+persisted drafts (the key never changes), so prefer a real
+structural hash if your library exposes the metadata.
+
+`getDefaultAtPath` must NOT throw. Return `undefined` for paths
+that don't exist in the schema; the runtime treats that as
+"don't fill" and falls back to the existing data.
 
 ## A minimal Valibot-ish adapter
 
@@ -78,6 +91,22 @@ export function myLibAdapter<F extends GenericForm>(schema: MyLibSchema<F>): Abs
       const defaults = schema.defaultValues()
       const merged = mergeDeepPartial(defaults, constraints)
       return { data: merged, errors: undefined, success: true, formKey: '' }
+    },
+
+    getDefaultAtPath(path) {
+      // Walk the schema to `path` and return the default at that
+      // node. The runtime uses this to fill structural gaps on
+      // every setValue (sparse array writes, partial object writes,
+      // path-form callback prev auto-default).
+      //
+      // Concretely: empty path → whole-form default; object property
+      // → property's default; array index → element default; tuple
+      // position → position's default; optional/nullable around a
+      // structural inner → inner default; optional/nullable around
+      // a primitive → undefined / null (preserve the wrapper's
+      // semantic); .default(x) wrapper → x. Return undefined for
+      // paths that don't exist in the schema.
+      return walkSchemaToDefault(schema, path)
     },
 
     getSchemasAtPath(_path) {
@@ -183,6 +212,85 @@ See `src/runtime/adapters/zod-v4/fingerprint.ts` for a full
 walker with factory-default idempotence and shared-reference
 handling.
 
+## getDefaultAtPath
+
+The runtime's structural-completeness invariant — every `setValue`
+write leaves the form satisfying the slim schema — depends on this
+method returning a sane default at any path. Three concrete
+runtime callers:
+
+- **`mergeStructural`**, when a partial value-form write hits a
+  schema key the consumer didn't supply. Asks for the default at
+  the missing sub-path and fills it in.
+- **`setAtPathWithSchemaFill`**, when a sparse array write
+  (`setValue('posts.21', cb)` against an empty array) needs to pad
+  intermediate indices. Asks for the element default once and reuses
+  it.
+- **Path-form callback prev auto-default**, when the consumer
+  writes `setValue('user', prev => ({ ...prev, name: 'X' }))` and
+  the slot was previously empty. The runtime calls
+  `getDefaultAtPath(['user'])` and feeds the result to the callback.
+
+### The peeling rule
+
+Wrappers around _structural_ types peel; wrappers around
+_primitive_ leaves don't:
+
+```ts
+// schema.profile is z.object({...}).optional()
+getDefaultAtPath(['profile']) // returns { name: '', age: 0 }  — peel
+getDefaultAtPath(['profile', 'name']) // returns ''            — peel + descend
+
+// schema.notes is z.string().optional()
+getDefaultAtPath(['notes']) // returns undefined  — DO NOT peel
+// (peeling would return '' and break mergeStructural — the wrapper's
+// "absent allowed" semantic gets lost when filling sibling keys)
+
+// schema.role is z.string().default('user')
+getDefaultAtPath(['role']) // returns 'user'  — explicit default wins
+```
+
+If your library exposes wrapper introspection, classify each
+wrapper-inner combo: `OptionalString` / `NullableNumber` /
+`OptionalBoolean` etc. preserve the wrapper semantic; everything
+else peels to the inner default.
+
+### Return values for special positions
+
+| Position                     | Return                                      |
+| ---------------------------- | ------------------------------------------- |
+| Empty path `[]`              | The whole-form default                      |
+| Object property `['user']`   | The property's default                      |
+| Array index `['posts', 0]`   | Element schema's default — same for any `N` |
+| Tuple position `['xy', 1]`   | Position-specific default                   |
+| Tuple past length            | `undefined` (signal: don't pad)             |
+| Discriminated union root     | First variant's default                     |
+| Discriminated union sub-path | Matching variant's value (or first variant) |
+| Path doesn't exist in schema | `undefined`                                 |
+
+### Testing
+
+The Zod adapter test suites
+(`test/adapters/zod-v4/get-default-at-path.test.ts` and the v3
+mirror) double as a behavioural spec — port the cases to your
+adapter's test suite. Minimum coverage:
+
+- Object property path returns property's default.
+- `.default(x)` wrapper returns `x`.
+- Array index path returns element default for any `N`.
+- Nested defaults through array → object → array.
+- Tuple position-specific defaults; tuple-past-length →
+  `undefined`.
+- Optional/Nullable around structural inner peels.
+- Optional/Nullable around primitive PRESERVES wrapper semantic
+  (`undefined`/`null`).
+- Discriminated union returns first variant's default at the union
+  root.
+- Discriminated union descends into the matching variant for
+  variant-specific keys.
+- Record returns value-type default for any string key.
+- Non-existent paths return `undefined`.
+
 ## Validating a single path
 
 When the library needs to re-check just one field, it passes a
@@ -220,6 +328,13 @@ Minimum coverage:
 
 - `getDefaultValues` returns schema defaults when no `constraints`.
 - `getDefaultValues` merges `constraints` over defaults.
+- `getDefaultAtPath` returns the property default for object paths.
+- `getDefaultAtPath` returns the element default for array indices.
+- `getDefaultAtPath` returns the inner default through structural
+  wrappers (peels Optional/Nullable around objects; preserves them
+  around primitives).
+- `getDefaultAtPath` returns `undefined` for paths not in the
+  schema.
 - `validateAtPath` returns `{ success: true }` for valid input.
 - `validateAtPath` returns structured `ValidationError[]` for invalid input.
 - `validateAtPath(undefined)` validates the whole form.
@@ -233,4 +348,9 @@ Minimum coverage:
 The v4 adapter's test suite (`test/adapters/zod-v4/`) is the
 template. Add a fast-check property test over random forms if your
 adapter does non-trivial path walking —
-`test/core/diff-apply.property.test.ts` shows the pattern.
+`test/core/diff-apply.property.test.ts` shows the pattern. Pair the
+adapter tests with the runtime structural-completeness regressions
+at `test/composables/set-value-schema-fill-regression.test.ts` —
+those drive `getDefaultAtPath` end-to-end through `setValue`, so a
+broken adapter implementation surfaces as a test failure with a
+clear "schema didn't fill X" diagnostic.

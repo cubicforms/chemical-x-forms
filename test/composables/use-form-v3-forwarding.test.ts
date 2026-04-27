@@ -6,6 +6,7 @@ import type { FormStorage, UseAbstractFormReturnType } from '../../src/runtime/t
 import { vRegister } from '../../src/runtime/core/directive'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { useForm } from '../../src/zod-v3'
+import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v3/fingerprint'
 
 /**
  * Regression pin: the zod v3 `useForm` wrapper used to hand-pick the
@@ -85,6 +86,7 @@ describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
       getItem: () => Promise.resolve(undefined),
       setItem,
       removeItem: () => Promise.resolve(),
+      listKeys: () => Promise.resolve([]),
     }
 
     // Persistence is per-element opt-in, so the test must drive its
@@ -132,7 +134,8 @@ describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
 
     expect(setItem).toHaveBeenCalled()
     const [key, payload] = setItem.mock.calls[0] ?? []
-    expect(key).toBe('chemical-x-forms:v3-persist')
+    const fp = fingerprintZodSchema(schema)
+    expect(key).toBe(`chemical-x-forms:v3-persist:${fp}`)
     expect(payload).toMatchObject({
       v: 2,
       data: { form: { email: 'alice@example.com' } },

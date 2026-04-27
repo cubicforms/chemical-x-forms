@@ -217,6 +217,27 @@ const RECURSABLE_NODE_TYPES: ReadonlySet<number> = new Set<number>([
   NodeTypes.IF_BRANCH,
 ])
 
+// Native form-shell tags excluded from the kebab-case extension. The
+// hyphen check on `node.tag` already excludes most native HTML tags
+// (which have no hyphen), but listing the form-shell ones explicitly
+// documents the conservative stance: even if a future native tag like
+// `<my-form-something>` lands, it won't accidentally collide with a
+// custom-element transform branch. `<input>`, `<select>`, `<textarea>`
+// already have dedicated branches via inputTextAreaNodeTransform and
+// the isSelect path above; the others (form, fieldset, label, button,
+// option) carry no meaningful v-register binding and shouldn't be
+// rewritten with component-style props.
+const NATIVE_FORM_TAGS: ReadonlySet<string> = new Set<string>([
+  'input',
+  'textarea',
+  'select',
+  'option',
+  'form',
+  'fieldset',
+  'label',
+  'button',
+])
+
 /**
  * Synthesise a static value for `<option>foo</option>` (no `value=`
  * attr). Returns the text content as a single-quoted JS string literal
@@ -269,8 +290,29 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
     const isSelect = node.type === NodeTypes.ELEMENT && node.tag === 'select'
     const isCustomComponent =
       node.type === NodeTypes.ELEMENT && node.tagType === ElementTypes.COMPONENT
+    // Kebab-case tags (those with a hyphen, like `<my-input>`) compile
+    // as `tagType === ElementTypes.ELEMENT` — Vue's compiler can't tell
+    // statically whether the tag will resolve to an `app.component`
+    // registration or to a user-supplied `compilerOptions.isCustomElement`
+    // predicate, so it emits an element creation that the runtime
+    // disambiguates. The transform fires the bridge prop injection on
+    // these tags too: a kebab-case Vue component sees `useRegister`
+    // work in its setup; a real Web Component sees `:value` /
+    // `:registerValue` as DOM attributes (the documented `assignKey`
+    // escape hatch handles that interop).
+    //
+    // NATIVE_FORM_TAGS keeps the conservative stance: only inject on
+    // tags Vue would NEVER treat as a component. The hyphen check
+    // already excludes most native HTML tags (which have no hyphen);
+    // the explicit list documents the contract and guards against
+    // hypothetical future native form tags with hyphens.
+    const isKebabCustomElement =
+      node.type === NodeTypes.ELEMENT &&
+      node.tagType === ElementTypes.ELEMENT &&
+      node.tag.includes('-') &&
+      !NATIVE_FORM_TAGS.has(node.tag)
 
-    if (!(isSelect || isCustomComponent)) return
+    if (!(isSelect || isCustomComponent || isKebabCustomElement)) return
 
     const selectSummarizedProps = getSummarizedProps(node)
 
@@ -426,6 +468,24 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
     const registerProp = registerProps[0]
 
     if (!registerProp) return
+
+    // Idempotency marker. The hint and preamble transforms record
+    // their own per-node markers; this one detects an already-injected
+    // `:registerValue` directive on the props array and skips
+    // re-pushing. Without the check, a doubly-registered transform
+    // pipeline (rare in production, common in test combinatorics)
+    // would emit two `registerValue:` keys in the generated render —
+    // the last wins for prop resolution, but the output is bloated and
+    // confusing under codegen inspection.
+    const alreadyInjected = node.props.some(
+      (p) =>
+        p.type === NodeTypes.DIRECTIVE &&
+        p.name === 'bind' &&
+        p.arg !== undefined &&
+        'content' in p.arg &&
+        p.arg.content === 'registerValue'
+    )
+    if (alreadyInjected) return
 
     const customElementProp: DirectiveNode = {
       arg: createSimpleExpression('registerValue', true),

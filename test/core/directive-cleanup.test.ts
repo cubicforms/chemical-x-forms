@@ -258,9 +258,7 @@ describe('v-register directive — D2 unsupported-element warning', () => {
     // Same element re-fires created (KeepAlive case); warn must not
     // double-fire — WeakSet dedupe.
     hooks.created?.(div, binding, vnode, null)
-    const matched = warnSpy.mock.calls.filter((c: unknown[]) =>
-      String(c[0]).includes('falls back to text-input semantics')
-    )
+    const matched = warnSpy.mock.calls.filter((c: unknown[]) => String(c[0]).includes('is a no-op'))
     expect(matched.length).toBe(1)
     warnSpy.mockRestore()
   })
@@ -275,9 +273,7 @@ describe('v-register directive — D2 unsupported-element warning', () => {
     const binding = makeBinding(value)
     const vnode = makeVNode({})
     hooks.created?.(div, binding, vnode, null)
-    const matched = warnSpy.mock.calls.filter((c: unknown[]) =>
-      String(c[0]).includes('falls back to text-input semantics')
-    )
+    const matched = warnSpy.mock.calls.filter((c: unknown[]) => String(c[0]).includes('is a no-op'))
     expect(matched.length).toBe(0)
     warnSpy.mockRestore()
   })
@@ -291,9 +287,7 @@ describe('v-register directive — D2 unsupported-element warning', () => {
       const vnode = makeVNode({})
       hooks.created?.(el, binding, vnode, null)
     }
-    const matched = warnSpy.mock.calls.filter((c: unknown[]) =>
-      String(c[0]).includes('falls back to text-input semantics')
-    )
+    const matched = warnSpy.mock.calls.filter((c: unknown[]) => String(c[0]).includes('is a no-op'))
     expect(matched.length).toBe(0)
     warnSpy.mockRestore()
   })

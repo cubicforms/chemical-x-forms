@@ -98,11 +98,15 @@ describe('useRegister — inside child setup', () => {
     document.body.appendChild(root)
     app.mount(root)
     await flush()
-    warnSpy.mockRestore()
 
+    // Computed is lazy — `.value` triggers evaluation, which is what
+    // fires the no-parent-RV warn. Read it BEFORE restoring the spy
+    // so the warn lands in the captured `warnings` array.
     expect(captured.register).toBeDefined()
     if (captured.register === undefined) throw new Error('unreachable')
     expect(captured.register.value).toBeUndefined()
+
+    warnSpy.mockRestore()
 
     const matched = warnings.filter((w) => w.includes('useRegister'))
     expect(matched.length).toBeGreaterThanOrEqual(1)
@@ -256,7 +260,7 @@ describe('useRegister — sentinel suppresses parent-directive warn', () => {
     await flush()
     warnSpy.mockRestore()
 
-    const matched = warnings.filter((w) => w.includes('falls back to text-input semantics'))
+    const matched = warnings.filter((w) => w.includes('is a no-op'))
     expect(matched.length).toBe(0)
   })
 
@@ -375,16 +379,13 @@ describe('useRegister — inner v-register receives full directive lifecycle', (
 
     if (captured.api === undefined) throw new Error('unreachable')
 
-    // FormStore element registry tracks the inner input → field state
-    // baseline flips from `null` (no element) to `false` (element
-    // present, not yet interacted).
-    const fs = captured.api.getFieldState('email').value
-    expect(fs.focused).toBe(false)
-    expect(fs.blurred).toBe(false)
-    expect(fs.touched).toBe(false)
-
-    // Focus listener fires on the inner input.
+    // Focus listeners attached to the inner input fire markFocused →
+    // `focused` flips from null to true. If the parent's directive
+    // had landed on the div root instead, the inner input's focus
+    // wouldn't bubble through to a focus-event listener (the
+    // directive's focus tracking installs at registerElement time).
     const innerInput = root.querySelector('input.inner') as HTMLInputElement
+    expect(innerInput).not.toBeNull()
     innerInput.focus()
     innerInput.dispatchEvent(new Event('focus', { bubbles: true }))
     await flush()

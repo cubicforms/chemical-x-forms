@@ -143,7 +143,7 @@ describe('pattern 1: v-register on a component whose root is <input>', () => {
       },
     })
     mounted = mountWithChild(ChildInput)
-    const matched = mounted.warnings.filter((w) => w.includes('falls back to text-input semantics'))
+    const matched = mounted.warnings.filter((w) => w.includes('is a no-op'))
     expect(matched.length).toBe(0)
   })
 })
@@ -193,21 +193,23 @@ describe('pattern 2: v-register on a non-form root WITH useRegister (recommended
 
   it('does NOT fire the unsupported-element dev-warn (sentinel suppresses)', () => {
     mounted = mountWithChild(InnerInputViaUseRegister)
-    const matched = mounted.warnings.filter((w) => w.includes('falls back to text-input semantics'))
+    const matched = mounted.warnings.filter((w) => w.includes('is a no-op'))
     expect(matched.length).toBe(0)
   })
 
-  it('FormStore element registry tracks the INNER input, not the div root', () => {
+  it('FormStore element registry tracks the INNER input, not the div root', async () => {
     mounted = mountWithChild(InnerInputViaUseRegister)
-    // The inner input is INTERACTIVE; the div is not. After mount, the
-    // directive's `registerElement` call landed on the inner input,
-    // so focus/blur tracking has a real target. The `null` baseline
-    // (DOMFieldState defaults) flips to `false` once an element is
-    // registered but hasn't been interacted with.
-    const fs = mounted.api.getFieldState('email').value
-    expect(fs.focused).toBe(false)
-    expect(fs.blurred).toBe(false)
-    expect(fs.touched).toBe(false)
+    // The inner input is INTERACTIVE; focus listeners attached during
+    // its v-register `created` flip `focused` from null to true on the
+    // FieldRecord. If listeners had attached to the div root instead,
+    // a focus on the inner input wouldn't bubble through to a
+    // div-mounted listener and `focused` would stay null.
+    const innerInput = mounted.rootEl.querySelector('input.inner') as HTMLInputElement
+    expect(innerInput).not.toBeNull()
+    innerInput.focus()
+    innerInput.dispatchEvent(new Event('focus', { bubbles: true }))
+    await flush()
+    expect(mounted.api.getFieldState('email').value.focused).toBe(true)
   })
 })
 
@@ -231,7 +233,7 @@ describe('non-pattern: v-register on a non-form root WITHOUT useRegister/assignK
   it('fires the unsupported-element dev-warn (div is not in SUPPORTED_TAGS)', () => {
     mounted = mountWithChild(PlainDivChild)
     expect(mounted.rootEl.tagName).toBe('DIV')
-    const matched = mounted.warnings.filter((w) => w.includes('falls back to text-input semantics'))
+    const matched = mounted.warnings.filter((w) => w.includes('is a no-op'))
     expect(matched.length).toBeGreaterThanOrEqual(1)
   })
 
@@ -283,7 +285,29 @@ describe('pattern 4: v-register on a non-form root WITH assignKey (kept-current 
    * bug; the recommended path for non-form roots is `useRegister`.
    */
   it('suppresses the unsupported-element warn AND keeps listeners attached + assigner-fires', async () => {
+    // The directive's tri-state guard reads `assignKey` at `created`-time.
+    // To install the consumer's assigner BEFORE `vRegister.created`
+    // fires, we use a small companion directive ordered first in the
+    // directive list — Vue 3 runs directives in array order, so
+    // `vInstallAssignKey.created` lands the assigner on the element
+    // before the `vRegister` lookup. ref-callbacks fire AFTER `created`
+    // (timing footgun documented in the recipe doc); this is the only
+    // clean way to verify the "assignKey installed at created-time"
+    // half of the contract from a runtime test.
     const received: unknown[] = []
+    const vInstallAssignKey = {
+      created(el: HTMLElement) {
+        ;(el as unknown as { [k: symbol]: unknown })[assignKey] = (v: unknown) => {
+          received.push(v)
+        }
+      },
+    }
+
+    const warnings: string[] = []
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+      warnings.push(args.map((a) => String(a)).join(' '))
+    })
+
     const ChildDiv = defineComponent({
       name: 'ChildDiv',
       inheritAttrs: false,
@@ -291,36 +315,44 @@ describe('pattern 4: v-register on a non-form root WITH assignKey (kept-current 
         return () => h('div', attrs, [h('input', { type: 'text' })])
       },
     })
-    mounted = mountWithChild(ChildDiv, {
-      installAssigner: (el) => {
-        ;(el as unknown as { [k: symbol]: unknown })[assignKey] = (v: unknown) => {
-          received.push(v)
-        }
+
+    const Parent = defineComponent({
+      setup() {
+        const api = useForm({ schema, key: `assigner-${Math.random().toString(36).slice(2)}` })
+        const rv = api.register('email')
+        return () =>
+          withDirectives(h(ChildDiv, { registerValue: rv, value: rv.innerRef.value }), [
+            [vInstallAssignKey],
+            [vRegister, rv],
+          ])
       },
     })
 
-    // The unsupported-element warn fires on `created` — BEFORE the
-    // post-mount `installAssigner` callback runs — so we can't suppress
-    // it via assignKey installed after the fact. The "warn-suppressed
-    // when assignKey is pre-installed" half of the contract is verified
-    // by the SelfInstallingChild scenario via a ref-callback (which
-    // runs AFTER `created` per Vue's lifecycle ordering — known timing
-    // surprise, documented in the recipes). Here we only assert the
-    // KEPT-CURRENT listener behaviour: with the assigner installed,
-    // bubbled events from the inner input do reach the directive's
-    // text-input listener, which reads `el.value` (the div's, not the
-    // inner input's) and calls the consumer's assigner.
-    const innerInput = mounted.rootEl.querySelector('input') as HTMLInputElement
+    const app = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    warnSpy.mockRestore()
+
+    // Warn is suppressed (assignKey was installed at `created`-time).
+    const matched = warnings.filter((w) => w.includes('is a no-op'))
+    expect(matched.length).toBe(0)
+
+    // Listeners DID attach (kept-current) — typing in the inner input
+    // bubbles to the div root, hits the directive's text-input
+    // listener, which reads `el.value` (the div's) and calls the
+    // consumer's assigner. The value is el.value-sourced, so it isn't
+    // 'typed' — that's the documented limitation pointing consumers
+    // toward useRegister.
+    const innerInput = root.querySelector('input') as HTMLInputElement
     innerInput.value = 'typed'
     innerInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flush()
 
-    // Listeners DID attach (kept-current) — assigner was called at
-    // least once. The value is el.value-sourced (div), so it isn't
-    // 'typed'; that's the documented limitation pointing consumers
-    // toward useRegister.
     expect(received.length).toBeGreaterThanOrEqual(1)
     expect(received).not.toContain('typed')
+
+    app.unmount()
   })
 })
 
@@ -601,7 +633,7 @@ describe("multi-root component — directive lands on Vue's placeholder ⚠", ()
       (w) =>
         w.includes('Runtime directive used on component with non-element root') ||
         w.includes('non-element root') ||
-        w.includes('falls back to text-input semantics')
+        w.includes('is a no-op')
     )
     expect(matched.length).toBeGreaterThanOrEqual(1)
 

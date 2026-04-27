@@ -36,7 +36,21 @@ export default [
     // ForOrphans + sweepAllOrphansAcrossStandardStores, FormStorage
     // listKeys across three backends, fingerprint-suffixed key
     // composition.
-    limit: '17 KB',
+    //
+    // Raised 17 → 18 KB on the deep-QA cleanup branch:
+    //   - DevTools redaction walker (redactSensitiveLeaves +
+    //     expanded SENSITIVE_NAME_PATTERNS) for the timeline + inspector
+    //   - one-shot adapter dev warnings (localStorage / sessionStorage /
+    //     IDB) on quota / open / abort failures
+    //   - createChemicalXForms idempotent install dev-warn
+    //   - v-register unsupported-element dev-warn (vRegisterDynamic)
+    //   - validate() outside-effect-scope dev-warn (process-form)
+    //   - schema-error gen-check on the submit success/failure paths
+    //   - parseApiErrors maxTotalSegments cap
+    //   - registerDrain + awaitPendingWrites on FormStore + Registry
+    //     (drain-on-evict + Registry.shutdown)
+    //   - <option> static-text fallback in the select transform
+    limit: '18 KB',
     gzip: true,
     modifyEsbuildConfig: asEsm,
   },
@@ -52,7 +66,11 @@ export default [
     //
     // Raised 16 → 17 KB tracking index.mjs's structural-completeness +
     // fingerprint-persistence bump.
-    limit: '17 KB',
+    //
+    // Raised 17 → 18 KB tracking index.mjs's deep-QA cleanup bump
+    // (same shared core chunk: DevTools redaction, dev-warns,
+    // gen-checks, registry drain).
+    limit: '18 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
@@ -69,7 +87,12 @@ export default [
     //
     // Raised 16 → 17 KB tracking index.mjs's structural-completeness +
     // fingerprint-persistence bump.
-    limit: '17 KB',
+    //
+    // Raised 17 → 18 KB on the deep-QA cleanup branch (same shared
+    // core chunk as index.mjs PLUS v3-specific work: bounded
+    // wrapper-peel recursion, ZodPipeline / ZodReadonly / ZodBranded /
+    // ZodCatch handling, Symbol path-segment coercion).
+    limit: '18 KB',
     gzip: true,
     ignore: ['zod', 'lodash-es'],
     modifyEsbuildConfig: asEsm,

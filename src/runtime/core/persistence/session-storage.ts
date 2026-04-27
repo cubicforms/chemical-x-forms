@@ -37,5 +37,18 @@ export function createSessionStorageAdapter(): FormStorage {
       }
       return Promise.resolve()
     },
+    listKeys(prefix) {
+      if (!available) return Promise.resolve([])
+      const out: string[] = []
+      try {
+        for (let i = 0; i < sessionStorage.length; i++) {
+          const k = sessionStorage.key(i)
+          if (k !== null && k.startsWith(prefix) === true) out.push(k)
+        }
+      } catch {
+        // SecurityError under private-mode locks.
+      }
+      return Promise.resolve(out)
+    },
   }
 }

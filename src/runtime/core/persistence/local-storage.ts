@@ -50,5 +50,18 @@ export function createLocalStorageAdapter(): FormStorage {
       }
       return Promise.resolve()
     },
+    listKeys(prefix) {
+      if (!available) return Promise.resolve([])
+      const out: string[] = []
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i)
+          if (k !== null && k.startsWith(prefix) === true) out.push(k)
+        }
+      } catch {
+        // SecurityError under private-mode locks.
+      }
+      return Promise.resolve(out)
+    },
   }
 }

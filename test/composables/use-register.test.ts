@@ -385,3 +385,151 @@ describe('useRegister — inner v-register receives full directive lifecycle', (
     expect(captured.api.getFieldState('email').value.focused).toBe(true)
   })
 })
+
+describe('useRegister — strips bridge keys from attrs (no inheritAttrs needed)', () => {
+  let app: App | undefined
+
+  afterEach(() => {
+    app?.unmount()
+    app = undefined
+    document.body.innerHTML = ''
+  })
+
+  /**
+   * The select-transform's component branch injects `:value` and
+   * `:registerValue` on the parent's component vnode so `useRegister`
+   * can read them. Those are non-prop attrs from the child's
+   * perspective; without intervention they fall through to the
+   * rendered root and pollute the DOM as stringified attributes
+   * (`<label registerValue="[object Object]">`). `useRegister`
+   * captures `registerValue` into a local ref then deletes both
+   * bridge keys from `instance.attrs` before render — so the
+   * rendered root has no leak, AND class/style/aria/data fallthrough
+   * still works. The consumer doesn't need
+   * `defineOptions({ inheritAttrs: false })`.
+   */
+  it('rendered root has no registerValue/value DOM attributes (no consumer inheritAttrs needed)', async () => {
+    // Child does NOT set inheritAttrs:false. Bridge attrs would
+    // normally fall through; useRegister strips them.
+    const Child = defineComponent({
+      name: 'Child',
+      setup() {
+        useRegister()
+        return () => h('label', { class: 'wrapper' }, [h('input', { type: 'text' })])
+      },
+    })
+
+    const Parent = defineComponent({
+      setup() {
+        const form = useForm({ schema, key: 'strip-attrs-test' })
+        const rv = form.register('email')
+        return () =>
+          withDirectives(h(Child, { registerValue: rv, value: rv.innerRef.value }), [
+            [vRegister, rv],
+          ])
+      },
+    })
+
+    app = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+
+    const label = root.querySelector('label.wrapper')
+    expect(label).not.toBeNull()
+    expect(label?.hasAttribute('registerValue')).toBe(false)
+    expect(label?.hasAttribute('value')).toBe(false)
+  })
+
+  it('class / style / aria fallthrough still lands on the rendered root', async () => {
+    // Verify the surgical-strip approach preserves what the consumer
+    // legitimately wants — only the bridge keys are removed.
+    const Child = defineComponent({
+      name: 'Child',
+      setup() {
+        useRegister()
+        return () => h('label', null, [h('input', { type: 'text' })])
+      },
+    })
+
+    const Parent = defineComponent({
+      setup() {
+        const form = useForm({ schema, key: 'strip-fallthrough-test' })
+        const rv = form.register('email')
+        return () =>
+          withDirectives(
+            h(Child, {
+              registerValue: rv,
+              value: rv.innerRef.value,
+              class: 'consumer-class',
+              style: 'color: red',
+              'aria-label': 'a11y label',
+              'data-test': 'spike',
+            }),
+            [[vRegister, rv]]
+          )
+      },
+    })
+
+    app = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+
+    const label = root.querySelector('label')
+    expect(label).not.toBeNull()
+    expect(label?.classList.contains('consumer-class')).toBe(true)
+    expect(label?.getAttribute('style')).toContain('color: red')
+    expect(label?.getAttribute('aria-label')).toBe('a11y label')
+    expect(label?.getAttribute('data-test')).toBe('spike')
+    expect(label?.hasAttribute('registerValue')).toBe(false)
+    expect(label?.hasAttribute('value')).toBe(false)
+  })
+
+  it('strip survives parent re-render (onBeforeUpdate re-strips after setFullProps repopulates)', async () => {
+    // Vue's setFullProps re-assigns attrs[key] on every parent
+    // re-render. onBeforeUpdate fires after that and before
+    // renderComponentRoot — that's where the strip re-runs.
+    const tick = ref(0)
+    const Child = defineComponent({
+      name: 'Child',
+      setup() {
+        useRegister()
+        return () => h('label', { class: 'wrapper' }, [h('input', { type: 'text' })])
+      },
+    })
+
+    const Parent = defineComponent({
+      setup() {
+        const form = useForm({ schema, key: 'strip-rerender-test' })
+        return () => {
+          // touch tick so the parent's render effect re-runs
+          void tick.value
+          const rv = form.register('email')
+          return withDirectives(h(Child, { registerValue: rv, value: rv.innerRef.value }), [
+            [vRegister, rv],
+          ])
+        }
+      },
+    })
+
+    app = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+
+    const label = root.querySelector('label.wrapper')
+    expect(label?.hasAttribute('registerValue')).toBe(false)
+
+    tick.value += 1
+    await flush()
+    tick.value += 1
+    await flush()
+
+    expect(label?.hasAttribute('registerValue')).toBe(false)
+    expect(label?.hasAttribute('value')).toBe(false)
+  })
+})

@@ -59,7 +59,14 @@
  * typed sub-paths, structured paths, getFieldState, etc. `useRegister`
  * stays a single-purpose ambient hook for the "wrap one field" case.
  */
-import { computed, getCurrentInstance, onMounted, useAttrs, type ComputedRef } from 'vue'
+import {
+  computed,
+  getCurrentInstance,
+  onBeforeUpdate,
+  onMounted,
+  shallowRef,
+  type ComputedRef,
+} from 'vue'
 import { __DEV__ } from '../core/dev'
 import { captureUserCallSite } from '../core/dev-stack-trace'
 import type { RegisterValue } from '../types/types-api'
@@ -93,15 +100,47 @@ export function useRegister(): ComputedRef<RegisterValue | undefined> {
     }
   })
 
-  // `useAttrs()` returns the reactive setup-context proxy that tracks
-  // reads — `instance.attrs` is the raw object, so reads off it
-  // don't trigger reactive recomputation when the parent passes a
-  // fresh registerValue. The proxy is what the parent's render-effect
-  // ties into.
-  const attrs = useAttrs()
+  // Capture the bridge `registerValue` from instance.attrs into a
+  // local ref, then STRIP the bridge keys (`registerValue` + `value`)
+  // from the attrs object. This prevents fallthrough to the rendered
+  // root: without the strip, Vue would merge attrs onto the root's
+  // vnode and the wrapper would render with stringified DOM attrs
+  // (`<label registerValue="[object Object]">`). Class/style/aria/data
+  // fallthrough is unaffected — only the bridge keys are removed, so
+  // the consumer doesn't have to set `defineOptions({ inheritAttrs:
+  // false })` and lose those legitimate fallthroughs.
+  //
+  // Vue's `setFullProps` repopulates attrs on every parent re-render
+  // (it iterates rawProps and re-assigns each key into attrs). So the
+  // capture+strip has to run on every update, not just at setup. The
+  // `onBeforeUpdate` hook fires after `updateComponentPreRender`
+  // (which calls setFullProps) and before `renderComponentRoot`
+  // (which reads attrs for fallthrough), giving us a clean window.
+  //
+  // We don't read from `useAttrs()` proxy in the computed because
+  // the proxy reads off the same target we're mutating — after the
+  // strip, the proxy returns undefined for the bridge keys. The
+  // captured ref is the source of truth instead, refreshed in lockstep
+  // with attrs.
+  //
+  // `shallowRef` (not `ref`) — `ref` calls `reactive()` on object
+  // values, which would wrap the parent's RV in a reactive proxy and
+  // break referential equality. The directive hooks downstream rely
+  // on the rv being the same reference the parent holds, so we keep
+  // it raw.
+  const capturedRegisterValue = shallowRef<RegisterValue | undefined>(undefined)
+
+  const refreshAndStripBridgeAttrs = (): void => {
+    const rawAttrs = instance.attrs as Record<string, unknown>
+    capturedRegisterValue.value = rawAttrs['registerValue'] as RegisterValue | undefined
+    if ('registerValue' in rawAttrs) delete rawAttrs['registerValue']
+    if ('value' in rawAttrs) delete rawAttrs['value']
+  }
+  refreshAndStripBridgeAttrs()
+  onBeforeUpdate(refreshAndStripBridgeAttrs)
 
   return computed(() => {
-    const rv = attrs['registerValue'] as RegisterValue | undefined
+    const rv = capturedRegisterValue.value
     if (rv === undefined) {
       warnNoParentRV(instance as unknown as object)
     }

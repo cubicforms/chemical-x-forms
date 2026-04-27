@@ -30,29 +30,55 @@ import type { Path, PathKey, Segment } from '../paths'
  * by humans.
  */
 export const SENSITIVE_NAME_PATTERNS: readonly RegExp[] = [
+  // Passwords and PIN-like
   /password/i,
   /passwd/i,
+  /passwords/i,
   /\bpwd\b/i,
+  /\bpin\b/i,
+  // Card / payment
   /\bcvv\b/i,
   /\bcvc\b/i,
-  /\bssn\b/i,
-  /social[_\s-]?security/i,
-  /\bdob\b/i,
-  /date[_\s-]?of[_\s-]?birth/i,
-  /\bpin\b/i,
-  /\btoken\b/i,
-  /secret/i,
-  /api[_\s-]?key/i,
-  /private[_\s-]?key/i,
   /card[_\s-]?(?:number|num)/i,
   /\bcard\b/i,
   /\biban\b/i,
   /routing[_\s-]?number/i,
   /account[_\s-]?number/i,
+  // Government / identity
+  /\bssn\b/i,
+  /social[_\s-]?security/i,
+  /\bdob\b/i,
+  /date[_\s-]?of[_\s-]?birth/i,
   /passport/i,
   /driver[_\s-]?license/i,
-  /mfa[_\s-]?(?:secret|seed)/i,
+  // Tax IDs (US + international common variants)
+  /\btin\b/i,
+  /\bein\b/i,
+  /\bitin\b/i,
+  /tax[_\s-]?id/i,
+  // Tokens, secrets, API/auth credentials
+  /\btoken\b/i,
+  /\btokens\b/i,
+  /secret/i,
+  /secrets/i,
+  /api[_\s-]?key/i,
+  /api[_\s-]?secret/i,
+  /api[_\s-]?token/i,
+  /private[_\s-]?key/i,
+  /\bbearer\b/i,
+  /\boauth\b/i,
+  /auth[_\s-]?token/i,
+  /access[_\s-]?token/i,
+  /refresh[_\s-]?token/i,
+  /session[_\s-]?(?:id|key|token)/i,
+  // MFA / OTP
+  /\botp\b/i,
+  /one[_\s-]?time[_\s-]?(?:password|code)/i,
+  /mfa[_\s-]?(?:secret|seed|code|token)/i,
+  /two[_\s-]?factor[_\s-]?(?:code|token)/i,
+  /\b2fa[_\s-]?(?:code|token)?\b/i,
   /recovery[_\s-]?code/i,
+  /backup[_\s-]?code/i,
 ] as const
 
 function segmentMatchesSensitive(segment: Segment): boolean {

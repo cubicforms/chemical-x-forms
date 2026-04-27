@@ -25,14 +25,25 @@ for the full set of changes.
   intentional. Migration: pass `validationMode: 'lax'` to keep the
   old behaviour.
 - **Breaking — errors split by source.** `setFieldErrors` /
-  `addFieldErrors` / `setFieldErrorsFromApi` write to a separate
-  user-error store internally; their entries now SURVIVE schema
-  revalidation AND successful submits (only `clearFieldErrors` /
-  `reset` / `resetField` remove them). Public surfaces (`fieldErrors`,
-  `state.isValid`, `getFieldState(path).errors`) merge schema +
-  user transparently — schema first, user second.
-  `clearFieldErrors(path?)` deliberately clears both stores at the
-  given path (pragmatic "make these errors go away" semantic).
+  `addFieldErrors` write to a separate user-error store internally;
+  their entries now SURVIVE schema revalidation AND successful
+  submits (only `clearFieldErrors` / `reset` / `resetField` remove
+  them). Public surfaces (`fieldErrors`, `state.isValid`,
+  `getFieldState(path).errors`) merge schema + user transparently —
+  schema first, user second. `clearFieldErrors(path?)` deliberately
+  clears both stores at the given path (pragmatic "make these
+  errors go away" semantic).
+- **Breaking — `setFieldErrorsFromApi` retired.** Replaced by the
+  pure `parseApiErrors(payload, { formKey })` exported helper +
+  `setFieldErrors(result.errors)`. The form's setter surface is now
+  one canonical write; shape adapters live as composable parsers.
+  Old: `form.setFieldErrorsFromApi(payload)`. New:
+  `const r = parseApiErrors(payload, { formKey: form.key }); if (r.ok) form.setFieldErrors(r.errors)`.
+  New exports: `parseApiErrors`, `PARSE_API_ERRORS_DEFAULTS`,
+  `ParseApiErrorsOptions`, `ParseApiErrorsResult`. The parser
+  returns a discriminated `{ ok, errors, rejected? }` so malformed
+  payloads are visible (vs. the old "returns empty array" silent
+  failure).
 - **Breaking — persistence payload v2.** `PersistConfig.version`
   defaults to `2` (was `1`). On-disk shape: `data.errors` is gone,
   replaced by `data.schemaErrors` + `data.userErrors`. Old v1
@@ -79,6 +90,58 @@ for the full set of changes.
   future internal use; with the entry-reject in place, collisions
   between consumer keys and library-allocated keys are now impossible
   by construction.
+- **Breaking — persistence opt-in moved to per-field.** Form-level
+  `persist: { storage: 'local' }` no longer auto-persists every
+  field. Each persisted field opts in explicitly at its `register()`
+  call site: `register('email', { persist: true })`. Programmatic
+  `form.setValue` no longer reaches storage; use new `form.persist(path)`
+  for an explicit one-shot checkpoint. Sensitive-named paths
+  (password / cvv / ssn / token / api-key / etc.) throw
+  `SensitivePersistFieldError` at mount unless
+  `acknowledgeSensitive: true` is also passed. Persisted payloads
+  are sparse — only opted-in paths land in storage; hydration
+  merges over schema defaults. `reset()` and `resetField(path)` now
+  wipe the persisted draft alongside the in-memory clear.
+  New APIs: `form.persist(path, opts?)`,
+  `form.clearPersistedDraft(path?)`, `RegisterOptions`, `WriteMeta`,
+  `SensitivePersistFieldError`. Dev-mode warning if persist is
+  configured but no field opts in. The `assignKey` symbol on
+  v-register elements gains an optional `meta` parameter (clean
+  break for the rare consumer who supplied a custom assigner via
+  `onUpdate:registerValue`). See the
+  [migration guide](./docs/migration/0.11-to-0.12.md#breaking-persistence-opt-in-moved-to-per-field)
+  + [persistence recipe](./docs/recipes/persistence.md) for the full
+  rewrite.
+- **New — shorthand `persist:` config.** `useForm({ persist: 'local' })`
+  is now equivalent to `useForm({ persist: { storage: 'local' } })`;
+  same shorthand for `'session'` / `'indexeddb'` and for custom
+  `FormStorage` adapters (`persist: encryptedStorage`). The full
+  options bag is still required to override `key`, `debounceMs`,
+  `version`, etc. New `PersistConfigOptions` type exported alongside
+  `PersistConfig` (which is now the union of all input forms).
+- **New — cross-store cleanup at mount.** The configured `storage` is
+  the source of truth for "where the draft lives now." Standard
+  backends (`'local'` / `'session'` / `'indexeddb'`) NOT matching the
+  configured one get a `removeItem(key)` (fire-and-forget). A
+  migration `'local'` → `'session'` (or `'local'` → encrypted custom
+  adapter) can no longer orphan PII / sensitive fields in the
+  abandoned backend. Configuring a custom adapter sweeps all three
+  standard backends. Inlined per-backend so it doesn't drag in the
+  adapter chunks the consumer didn't ask for.
+- **New — auto-wipe of stale persisted entries.** A non-empty raw
+  value that fails to parse on hydration (version mismatch,
+  malformed envelope, corrupted JSON) is now wiped from the
+  configured backend instead of being left on disk. Bumping
+  `persist.version` no longer leaves the old payload bytes lingering
+  indefinitely. "Truly absent" entries stay a no-op — the wipe only
+  fires when there's actually something to clean.
+- **New — symmetric dev-mode warning for the inverse misuse.**
+  `register('foo', { persist: true })` on a form with no `persist:`
+  option configured on `useForm()` now logs a one-time warning in
+  development pointing at the offending call. Pairs with the
+  existing "persist configured but no opt-ins" warning so both halves
+  of the wire-up problem produce a clear signal at the right call
+  site. Production is silent.
 
 ## v0.11.1
 **Dev-mode ergonomics for the ambient `useFormContext` warning.**

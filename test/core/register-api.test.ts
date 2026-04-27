@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createFormStore } from '../../src/runtime/core/create-form-store'
 import { buildRegister } from '../../src/runtime/core/register-api'
 import { fakeSchema } from '../utils/fake-schema'
 
 type F = { email: string; note: string }
 
-function makeRegister() {
+function makeRegister(opts?: { isSSR?: boolean }) {
   const state = createFormStore<F>({
-    formKey: 'r',
+    formKey: `r-${Math.random().toString(36).slice(2)}`,
     schema: fakeSchema<F>({ email: '', note: '' }),
+    ...(opts?.isSSR === true ? { isSSR: true } : {}),
   })
   return { state, register: buildRegister(state) }
 }
@@ -128,6 +129,45 @@ describe('buildRegister', () => {
       rvA.deregisterElement(input)
       document.body.removeChild(input)
       void rvB
+    })
+  })
+
+  describe('dev warnings', () => {
+    it('does NOT warn during SSR even when persistence module is absent', () => {
+      // SSR deliberately skips wirePersistence (persistence is a
+      // client-only concern), so during the server pass `state.modules`
+      // never carries a persistence entry — even when the consumer DID
+      // configure `persist:` on useForm(). Without an SSR gate, the
+      // "register({ persist: true }) without persist: configured"
+      // warning would falsely fire on every server render.
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      try {
+        const { register } = makeRegister({ isSSR: true })
+        register('email', { persist: true })
+        const matches = warnSpy.mock.calls
+          .map((args) => args.join(' '))
+          .filter((msg) => /no `persist:` option is configured/.test(msg))
+        expect(matches).toEqual([])
+      } finally {
+        warnSpy.mockRestore()
+      }
+    })
+
+    it('DOES warn off-SSR when persistence module is absent and the binding opts in', () => {
+      // The actual misuse case: client-side render, no persistence module
+      // (because `useForm()` had no `persist:` option), but a binding asks
+      // to opt in. This is the warning's intended trigger.
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      try {
+        const { register } = makeRegister()
+        register('note', { persist: true })
+        const matches = warnSpy.mock.calls
+          .map((args) => args.join(' '))
+          .filter((msg) => /no `persist:` option is configured/.test(msg))
+        expect(matches.length).toBe(1)
+      } finally {
+        warnSpy.mockRestore()
+      }
     })
   })
 })

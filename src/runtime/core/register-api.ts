@@ -1,8 +1,10 @@
 import { computed, type Ref } from 'vue'
-import type { RegisterValue } from '../types/types-api'
+import type { RegisterOptions, RegisterValue, WriteMeta } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
+import { __DEV__ } from './dev'
 import { canonicalizePath, type Path } from './paths'
+import { PERSISTENCE_MODULE_KEY } from './persistence'
 
 /**
  * Register API factory. Given a FormStore, returns a `register(path)` that
@@ -57,11 +59,77 @@ function detachFocusListeners(element: HTMLElement): void {
   delete target[cxListenersSymbol]
 }
 
+/**
+ * Dedupes the dev-mode "register({ persist: true }) without `persist:`
+ * configured" warning. Keyed by FormStore so each form warns at most
+ * once across all of its `register()` call sites — multiple paths
+ * opting in produce one warning, not N. WeakSet auto-clears when the
+ * FormStore is GC'd, so a remount with a different config gets a
+ * fresh check.
+ *
+ * `null` in production so the WeakSet allocation tree-shakes out.
+ */
+const warnedMissingPersistConfig: WeakSet<FormStore<GenericForm>> | null = __DEV__
+  ? new WeakSet<FormStore<GenericForm>>()
+  : null
+
 export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
-  return function register(pathInput: string | Path): RegisterValue<unknown> {
-    const { segments } = canonicalizePath(pathInput)
+  return function register(
+    pathInput: string | Path,
+    options?: RegisterOptions
+  ): RegisterValue<unknown> {
+    const { segments, key: pathKey } = canonicalizePath(pathInput)
 
     const innerRef = computed(() => state.getValueAtPath(segments)) as Readonly<Ref<unknown>>
+
+    const persist = options?.persist === true
+    const acknowledgeSensitive = options?.acknowledgeSensitive === true
+
+    // Dev-only: opt-in declared but the form has no persistence wired.
+    // Without this warning the directive silently records the opt-in,
+    // no writes ever land, and the dev concludes "persistence is broken"
+    // when the actual issue is a missing `persist:` option on `useForm()`.
+    // Symmetric to wirePersistence's "configured but no opt-ins" warning;
+    // together they cover both halves of the misuse space. Deduped per
+    // FormStore so a template with N opted-in paths produces one warning,
+    // not N.
+    //
+    // Skipped during SSR: `wirePersistence` is intentionally not run on
+    // the server (persistence is a client-only concern), so
+    // `state.modules.has(PERSISTENCE_MODULE_KEY)` is always false during
+    // SSR — even for forms that DID configure `persist:`. Without this
+    // gate the warning would falsely fire on every server-rendered
+    // `register({ persist: true })`. The client-side hydration pass
+    // re-runs the check against a freshly-wired module and warns
+    // correctly if the misuse is real.
+    if (__DEV__ && persist && !state.isSSR && warnedMissingPersistConfig !== null) {
+      const formStore = state as FormStore<GenericForm>
+      if (
+        !state.modules.has(PERSISTENCE_MODULE_KEY) &&
+        !warnedMissingPersistConfig.has(formStore)
+      ) {
+        warnedMissingPersistConfig.add(formStore)
+        const display = segments.map((s) => String(s)).join('.')
+        // No inline source frame here. `register()` is overwhelmingly
+        // called from compiled `<template>` render functions, where
+        // Vite's sourcemap for attribute-value expressions
+        // (`v-register="register(...)"`) maps back to the surrounding
+        // element / closing-tag region, not the actual `register(`
+        // token — adding a frame would be actively misleading. The
+        // path name in the message (`'${display}'`) is the reliable
+        // anchor: `grep "register('${display}'"` finds the call site.
+        // The console auto-renders its own clickable stack below the
+        // message anyway.
+        console.warn(
+          `[@chemical-x/forms] register('${display}', { persist: true }) was used on form ` +
+            `"${state.formKey}", but no \`persist:\` option is configured on useForm(). The ` +
+            `opt-in is recorded, but no writes will land in any storage backend. Add ` +
+            `\`persist: 'local'\` (or another backend) to your useForm() options. To find the ` +
+            `offending call, search your codebase for \`register('${display}'\`. See ` +
+            `./docs/recipes/persistence.md.`
+        )
+      }
+    }
 
     return {
       innerRef,
@@ -80,8 +148,8 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
         state.deregisterElement(segments, element)
       },
 
-      setValueWithInternalPath: (value: unknown): boolean => {
-        state.setValueAtPath(segments, value)
+      setValueWithInternalPath: (value: unknown, meta?: WriteMeta): boolean => {
+        state.setValueAtPath(segments, value, meta)
         return true
       },
 
@@ -96,6 +164,13 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
       markConnectedOptimistically: (): void => {
         state.markConnectedOptimistically(segments)
       },
+
+      // --- Persistence opt-in (internal; the directive is the only
+      // legitimate consumer) ---
+      path: pathKey,
+      persist,
+      acknowledgeSensitive,
+      persistOptIns: state.persistOptIns,
     }
   }
 }

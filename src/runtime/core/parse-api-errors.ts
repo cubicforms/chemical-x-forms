@@ -8,11 +8,13 @@ import { InvalidPathError } from './errors'
 import { canonicalizePath } from './paths'
 
 /**
- * Structured result of `hydrateApiErrors`. Replaces the pre-rewrite
- * `ValidationError[]` return, which conflated "empty but valid payload"
- * with "malformed payload we couldn't hydrate".
+ * Structured result of `parseApiErrors`. The discriminated `ok` flag
+ * separates "empty but valid payload" (`{ ok: true, errors: [] }`)
+ * from "malformed payload we couldn't parse" (`{ ok: false, rejected }`).
+ * Earlier versions of this surface conflated the two by returning a
+ * bare `ValidationError[]`, making server-integration bugs invisible.
  */
-export type HydrateApiErrorsResult = {
+export type ParseApiErrorsResult = {
   readonly ok: boolean
   readonly errors: ValidationError[]
   readonly rejected?: string
@@ -22,11 +24,17 @@ export type HydrateApiErrorsResult = {
  * Guardrails for untrusted API error payloads. A misbehaving (or
  * hostile) server can emit large or deeply-nested detail maps; applying
  * them to form state is O(entries × depth) in the worst case. Hitting
- * either ceiling causes the hydrator to reject the payload wholesale —
+ * either ceiling causes the parser to reject the payload wholesale —
  * partial application would silently apply some errors and drop others,
  * which is worse for debugging than a clean rejection.
  */
-export type HydrateApiErrorsOptions = {
+export type ParseApiErrorsOptions = {
+  /**
+   * The form's `key` (or `form.key`). Stamped on every produced
+   * `ValidationError` so the form knows which form the errors belong
+   * to. Required because `ValidationError.formKey` is required on the
+   * type, and stamping is the parser's job — not the consumer's.
+   */
   readonly formKey: FormKey
   /**
    * Maximum number of distinct keys accepted in the details record.
@@ -48,7 +56,7 @@ export type HydrateApiErrorsOptions = {
  * Default caps. Conservative; consumers who deliberately ship larger
  * payloads can override on a per-call basis.
  */
-export const HYDRATE_API_ERRORS_DEFAULTS = {
+export const PARSE_API_ERRORS_DEFAULTS = {
   maxEntries: 1000,
   maxPathDepth: 32,
 } as const
@@ -75,16 +83,22 @@ export const HYDRATE_API_ERRORS_DEFAULTS = {
  * Return semantics:
  * - `{ ok: true, errors }` — payload recognised (possibly empty)
  * - `{ ok: false, errors: [], rejected: '…' }` — payload shape not
- *   recognised (malformed object-of-objects, primitive, etc.). Prior
- *   versions silently returned `[]` for both cases, which made server
- *   integration bugs hard to debug.
+ *   recognised (malformed object-of-objects, primitive, etc.).
+ *
+ * Pure transformation: no side effects, no form coupling. Pair with
+ * `form.setFieldErrors` (or `addFieldErrors`) to apply the result:
+ *
+ * ```ts
+ * const result = parseApiErrors(response, { formKey: form.key })
+ * if (result.ok) form.setFieldErrors(result.errors)
+ * ```
  */
-export function hydrateApiErrors(
+export function parseApiErrors(
   payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined | unknown,
-  options: HydrateApiErrorsOptions
-): HydrateApiErrorsResult {
-  const maxEntries = options.maxEntries ?? HYDRATE_API_ERRORS_DEFAULTS.maxEntries
-  const maxPathDepth = options.maxPathDepth ?? HYDRATE_API_ERRORS_DEFAULTS.maxPathDepth
+  options: ParseApiErrorsOptions
+): ParseApiErrorsResult {
+  const maxEntries = options.maxEntries ?? PARSE_API_ERRORS_DEFAULTS.maxEntries
+  const maxPathDepth = options.maxPathDepth ?? PARSE_API_ERRORS_DEFAULTS.maxPathDepth
 
   if (payload === null || payload === undefined) {
     return { ok: true, errors: [] }

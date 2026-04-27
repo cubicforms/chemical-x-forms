@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { useForm } from '@runtime/composables/use-form'
+  import { parseApiErrors } from '@runtime/core/parse-api-errors'
   // The SSR fixture exercises the zod v3 adapter via useForm auto-import.
   // Installed side-by-side with zod v4 via pnpm alias.
   import { z } from 'zod-v3'
@@ -44,19 +45,24 @@
   ])
   const directEmailState = getDirectFieldState('email')
 
-  // Hydration helper applied during setup, simulating a 422 from the server
-  // being mapped onto fields before the page renders.
-  const { fieldErrors: apiErrors, setFieldErrorsFromApi: setApiErrors } = useForm({
+  // Parsed-from-API helper applied during setup, simulating a 422 from
+  // the server being mapped onto fields before the page renders.
+  const apiErrorForm = useForm({
     schema: z.object({ username: z.string() }),
     key: 'errors-from-api',
   })
-  setApiErrors({
-    error: {
-      code: 'VALIDATION_ERROR',
-      message: 'Invalid input',
-      details: { username: ['Username taken', 'Reserved word'] },
+  const { fieldErrors: apiErrors, setFieldErrors: setApiErrors } = apiErrorForm
+  const parsedApi = parseApiErrors(
+    {
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid input',
+        details: { username: ['Username taken', 'Reserved word'] },
+      },
     },
-  })
+    { formKey: apiErrorForm.key }
+  )
+  if (parsedApi.ok) setApiErrors(parsedApi.errors)
 
   // -- handleSubmit return-shape fixture --
   // Proves handleSubmit(cb) returns a function (not a Promise) so it can be
@@ -158,7 +164,7 @@
         <span id="errors-direct-count">{{ Object.keys(directErrors).length }}</span>
       </div>
 
-      <!-- setFieldErrorsFromApi -->
+      <!-- parseApiErrors → setFieldErrors -->
       <div id="errors-from-api">
         <span id="errors-from-api-first">{{ apiErrors.username?.[0]?.message ?? '' }}</span>
         <span id="errors-from-api-second">{{ apiErrors.username?.[1]?.message ?? '' }}</span>

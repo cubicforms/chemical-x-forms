@@ -1,12 +1,12 @@
 import { fc, test } from '@fast-check/vitest'
 import { describe, expect } from 'vitest'
-import { hydrateApiErrors } from '../../src/runtime/core/hydrate-api-errors'
+import { parseApiErrors } from '../../src/runtime/core/parse-api-errors'
 
 /**
- * Properties for the API-error hydration normaliser. The important
- * invariants: any plausible payload must be a total function (no throws),
- * well-formed envelopes always hydrate successfully, and the formKey
- * always propagates onto the produced errors.
+ * Properties for the API-error parser. The important invariants: any
+ * plausible payload must be a total function (no throws), well-formed
+ * envelopes always parse successfully, and the formKey always
+ * propagates onto the produced errors.
  */
 
 // A "well-formed details record": string keys → string | string[] values.
@@ -20,7 +20,7 @@ const arbDetails = fc.dictionary(
   { maxKeys: 4 }
 )
 
-// The three envelope shapes hydrateApiErrors accepts for well-formed input.
+// The three envelope shapes parseApiErrors accepts for well-formed input.
 const arbValidPayload = fc.oneof(
   // Raw details.
   arbDetails,
@@ -31,7 +31,7 @@ const arbValidPayload = fc.oneof(
 )
 
 // A "random junk" payload generator — any JSON-ish value. Used to prove
-// hydrateApiErrors is total (never throws) rather than that it succeeds.
+// parseApiErrors is total (never throws) rather than that it succeeds.
 const arbJunkPayload = fc.oneof(
   fc.constant(null),
   fc.constant(undefined),
@@ -42,18 +42,18 @@ const arbJunkPayload = fc.oneof(
   fc.dictionary(fc.string({ minLength: 1, maxLength: 6 }), fc.jsonValue(), { maxKeys: 4 })
 )
 
-describe('hydrateApiErrors — properties', () => {
+describe('parseApiErrors — properties', () => {
   test.prop([arbJunkPayload, fc.string({ minLength: 1, maxLength: 8 })])(
     'total function: never throws for plausible payloads',
     (payload, formKey) => {
-      expect(() => hydrateApiErrors(payload, { formKey })).not.toThrow()
+      expect(() => parseApiErrors(payload, { formKey })).not.toThrow()
     }
   )
 
   test.prop([arbValidPayload, fc.string({ minLength: 1, maxLength: 8 })])(
     'valid-envelope invariant: well-formed inputs always produce ok:true',
     (payload, formKey) => {
-      const result = hydrateApiErrors(payload, { formKey })
+      const result = parseApiErrors(payload, { formKey })
       expect(result.ok).toBe(true)
     }
   )
@@ -61,7 +61,7 @@ describe('hydrateApiErrors — properties', () => {
   test.prop([arbDetails, fc.string({ minLength: 1, maxLength: 8 })])(
     'formKey propagation: every produced error carries the input formKey',
     (details, formKey) => {
-      const result = hydrateApiErrors(details, { formKey })
+      const result = parseApiErrors(details, { formKey })
       expect(result.ok).toBe(true)
       for (const err of result.errors) {
         expect(err.formKey).toBe(formKey)
@@ -76,7 +76,7 @@ describe('hydrateApiErrors — properties', () => {
         if (typeof v === 'string') return sum + (v.length > 0 ? 1 : 0)
         return sum + v.filter((s) => s.length > 0).length
       }, 0)
-      const { errors } = hydrateApiErrors(details, { formKey })
+      const { errors } = parseApiErrors(details, { formKey })
       expect(errors.length).toBe(expected)
     }
   )

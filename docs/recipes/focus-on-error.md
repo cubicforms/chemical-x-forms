@@ -35,19 +35,22 @@ directly:
 
 ```vue
 <script setup lang="ts">
-  const { handleSubmit, setFieldErrorsFromApi, scrollToFirstError, focusFirstError } = useForm({
-    schema,
-    key: 'signup',
-  })
+  import { useForm, parseApiErrors } from '@chemical-x/forms'
+
+  const form = useForm({ schema, key: 'signup' })
+  const { handleSubmit, setFieldErrors, scrollToFirstError, focusFirstError } = form
 
   const onSubmit = handleSubmit(async (values) => {
     try {
       await $fetch('/api/signup', { method: 'POST', body: values })
     } catch (err) {
       if (err.statusCode === 422) {
-        setFieldErrorsFromApi(err.data)
-        scrollToFirstError({ block: 'center', behavior: 'smooth' })
-        focusFirstError({ preventScroll: true })
+        const result = parseApiErrors(err.data, { formKey: form.key })
+        if (result.ok) {
+          setFieldErrors(result.errors)
+          scrollToFirstError({ block: 'center', behavior: 'smooth' })
+          focusFirstError({ preventScroll: true })
+        }
       }
     }
   })

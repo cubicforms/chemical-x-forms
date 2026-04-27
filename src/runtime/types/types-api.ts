@@ -1,5 +1,6 @@
 import type { ObjectDirective, Ref } from 'vue'
-import type { Path } from '../core/paths'
+import type { Path, PathKey } from '../core/paths'
+import type { PersistOptInRegistry } from '../core/persistence/opt-in-registry'
 import type {
   ArrayItem,
   ArrayPath,
@@ -202,17 +203,36 @@ export type FormStorage = {
 export type PersistIncludeMode = 'form' | 'form+errors'
 
 /**
+ * Write metadata threaded through `setValueAtPath` / `applyFormReplacement`
+ * and surfaced to `onFormChange` listeners. Lets the call site (directive,
+ * field-array helper, history undo, devtools edit, programmatic
+ * `form.setValue`) declare whether THIS write should reach the persistence
+ * layer.
+ *
+ * The persistence subscription only writes when `meta?.persist === true`;
+ * an absent or `false` value bypasses the storage adapter entirely. This
+ * is the security gate behind the per-element opt-in model — only writes
+ * sourced from a binding that explicitly opted into persistence (via
+ * `register('foo', { persist: true })`) carry `persist: true`.
+ */
+export type WriteMeta = {
+  readonly persist?: boolean
+}
+
+/**
  * Undo/redo configuration. `true` enables with default `max: 50`.
  * Pass an object to tune the bounded snapshot stack size.
  */
 export type HistoryConfig = true | { max?: number }
 
 /**
- * Opt-in persistence for the form's draft state. The library writes
- * (debounced) on every mutation and reads back on mount. Off by
- * default — no config → no reads, no writes, zero overhead.
+ * Full options form for persistence. Use this when you need to override
+ * defaults beyond just picking the backend (debounce, key namespace,
+ * version, error inclusion, etc.). For backend-only configuration the
+ * shorthand `persist: 'local'` / `persist: customAdapter` is equivalent
+ * to `persist: { storage: 'local' }` / `persist: { storage: customAdapter }`.
  */
-export type PersistConfig = {
+export type PersistConfigOptions = {
   /**
    * Which backend to persist to. String shortcuts load built-in
    * adapters via dynamic import (tree-shakeable — a consumer who
@@ -245,6 +265,25 @@ export type PersistConfig = {
   /** Clear the persisted entry when a submit handler resolves. Default `true`. */
   clearOnSubmitSuccess?: boolean
 }
+
+/**
+ * Opt-in persistence for the form's draft state. The library writes
+ * (debounced) on every mutation and reads back on mount. Off by
+ * default — no config → no reads, no writes, zero overhead.
+ *
+ * Three input forms — pick the one that reads best at the call site:
+ *
+ * ```ts
+ * useForm({ persist: 'local' })                       // shorthand: built-in backend
+ * useForm({ persist: encryptedStorage })              // shorthand: custom adapter
+ * useForm({ persist: { storage: 'local', version: 3 } }) // full options bag
+ * ```
+ *
+ * The shorthand forms get the same defaults as the full bag — they
+ * exist purely to remove ceremony for the common "I just want to pick
+ * a backend" case.
+ */
+export type PersistConfig = FormStorageKind | FormStorage | PersistConfigOptions
 
 export type UseFormConfiguration<
   Form extends GenericForm,
@@ -345,14 +384,30 @@ export type UseFormConfiguration<
   /**
    * Opt-in persistence of the form's draft state. Off by default.
    * See `docs/recipes/persistence.md` for the tradeoff table and
-   * backend picker guidance. Key fields:
+   * backend picker guidance.
    *
-   * - `storage: 'local' | 'session' | 'indexeddb' | FormStorage`
-   * - `key?`: persisted entry key. Defaults to
-   *   `chemical-x-forms:${formKey}`.
-   * - `debounceMs?`: write debounce. Default `300` ms.
-   * - `version?`: bump to invalidate existing entries.
-   * - `clearOnSubmitSuccess?`: default `true`.
+   * Three input forms — pick the one that reads best at the call site:
+   *
+   * - `persist: 'local'` (shorthand for a built-in backend). Same
+   *   shape works for `'session'` and `'indexeddb'`.
+   * - `persist: encryptedStorage` (shorthand for a custom `FormStorage`
+   *   adapter — the object with `getItem` / `setItem` / `removeItem`).
+   * - `persist: { storage: 'local', version: 3, debounceMs: 500, ... }`
+   *   when you need to override anything beyond the backend.
+   *
+   * Cross-store cleanup: at mount, the library calls `removeItem(key)`
+   * on every standard backend (`'local'`, `'session'`, `'indexeddb'`)
+   * that's NOT the configured one — fire-and-forget. This means if a
+   * form was persisting to `'local'` and switches to `'session'` (or
+   * a custom encrypted adapter), the stale `'local'` entry can't
+   * orphan PII / sensitive data. Custom adapters can't be enumerated,
+   * so a custom→custom migration is on the consumer.
+   *
+   * Per-field opt-in: configuring `persist` is necessary but not
+   * sufficient — every field that should actually persist needs
+   * `register('foo', { persist: true })`. Adding `persist:` without
+   * any field opt-ins logs a dev-mode warning. See
+   * `docs/recipes/persistence.md` for the threat-model rationale.
    */
   persist?: PersistConfig
 
@@ -488,11 +543,46 @@ export type RegisterFlatPath<Form, Key extends keyof Form = keyof Form> =
         : never
     : never
 
+/**
+ * Per-binding options for `register(path, options)`. Lives at the binding
+ * layer (not the form layer) so adding a sensitive field doesn't auto-leak
+ * into a form-wide persistence config — every persisted path is announced
+ * at its own `register()` call site.
+ */
+export type RegisterOptions = {
+  /**
+   * Opt this binding into the form's persistence pipeline. Requires
+   * `persist:` configured on `useForm()` for any storage activity to
+   * actually happen. Throws `SensitivePersistFieldError` if the path
+   * matches a known sensitive-name pattern (password / cvv / ssn / …)
+   * unless `acknowledgeSensitive: true` is also passed.
+   *
+   * Persistence is bound to THIS binding's mount lifecycle: opt-in on
+   * mount, opt-out on unmount. Multiple bindings to the same path are
+   * tracked independently — the path keeps persisting as long as any
+   * opted-in binding is mounted.
+   */
+  persist?: boolean
+  /**
+   * Explicit acknowledgement that the persisted path is intentionally
+   * sensitive. Required override for paths matching the sensitive-name
+   * heuristic (password, cvv, ssn, etc.). Compliance dimension —
+   * forces a code-review trigger when a sensitive field reaches the
+   * persistence pipeline.
+   */
+  acknowledgeSensitive?: boolean
+}
+
 export type RegisterValue<Value = unknown> = {
   innerRef: Readonly<Ref<Value>>
   registerElement: (el: HTMLElement) => void
   deregisterElement: (el: HTMLElement) => void
-  setValueWithInternalPath: (value: unknown) => boolean
+  /**
+   * Internal write delegate. Optional `meta` is forwarded down through
+   * `state.setValueAtPath` to `onFormChange` listeners; the persistence
+   * subscription only writes when `meta?.persist === true`.
+   */
+  setValueWithInternalPath: (value: unknown, meta?: WriteMeta) => boolean
   /**
    * Optimistic SSR-only mark. Called by the `vRegisterHint` template
    * transform's wrapping IIFE so that any field bound to `v-register`
@@ -502,6 +592,24 @@ export type RegisterValue<Value = unknown> = {
    * hydration. No-op on the client; see `FormStore.markConnectedOptimistically`.
    */
   markConnectedOptimistically: () => void
+  // --- Persistence opt-in (internal — managed by the directive) ---
+  /**
+   * Canonical path key for this binding. Used by the directive when
+   * adding / removing entries in `persistOptIns`. Internal field; not
+   * part of the consumer-visible API surface.
+   */
+  path: PathKey
+  /** Opt-in flag from `register(path, { persist })`. Internal. */
+  persist: boolean
+  /** Opt-in flag from `register(path, { acknowledgeSensitive })`. Internal. */
+  acknowledgeSensitive: boolean
+  /**
+   * Reference to the FormStore's per-element opt-in registry. The
+   * directive's `created` / `updated` / `beforeUnmount` hooks add and
+   * remove entries here based on the binding's `persist` flag.
+   * Internal.
+   */
+  persistOptIns: PersistOptInRegistry
 }
 
 export type CustomDirectiveRegisterAssignerFn = (value: unknown) => void
@@ -578,7 +686,8 @@ export type FieldState = DeepFlatten<
     /**
      * Validation errors for this field's path. Populated automatically when
      * `handleSubmit` validates, and manually via `setFieldErrors` /
-     * `setFieldErrorsFromApi`. Empty array when there are no errors for the
+     * `addFieldErrors` (typically fed from `parseApiErrors(payload)` for
+     * server-side responses). Empty array when there are no errors for the
      * field — safe to read without a null check.
      */
     errors: ValidationError[]
@@ -770,7 +879,8 @@ export type UseAbstractFormReturnType<
   // to the full `RegisterFlatPath<Form>` union, and every register call
   // would produce a RegisterValue<union-of-every-leaf | undefined>.
   register: <Path extends RegisterFlatPath<Form, keyof Form>>(
-    path: Path
+    path: Path,
+    options?: RegisterOptions
   ) => RegisterValue<NestedType<Form, Path> | undefined>
   key: FormKey
 
@@ -781,7 +891,9 @@ export type UseAbstractFormReturnType<
    * automatically by `handleSubmit` on validation failure and cleared on
    * validation success. Also writable (via the imperative methods below,
    * not via direct mutation) — `setFieldErrors`, `addFieldErrors`,
-   * `clearFieldErrors`, `setFieldErrorsFromApi`.
+   * `clearFieldErrors`. For server / API responses, parse the envelope
+   * via `parseApiErrors(payload)` and feed the result into
+   * `setFieldErrors` / `addFieldErrors`.
    *
    * Typed as `Readonly<FormFieldErrors<Form>>` — a frozen view over the
    * form's own `FlatPath<Form>` mapped type. Dot access works for known
@@ -819,23 +931,6 @@ export type UseAbstractFormReturnType<
    */
   clearFieldErrors: (path?: string | (string | number)[]) => void
 
-  /**
-   * Convenience for server-error hydration: accepts either the wrapped
-   * `{ error: { details } }` envelope or a raw `{ path: [msg] }` record,
-   * maps it to `ValidationError[]`, stamps the current form key, and calls
-   * `setFieldErrors`. Returns the produced errors for downstream use.
-   *
-   * The optional `limits` object caps entry count and path depth so
-   * attacker-controlled payloads (gateway passthroughs, untrusted
-   * microservices) can't DoS the form. Defaults: 1 000 entries, depth 32.
-   * Over-budget payloads are rejected wholesale; over-depth individual
-   * keys are dropped but the rest of the payload still applies.
-   */
-  setFieldErrorsFromApi: (
-    payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined,
-    limits?: { maxEntries?: number; maxPathDepth?: number }
-  ) => ValidationError[]
-
   // --- Form-level state ---
 
   /**
@@ -865,7 +960,11 @@ export type UseAbstractFormReturnType<
    *   - per-field `touched` / `focused` / `blurred` are cleared (the
    *     `isConnected` DOM flag is preserved);
    *   - submission lifecycle (`isSubmitting` / `submitCount` /
-   *     `submitError`) resets to the "pre-submission" state.
+   *     `submitError`) resets to the "pre-submission" state;
+   *   - the persisted draft (if `persist:` was configured) is wiped —
+   *     reset semantics are "fresh start across every layer". The
+   *     opt-in registry is NOT touched, so the next user keystroke on
+   *     a still-mounted opted-in input re-populates the entry naturally.
    */
   reset: (nextDefaultValues?: DeepPartial<Form>) => void
 
@@ -878,8 +977,49 @@ export type UseAbstractFormReturnType<
    *
    * No-ops if the path is not tracked (e.g. a freshly-named key that has
    * never been set or appeared in schema defaults).
+   *
+   * If `persist:` is configured, the persisted entry's matching subpath
+   * is removed too (and the whole entry is dropped if no opted-in paths
+   * remain). The opt-in registry is preserved.
    */
   resetField: (path: FlatPath<Form>) => void
+
+  // --- Persistence (imperative APIs) ---
+
+  /**
+   * Imperative one-shot write of the current value at `path` to the
+   * configured storage. Use case: explicit "Save Draft" button, a
+   * `beforeunload` handler, a multi-step checkpoint where the consumer
+   * wants the durable record refreshed without waiting for the
+   * debounced subscription to fire.
+   *
+   * - Bypasses the per-element opt-in gate (the consumer is taking
+   *   explicit responsibility for this checkpoint).
+   * - Bypasses the debouncer (write happens after a `flush()` of any
+   *   pending subscription write, so it can't be overwritten).
+   * - Read-merge-write: existing paths in the persisted entry are
+   *   preserved.
+   * - Throws `SensitivePersistFieldError` if `path` matches the
+   *   sensitive-name heuristic; pass `acknowledgeSensitive: true` to
+   *   override.
+   * - Silent no-op when `persist:` isn't configured on the form.
+   */
+  persist: (path: FlatPath<Form>, options?: { acknowledgeSensitive?: boolean }) => Promise<void>
+
+  /**
+   * Wipe the persisted entry. Without `path`, removes the entire
+   * draft. With `path`, removes only that subpath (and any matching
+   * persisted error entries). The entry is removed entirely if the
+   * resulting form is empty.
+   *
+   * Does NOT touch the in-memory form state (use `reset` /
+   * `resetField` for that — and they call this internally). Does NOT
+   * disable any active opt-ins; future writes from opted-in bindings
+   * will re-populate the storage entry.
+   *
+   * Silent no-op when `persist:` isn't configured.
+   */
+  clearPersistedDraft: (path?: FlatPath<Form>) => Promise<void>
 
   // --- Undo / redo ---
 

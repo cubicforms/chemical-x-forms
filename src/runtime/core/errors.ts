@@ -35,3 +35,31 @@ export class ReservedFormKeyError extends Error {
     )
   }
 }
+
+/**
+ * Thrown when a binding (or `form.persist`) targets a path whose name
+ * matches the sensitive-name heuristic (password / cvv / ssn / token /
+ * etc.) without an explicit `acknowledgeSensitive: true` override.
+ *
+ * Persisting sensitive data to client-side storage (localStorage,
+ * sessionStorage, IndexedDB) creates a compliance footgun across
+ * HIPAA / PII / PCI-DSS / SOC2: the device-bound copy survives logouts,
+ * is readable by any same-origin script, and is unencrypted at rest.
+ * The heuristic is intentionally noisy — false positives surface a
+ * code-review trigger; the override turns it back off when the
+ * developer affirms the persistence is intentional.
+ */
+export class SensitivePersistFieldError extends Error {
+  override readonly name = 'SensitivePersistFieldError'
+  constructor(path: ReadonlyArray<string | number> | string) {
+    const display = Array.isArray(path) ? path.join('.') : String(path)
+    super(
+      `[@chemical-x/forms] The path "${display}" matches a sensitive-name ` +
+        `pattern (password / cvv / ssn / token / etc.). Persisting sensitive ` +
+        `data to client-side storage (localStorage / sessionStorage / IndexedDB) ` +
+        `is a compliance risk (HIPAA / PII / PCI-DSS / SOC2). If you genuinely ` +
+        `intend to persist this path, pass \`acknowledgeSensitive: true\` to ` +
+        `register() (or to form.persist()) to opt out of this check.`
+    )
+  }
+}

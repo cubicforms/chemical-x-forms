@@ -37,16 +37,16 @@ const form = useForm({ schema, key: 'signup' })
 
 Options:
 
-| Field             | Type                                                                        | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ----------------- | --------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `schema`          | `z.ZodType`                                                                 | yes      | The Zod schema describing the form shape.                                                                                                                                                                                                                                                                                                                                                                                            |
-| `key`             | `string`                                                                    | no       | Form identity. Omit for one-off forms (runtime allocates a synthetic `__cx:anon:<id>` via `useId()`). Pass a string when you need cross-component lookup via `useFormContext(key)`, shared state across call-sites, a stable `persist` storage-key default, or a recognisable DevTools label. Keys starting with `__cx:` are reserved for the library's internal synthetic-key namespace; passing one throws `ReservedFormKeyError`. |
-| `defaultValues`   | `DeepPartial<Form>`                                                         | no       | Constraints applied over schema defaults.                                                                                                                                                                                                                                                                                                                                                                                            |
-| `validationMode`  | `'lax'` \| `'strict'`                                                       | no       | Defaults to `'strict'` — defaults that fail the schema seed `schemaErrors` at construction. Pass `'lax'` to opt out (multi-step wizards, placeholder rows). See [Types](#types).                                                                                                                                                                                                                                                     |
-| `onInvalidSubmit` | `'none'` \| `'focus-first-error'` \| `'scroll-to-first-error'` \| `'both'`  | no       | What to do when submit fails validation. See [recipe](./recipes/focus-on-error.md).                                                                                                                                                                                                                                                                                                                                                  |
-| `fieldValidation` | `{ on, debounceMs }`                                                        | no       | Live field validation. Default `{ on: 'change', debounceMs: 125 }` — errors track live. Pass `{ on: 'none' }` to opt out (submit-only). See [recipe](./recipes/field-level-validation.md).                                                                                                                                                                                                                                           |
-| `persist`         | `{ storage, key?, debounceMs?, include?, version?, clearOnSubmitSuccess? }` | no       | Persist draft state. See [recipe](./recipes/persistence.md).                                                                                                                                                                                                                                                                                                                                                                         |
-| `history`         | `true` \| `{ max?: number }`                                                | no       | Enable undo/redo. See [recipe](./recipes/undo-redo.md).                                                                                                                                                                                                                                                                                                                                                                              |
+| Field             | Type                                                                                                          | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema`          | `z.ZodType`                                                                                                   | yes      | The Zod schema describing the form shape.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `key`             | `string`                                                                                                      | no       | Form identity. Omit for one-off forms (runtime allocates a synthetic `__cx:anon:<id>` via `useId()`). Pass a string when you need cross-component lookup via `useFormContext(key)`, shared state across call-sites, a stable `persist` storage-key default, or a recognisable DevTools label. Keys starting with `__cx:` are reserved for the library's internal synthetic-key namespace; passing one throws `ReservedFormKeyError`.                                                                                                                                |
+| `defaultValues`   | `DeepPartial<Form>`                                                                                           | no       | Constraints applied over schema defaults.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `validationMode`  | `'lax'` \| `'strict'`                                                                                         | no       | Defaults to `'strict'` — defaults that fail the schema seed `schemaErrors` at construction. Pass `'lax'` to opt out (multi-step wizards, placeholder rows). See [Types](#types).                                                                                                                                                                                                                                                                                                                                                                                    |
+| `onInvalidSubmit` | `'none'` \| `'focus-first-error'` \| `'scroll-to-first-error'` \| `'both'`                                    | no       | What to do when submit fails validation. See [recipe](./recipes/focus-on-error.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `fieldValidation` | `{ on, debounceMs }`                                                                                          | no       | Live field validation. Default `{ on: 'change', debounceMs: 125 }` — errors track live. Pass `{ on: 'none' }` to opt out (submit-only). See [recipe](./recipes/field-level-validation.md).                                                                                                                                                                                                                                                                                                                                                                          |
+| `persist`         | `FormStorageKind \| FormStorage \| { storage, key?, debounceMs?, include?, version?, clearOnSubmitSuccess? }` | no       | Operational config for the persistence pipeline. Three input forms: a string shorthand (`'local'` / `'session'` / `'indexeddb'`), a custom `FormStorage` adapter passed directly, or the full options bag. Per-field opt-in lives at every `register('foo', { persist: true })` call site — this config alone never causes any field to persist. At mount, stale entries under the same key in non-configured standard backends are wiped (cross-store cleanup); version-mismatched / malformed payloads are wiped on read. See [recipe](./recipes/persistence.md). |
+| `history`         | `true` \| `{ max?: number }`                                                                                  | no       | Enable undo/redo. See [recipe](./recipes/undo-redo.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ### `zodAdapter(schema)`
 
@@ -101,6 +101,7 @@ import {
   escapeForInlineScript,
   vRegister,
   canonicalizePath,
+  parseApiErrors,
 } from '@chemical-x/forms'
 ```
 
@@ -172,13 +173,38 @@ manually.
 Normalise a dotted-string or array path into a structured `Path`
 plus a stable `PathKey`. Use when building custom adapters.
 
+### `parseApiErrors(payload, options) → ParseApiErrorsResult`
+
+Pure transformation: takes a server response in the common shapes
+(`{ error: { details } }`, `{ details }`, or a raw `{ path: msg[] }`
+record) and returns `{ ok, errors, rejected? }`. Pair with
+`form.setFieldErrors(result.errors)` to apply. The form's setter
+surface deliberately doesn't include a `…FromApi` shortcut — keeping
+the parse step explicit makes the data flow obvious and the parser
+unit-testable in isolation.
+
+```ts
+const result = parseApiErrors(response, {
+  formKey: form.key,
+  // Optional caps for untrusted gateway-passthrough payloads:
+  maxEntries: 200, // default 1000
+  maxPathDepth: 8, // default 32
+})
+if (result.ok) form.setFieldErrors(result.errors)
+else console.warn('Bad payload:', result.rejected)
+```
+
+See [server-errors recipe](./recipes/server-errors.md) for the full
+pattern.
+
 ### Other exports
 
 - `parseDottedPath(s)` — string → `Segment[]`
 - `assignKey(el, key)` — low-level DOM marking used by `vRegister`
 - `isRegisterValue(x)` — type guard for the object `register` returns
 - `ROOT_PATH` / `ROOT_PATH_KEY` — the empty path and its key
-- `InvalidPathError` / `RegistryNotInstalledError` / `ReservedFormKeyError` / `SubmitErrorHandlerError` — error classes
+- `PARSE_API_ERRORS_DEFAULTS` — `{ maxEntries: 1000, maxPathDepth: 32 }` constant
+- `InvalidPathError` / `RegistryNotInstalledError` / `ReservedFormKeyError` / `SensitivePersistFieldError` / `SubmitErrorHandlerError` — error classes
 
 ---
 
@@ -245,11 +271,11 @@ piece of form state as a named field. Grouped by concern:
 
 ### Writing values
 
-| Member                  | Signature                               | What it does                                              |
-| ----------------------- | --------------------------------------- | --------------------------------------------------------- |
-| `setValue(value)`       | `(value: Form) => boolean`              | Replace the whole form.                                   |
-| `setValue(path, value)` | `(path, value) => boolean`              | Replace a single leaf or sub-tree.                        |
-| `register(path)`        | `(path) => RegisterValue<LeafOf<path>>` | Produces the binding the `v-register` directive consumes. |
+| Member                     | Signature                                                          | What it does                                                                                                                                                                                                                                                     |
+| -------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setValue(value)`          | `(value: Form) => boolean`                                         | Replace the whole form. Programmatic — does NOT trigger persistence.                                                                                                                                                                                             |
+| `setValue(path, value)`    | `(path, value) => boolean`                                         | Replace a single leaf or sub-tree. Programmatic — does NOT trigger persistence.                                                                                                                                                                                  |
+| `register(path, options?)` | `(path, options?: RegisterOptions) => RegisterValue<LeafOf<path>>` | Produces the binding the `v-register` directive consumes. `options.persist: true` opts the field into the persistence pipeline; `options.acknowledgeSensitive: true` overrides the sensitive-name heuristic. See [persistence recipe](./recipes/persistence.md). |
 
 ### Validation + submission
 
@@ -273,13 +299,12 @@ revalidation and successful submits — the consumer owns their lifecycle
 explicitly. See the [migration guide](./migration/0.11-to-0.12.md) for
 the rationale.
 
-| Member                                    | Type                                                                                                                                                                                       |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `fieldErrors`                             | `Readonly<FormFieldErrors<Form>>` — Proxy view; dot-access leaves directly, no `.value`. Merges schema + user; schema entries first.                                                       |
-| `setFieldErrors(errors)`                  | `(ValidationError[]) => void` — replaces the user-error store.                                                                                                                             |
-| `addFieldErrors(errors)`                  | `(ValidationError[]) => void` — appends to the user-error store.                                                                                                                           |
-| `clearFieldErrors(path?)`                 | `(path?) => void` — clears BOTH stores at the given path (or all paths if omitted). With live validation, the schema half re-populates on the next mutation if the value is still invalid. |
-| `setFieldErrorsFromApi(payload, limits?)` | Hydrates a server error envelope into the user-error store. Survives subsequent schema revalidation. See [server-errors recipe](./recipes/server-errors.md).                               |
+| Member                    | Type                                                                                                                                                                                                                                   |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fieldErrors`             | `Readonly<FormFieldErrors<Form>>` — Proxy view; dot-access leaves directly, no `.value`. Merges schema + user; schema entries first.                                                                                                   |
+| `setFieldErrors(errors)`  | `(ValidationError[]) => void` — replaces the user-error store. For server / API responses, parse the payload via `parseApiErrors` (top-level helper) and feed the result here. See [server-errors recipe](./recipes/server-errors.md). |
+| `addFieldErrors(errors)`  | `(ValidationError[]) => void` — appends to the user-error store.                                                                                                                                                                       |
+| `clearFieldErrors(path?)` | `(path?) => void` — clears BOTH stores at the given path (or all paths if omitted). With live validation, the schema half re-populates on the next mutation if the value is still invalid.                                             |
 
 ### Form-level state
 
@@ -315,10 +340,20 @@ with a dev-mode warning (use `setValue` / `handleSubmit` /
 
 ### Reset
 
-| Member             | Signature                            | What it does                                                                        |
-| ------------------ | ------------------------------------ | ----------------------------------------------------------------------------------- |
-| `reset(next?)`     | `(next?: DeepPartial<Form>) => void` | Re-seed the whole form. Rebuilds originals, clears errors + touched + submit state. |
-| `resetField(path)` | `(path: FlatPath<Form>) => void`     | Restore one path (leaf or container) to its original value.                         |
+| Member             | Signature                            | What it does                                                                                                                               |
+| ------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `reset(next?)`     | `(next?: DeepPartial<Form>) => void` | Re-seed the whole form. Rebuilds originals, clears errors + touched + submit state. Wipes the persisted draft if `persist:` is configured. |
+| `resetField(path)` | `(path: FlatPath<Form>) => void`     | Restore one path (leaf or container) to its original value. Wipes the matching subpath from storage if `persist:` is configured.           |
+
+### Persistence (imperative)
+
+| Member                       | Signature                                                                               | What it does                                                                                                                                                                                                                            |
+| ---------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `persist(path, options?)`    | `(path: FlatPath<Form>, options?: { acknowledgeSensitive?: boolean }) => Promise<void>` | One-shot read-merge-write of `path`'s current value. Bypasses the per-element opt-in gate and the debouncer. Throws `SensitivePersistFieldError` on sensitive paths unless acknowledged. Silent no-op when `persist:` isn't configured. |
+| `clearPersistedDraft(path?)` | `(path?: FlatPath<Form>) => Promise<void>`                                              | Wipe the persisted entry. With `path`, removes only that subpath. Does NOT touch in-memory state or active opt-ins. Silent no-op when `persist:` isn't configured.                                                                      |
+
+See [persistence recipe](./recipes/persistence.md) for the per-field
+opt-in model these APIs sit on top of.
 
 ### Undo / redo
 
@@ -384,7 +419,10 @@ import type {
   OnInvalidSubmitPolicy,
   OnSubmit,
   PendingValidationStatus,
+  ParseApiErrorsOptions,
+  ParseApiErrorsResult,
   PersistConfig,
+  PersistConfigOptions,
   PersistIncludeMode,
   ReactiveValidationStatus,
   RegisterValue,

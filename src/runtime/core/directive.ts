@@ -34,7 +34,10 @@ import type {
   RegisterSelectCustomDirective,
   RegisterTextCustomDirective,
   RegisterValue,
+  WriteMeta,
 } from '../types/types-api'
+import { getOrAssignElementId } from './persistence/opt-in-registry'
+import { enforceSensitiveCheck } from './persistence/sensitive-names'
 
 export const assignKey: unique symbol = Symbol('_assign')
 
@@ -94,13 +97,36 @@ function removeTrackedListeners(el: Element): void {
   delete carrier[listenersKey]
 }
 
+/**
+ * Compute the WriteMeta the default assigner attaches to its
+ * `setValueWithInternalPath` call. Per-element semantics: only THIS
+ * element's writes carry `persist: true`, and only if THIS element opted
+ * in via `register('foo', { persist: true })`. Other elements bound to
+ * the same path get `persist: false` from their own assigners.
+ *
+ * The assigner closure captures `el` and `registerValue` directly.
+ * `el` is stable across the assigner's lifetime; `registerValue` is the
+ * latest one, since the assigner is recreated on every `beforeUpdate`
+ * via `setAssignFunction`.
+ */
+function computePersistMeta(el: HTMLElement, registerValue: RegisterValue): WriteMeta {
+  const elementId = getOrAssignElementId(el)
+  return { persist: registerValue.persistOptIns.hasOptIn(elementId, registerValue.path) }
+}
+
 const getModelAssigner = (
+  el: HTMLElement,
   vnode: VNode,
   registerValue: RegisterValue
 ): CustomDirectiveRegisterAssignerFn => {
   // developer escape hatch — Vue wires `onUpdate:registerValue` as either a
   // single function or an array of functions depending on how many listeners
   // are bound. We narrow before dispatching.
+  //
+  // User-supplied assigners receive `(value)` only; if they want their writes
+  // to participate in persistence they must call
+  // `registerValue.setValueWithInternalPath(value, customMeta)` themselves.
+  // The default assigner below auto-attaches per-element meta.
   const fn: unknown = vnode.props?.['onUpdate:registerValue']
   if (isArray(fn)) {
     return (value) =>
@@ -114,8 +140,47 @@ const getModelAssigner = (
     return fn as CustomDirectiveRegisterAssignerFn
   }
   return (value) => {
-    registerValue.setValueWithInternalPath(value)
+    registerValue.setValueWithInternalPath(value, computePersistMeta(el, registerValue))
     return undefined
+  }
+}
+
+/**
+ * Idempotent reconciliation of a single element's opt-in across the
+ * directive lifecycle. Called from `created` (oldValue undefined),
+ * `beforeUpdate` (oldValue the previous RegisterValue), and as a
+ * convenience from `beforeUnmount` (value undefined).
+ *
+ * Handles every transition: persist flag flipping in either direction,
+ * `register()` path changing (e.g. dynamic v-for index), and the
+ * cross-form / cross-SFC case where `register()` returns a value bound
+ * to a different FormStore (different `persistOptIns` instance).
+ */
+function syncPersistOptIn(el: HTMLElement, value: unknown, oldValue: unknown): void {
+  const wasOptedIn = isRegisterValue(oldValue) && oldValue.persist === true
+  const wantsOptIn = isRegisterValue(value) && value.persist === true
+  if (!wasOptedIn && !wantsOptIn) return
+  const elementId = getOrAssignElementId(el)
+  // Detach the old opt-in unless every dimension matches (persist still
+  // requested, same canonical path, same registry instance).
+  if (wasOptedIn) {
+    const old = oldValue as RegisterValue
+    const samePathAndRegistry =
+      wantsOptIn &&
+      (value as RegisterValue).path === old.path &&
+      (value as RegisterValue).persistOptIns === old.persistOptIns
+    if (!samePathAndRegistry) {
+      old.persistOptIns.remove(elementId, old.path)
+    }
+  }
+  // Attach the new opt-in. `add` is idempotent, so if oldValue already
+  // had the same (path, registry) we just re-touch the same entry.
+  // The sensitive-name check fires here (not on every keystroke) — it's
+  // the act of OPTING IN that crosses the compliance threshold.
+  if (wantsOptIn) {
+    const v = value as RegisterValue
+    enforceSensitiveCheck(v.path, v.acknowledgeSensitive)
+    v.persistOptIns.add(elementId, v.path)
   }
 }
 
@@ -135,7 +200,7 @@ function onCompositionEnd(e: Event) {
 }
 
 function setAssignFunction(
-  el: { [AssignKey: symbol]: CustomDirectiveRegisterAssignerFn },
+  el: HTMLElement & { [AssignKey: symbol]: CustomDirectiveRegisterAssignerFn },
   vnode: VNode,
   value: RegisterValue<unknown>
 ) {
@@ -147,7 +212,7 @@ function setAssignFunction(
     return
   }
 
-  el[assignKey] = getModelAssigner(vnode, value)
+  el[assignKey] = getModelAssigner(el, vnode, value)
 }
 
 // We are exporting the v-model runtime directly as vnode hooks so that it can
@@ -453,12 +518,20 @@ function getCheckboxValue(
 
 const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
   created(el, binding, vnode) {
+    // Per-element persist opt-in is reconciled at the dynamic level so
+    // the per-tag variants stay focused on their input semantics.
+    syncPersistOptIn(el, binding.value, undefined)
     callModelHook(el, binding, vnode, null, 'created')
   },
   mounted(el, binding, vnode) {
     callModelHook(el, binding, vnode, null, 'mounted')
   },
   beforeUpdate(el, binding, vnode, prevVNode) {
+    // Reactive opt-in toggling: `register('foo', { persist: rememberMe })`
+    // re-evaluates on every parent render. `binding.oldValue` holds the
+    // prior RegisterValue so the helper can diff persist / path / registry
+    // and migrate the entry without thrashing.
+    syncPersistOptIn(el, binding.value, binding.oldValue)
     callModelHook(el, binding, vnode, prevVNode, 'beforeUpdate')
   },
   updated(el, binding, vnode, prevVNode) {
@@ -470,6 +543,14 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
     // re-used by KeepAlive / v-show would otherwise double its listener
     // count on the next activation cycle.
     removeTrackedListeners(el)
+
+    // Drop every opt-in this element ever held — `removeAllFor` sweeps
+    // by elementId rather than (id, path), which covers the case where
+    // the binding's path changed across updates and we don't want to
+    // hunt for the latest entry.
+    if (isRegisterValue(value)) {
+      value.persistOptIns.removeAllFor(getOrAssignElementId(el))
+    }
 
     if (!isRegisterValue(value)) return
 

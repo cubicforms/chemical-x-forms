@@ -115,7 +115,14 @@ export function createHistoryModule<F extends GenericForm>(
 
   function restore(snap: HistorySnapshot<F>): void {
     suppressNext = true
-    state.applyFormReplacement(snap.form)
+    // Undo / redo replays a whole-form snapshot, so the persist decision
+    // can't be made per-path. Rule: if the form has any opted-in path
+    // at all, the rewind reaches the persistence layer (so the durable
+    // record matches what the user just rolled back to). If nothing is
+    // opted in, no write — matches the per-element default.
+    state.applyFormReplacement(snap.form, {
+      persist: !state.persistOptIns.isEmpty(),
+    })
     // Rebuild both error stores from the snapshot. Each writer clears +
     // repopulates its own Map; the two sources stay isolated. Order is
     // arbitrary because the writers touch separate Maps with no

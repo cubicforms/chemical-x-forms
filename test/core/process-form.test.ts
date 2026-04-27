@@ -428,31 +428,10 @@ describe('buildProcessForm', () => {
     })
   })
 
-  describe('setFieldErrorsFromApi', () => {
-    it('hydrates wrapped envelope and populates state errors', () => {
-      const state = alwaysValid()
-      const { setFieldErrorsFromApi } = buildProcessForm(state)
-      const result = setFieldErrorsFromApi({
-        error: { details: { email: ['taken'] } },
-      })
-      expect(result.ok).toBe(true)
-      expect(result.errors).toHaveLength(1)
-      expect(state.getErrorsForPath(['email'])).toHaveLength(1)
-    })
-
-    it('returns ok:false with reason on malformed payload and does not mutate state', () => {
-      const state = alwaysValid()
-      const { setFieldErrorsFromApi } = buildProcessForm(state)
-      // Existing user-injected error — proves a malformed payload bail
-      // doesn't accidentally clobber prior state.
-      state.setAllUserErrors([{ message: 'existing', path: ['password'], formKey: 'pf' }])
-      const result = setFieldErrorsFromApi(
-        'oops' as unknown as Parameters<typeof setFieldErrorsFromApi>[0]
-      )
-      expect(result.ok).toBe(false)
-      expect(result.rejected).toBeDefined()
-      // Existing errors untouched
-      expect(state.getErrorsForPath(['password'])).toHaveLength(1)
-    })
-  })
+  // The `setFieldErrorsFromApi` factory was retired in 0.12 in favour of
+  // the pure `parseApiErrors` helper. Pure-parser behaviour is covered by
+  // `test/core/parse-api-errors.test.ts`; the consumer-side write
+  // (`form.setFieldErrors(parseApiErrors(payload).errors)`) is integration
+  // territory tested in `test/composables/use-abstract-form.test.ts` and
+  // the field-errors-view tests.
 })

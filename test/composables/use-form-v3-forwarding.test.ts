@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, type App } from 'vue'
+import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
 import { z } from 'zod-v3'
 import type { FormStorage, UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
+import { vRegister } from '../../src/runtime/core/directive'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { useForm } from '../../src/zod-v3'
 
@@ -86,16 +87,46 @@ describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
       removeItem: () => Promise.resolve(),
     }
 
-    const { app, api } = mount({
-      schema,
-      key: 'v3-persist',
-      persist: { storage, debounceMs: 20 },
+    // Persistence is per-element opt-in, so the test must drive its
+    // mutation through a real <input v-register="register('email',
+    // { persist: true })">. Programmatic `api.setValue` doesn't reach
+    // the persistence pipeline by design.
+    const handle: { api?: ApiReturn; emailInput?: HTMLInputElement } = {}
+    const App = defineComponent({
+      setup() {
+        const api = useForm({
+          schema,
+          key: 'v3-persist',
+          persist: { storage, debounceMs: 20 },
+        } as never) as ApiReturn
+        handle.api = api
+        return () =>
+          h('div', [
+            withDirectives(
+              h('input', {
+                type: 'text',
+                ref: (el): void => {
+                  if (el !== null) handle.emailInput = el as HTMLInputElement
+                },
+              }),
+              [[vRegister, api.register('email', { persist: true })]]
+            ),
+          ])
+      },
     })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
     apps.push(app)
 
-    // Trigger a mutation so the debounced writer schedules. If the
-    // option was dropped, setItem never fires.
-    api.setValue('email', 'alice@example.com')
+    // Simulate the user typing — the directive's input handler will
+    // attach `meta.persist = true` (this element opted in) and the
+    // persistence subscription will fire.
+    const input = handle.emailInput
+    if (input === undefined) throw new Error('email input not mounted')
+    input.value = 'alice@example.com'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
     await wait(50)
     await drain()
 

@@ -70,8 +70,10 @@ export type {
   OnSubmit,
   PendingValidationStatus,
   PersistConfig,
+  PersistConfigOptions,
   PersistIncludeMode,
   ReactiveValidationStatus,
+  RegisterOptions,
   RegisterValue,
   SettledValidationStatus,
   SubmitHandler,
@@ -81,6 +83,7 @@ export type {
   ValidationMode,
   ValidationResponse,
   ValidationResponseWithoutValue,
+  WriteMeta,
 } from './runtime/types/types-api'
 
 export type { DeepPartial, FlatPath, GenericForm, NestedType } from './runtime/types/types-core'
@@ -95,5 +98,16 @@ export {
   InvalidPathError,
   RegistryNotInstalledError,
   ReservedFormKeyError,
+  SensitivePersistFieldError,
   SubmitErrorHandlerError,
 } from './runtime/core/errors'
+
+// API-error parser. Pure transformation: takes a server response in
+// the common shapes (wrapped envelope, raw details record) and returns
+// `ValidationError[]` + an `ok` discriminator for malformed payloads.
+// Pair with `form.setFieldErrors` (or `addFieldErrors`) to apply the
+// result. The form API has no `setFieldErrorsFromApi` shortcut by
+// design — keeping the parse step explicit is the consolidation move
+// that lets the form's setter surface stay narrow.
+export { parseApiErrors, PARSE_API_ERRORS_DEFAULTS } from './runtime/core/parse-api-errors'
+export type { ParseApiErrorsOptions, ParseApiErrorsResult } from './runtime/core/parse-api-errors'

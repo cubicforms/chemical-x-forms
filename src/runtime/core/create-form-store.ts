@@ -7,12 +7,17 @@ import type {
   DefaultValuesResponse,
   ValidationError,
   ValidationMode,
+  WriteMeta,
 } from '../types/types-api'
 import type { DeepPartial, GenericForm } from '../types/types-core'
 import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS } from './defaults'
 import { diffAndApply } from './diff-apply'
 import { canonicalizePath, type Path, type PathKey, type Segment } from './paths'
 import { getAtPath, setAtPath } from './path-walker'
+import {
+  createPersistOptInRegistry,
+  type PersistOptInRegistry,
+} from './persistence/opt-in-registry'
 
 /**
  * Per-form closure state — the single store owned by each `useForm` call.
@@ -116,8 +121,22 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   readonly activeValidations: Ref<number>
 
   // --- form mutations ---
-  applyFormReplacement(next: F): void
-  setValueAtPath(path: Path, value: unknown): void
+  /**
+   * Replace the form value wholesale. Optional `meta` is forwarded to
+   * every `onFormChange` listener so they can decide whether THIS write
+   * is one they care about — most importantly, the persistence layer
+   * only writes when `meta?.persist === true`. Internal callers that
+   * don't pass meta default to no-persist.
+   */
+  applyFormReplacement(next: F, meta?: WriteMeta): void
+  /**
+   * Set a single path's value. `meta` is forwarded to listeners via
+   * `applyFormReplacement` (see above). The directive's input handler
+   * computes `meta.persist` from the per-element opt-in registry; other
+   * internal call sites pass `meta.persist = hasAnyOptInForPath(path)`.
+   * Public `form.setValue` passes no meta.
+   */
+  setValueAtPath(path: Path, value: unknown, meta?: WriteMeta): void
   getValueAtPath(path: Path): unknown
 
   // --- reset ---
@@ -198,10 +217,13 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    * Subscribe to every `applyFormReplacement`. Fires synchronously
    * after `form.value` has been swapped to `next` and all field /
    * originals bookkeeping has run. Used by persistence + undo/redo
-   * to hook the single mutation funnel. Returns an unsubscribe
+   * to hook the single mutation funnel. The optional `meta` carries
+   * the originating call site's intent — the persistence subscription
+   * filters on `meta?.persist === true`; subscribers that don't care
+   * about meta can ignore the parameter. Returns an unsubscribe
    * function.
    */
-  onFormChange(listener: (next: F) => void): () => void
+  onFormChange(listener: (next: F, meta?: WriteMeta) => void): () => void
 
   /**
    * Subscribe to successful submissions. Fires after the consumer's
@@ -246,6 +268,16 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   readonly modules: Map<string, unknown>
 
   /**
+   * Per-element persistence opt-in tracker. Empty by default; the
+   * `v-register` directive populates entries on `mount` for each binding
+   * that passed `register('foo', { persist: true })` and clears them on
+   * `beforeUnmount`. Two SFCs sharing a key share this registry — opt-ins
+   * are per-DOM-element, not per-component. Internal to the persistence
+   * subsystem; not part of the consumer API surface.
+   */
+  readonly persistOptIns: PersistOptInRegistry
+
+  /**
    * Tear down non-reactive resources owned by this FormStore. Invoked
    * by the registry when the last consumer unmounts. Cancels pending
    * field-validation timers, drops every subscriber, and fires each
@@ -269,8 +301,9 @@ export type FormStoreHydration = {
   readonly schemaErrors: ReadonlyArray<readonly [string, unknown]>
   /**
    * User-injected errors snapshot. Replayed into `userErrors` at
-   * construction. Allows server-side `setFieldErrorsFromApi` /
-   * `addFieldErrors` calls to round-trip through hydration.
+   * construction. Allows server-side `setFieldErrors` /
+   * `addFieldErrors` calls (typically fed from `parseApiErrors`) to
+   * round-trip through hydration.
    */
   readonly userErrors: ReadonlyArray<readonly [string, unknown]>
   readonly fields: ReadonlyArray<readonly [string, unknown]>
@@ -303,9 +336,15 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
 
   // Plain Sets (not reactive) — these fire imperative callbacks; no
   // template should ever depend on "how many listeners are attached".
-  const formChangeListeners = new Set<(next: F) => void>()
+  const formChangeListeners = new Set<(next: F, meta?: WriteMeta) => void>()
   const submitSuccessListeners = new Set<() => void>()
   const resetListeners = new Set<() => void>()
+
+  // Per-element persistence opt-ins. Constructed up-front so the
+  // directive can populate entries before the persistence module wires
+  // its subscription (mount order between the directive and
+  // wirePersistence isn't guaranteed).
+  const persistOptIns = createPersistOptInRegistry()
 
   // State-scoped teardown hooks. Persistence / history / any other
   // per-state module registers its disposer here so the cleanup is
@@ -437,7 +476,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     })
   }
 
-  function applyFormReplacement(next: F): void {
+  function applyFormReplacement(next: F, meta?: WriteMeta): void {
     const prev = form.value
     if (Object.is(prev, next)) return
     form.value = next
@@ -457,19 +496,20 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // Notify any subscribed modules (persistence, undo/redo) — fire
     // after field bookkeeping so listeners see a fully-updated form.
     // Listener throws are isolated so one misbehaving subscriber
-    // can't block the others.
+    // can't block the others. `meta` propagates the call-site's
+    // intent (e.g. persist: true) to subscribers that filter on it.
     for (const listener of formChangeListeners) {
       try {
-        listener(next)
+        listener(next, meta)
       } catch (err) {
         console.error('[@chemical-x/forms] onFormChange threw:', err)
       }
     }
   }
 
-  function setValueAtPath(path: Path, value: unknown): void {
+  function setValueAtPath(path: Path, value: unknown, meta?: WriteMeta): void {
     const nextForm = setAtPath(form.value, path, value) as F
-    applyFormReplacement(nextForm)
+    applyFormReplacement(nextForm, meta)
     if (fieldValidationMode === 'change') {
       scheduleFieldValidation(path, false /* debounced */)
     }
@@ -546,7 +586,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     fieldValidationState.clear()
   }
 
-  function onFormChange(listener: (next: F) => void): () => void {
+  function onFormChange(listener: (next: F, meta?: WriteMeta) => void): () => void {
     formChangeListeners.add(listener)
     return () => {
       formChangeListeners.delete(listener)
@@ -600,6 +640,10 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     formChangeListeners.clear()
     submitSuccessListeners.clear()
     resetListeners.clear()
+    // Drop opt-ins so a directive that survives FormStore eviction
+    // (it shouldn't, but defensive) doesn't keep the registry alive
+    // through stale path entries on a disposed store.
+    persistOptIns.clear()
   }
 
   function getValueAtPath(path: Path): unknown {
@@ -1028,6 +1072,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     emitSubmitSuccess,
     registerCleanup,
     modules,
+    persistOptIns,
     dispose,
   }
 }

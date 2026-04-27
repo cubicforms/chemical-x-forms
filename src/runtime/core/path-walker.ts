@@ -94,3 +94,48 @@ export function setAtPath(root: unknown, path: Path, value: unknown): unknown {
   rec[head] = setAtPath(rec[head], rest, value)
   return rec
 }
+
+/**
+ * Copy-on-write deletion of `path` from `root`. Returns a fresh root
+ * with the targeted leaf (or container) removed; siblings stay
+ * reference-equal. Missing intermediates short-circuit and return
+ * `root` unchanged.
+ *
+ * Array semantics: deleting a numeric index splices the array (length
+ * shrinks by one). Object semantics: deleting a string key removes the
+ * own-property and shrinks the key set by one.
+ *
+ * Used by the persistence layer's `clearPersistedDraft(path)` to wipe
+ * a single subpath from the persisted entry without disturbing other
+ * paths the user might have opted in.
+ */
+export function deleteAtPath(root: unknown, path: Path): unknown {
+  if (path.length === 0) return undefined
+
+  const head = path[0] as Segment
+  const rest = path.slice(1)
+
+  if (typeof head === 'number') {
+    if (!Array.isArray(root)) return root
+    if (head < 0 || head >= root.length) return root
+    if (rest.length === 0) {
+      const arr = [...root]
+      arr.splice(head, 1)
+      return arr
+    }
+    const arr = [...root]
+    arr[head] = deleteAtPath(arr[head], rest)
+    return arr
+  }
+
+  if (!isPlainRecord(root)) return root
+  if (rest.length === 0) {
+    const rec: Record<string, unknown> = { ...root }
+    delete rec[head]
+    return rec
+  }
+  if (!(head in root)) return root
+  const rec: Record<string, unknown> = { ...root }
+  rec[head] = deleteAtPath(rec[head], rest)
+  return rec
+}

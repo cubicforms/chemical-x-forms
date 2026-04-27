@@ -4,28 +4,41 @@ import { createFormStore, type FormStore } from '../core/create-form-store'
 import {
   ANONYMOUS_FORM_KEY_PREFIX,
   DEFAULT_PERSISTENCE_DEBOUNCE_MS,
+  PERSISTENCE_KEY_PREFIX,
   RESERVED_KEY_PREFIX,
 } from '../core/defaults'
 import { __DEV__ } from '../core/dev'
+import { captureUserCallSite } from '../core/dev-stack-trace'
 import { ReservedFormKeyError } from '../core/errors'
 import type { FieldStateView } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
 import { createHistoryModule, type HistoryModule } from '../core/history'
 import {
-  buildPersistedPayload,
   createDebouncedWriter,
+  filterErrorsByPaths,
   getStorageAdapter,
+  mergeSparseHydration,
+  normalizePersistConfig,
+  PERSISTENCE_MODULE_KEY,
+  pluckPaths,
   readPersistedPayload,
   resolveStorageKey,
+  sweepAllStandardStores,
+  sweepNonConfiguredStandardStores,
+  type PersistedPayload,
+  type PersistenceModule,
 } from '../core/persistence'
+import { canonicalizePath, type Path, type PathKey } from '../core/paths'
+import { deleteAtPath, getAtPath, setAtPath, isPlainRecord } from '../core/path-walker'
 import { kFormContext, useRegistry } from '../core/registry'
 import type {
   AbstractSchema,
   ChemicalXFormsDefaults,
   FormKey,
-  PersistConfig,
+  PersistConfigOptions,
   UseAbstractFormReturnType,
   UseFormConfiguration,
+  ValidationError,
 } from '../types/types-api'
 import type { DeepPartial, GenericForm } from '../types/types-core'
 
@@ -40,8 +53,8 @@ import type { DeepPartial, GenericForm } from '../types/types-core'
  * - Looks up (or creates) the FormStore<F> for the configured key. If the
  *   registry has a pending hydration entry for the key, threads it into
  *   createFormStore so the client side starts from the server's snapshot.
- * - Builds register / getFieldState / validate / handleSubmit /
- *   setFieldErrorsFromApi from that FormStore via the Phase 1b factories.
+ * - Builds register / getFieldState / validate / handleSubmit from that
+ *   FormStore via the Phase 1b factories.
  *
  * The old pre-rewrite implementation stitched together five separate Nuxt
  * useState composables and a cache in register.ts. This file collapses all
@@ -109,14 +122,47 @@ export function useAbstractForm<
 
   // Wire persistence (opt-in) — only on fresh state creation, skipped
   // on SSR. `existing` means a prior useForm() already mounted and
-  // wired persistence; we don't double-subscribe. The disposer is
-  // registered on the FormStore (not on this consumer's scope) so
-  // persistence survives any single consumer unmounting — it tears
-  // down only when the last consumer releases and the registry evicts
-  // the state.
-  if (existing === undefined && merged.persist !== undefined && !registry.isSSR) {
-    const disposePersist = wirePersistence(state, merged.persist)
-    state.registerCleanup(disposePersist)
+  // wired persistence; we don't double-subscribe. The handle is cached
+  // on `state.modules` so `buildFormApi` can plug `form.persist` /
+  // `form.clearPersistedDraft` into the consumer-facing API. The
+  // disposer is registered on the FormStore (not on this consumer's
+  // scope) so persistence survives any single consumer unmounting — it
+  // tears down only when the last consumer releases and the registry
+  // evicts the state.
+  //
+  // The shorthand input (`persist: 'local'`, `persist: customAdapter`)
+  // is normalised to the resolved options bag once at this boundary —
+  // everything below operates on the resolved shape.
+  if (existing === undefined && !registry.isSSR) {
+    if (merged.persist !== undefined) {
+      const resolvedPersist = normalizePersistConfig(merged.persist)
+      const persistenceKey = resolveStorageKey(resolvedPersist, state.formKey)
+      // Cross-store cleanup. The configured backend is the source of
+      // truth — any standard backend not matching the configured one
+      // gets a `removeItem(key)` so historic entries can't orphan
+      // sensitive data when the dev migrates between backends. Inlined
+      // per-backend (see `sweepNonConfiguredStandardStores`) so this
+      // doesn't drag in adapter chunks the consumer didn't ask for.
+      sweepNonConfiguredStandardStores(resolvedPersist.storage, persistenceKey)
+      const persistenceModule = wirePersistence(state, resolvedPersist)
+      state.modules.set(PERSISTENCE_MODULE_KEY, persistenceModule)
+      state.registerCleanup(() => persistenceModule.dispose())
+    } else {
+      // No `persist:` configured. The form might have HAD persistence
+      // in a prior deployment that the dev has since removed
+      // (compliance pivot, simplification). Sweep the default-key
+      // entry from every standard backend so removing the option
+      // actually removes the on-disk artifact — without this, sensitive
+      // draft data from a "we used to persist this" past can linger
+      // indefinitely. We can only reach the default key
+      // (`chemical-x-forms:${formKey}`); a previous deployment that
+      // used a custom `persist.key` is on the consumer to clean up via
+      // an explicit migration. Anonymous forms (`__cx:anon:*`) don't
+      // have a stable key across sessions, so the sweep is mostly
+      // wasted for them — but the cost is bounded (3 fire-and-forget
+      // calls) and the security guarantee is consistent.
+      sweepAllStandardStores(`${PERSISTENCE_KEY_PREFIX}${state.formKey}`)
+    }
   }
 
   // Wire history (opt-in). Fresh-state-only — the module subscribes
@@ -299,85 +345,6 @@ function recordAmbientProvide(isSSR: boolean): void {
 }
 
 /**
- * Best-effort capture of the caller's source frame, normalised to a
- * short `<path>:<line>:<col>` form. Walks the stack past
- * `@chemical-x/forms` internal frames, picks the first frame that
- * looks like user code, then strips the dev-server scheme + host +
- * Vite/Nuxt's `/_nuxt/` prefix so the warning doesn't carry a wall
- * of `https://localhost:3000/_nuxt/...` noise. Returns `undefined`
- * on engines that don't expose `.stack` or when parsing fails — the
- * warning degrades to listing "<unknown location>" in that slot.
- *
- * Click-through navigation isn't sacrificed: `console.warn` already
- * renders its own clickable stack trace below the message in
- * Chrome / Firefox DevTools (V8 frame format → Sources tab). The
- * inline list is purely for "which call sites collided", and short
- * paths read better than full URLs there.
- *
- * Dev-only; guarded upstream in `recordAmbientProvide`. The cx-frame
- * regex matches both the published path (`@chemical-x/forms/...`)
- * and the linked / source path (`chemical-x-forms/...`) so local
- * dev via `make link-cx` surfaces the same trimmed frames.
- */
-function captureUserCallSite(): string | undefined {
-  const raw = new Error().stack
-  if (typeof raw !== 'string') return undefined
-  const lines = raw.split('\n')
-  // Skip the "Error" message line and any frame inside cx itself.
-  for (let i = 1; i < lines.length; i++) {
-    const frame = lines[i]
-    if (frame === undefined) continue
-    if (/chemical-x[/-]forms?/i.test(frame)) continue
-    if (/\bforms\.[A-Za-z0-9_-]+\.m?js\b/.test(frame)) continue
-    const trimmed = frame.trim()
-    if (trimmed.length === 0) continue
-    return shortenSourceFrame(trimmed)
-  }
-  return undefined
-}
-
-/**
- * Reduce a raw stack frame to `<path>:<line>:<col>`.
- *
- * Inputs we expect (V8, with or without `at fn (…)` wrapper):
- *   - `at setup (https://cubicforms.test/_nuxt/pages/spike-cx.vue:18:18)`
- *   - `at https://example.com/foo.js:1:1`
- *   - `at file:///Users/x/proj/spike.vue:18:18`
- *   - `pages/foo.vue:18:18` (already path-like, no V8 wrapper)
- *
- * Outputs:
- *   - `pages/spike-cx.vue:18:18`
- *   - `foo.js:1:1`
- *   - `Users/x/proj/spike.vue:18:18`
- *   - `pages/foo.vue:18:18`
- *
- * If the frame doesn't match the trailing `…:line:col` shape at all,
- * we return the original trimmed frame unchanged — better to surface
- * something than nothing.
- */
-function shortenSourceFrame(frame: string): string {
-  const match = /(?:^|\s|\()([^\s()]+):(\d+):(\d+)\)?$/.exec(frame)
-  if (match === null) return frame
-  const [, urlOrPath, line, col] = match
-  if (urlOrPath === undefined || line === undefined || col === undefined) return frame
-  let path = urlOrPath
-  // Strip `scheme://host/` (https://…, http://…). file:// gets the
-  // same treatment, leaving the absolute filesystem path; we then
-  // also strip its leading slash below so it reads as a relative path.
-  path = path.replace(/^[a-z]+:\/\/[^/]+\//i, '')
-  // Strip Vite/Nuxt's dev-server prefix.
-  path = path.replace(/^_nuxt\//, '')
-  // Strip leading slash (left over from file:// or absolute paths).
-  path = path.replace(/^\//, '')
-  // Wrap in parens. Chrome's console auto-linker partial-matches
-  // bare `pages/foo.vue:137:23` (it picks up `/foo.vue:137` and
-  // drops the `pages` prefix + `:23` suffix). Parens are the V8
-  // stack-frame convention and Chrome reliably auto-links them
-  // end-to-end.
-  return `(${path}:${line}:${col})`
-}
-
-/**
  * Normalise `configuration.key` into a concrete FormKey. Explicit keys
  * pass through after a reserved-namespace check (anything starting
  * with `__cx:` is rejected with `ReservedFormKeyError`); empty /
@@ -469,8 +436,8 @@ function warnOnSchemaFingerprintMismatch(
  */
 function wirePersistence<F extends GenericForm>(
   state: FormStore<F>,
-  config: PersistConfig
-): () => void {
+  config: PersistConfigOptions
+): PersistenceModule {
   const key = resolveStorageKey(config, state.formKey)
   const debounceMs = config.debounceMs ?? DEFAULT_PERSISTENCE_DEBOUNCE_MS
   const include = config.include ?? 'form'
@@ -492,23 +459,51 @@ function wirePersistence<F extends GenericForm>(
     if (disposed) return
     const adapter = await adapterPromise
     if (disposed) return
+    // Sparse-payload reshape: the persisted form contains only paths
+    // that were opted in via `register('foo', { persist: true })`. If
+    // every opt-in has been torn down, wipe the entry rather than
+    // write a hollow envelope (matches the per-element security model
+    // — no opt-ins → nothing to persist).
+    const optedInPaths = new Set<PathKey>(state.persistOptIns.optedInPaths())
+    if (optedInPaths.size === 0) {
+      await adapter.removeItem(key)
+      return
+    }
     // Unwrap the reactive form to a plain object before handing it to
     // the adapter — IDB's `structuredClone` can't serialise Vue
     // proxies (DATA_CLONE_ERR), and local/session stringify the
     // proxy's own-enumerable keys anyway.
     const rawForm = toRaw(state.form.value)
-    const payload = buildPersistedPayload(
-      rawForm,
-      include,
-      state.schemaErrors,
-      state.userErrors,
-      version
-    )
+    const filteredForm = pluckPaths(rawForm, optedInPaths) as F
+    if (include === 'form') {
+      await adapter.setItem(key, { v: version, data: { form: filteredForm } })
+      return
+    }
+    // include === 'form+errors': filter both error stores to the
+    // opted-in paths only. A persisted error without a persisted
+    // value would dangle on rehydration; dropping is the consistent
+    // contract.
+    const filteredSchemaErrors = filterErrorsByPaths(state.schemaErrors, optedInPaths)
+    const filteredUserErrors = filterErrorsByPaths(state.userErrors, optedInPaths)
+    const payload: PersistedPayload<F> = {
+      v: version,
+      data: {
+        form: filteredForm,
+        schemaErrors: [...filteredSchemaErrors.entries()].map(([k, v]) => [k, [...v]] as const),
+        userErrors: [...filteredUserErrors.entries()].map(([k, v]) => [k, [...v]] as const),
+      },
+    }
     await adapter.setItem(key, payload)
   }, debounceMs)
 
-  const unsubscribeChange = state.onFormChange(() => {
+  const unsubscribeChange = state.onFormChange((_next, meta) => {
     if (disposed) return
+    // Per-element opt-in: only writes whose source declared `persist: true`
+    // reach the storage adapter. Programmatic `form.setValue`, history
+    // undo without opt-ins, devtools edits to non-opted paths, and
+    // `reset()` all bypass this gate by passing no meta (or `persist:
+    // false`).
+    if (meta?.persist !== true) return
     writer.schedule()
   })
 
@@ -539,9 +534,29 @@ function wirePersistence<F extends GenericForm>(
     try {
       const raw = await adapter.getItem(key)
       const payload = readPersistedPayload<F>(raw, version)
-      if (payload === null) return
+      if (payload === null) {
+        // Truly-absent entries are a no-op; we'd churn the adapter for
+        // nothing. But a non-null raw that didn't parse is a stale
+        // payload — wrong version, malformed shape, corrupted JSON —
+        // and leaving it on disk is the same hysteresis problem the
+        // cross-store cleanup avoids. The dev bumped `version` (or the
+        // shape drifted) to signal "old data is invalid"; auto-wipe so
+        // the next mount reads cleanly and so sensitive fields from a
+        // pre-version-bump deployment can't linger indefinitely.
+        if (raw !== null && raw !== undefined) {
+          await adapter.removeItem(key)
+        }
+        return
+      }
       if (disposed) return
-      state.applyFormReplacement(payload.data.form)
+      // Sparse-aware replacement: the persisted form may contain only
+      // a subset of paths (the ones opted into persistence on the
+      // previous mount). Merge over the current form (which carries
+      // schema defaults at this point — wirePersistence runs before
+      // any user mutation could have happened) so non-persisted paths
+      // keep their schema defaults.
+      const merged = mergeSparseHydration(toRaw(state.form.value) as F, payload.data.form)
+      state.applyFormReplacement(merged)
       if (include === 'form+errors') {
         // Each store rebuilds independently from its persisted entries.
         // Consumers who bumped `version` already had their payload
@@ -561,7 +576,128 @@ function wirePersistence<F extends GenericForm>(
     }
   })()
 
-  return () => {
+  // Dev-mode warning: persistence is configured but no field opted in.
+  // Common confusion mode — `persist: { storage: 'local' }` is set on
+  // the form but every `register()` call omits `{ persist: true }`, so
+  // drafts mysteriously never save. Wait one microtask AFTER the
+  // initial mount task settles so the directive's `created` hooks have
+  // had a chance to populate opt-ins; then check once. One-shot —
+  // re-mounts within the same FormStore lifetime don't re-warn.
+  if (__DEV__) {
+    void Promise.resolve().then(() => {
+      if (disposed) return
+      // Two microtask hops: the first lets the current setup() return
+      // and Vue mount the directive subtree; the second runs after
+      // Vue's own queued effects so any `register({ persist: true })`
+      // has landed in the registry.
+      void Promise.resolve().then(() => {
+        if (disposed) return
+        if (state.persistOptIns.isEmpty()) {
+          console.warn(
+            `[@chemical-x/forms] Persistence is configured for form ` +
+              `"${state.formKey}" but no fields opted in. Each persisted ` +
+              `field needs \`register('foo', { persist: true })\`, or call ` +
+              `\`form.persist('foo')\` for an explicit checkpoint. ` +
+              `See ./docs/recipes/persistence.md.`
+          )
+        }
+      })
+    })
+  }
+
+  /**
+   * Imperative one-shot write. Read-merge-write strategy: flush any
+   * pending debounced write first (so it can't overwrite our update),
+   * read the existing payload, set the path's current value, optionally
+   * merge in this path's errors, and write back. Preserves untouched
+   * paths in storage.
+   */
+  async function writePathImmediately(path: Path): Promise<void> {
+    if (disposed) return
+    await writer.flush()
+    if (disposed) return
+    const adapter = await adapterPromise
+    if (disposed) return
+    const raw = await adapter.getItem(key)
+    const existing = readPersistedPayload<F>(raw, version)
+    const baseForm = existing?.data.form ?? ({} as F)
+    const value = getAtPath(toRaw(state.form.value), path)
+    const nextForm = setAtPath(baseForm, path, value) as F
+    if (include === 'form') {
+      await adapter.setItem(key, { v: version, data: { form: nextForm } })
+      return
+    }
+    // include === 'form+errors': preserve the rest of the persisted
+    // error map and refresh the entry for this path's canonical key.
+    const { key: pathKey } = canonicalizePath(path)
+    const schemaMap = new Map<string, ValidationError[]>(existing?.data.schemaErrors ?? [])
+    const userMap = new Map<string, ValidationError[]>(existing?.data.userErrors ?? [])
+    const currentSchema = state.schemaErrors.get(pathKey)
+    const currentUser = state.userErrors.get(pathKey)
+    if (currentSchema !== undefined && currentSchema.length > 0) {
+      schemaMap.set(pathKey, [...currentSchema])
+    } else {
+      schemaMap.delete(pathKey)
+    }
+    if (currentUser !== undefined && currentUser.length > 0) {
+      userMap.set(pathKey, [...currentUser])
+    } else {
+      userMap.delete(pathKey)
+    }
+    const payload: PersistedPayload<F> = {
+      v: version,
+      data: {
+        form: nextForm,
+        schemaErrors: [...schemaMap.entries()].map(([k, v]) => [k, [...v]] as const),
+        userErrors: [...userMap.entries()].map(([k, v]) => [k, [...v]] as const),
+      },
+    }
+    await adapter.setItem(key, payload)
+  }
+
+  /**
+   * Wipe the persisted entry. Without `path`, removes the whole key.
+   * With `path`, deletes only that subpath (and any matching error
+   * entries) and writes back; the entry is removed entirely if the
+   * resulting form value is empty.
+   */
+  async function clearPersistedDraft(path?: Path): Promise<void> {
+    if (disposed) return
+    await writer.flush()
+    if (disposed) return
+    const adapter = await adapterPromise
+    if (disposed) return
+    if (path === undefined) {
+      await adapter.removeItem(key)
+      return
+    }
+    const raw = await adapter.getItem(key)
+    const existing = readPersistedPayload<F>(raw, version)
+    if (existing === null) return
+    const nextForm = deleteAtPath(existing.data.form, path) as F
+    if (isEmptyContainer(nextForm)) {
+      await adapter.removeItem(key)
+      return
+    }
+    if (include === 'form') {
+      await adapter.setItem(key, { v: version, data: { form: nextForm } })
+      return
+    }
+    const { key: pathKey } = canonicalizePath(path)
+    const schemaErrors = (existing.data.schemaErrors ?? []).filter(([k]) => k !== pathKey)
+    const userErrors = (existing.data.userErrors ?? []).filter(([k]) => k !== pathKey)
+    const payload: PersistedPayload<F> = {
+      v: version,
+      data: {
+        form: nextForm,
+        schemaErrors: schemaErrors.map(([k, v]) => [k, [...v]] as const),
+        userErrors: userErrors.map(([k, v]) => [k, [...v]] as const),
+      },
+    }
+    await adapter.setItem(key, payload)
+  }
+
+  function dispose(): void {
     disposed = true
     unsubscribeChange()
     unsubscribeSuccess()
@@ -570,6 +706,24 @@ function wirePersistence<F extends GenericForm>(
     // works as a fire-and-forget.
     void writer.flush().catch(() => undefined)
   }
+
+  return {
+    writePathImmediately,
+    clearPersistedDraft,
+    dispose,
+  }
+}
+
+/**
+ * Treat `null`, `undefined`, `[]`, and `{}` as "nothing left to keep."
+ * Used by `clearPersistedDraft(path)` to decide whether to wipe the
+ * entire entry instead of writing a hollow envelope back.
+ */
+function isEmptyContainer(value: unknown): boolean {
+  if (value === undefined || value === null) return true
+  if (Array.isArray(value)) return value.length === 0
+  if (isPlainRecord(value)) return Object.keys(value).length === 0
+  return false
 }
 
 export type { FieldStateView }

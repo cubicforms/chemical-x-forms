@@ -239,3 +239,62 @@ describe('v-register directive — listener teardown on unmount', () => {
     expect(spy.removed).toBe(addedCount)
   })
 })
+
+describe('v-register directive — D2 unsupported-element warning', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  it('warns once when v-register is bound to a <div> with no assignKey override', () => {
+    const div = document.createElement('div')
+    document.body.appendChild(div)
+    const { value } = makeRegisterValue('hello')
+    const binding = makeBinding(value)
+    const vnode = makeVNode({})
+    hooks.created?.(div, binding, vnode, null)
+    // Same element re-fires created (KeepAlive case); warn must not
+    // double-fire — WeakSet dedupe.
+    hooks.created?.(div, binding, vnode, null)
+    const matched = warnSpy.mock.calls.filter((c: unknown[]) =>
+      String(c[0]).includes('falls back to text-input semantics')
+    )
+    expect(matched.length).toBe(1)
+    warnSpy.mockRestore()
+  })
+
+  it('does NOT warn when an assigner is installed via assignKey before mount', () => {
+    const div = document.createElement('div')
+    document.body.appendChild(div)
+    // Consumer-installed assigner — escape hatch for custom components
+    // / non-input elements that handle the binding manually.
+    ;(div as unknown as { [k: symbol]: unknown })[assignKey] = (_v: unknown) => undefined
+    const { value } = makeRegisterValue('hello')
+    const binding = makeBinding(value)
+    const vnode = makeVNode({})
+    hooks.created?.(div, binding, vnode, null)
+    const matched = warnSpy.mock.calls.filter((c: unknown[]) =>
+      String(c[0]).includes('falls back to text-input semantics')
+    )
+    expect(matched.length).toBe(0)
+    warnSpy.mockRestore()
+  })
+
+  it('does NOT warn for native input / select / textarea elements', () => {
+    for (const tag of ['input', 'select', 'textarea'] as const) {
+      const el = document.createElement(tag)
+      document.body.appendChild(el)
+      const { value } = makeRegisterValue('hello')
+      const binding = makeBinding(value)
+      const vnode = makeVNode({})
+      hooks.created?.(el, binding, vnode, null)
+    }
+    const matched = warnSpy.mock.calls.filter((c: unknown[]) =>
+      String(c[0]).includes('falls back to text-input semantics')
+    )
+    expect(matched.length).toBe(0)
+    warnSpy.mockRestore()
+  })
+})

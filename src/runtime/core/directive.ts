@@ -516,8 +516,43 @@ function getCheckboxValue(
   return key in el ? el[key] : checked
 }
 
+// Tags the dispatch covers natively. A v-register binding on anything
+// else falls back to `vRegisterText`, which assumes `el.value` is a
+// readable/writable string slot — wrong for `<div>`, `<span>`, custom
+// components, etc. The escape hatch is a consumer-installed
+// `[assignKey]` that overrides `setAssignFunction`'s default assigner.
+const SUPPORTED_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
+
+// One-shot dev-warn dedupe so a v-for over 100 unsupported elements
+// produces one warning, not 100. Keyed by element identity (WeakSet
+// for GC-friendliness).
+const warnedUnsupportedElements: WeakSet<HTMLElement> | null = __DEV__
+  ? new WeakSet<HTMLElement>()
+  : null
+
 const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
   created(el, binding, vnode) {
+    // D2: v-register on a tag that isn't input/select/textarea silently
+    // falls back to vRegisterText and then no-ops at user interaction
+    // because reading `el.value` on a div returns undefined. Warn the
+    // first time we see such a binding per element — unless the
+    // consumer installed their own assigner via `assignKey`, in which
+    // case they've taken responsibility.
+    if (
+      __DEV__ &&
+      warnedUnsupportedElements !== null &&
+      !SUPPORTED_TAGS.has(el.tagName) &&
+      (el as unknown as { [k: symbol]: unknown })[assignKey] === undefined &&
+      !warnedUnsupportedElements.has(el)
+    ) {
+      warnedUnsupportedElements.add(el)
+      warn(
+        `[@chemical-x/forms] v-register on <${el.tagName.toLowerCase()}> falls back to text-input semantics ` +
+          `(reading el.value). For non-input elements or custom components, install a custom assigner via ` +
+          `the \`assignKey\` symbol on the element, or expose an \`onUpdate:registerValue\` handler from the ` +
+          `component that wraps a native input.`
+      )
+    }
     // Per-element persist opt-in is reconciled at the dynamic level so
     // the per-tag variants stay focused on their input semantics.
     syncPersistOptIn(el, binding.value, undefined)

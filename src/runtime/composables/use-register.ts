@@ -22,14 +22,25 @@
  *     </div>
  *   </template>
  *
- * Side effect: registers `getCurrentInstance()` in `registerOwners`
- * so the parent's directive (`vRegisterDynamic.created`) can detect
- * "this child handles binding internally" — and skip both the
- * unsupported-element warn and the listener attachment on the parent's
- * (non-form) root. Without the sentinel, the directive falls back to
- * text-input semantics on a div / span / custom-element root and reads
- * `el.value` off something with no useful `value` slot, which clobbers
- * the form on every keystroke.
+ * Side effect: stamps a unique-symbol marker on the rendered root
+ * DOM element via `onMounted`. The parent's directive's deferred
+ * warn check (in `vRegisterDynamic.created` → nextTick) reads the
+ * marker to suppress the "is a no-op" warn — without it, components
+ * deeply nested in a parent's render tree would always warn (the
+ * directive can't reach the child's instance via `binding.instance`,
+ * since that's the page/parent component, whose `subTree` is the
+ * outer element tree, not the child component vnode directly).
+ *
+ * The marker on `el` is enough because the warn-suppression decision
+ * runs after `onMounted` (Vue's nextTick fires after post-render
+ * effects), by which point the marker is set if useRegister was
+ * called during the child's setup.
+ *
+ * The actual bug-fix (don't clobber form state via bubbled events
+ * reading `el.value` off a non-form root) is handled in the
+ * directive's listener bodies — they bail when the rendered root
+ * isn't a supported tag and the assigner is the default. See
+ * `directive.ts > shouldBailListener` for that contract.
  *
  * Three resolution modes:
  *
@@ -48,28 +59,18 @@
  * typed sub-paths, structured paths, getFieldState, etc. `useRegister`
  * stays a single-purpose ambient hook for the "wrap one field" case.
  */
-import { computed, getCurrentInstance, useAttrs, type ComputedRef } from 'vue'
+import { computed, getCurrentInstance, onMounted, useAttrs, type ComputedRef } from 'vue'
 import { __DEV__ } from '../core/dev'
 import { captureUserCallSite } from '../core/dev-stack-trace'
 import type { RegisterValue } from '../types/types-api'
 
 /**
- * WeakSet keyed by component instance. The directive's
- * `vRegisterDynamic.created` looks up `vnode.component` here to
- * detect "this child handles binding via useRegister, don't warn or
- * attach listeners on the parent's root".
- *
- * Entries auto-collect when the instance is GC'd; the directive does
- * NOT clear the entry on `beforeUnmount`. `<KeepAlive>` keeps the
- * same instance alive across deactivation/reactivation cycles, and
- * setup runs only once — clearing on unmount would re-fire the
- * unsupported-element warn on reactivation.
- *
- * Lives in production too, not just dev: the listener-attachment
- * decision matters in prod (the bubbled-write bug fires regardless of
- * NODE_ENV). Only the warn surface is dev-gated.
+ * Marker on the rendered root DOM element. Set by `useRegister`'s
+ * `onMounted` hook; read by the directive's deferred warn check to
+ * skip the "is a no-op" warn for components that handle binding via
+ * an inner v-register.
  */
-export const registerOwners: WeakSet<object> = new WeakSet<object>()
+export const REGISTER_OWNER_MARKER: unique symbol = Symbol('cxUseRegisterChild')
 
 const warnedNoParentRV: WeakSet<object> | null = __DEV__ ? new WeakSet<object>() : null
 let warnedOutsideSetup = false
@@ -81,7 +82,16 @@ export function useRegister(): ComputedRef<RegisterValue | undefined> {
     return computed(() => undefined)
   }
 
-  registerOwners.add(instance as unknown as object)
+  // Mark the rendered root DOM element after mount. `instance.vnode.el`
+  // is set during the patch of the child's subtree; reading it here
+  // (post-mount) gets the actual rendered element. The marker is what
+  // the parent's directive's deferred warn check reads.
+  onMounted(() => {
+    const el = instance.vnode.el
+    if (el !== null && el !== undefined && typeof el === 'object') {
+      ;(el as unknown as { [k: symbol]: unknown })[REGISTER_OWNER_MARKER] = true
+    }
+  })
 
   // `useAttrs()` returns the reactive setup-context proxy that tracks
   // reads — `instance.attrs` is the raw object, so reads off it

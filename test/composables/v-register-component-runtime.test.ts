@@ -44,7 +44,7 @@ type MountReturn = {
  * exercises the same prop / attr surface a compiled template would
  * produce. Tests that don't read these props are unaffected.
  */
-function mountWithChild(
+async function mountWithChild(
   Child: ReturnType<typeof defineComponent>,
   options?: {
     persist?: boolean
@@ -52,7 +52,7 @@ function mountWithChild(
     onUpdateRegisterValue?: (...args: unknown[]) => void
     installAssigner?: (el: HTMLElement) => void
   }
-): MountReturn {
+): Promise<MountReturn> {
   const handle: { api?: ApiReturn } = {}
   const warnings: string[] = []
   const warnSpy = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
@@ -89,6 +89,12 @@ function mountWithChild(
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
+  // The directive's "is a no-op" warn is deferred via `nextTick` so
+  // that `useRegister`'s `onMounted` marker (and any post-install
+  // assignKey) has a chance to land before the warn check runs.
+  // Flush microtasks before restoring the spy so the captured
+  // `warnings` array reflects the post-deferred state.
+  await flush()
   warnSpy.mockRestore()
 
   const rootEl = root.firstElementChild as HTMLElement | null
@@ -123,7 +129,7 @@ describe('pattern 1: v-register on a component whose root is <input>', () => {
         return () => h('input', { type: 'text', ...attrs })
       },
     })
-    mounted = mountWithChild(ChildInput)
+    mounted = await mountWithChild(ChildInput)
     expect(mounted.rootEl.tagName).toBe('INPUT')
 
     const input = mounted.rootEl as HTMLInputElement
@@ -134,7 +140,7 @@ describe('pattern 1: v-register on a component whose root is <input>', () => {
     expect(mounted.api.getValue('email').value).toBe('alice@example.com')
   })
 
-  it('does NOT fire the unsupported-element dev-warn (input is in SUPPORTED_TAGS)', () => {
+  it('does NOT fire the unsupported-element dev-warn (input is in SUPPORTED_TAGS)', async () => {
     const ChildInput = defineComponent({
       name: 'ChildInput',
       inheritAttrs: false,
@@ -142,7 +148,7 @@ describe('pattern 1: v-register on a component whose root is <input>', () => {
         return () => h('input', { type: 'text', ...attrs })
       },
     })
-    mounted = mountWithChild(ChildInput)
+    mounted = await mountWithChild(ChildInput)
     const matched = mounted.warnings.filter((w) => w.includes('is a no-op'))
     expect(matched.length).toBe(0)
   })
@@ -179,7 +185,7 @@ describe('pattern 2: v-register on a non-form root WITH useRegister (recommended
   })
 
   it('typing in the inner input writes through to the form (the binding follows useRegister)', async () => {
-    mounted = mountWithChild(InnerInputViaUseRegister)
+    mounted = await mountWithChild(InnerInputViaUseRegister)
     expect(mounted.rootEl.tagName).toBe('DIV')
 
     const innerInput = mounted.rootEl.querySelector('input.inner') as HTMLInputElement
@@ -191,14 +197,14 @@ describe('pattern 2: v-register on a non-form root WITH useRegister (recommended
     expect(mounted.api.getValue('email').value).toBe('typed')
   })
 
-  it('does NOT fire the unsupported-element dev-warn (sentinel suppresses)', () => {
-    mounted = mountWithChild(InnerInputViaUseRegister)
+  it('does NOT fire the unsupported-element dev-warn (sentinel suppresses)', async () => {
+    mounted = await mountWithChild(InnerInputViaUseRegister)
     const matched = mounted.warnings.filter((w) => w.includes('is a no-op'))
     expect(matched.length).toBe(0)
   })
 
   it('FormStore element registry tracks the INNER input, not the div root', async () => {
-    mounted = mountWithChild(InnerInputViaUseRegister)
+    mounted = await mountWithChild(InnerInputViaUseRegister)
     // The inner input is INTERACTIVE; focus listeners attached during
     // its v-register `created` flip `focused` from null to true on the
     // FieldRecord. If listeners had attached to the div root instead,
@@ -230,15 +236,15 @@ describe('non-pattern: v-register on a non-form root WITHOUT useRegister/assignK
     },
   })
 
-  it('fires the unsupported-element dev-warn (div is not in SUPPORTED_TAGS)', () => {
-    mounted = mountWithChild(PlainDivChild)
+  it('fires the unsupported-element dev-warn (div is not in SUPPORTED_TAGS)', async () => {
+    mounted = await mountWithChild(PlainDivChild)
     expect(mounted.rootEl.tagName).toBe('DIV')
     const matched = mounted.warnings.filter((w) => w.includes('is a no-op'))
     expect(matched.length).toBeGreaterThanOrEqual(1)
   })
 
   it('does NOT clobber the seeded form value — no listeners attached to the div root', async () => {
-    mounted = mountWithChild(PlainDivChild)
+    mounted = await mountWithChild(PlainDivChild)
     mounted.api.setValue('email', 'seed@example.com')
     expect(mounted.api.getValue('email').value).toBe('seed@example.com')
 
@@ -254,8 +260,8 @@ describe('non-pattern: v-register on a non-form root WITHOUT useRegister/assignK
     expect(mounted.api.getValue('email').value).toBe('seed@example.com')
   })
 
-  it('FormStore element registry SKIPS non-INTERACTIVE roots (silent no-op)', () => {
-    mounted = mountWithChild(PlainDivChild)
+  it('FormStore element registry SKIPS non-INTERACTIVE roots (silent no-op)', async () => {
+    mounted = await mountWithChild(PlainDivChild)
     const fs = mounted.api.getFieldState('email').value
     expect(fs.focused).toBeNull()
     expect(fs.blurred).toBeNull()
@@ -374,7 +380,7 @@ describe('pattern 3: @update:registerValue prop on a component', () => {
         return () => h('input', { type: 'text', ...attrs })
       },
     })
-    mounted = mountWithChild(ChildInput, {
+    mounted = await mountWithChild(ChildInput, {
       onUpdateRegisterValue: (v: unknown) => {
         received.push(v)
       },
@@ -519,7 +525,7 @@ describe('listener teardown on component unmount (works ✓)', () => {
         return () => h('input', { type: 'text', ...attrs })
       },
     })
-    mounted = mountWithChild(ChildInput)
+    mounted = await mountWithChild(ChildInput)
     const counts = { added: 0, removed: 0 }
     const el = mounted.rootEl
     const origAdd = el.addEventListener.bind(el)
@@ -562,7 +568,7 @@ describe('persist opt-in lifecycle on a component (works ✓)', () => {
         return () => h('input', { type: 'text', ...attrs })
       },
     })
-    mounted = mountWithChild(ChildInput, {
+    mounted = await mountWithChild(ChildInput, {
       persist: true,
       acknowledgeSensitive: false,
     })
@@ -578,7 +584,7 @@ describe('persist opt-in lifecycle on a component (works ✓)', () => {
 
     mounted.app.unmount()
     mounted = undefined
-    const fresh = mountWithChild(ChildInput, { persist: false })
+    const fresh = await mountWithChild(ChildInput, { persist: false })
     const freshProbe = (
       fresh.api as unknown as {
         register: (path: string) => {

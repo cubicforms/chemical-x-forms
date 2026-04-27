@@ -25,7 +25,7 @@ import {
 } from './vue-shared-shim'
 import type { DirectiveBinding, DirectiveHook, ObjectDirective, VNode } from 'vue'
 import { isRef, nextTick, warn } from 'vue'
-import { registerOwners } from '../composables/use-register'
+import { REGISTER_OWNER_MARKER } from '../composables/use-register'
 import { __DEV__ } from './dev'
 import type {
   CustomDirectiveRegisterAssignerFn,
@@ -115,6 +115,52 @@ function computePersistMeta(el: HTMLElement, registerValue: RegisterValue): Writ
   return { persist: registerValue.persistOptIns.hasOptIn(elementId, registerValue.path) }
 }
 
+/**
+ * Symbol-tagged on default-installed assigners so listener bodies can
+ * tell "no consumer override" from "consumer-installed assigner". The
+ * bail check (`shouldBailListener`) uses this to avoid the bubbled-
+ * write bug for non-supported roots: the default assigner reading
+ * `el.value` off a `<div>` would clobber form state with `''` /
+ * `undefined` on every keystroke from a descendant input. A consumer-
+ * installed assigner (via `assignKey` or `onUpdate:registerValue`)
+ * has explicitly opted into reading whatever the listener captures,
+ * so the bail doesn't apply.
+ */
+const DEFAULT_ASSIGNER_TAG: unique symbol = Symbol('cxDefaultAssigner')
+
+type DefaultAssignerCarrier = { [DEFAULT_ASSIGNER_TAG]?: boolean }
+
+function isDefaultAssigner(fn: unknown): boolean {
+  return typeof fn === 'function' && (fn as DefaultAssignerCarrier)[DEFAULT_ASSIGNER_TAG] === true
+}
+
+/**
+ * Listener-body bail. Called at the top of every event handler the
+ * directive attaches. Bails when:
+ *  - the rendered root is a non-supported tag (where `el.value` is
+ *    meaningless), AND
+ *  - the assigner is the default (no consumer override).
+ *
+ * Catches two cases without needing instance-level sentinel detection:
+ *  1. A `useRegister`-using child component — its rendered root is
+ *     usually a `<label>` / `<div>` / etc., and the inner
+ *     `<input v-register>` handles binding. The parent's directive's
+ *     listener on the rendered root would otherwise read `el.value`
+ *     off the wrapper and clobber the form.
+ *  2. A bare `<div v-register>` with no escape hatch — same story,
+ *     the dev gets a deferred warn pointing at the recipe.
+ *
+ * Pre-installed `assignKey` AND `@update:registerValue` listener
+ * shapes both bypass this bail (their assigner replaces the default,
+ * stripping the tag). Post-installed `assignKey` (set via
+ * `onMounted` or a ref callback) ALSO bypasses, because by the time
+ * the next input event fires, the user's assigner is in place.
+ */
+function shouldBailListener(el: HTMLElement): boolean {
+  if (SUPPORTED_TAGS.has(el.tagName)) return false
+  return isDefaultAssigner((el as unknown as { [k: symbol]: unknown })[assignKey])
+}
+
 const getModelAssigner = (
   el: HTMLElement,
   vnode: VNode,
@@ -140,10 +186,15 @@ const getModelAssigner = (
   if (isFunction(fn)) {
     return fn as CustomDirectiveRegisterAssignerFn
   }
-  return (value) => {
+  // Default-installed assigner. Tagged so the listener-body bail
+  // (`shouldBailListener`) can distinguish it from consumer overrides
+  // and prevent the bubbled-write bug on non-supported roots.
+  const defaultAssigner: CustomDirectiveRegisterAssignerFn = (value) => {
     registerValue.setValueWithInternalPath(value, computePersistMeta(el, registerValue))
     return undefined
   }
+  ;(defaultAssigner as unknown as DefaultAssignerCarrier)[DEFAULT_ASSIGNER_TAG] = true
+  return defaultAssigner
 }
 
 /**
@@ -200,6 +251,14 @@ function onCompositionEnd(e: Event) {
   }
 }
 
+function makeNoopAssigner(): CustomDirectiveRegisterAssignerFn {
+  const noop: CustomDirectiveRegisterAssignerFn = (_) => undefined
+  // Tag so `shouldBailListener` recognizes this as the default,
+  // alongside the real default-model assigner.
+  ;(noop as unknown as DefaultAssignerCarrier)[DEFAULT_ASSIGNER_TAG] = true
+  return noop
+}
+
 function setAssignFunction(
   el: HTMLElement & { [AssignKey: symbol]: CustomDirectiveRegisterAssignerFn },
   vnode: VNode,
@@ -212,7 +271,7 @@ function setAssignFunction(
   // entire directive lifecycle. The default assigner is a fallback
   // for the common case where nobody overrides; it should NEVER
   // clobber an explicit consumer override.
-  if (el[assignKey] !== undefined) {
+  if (el[assignKey] !== undefined && !isDefaultAssigner(el[assignKey])) {
     return
   }
 
@@ -228,14 +287,14 @@ function setAssignFunction(
   // those are likely typos (passing a string, an object literal, the
   // form API itself, etc.) and the developer benefits from a hint.
   if (value === undefined) {
-    el[assignKey] = (_) => undefined
+    el[assignKey] = makeNoopAssigner()
     return
   }
   if (!isRegisterValue(value)) {
     warn(
       `v-register expected value of type RegisterValue, got value of type ${typeof value} instead. Please check your v-register value.`
     )
-    el[assignKey] = (_) => undefined
+    el[assignKey] = makeNoopAssigner()
     return
   }
 
@@ -252,6 +311,13 @@ const vRegisterText: RegisterTextCustomDirective = {
       setAssignFunction(el, vnode, value)
     }
     addEventListener(el, lazy === true ? 'change' : 'input', (e) => {
+      // Bail if this listener was attached on a non-supported root
+      // (a `<label>` / `<div>` etc.) AND the assigner is the default.
+      // The bubbled-write bug fires here without this guard: a
+      // descendant's `input` event reaches this handler, reads
+      // `el.value` off the wrapper (`''` in jsdom, `undefined` in
+      // browsers), and clobbers the form. See `shouldBailListener`.
+      if (shouldBailListener(el)) return
       const target = e.target as ComposingTarget
       if (target === null || target.composing) return
       let domValue: string | number = el.value
@@ -265,6 +331,7 @@ const vRegisterText: RegisterTextCustomDirective = {
     })
     if (trim === true) {
       addEventListener(el, 'change', () => {
+        if (shouldBailListener(el)) return
         el.value = el.value.trim()
       })
     }
@@ -324,6 +391,7 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
     value.registerElement(el)
     setAssignFunction(el, vnode, value)
     addEventListener(el, 'change', () => {
+      if (shouldBailListener(el)) return
       const modelValue = value.innerRef.value ?? []
 
       // this side-steps subtle 2-way binding bugs where ref updates but input cannot be tracked by value
@@ -411,6 +479,7 @@ const vRegisterRadio: RegisterRadioCustomDirective = {
     el.checked = looseEqual(value.innerRef.value, vnode.props?.['value'])
     setAssignFunction(el, vnode, value)
     addEventListener(el, 'change', () => {
+      if (shouldBailListener(el)) return
       el[assignKey]?.(getValue(el))
     })
   },
@@ -433,6 +502,7 @@ const vRegisterSelect: RegisterSelectCustomDirective = {
     value.registerElement(el)
     const isSetModel = isSet(value.innerRef.value)
     addEventListener(el, 'change', () => {
+      if (shouldBailListener(el)) return
       const selectedVal = Array.prototype.filter
         .call(el.options, (o: HTMLOptionElement) => o.selected)
         .map((o: HTMLOptionElement) => (number === true ? looseToNumber(getValue(o)) : getValue(o)))
@@ -545,27 +615,20 @@ function getCheckboxValue(
 
 // Tags the directive's text/checkbox/radio/select variants handle
 // natively. A v-register binding on anything else (a `<div>`, a
-// `<span>`, a Vue component whose root is a non-form element) falls
-// back to one of three contracts, picked by what's present at
-// directive-`created` time:
+// `<span>`, a Vue component whose root is a non-form element) gets
+// listeners attached normally — but the listener bodies bail (via
+// `shouldBailListener`) when the assigner is still the default. This
+// prevents the bubbled-write bug while letting consumer-installed
+// `assignKey` / `@update:registerValue` shapes flow through.
 //
-//   1. The child component called `useRegister()` and registered
-//      itself in `registerOwners` → the directive on the parent's
-//      root skips its warn AND skips listener attachment, because
-//      the child's own inner `<input v-register>` handles binding.
-//
-//   2. The element has an `assignKey` symbol installed → the
-//      consumer has taken responsibility for the assigner. The
-//      directive suppresses its warn and KEEPS the text-input
-//      listener wiring (kept-current behaviour). Reads `el.value`,
-//      which on a non-input root reads back as `''` (jsdom) /
-//      `undefined` (browsers) — the consumer is expected to source
-//      the value themselves via a separate listener if they care.
-//
-//   3. Neither sentinel nor `assignKey` → the directive warns once
-//      per element AND skips listener attachment, so a bubbled `input`
-//      event from a descendant doesn't reach a listener that would
-//      read `el.value` off the wrong element and clobber the form.
+// The dev-warn for the "no escape hatch" case is deferred to the
+// next tick after `created`, so `useRegister`'s `onMounted` marker
+// has a chance to set `REGISTER_OWNER_MARKER` on the rendered root
+// before the warn check runs. Without the deferral, deeply-nested
+// `useRegister` children would always warn (the directive can't
+// reach the child instance via `binding.instance` — that's the
+// page/parent component, whose `subTree` is the outer element tree,
+// not the child component vnode directly).
 const SUPPORTED_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
 
 // One-shot dev-warn dedupe so a v-for over 100 unsupported elements
@@ -575,81 +638,37 @@ const warnedUnsupportedElements: WeakSet<HTMLElement> | null = __DEV__
   ? new WeakSet<HTMLElement>()
   : null
 
-/**
- * `useRegister()` sentinel lookup. The directive's `el` is the
- * rendered root DOM element, but `vnode.component` is the child
- * Vue instance — that's the WeakSet key. For non-component-bound
- * directives (e.g. `<input v-register>` directly), `vnode.component`
- * is null and the sentinel never applies.
- */
-/**
- * `useRegister()` sentinel lookup. When a parent renders
- * `<MyComp v-register="...">`, Vue routes the directive's hooks to
- * MyComp's RENDERED ROOT element vnode — `vnode.component` is null
- * (the rendered root is an element, not a component). The reliable
- * way to find the child component instance is via the PARENT
- * component's `subTree`: `subTree.component` is the child component
- * vnode's instance when the parent rendered a single component child
- * (the canonical `<MyComp v-register>` case).
- *
- * `binding.instance` returns the parent's setup-API proxy, whose `$`
- * accessor exposes the raw component instance carrying `subTree`. This
- * is the same `$` Vue's templates use for `this.$el`, `this.$parent`,
- * etc. — documented Vue-3 internal that's been stable across versions.
- *
- * NOT used: `el.__vueParentComponent`. That walks DOWN the render
- * tree, so any descendant of a sentinel'd component would falsely
- * match — including the inner `<input v-register>` the child renders.
- * That false-match would skip the inner input's listener attachment,
- * defeating the whole pattern.
- *
- * Limitation: parent rendering a Fragment / multi-child where
- * subTree.component isn't directly the sentinel'd child won't match.
- * Single-component-child is the recommended pattern; complex cases
- * fall back to the supported-tag-root or assignKey paths.
- */
-function isUseRegisterChild(vnode: VNode, binding: DirectiveBinding): boolean {
-  // Defensive: if Vue ever routes the component vnode through directly.
-  if (vnode.component !== null && registerOwners.has(vnode.component as unknown as object)) {
-    return true
-  }
-
-  const proxy = binding.instance as { $?: { subTree?: { component?: object | null } } } | null
-  const rawParent = proxy?.$
-  const subTreeComp = rawParent?.subTree?.component
-  if (subTreeComp !== null && subTreeComp !== undefined && registerOwners.has(subTreeComp)) {
-    return true
-  }
-
-  return false
-}
-
-function hasAssignerOverride(el: HTMLElement): boolean {
-  return (el as unknown as { [k: symbol]: unknown })[assignKey] !== undefined
-}
-
 const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
   created(el, binding, vnode) {
-    // Per-element persist opt-in is reconciled regardless of which
-    // branch we take — even sentinel'd children opt in / out via the
-    // parent's RegisterValue.
+    // Per-element persist opt-in is reconciled at the dynamic level so
+    // the per-tag variants stay focused on their input semantics.
     syncPersistOptIn(el, binding.value, undefined)
 
-    // Branch 1: child handles binding via useRegister. Skip warn and
-    // listener attachment on the parent's root.
-    if (isUseRegisterChild(vnode, binding)) return
+    // Always run the per-tag variant's `created` — listener-body bail
+    // (`shouldBailListener`) prevents the bubbled-write bug on
+    // non-supported roots while letting consumer overrides through.
+    callModelHook(el, binding, vnode, null, 'created')
 
-    const isUnsupported = !SUPPORTED_TAGS.has(el.tagName)
-    const assignerOverridden = hasAssignerOverride(el)
-
-    // Branch 3: neither sentinel nor assignKey on a non-supported root.
-    // Warn once per element and SKIP `callModelHook` — the previous
-    // pre-rewrite directive attached text-input listeners here, and the
-    // bubbled-write bug fired on every keystroke from a descendant
-    // input. Skipping listeners avoids the bug; the warn points the
-    // author at `useRegister` (or `assignKey` for the low-level path).
-    if (isUnsupported && !assignerOverridden) {
-      if (__DEV__ && warnedUnsupportedElements !== null && !warnedUnsupportedElements.has(el)) {
+    // Defer the unsupported-element warn to nextTick. By then:
+    //  - useRegister's onMounted has run, setting REGISTER_OWNER_MARKER
+    //    on the el if the child component called useRegister()
+    //  - any post-install assignKey override (via onMounted /
+    //    ref-callback) is in place, so the assigner isn't default
+    // anymore. The warn fires only when neither escape hatch was used.
+    if (
+      __DEV__ &&
+      warnedUnsupportedElements !== null &&
+      !SUPPORTED_TAGS.has(el.tagName) &&
+      !warnedUnsupportedElements.has(el)
+    ) {
+      void nextTick(() => {
+        if (warnedUnsupportedElements.has(el)) return
+        const hasMarker =
+          (el as unknown as { [k: symbol]: unknown })[REGISTER_OWNER_MARKER] === true
+        const hasUserAssigner = !isDefaultAssigner(
+          (el as unknown as { [k: symbol]: unknown })[assignKey]
+        )
+        if (hasMarker || hasUserAssigner) return
         warnedUnsupportedElements.add(el)
         warn(
           `[@chemical-x/forms] v-register on <${el.tagName.toLowerCase()}> is a no-op — ` +
@@ -658,18 +677,10 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
             `native element. Lower-level: install a custom assigner via the \`assignKey\` ` +
             `symbol on the element.`
         )
-      }
-      return
+      })
     }
-
-    // Branch 2 (assignKey on non-supported root) AND the supported-tag
-    // happy path both fall through to `callModelHook`. assignKey on a
-    // supported root is just a passive override of the default
-    // assigner; the directive's listeners still attach.
-    callModelHook(el, binding, vnode, null, 'created')
   },
   mounted(el, binding, vnode) {
-    if (isUseRegisterChild(vnode, binding)) return
     callModelHook(el, binding, vnode, null, 'mounted')
   },
   beforeUpdate(el, binding, vnode, prevVNode) {
@@ -678,11 +689,9 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
     // prior RegisterValue so the helper can diff persist / path / registry
     // and migrate the entry without thrashing.
     syncPersistOptIn(el, binding.value, binding.oldValue)
-    if (isUseRegisterChild(vnode, binding)) return
     callModelHook(el, binding, vnode, prevVNode, 'beforeUpdate')
   },
   updated(el, binding, vnode, prevVNode) {
-    if (isUseRegisterChild(vnode, binding)) return
     callModelHook(el, binding, vnode, prevVNode, 'updated')
   },
   beforeUnmount(el, { value }) {

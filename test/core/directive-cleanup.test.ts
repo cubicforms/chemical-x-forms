@@ -3,7 +3,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DirectiveBinding } from 'vue'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import { assignKey, vRegister } from '../../src/runtime/core/directive'
 import { createPersistOptInRegistry } from '../../src/runtime/core/persistence/opt-in-registry'
 import type { PathKey } from '../../src/runtime/core/paths'
@@ -248,7 +248,7 @@ describe('v-register directive — D2 unsupported-element warning', () => {
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
   })
 
-  it('warns once when v-register is bound to a <div> with no assignKey override', () => {
+  it('warns once when v-register is bound to a <div> with no assignKey override', async () => {
     const div = document.createElement('div')
     document.body.appendChild(div)
     const { value } = makeRegisterValue('hello')
@@ -258,12 +258,16 @@ describe('v-register directive — D2 unsupported-element warning', () => {
     // Same element re-fires created (KeepAlive case); warn must not
     // double-fire — WeakSet dedupe.
     hooks.created?.(div, binding, vnode, null)
+    // The warn is deferred via `nextTick` so `useRegister`'s
+    // `onMounted` marker has a chance to land first. Flush before
+    // asserting on the spy.
+    await nextTick()
     const matched = warnSpy.mock.calls.filter((c: unknown[]) => String(c[0]).includes('is a no-op'))
     expect(matched.length).toBe(1)
     warnSpy.mockRestore()
   })
 
-  it('does NOT warn when an assigner is installed via assignKey before mount', () => {
+  it('does NOT warn when an assigner is installed via assignKey before mount', async () => {
     const div = document.createElement('div')
     document.body.appendChild(div)
     // Consumer-installed assigner — escape hatch for custom components
@@ -273,12 +277,13 @@ describe('v-register directive — D2 unsupported-element warning', () => {
     const binding = makeBinding(value)
     const vnode = makeVNode({})
     hooks.created?.(div, binding, vnode, null)
+    await nextTick()
     const matched = warnSpy.mock.calls.filter((c: unknown[]) => String(c[0]).includes('is a no-op'))
     expect(matched.length).toBe(0)
     warnSpy.mockRestore()
   })
 
-  it('does NOT warn for native input / select / textarea elements', () => {
+  it('does NOT warn for native input / select / textarea elements', async () => {
     for (const tag of ['input', 'select', 'textarea'] as const) {
       const el = document.createElement(tag)
       document.body.appendChild(el)
@@ -287,6 +292,7 @@ describe('v-register directive — D2 unsupported-element warning', () => {
       const vnode = makeVNode({})
       hooks.created?.(el, binding, vnode, null)
     }
+    await nextTick()
     const matched = warnSpy.mock.calls.filter((c: unknown[]) => String(c[0]).includes('is a no-op'))
     expect(matched.length).toBe(0)
     warnSpy.mockRestore()

@@ -264,27 +264,35 @@ describe('useRegister — sentinel suppresses parent-directive warn', () => {
     expect(matched.length).toBe(0)
   })
 
-  it("directive does NOT attach listeners to a sentinel-marked child's root", async () => {
+  it("listeners attached to a sentinel-marked child's root BAIL on bubbled events (no clobber)", async () => {
+    // The directive attaches listeners on every rendered root —
+    // including a useRegister'd component's wrapper element. On
+    // bubbled events from descendants, those listeners check the
+    // assigner identity and bail when the default is still installed
+    // (see `shouldBailListener`). Result: typing in any descendant
+    // input doesn't reach the wrapper's listener with a write
+    // attempt, so the form value isn't clobbered with `el.value`
+    // (the wrapper's, which is junk).
+    let formApi: ReturnType<typeof useForm<typeof schema>> | undefined
     const Child = defineComponent({
-      name: 'NoListenersChild',
+      name: 'NoBailChild',
       inheritAttrs: false,
       setup() {
         const register = useRegister()
         return { register }
       },
       render() {
-        return h('div', { class: 'wrapper' }, [
-          withDirectives(h('input', { type: 'text', class: 'inner' }), [
-            [vRegister, this.register],
-          ]),
-        ])
+        // Inner input has NO v-register so the only writes that could
+        // reach the form are via the wrapper's listener. With the bail
+        // in place, those writes don't happen.
+        return h('div', { class: 'wrapper' }, [h('input', { type: 'text', class: 'inner' })])
       },
     })
 
-    const adds: string[] = []
     const Parent = defineComponent({
       setup() {
-        const form = useForm({ schema, key: 'no-listeners-test' })
+        const form = useForm({ schema, key: 'bail-test' })
+        formApi = form
         const rv = form.register('email')
         return () =>
           withDirectives(h(Child, { registerValue: rv, value: rv.innerRef.value }), [
@@ -296,38 +304,23 @@ describe('useRegister — sentinel suppresses parent-directive warn', () => {
     app = createApp(Parent).use(createChemicalXForms())
     const root = document.createElement('div')
     document.body.appendChild(root)
+    app.mount(root)
+    await flush()
 
-    // Patch addEventListener globally on Element.prototype BEFORE mount
-    // so we capture every call. We snapshot the root <div>'s adds vs.
-    // the inner <input>'s adds by tagName.
-    const origAdd = Element.prototype.addEventListener
-    const addByTag = new Map<string, number>()
-    Element.prototype.addEventListener = function (
-      this: Element,
-      ...args: Parameters<Element['addEventListener']>
-    ) {
-      addByTag.set(this.tagName, (addByTag.get(this.tagName) ?? 0) + 1)
-      adds.push(`${this.tagName}:${args[0]}`)
-      return origAdd.apply(this, args)
-    } as Element['addEventListener']
+    if (formApi === undefined) throw new Error('unreachable')
+    formApi.setValue('email', 'seed@example.com')
+    expect(formApi.getValue('email').value).toBe('seed@example.com')
 
-    try {
-      app.mount(root)
-      await flush()
-    } finally {
-      Element.prototype.addEventListener = origAdd
-    }
+    // Type into the inner input. Without the bail, the wrapper's
+    // bubbled `input` listener would read `el.value` off the div and
+    // clobber the seeded value. With the bail, the listener exits
+    // early and the form keeps the seed.
+    const innerInput = root.querySelector('input.inner') as HTMLInputElement
+    innerInput.value = 'typed-clobber-attempt'
+    innerInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
 
-    const rootEl = root.firstElementChild as HTMLElement | null
-    expect(rootEl?.tagName).toBe('DIV')
-
-    // The parent's directive on the <div> root MUST NOT attach
-    // listeners to the div. The inner <input>'s own v-register DOES
-    // attach listeners (input/change/composition).
-    const divAdds = addByTag.get('DIV') ?? 0
-    const inputAdds = addByTag.get('INPUT') ?? 0
-    expect(divAdds).toBe(0)
-    expect(inputAdds).toBeGreaterThanOrEqual(1)
+    expect(formApi.getValue('email').value).toBe('seed@example.com')
   })
 })
 

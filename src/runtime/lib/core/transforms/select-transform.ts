@@ -383,7 +383,23 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
       flattenCompoundExpression(initExpression),
       false
     )
-    const outputExp = processExpression(simpleExpression, { ...context, prefixIdentifiers: false })
+    // `processExpression` can throw on malformed identifiers or
+    // exotic expression shapes. Pre-fix, the throw bubbled to the
+    // outer try/catch, which then ran the snapshot-restore path AND
+    // skipped both the select's `:value` injection AND every option's
+    // `:selected` binding — turning a single-expression problem into
+    // a whole-template fallback. Isolate here so a parser failure on
+    // this one expression keeps the other injections.
+    let outputExp: ExpressionNode
+    try {
+      outputExp = processExpression(simpleExpression, { ...context, prefixIdentifiers: false })
+    } catch (err) {
+      console.error(
+        '[@chemical-x/forms] select transform: processExpression failed; falling back to the unprocessed expression.',
+        err
+      )
+      outputExp = simpleExpression
+    }
 
     const valueProp: DirectiveNode = {
       rawName: ':value',

@@ -81,6 +81,22 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         return { data, errors: undefined, success: true, formKey }
       },
 
+      getDefaultAtPath(path) {
+        // For empty path, the "default at root" is the schema's full
+        // default — return the deriveDefault of the root, not the slim-
+        // schema validate-then-fix loop (that's getDefaultValues' job).
+        if (path.length === 0) return deriveDefault(rootSchema, true)
+        const [first] = getNestedZodSchemasAtPath(rootSchema, path)
+        if (first === undefined) return undefined
+        // First candidate matches validateAtPath's first-success semantic
+        // and getDefaultValuesFromZodSchema's line-256 first-candidate
+        // behavior. For discriminated unions the candidate set is filtered
+        // by the path-walker; for plain unions the first option's default
+        // is the canonical "fresh" value (matches deriveDefault's union
+        // branch).
+        return deriveDefault(first, true)
+      },
+
       getSchemasAtPath(path) {
         const resolved = getNestedZodSchemasAtPath(rootSchema, path)
         return resolved.map(

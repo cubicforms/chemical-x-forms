@@ -1,3 +1,4 @@
+import { getAtPath } from '../../src/runtime/core/path-walker'
 import type { Path } from '../../src/runtime/core/paths'
 import type {
   AbstractSchema,
@@ -52,6 +53,13 @@ export function fakeSchema<F extends GenericForm>(
         success: true,
         formKey: '',
       }
+    },
+    getDefaultAtPath(path) {
+      // Tests that don't care just inherit a "lookup-in-defaults" semantic
+      // — for any path that exists in the provided defaults tree, return
+      // the value there; otherwise undefined. Tests that DO care can
+      // overwrite this on the returned object before passing to consumers.
+      return getAtPath(defaults, path)
     },
     getSchemasAtPath(path) {
       void path

@@ -95,6 +95,31 @@ export type AbstractSchema<Form, GetValueFormType> = {
 
   getDefaultValues(config: GetDefaultValuesConfig<Form>): DefaultValuesResponse<Form>
   /**
+   * Return the schema-prescribed default value at the given path. The
+   * runtime uses this to fill structural gaps so every `setValue` write
+   * leaves the form satisfying the slim schema (objects/arrays/primitives
+   * without refines).
+   *
+   * Semantics:
+   * - **Object property path:** the property's schema default.
+   * - **Array element path:** the element default (paths past the
+   *   array's current length still resolve — every position resolves
+   *   to the same element type).
+   * - **Tuple position path:** the position-specific default. Out-of-
+   *   range positions return `undefined`.
+   * - **Optional/Default/Nullable/Readonly/Catch/Pipe wrappers:** the
+   *   inner default.
+   * - **Discriminated union:** the first variant's default (matches
+   *   `validateAtPath`'s first-success semantic).
+   * - **Leaf:** the primitive default (`''`, `0`, `false`, etc., or the
+   *   wrapper's `.default(x)` value when present).
+   * - **Path doesn't exist in schema:** `undefined`.
+   *
+   * Adapters may return `undefined` when the path can't be resolved;
+   * callers treat that as "don't fill" and fall back to existing data.
+   */
+  getDefaultAtPath(path: Path): unknown
+  /**
    * Return every sub-schema that could resolve at the given structured
    * path. Multiple results are only expected for discriminated / union
    * branches where the adapter can't decide a single winner until the

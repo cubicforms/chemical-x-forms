@@ -465,6 +465,86 @@ without grepping.
   helper — schemas are the contract; renames are a write-once
   transformation the consumer owns.
 
+## Cross-tab semantics
+
+`localStorage` is shared across same-origin tabs; two tabs of the
+same app reading and writing the same persisted key will race.
+The library does NOT implement cross-tab coordination — it's
+**last-write-wins**. Two scenarios in particular:
+
+- Tab A is mid-debounce on a write; Tab B writes the same key
+  first; Tab A's debounce fires and overwrites Tab B's data.
+- The library does not subscribe to the `storage` event, so a
+  fresh write from another tab does NOT replay into the live form
+  on the first tab.
+
+**If multi-tab consistency matters,** use `'session'` (tab-scoped),
+or build a custom `FormStorage` adapter that coordinates writes
+(e.g., via a `BroadcastChannel`). For most form drafts, last-write-
+wins is acceptable; the user typing in two tabs of the same draft
+is a vanishingly rare case.
+
+## Storage degradation: what surfaces, what stays silent
+
+Each backend can fail on the consumer's device for reasons outside
+the library's control:
+
+- **localStorage / sessionStorage.** Quota exceeded (~5 MB), or
+  Safari private mode rejecting `setItem` with a `SecurityError`.
+  In dev mode, the adapter logs a one-shot `console.warn` on the
+  FIRST failure for a given form (subsequent failures stay silent
+  to avoid spamming the console with one warn per keystroke). In
+  production, failures are silently swallowed — by design, since
+  there's no user-visible recovery path the form can offer.
+- **IndexedDB.** The DB-open phase can fail (`onerror`) or be
+  blocked (`onblocked`, another tab holds an older version). One-
+  shot dev warning, same pattern as above. Per-write failures
+  surface as `transaction.onabort` (most often quota exceeded);
+  again, one-shot dev warning.
+
+Check `console` in dev mode if persistence appears to silently
+drop writes.
+
+## Component support
+
+`<MyComponent v-register="register('name')" />` works when
+`MyComponent`'s root element is a native input / textarea / select.
+The directive applies to the rendered DOM root and binds value /
+checked / selected as usual.
+
+For components whose root is a `<div>` / `<button>` / custom
+element, install a manual assigner via the `assignKey` symbol on
+the rendered element:
+
+```ts
+import { assignKey } from '@chemical-x/forms'
+// inside the component, on the rendered root element:
+elRef.value[assignKey] = (newValue) => emit('update:modelValue', newValue)
+```
+
+The library ALSO injects a `:registerValue` prop on every
+component vnode that has `v-register` (covering custom-component
+wrappers cleanly). Consume it as:
+
+```vue
+<script setup lang="ts">
+  import type { RegisterValue } from '@chemical-x/forms'
+  defineProps<{ registerValue?: RegisterValue<string> }>()
+  const emit = defineEmits<{ 'update:registerValue': [value: string] }>()
+</script>
+
+<template>
+  <input
+    :value="registerValue?.innerRef.value"
+    @input="emit('update:registerValue', ($event.target as HTMLInputElement).value)"
+  />
+</template>
+```
+
+A dev warning fires the first time the directive sees a non-input/
+select/textarea root without an `assignKey` override — it points
+you at this section.
+
 ## Gotchas
 
 - **`localStorage` blocks the main thread** on large writes. If
@@ -472,9 +552,18 @@ without grepping.
   `'indexeddb'`.
 - **Safari private mode** can throw `SecurityError` on
   `localStorage.setItem`. The adapter swallows it — the form stays
-  usable; writes just don't land.
+  usable; writes just don't land. See the dev-warning section
+  above.
 - **Re-mounting an opted-in input** with a fresh DOM element issues
   a new element ID; the prior opt-in (tied to the old element's ID)
   was already removed at unmount. Rapid mount/unmount cycles are
   fine — the registry tracks elements via WeakMap, which auto-GCs
   when the DOM node is dropped.
+- **`acknowledgeSensitive: true` is a code-review trigger, not a
+  soundness boundary.** It silences the throw for paths that match
+  the sensitive-name heuristic, but the heuristic doesn't catch
+  alias-typed paths (`register('pswd' as 'password')`), abbreviated
+  variants not in the list, or schemas with deliberately innocuous
+  keys for sensitive data. Treat the override as an explicit
+  decision worth a second pair of eyes; don't treat its absence
+  as a security guarantee.

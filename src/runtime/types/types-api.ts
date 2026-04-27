@@ -218,11 +218,19 @@ export type FormStorageKind = 'local' | 'session' | 'indexeddb'
  * stores structured-cloned values. The local/session adapters
  * stringify on write and parse on read, so from the caller's
  * perspective the contract is "give me back whatever I put in".
+ *
+ * `listKeys(prefix)` returns every key whose name starts with `prefix`.
+ * Used by the orphan-cleanup pass at form mount: storage keys carry
+ * a fingerprint suffix (`${prefix}:${fingerprint}`) so schema changes
+ * auto-invalidate stale entries; cleanup walks all matching keys and
+ * deletes any whose suffix doesn't match the current fingerprint.
+ * Required across all backends; pre-1.0 break for custom adapters.
  */
 export type FormStorage = {
   getItem(key: string): Promise<unknown>
   setItem(key: string, value: unknown): Promise<void>
   removeItem(key: string): Promise<void>
+  listKeys(prefix: string): Promise<string[]>
 }
 
 export type PersistIncludeMode = 'form' | 'form+errors'
@@ -279,13 +287,6 @@ export type PersistConfigOptions = {
    * is expensive to reconstruct (complex cross-field refinements).
    */
   include?: PersistIncludeMode
-
-  /**
-   * Increment to invalidate all existing persisted payloads across
-   * every client. Readers check `v` and drop mismatched entries.
-   * Default `1`.
-   */
-  version?: number
 
   /** Clear the persisted entry when a submit handler resolves. Default `true`. */
   clearOnSubmitSuccess?: boolean

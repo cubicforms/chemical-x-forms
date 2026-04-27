@@ -74,7 +74,7 @@ function makeForm(leafCount: number, depth: number): Record<string, unknown> {
 }
 
 async function benchOneWrite(adapter: FormStorage, form: Record<string, unknown>): Promise<void> {
-  const payload = buildPersistedPayload(form, 'form', new Map(), new Map(), 1)
+  const payload = buildPersistedPayload(form, 'form', new Map(), new Map())
   await adapter.setItem('bench-key', payload)
 }
 

@@ -29,6 +29,7 @@ describe('normalizePersistConfig', () => {
       getItem: () => Promise.resolve(undefined),
       setItem: () => Promise.resolve(),
       removeItem: () => Promise.resolve(),
+      listKeys: () => Promise.resolve([]),
     }
     const normalized = normalizePersistConfig(adapter)
     expect(normalized.storage).toBe(adapter)

@@ -7,6 +7,7 @@ import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { __resetIndexedDbForTests } from '../../src/runtime/core/persistence/indexeddb'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
 
 /**
  * Node 25's native `localStorage` (behind `--experimental-webstorage`)
@@ -57,6 +58,16 @@ const schema = z.object({
   email: z.string(),
   password: z.string(),
 })
+
+/**
+ * Fingerprint suffix appended to every storage key by the runtime.
+ * Tests that pre-seed storage at a specific key need to seed at the
+ * fingerprint-suffixed key the live form will read; otherwise the
+ * pre-seeded entry is treated as an orphan (stale-fingerprint) and
+ * cleaned up on mount instead of rehydrating.
+ */
+const FP = fingerprintZodSchema(schema)
+const fpKey = (base: string): string => `${base}:${FP}`
 
 type ApiReturn = ReturnType<typeof useForm<typeof schema>>
 type Field = 'email' | 'password'
@@ -176,7 +187,7 @@ describe('persistence — localStorage backend', () => {
     apps.push(app)
     await drain()
     type('email', 'alice@example.com')
-    const raw = await waitUntil(() => localStorage.getItem('test-local'))
+    const raw = await waitUntil(() => localStorage.getItem(fpKey('test-local')))
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { v: number; data: { form: { email: string } } }
     expect(payload.v).toBe(2)
@@ -185,7 +196,7 @@ describe('persistence — localStorage backend', () => {
 
   it('hydrates from a persisted payload on mount', async () => {
     localStorage.setItem(
-      'test-hydrate',
+      fpKey('test-hydrate'),
       JSON.stringify({ v: 2, data: { form: { email: 'seed@example.com', password: 'pw' } } })
     )
     const { app, api } = mountForm({ storage: 'local', key: 'test-hydrate', debounceMs: 20 })
@@ -201,20 +212,19 @@ describe('persistence — localStorage backend', () => {
 
   it('drops AND wipes a version-mismatched payload', async () => {
     localStorage.setItem(
-      'test-vmismatch',
+      fpKey('test-vmismatch'),
       JSON.stringify({ v: 99, data: { form: { email: 'stale@x.com', password: 'stale' } } })
     )
     const { app, api } = mountForm({
       storage: 'local',
       key: 'test-vmismatch',
       debounceMs: 20,
-      version: 1,
     })
     apps.push(app)
     // Schema defaults (empty strings) — the stale payload was rejected.
     // Hydration is async, so wait for the wipe to land before asserting.
-    await waitUntil(() => (localStorage.getItem('test-vmismatch') === null ? true : null))
-    expect(localStorage.getItem('test-vmismatch')).toBeNull()
+    await waitUntil(() => (localStorage.getItem(fpKey('test-vmismatch')) === null ? true : null))
+    expect(localStorage.getItem(fpKey('test-vmismatch'))).toBeNull()
     expect(api.getValue('email').value).toBe('')
   })
 
@@ -223,7 +233,7 @@ describe('persistence — localStorage backend', () => {
     // wrong type, etc.) is treated like a stale entry — auto-wiped so
     // sensitive fields from a previous shape can't linger.
     localStorage.setItem(
-      'test-malformed',
+      fpKey('test-malformed'),
       JSON.stringify({ totally: 'not the right shape', email: 'leak@x.com' })
     )
     const { app, api } = mountForm({
@@ -232,14 +242,14 @@ describe('persistence — localStorage backend', () => {
       debounceMs: 20,
     })
     apps.push(app)
-    await waitUntil(() => (localStorage.getItem('test-malformed') === null ? true : null))
-    expect(localStorage.getItem('test-malformed')).toBeNull()
+    await waitUntil(() => (localStorage.getItem(fpKey('test-malformed')) === null ? true : null))
+    expect(localStorage.getItem(fpKey('test-malformed'))).toBeNull()
     expect(api.getValue('email').value).toBe('')
   })
 
   it('clears the persisted entry on submit success', async () => {
     localStorage.setItem(
-      'test-clear',
+      fpKey('test-clear'),
       JSON.stringify({ v: 2, data: { form: { email: 'pre@x.com', password: 'pw' } } })
     )
     const { app, api } = mountForm({ storage: 'local', key: 'test-clear', debounceMs: 20 })
@@ -254,8 +264,8 @@ describe('persistence — localStorage backend', () => {
     // The onSubmitSuccess listener fires a fire-and-forget
     // flush()→removeItem() chain; poll for the entry to disappear
     // rather than wagering a fixed sleep.
-    await waitUntil(() => (localStorage.getItem('test-clear') === null ? true : null))
-    expect(localStorage.getItem('test-clear')).toBeNull()
+    await waitUntil(() => (localStorage.getItem(fpKey('test-clear')) === null ? true : null))
+    expect(localStorage.getItem(fpKey('test-clear'))).toBeNull()
   })
 
   it('honours clearOnSubmitSuccess: false', async () => {
@@ -268,8 +278,8 @@ describe('persistence — localStorage backend', () => {
     apps.push(app)
     await drain()
     type('email', 'user@x.com')
-    await waitUntil(() => localStorage.getItem('test-noclear'))
-    expect(localStorage.getItem('test-noclear')).not.toBeNull()
+    await waitUntil(() => localStorage.getItem(fpKey('test-noclear')))
+    expect(localStorage.getItem(fpKey('test-noclear'))).not.toBeNull()
     const handler = api.handleSubmit(async () => {})
     await handler()
     await drain()
@@ -278,7 +288,7 @@ describe('persistence — localStorage backend', () => {
     // (otherwise a delayed removeItem would fail this after the
     // assertion settles).
     await wait(40)
-    expect(localStorage.getItem('test-noclear')).not.toBeNull()
+    expect(localStorage.getItem(fpKey('test-noclear'))).not.toBeNull()
   })
 })
 
@@ -295,7 +305,7 @@ describe('persistence — sessionStorage backend', () => {
     apps.push(app)
     await drain()
     type('email', 'sess@example.com')
-    const raw = await waitUntil(() => sessionStorage.getItem('test-session'))
+    const raw = await waitUntil(() => sessionStorage.getItem(fpKey('test-session')))
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { data: { form: { email: string } } }
     expect(payload.data.form.email).toBe('sess@example.com')
@@ -354,7 +364,7 @@ describe('persistence — include=form+errors', () => {
     // error for persistence — programmatic api.setValue would bypass the
     // per-element gate.
     type('password', 'trigger')
-    const raw = await waitUntil(() => localStorage.getItem('test-form-errors'))
+    const raw = await waitUntil(() => localStorage.getItem(fpKey('test-form-errors')))
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as {
       data: {
@@ -421,7 +431,7 @@ describe('persistence — per-element opt-in', () => {
     // Generous wait — debounce is 20 ms, so 80 ms covers timer + drain.
     await wait(80)
     await drain()
-    expect(localStorage.getItem('test-noop')).toBeNull()
+    expect(localStorage.getItem(fpKey('test-noop'))).toBeNull()
   })
 
   it('directive write WITHOUT register({ persist: true }) does NOT persist', async () => {
@@ -463,7 +473,7 @@ describe('persistence — per-element opt-in', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await wait(80)
     await drain()
-    expect(localStorage.getItem('test-no-flag')).toBeNull()
+    expect(localStorage.getItem(fpKey('test-no-flag'))).toBeNull()
     // Sanity: the value still landed in the form ref (writes work, just
     // no persistence).
     expect(handle.api?.getValue('email').value).toBe('no-opt-in@example.com')
@@ -518,13 +528,13 @@ describe('persistence — per-element opt-in', () => {
     b.dispatchEvent(new Event('input', { bubbles: true }))
     await wait(80)
     await drain()
-    expect(localStorage.getItem('test-mixed')).toBeNull()
+    expect(localStorage.getItem(fpKey('test-mixed'))).toBeNull()
 
     // Input A fires — should persist.
     const a = handle.a as HTMLInputElement
     a.value = 'from-a@example.com'
     a.dispatchEvent(new Event('input', { bubbles: true }))
-    const raw = await waitUntil(() => localStorage.getItem('test-mixed'))
+    const raw = await waitUntil(() => localStorage.getItem(fpKey('test-mixed')))
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { data: { form: { email: string } } }
     expect(payload.data.form.email).toBe('from-a@example.com')
@@ -656,7 +666,7 @@ describe('persistence — sensitive-name heuristic', () => {
     await expect(
       handle.api?.persist('password', { acknowledgeSensitive: true })
     ).resolves.toBeUndefined()
-    const raw = localStorage.getItem('test-sensitive-imp-ack')
+    const raw = localStorage.getItem(fpKey('test-sensitive-imp-ack'))
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { data: { form: { password?: string } } }
     expect(payload.data.form.password).toBe('unsafe-but-acknowledged')
@@ -699,7 +709,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
 
     handle.api?.setValue('email', 'checkpoint@example.com')
     await handle.api?.persist('email')
-    const raw = localStorage.getItem('test-imp-persist')
+    const raw = localStorage.getItem(fpKey('test-imp-persist'))
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { data: { form: { email: string } } }
     expect(payload.data.form.email).toBe('checkpoint@example.com')
@@ -709,7 +719,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
     // Seed an entry with both fields populated, then persist only one
     // path's update — the other field's persisted value must survive.
     localStorage.setItem(
-      'test-imp-merge',
+      fpKey('test-imp-merge'),
       JSON.stringify({ v: 2, data: { form: { email: 'prev@x.com', password: 'prev-pw' } } })
     )
     const handle: { api?: ApiReturn } = {}
@@ -733,7 +743,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
 
     handle.api?.setValue('email', 'updated@example.com')
     await handle.api?.persist('email')
-    const raw = localStorage.getItem('test-imp-merge')
+    const raw = localStorage.getItem(fpKey('test-imp-merge'))
     const payload = JSON.parse(raw as string) as {
       data: { form: { email: string; password: string } }
     }
@@ -744,7 +754,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
 
   it('form.clearPersistedDraft() wipes the entry; form.clearPersistedDraft(path) wipes only that subpath', async () => {
     localStorage.setItem(
-      'test-clear-api',
+      fpKey('test-clear-api'),
       JSON.stringify({ v: 2, data: { form: { email: 'a@x.com', password: 'pw' } } })
     )
     const handle: { api?: ApiReturn } = {}
@@ -767,7 +777,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
 
     // Subpath wipe — email gone, password remains.
     await handle.api?.clearPersistedDraft('email')
-    const after1 = JSON.parse(localStorage.getItem('test-clear-api') as string) as {
+    const after1 = JSON.parse(localStorage.getItem(fpKey('test-clear-api')) as string) as {
       data: { form: Record<string, string> }
     }
     expect(after1.data.form['email']).toBeUndefined()
@@ -775,7 +785,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
 
     // Whole-entry wipe.
     await handle.api?.clearPersistedDraft()
-    expect(localStorage.getItem('test-clear-api')).toBeNull()
+    expect(localStorage.getItem(fpKey('test-clear-api'))).toBeNull()
   })
 
   it('form.persist / form.clearPersistedDraft are silent no-ops when persist: not configured', async () => {
@@ -816,13 +826,13 @@ describe('persistence — reset wipes the persisted draft', () => {
     apps.push(app)
     await drain()
     type('email', 'before-reset@example.com')
-    await waitUntil(() => localStorage.getItem('test-reset'))
-    expect(localStorage.getItem('test-reset')).not.toBeNull()
+    await waitUntil(() => localStorage.getItem(fpKey('test-reset')))
+    expect(localStorage.getItem(fpKey('test-reset'))).not.toBeNull()
 
     api.reset()
     // Storage wipe is fire-and-forget — poll for the entry to disappear.
-    await waitUntil(() => (localStorage.getItem('test-reset') === null ? true : null))
-    expect(localStorage.getItem('test-reset')).toBeNull()
+    await waitUntil(() => (localStorage.getItem(fpKey('test-reset')) === null ? true : null))
+    expect(localStorage.getItem(fpKey('test-reset'))).toBeNull()
     expect(api.getValue('email').value).toBe('')
   })
 
@@ -879,7 +889,7 @@ describe('persistence — reset wipes the persisted draft', () => {
     const passwordEl = handle.passwordEl as HTMLInputElement
     passwordEl.value = 'never-persisted'
     passwordEl.dispatchEvent(new Event('input', { bubbles: true }))
-    const raw = await waitUntil(() => localStorage.getItem('test-sparse'))
+    const raw = await waitUntil(() => localStorage.getItem(fpKey('test-sparse')))
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { data: { form: Record<string, unknown> } }
     expect(payload.data.form['email']).toBe('opted-in@example.com')
@@ -893,7 +903,7 @@ describe('persistence — reset wipes the persisted draft', () => {
     // Seed a sparse payload (only email present). On mount, email
     // hydrates from the seed, password falls back to schema default.
     localStorage.setItem(
-      'test-sparse-hydrate',
+      fpKey('test-sparse-hydrate'),
       JSON.stringify({ v: 2, data: { form: { email: 'sparse-seed@x.com' } } })
     )
     const { app, api } = mountForm({
@@ -1053,7 +1063,7 @@ describe('persistence — reset wipes the persisted draft', () => {
     // Seed both fields, mount with both opted in, then resetField just
     // 'email'. Storage should drop email but keep password.
     localStorage.setItem(
-      'test-reset-field',
+      fpKey('test-reset-field'),
       JSON.stringify({ v: 2, data: { form: { email: 'seed@x.com', password: 'seed-pw' } } })
     )
     const { app, api } = mountForm({
@@ -1067,12 +1077,12 @@ describe('persistence — reset wipes the persisted draft', () => {
     api.resetField('email')
     // Wait for the fire-and-forget clearPersistedDraft to land.
     await waitUntil(() => {
-      const raw = localStorage.getItem('test-reset-field')
+      const raw = localStorage.getItem(fpKey('test-reset-field'))
       if (raw === null) return null
       const parsed = JSON.parse(raw) as { data: { form: Record<string, unknown> } }
       return parsed.data.form['email'] === undefined ? true : null
     })
-    const final = JSON.parse(localStorage.getItem('test-reset-field') as string) as {
+    const final = JSON.parse(localStorage.getItem(fpKey('test-reset-field')) as string) as {
       data: { form: Record<string, string> }
     }
     expect(final.data.form['email']).toBeUndefined()
@@ -1134,7 +1144,7 @@ describe('persistence — shorthand config', () => {
     el.value = 'shorthand@example.com'
     el.dispatchEvent(new Event('input', { bubbles: true }))
     // Default debounceMs is 300 — allow 600 ms for the timer + adapter chain.
-    const expectedKey = `chemical-x-forms:${formKey}`
+    const expectedKey = `chemical-x-forms:${formKey}:${FP}`
     const raw = await waitUntil(() => localStorage.getItem(expectedKey), 1000)
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { v: number; data: { form: { email: string } } }
@@ -1153,6 +1163,7 @@ describe('persistence — shorthand config', () => {
         return Promise.resolve()
       },
       removeItem: (): Promise<void> => Promise.resolve(),
+      listKeys: (): Promise<string[]> => Promise.resolve([]),
     }
     const handle: { el?: HTMLInputElement } = {}
     const formKey = `custom-${Math.random().toString(36).slice(2)}`
@@ -1185,7 +1196,7 @@ describe('persistence — shorthand config', () => {
     await waitUntil(() => (writes.length > 0 ? true : null), 1000)
     expect(writes.length).toBeGreaterThan(0)
     const [writtenKey, writtenValue] = writes[writes.length - 1]!
-    expect(writtenKey).toBe(`chemical-x-forms:${formKey}`)
+    expect(writtenKey).toBe(`chemical-x-forms:${formKey}:${FP}`)
     const payload = writtenValue as { data: { form: { email: string } } }
     expect(payload.data.form.email).toBe('custom@example.com')
   })
@@ -1234,30 +1245,33 @@ describe('persistence — cross-store cleanup at mount', () => {
     return app
   }
 
-  it("configured 'local' wipes the same-key entry from sessionStorage", async () => {
+  it("configured 'local' wipes orphan entries from sessionStorage (legacy + stale-fingerprint)", async () => {
     const key = 'cleanup-shared-key'
+    // Legacy pre-fingerprint key in non-configured store.
     sessionStorage.setItem(key, JSON.stringify({ stale: 'data' }))
-    localStorage.setItem(key, JSON.stringify({ v: 2, data: { form: { email: 'keep' } } }))
+    // Current-fingerprint key in configured store stays (cleanup only
+    // touches non-current-fingerprint orphans).
+    localStorage.setItem(fpKey(key), JSON.stringify({ v: 2, data: { form: { email: 'keep' } } }))
     expect(sessionStorage.getItem(key)).not.toBeNull()
     mountMinimal({ storage: 'local', key })
     // Cleanup is fire-and-forget; poll for the session entry to vanish.
     await waitUntil(() => (sessionStorage.getItem(key) === null ? true : null), 500)
     expect(sessionStorage.getItem(key)).toBeNull()
-    // The configured backend's entry must NOT be touched by the sweep.
-    expect(localStorage.getItem(key)).not.toBeNull()
+    // The configured backend's CURRENT entry must NOT be touched.
+    expect(localStorage.getItem(fpKey(key))).not.toBeNull()
   })
 
-  it("configured 'session' wipes the same-key entry from localStorage", async () => {
+  it("configured 'session' wipes orphan entries from localStorage", async () => {
     const key = 'cleanup-shared-key-2'
     localStorage.setItem(key, JSON.stringify({ stale: 'data' }))
-    sessionStorage.setItem(key, JSON.stringify({ v: 2, data: { form: { email: 'keep' } } }))
+    sessionStorage.setItem(fpKey(key), JSON.stringify({ v: 2, data: { form: { email: 'keep' } } }))
     mountMinimal({ storage: 'session', key })
     await waitUntil(() => (localStorage.getItem(key) === null ? true : null), 500)
     expect(localStorage.getItem(key)).toBeNull()
-    expect(sessionStorage.getItem(key)).not.toBeNull()
+    expect(sessionStorage.getItem(fpKey(key))).not.toBeNull()
   })
 
-  it('configured custom adapter wipes both localStorage and sessionStorage', async () => {
+  it('configured custom adapter wipes orphans from both localStorage and sessionStorage', async () => {
     // Custom adapters can't be reached by enumeration, so the cleanup
     // sweeps ALL three standard backends — the dev might have migrated
     // away from any of them.
@@ -1268,6 +1282,7 @@ describe('persistence — cross-store cleanup at mount', () => {
       getItem: (): Promise<unknown> => Promise.resolve(undefined),
       setItem: (): Promise<void> => Promise.resolve(),
       removeItem: (): Promise<void> => Promise.resolve(),
+      listKeys: (): Promise<string[]> => Promise.resolve([]),
     }
     mountMinimal({ storage: customAdapter, key })
     await waitUntil(
@@ -1366,5 +1381,139 @@ describe('persistence — cross-store cleanup at mount', () => {
     )
     expect(localStorage.getItem(expectedStorageKey)).toBeNull()
     expect(sessionStorage.getItem(expectedStorageKey)).toBeNull()
+  })
+})
+
+/**
+ * Fingerprint-keyed storage key + active orphan cleanup. Schema content
+ * changes produce a different fingerprint, so the new mount looks up a
+ * fresh storage key — old drafts become orphans, cleaned up by the
+ * same mount via `listKeys + removeItem`. Replaces the old manual
+ * `version: number` invalidation protocol.
+ */
+describe('persistence — fingerprint-keyed storage + orphan cleanup', () => {
+  const apps: App[] = []
+  beforeEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  it('storage key includes the schema fingerprint suffix', async () => {
+    const { app, type } = mountForm({ storage: 'local', key: 'fp-write', debounceMs: 20 })
+    apps.push(app)
+    await drain()
+    type('email', 'fp@example.com')
+    const expected = fpKey('fp-write')
+    const raw = await waitUntil(() => localStorage.getItem(expected))
+    expect(raw).not.toBeNull()
+  })
+
+  it('schema-A → schema-B: fingerprint differs → no rehydration', async () => {
+    const stalePayload = JSON.stringify({
+      v: 2,
+      data: { form: { email: 'stale@x.com', password: 'stale' } },
+    })
+    localStorage.setItem('fp-mismatch:OLD-FINGERPRINT', stalePayload)
+    const { app, api } = mountForm({ storage: 'local', key: 'fp-mismatch', debounceMs: 20 })
+    apps.push(app)
+    await drain()
+    expect(api.getValue('email').value).toBe('')
+  })
+
+  it('orphan cleanup: stale-fingerprint entries wiped on mount of the same form', async () => {
+    const stalePayload = JSON.stringify({
+      v: 2,
+      data: { form: { email: 'stale@x.com', password: 'stale' } },
+    })
+    localStorage.setItem('fp-orphan:OLD-FP-1', stalePayload)
+    localStorage.setItem('fp-orphan:OLD-FP-2', stalePayload)
+    localStorage.setItem(
+      fpKey('fp-orphan'),
+      JSON.stringify({ v: 2, data: { form: { email: 'live@x.com', password: 'live' } } })
+    )
+    const { app, api } = mountForm({ storage: 'local', key: 'fp-orphan', debounceMs: 20 })
+    apps.push(app)
+    await waitUntil(() => (api.getValue('email').value === 'live@x.com' ? true : null))
+    await waitUntil(() =>
+      localStorage.getItem('fp-orphan:OLD-FP-1') === null &&
+      localStorage.getItem('fp-orphan:OLD-FP-2') === null
+        ? true
+        : null
+    )
+    expect(localStorage.getItem('fp-orphan:OLD-FP-1')).toBeNull()
+    expect(localStorage.getItem('fp-orphan:OLD-FP-2')).toBeNull()
+    expect(localStorage.getItem(fpKey('fp-orphan'))).not.toBeNull()
+  })
+
+  it('orphan cleanup: pre-fingerprint legacy keys (no `:` suffix) are wiped', async () => {
+    localStorage.setItem(
+      'fp-legacy',
+      JSON.stringify({ v: 2, data: { form: { email: 'legacy@x.com', password: 'pw' } } })
+    )
+    const { app } = mountForm({ storage: 'local', key: 'fp-legacy', debounceMs: 20 })
+    apps.push(app)
+    await waitUntil(() => (localStorage.getItem('fp-legacy') === null ? true : null))
+    expect(localStorage.getItem('fp-legacy')).toBeNull()
+  })
+
+  it('orphan cleanup uses exact-or-`:`-prefix match (no sibling-form collision)', async () => {
+    localStorage.setItem(
+      fpKey('my-form-2'),
+      JSON.stringify({ v: 2, data: { form: { email: 'sibling@x.com', password: 'pw' } } })
+    )
+    const { app } = mountForm({ storage: 'local', key: 'my-form', debounceMs: 20 })
+    apps.push(app)
+    await drain()
+    expect(localStorage.getItem(fpKey('my-form-2'))).not.toBeNull()
+  })
+})
+
+/**
+ * `FormStorage.listKeys(prefix)` per-backend smoke tests. Each adapter
+ * must enumerate keys whose name starts with the given prefix; the
+ * orphan-cleanup pass relies on this contract.
+ */
+describe('FormStorage.listKeys — per-backend', () => {
+  it('localStorage adapter returns matching keys', async () => {
+    const { createLocalStorageAdapter } =
+      await import('../../src/runtime/core/persistence/local-storage')
+    const adapter = createLocalStorageAdapter()
+    localStorage.clear()
+    localStorage.setItem('cx-test:a', 'va')
+    localStorage.setItem('cx-test:b:fp', 'vb')
+    localStorage.setItem('other:x', 'vx')
+    const keys = await adapter.listKeys('cx-test:')
+    expect(keys.sort()).toEqual(['cx-test:a', 'cx-test:b:fp'])
+    localStorage.clear()
+  })
+
+  it('sessionStorage adapter returns matching keys', async () => {
+    const { createSessionStorageAdapter } =
+      await import('../../src/runtime/core/persistence/session-storage')
+    const adapter = createSessionStorageAdapter()
+    sessionStorage.clear()
+    sessionStorage.setItem('s-test:a', 'va')
+    sessionStorage.setItem('s-test:b:fp', 'vb')
+    sessionStorage.setItem('other:x', 'vx')
+    const keys = await adapter.listKeys('s-test:')
+    expect(keys.sort()).toEqual(['s-test:a', 's-test:b:fp'])
+    sessionStorage.clear()
+  })
+
+  it('IndexedDB adapter returns matching keys', async () => {
+    __resetIndexedDbForTests()
+    const { createIndexedDbAdapter } = await import('../../src/runtime/core/persistence/indexeddb')
+    const adapter = createIndexedDbAdapter()
+    await adapter.setItem('idb-test:a', { v: 2, data: { form: { x: 1 } } })
+    await adapter.setItem('idb-test:b:fp', { v: 2, data: { form: { x: 2 } } })
+    await adapter.setItem('other:x', { v: 2, data: { form: {} } })
+    const keys = await adapter.listKeys('idb-test:')
+    expect(keys.sort()).toEqual(['idb-test:a', 'idb-test:b:fp'])
+    __resetIndexedDbForTests()
   })
 })

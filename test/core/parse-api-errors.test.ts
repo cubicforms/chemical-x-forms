@@ -203,5 +203,38 @@ describe('parseApiErrors (structured result)', () => {
       const dropResult = parseApiErrors(payload, { formKey: 'f', maxPathDepth: 7 })
       expect(dropResult.errors).toHaveLength(0)
     })
+
+    // C4 — maxTotalSegments cap. Per-key caps don't bound the worst-case
+    // walk (1000 keys × 31 segments = 31k segments).
+    it('rejects payloads whose total path-segment count exceeds maxTotalSegments', () => {
+      // 100 keys, 6 segments each → 600 total. Cap at 500 → reject.
+      const payload: Record<string, string> = {}
+      for (let i = 0; i < 100; i++) payload[`a.b.c.d.e.f${i}`] = 'msg'
+      const result = parseApiErrors(payload, { formKey: 'f', maxTotalSegments: 500 })
+      expect(result.ok).toBe(false)
+      expect(result.errors).toEqual([])
+      expect(result.rejected).toContain('maxTotalSegments=500')
+    })
+
+    it('defaults maxTotalSegments to 10000 when not specified', () => {
+      // 999 keys × 11 segments = 10 989. Per-key cap (32) and
+      // maxEntries cap (1000) both pass. Default total cap (10 000)
+      // catches the pathological total.
+      const segs = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k']
+      const payload: Record<string, string> = {}
+      for (let i = 0; i < 999; i++) payload[`${segs.join('.')}.row${i}`] = 'msg'
+      const result = parseApiErrors(payload, { formKey: 'f' })
+      expect(result.ok).toBe(false)
+      expect(result.rejected).toContain('maxTotalSegments=10000')
+    })
+
+    it('accepts payloads up to maxTotalSegments inclusive', () => {
+      // 50 keys × 4 segments = 200 total. Cap at 200 → accept.
+      const payload: Record<string, string> = {}
+      for (let i = 0; i < 50; i++) payload[`a.b.c.k${i}`] = 'msg'
+      const result = parseApiErrors(payload, { formKey: 'f', maxTotalSegments: 200 })
+      expect(result.ok).toBe(true)
+      expect(result.errors).toHaveLength(50)
+    })
   })
 })

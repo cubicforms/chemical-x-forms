@@ -50,6 +50,15 @@ export type ParseApiErrorsOptions = {
    * silent partial apply).
    */
   readonly maxPathDepth?: number
+  /**
+   * Maximum total number of path segments summed across every accepted
+   * key. Defaults to 10 000. Caps the worst-case `maxEntries × maxPathDepth`
+   * traversal cost so a payload of, e.g., 1 000 keys at 31 segments each
+   * (passes the per-key cap) can't push the parser into a 31 000-segment
+   * walk. Exceeding this cap rejects the payload wholesale, mirroring
+   * the `maxEntries` and per-key-depth strictness.
+   */
+  readonly maxTotalSegments?: number
 }
 
 /**
@@ -59,6 +68,7 @@ export type ParseApiErrorsOptions = {
 export const PARSE_API_ERRORS_DEFAULTS = {
   maxEntries: 1000,
   maxPathDepth: 32,
+  maxTotalSegments: 10000,
 } as const
 
 /**
@@ -99,6 +109,7 @@ export function parseApiErrors(
 ): ParseApiErrorsResult {
   const maxEntries = options.maxEntries ?? PARSE_API_ERRORS_DEFAULTS.maxEntries
   const maxPathDepth = options.maxPathDepth ?? PARSE_API_ERRORS_DEFAULTS.maxPathDepth
+  const maxTotalSegments = options.maxTotalSegments ?? PARSE_API_ERRORS_DEFAULTS.maxTotalSegments
 
   if (payload === null || payload === undefined) {
     return { ok: true, errors: [] }
@@ -126,6 +137,7 @@ export function parseApiErrors(
   }
 
   const errors: ValidationError[] = []
+  let totalSegments = 0
   for (const [key, messages] of Object.entries(details)) {
     const messageList = Array.isArray(messages) ? messages : [messages]
     // `canonicalizePath` throws `InvalidPathError` for dotted strings with
@@ -146,6 +158,17 @@ export function parseApiErrors(
     // the rest. Consumers who want strict rejection can post-filter
     // on `result.errors.length < details entryCount`.
     if (segments.length > maxPathDepth) continue
+    // Total-segment cap. Enforced wholesale (not per-key) so a payload
+    // that passes the per-key gate but stacks into a pathological
+    // total still fails visibly. Mirrors `maxEntries` strictness.
+    totalSegments += segments.length
+    if (totalSegments > maxTotalSegments) {
+      return {
+        ok: false,
+        errors: [],
+        rejected: `payload total path segments exceeds maxTotalSegments=${maxTotalSegments}`,
+      }
+    }
     for (const message of messageList) {
       if (typeof message !== 'string' || message.length === 0) continue
       errors.push({

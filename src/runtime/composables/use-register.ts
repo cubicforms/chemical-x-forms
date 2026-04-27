@@ -58,17 +58,6 @@
  * `ctx.register('a.b.c')` directly — that composable already handles
  * typed sub-paths, structured paths, getFieldState, etc. `useRegister`
  * stays a single-purpose ambient hook for the "wrap one field" case.
- *
- * Side effect (2): implicit `inheritAttrs: false`. The bridge props
- * (`:value` and `:registerValue`) injected by the select-transform
- * on the parent's component vnode would otherwise fall through to
- * this component's rendered root as stringified DOM attributes.
- * `useRegister` consumes them directly via the attrs proxy and
- * re-binds them onto an inner native element, so fallthrough is
- * never wanted. The flip is conditional — an explicit
- * `defineOptions({ inheritAttrs: true })` is respected (the consumer
- * accepts the leak). Class/style fallthrough is also suppressed; if
- * the wrapper needs them, forward via `<wrapper v-bind="$attrs">`.
  */
 import { computed, getCurrentInstance, onMounted, useAttrs, type ComputedRef } from 'vue'
 import { __DEV__ } from '../core/dev'
@@ -91,27 +80,6 @@ export function useRegister(): ComputedRef<RegisterValue | undefined> {
   if (instance === null) {
     warnOutsideSetup()
     return computed(() => undefined)
-  }
-
-  // Implicit `inheritAttrs: false`. The bridge props the
-  // select-transform injects on the parent's component vnode
-  // (`:value` + `:registerValue`) would otherwise fall through to
-  // this component's rendered root and pollute the DOM as stringified
-  // attributes (`registerValue="[object Object]"`). `useRegister`
-  // consumes those props directly via the attrs proxy and re-binds
-  // them onto an inner native element via `v-register="register"`,
-  // so fallthrough is never wanted.
-  //
-  // Mutate `instance.type` (the SFC's options object — unique per
-  // file) rather than the instance. Only flip when the user hasn't
-  // explicitly chosen a value: an explicit
-  // `defineOptions({ inheritAttrs: true })` is respected and the
-  // consumer accepts the leak. Once set, subsequent instances of the
-  // same component observe `inheritAttrs === false` already and the
-  // assignment is a no-op.
-  const componentOptions = instance.type as { inheritAttrs?: boolean }
-  if (componentOptions.inheritAttrs === undefined) {
-    componentOptions.inheritAttrs = false
   }
 
   // Mark the rendered root DOM element after mount. `instance.vnode.el`

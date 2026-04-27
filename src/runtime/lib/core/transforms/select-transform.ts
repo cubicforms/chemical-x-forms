@@ -217,6 +217,39 @@ const RECURSABLE_NODE_TYPES: ReadonlySet<number> = new Set<number>([
   NodeTypes.IF_BRANCH,
 ])
 
+/**
+ * Synthesise a static value for `<option>foo</option>` (no `value=`
+ * attr). Returns the text content as a single-quoted JS string literal
+ * so the equality check rendered into the AST treats it as a string.
+ *
+ * Returns:
+ *   - quoted-string `"'apple'"` for a single static text child,
+ *   - `null` for mixed / dynamic / empty children — caller skips the
+ *     binding rather than synthesise a guess.
+ *
+ * The HTML spec says an option's value defaults to its descendant
+ * text. We restrict to "single static text node" to keep the
+ * code-path safe: handling interpolation correctly would need a
+ * wrapped runtime expression, which we can't emit at compile time
+ * without leaking runtime references that may not exist in the
+ * template's binding scope.
+ */
+function inferOptionValueFromChildren(node: TemplateChildNode | RootNode): string | null {
+  if (!('children' in node)) return null
+  const children = node.children
+  if (children.length !== 1) return null
+  const only = children[0]
+  if (only === undefined) return null
+  if (typeof only === 'string' || typeof only === 'symbol') return null
+  if (only.type !== NodeTypes.TEXT) return null
+  // Mirror Vue's option-value semantic: trim leading/trailing whitespace
+  // so `<option> apple </option>` matches a model value of `'apple'`.
+  const text = only.content.trim()
+  // Escape single quotes so the rendered JS literal stays valid.
+  const escaped = text.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+  return `'${escaped}'`
+}
+
 export const selectNodeTransform: NodeTransform = (node, context) => {
   // Snapshot every prop array we're about to mutate so a throw
   // mid-traversal rewinds to the pre-transform state. Without this,
@@ -280,9 +313,32 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
 
       const optionProps = getSummarizedProps(_node)
       const valueIndex = optionProps.findIndex((p) => isExactKey(p.key, 'value'))
-      if (optionProps.length === 0 || valueIndex < 0 || valueIndex >= optionProps.length) return
 
-      const optionValueSummarizedProp = optionProps[valueIndex]
+      // D3: HTML lets `<option>apple</option>` use text content as the
+      // value. The original transform required an explicit `value=`
+      // attr and silently dropped value-less options — they'd render
+      // unselectable through `register('fruit')` because the AST
+      // emitted no `:selected` binding.
+      //
+      // Fallback: if no `value=`, look at the option's children. A
+      // single static TextNode → use it as the static value. Anything
+      // else (interpolation, mixed children, no children) → skip with
+      // a dev-warn rather than guess.
+      let optionValueSummarizedProp: SummarizedProp | undefined
+      if (valueIndex >= 0 && valueIndex < optionProps.length) {
+        optionValueSummarizedProp = optionProps[valueIndex]
+      } else {
+        const fallback = inferOptionValueFromChildren(_node)
+        if (fallback === null) {
+          // Dynamic / mixed children — can't synthesize a static
+          // equality expression. Bail without binding so the option
+          // simply isn't reactive (matches pre-D3 behaviour for the
+          // genuinely-dynamic cases). Producing a wrong binding would
+          // be worse than no binding.
+          return
+        }
+        optionValueSummarizedProp = { key: 'value', value: fallback }
+      }
 
       const props = _node.props
       snapshotProps(props)

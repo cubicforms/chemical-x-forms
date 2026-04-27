@@ -500,4 +500,45 @@ describe('buildProcessForm', () => {
   // (`form.setFieldErrors(parseApiErrors(payload).errors)`) is integration
   // territory tested in `test/composables/use-abstract-form.test.ts` and
   // the field-errors-view tests.
+
+  // C3 — sharpened dev-warn when validate() is called outside an
+  // effect scope. The watcher leaks (intentional behaviour), but the
+  // first warn per FormStore tells the consumer about the leak so
+  // they can wrap in effectScope().
+  describe('validate() — outside-scope dev warning', () => {
+    it('warns once per FormStore, not on every call', () => {
+      const state = alwaysValid()
+      const { validate } = buildProcessForm(state)
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        validate()
+        validate()
+        validate()
+        const matched = warnSpy.mock.calls.filter((c: unknown[]) =>
+          String(c[0]).includes('outside a Vue effect scope')
+        )
+        expect(matched.length).toBe(1)
+      } finally {
+        warnSpy.mockRestore()
+      }
+    })
+
+    it('does NOT warn when called inside an effect scope', async () => {
+      const { effectScope } = await import('vue')
+      const state = alwaysValid()
+      const { validate } = buildProcessForm(state)
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const scope = effectScope()
+        scope.run(() => validate())
+        const matched = warnSpy.mock.calls.filter((c: unknown[]) =>
+          String(c[0]).includes('outside a Vue effect scope')
+        )
+        expect(matched.length).toBe(0)
+        scope.stop()
+      } finally {
+        warnSpy.mockRestore()
+      }
+    })
+  })
 })

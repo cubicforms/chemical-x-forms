@@ -11,8 +11,21 @@ import type {
 } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
+import { __DEV__ } from './dev'
 import { SubmitErrorHandlerError } from './errors'
 import { canonicalizePath, type Path } from './paths'
+
+/**
+ * Tracks FormStores for which we've already emitted the
+ * "validate() called outside an effect scope" warning. One warn per
+ * store keeps the diagnostic loud the first time and silent for the
+ * rest of the run — important for hot-loop callers that would
+ * otherwise spam the console (a tight test loop calling validate()
+ * 1000 times shouldn't produce 1000 warnings).
+ */
+const warnedNoScopeStores: WeakSet<FormStore<GenericForm>> | null = __DEV__
+  ? new WeakSet<FormStore<GenericForm>>()
+  : null
 
 /**
  * validate + handleSubmit, both built against a FormStore<F>. Replaces
@@ -107,7 +120,21 @@ export function buildProcessForm<F extends GenericForm>(
     // unmount. Tests calling validate() in a raw context simply leak
     // the watcher for the test's duration — acceptable given tests
     // tear down the module context per run.
-    if (getCurrentScope() !== undefined) onScopeDispose(stop)
+    if (getCurrentScope() !== undefined) {
+      onScopeDispose(stop)
+    } else if (
+      __DEV__ &&
+      warnedNoScopeStores !== null &&
+      !warnedNoScopeStores.has(state as FormStore<GenericForm>)
+    ) {
+      warnedNoScopeStores.add(state as FormStore<GenericForm>)
+      console.warn(
+        '[@chemical-x/forms] validate() called outside a Vue effect scope. ' +
+          'The reactive watcher will not be released until the JS engine garbage-collects the form ' +
+          '— move the call into setup() / a child component, or wrap in `effectScope().run(...)`. ' +
+          'Tests can suppress this warning by mocking console.warn for the run.'
+      )
+    }
     return result as Readonly<Ref<ReactiveValidationStatus<F>>>
   }
 

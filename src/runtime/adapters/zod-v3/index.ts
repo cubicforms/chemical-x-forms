@@ -12,6 +12,13 @@ import type { AbstractSchema, FormKey, ValidationError } from '../../types/types
 // `Path` (Segment[]) as part of the v3/v4 split.
 const PATH_SEPARATOR = '.'
 
+// Shared cap for every wrapper-peeling / unwrap helper in this file.
+// Pathological schemas (deep `.refine()` chains, self-referential lazy
+// loops) would otherwise stack-overflow or hang. 64 is generous for any
+// realistic form schema; past it we bail conservatively rather than
+// crash.
+const MAX_UNWRAP_STEPS = 64
+
 function isPrimitive(input: unknown): boolean {
   const type = typeof input
   if (
@@ -450,7 +457,7 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
  */
 function unwrapStructuralLeafV3(schema: z.ZodTypeAny): z.ZodTypeAny {
   let current: z.ZodTypeAny = schema
-  for (let i = 0; i < 64; i++) {
+  for (let i = 0; i < MAX_UNWRAP_STEPS; i++) {
     if (!(isZodSchemaType(current, 'ZodOptional') || isZodSchemaType(current, 'ZodNullable'))) {
       break
     }
@@ -500,7 +507,7 @@ function isStructuralV3Kind(schema: z.ZodTypeAny): boolean {
  */
 function peelV3Wrappers(schema: z.ZodTypeAny): z.ZodTypeAny {
   let current: z.ZodTypeAny = schema
-  for (let i = 0; i < 64; i++) {
+  for (let i = 0; i < MAX_UNWRAP_STEPS; i++) {
     if (
       isZodSchemaType(current, 'ZodOptional') ||
       isZodSchemaType(current, 'ZodNullable') ||
@@ -543,7 +550,11 @@ function walkV3ToLeafSchema(
   let i = 0
   // Iteration cap prevents pathological unions / lazy loops from hanging.
   let safetyTicks = 0
-  while (i < segments.length && current && safetyTicks < segments.length * 64 + 64) {
+  while (
+    i < segments.length &&
+    current &&
+    safetyTicks < segments.length * MAX_UNWRAP_STEPS + MAX_UNWRAP_STEPS
+  ) {
     safetyTicks++
     current = peelV3Wrappers(current)
     const key = String(segments[i] ?? '')
@@ -603,9 +614,10 @@ function unwrapToDiscriminatedUnion(
 ): z.ZodDiscriminatedUnion<string, readonly z.ZodDiscriminatedUnionOption<string>[]> | undefined {
   let currentSchema: z.ZodTypeAny = schema
 
-  // `innerType` on ZodDefault/Optional/Nullable is a ZodType (non-nullable),
-  // so we loop unconditionally and exit via `return`.
-  for (;;) {
+  // Bounded by MAX_UNWRAP_STEPS so a pathological lazy self-reference
+  // can't hang the lookup. `innerType` on ZodDefault/Optional/Nullable
+  // is a ZodType (non-nullable); the cap is a soundness guard.
+  for (let i = 0; i < MAX_UNWRAP_STEPS; i++) {
     // If the schema is a discriminated union, return it
     if (isZodSchemaType(currentSchema, 'ZodDiscriminatedUnion')) {
       return currentSchema
@@ -624,6 +636,7 @@ function unwrapToDiscriminatedUnion(
     // Any other type: give up.
     return undefined
   }
+  return undefined
 }
 
 type DefaultValueContext = {
@@ -693,29 +706,39 @@ function getDefaultValue(
 }
 
 function unwrapDefault(schema: z.ZodTypeAny): [unknown, boolean] {
-  // If it's a ZodDefault, return its default value
-  if (isZodSchemaType(schema, 'ZodDefault')) {
-    const defaultValue = schema._def.defaultValue()
-    return [defaultValue, true]
-  }
-
-  // Handle nullable, optional types: unwrap their inner type
-  if (isZodSchemaType(schema, 'ZodNullable') || isZodSchemaType(schema, 'ZodOptional')) {
-    return unwrapDefault(schema._def.innerType)
-  }
-
-  // Handle ZodEffects - check its effect property
-  if (isZodSchemaType(schema, 'ZodEffects')) {
-    // If the effect is a ZodType, we continue unwrapping it
-    if (isZodSchemaType(schema._def.effect, 'ZodType')) {
-      return unwrapDefault(schema._def.effect) // Continue unwrapping the schema wrapped by the effect
-    } else {
-      // If it's not a ZodType, recurse into the inner type and continue unwrapping
-      return unwrapDefault(schema.innerType())
+  // Iterative peel: a chain of `.refine()` calls produces a deep
+  // ZodEffects(ZodEffects(...)) tree, and stack-based recursion runs
+  // out before MAX_UNWRAP_STEPS does. The bound also acts as a
+  // self-reference guard for pathological lazy loops.
+  let current: z.ZodTypeAny = schema
+  for (let i = 0; i < MAX_UNWRAP_STEPS; i++) {
+    if (isZodSchemaType(current, 'ZodDefault')) {
+      const defaultValue = current._def.defaultValue()
+      return [defaultValue, true]
     }
+    if (isZodSchemaType(current, 'ZodNullable') || isZodSchemaType(current, 'ZodOptional')) {
+      current = current._def.innerType
+      continue
+    }
+    if (isZodSchemaType(current, 'ZodEffects')) {
+      // ZodEffects's structural source lives at `_def.effect` when the
+      // effect itself was constructed from a ZodType (older v3 shape),
+      // otherwise at `.innerType()` (newer v3). Probe both — whichever
+      // resolves to a ZodTypeAny is the schema we keep unwrapping.
+      const effect = current._def.effect as unknown
+      if (effect !== null && typeof effect === 'object' && '_def' in effect) {
+        current = effect as z.ZodTypeAny
+        continue
+      }
+      const inner = (current as { innerType?: () => z.ZodTypeAny }).innerType?.()
+      if (inner) {
+        current = inner
+        continue
+      }
+      break
+    }
+    break
   }
-
-  // If no default found, return null
   return [null, false]
 }
 
@@ -893,7 +916,13 @@ function hasChecks(schema: z.ZodTypeAny): boolean {
 }
 
 function stripRefinements<T extends z.ZodTypeAny>(schema: T) {
-  function _stripRefinements(_schema: z.ZodTypeAny): z.ZodTypeAny {
+  // `depth` bounds the recursion at MAX_UNWRAP_STEPS (per branch). For
+  // realistic form schemas the structural depth is in single digits;
+  // the bound only matters for pathological chains
+  // (`z.string().refine().refine()...` produces nested ZodEffects whose
+  // depth is exactly the chain length).
+  function _stripRefinements(_schema: z.ZodTypeAny, depth: number): z.ZodTypeAny {
+    if (depth >= MAX_UNWRAP_STEPS) return _schema as T
     if (isZodSchemaType(_schema, 'ZodString') && _schema._def.checks.length > 0) {
       // Rebuild a ZodString without checks
       return z.string()
@@ -906,38 +935,41 @@ function stripRefinements<T extends z.ZodTypeAny>(schema: T) {
 
     if (isZodSchemaType(_schema, 'ZodArray')) {
       // Recursively process the array's inner type
-      return z.array(_stripRefinements(_schema._def.type))
+      return z.array(_stripRefinements(_schema._def.type, depth + 1))
     }
 
     if (isZodSchemaType(_schema, 'ZodObject')) {
       // Recursively process each property of the object
       const shape = _schema.shape
       const strippedShape = Object.fromEntries(
-        Object.entries(shape).map(([key, value]) => [key, _stripRefinements(value as z.ZodTypeAny)])
+        Object.entries(shape).map(([key, value]) => [
+          key,
+          _stripRefinements(value as z.ZodTypeAny, depth + 1),
+        ])
       )
       return z.object(strippedShape)
     }
 
     if (isZodSchemaType(_schema, 'ZodEffects')) {
       // Unwrap the inner schema and strip refinements
-      return _stripRefinements(_schema.innerType())
+      return _stripRefinements(_schema.innerType(), depth + 1)
     }
 
     if (isZodSchemaType(_schema, 'ZodOptional')) {
       // Recursively strip optional's inner type
-      return z.optional(_stripRefinements(_schema.unwrap()))
+      return z.optional(_stripRefinements(_schema.unwrap(), depth + 1))
     }
 
     if (isZodSchemaType(_schema, 'ZodNullable')) {
       // Recursively strip nullable's inner type
-      return z.nullable(_stripRefinements(_schema.unwrap()))
+      return z.nullable(_stripRefinements(_schema.unwrap(), depth + 1))
     }
 
     // Return other schema types as-is
     return _schema as T
   }
 
-  return _stripRefinements(schema) as T
+  return _stripRefinements(schema, 0) as T
 }
 
 function stripRootSchema(schema: z.ZodSchema, stripConfig: StripConfig) {

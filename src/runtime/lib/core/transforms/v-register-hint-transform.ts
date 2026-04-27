@@ -4,7 +4,6 @@ import {
   type CompoundExpressionNode,
   type ExpressionNode,
   type NodeTransform,
-  type SourceLocation,
 } from '@vue/compiler-core'
 
 /**
@@ -46,12 +45,6 @@ import {
  * bundler configurations do this), the second pass detects the marker
  * and skips re-wrapping.
  */
-
-const dummyLoc: SourceLocation = {
-  start: { column: 0, line: 0, offset: 0 },
-  end: { column: 0, line: 0, offset: 0 },
-  source: '',
-}
 
 const HINT_MARKER = '__cxRv'
 const HINT_PREFIX = `((${HINT_MARKER}) => (${HINT_MARKER}?.markConnectedOptimistically?.(), ${HINT_MARKER}))(`
@@ -99,5 +92,8 @@ function wrapWithOptimisticHint(exp: ExpressionNode): CompoundExpressionNode {
   // expect.
   const innerChildren: CompoundExpressionNode['children'] =
     exp.type === NodeTypes.SIMPLE_EXPRESSION ? [exp] : [...exp.children]
-  return createCompoundExpression([HINT_PREFIX, ...innerChildren, HINT_SUFFIX], dummyLoc)
+  // Reuse the wrapped expression's source location — runtime errors
+  // in the wrapped IIFE point at the v-register binding site rather
+  // than line 0.
+  return createCompoundExpression([HINT_PREFIX, ...innerChildren, HINT_SUFFIX], exp.loc)
 }

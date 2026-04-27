@@ -82,3 +82,31 @@ describe('selectNodeTransform — option value fallback (D3)', () => {
     expect(countSelectedBindings(code)).toBe(2)
   })
 })
+
+describe('selectNodeTransform — E1 source-location fidelity', () => {
+  it('preserves a non-zero source location on the injected :value binding', () => {
+    // Pad the template so the <select> doesn't sit at line/column 0
+    // — this lets us assert that the injected directive's loc matches
+    // a non-trivial position rather than the deleted dummyLoc.
+    const template = `<div>\n  <select v-register="fruit"><option value="apple">A</option></select>\n</div>`
+    // baseCompile preserves AST node `loc` fields; we walk the AST and
+    // confirm the `:value` directive on the select has the select's loc.
+    const result = baseCompile(template, {
+      nodeTransforms: [selectNodeTransform],
+      mode: 'module',
+    })
+    const root = result.ast as unknown as { children: { tag?: string; children?: unknown[] }[] }
+    const div = root.children[0] as {
+      tag: string
+      children: { tag?: string; props: { name: string; loc: { start: { line: number } } }[] }[]
+    }
+    const select = div.children.find((c) => c.tag === 'select')
+    expect(select).toBeDefined()
+    const valueProp = select?.props.find((p) => p.name === 'bind')
+    if (valueProp === undefined) throw new Error('select :value binding missing')
+    // Pre-fix the loc was {line: 0, column: 0}; now it matches the
+    // select element's location (line 2 in this template after the
+    // leading <div> + newline + indent).
+    expect(valueProp.loc.start.line).toBeGreaterThan(0)
+  })
+})

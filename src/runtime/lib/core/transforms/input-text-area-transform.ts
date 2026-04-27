@@ -211,11 +211,10 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
       registerSummarizedProp: SummarizedProp,
       elementValueSummarizedProp: SummarizedProp
     ): void {
-      const dummyLoc: SourceLocation = {
-        start: { column: 0, line: 0, offset: 0 },
-        end: { column: 0, line: 0, offset: 0 },
-        source: '',
-      }
+      // Reuse the originating element's source location for the
+      // injected directive — runtime errors in the synthesized expression
+      // get reported at the v-register binding site rather than line 0.
+      const injectedLoc: SourceLocation = _node.loc
 
       const props = _node.props
       removePropsByName(props, ['checked', 'value']) // (re)create the `value` prop further down
@@ -247,7 +246,7 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
         name: 'bind',
         modifiers: [],
         type: NodeTypes.DIRECTIVE,
-        loc: dummyLoc,
+        loc: injectedLoc,
       }
 
       props.push(valueOrCheckedProp)

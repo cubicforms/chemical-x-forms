@@ -7,7 +7,6 @@ import {
   type NodeTransform,
   type RootNode,
   type SimpleExpressionNode,
-  type SourceLocation,
 } from '@vue/compiler-core'
 
 /**
@@ -55,12 +54,6 @@ import {
  * be hoisted because their path expressions reference loop-scoped
  * identifiers (e.g. `form.register(`item.${i}`)`).
  */
-
-const dummyLoc: SourceLocation = {
-  start: { column: 0, line: 0, offset: 0 },
-  end: { column: 0, line: 0, offset: 0 },
-  source: '',
-}
 
 /**
  * Per-root traversal state. Keyed by the RootNode object — stable for
@@ -265,7 +258,10 @@ function injectPreamble(element: ElementNode, captured: readonly string[]): void
     arg: createSimpleExpression(PREAMBLE_ATTR, true /* static arg */),
     exp,
     modifiers: [],
-    loc: dummyLoc,
+    // Reuse the host element's source location so any runtime error
+    // in the synthesized expression points at the consumer's template
+    // line, not at the dummyLoc that pre-fix was line 0.
+    loc: element.loc,
   }
   element.props.unshift(directive)
 }

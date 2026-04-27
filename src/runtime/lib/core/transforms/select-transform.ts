@@ -284,11 +284,10 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
 
     const registerSummarizedProp = selectSummarizedProps[registerIndex]
 
-    const dummyLoc: SourceLocation = {
-      start: { column: 0, line: 0, offset: 0 },
-      end: { column: 0, line: 0, offset: 0 },
-      source: '',
-    }
+    // Inject location matches the originating element so source maps
+    // for runtime errors in the synthesized expressions point at the
+    // user's <select v-register=...> rather than line 0.
+    const selectLoc: SourceLocation = node.loc
 
     function traverseSelectNode(
       _node: RootNode | TemplateChildNode,
@@ -356,7 +355,7 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
         name: 'bind',
         modifiers: [],
         type: NodeTypes.DIRECTIVE,
-        loc: dummyLoc,
+        loc: _node.loc,
       }
       props.push(newProp)
     }
@@ -393,7 +392,7 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
       name: 'bind',
       modifiers: [],
       type: NodeTypes.DIRECTIVE,
-      loc: dummyLoc,
+      loc: selectLoc,
     }
 
     node.props.push(valueProp)
@@ -418,7 +417,7 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
       name: 'bind',
       modifiers: [],
       type: NodeTypes.DIRECTIVE,
-      loc: dummyLoc,
+      loc: selectLoc,
     }
 
     node.props.push(customElementProp)

@@ -119,6 +119,38 @@ not a Promise. Bind the returned value:
 
 See [0.6 → 0.7 migration](./migration/0.6-to-0.7.md).
 
+## "v-register on my component does nothing (typing doesn't update the form)"
+
+`<MyComponent v-register="...">` works only when the component's
+rendered root element is one Vue's directive can bind: `<input>`,
+`<textarea>`, or `<select>`. For components whose root is a `<div>`
+/ `<label>` / styled wrapper, the directive can't read `el.value`
+off the wrapper and skips listener attachment to avoid the bubbled-
+write bug — typing into a descendant input goes nowhere.
+
+The fix: call `useRegister()` in the child's setup and re-bind
+v-register onto an inner native element:
+
+```vue
+<!-- StyledInput.vue -->
+<script setup lang="ts">
+  import { useRegister } from '@chemical-x/forms'
+  const register = useRegister()
+</script>
+
+<template>
+  <div class="wrapper">
+    <input v-register="register" />
+  </div>
+</template>
+```
+
+The dev-mode console warning `v-register on <div> is a no-op …`
+points here. See the [components recipe](./recipes/persistence.md#component-support)
+for the four supported patterns (native root, useRegister,
+useFormContext for compound components, and the `assignKey`
+escape hatch).
+
 ## "Persisted state is gone after a schema change"
 
 Working as intended. As of 0.12, storage keys carry the schema's

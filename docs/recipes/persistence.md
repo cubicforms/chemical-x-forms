@@ -507,43 +507,120 @@ drop writes.
 
 ## Component support
 
-`<MyComponent v-register="register('name')" />` works when
-`MyComponent`'s root element is a native input / textarea / select.
-The directive applies to the rendered DOM root and binds value /
-checked / selected as usual.
+`<MyComponent v-register="register('name')" />` is supported through
+four patterns, each appropriate for different component shapes. The
+recommended pattern (for most cases) is `useRegister()`.
 
-For components whose root is a `<div>` / `<button>` / custom
-element, install a manual assigner via the `assignKey` symbol on
-the rendered element:
+### 1. Native form-element root (just works)
 
-```ts
-import { assignKey } from '@chemical-x/forms'
-// inside the component, on the rendered root element:
-elRef.value[assignKey] = (newValue) => emit('update:modelValue', newValue)
-```
-
-The library ALSO injects a `:registerValue` prop on every
-component vnode that has `v-register` (covering custom-component
-wrappers cleanly). Consume it as:
+When `MyComponent`'s root is `<input>` / `<select>` / `<textarea>`,
+the directive lands on the rendered DOM root and persistence /
+focus / blur tracking flows naturally.
 
 ```vue
+<!-- MyInput.vue -->
 <script setup lang="ts">
-  import type { RegisterValue } from '@chemical-x/forms'
-  defineProps<{ registerValue?: RegisterValue<string> }>()
-  const emit = defineEmits<{ 'update:registerValue': [value: string] }>()
+  defineOptions({ inheritAttrs: false })
 </script>
 
 <template>
-  <input
-    :value="registerValue?.innerRef.value"
-    @input="emit('update:registerValue', ($event.target as HTMLInputElement).value)"
-  />
+  <input v-bind="$attrs" />
 </template>
 ```
 
-A dev warning fires the first time the directive sees a non-input/
-select/textarea root without an `assignKey` override — it points
-you at this section.
+```vue
+<!-- consumer -->
+<MyInput v-register="register('name')" />
+```
+
+### 2. Non-form root → `useRegister()` (recommended)
+
+When the component wraps a native input in styling (a `<div>`
+container, a `<label>` wrapper, etc.), call `useRegister()` in the
+child's setup and re-bind v-register onto an inner native element:
+
+```vue
+<!-- StyledInput.vue -->
+<script setup lang="ts">
+  import { useRegister } from '@chemical-x/forms'
+  const register = useRegister()
+</script>
+
+<template>
+  <div class="wrapper">
+    <input v-register="register" />
+  </div>
+</template>
+```
+
+```vue
+<!-- consumer -->
+<StyledInput v-register="register('email', { persist: true })" />
+```
+
+The directive on the parent's `<StyledInput>` detects the
+`useRegister` sentinel and skips listener attachment on the
+component's root. The inner `<input v-register="register">` gets
+the full directive lifecycle — listener attachment, FormStore
+element registration, focus / blur / touched tracking, persistence
+opt-in. The form-state contract aligns with where DOM events
+originate.
+
+`useRegister()` returns `ComputedRef<RegisterValue | undefined>`.
+The `| undefined` is intentional: a child rendered standalone (no
+parent passing `v-register`) gets a no-op binding plus a dev-warn,
+not a crash.
+
+### 3. Compound components → `useFormContext`
+
+For components that touch multiple fields (e.g. an `AddressBlock`
+with its own `street`, `city`, `zip` inputs), use the existing
+`useFormContext` API and call `ctx.register('a.b.c')` directly:
+
+```vue
+<!-- AddressBlock.vue -->
+<script setup lang="ts">
+  import { useFormContext } from '@chemical-x/forms'
+  type SignupForm = { address: { street: string; city: string; zip: string } }
+  const ctx = useFormContext<SignupForm>('signup')
+</script>
+
+<template>
+  <div v-if="ctx">
+    <input v-register="ctx.register('address.street')" />
+    <input v-register="ctx.register('address.city')" />
+    <input v-register="ctx.register('address.zip')" />
+  </div>
+</template>
+```
+
+`useRegister` is a single-purpose ambient hook — it never accepts a
+key or path. Compound use-cases belong on `useFormContext`, which
+already handles typed sub-paths, structured paths, `getFieldState`,
+and the rest.
+
+### 4. `assignKey` low-level escape hatch
+
+For Web Components (real custom elements that aren't Vue
+components) or unusual binding targets, install the assigner
+directly on the element:
+
+```ts
+import { assignKey } from '@chemical-x/forms'
+elRef.value[assignKey] = (newValue) => emit('update:modelValue', newValue)
+```
+
+A companion directive ordered first in `withDirectives` lets the
+assigner land before `vRegister.created` runs, suppressing the
+unsupported-element warn. The directive also respects a pre-
+installed `assignKey` and won't clobber it. Use this only when
+`useRegister` doesn't fit (typically Web Components).
+
+### Dev-warn
+
+The first time the directive sees a non-input / select / textarea
+root WITHOUT a `useRegister` sentinel and WITHOUT an `assignKey`
+override, it logs a one-shot warning pointing at this recipe.
 
 ## Gotchas
 

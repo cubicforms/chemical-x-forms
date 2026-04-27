@@ -81,6 +81,22 @@ export type DeepPartial<T> = T extends Primitive // Base case for primitive type
         }
       : T
 
+/**
+ * Resolve the type at a dotted-string path within `RootValue`. The
+ * recursion peels one segment per recursion step.
+ *
+ * **TS recursion-depth limit.** The TypeScript compiler caps conditional-
+ * type recursion at 50 (under the `tsc` instantiation budget; tighter
+ * for `--strict` builds). A path with more than ~45-50 segments will
+ * resolve to `never` instead of the correct leaf type — TS gives up
+ * silently rather than erroring at the call site. Real form schemas
+ * never approach this limit, but consumers who hand-author paths via
+ * `as` casts on extremely deep state should use a tuple-counter
+ * variant or split the lookup into chunks.
+ *
+ * The runtime walker (`path-walker.ts`) has no such limit; only the
+ * static type lookup is affected.
+ */
 export type NestedType<
   RootValue,
   FlattenedPath extends string,

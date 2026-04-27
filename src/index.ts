@@ -96,6 +96,7 @@ export type { Path, PathKey, Segment } from './runtime/core/paths'
 // Error classes
 export {
   InvalidPathError,
+  OutsideSetupError,
   RegistryNotInstalledError,
   ReservedFormKeyError,
   SensitivePersistFieldError,

@@ -21,7 +21,33 @@ export class SubmitErrorHandlerError extends Error {
 export class RegistryNotInstalledError extends Error {
   override readonly name = 'RegistryNotInstalledError'
   constructor() {
-    super('[@chemical-x/forms] Registry not found; install via `app.use(createChemicalXForms())`.')
+    super(
+      '[@chemical-x/forms] Registry not found. Install the plugin via `app.use(createChemicalXForms())`.'
+    )
+  }
+}
+
+/**
+ * Thrown when a cx composable (`useForm`, `useFormContext`, `useRegistry`)
+ * is invoked from outside a Vue `setup()` context — typically from an
+ * event handler, watcher, or async callback that runs after mount.
+ *
+ * This is a Vue-lifecycle constraint, not a plugin-installation one:
+ * the plugin can be perfectly installed but `inject` / `provide` only
+ * resolve while a component instance is on the active call stack.
+ *
+ * Pre-disambiguation, the same `RegistryNotInstalledError` covered both
+ * causes — pointing the developer at "install the plugin" when the
+ * actual fix was "move the call into setup or a child component". The
+ * split lets each failure mode lead the reader to the right fix.
+ */
+export class OutsideSetupError extends Error {
+  override readonly name = 'OutsideSetupError'
+  constructor() {
+    super(
+      '[@chemical-x/forms] useForm / useFormContext called outside Vue setup(). ' +
+        'Move into setup or mount a child component to trigger from an event.'
+    )
   }
 }
 

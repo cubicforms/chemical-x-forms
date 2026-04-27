@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createApp } from 'vue'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { getRegistryFromApp } from '../../src/runtime/core/registry'
@@ -39,5 +39,30 @@ describe('createChemicalXForms', () => {
     a.use(createChemicalXForms())
     b.use(createChemicalXForms())
     expect(getRegistryFromApp(a)).not.toBe(getRegistryFromApp(b))
+  })
+
+  // D1 — installing twice on the same app is a no-op (idempotent).
+  // Pre-fix, the second install overwrote `app._chemicalX`, orphaning
+  // every form the first registry had built.
+  it('a second install on the same app is a no-op and warns in dev', () => {
+    const app = createApp({ render: () => null })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      app.use(createChemicalXForms())
+      const firstRegistry = getRegistryFromApp(app)
+      // Second install with a fresh factory call (Vue's Plugin dedupe
+      // only catches identical plugin objects).
+      app.use(createChemicalXForms())
+      const secondRegistry = getRegistryFromApp(app)
+      // Same registry — no overwrite.
+      expect(secondRegistry).toBe(firstRegistry)
+      // Single dev warning fired.
+      const matched = warnSpy.mock.calls.filter((c: unknown[]) =>
+        String(c[0]).includes('createChemicalXForms() install was called more than once')
+      )
+      expect(matched.length).toBe(1)
+    } finally {
+      warnSpy.mockRestore()
+    }
   })
 })

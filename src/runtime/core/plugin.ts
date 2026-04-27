@@ -1,4 +1,5 @@
 import type { App, Plugin } from 'vue'
+import { __DEV__ } from './dev'
 import { attachRegistryToApp, createRegistry } from './registry'
 import { vRegister } from './directive'
 import type { SSRDetectOptions } from './ssr'
@@ -40,6 +41,24 @@ export type ChemicalXFormsPluginOptions = SSRDetectOptions & {
 export function createChemicalXForms(options: ChemicalXFormsPluginOptions = {}): Plugin {
   const plugin: Plugin = {
     install(app: App) {
+      // Idempotent install: a second `app.use(createChemicalXForms())`
+      // (e.g. accidentally registered twice in vite.config + nuxt
+      // module, or by a higher-order plugin that installs us alongside
+      // a consumer's own install) would otherwise overwrite the
+      // existing registry — orphaning every FormStore the previous
+      // instance had built. Detect via the `_chemicalX` slot
+      // `attachRegistryToApp` writes; bail with a dev warning so the
+      // duplicate is visible during development.
+      if (app._chemicalX !== undefined) {
+        if (__DEV__) {
+          console.warn(
+            '[@chemical-x/forms] createChemicalXForms() install was called more than once on the same app. ' +
+              'The second install is a no-op; the existing registry is preserved. ' +
+              'Likely cause: registering the plugin twice (vite + nuxt module + manual `app.use`).'
+          )
+        }
+        return
+      }
       const registry = createRegistry(options)
       attachRegistryToApp(app, registry)
       app.directive('register', vRegister)

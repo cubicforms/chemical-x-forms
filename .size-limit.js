@@ -50,7 +50,15 @@ export default [
     //   - registerDrain + awaitPendingWrites on FormStore + Registry
     //     (drain-on-evict + Registry.shutdown)
     //   - <option> static-text fallback in the select transform
-    limit: '18 KB',
+    //
+    // Raised 18 → 19 KB on the useRegister branch: useRegister
+    // composable + WeakSet sentinel (registerOwners), directive
+    // tri-state guard with binding.instance.subTree.component lookup,
+    // setAssignFunction undefined-no-op + pre-installed-assigner
+    // respect, select-transform idempotency marker + kebab-case
+    // extension (NATIVE_FORM_TAGS + hasHyphen gate). Measured at
+    // 18.23 KB; 0.77 KB headroom for the docs/test follow-up commit.
+    limit: '19 KB',
     gzip: true,
     modifyEsbuildConfig: asEsm,
   },
@@ -70,7 +78,12 @@ export default [
     // Raised 17 → 18 KB tracking index.mjs's deep-QA cleanup bump
     // (same shared core chunk: DevTools redaction, dev-warns,
     // gen-checks, registry drain).
-    limit: '18 KB',
+    //
+    // Raised 18 → 19 KB tracking index.mjs's useRegister bump (same
+    // shared core chunk: useRegister + sentinel + directive tri-state
+    // + setAssignFunction undefined-no-op + select-transform
+    // idempotency / kebab-case extension).
+    limit: '19 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
@@ -92,7 +105,10 @@ export default [
     // core chunk as index.mjs PLUS v3-specific work: bounded
     // wrapper-peel recursion, ZodPipeline / ZodReadonly / ZodBranded /
     // ZodCatch handling, Symbol path-segment coercion).
-    limit: '18 KB',
+    //
+    // Raised 18 → 19 KB tracking index.mjs's useRegister bump (same
+    // shared core chunk).
+    limit: '19 KB',
     gzip: true,
     ignore: ['zod', 'lodash-es'],
     modifyEsbuildConfig: asEsm,

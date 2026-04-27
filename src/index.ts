@@ -43,6 +43,12 @@ export { useAbstractForm as useForm } from './runtime/composables/use-abstract-f
 // docblock for the type-erasure reasoning.
 export { useFormContext } from './runtime/composables/use-form-context'
 
+// Ambient bridge for components that wrap a single field and want to
+// re-bind v-register onto an inner native element. See
+// `docs/recipes/components.md` for usage; for compound components
+// reaching multiple fields, prefer `useFormContext`.
+export { useRegister } from './runtime/composables/use-register'
+
 // The v-register directive (registered automatically by createChemicalXForms,
 // but exported for advanced consumers who install directives themselves).
 export { vRegister, isRegisterValue, assignKey } from './runtime/core/directive'

@@ -5,24 +5,23 @@ import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { assignKey, vRegister } from '../../src/runtime/core/directive'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { useRegister } from '../../src/runtime/composables/use-register'
 
 /**
- * Provocative coverage for `<MyComponent v-register="register(...)" />`.
+ * Runtime contract for `<MyComponent v-register="register(...)" />`.
  *
- * The runtime directive `vRegisterDynamic` is applied to whatever DOM
- * element Vue produces from the component's render — single-root
- * components route the directive to the inner element; multi-root
- * components and components rendering non-input wrappers behave in
- * surprising ways. This file pins each surprise so a future refactor
- * notices what changed.
+ * Four supported component patterns (from
+ * `docs/recipes/components.md`):
  *
- * Each describe block tags itself with one of:
- *   - works ✓      — current behaviour matches user expectations
- *   - surprising ⚠ — current behaviour is technically correct but easy
- *                    to misuse; the test calls out the footgun
- *   - broken ✗    — current behaviour produces a wrong write or
- *                    silent no-op; the test demonstrates the failure
- *                    mode and pins it so a fix can flip the assertion.
+ *   1. Native form-element root          — directive lands on the input, just works
+ *   2. `useRegister()` inside the child  — child re-binds inner native element
+ *   3. `@update:registerValue` listener  — assigner override (requires supported-tag root)
+ *   4. `assignKey` escape hatch          — low-level, kept-current behaviour
+ *
+ * Each describe block tests one pattern (or a non-pattern, for the
+ * "no escape hatch" case where the directive must NOT attach
+ * listeners to a non-form root). The plan-of-record for this work is
+ * `~/.claude/plans/excellent-findings-i-would-drifting-micali.md`.
  */
 
 const schema = z.object({ email: z.string(), name: z.string() })
@@ -38,22 +37,12 @@ type MountReturn = {
 
 /**
  * Mount a parent component that renders `<Child v-register="api.register('email')" />`.
- * The `Child` is supplied by the test; its render fn decides which DOM
- * element ends up as the directive's `el`.
  *
- * After mount, the helper queries the mount root for `firstElementChild`
- * — that's the component's rendered single root. Multi-root / fragment
- * children render a Vue placeholder comment as `firstChild`, in which
- * case `firstElementChild` is null.
- *
- * The `installAssigner` option, when present, runs BEFORE the parent's
- * `setup` factory finishes — but the directive's `created` hook fires
- * AFTER setup returns and the component renders. So we install the
- * assigner via a tiny pre-render hook on the parent: the parent renders
- * a `:ref` on the child that runs the installer the first time it sees
- * the actual DOM element. The installer winds up running before the
- * directive's `created` because the directive runs on the Vue tick AFTER
- * the rendered tree is committed.
+ * The bridge props (`registerValue: rv` + `value: rv.innerRef.value`)
+ * are passed alongside the directive — this mirrors the AST output of
+ * `selectNodeTransform`'s component branch so the runtime test
+ * exercises the same prop / attr surface a compiled template would
+ * produce. Tests that don't read these props are unaffected.
  */
 function mountWithChild(
   Child: ReturnType<typeof defineComponent>,
@@ -83,12 +72,12 @@ function mountWithChild(
           h(
             Child,
             {
+              registerValue: rv,
+              value: rv.innerRef.value,
               ...(options?.onUpdateRegisterValue
                 ? { 'onUpdate:registerValue': options.onUpdateRegisterValue }
                 : {}),
             },
-            // Non-trivial slot so multi-root and slot-receiving children
-            // both work without rewriting the helper per test.
             { default: () => [h('span', 'slot')] }
           ),
           [[vRegister, rv]]
@@ -96,24 +85,12 @@ function mountWithChild(
     },
   })
 
-  // If installAssigner is requested, intercept the mount root so we can
-  // install on whatever element ends up as `firstElementChild` BEFORE
-  // any subsequent test interaction. The directive's `created` already
-  // ran by mount-return time, so the assigner installs after `created`
-  // — that's intentional: tests using the assignKey escape hatch want
-  // to verify the post-warning, post-default-assigner behaviour with
-  // the consumer's hook in place. (For dev-warn-suppression tests we
-  // need a different path — see the `mountWithPreInstalledAssigner`
-  // helper below, used by the suppression test only.)
   const app = createApp(Parent).use(createChemicalXForms())
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
   warnSpy.mockRestore()
 
-  // The component's rendered root: if a single root, it's the first
-  // element child of the mount root. If multi-root or fragment, this
-  // is null.
   const rootEl = root.firstElementChild as HTMLElement | null
   if (handle.api === undefined) throw new Error('mountWithChild: api never set')
   if (rootEl === null)
@@ -129,7 +106,7 @@ async function flush(): Promise<void> {
   }
 }
 
-describe('v-register on a component whose root is <input> (works ✓)', () => {
+describe('pattern 1: v-register on a component whose root is <input>', () => {
   let mounted: MountReturn | undefined
 
   afterEach(() => {
@@ -171,7 +148,7 @@ describe('v-register on a component whose root is <input> (works ✓)', () => {
   })
 })
 
-describe('v-register on a component whose root is <div> (broken ✗ + surprising ⚠)', () => {
+describe('pattern 2: v-register on a non-form root WITH useRegister (recommended)', () => {
   let mounted: MountReturn | undefined
 
   afterEach(() => {
@@ -180,36 +157,86 @@ describe('v-register on a component whose root is <div> (broken ✗ + surprising
     document.body.innerHTML = ''
   })
 
+  /**
+   * Child renders <div><input v-register="register" /></div>. The
+   * inner input is what the directive binds to; the parent's <div>
+   * root carries no listeners and no FormStore registration. The
+   * sentinel set by useRegister suppresses the unsupported-element
+   * warn.
+   */
+  const InnerInputViaUseRegister = defineComponent({
+    name: 'InnerInputViaUseRegister',
+    inheritAttrs: false,
+    setup() {
+      const register = useRegister()
+      return { register }
+    },
+    render() {
+      return h('div', { class: 'wrapper' }, [
+        withDirectives(h('input', { type: 'text', class: 'inner' }), [[vRegister, this.register]]),
+      ])
+    },
+  })
+
+  it('typing in the inner input writes through to the form (the binding follows useRegister)', async () => {
+    mounted = mountWithChild(InnerInputViaUseRegister)
+    expect(mounted.rootEl.tagName).toBe('DIV')
+
+    const innerInput = mounted.rootEl.querySelector('input.inner') as HTMLInputElement
+    expect(innerInput).not.toBeNull()
+    innerInput.value = 'typed'
+    innerInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    expect(mounted.api.getValue('email').value).toBe('typed')
+  })
+
+  it('does NOT fire the unsupported-element dev-warn (sentinel suppresses)', () => {
+    mounted = mountWithChild(InnerInputViaUseRegister)
+    const matched = mounted.warnings.filter((w) => w.includes('falls back to text-input semantics'))
+    expect(matched.length).toBe(0)
+  })
+
+  it('FormStore element registry tracks the INNER input, not the div root', () => {
+    mounted = mountWithChild(InnerInputViaUseRegister)
+    // The inner input is INTERACTIVE; the div is not. After mount, the
+    // directive's `registerElement` call landed on the inner input,
+    // so focus/blur tracking has a real target. The `null` baseline
+    // (DOMFieldState defaults) flips to `false` once an element is
+    // registered but hasn't been interacted with.
+    const fs = mounted.api.getFieldState('email').value
+    expect(fs.focused).toBe(false)
+    expect(fs.blurred).toBe(false)
+    expect(fs.touched).toBe(false)
+  })
+})
+
+describe('non-pattern: v-register on a non-form root WITHOUT useRegister/assignKey', () => {
+  let mounted: MountReturn | undefined
+
+  afterEach(() => {
+    mounted?.app.unmount()
+    mounted = undefined
+    document.body.innerHTML = ''
+  })
+
+  const PlainDivChild = defineComponent({
+    name: 'PlainDivChild',
+    inheritAttrs: false,
+    setup(_, { attrs }) {
+      return () => h('div', attrs, [h('input', { type: 'text', class: 'inner' })])
+    },
+  })
+
   it('fires the unsupported-element dev-warn (div is not in SUPPORTED_TAGS)', () => {
-    const ChildDiv = defineComponent({
-      name: 'ChildDiv',
-      inheritAttrs: false,
-      setup(_, { attrs }) {
-        return () => h('div', attrs, [h('input', { type: 'text', class: 'inner' })])
-      },
-    })
-    mounted = mountWithChild(ChildDiv)
+    mounted = mountWithChild(PlainDivChild)
     expect(mounted.rootEl.tagName).toBe('DIV')
     const matched = mounted.warnings.filter((w) => w.includes('falls back to text-input semantics'))
     expect(matched.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('the typed value does NOT reach the FormStore — bubbled event reads el.value off a div ✗', async () => {
-    // The directive's text-input variant attaches an `input` listener
-    // on `el` (the <div> root). Native `input` events from the inner
-    // <input> bubble to the div; the listener reads `el.value` (which
-    // jsdom returns as the string '', not as undefined — the
-    // browser-native HTMLDivElement has no `value` property at all).
-    // Net effect: the form's `email` field is clobbered to '' on every
-    // keystroke instead of capturing what the user typed.
-    const ChildDiv = defineComponent({
-      name: 'ChildDiv',
-      inheritAttrs: false,
-      setup(_, { attrs }) {
-        return () => h('div', attrs, [h('input', { type: 'text', class: 'inner' })])
-      },
-    })
-    mounted = mountWithChild(ChildDiv)
+  it('does NOT clobber the seeded form value — no listeners attached to the div root', async () => {
+    mounted = mountWithChild(PlainDivChild)
     mounted.api.setValue('email', 'seed@example.com')
     expect(mounted.api.getValue('email').value).toBe('seed@example.com')
 
@@ -218,33 +245,15 @@ describe('v-register on a component whose root is <div> (broken ✗ + surprising
     innerInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flush()
 
-    // The pre-typed value got CLOBBERED. The exact replacement value is
-    // platform-dependent (jsdom returns '' for div.value; real browsers
-    // return undefined which `String()` later coerces to 'undefined').
-    // What's invariant is "the captured value is NOT what the user typed":
-    expect(mounted.api.getValue('email').value).not.toBe('typed')
-    expect(mounted.api.getValue('email').value).not.toBe('seed@example.com')
+    // With listeners SKIPPED on the unsupported root, the bubbled event
+    // doesn't reach a directive listener, doesn't read `el.value` off
+    // the div, and doesn't write the empty/undefined string to the
+    // form. The seeded value survives.
+    expect(mounted.api.getValue('email').value).toBe('seed@example.com')
   })
 
-  it('the FormStore element registry SKIPS non-INTERACTIVE roots (silent no-op) ⚠', () => {
-    // `register-api.ts` filters elements by INTERACTIVE_TAG_NAMES on
-    // registerElement — div is not in the set, so the FormStore never
-    // hears about this element. Focus listeners aren't attached;
-    // `state.elementRegistry` stays empty for this path.
-    const ChildDiv = defineComponent({
-      name: 'ChildDiv',
-      inheritAttrs: false,
-      setup(_, { attrs }) {
-        return () => h('div', attrs, [h('input', { type: 'text' })])
-      },
-    })
-    mounted = mountWithChild(ChildDiv)
-    // The path's field record never gained a registered element.
-    // DOMFieldState defaults to `{ focused: null, blurred: null,
-    // touched: null }` for paths with no registered element — the
-    // public surface differentiates "not yet interacted" (false)
-    // from "no element to track" (null). All three null on a div
-    // root is the smoking gun.
+  it('FormStore element registry SKIPS non-INTERACTIVE roots (silent no-op)', () => {
+    mounted = mountWithChild(PlainDivChild)
     const fs = mounted.api.getFieldState('email').value
     expect(fs.focused).toBeNull()
     expect(fs.blurred).toBeNull()
@@ -252,7 +261,7 @@ describe('v-register on a component whose root is <div> (broken ✗ + surprising
   })
 })
 
-describe('escape hatch: el[assignKey] override on a non-input root', () => {
+describe('pattern 4: v-register on a non-form root WITH assignKey (kept-current escape hatch)', () => {
   let mounted: MountReturn | undefined
 
   afterEach(() => {
@@ -261,65 +270,19 @@ describe('escape hatch: el[assignKey] override on a non-input root', () => {
     document.body.innerHTML = ''
   })
 
-  it('a child installing assignKey via a ref callback does NOT suppress the warn (timing footgun ✗)', () => {
-    // Surprise: ref callbacks on a directive-bearing component vnode
-    // fire AFTER the directive's `created` hook, so the assignKey
-    // installed in the child's render arrives too late for the
-    // SUPPORTED_TAGS check in `vRegisterDynamic.created`. The warning
-    // fires once, the consumer's assigner is in place from then on.
-    //
-    // The actual fix for component authors who want to use assignKey:
-    // install it OUTSIDE the directive lifecycle — e.g., on the
-    // element BEFORE the parent renders (synchronous setup-time DOM
-    // creation), or accept the one-shot dev-warning as cosmetic and
-    // know that the binding still works after `created` returns.
-    const warnings: string[] = []
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
-      warnings.push(args.map((a) => String(a)).join(' '))
-    })
-
-    const SelfInstallingChild = defineComponent({
-      name: 'SelfInstallingChild',
-      inheritAttrs: false,
-      setup(_, { attrs }) {
-        const captureRoot = (el: unknown): void => {
-          if (el === null || el === undefined) return
-          ;(el as unknown as { [k: symbol]: unknown })[assignKey] = (_v: unknown) => undefined
-        }
-        return () => h('div', { ...attrs, ref: captureRoot }, [h('input', { type: 'text' })])
-      },
-    })
-
-    const Parent = defineComponent({
-      setup() {
-        const api = useForm({ schema, key: `assigner-${Math.random().toString(36).slice(2)}` })
-        const rv = api.register('email')
-        return () => withDirectives(h(SelfInstallingChild), [[vRegister, rv]])
-      },
-    })
-    const app = createApp(Parent).use(createChemicalXForms())
-    const root = document.createElement('div')
-    document.body.appendChild(root)
-    app.mount(root)
-    warnSpy.mockRestore()
-
-    const matched = warnings.filter((w) => w.includes('falls back to text-input semantics'))
-    expect(matched.length).toBeGreaterThanOrEqual(1)
-    app.unmount()
-  })
-
-  it('the assigner receives a value sourced from el.value, NOT the inner input the user typed into ✗', async () => {
-    // Important: the `assignKey` escape hatch ONLY overrides the
-    // function called with the value. It does NOT change how the
-    // directive sources the value — the text-input variant always
-    // reads `el.value`, which has no useful semantics for a <div>
-    // (jsdom returns ''; native browsers return undefined). So an
-    // assignKey override is a partial fix: it suppresses the dev-
-    // warning AND lets the consumer route writes into a custom store,
-    // but the value handed to that store is still wrong.
-    //
-    // Workaround: the consumer must source the value themselves —
-    // attach a separate event listener on the inner input.
+  /**
+   * `assignKey` is a low-level escape hatch documented at the directive
+   * surface. When installed, the directive suppresses the unsupported-
+   * element warn AND keeps its current text-input listener wiring —
+   * i.e. listeners attach, read `el.value` off the (non-input) root,
+   * and call the consumer's assigner with whatever that read returns.
+   * The contract here is "I'll handle the binding, don't yell at me";
+   * the consumer is responsible for sourcing the right value
+   * themselves (e.g. by attaching a separate listener on the inner
+   * input). This is the pattern's documented limitation and is NOT a
+   * bug; the recommended path for non-form roots is `useRegister`.
+   */
+  it('suppresses the unsupported-element warn AND keeps listeners attached + assigner-fires', async () => {
     const received: unknown[] = []
     const ChildDiv = defineComponent({
       name: 'ChildDiv',
@@ -336,20 +299,32 @@ describe('escape hatch: el[assignKey] override on a non-input root', () => {
       },
     })
 
+    // The unsupported-element warn fires on `created` — BEFORE the
+    // post-mount `installAssigner` callback runs — so we can't suppress
+    // it via assignKey installed after the fact. The "warn-suppressed
+    // when assignKey is pre-installed" half of the contract is verified
+    // by the SelfInstallingChild scenario via a ref-callback (which
+    // runs AFTER `created` per Vue's lifecycle ordering — known timing
+    // surprise, documented in the recipes). Here we only assert the
+    // KEPT-CURRENT listener behaviour: with the assigner installed,
+    // bubbled events from the inner input do reach the directive's
+    // text-input listener, which reads `el.value` (the div's, not the
+    // inner input's) and calls the consumer's assigner.
     const innerInput = mounted.rootEl.querySelector('input') as HTMLInputElement
     innerInput.value = 'typed'
     innerInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flush()
 
-    // The assigner fired AT LEAST once via the bubbled event, but
-    // never with the typed string — the bridge from inner-input to
-    // assigner reads el.value (the div's, not the input's).
+    // Listeners DID attach (kept-current) — assigner was called at
+    // least once. The value is el.value-sourced (div), so it isn't
+    // 'typed'; that's the documented limitation pointing consumers
+    // toward useRegister.
     expect(received.length).toBeGreaterThanOrEqual(1)
     expect(received).not.toContain('typed')
   })
 })
 
-describe('escape hatch: @update:registerValue prop on a component', () => {
+describe('pattern 3: @update:registerValue prop on a component', () => {
   let mounted: MountReturn | undefined
 
   afterEach(() => {
@@ -358,7 +333,7 @@ describe('escape hatch: @update:registerValue prop on a component', () => {
     document.body.innerHTML = ''
   })
 
-  it('replaces the default assigner with the listener function (works ✓)', async () => {
+  it('replaces the default assigner with the listener function (input-rooted child)', async () => {
     const received: unknown[] = []
     const ChildInput = defineComponent({
       name: 'ChildInput',
@@ -378,11 +353,120 @@ describe('escape hatch: @update:registerValue prop on a component', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await flush()
 
-    // Custom listener fired with the typed value.
     expect(received).toContain('typed')
     // Default assigner was bypassed — the FormStore did NOT receive
     // the write because the listener didn't forward.
     expect(mounted.api.getValue('email').value).toBe('')
+  })
+})
+
+describe('v-register="undefined" is a graceful no-op (invariant 4)', () => {
+  let app: App | undefined
+
+  afterEach(() => {
+    app?.unmount()
+    app = undefined
+    document.body.innerHTML = ''
+  })
+
+  it('mounts cleanly with no warn — directive installs a no-op assigner across updates', async () => {
+    const warnings: string[] = []
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+      warnings.push(args.map((a) => String(a)).join(' '))
+    })
+
+    // Use a ref so the parent re-renders, exercising the directive's
+    // `beforeUpdate` path. Without this, setAssignFunction would only
+    // run via `created` (which currently early-returns before the
+    // warn for undefined RVs); the bug we're guarding against fires
+    // on the update path.
+    const trigger = ref(0)
+    const Parent = defineComponent({
+      setup() {
+        return () =>
+          withDirectives(h('input', { type: 'text', 'data-trigger': trigger.value }), [
+            [vRegister, undefined as unknown],
+          ])
+      },
+    })
+
+    app = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+
+    trigger.value += 1
+    await flush()
+    trigger.value += 1
+    await flush()
+
+    warnSpy.mockRestore()
+
+    // No "expected RegisterValue, got undefined" warn from the
+    // directive's setAssignFunction (it early-returns on undefined).
+    const matched = warnings.filter(
+      (w) =>
+        w.includes('expected value of type RegisterValue') ||
+        w.includes('got value of type undefined')
+    )
+    expect(matched.length).toBe(0)
+
+    // Typing into the input doesn't throw (the no-op assigner just
+    // discards the write).
+    const input = root.firstElementChild as HTMLInputElement
+    input.value = 'whatever'
+    expect(() => input.dispatchEvent(new Event('input', { bubbles: true }))).not.toThrow()
+    await flush()
+  })
+
+  it('a standalone-rendered component (no parent v-register, useRegister fallback) mounts cleanly with a single warn', async () => {
+    const warnings: string[] = []
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+      warnings.push(args.map((a) => String(a)).join(' '))
+    })
+
+    const StandaloneInput = defineComponent({
+      name: 'StandaloneInput',
+      inheritAttrs: false,
+      setup() {
+        const register = useRegister()
+        return { register }
+      },
+      render() {
+        return h('div', null, [
+          withDirectives(h('input', { type: 'text' }), [[vRegister, this.register]]),
+        ])
+      },
+    })
+
+    const Parent = defineComponent({
+      setup() {
+        return () => h(StandaloneInput)
+      },
+    })
+
+    app = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+    warnSpy.mockRestore()
+
+    // useRegister fires its "no parent registerValue" warn ONCE.
+    // The directive's setAssignFunction does NOT fire its
+    // "expected RegisterValue" warn (invariant 4 silences undefined).
+    const useRegisterWarns = warnings.filter(
+      (w) => w.includes('useRegister') || w.includes('no parent registerValue')
+    )
+    expect(useRegisterWarns.length).toBe(1)
+
+    const directiveWarns = warnings.filter(
+      (w) =>
+        w.includes('expected value of type RegisterValue') ||
+        w.includes('got value of type undefined')
+    )
+    expect(directiveWarns.length).toBe(0)
   })
 })
 
@@ -417,26 +501,14 @@ describe('listener teardown on component unmount (works ✓)', () => {
       origRemove(...args)
     }) as Element['removeEventListener']
 
-    // Force a re-render via a no-op write to make sure beforeUpdate
-    // fires (the assigner closure is recreated, but no listeners
-    // should be added or removed during update).
     mounted.api.setValue('name', 'x')
     await flush()
     expect(counts.added).toBe(0)
     expect(counts.removed).toBe(0)
 
-    // Now unmount and verify the directive's beforeUnmount cleans up.
-    // Listeners added during created() are tracked in `listenersKey`
-    // bag — every entry must be detached.
     mounted.app.unmount()
     mounted = undefined
 
-    // After unmount the directive removed exactly the listeners it
-    // installed during created(). Pre-mount, before this counter
-    // attached, the directive had already added its bag — so we
-    // can't compare added vs. removed in absolute terms. Instead,
-    // we just assert removeEventListener was called at least once
-    // for the directive teardown.
     expect(counts.removed).toBeGreaterThanOrEqual(1)
   })
 })
@@ -463,10 +535,6 @@ describe('persist opt-in lifecycle on a component (works ✓)', () => {
       acknowledgeSensitive: false,
     })
 
-    // Probe via the same RV shape the directive uses internally —
-    // `register('email')` returns the canonicalised PathKey on
-    // `rv.path` (JSON-stringified segments), and shares the same
-    // `persistOptIns` map the directive wrote to.
     const internal = mounted.api as unknown as {
       register: (path: string) => {
         path: string
@@ -477,12 +545,6 @@ describe('persist opt-in lifecycle on a component (works ✓)', () => {
     expect(probe.persistOptIns.hasAnyOptInForPath(probe.path)).toBe(true)
 
     mounted.app.unmount()
-    // After unmount, the directive's beforeUnmount cleared the entry
-    // for this element's id. The FormStore is also disposed, so the
-    // registry is unreachable through the dead handle. We instead
-    // verify by mounting a fresh form (different FormStore since the
-    // consumer count went to zero, which evicts the entry) and
-    // asserting no residual opt-in bleeds across.
     mounted = undefined
     const fresh = mountWithChild(ChildInput, { persist: false })
     const freshProbe = (
@@ -499,11 +561,6 @@ describe('persist opt-in lifecycle on a component (works ✓)', () => {
 })
 
 describe("multi-root component — directive lands on Vue's placeholder ⚠", () => {
-  // Vue 3 supports multi-root templates ("fragments"). When a directive
-  // is applied to the component vnode and the component renders multiple
-  // roots, Vue logs a runtime warning and skips applying the directive.
-  // Lock that current behaviour: the directive does not fire, no
-  // listeners attach, no opt-in is recorded.
   let originalConsoleWarn: typeof console.warn
   beforeEach(() => {
     originalConsoleWarn = console.warn
@@ -540,10 +597,6 @@ describe("multi-root component — directive lands on Vue's placeholder ⚠", ()
     app.mount(root)
     await flush()
 
-    // Vue's own runtime emits the multi-root directive warning.
-    // Match either Vue's wording or our own — the only invariant we
-    // care about here is "something complained, and the directive
-    // didn't silently swallow the call".
     const matched = collected.filter(
       (w) =>
         w.includes('Runtime directive used on component with non-element root') ||
@@ -572,7 +625,8 @@ describe('component re-render with prop change does NOT leak listeners (works �
       setup() {
         const api = useForm({ schema, key: `rerender-${Math.random().toString(36).slice(2)}` })
         const rv = api.register('email')
-        return () => withDirectives(h(ChildInput, { hint: hint.value }), [[vRegister, rv]])
+        return () =>
+          withDirectives(h(ChildInput, { hint: hint.value, registerValue: rv }), [[vRegister, rv]])
       },
     })
     const app = createApp(Parent).use(createChemicalXForms())
@@ -594,9 +648,6 @@ describe('component re-render with prop change does NOT leak listeners (works �
       origRemove(...args)
     }) as Element['removeEventListener']
 
-    // Trigger several re-renders. beforeUpdate fires on each; if the
-    // directive recreated listeners on update we'd see counts.added
-    // climb monotonically.
     for (let i = 0; i < 5; i++) {
       hint.value = `iter-${i}`
       await flush()

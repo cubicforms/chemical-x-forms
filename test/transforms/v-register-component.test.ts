@@ -204,25 +204,35 @@ describe('v-register on Vue components — AST behaviour', () => {
       }
     })
 
-    it('kebab-case `<my-input v-register>` does NOT hit the component branch (custom element, not component) ⚠', () => {
-      // Vue's compiler treats kebab-case tags as custom elements
-      // (`_createElementBlock("my-input", ...)`) by default — not as
-      // components. Result: `selectNodeTransform`'s
-      // `tagType === ElementTypes.COMPONENT` check does NOT match,
-      // and the `:value` + `:registerValue` props are NOT injected.
-      //
-      // For PascalCase consumers this is a non-issue. For users who
-      // genuinely want a kebab-case Vue component, the workaround is
-      // to register the component globally and use PascalCase in
-      // templates, OR pass `compilerOptions.isCustomElement` = false
-      // for that tag in the bundler config — outside this transform's
-      // contract.
+    it('kebab-case `<my-input v-register>` DOES hit the component branch (custom-element extension)', () => {
+      // The transform's component branch fires on
+      //   (a) PascalCase / Component-typed tags, AND
+      //   (b) kebab-case ELEMENT-typed tags that aren't recognised
+      //       native form elements (NATIVE_FORM_TAGS).
+      // The runtime resolves `<my-input>` against `app.component`
+      // registrations OR the user's `compilerOptions.isCustomElement`
+      // predicate; either way the `:value` + `:registerValue` props
+      // injected here are the bridge `useRegister()` reads. Web
+      // Components without a Vue component definition see them as DOM
+      // attributes — the documented assignKey escape hatch covers
+      // that case.
       const code = compileWith(`<my-input v-register="reg" />`, [selectNodeTransform])
+      expect(code).toContain('innerRef')
+      expect(code).toContain('registerValue:')
+      expect(code).toContain('_directive_register')
+    })
+
+    it('`<form v-register>` does NOT hit the component branch (NATIVE_FORM_TAGS guard)', () => {
+      // Native form-shell tags (form, fieldset, label, button, etc.)
+      // are excluded from the kebab-case extension via the
+      // NATIVE_FORM_TAGS allow-list. They have no hyphen anyway, so
+      // the new gate's `hasHyphen` check would already short-circuit;
+      // the explicit guard documents the conservative stance and
+      // catches a hypothetical `<form-something v-register>` future
+      // mistake.
+      const code = compileWith(`<form v-register="reg" />`, [selectNodeTransform])
       expect(code).not.toContain('innerRef')
       expect(code).not.toContain('registerValue:')
-      // The runtime directive is still resolved — the binding works,
-      // it just doesn't get the AST-level prop injection.
-      expect(code).toContain('_directive_register')
     })
   })
 
@@ -307,24 +317,21 @@ describe('v-register on Vue components — AST behaviour', () => {
       expect(hits).toBe(1)
     })
 
-    it('select-transform on a component IS NOT idempotent under duplicate registration ⚠', () => {
-      // Surprise: the select-transform's component branch pushes a new
-      // `value` and `registerValue` directive on each invocation
-      // (unlike the hint/preamble transforms, it has no
-      // already-applied marker). A duplicate registration writes them
-      // twice. This won't crash Vue codegen (last write wins for the
-      // resolved prop), but it does produce slightly larger output and
-      // suggests an idempotency hardening could land here.
+    it('select-transform on a component IS idempotent under duplicate registration', () => {
+      // The component branch carries an already-applied marker so a
+      // doubly-registered transform pipeline only injects the
+      // `:value` + `:registerValue` props once. This protects against
+      // weird vite-plugin pipelines or tests that compose the same
+      // transform twice; without the marker, the duplicate output is
+      // valid (last write wins) but bloats the generated render.
       const code = compileWith(`<MyInput v-register="reg" />`, [
         selectNodeTransform,
         selectNodeTransform,
       ])
       const valueHits = code.match(/value:\s*\(.*\)\?\.innerRef\.value/g)?.length ?? 0
       const regValueHits = code.match(/registerValue:/g)?.length ?? 0
-      // Lock the present non-idempotent shape; if a future hardening
-      // makes this 1/1, flip this to `.toBe(1)` and remove the warning.
-      expect(valueHits).toBeGreaterThanOrEqual(1)
-      expect(regValueHits).toBeGreaterThanOrEqual(1)
+      expect(valueHits).toBe(1)
+      expect(regValueHits).toBe(1)
     })
   })
 })

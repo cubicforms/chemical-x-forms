@@ -27,3 +27,4 @@ export type { ZodKind } from './runtime/adapters/zod-v4'
 // generic — so re-exporting from the /zod subpath is purely for
 // discoverability alongside useForm.
 export { useFormContext } from './runtime/composables/use-form-context'
+export { useRegister } from './runtime/composables/use-register'

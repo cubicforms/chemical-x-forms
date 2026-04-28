@@ -165,3 +165,68 @@ describe('WriteShape — handleSubmit stays strict', () => {
     expectTypeOf<SubmitArg>().toEqualTypeOf<{ color: 'red' | 'green' | 'blue' }>()
   })
 })
+
+const _readSchema = z.object({
+  color: z.enum(['red', 'green', 'blue']),
+  age: z.number().int(),
+  email: z.string().email(),
+})
+const _readForm = makeFormProxy<ReturnType<typeof useForm<typeof _readSchema>>>()
+
+/**
+ * Read-side widening: storage holds slim-primitive-correct values
+ * under the write contract, so reads must reflect that. `getValue`,
+ * `getFieldState(...).value.currentValue`, and `register(path).innerRef`
+ * all widen leaves to the slim primitive type. Strict post-validation
+ * shapes only appear on `handleSubmit` / `validate*()`.
+ */
+describe('WriteShape — applied to getValue', () => {
+  it('getValue at an enum-typed path returns Ref<string>', () => {
+    // The store can hold `'teal'` (refinement-invalid but slim-correct);
+    // the read type must admit it. Pre-widen this was Ref<'red'|'green'|'blue'>.
+    const ref = _readForm.getValue('color')
+    expectTypeOf(ref.value).toEqualTypeOf<string>()
+  })
+
+  it('getValue at an int-typed path returns Ref<number>', () => {
+    const ref = _readForm.getValue('age')
+    expectTypeOf(ref.value).toEqualTypeOf<number>()
+  })
+
+  it('getValue at the email path returns Ref<string>', () => {
+    const ref = _readForm.getValue('email')
+    expectTypeOf(ref.value).toEqualTypeOf<string>()
+  })
+
+  it('getValue() (whole-form) widens every leaf', () => {
+    const ref = _readForm.getValue()
+    expectTypeOf(ref.value).toEqualTypeOf<{
+      color: string
+      age: number
+      email: string
+    }>()
+  })
+})
+
+describe('WriteShape — applied to getFieldState', () => {
+  it('getFieldState at an enum-typed path narrows currentValue/originalValue/previousValue to string', () => {
+    const fieldStateRef = _readForm.getFieldState('color')
+    expectTypeOf(fieldStateRef.value.currentValue).toEqualTypeOf<string>()
+    expectTypeOf(fieldStateRef.value.originalValue).toEqualTypeOf<string>()
+    expectTypeOf(fieldStateRef.value.previousValue).toEqualTypeOf<string>()
+  })
+
+  it('getFieldState metadata stays untouched (errors / dirty / pristine / focused)', () => {
+    const fieldStateRef = _readForm.getFieldState('color')
+    expectTypeOf(fieldStateRef.value.dirty).toEqualTypeOf<boolean>()
+    expectTypeOf(fieldStateRef.value.pristine).toEqualTypeOf<boolean>()
+    expectTypeOf(fieldStateRef.value.focused).toEqualTypeOf<boolean | null>()
+  })
+})
+
+describe('WriteShape — applied to register', () => {
+  it("register(path).innerRef widens the path's leaf type", () => {
+    const reg = _readForm.register('color')
+    expectTypeOf(reg.innerRef.value).toEqualTypeOf<string>()
+  })
+})

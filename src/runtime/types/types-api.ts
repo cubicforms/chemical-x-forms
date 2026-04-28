@@ -800,7 +800,16 @@ export type DOMFieldState = {
   blurred: boolean | null
   touched: boolean | null
 }
-export type FieldState = DeepFlatten<
+/**
+ * Per-field reactive state, parameterised on the value type at the
+ * path. `Value` defaults to `unknown` so legacy uses (path-agnostic
+ * `Ref<FieldState>`) still resolve. The public `getFieldState`
+ * resolves `Value` to `WriteShape<NestedReadType<GetValueFormType,
+ * Path>>` so `state.value.currentValue` is type-honest with what's
+ * actually storable at that leaf — matching `getValue(path)`'s
+ * widened return.
+ */
+export type FieldState<Value = unknown> = DeepFlatten<
   DOMFieldState & {
     meta: MetaTrackerValue
     /**
@@ -811,7 +820,12 @@ export type FieldState = DeepFlatten<
      * field — safe to read without a null check.
      */
     errors: ValidationError[]
-  } & FormSummaryValue
+    originalValue: Value
+    previousValue: Value
+    currentValue: Value
+    pristine: boolean
+    dirty: boolean
+  }
 >
 export type DOMFieldStateStore = Map<string, DOMFieldState | undefined>
 
@@ -944,27 +958,42 @@ export type UseAbstractFormReturnType<
   Form extends GenericForm,
   GetValueFormType extends GenericForm = Form,
 > = {
-  getFieldState: (path: FlatPath<Form, keyof Form, true>) => Ref<FieldState>
+  // getFieldState path-narrows on the leaf type. Same widening rule as
+  // getValue: `currentValue` / `originalValue` / `previousValue` reflect
+  // slim-primitive storage, so they widen via `WriteShape`. Metadata
+  // slots (errors, pristine, dirty, focused/blurred/touched, meta) are
+  // path-agnostic and unaffected.
+  getFieldState: <Path extends FlatPath<Form, keyof Form, true>>(
+    path: Path
+  ) => Ref<FieldState<NestedReadType<WriteShape<GetValueFormType>, Path>>>
   handleSubmit: HandleSubmit<Form>
-  // getValue READS the form. At array sub-paths the runtime can return
-  // undefined (out-of-bounds index), so the read shape uses
-  // `NestedReadType` — once the path crosses a numeric segment, every
-  // result is `T | undefined`. Strict (no taint) for paths that don't
-  // cross arrays.
+  // getValue READS the form. Storage holds slim-primitive-correct values
+  // (the write contract); validation surfaces refinements via field
+  // errors but never rewrites storage. So the read shape widens via
+  // `WriteShape<GetValueFormType>` — `'red'|'green'|'blue'` becomes
+  // `string`, matching what's actually storable. Consumers who need
+  // the strict post-validation shape route through `handleSubmit` /
+  // `validate*()`, which keep the strict `GetValueFormType`.
+  //
+  // At array sub-paths the runtime can return undefined (out-of-bounds
+  // index), so `NestedReadType` taints once the path crosses a numeric
+  // segment. Strict-no-taint for paths that don't cross arrays.
   getValue: {
-    (): Readonly<Ref<WithIndexedUndefined<GetValueFormType>>>
-    <Path extends FlatPath<Form>>(path: Path): Readonly<Ref<NestedReadType<GetValueFormType, Path>>>
+    (): Readonly<Ref<WithIndexedUndefined<WriteShape<GetValueFormType>>>>
+    <Path extends FlatPath<Form>>(
+      path: Path
+    ): Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
     <WithMeta extends boolean>(
       context: CurrentValueContext<WithMeta>
     ): WithMeta extends true
-      ? CurrentValueWithContext<WithIndexedUndefined<GetValueFormType>>
-      : Readonly<Ref<WithIndexedUndefined<GetValueFormType>>>
+      ? CurrentValueWithContext<WithIndexedUndefined<WriteShape<GetValueFormType>>>
+      : Readonly<Ref<WithIndexedUndefined<WriteShape<GetValueFormType>>>>
     <Path extends FlatPath<Form>, WithMeta extends boolean>(
       path: Path,
       context: CurrentValueContext<WithMeta>
     ): WithMeta extends true
-      ? CurrentValueWithContext<NestedReadType<GetValueFormType, Path>>
-      : Readonly<Ref<NestedReadType<GetValueFormType, Path>>>
+      ? CurrentValueWithContext<NestedReadType<WriteShape<GetValueFormType>, Path>>
+      : Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
   }
   // setValue WRITES the form. Both forms drop `DeepPartial` — write
   // shapes lead with the WriteShape-widened NestedType. WriteShape
@@ -1024,7 +1053,12 @@ export type UseAbstractFormReturnType<
   register: <Path extends RegisterFlatPath<Form, keyof Form>>(
     path: Path,
     options?: RegisterOptions
-  ) => RegisterValue<NestedReadType<Form, Path>>
+    // innerRef reflects what's stored at the path — slim-primitive-correct
+    // per the write contract. WriteShape widens primitive-literal leaves
+    // so reads of refinement-invalid-but-primitive-correct values
+    // (`'teal'` in a colour-enum slot, '' in a `.email()` slot) typecheck
+    // as `string` rather than the strict enum/literal union.
+  ) => RegisterValue<NestedReadType<WriteShape<Form>, Path>>
   key: FormKey
 
   // --- Reactive field-error API ---

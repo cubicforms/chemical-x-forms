@@ -41,7 +41,7 @@ Options:
 | ----------------- | --------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `schema`          | `z.ZodType`                                                                                         | yes      | The Zod schema describing the form shape.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `key`             | `string`                                                                                            | no       | Form identity. Omit for one-off forms (runtime allocates a synthetic `__cx:anon:<id>` via `useId()`). Pass a string when you need cross-component lookup via `useFormContext(key)`, shared state across call-sites, a stable `persist` storage-key default, or a recognisable DevTools label. Keys starting with `__cx:` are reserved for the library's internal synthetic-key namespace; passing one throws `ReservedFormKeyError`.                                                                                                                                                                                                                                                                                                       |
-| `defaultValues`   | `DeepPartial<WriteShape<Form>>`                                                                     | no       | Constraints applied over schema defaults. Refinement-invalid leaves that satisfy the slim primitive type at their path (e.g. `'teal'` against `z.enum(['red','green','blue'])`, a 4-character string against `z.string().min(8)`) pass through unchanged so SSR / autosave rehydration can land partial-but-saved state as-is. Wrong-primitive leaves (a number where a string is expected) are still replaced by the schema default.                                                                                                                                                                                                                                                                                                      |
+| `defaultValues`   | `DeepPartial<DefaultValuesShape<Form>>`                                                             | no       | Constraints applied over schema defaults. Refinement-invalid leaves that satisfy the slim primitive type at their path (e.g. `'teal'` against `z.enum(['red','green','blue'])`, a 4-character string against `z.string().min(8)`) pass through unchanged so SSR / autosave rehydration can land partial-but-saved state as-is. Wrong-primitive leaves (a number where a string is expected) are still replaced by the schema default. Each primitive leaf may be the `unset` sentinel to mark the path displayed-empty at construction.                                                                                                                                                                                                    |
 | `validationMode`  | `'lax'` \| `'strict'`                                                                               | no       | Defaults to `'strict'` — defaults that fail the schema seed `schemaErrors` at construction. Pass `'lax'` to opt out (multi-step wizards, placeholder rows). See [Types](#types).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `onInvalidSubmit` | `'none'` \| `'focus-first-error'` \| `'scroll-to-first-error'` \| `'both'`                          | no       | What to do when submit fails validation. See [recipe](./recipes/focus-on-error.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `fieldValidation` | `{ on, debounceMs }`                                                                                | no       | Live field validation. Default `{ on: 'change', debounceMs: 125 }` — errors track live. Pass `{ on: 'none' }` to opt out (submit-only). See [recipe](./recipes/field-level-validation.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -252,6 +252,60 @@ else console.warn('Bad payload:', result.rejected)
 See [server-errors recipe](./recipes/server-errors.md) for the full
 pattern.
 
+### `unset`
+
+A brand-typed sentinel symbol used to mark a primitive leaf as
+**displayed-empty** while storage holds the schema's slim default
+(`0` for `z.number()`, `''` for `z.string()`, `false` for
+`z.boolean()`, `0n` for `z.bigint()`).
+
+```ts
+import { unset, useForm } from '@chemical-x/forms/zod'
+import { z } from 'zod'
+
+const form = useForm({
+  schema: z.object({ income: z.number() }),
+  defaultValues: { income: unset }, // input renders blank, storage = 0
+})
+
+// Programmatic clear — same semantic as the user backspacing the field.
+form.setValue('income', unset)
+
+// Restore-with-blanks via reset.
+form.reset({ income: unset })
+```
+
+Three places accept the sentinel:
+
+- **`defaultValues`** — every primitive leaf can be `unset`. The
+  library walks the payload at construction and adds the leaf's path
+  to the form's transient-empty set.
+- **`setValue(path, unset)`** — translated at the API boundary;
+  storage gets the slim default with `transientEmpty: true` meta.
+- **`reset({ … })`** — same translation; the post-reset state
+  becomes the new dirty=false baseline.
+
+**Submit / validate honor the sentinel.** A transient-empty path
+bound to a _required_ schema (no `.optional()` / `.nullable()` /
+`.default(N)` / `.catch(N)`) raises a synthesized `"Required"`
+error during `handleSubmit` / `validate` / `validateAsync`. Use
+this when "user didn't answer" must NOT silently submit as `0` /
+`''` / `false`. Optional / nullable / has-default schemas accept
+the empty case and don't raise.
+
+The directive's input listener auto-marks numeric inputs on empty
+DOM (`<input type="number">` or `<input v-register.number>`); for
+strings and booleans the dev opts in via `unset` because the DOM
+state alone doesn't carry "user-cleared" intent.
+
+Per-path introspection: `form.getFieldState(path).value.pendingEmpty`.
+Bulk introspection: `form.transientEmptyPaths.value` returns a
+frozen `ReadonlySet<PathKey>` of every marked leaf, suitable for
+"unanswered fields" logging or conditional UI.
+
+`isUnset(value)` is the runtime type guard. `Unset` is the
+brand-typed `unique symbol` flavor for type-level usage.
+
 ### Other exports
 
 - `parseDottedPath(s)` — string → `Segment[]`
@@ -455,10 +509,10 @@ with a dev-mode warning (use `setValue` / `handleSubmit` /
 
 ### Reset
 
-| Member             | Signature                                        | What it does                                                                                                                               |
-| ------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `reset(next?)`     | `(next?: DeepPartial<WriteShape<Form>>) => void` | Re-seed the whole form. Rebuilds originals, clears errors + touched + submit state. Wipes the persisted draft if `persist:` is configured. |
-| `resetField(path)` | `(path: FlatPath<Form>) => void`                 | Restore one path (leaf or container) to its original value. Wipes the matching subpath from storage if `persist:` is configured.           |
+| Member             | Signature                                                | What it does                                                                                                                                                                                                               |
+| ------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reset(next?)`     | `(next?: DeepPartial<DefaultValuesShape<Form>>) => void` | Re-seed the whole form. Rebuilds originals, clears errors + touched + submit state. Wipes the persisted draft if `persist:` is configured. Each leaf in `next` may be `unset` to mark the path displayed-empty post-reset. |
+| `resetField(path)` | `(path: FlatPath<Form>) => void`                         | Restore one path (leaf or container) to its original value. Wipes the matching subpath from storage if `persist:` is configured.                                                                                           |
 
 ### Persistence (imperative)
 
@@ -503,6 +557,13 @@ operation is a no-op (out-of-range index on `remove` / `swap` /
 See [dynamic-field-arrays recipe](./recipes/dynamic-field-arrays.md)
 for the `v-for` pattern.
 
+### Transient-empty introspection
+
+| Member                                   | Type                  | What it does                                                                                                                                                                                                                                                                                                                               |
+| ---------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `transientEmptyPaths.value`              | `ReadonlySet<string>` | Frozen snapshot of every path-key currently in the form's transient-empty set. Reactive — Vue tracks `.has()` / `.size` / iteration. Mutating the snapshot is a no-op (writes go through `setValue(_, unset)`, the directive's input listener, or `markTransientEmpty()` on a register binding). See `unset` exported from the core entry. |
+| `getFieldState(path).value.pendingEmpty` | `boolean`             | Per-path equivalent: `true` while `path` is in the transient-empty set.                                                                                                                                                                                                                                                                    |
+
 ### Identity
 
 | Member | Type      | What it does                              |
@@ -527,6 +588,7 @@ import type {
   CustomDirectiveRegisterAssignerFn,
   DeepPartial,
   DefaultValuesResponse,
+  DefaultValuesShape,
   FieldState,
   FieldValidationConfig,
   FieldValidationMode,
@@ -560,6 +622,7 @@ import type {
   SettledValidationStatus,
   SlimPrimitiveKind,
   SubmitHandler,
+  Unset,
   UseAbstractFormReturnType,
   UseFormConfiguration,
   ValidationError,
@@ -590,12 +653,20 @@ The ones you'll touch most:
   `string`; `42` → `number`; nested objects recurse; tuples
   preserve positions; unbounded arrays widen elements; `Date`,
   `RegExp`, `Map`, `Set`, and functions pass through unchanged.
-  Applied to write surfaces (`setValue`, `defaultValues`,
-  `reset`, field-array helpers) and to read surfaces that observe
-  storage (`getValue`, `getFieldState.currentValue`,
-  `register.innerRef`). NOT applied to `handleSubmit` or
-  `validate*()` payloads — those run after validation, so the
-  strict zod-inferred shape is honest there.
+  Applied to read surfaces that observe storage (`getValue`,
+  `getFieldState.currentValue`, `register.innerRef`). NOT applied
+  to `handleSubmit` or `validate*()` payloads — those run after
+  validation, so the strict zod-inferred shape is honest there.
+- **`DefaultValuesShape<T>`** — `WriteShape<T>` plus the `unset`
+  sentinel admitted at every primitive leaf (`string`, `number`,
+  `boolean`, `bigint`). Applied to the write surfaces that accept
+  intent (`defaultValues`, `setValue`'s value, `reset`'s argument,
+  field-array helpers). Non-primitive leaves (`Date`, `RegExp`,
+  etc.) stay strict — `defaultValues: { joinedAt: unset }` against
+  `z.date()` is a type error.
+- **`Unset`** — the brand-typed `unique symbol` flavor of the
+  `unset` sentinel for type-level usage. The runtime symbol is
+  exported alongside under the same name from `@chemical-x/forms`.
 - **`WithIndexedUndefined<T>`** — recursive transform that taints
   every unbounded array's element type with `| undefined`. Tuples,
   `Date`, `RegExp`, `Map`, `Set`, and functions pass through

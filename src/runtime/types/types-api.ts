@@ -1029,9 +1029,29 @@ export type RegisterModelDynamicCustomDirective = ObjectDirective<
   string
 >
 /**
- * Union of all v-register directive variants. The exported
- * `vRegister` directive matches this type. Modifier support varies
- * by variant — see each variant's docblock for the supported set.
+ * The `v-register` directive. Binds a form field to a native
+ * input, select, textarea, checkbox, or radio:
+ *
+ * ```vue
+ * <input v-register="form.register('email')" />
+ * <select v-register="form.register('country')">
+ *   <option value="us">US</option>
+ *   <option value="uk">UK</option>
+ * </select>
+ * ```
+ *
+ * Modifier support varies by element:
+ *   - text / number / textarea: `.lazy`, `.trim`, `.number`
+ *   - select: `.number`
+ *   - checkbox / radio: none
+ *
+ * See `RegisterTextModifier` / `RegisterSelectModifier` for
+ * per-modifier semantics.
+ *
+ * Registered globally by `createChemicalXForms()` (and by the
+ * `@chemical-x/forms/nuxt` module). Most consumers don't import the
+ * directive itself — it's exposed for integrations that install
+ * directives manually.
  */
 export type RegisterDirective =
   | RegisterTextCustomDirective

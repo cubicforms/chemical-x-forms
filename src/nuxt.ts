@@ -121,6 +121,22 @@ import type { RegisterDirective } from "@chemical-x/forms/types"
 
 declare module "vue" {
   interface GlobalDirectives {
+    /**
+     * The \`v-register\` directive. Binds a form field to a native
+     * input, select, textarea, checkbox, or radio:
+     *
+     * \`\`\`vue
+     * <input v-register="form.register('email')" />
+     * \`\`\`
+     *
+     * Modifier support varies by element:
+     *   - text / number / textarea: \`.lazy\`, \`.trim\`, \`.number\`
+     *   - select: \`.number\`
+     *   - checkbox / radio: none
+     *
+     * See \`RegisterDirective\` for full usage and per-modifier
+     * semantics.
+     */
     vRegister: RegisterDirective
   }
 }

@@ -246,7 +246,7 @@ export type AbstractSchema<Form, GetValueFormType> = {
    * does NOT admit "empty" via `.optional()`, `.nullable()`,
    * `.default(N)`, or `.catch(N)` at the leaf or any wrapper.
    *
-   * Used by the submit / validate path to surface a "Required" error
+   * Used by the submit / validate path to surface a "No value supplied" error
    * when a field is in the form's `transientEmptyPaths` set (the user
    * cleared it or never answered) AND the schema treats the field as
    * required. Without this, a strict `z.number()` would silently
@@ -808,7 +808,7 @@ export type MetaTrackerValue = {
    * declaratively via `defaultValues: { x: unset }` /
    * imperatively via `setValue('x', unset)`.
    *
-   * Submit-time validation raises "Required" for transient-empty
+   * Submit-time validation raises "No value supplied" for transient-empty
    * paths whose schema is required (no `.optional()` / `.nullable()`
    * / `.default()`), so most consumers can ignore this field — it's
    * the safety net's input. Read it directly when you want to drive
@@ -1626,7 +1626,7 @@ export type UseAbstractFormReturnType<
      * Refinement-level mismatches succeed and surface as field
      * errors. Pass the `unset` symbol at any primitive leaf to mark
      * it transient-empty (storage holds the slim default; UI displays
-     * empty; submit raises "Required" for required schemas).
+     * empty; submit raises "No value supplied" for required schemas).
      */
     <
       Path extends FlatPath<Form>,

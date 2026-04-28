@@ -91,7 +91,7 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    *
    * Storage NEVER reflects this set — calculations and reads against
    * `form.value` see the slim default. The set is purely a UI/intent
-   * channel that submit/validate consult to raise "Required" errors
+   * channel that submit/validate consult to raise "No value supplied" errors
    * for required schemas.
    */
   readonly transientEmptyPaths: Set<PathKey>

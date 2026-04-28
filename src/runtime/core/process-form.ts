@@ -172,7 +172,7 @@ export function buildProcessForm<F extends GenericForm>(
     // holds the slim default (`0` for `z.number()`) in both cases. We
     // close the gap by consulting the form's `transientEmptyPaths` set:
     // every path in there + a required leaf in the schema becomes a
-    // synthesised "Required" error. Empty set or no required leaves →
+    // synthesised "No value supplied" error. Empty set or no required leaves →
     // no-op, return the base result unchanged.
     const requiredErrors = collectRequiredEmptyErrors(state, path)
     if (requiredErrors.length === 0) return baseResult
@@ -357,7 +357,7 @@ function adapterThrowMessage(err: unknown): string {
 }
 
 /**
- * Synthesise a "Required" `ValidationError` for every path in the
+ * Synthesise a "No value supplied" `ValidationError` for every path in the
  * form's `transientEmptyPaths` whose schema requires the leaf — i.e.
  * the schema is NOT `.optional()` / `.nullable()` / `.default(N)` /
  * `.catch(N)` at that leaf. When a `scope` is provided (per-path
@@ -389,7 +389,7 @@ function collectRequiredEmptyErrors<F extends GenericForm>(
       // a numeric DOM clear). The schema requires a value here.
       // Message wording differentiates from a generic schema failure
       // ("Expected number, received string") so consumers showing
-      // raw errors don't surface a vague "Required" — devs see at
+      // raw errors don't surface a vague "No value supplied" — devs see at
       // a glance that the user just hasn't supplied this field.
       message: 'No value supplied',
       path: [...segments],

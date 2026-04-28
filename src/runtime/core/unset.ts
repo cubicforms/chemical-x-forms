@@ -18,7 +18,7 @@
  *   key: 'housing',
  * })
  *
- * // Submitting before the user types raises a "Required" error,
+ * // Submitting before the user types raises a "No value supplied" error,
  * // because z.number() is strict (no .optional()/.nullable()/.default()).
  * ```
  *

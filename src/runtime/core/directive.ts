@@ -416,7 +416,7 @@ const vRegisterText: RegisterTextCustomDirective = {
         // Mark the path transient-empty rather than skipping silently:
         // storage gets the slim default (0), the UI shows blank via
         // `displayValue.value === ''`, and submit-time validation
-        // raises "Required" if the schema demands a number (the
+        // raises "No value supplied" if the schema demands a number (the
         // public-housing footgun fix). Without this, the directive's
         // pre-fix skip-on-empty silently desynced storage from UI.
         //

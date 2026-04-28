@@ -58,7 +58,19 @@ export default [
     // respect, select-transform idempotency marker + kebab-case
     // extension (NATIVE_FORM_TAGS + hasHyphen gate). Measured at
     // 18.23 KB; 0.77 KB headroom for the docs/test follow-up commit.
-    limit: '19 KB',
+    //
+    // Raised 19 → 24 KB on the slim-primitive write-contract branch:
+    // AbstractSchema.getSlimPrimitiveTypesAtPath + zod-v4 walker
+    // (slim-primitives.ts), runtime gate (slim-primitive-gate.ts)
+    // with one-shot dev-warn dedupe, boolean threading through every
+    // setValueAtPath caller (register-api / build-form-api /
+    // field-arrays / directive default assigner), vRegisterSelect
+    // _assigning write-conditional, default-values issue-classifier
+    // (slimPrimitivesOf + slimKindOf at issue path) replacing the
+    // refinement-strip behaviour in zod-v4/v3 adapters. Measured at
+    // 19.01 KB; the 5 KB ceiling gives runway for upcoming work
+    // without per-PR bumps.
+    limit: '24 KB',
     gzip: true,
     modifyEsbuildConfig: asEsm,
   },
@@ -83,7 +95,11 @@ export default [
     // shared core chunk: useRegister + sentinel + directive tri-state
     // + setAssignFunction undefined-no-op + select-transform
     // idempotency / kebab-case extension).
-    limit: '19 KB',
+    //
+    // Raised 19 → 24 KB tracking index.mjs's slim-primitive
+    // write-contract bump (same shared core chunk + zod-v4
+    // slim-primitives walker).
+    limit: '24 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
@@ -108,7 +124,11 @@ export default [
     //
     // Raised 18 → 19 KB tracking index.mjs's useRegister bump (same
     // shared core chunk).
-    limit: '19 KB',
+    //
+    // Raised 19 → 24 KB tracking index.mjs's slim-primitive
+    // write-contract bump (same shared core chunk + v3-inline
+    // slimPrimitivesV3 walker on the v3 adapter).
+    limit: '24 KB',
     gzip: true,
     ignore: ['zod', 'lodash-es'],
     modifyEsbuildConfig: asEsm,

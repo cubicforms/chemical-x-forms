@@ -952,19 +952,36 @@ export type CustomRegisterDirective<T, Modifiers extends string = string> = Obje
   string
 >
 
-/** v-register directive variant for text inputs and `<textarea>`. */
+/**
+ * v-register directive variant for `<input type="text">`,
+ * `<input type="number">`, and `<textarea>`. Supports the same
+ * modifiers as Vue's `v-model`:
+ *
+ * - `.lazy` — write on `change` (blur) instead of `input`.
+ * - `.trim` — strip leading/trailing whitespace before writing;
+ *   re-trim the visible DOM value on blur.
+ * - `.number` — cast the value via `parseFloat` before writing
+ *   (passes through unchanged when the value can't be parsed
+ *   as a number). Auto-applied for `<input type="number">`.
+ *
+ * Combine freely: `<input v-register.lazy.number="..." />`.
+ */
 export type RegisterTextCustomDirective = CustomRegisterDirective<
   HTMLInputElement | HTMLTextAreaElement,
-  string
+  'trim' | 'number' | 'lazy'
 >
 
-/** v-register directive variant for checkboxes. */
+/** v-register directive variant for checkboxes. No modifiers. */
 export type RegisterCheckboxCustomDirective = CustomRegisterDirective<HTMLInputElement>
-/** v-register directive variant for radio inputs. */
+/** v-register directive variant for radio inputs. No modifiers. */
 export type RegisterRadioCustomDirective = CustomRegisterDirective<HTMLInputElement>
 
-/** v-register directive variant for `<select>`. */
-export type RegisterSelectCustomDirective = CustomRegisterDirective<HTMLSelectElement, string>
+/**
+ * v-register directive variant for `<select>`. Supports `.number`
+ * (cast each selected option's value via `parseFloat` before
+ * writing); mirrors Vue's `v-model` on `<select>`.
+ */
+export type RegisterSelectCustomDirective = CustomRegisterDirective<HTMLSelectElement, 'number'>
 
 /** v-register directive variant for the dynamic input/select/textarea bridge. */
 export type RegisterModelDynamicCustomDirective = ObjectDirective<
@@ -972,7 +989,11 @@ export type RegisterModelDynamicCustomDirective = ObjectDirective<
   RegisterValue | undefined,
   string
 >
-/** Union of all v-register directive variants. The exported `vRegister` directive matches this type. */
+/**
+ * Union of all v-register directive variants. The exported
+ * `vRegister` directive matches this type. Modifier support varies
+ * by variant — see each variant's docblock for the supported set.
+ */
 export type RegisterDirective =
   | RegisterTextCustomDirective
   | RegisterCheckboxCustomDirective

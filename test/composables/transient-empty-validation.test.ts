@@ -85,11 +85,11 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     expect(onSubmit).not.toHaveBeenCalled()
     expect(onError).toHaveBeenCalledTimes(1)
     const errors = onError.mock.calls[0]?.[0] as Array<{ message: string; path: unknown[] }>
-    const requiredErr = errors.find((e) => e.message === 'Required')
+    const requiredErr = errors.find((e) => e.message === 'No value supplied')
     expect(requiredErr).toBeDefined()
     expect(requiredErr?.path).toEqual(['income'])
     // The error also lands in fieldErrors via the schemaErrors store.
-    expect(form.fieldErrors['income']?.[0]?.message).toBe('Required')
+    expect(form.fieldErrors['income']?.[0]?.message).toBe('No value supplied')
     void incomeKey
   })
 
@@ -176,7 +176,7 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     expect(onSubmit).not.toHaveBeenCalled()
     expect(onError).toHaveBeenCalledTimes(1)
     const errors = onError.mock.calls[0]?.[0] as Array<{ message: string; path: unknown[] }>
-    expect(errors.some((e) => e.message === 'Required' && e.path[0] === 'name')).toBe(true)
+    expect(errors.some((e) => e.message === 'No value supplied' && e.path[0] === 'name')).toBe(true)
   })
 
   it('raises "Required" for required booleans', async () => {
@@ -220,7 +220,9 @@ describe('validateAsync — surfaces required-empty errors', () => {
     const result = await form.validateAsync()
     expect(result.success).toBe(false)
     const errors = result.errors ?? []
-    expect(errors.some((e) => e.message === 'Required' && e.path[0] === 'income')).toBe(true)
+    expect(errors.some((e) => e.message === 'No value supplied' && e.path[0] === 'income')).toBe(
+      true
+    )
   })
 
   it('per-path validate(path) only contributes paths inside the scope', async () => {
@@ -288,7 +290,7 @@ describe('public-housing scenario', () => {
     const errors = onError.mock.calls[0]?.[0] as Array<{ message: string; path: unknown[] }>
     const incomeErrors = errors.filter((e) => e.path[0] === 'income')
     expect(incomeErrors.length).toBe(1)
-    expect(incomeErrors[0]?.message).toBe('Required')
+    expect(incomeErrors[0]?.message).toBe('No value supplied')
   })
 
   it('the same form with z.number().optional() submits cleanly with `undefined` storage', async () => {

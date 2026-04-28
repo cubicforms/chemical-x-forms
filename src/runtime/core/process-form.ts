@@ -384,7 +384,14 @@ function collectRequiredEmptyErrors<F extends GenericForm>(
     if (scope !== undefined && !pathStartsWith(segments, scope)) continue
     if (!state.schema.isRequiredAtPath(segments)) continue
     errors.push({
-      message: 'Required',
+      // The path is in `transientEmptyPaths` — the user hasn't
+      // committed a value yet (or explicitly cleared via `unset` /
+      // a numeric DOM clear). The schema requires a value here.
+      // Message wording differentiates from a generic schema failure
+      // ("Expected number, received string") so consumers showing
+      // raw errors don't surface a vague "Required" — devs see at
+      // a glance that the user just hasn't supplied this field.
+      message: 'No value supplied',
       path: [...segments],
       formKey: state.formKey,
     })

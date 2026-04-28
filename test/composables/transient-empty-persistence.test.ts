@@ -166,7 +166,7 @@ describe('persistence — transient-empty round-trips across mount', () => {
     await handler()
     expect(onSubmit).not.toHaveBeenCalled()
     const errs = onError.mock.calls[0]?.[0] as Array<{ message: string }>
-    expect(errs?.some((e) => e.message === 'Required')).toBe(true)
+    expect(errs?.some((e) => e.message === 'No value supplied')).toBe(true)
   })
 
   it('writes the transientEmptyPaths field after a numeric clear', async () => {

@@ -290,7 +290,7 @@ input yet, so every primitive leaf the consumer didn't supply in
 `defaultValues` is auto-marked `pendingEmpty`. This means
 `useForm({ schema: z.object({ email: z.string() }) })` (no
 `defaultValues`) starts with `email` in the transient-empty set —
-its `displayValue` is `''`, and `handleSubmit` raises `"Required"`
+its `displayValue` is `''`, and `handleSubmit` raises `"No value supplied"`
 until the user types something. To opt a leaf out of auto-mark,
 supply a non-`unset` value for it: `defaultValues: { email: '' }`
 explicitly tells the library "yes, empty string is intentional."
@@ -304,7 +304,7 @@ authoritative and auto-mark does not fire.
 
 **Submit / validate honor the sentinel.** A transient-empty path
 bound to a _required_ schema (no `.optional()` / `.nullable()` /
-`.default(N)` / `.catch(N)`) raises a synthesized `"Required"`
+`.default(N)` / `.catch(N)`) raises a synthesized `"No value supplied"`
 error during `handleSubmit` / `validate` / `validateAsync`. Use
 this when "user didn't answer" must NOT silently submit as `0` /
 `''` / `false`. Optional / nullable / has-default schemas accept

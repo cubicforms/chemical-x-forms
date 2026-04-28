@@ -14,8 +14,28 @@ import type {
 import { useAbstractForm } from './use-abstract-form'
 
 /**
- * Create a form bound to a Zod v3 schema (or any compatible
- * `AbstractSchema`).
+ * Create a form bound to a custom `AbstractSchema` adapter.
+ *
+ * ```ts
+ * import { useForm } from '@chemical-x/forms/zod-v3'
+ *
+ * const form = useForm({ schema: myAdapter, defaultValues: { … } })
+ * ```
+ *
+ * For Zod schemas, prefer the overload that accepts a `ZodObject`
+ * directly — it wraps the adapter automatically. For Zod v4, import
+ * from `@chemical-x/forms/zod` instead.
+ */
+export function useForm<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
+  configuration: UseFormConfiguration<
+    Form,
+    GetValueFormType,
+    AbstractSchema<Form, GetValueFormType>,
+    DeepPartial<WriteShape<Form>>
+  >
+): UseAbstractFormReturnType<Form, GetValueFormType>
+/**
+ * Create a form bound to a Zod v3 `ZodObject` schema.
  *
  * ```ts
  * import { useForm } from '@chemical-x/forms/zod-v3'
@@ -37,14 +57,6 @@ import { useAbstractForm } from './use-abstract-form'
  *
  * For Zod v4, import from `@chemical-x/forms/zod` instead.
  */
-export function useForm<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
-  configuration: UseFormConfiguration<
-    Form,
-    GetValueFormType,
-    AbstractSchema<Form, GetValueFormType>,
-    DeepPartial<WriteShape<Form>>
-  >
-): UseAbstractFormReturnType<Form, GetValueFormType>
 export function useForm<
   Schema extends z.ZodObject<z.ZodRawShape>,
   GetValueFormType extends GenericForm = TypeWithNullableDynamicKeys<Schema>,

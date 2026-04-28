@@ -1258,15 +1258,63 @@ export type UseAbstractFormReturnType<
    * `validate*()` when you need the post-validation strict type.
    */
   getValue: {
+    /**
+     * Read the whole form as a reactive ref.
+     *
+     * ```ts
+     * const all = form.getValue() // Readonly<Ref<Form>>
+     * ```
+     *
+     * Reads reflect what's storable: enum-typed slots widen to their
+     * primitive supertype (e.g. `string`) so refinement-invalid but
+     * structurally-valid values are visible. Use `handleSubmit` /
+     * `validate*()` when you need the post-validation strict type.
+     */
     (): Readonly<Ref<WithIndexedUndefined<WriteShape<GetValueFormType>>>>
+    /**
+     * Read the value at `path` as a reactive ref.
+     *
+     * ```ts
+     * const email = form.getValue('email') // Readonly<Ref<string>>
+     * ```
+     *
+     * Reads reflect what's storable: enum-typed slots widen to their
+     * primitive supertype (e.g. `string`) so refinement-invalid but
+     * structurally-valid values are visible. Use `handleSubmit` /
+     * `validate*()` when you need the post-validation strict type.
+     */
     <Path extends FlatPath<Form>>(
       path: Path
     ): Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
+    /**
+     * Read the whole form along with per-leaf metadata.
+     *
+     * ```ts
+     * const view = form.getValue({ withMeta: true })
+     * view.currentValue.value // the form value
+     * view.meta.value         // per-leaf MetaTrackerValue tree
+     * ```
+     *
+     * Pass `{ withMeta: false }` (or omit `withMeta`) for the same
+     * shape as `getValue()`.
+     */
     <WithMeta extends boolean>(
       context: CurrentValueContext<WithMeta>
     ): WithMeta extends true
       ? CurrentValueWithContext<WithIndexedUndefined<WriteShape<GetValueFormType>>>
       : Readonly<Ref<WithIndexedUndefined<WriteShape<GetValueFormType>>>>
+    /**
+     * Read the value at `path` along with per-leaf metadata.
+     *
+     * ```ts
+     * const view = form.getValue('email', { withMeta: true })
+     * view.currentValue.value // the email value
+     * view.meta.value         // metadata for that leaf
+     * ```
+     *
+     * Pass `{ withMeta: false }` (or omit `withMeta`) for the same
+     * shape as `getValue(path)`.
+     */
     <Path extends FlatPath<Form>, WithMeta extends boolean>(
       path: Path,
       context: CurrentValueContext<WithMeta>
@@ -1296,9 +1344,38 @@ export type UseAbstractFormReturnType<
    * field errors instead.
    */
   setValue: {
+    /**
+     * Replace the whole form. Pass a value or a callback receiving
+     * the previous form.
+     *
+     * ```ts
+     * form.setValue({ name: 'Ada', email: 'a@b.c' })
+     * form.setValue((prev) => ({ ...prev, name: 'Ada' }))
+     * ```
+     *
+     * Returns `true` when the write was accepted, `false` when the
+     * value didn't match the expected shape (e.g. wrong primitive
+     * type at a leaf). Refinement-level mismatches (out-of-enum
+     * values, failing `.email()`, etc.) succeed and surface as
+     * field errors instead.
+     */
     <Value extends SetValuePayload<WriteShape<Form>, WithIndexedUndefined<WriteShape<Form>>>>(
       value: Value
     ): boolean
+    /**
+     * Write at a specific path. Pass a value or a callback receiving
+     * the previous value at that path.
+     *
+     * ```ts
+     * form.setValue('email', 'a@b.c')
+     * form.setValue('count', (prev) => prev + 1)
+     * ```
+     *
+     * Returns `true` when the write was accepted, `false` when the
+     * value didn't match the slot's expected primitive type.
+     * Refinement-level mismatches succeed and surface as field
+     * errors.
+     */
     <
       Path extends FlatPath<Form>,
       Value extends SetValuePayload<

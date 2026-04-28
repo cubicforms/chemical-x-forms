@@ -298,3 +298,71 @@ describe('v-register directive — D2 unsupported-element warning', () => {
     warnSpy.mockRestore()
   })
 })
+
+/**
+ * `<input v-register="undefined" />` is supported as an inert binding.
+ * The directive types admit `RegisterValue | undefined` because
+ * `useRegister()` may return `undefined` (a wrapper component
+ * rendered without a parent `registerValue`); `<input v-register="register" />`
+ * inside that wrapper passes `undefined` through to the directive,
+ * and the binding must be a silent no-op (no warn — useRegister has
+ * already warned at the call site, no listener attachment that would
+ * later read off a stale `undefined` value).
+ */
+describe('v-register directive — undefined binding (inert)', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  it('does not throw and does not warn when value is undefined', async () => {
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const binding = makeBinding(undefined as unknown as RegisterValue<string>)
+    const vnode = makeVNode({})
+    expect(() => hooks.created?.(input, binding, vnode, null)).not.toThrow()
+    await nextTick()
+    expect(warnSpy.mock.calls.length).toBe(0)
+    warnSpy.mockRestore()
+  })
+
+  it('listener fires (input event) do not throw when no assigner is installed', () => {
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const binding = makeBinding(undefined as unknown as RegisterValue<string>)
+    const vnode = makeVNode({})
+    hooks.created?.(input, binding, vnode, null)
+
+    // Native input fires its `input` event — listener uses `?.()` on the
+    // assigner, so undefined assigner is a silent no-op rather than a
+    // throw.
+    expect(() => input.dispatchEvent(new Event('input'))).not.toThrow()
+    warnSpy.mockRestore()
+  })
+
+  it('beforeUpdate with undefined value installs a no-op assigner via setAssignFunction', () => {
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const binding = makeBinding(undefined as unknown as RegisterValue<string>)
+    const vnode = makeVNode({})
+    hooks.created?.(input, binding, vnode, null)
+    hooks.beforeUpdate?.(input, binding, vnode, null)
+
+    const installed = (input as unknown as { [k: symbol]: unknown })[assignKey]
+    expect(typeof installed).toBe('function')
+    expect(() => (installed as (v: unknown) => unknown)('typed value')).not.toThrow()
+    warnSpy.mockRestore()
+  })
+
+  it('beforeUnmount with undefined value does not throw on missing deregisterElement', () => {
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const binding = makeBinding(undefined as unknown as RegisterValue<string>)
+    const vnode = makeVNode({})
+    hooks.created?.(input, binding, vnode, null)
+    expect(() => hooks.beforeUnmount?.(input, binding, vnode, null)).not.toThrow()
+    warnSpy.mockRestore()
+  })
+})

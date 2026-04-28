@@ -936,13 +936,18 @@ export type CustomDirectiveRegisterAssignerFn = (value: unknown) => boolean | un
  * library's text / checkbox / radio / select directive types and
  * available for custom integrations that need to drop in their own
  * variant.
+ *
+ * The value generic admits `undefined` because `useRegister()` may
+ * return `undefined` (a wrapper component rendered without a parent
+ * `registerValue`); binding that value to `v-register` is supported
+ * and installs a no-op assigner at runtime.
  */
 export type CustomRegisterDirective<T, Modifiers extends string = string> = ObjectDirective<
   T & {
     _assigning?: boolean
     [S: symbol]: CustomDirectiveRegisterAssignerFn
   },
-  RegisterValue,
+  RegisterValue | undefined,
   Modifiers,
   string
 >
@@ -964,7 +969,7 @@ export type RegisterSelectCustomDirective = CustomRegisterDirective<HTMLSelectEl
 /** v-register directive variant for the dynamic input/select/textarea bridge. */
 export type RegisterModelDynamicCustomDirective = ObjectDirective<
   HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
-  RegisterValue,
+  RegisterValue | undefined,
   string
 >
 /** Union of all v-register directive variants. The exported `vRegister` directive matches this type. */

@@ -168,6 +168,30 @@ The `v-register` directive. Registered automatically by
 `createChemicalXForms`; exported for consumers installing directives
 manually.
 
+Bind to a native input, select, textarea, checkbox, or radio:
+
+```vue
+<input v-register="form.register('email')" />
+<select v-register="form.register('country')">...</select>
+```
+
+Or to a custom component — `useRegister()` in the child re-binds
+the parent's `v-register` onto an inner native element:
+
+```vue
+<!-- Parent -->
+<MyInput v-register="form.register('email')" />
+
+<!-- MyInput.vue -->
+<script setup>
+  import { useRegister } from '@chemical-x/forms'
+  const register = useRegister()
+</script>
+<template>
+  <input v-register="register" />
+</template>
+```
+
 #### Modifiers
 
 `v-register` mirrors Vue's `v-model` modifier semantics, scoped per

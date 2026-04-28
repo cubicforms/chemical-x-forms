@@ -129,6 +129,14 @@ declare module "vue" {
      * <input v-register="form.register('email')" />
      * \`\`\`
      *
+     * Also works on custom components — call \`useRegister()\` in
+     * the child's setup and re-bind \`v-register\` to an inner
+     * native element:
+     *
+     * \`\`\`vue
+     * <MyInput v-register="form.register('email')" />
+     * \`\`\`
+     *
      * Modifier support varies by element:
      *   - text / number / textarea: \`.lazy\`, \`.trim\`, \`.number\`
      *   - select: \`.number\`

@@ -1040,6 +1040,23 @@ export type RegisterModelDynamicCustomDirective = ObjectDirective<
  * </select>
  * ```
  *
+ * Also works on custom components — call `useRegister()` in the
+ * child's setup and re-bind `v-register` to an inner native
+ * element. The wrapper participates in the form lifecycle as if
+ * the inner element were bound directly:
+ *
+ * ```vue
+ * <!-- Parent -->
+ * <MyInput v-register="form.register('email')" />
+ *
+ * <!-- MyInput.vue -->
+ * <script setup>
+ * import { useRegister } from '@chemical-x/forms'
+ * const register = useRegister()
+ * </script>
+ * <template><input v-register="register" /></template>
+ * ```
+ *
  * Modifier support varies by element:
  *   - text / number / textarea: `.lazy`, `.trim`, `.number`
  *   - select: `.number`

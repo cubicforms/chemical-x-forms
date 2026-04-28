@@ -6,38 +6,53 @@ import type { SSRDetectOptions } from './ssr'
 import type { ChemicalXFormsDefaults } from '../types/types-api'
 
 /**
- * Create the `@chemical-x/forms` Vue plugin. Install once per app:
- *
- *   const app = createApp(App)
- *   app.use(createChemicalXForms())
- *
- * Under bare Vue 3, pass `{ ssr: true }` inside `entry-server.ts` so the
- * registry knows the context. Under Nuxt, the Nuxt module (Phase 4) wires
- * this for you via `nuxtApp.vueApp.use(createChemicalXForms({ ssr: import.meta.server }))`.
- *
- * The Vue DevTools integration is lazy-imported and gated on
- * `options.devtools` (default `true`). When the peer dep
- * `@vue/devtools-api` isn't installed (production builds, minimal
- * SSR), the import fails silently — no warnings, no extra bundle.
+ * Options for `createChemicalXForms()`.
  */
-
 export type ChemicalXFormsPluginOptions = SSRDetectOptions & {
   /**
-   * Enable the Vue DevTools plugin. Default `true` — in production
-   * the peer dep `@vue/devtools-api` is typically absent and the
-   * lazy import fails silently. Explicitly pass `false` to skip
-   * even attempting the import (smaller request-graph overhead if
-   * you're shipping a minified build with DevTools disabled).
+   * Whether to install the Vue DevTools integration. Default `true`.
+   * The DevTools peer dependency is loaded lazily — in production
+   * builds where it's absent, the import fails silently and no
+   * extra bundle is shipped. Pass `false` to skip even attempting
+   * the import.
    */
   devtools?: boolean
   /**
    * App-level defaults applied to every `useForm` call in this app.
-   * Per-form options always win. See `ChemicalXFormsDefaults` for the
-   * supported option set and the merge semantics.
+   * Per-form options always win. See `ChemicalXFormsDefaults` for
+   * the supported option set and the merge rules.
+   *
+   * ```ts
+   * app.use(
+   *   createChemicalXForms({
+   *     defaults: { fieldValidation: { debounceMs: 100 } },
+   *   })
+   * )
+   * ```
    */
   defaults?: ChemicalXFormsDefaults
 }
 
+/**
+ * Create the Vue plugin that installs the form library on a Vue
+ * application. Call once per app, then `app.use(...)` the result.
+ *
+ * ```ts
+ * import { createApp } from 'vue'
+ * import { createChemicalXForms } from '@chemical-x/forms'
+ *
+ * createApp(App)
+ *   .use(createChemicalXForms())
+ *   .mount('#app')
+ * ```
+ *
+ * Under SSR with bare Vue 3, pass `{ ssr: true }` from your server
+ * entry. Under Nuxt, install via `@chemical-x/forms/nuxt` instead —
+ * the Nuxt module wires both server and client automatically.
+ *
+ * Installing more than once on the same app is a no-op (the second
+ * call logs a dev-mode warning).
+ */
 export function createChemicalXForms(options: ChemicalXFormsPluginOptions = {}): Plugin {
   const plugin: Plugin = {
     install(app: App) {

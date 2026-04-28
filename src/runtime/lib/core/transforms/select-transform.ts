@@ -271,6 +271,16 @@ function inferOptionValueFromChildren(node: TemplateChildNode | RootNode): strin
   return `'${escaped}'`
 }
 
+/**
+ * Vue compiler node transform for `<select v-register>` and any
+ * component that wraps a select. Injects the `:value` /
+ * `:registerValue` bridge bindings the runtime directive needs to
+ * pre-mark selected options at SSR time.
+ *
+ * Wired automatically by `@chemical-x/forms/vite` and
+ * `@chemical-x/forms/nuxt`. Use directly only when integrating with
+ * a custom bundler.
+ */
 export const selectNodeTransform: NodeTransform = (node, context) => {
   // Snapshot every prop array we're about to mutate so a throw
   // mid-traversal rewinds to the pre-transform state. Without this,

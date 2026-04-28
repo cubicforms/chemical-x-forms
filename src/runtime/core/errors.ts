@@ -1,9 +1,14 @@
 /**
- * Typed error classes used across the core runtime. Each is an
- * instance-checkable signal for a distinct misuse or invariant
- * violation, in place of `console.error` + a sentinel return.
+ * Typed error classes thrown by the form library. Each one signals a
+ * distinct misuse so calling code can branch on `instanceof` instead
+ * of pattern-matching error messages.
  */
 
+/**
+ * Thrown when a path string is malformed — typically a dotted path
+ * with empty segments (e.g. `'a..b'`, leading or trailing dots).
+ * Use array form (`['a', 'b']`) for keys that contain literal dots.
+ */
 export class InvalidPathError extends Error {
   override readonly name = 'InvalidPathError'
   constructor(message: string, options?: ErrorOptions) {
@@ -11,6 +16,11 @@ export class InvalidPathError extends Error {
   }
 }
 
+/**
+ * Thrown when a `handleSubmit`-supplied `onError` callback itself
+ * throws or rejects. Wraps the inner failure so both the original
+ * cause (via `error.cause`) and the propagation site are visible.
+ */
 export class SubmitErrorHandlerError extends Error {
   override readonly name = 'SubmitErrorHandlerError'
   constructor(message: string, options?: ErrorOptions) {
@@ -18,6 +28,13 @@ export class SubmitErrorHandlerError extends Error {
   }
 }
 
+/**
+ * Thrown by `useForm` / `useFormContext` when the form library's
+ * plugin hasn't been installed on the current Vue app.
+ *
+ * Fix: add `app.use(createChemicalXForms())` to your app entry
+ * (or `@chemical-x/forms/nuxt` for Nuxt projects).
+ */
 export class RegistryNotInstalledError extends Error {
   override readonly name = 'RegistryNotInstalledError'
   constructor() {
@@ -28,18 +45,12 @@ export class RegistryNotInstalledError extends Error {
 }
 
 /**
- * Thrown when a cx composable (`useForm`, `useFormContext`, `useRegistry`)
- * is invoked from outside a Vue `setup()` context — typically from an
- * event handler, watcher, or async callback that runs after mount.
+ * Thrown when `useForm` / `useFormContext` is called outside of a
+ * Vue `setup()` function — typically from an event handler, watcher,
+ * or async callback that runs after mount.
  *
- * This is a Vue-lifecycle constraint, not a plugin-installation one:
- * the plugin can be perfectly installed but `inject` / `provide` only
- * resolve while a component instance is on the active call stack.
- *
- * Pre-disambiguation, the same `RegistryNotInstalledError` covered both
- * causes — pointing the developer at "install the plugin" when the
- * actual fix was "move the call into setup or a child component". The
- * split lets each failure mode lead the reader to the right fix.
+ * Fix: move the call into `setup()`, or trigger it from a child
+ * component whose `setup()` runs the composable.
  */
 export class OutsideSetupError extends Error {
   override readonly name = 'OutsideSetupError'
@@ -51,6 +62,12 @@ export class OutsideSetupError extends Error {
   }
 }
 
+/**
+ * Thrown when a `useForm({ key })` call uses a key starting with
+ * `__cx:`. That prefix is reserved for keys the library generates
+ * internally (e.g. for anonymous `useForm()` calls without an
+ * explicit key). Pick a different prefix for your form.
+ */
 export class ReservedFormKeyError extends Error {
   override readonly name = 'ReservedFormKeyError'
   constructor(key: string) {
@@ -63,17 +80,17 @@ export class ReservedFormKeyError extends Error {
 }
 
 /**
- * Thrown when a binding (or `form.persist`) targets a path whose name
- * matches the sensitive-name heuristic (password / cvv / ssn / token /
- * etc.) without an explicit `acknowledgeSensitive: true` override.
+ * Thrown when `register(path, { persist: true })` or `form.persist(path)`
+ * targets a path whose name matches a sensitive-data heuristic
+ * (password, cvv, ssn, token, etc.) without an explicit
+ * `acknowledgeSensitive: true` override.
  *
- * Persisting sensitive data to client-side storage (localStorage,
- * sessionStorage, IndexedDB) creates a compliance footgun across
- * HIPAA / PII / PCI-DSS / SOC2: the device-bound copy survives logouts,
- * is readable by any same-origin script, and is unencrypted at rest.
- * The heuristic is intentionally noisy — false positives surface a
- * code-review trigger; the override turns it back off when the
- * developer affirms the persistence is intentional.
+ * Sensitive data in client-side storage (localStorage, sessionStorage,
+ * IndexedDB) is a compliance risk — it survives logouts, is readable
+ * by any same-origin script, and is unencrypted at rest.
+ *
+ * Fix: pass `acknowledgeSensitive: true` to confirm the persistence
+ * is intentional, or persist the data server-side instead.
  */
 export class SensitivePersistFieldError extends Error {
   override readonly name = 'SensitivePersistFieldError'

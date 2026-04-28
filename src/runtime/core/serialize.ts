@@ -3,22 +3,39 @@ import type { FormKey } from '../types/types-api'
 import { getRegistryFromApp, type SerializedFormData } from './registry'
 
 /**
- * SSR serialization for bare Vue 3 + `@vue/server-renderer`. Nuxt's
- * built-in payload mechanism is wired to call these in the Nuxt-module
- * plugin (Phase 4); bare-Vue consumers call them explicitly in their
- * entry-server.ts / entry-client.ts scripts.
+ * Serialised snapshot of every form in a Vue app, produced by
+ * `renderChemicalXState` and consumed by `hydrateChemicalXState`.
  *
- * Payload shape is JSON-safe tuples so consumers can pick their own
- * stringifier (JSON.stringify, devalue, whatever). `originals` and
- * `elements` are intentionally omitted: originals are derivable from
- * schema.getDefaultValues on the client; elements are DOM references that
- * can't round-trip anyway.
+ * JSON-safe — pass to `JSON.stringify`, `devalue`, or any other
+ * serialiser before embedding in your SSR payload.
  */
-
 export type SerializedChemicalXState = {
+  /** Tuples of `[formKey, snapshot]` for every form in the app. */
   readonly forms: ReadonlyArray<readonly [FormKey, SerializedFormData]>
 }
 
+/**
+ * Snapshot every form on a Vue app for SSR. Call from your server
+ * entry after rendering the app:
+ *
+ * ```ts
+ * import { renderToString } from '@vue/server-renderer'
+ * import { renderChemicalXState, escapeForInlineScript } from '@chemical-x/forms'
+ *
+ * const html = await renderToString(app)
+ * const state = renderChemicalXState(app)
+ * const payload = escapeForInlineScript(JSON.stringify(state))
+ *
+ * return `
+ *   ${html}
+ *   <script>window.__CX_STATE__ = ${payload}</script>
+ * `
+ * ```
+ *
+ * Pair with `hydrateChemicalXState` on the client to restore the
+ * forms in their server-rendered state. Nuxt users don't need this —
+ * `@chemical-x/forms/nuxt` wires SSR automatically.
+ */
 export function renderChemicalXState(app: App): SerializedChemicalXState {
   const registry = getRegistryFromApp(app)
   const forms: Array<readonly [FormKey, SerializedFormData]> = []
@@ -36,11 +53,24 @@ export function renderChemicalXState(app: App): SerializedChemicalXState {
   return { forms }
 }
 
+/**
+ * Restore forms from a server-rendered snapshot on the client. Call
+ * from your client entry before mounting:
+ *
+ * ```ts
+ * import { createApp } from 'vue'
+ * import { createChemicalXForms, hydrateChemicalXState } from '@chemical-x/forms'
+ *
+ * const app = createApp(App).use(createChemicalXForms())
+ * hydrateChemicalXState(app, window.__CX_STATE__)
+ * app.mount('#app')
+ * ```
+ *
+ * The next `useForm({ key })` call for each serialised form picks up
+ * the snapshot transparently — no further action is required.
+ */
 export function hydrateChemicalXState(app: App, payload: SerializedChemicalXState): void {
   const registry = getRegistryFromApp(app)
-  // Stage the data as pending hydration. Each useForm call will consume
-  // this entry when constructing its FormStore so the client starts with
-  // the same form value, fields, and errors that the server rendered.
   for (const [key, data] of payload.forms) {
     registry.pendingHydration.set(key, data)
   }

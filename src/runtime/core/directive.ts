@@ -40,6 +40,19 @@ import type {
 import { getOrAssignElementId } from './persistence/opt-in-registry'
 import { enforceSensitiveCheck } from './persistence/sensitive-names'
 
+/**
+ * Symbol slot used by custom directive integrations to install an
+ * assigner on the bound element. Read by the v-register directive
+ * when a DOM event fires:
+ *
+ * ```ts
+ * import { assignKey } from '@chemical-x/forms'
+ * el[assignKey] = (value) => myCustomWriter(value)
+ * ```
+ *
+ * Most consumers never need this — the built-in directives wire
+ * default assigners for text inputs, checkboxes, radios, and selects.
+ */
 export const assignKey: unique symbol = Symbol('_assign')
 
 /**
@@ -60,6 +73,19 @@ type TrackedListener = {
 
 type ListenerCarrier = { [listenersKey]?: TrackedListener[] }
 
+/**
+ * Type guard for a `RegisterValue`. Returns `true` when `val` looks
+ * like the object returned from `form.register(path)`.
+ *
+ * ```ts
+ * if (isRegisterValue(slotValue)) {
+ *   // slotValue.innerRef is now a Ref<unknown>
+ * }
+ * ```
+ *
+ * Useful when building wrapper components that accept either a
+ * `RegisterValue` or a plain ref via the same prop.
+ */
 export function isRegisterValue<Value = unknown>(val: unknown): val is RegisterValue<Value> {
   if (typeof val !== 'object' || val === null) return false
   if (!('innerRef' in val)) return false
@@ -799,8 +825,21 @@ export type VXCustomDirective =
   | typeof vRegisterDynamic
 
 /**
- * The single exported directive, installed by `createChemicalXForms()` via
- * `app.directive('register', vRegister)`. Dispatches to the per-element-type
- * directive based on tagName + type.
+ * The `v-register` directive. Bind a form field to a native input,
+ * select, textarea, checkbox, or radio:
+ *
+ * ```vue
+ * <input v-register="form.register('email')" />
+ * <select v-register="form.register('country')">
+ *   <option value="us">US</option>
+ *   <option value="uk">UK</option>
+ * </select>
+ * ```
+ *
+ * The directive picks the right binding strategy automatically based
+ * on the element's `tagName` and `type`. Registered globally by
+ * `createChemicalXForms()` — most consumers never import it
+ * directly, but it's exposed for advanced integrations that wire
+ * directives manually.
  */
 export const vRegister = vRegisterDynamic

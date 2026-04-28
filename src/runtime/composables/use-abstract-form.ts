@@ -44,23 +44,25 @@ import type {
 import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
 
 /**
- * useForm's abstract entry point. The Zod-typed `useForm` sitting at
- * ../composables/use-form.ts delegates here after wrapping its Zod schema
- * with `zodAdapter` — the result is an `AbstractSchema<Form, GetValueFormType>`
- * instance indistinguishable from a hand-rolled adapter.
+ * Schema-agnostic `useForm`. Accepts any object that implements
+ * `AbstractSchema` — useful when integrating a custom schema
+ * adapter, a Valibot adapter, or any non-Zod validation library.
  *
- * Wiring:
- * - Fetches the current Vue app's ChemicalXRegistry via useRegistry().
- * - Looks up (or creates) the FormStore<F> for the configured key. If the
- *   registry has a pending hydration entry for the key, threads it into
- *   createFormStore so the client side starts from the server's snapshot.
- * - Builds register / getFieldState / validate / handleSubmit from that
- *   FormStore via the per-store factories.
+ * ```ts
+ * import { useForm } from '@chemical-x/forms'
  *
- * Everything related to one `useForm({ key })` call lives behind one
- * registry-backed closure — the form value, summary, element references,
- * field state, meta tracker, and error stores are all reached through the
- * same `FormStore` instance.
+ * const form = useForm({
+ *   schema: myCustomAdapter,
+ *   defaultValues: { name: '' },
+ * })
+ * ```
+ *
+ * For Zod, prefer the typed entry points at
+ * `@chemical-x/forms/zod` (v4) or `@chemical-x/forms/zod-v3` —
+ * they wrap the schema with the adapter automatically.
+ *
+ * Returns the same form API as the Zod-typed entry points; see
+ * `UseAbstractFormReturnType` for the full surface.
  */
 
 export function useAbstractForm<

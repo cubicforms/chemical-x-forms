@@ -55,6 +55,16 @@ import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from './types-
 import { fingerprintZodSchema } from './fingerprint'
 import { isZodSchemaType } from './helpers'
 
+/**
+ * Wrap a Zod v3 `ZodObject` schema in an `AbstractSchema` factory.
+ *
+ * Most consumers never call this directly — `useForm` from
+ * `@chemical-x/forms/zod-v3` does the wrapping automatically. Reach
+ * for it only when integrating with a custom code path that needs
+ * the adapter outside of `useForm`.
+ *
+ * Throws if the underlying schema isn't a `ZodObject`.
+ */
 export function zodAdapter<
   FormSchema extends z.ZodSchema,
   Form extends z.infer<FormSchema>,

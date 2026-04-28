@@ -98,6 +98,19 @@ function isStructuralKind(kind: ReturnType<typeof kindOf>): boolean {
   return STRUCTURAL_KINDS.has(kind)
 }
 
+/**
+ * Wrap a Zod v4 `ZodObject` schema in an `AbstractSchema` factory.
+ *
+ * Most consumers never call this directly — `useForm` from
+ * `@chemical-x/forms/zod` does the wrapping automatically. Reach for
+ * it when you need an adapter outside of `useForm` (e.g. validating
+ * data with the same library used elsewhere in the form runtime, or
+ * exposing the adapter to a custom integration).
+ *
+ * Throws if the schema isn't Zod v4, or contains kinds the adapter
+ * cannot represent (`z.promise`, `z.custom`, `z.templateLiteral`,
+ * recursive `z.lazy(...)`).
+ */
 export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infer<FormSchema>>(
   rootSchema: FormSchema
 ): (formKey: FormKey) => AbstractSchema<Form, Form> {

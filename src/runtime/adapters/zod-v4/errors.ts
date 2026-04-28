@@ -19,11 +19,12 @@ export function zodIssuesToValidationErrors(
 }
 
 /**
- * Thrown by the adapter constructor when the schema tree contains a Zod
- * kind the adapter cannot represent in a form (`z.promise`, `z.custom`,
- * `z.templateLiteral`) or a recursive `z.lazy(...)` whose factory
- * resolves back into itself. The message includes the offending dotted
- * path so consumers can locate the node without hunting.
+ * Thrown when a Zod schema includes a kind the form library cannot
+ * represent: `z.promise`, `z.custom`, `z.templateLiteral`, or a
+ * recursive `z.lazy(...)` that loops back into itself.
+ *
+ * The error message includes the dotted path of the offending node
+ * so you can locate it without traversing the whole schema.
  */
 export class UnsupportedSchemaError extends Error {
   override readonly name = 'UnsupportedSchemaError'

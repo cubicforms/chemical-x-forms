@@ -37,8 +37,18 @@ type ZodTypeMap = {
 }
 
 /**
- * Checks if `schema` is a Zod schema of the given `expectedType`.
- * Returns true if it matches, with a type predicate to narrow the schema type.
+ * Type guard for a Zod v3 schema kind. Returns `true` when `schema`
+ * is a Zod v3 instance of the named kind (`ZodString`, `ZodObject`,
+ * etc.) and narrows the type accordingly.
+ *
+ * ```ts
+ * if (isZodSchemaType(schema, 'ZodObject')) {
+ *   // schema is now typed as z.AnyZodObject
+ * }
+ * ```
+ *
+ * Useful when building adapters or introspection helpers that branch
+ * on schema shape. Most consumers don't need this.
  */
 export function isZodSchemaType<K extends keyof ZodTypeMap>(
   schema: unknown,

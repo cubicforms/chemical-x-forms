@@ -86,6 +86,16 @@ const stateByRoot: WeakMap<RootNode, TraversalState> = new WeakMap()
 
 const PREAMBLE_ATTR = 'data-cx-pre-mark'
 
+/**
+ * Vue compiler node transform that hoists `v-register`'s SSR
+ * connection marks to the root of the template. Together with
+ * `vRegisterHintTransform`, ensures expressions earlier in the
+ * template that read `getFieldState(path).isConnected` see the
+ * correct value during the server's single-pass render.
+ *
+ * Must run before `vRegisterHintTransform`. Wired automatically
+ * by `@chemical-x/forms/vite` and `@chemical-x/forms/nuxt`.
+ */
 export const vRegisterPreambleTransform: NodeTransform = (node, context) => {
   try {
     if (node.type === NodeTypes.ROOT) {

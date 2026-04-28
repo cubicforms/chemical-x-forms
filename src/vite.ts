@@ -30,7 +30,7 @@ import { selectNodeTransform } from './runtime/lib/core/transforms/select-transf
 import { vRegisterHintTransform } from './runtime/lib/core/transforms/v-register-hint-transform'
 import { vRegisterPreambleTransform } from './runtime/lib/core/transforms/v-register-preamble-transform'
 
-/** Reserved for future options. Empty at the moment. */
+/** Options for `chemicalXForms()`. Reserved for future use; pass `{}` or omit. */
 export type ChemicalXVitePluginOptions = Record<string, never>
 
 interface VitePluginVueApi {
@@ -43,6 +43,24 @@ interface VitePluginVueApi {
   }
 }
 
+/**
+ * Vite plugin that wires the form library's compile-time template
+ * transforms into `@vitejs/plugin-vue`. Required for SSR and for
+ * hydration accuracy under bare Vue 3.
+ *
+ * ```ts
+ * // vite.config.ts
+ * import vue from '@vitejs/plugin-vue'
+ * import { chemicalXForms } from '@chemical-x/forms/vite'
+ *
+ * export default defineConfig({
+ *   plugins: [vue(), chemicalXForms()],
+ * })
+ * ```
+ *
+ * Place the call after `vue()` in the plugins array. Nuxt projects
+ * don't need this — `@chemical-x/forms/nuxt` handles it.
+ */
 export function chemicalXForms(_options: ChemicalXVitePluginOptions = {}): Plugin {
   // Unused-var suppression until options exist.
   void _options

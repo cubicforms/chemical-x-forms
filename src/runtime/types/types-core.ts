@@ -1,5 +1,11 @@
+/**
+ * The minimum shape any form value satisfies — a plain record. Use
+ * as a constraint for composables that work generically across forms
+ * (e.g. a custom hook that takes any form's `useForm` return).
+ */
 export type GenericForm = Record<string, unknown>
 
+/** Internal helper — `true` when `T` is an object or array. */
 export type IsObjectOrArray<T> = T extends GenericForm
   ? true
   : T extends Array<unknown>
@@ -65,12 +71,30 @@ export type CompleteFlatPath<Form, Key extends keyof Form = keyof Form> =
 // `something.${number}.deeper` can resolve to 'something.42..deeper' -- one trailing decimal point
 // for the number, and a second for the separator. We guard against this in useForm by stripping all
 // trailing decimals when processing paths at runtime
+/**
+ * Union of dotted-string paths reachable inside `Form`, e.g. for
+ * `{ user: { email: string }, items: string[] }`:
+ *
+ *   `'user' | 'user.email' | 'items' | 'items.0' | 'items.1' | …`
+ *
+ * Used by every path-addressed API (`getValue(path)`,
+ * `setValue(path, value)`, `register(path)`, etc.) so paths
+ * autocomplete in the IDE and typos compile-error.
+ *
+ * Set `ForceFullPath` to `true` to restrict to leaf paths only
+ * (no intermediate container paths) — used by `getFieldState`.
+ */
 export type FlatPath<
   Form,
   Key extends keyof Form = keyof Form,
   ForceFullPath extends boolean = false,
 > = ForceFullPath extends true ? CompleteFlatPath<Form, Key> : PartialFlatPath<Form, Key>
 
+/**
+ * Recursive `Partial` — every property at every depth is optional.
+ * Used as the parameter type of `defaultValues` and `reset()` so
+ * partial overrides at any nesting level are valid.
+ */
 export type DeepPartial<T> = T extends Primitive // Base case for primitive types
   ? T
   : T extends Array<infer ArrayItem> // Recursively process arrays
@@ -82,20 +106,14 @@ export type DeepPartial<T> = T extends Primitive // Base case for primitive type
       : T
 
 /**
- * Resolve the type at a dotted-string path within `RootValue`. The
- * recursion peels one segment per recursion step.
+ * Resolve the type at a dotted-string path inside `RootValue`. Used
+ * by the strict (write-side) APIs to derive the type at a path:
  *
- * **TS recursion-depth limit.** The TypeScript compiler caps conditional-
- * type recursion at 50 (under the `tsc` instantiation budget; tighter
- * for `--strict` builds). A path with more than ~45-50 segments will
- * resolve to `never` instead of the correct leaf type — TS gives up
- * silently rather than erroring at the call site. Real form schemas
- * never approach this limit, but consumers who hand-author paths via
- * `as` casts on extremely deep state should use a tuple-counter
- * variant or split the lookup into chunks.
+ *   `NestedType<{ user: { email: string } }, 'user.email'>` → `string`
  *
- * The runtime walker (`path-walker.ts`) has no such limit; only the
- * static type lookup is affected.
+ * TypeScript caps conditional-type recursion at around 50 levels;
+ * paths deeper than that resolve to `never`. Real form schemas
+ * never reach this depth.
  */
 export type NestedType<
   RootValue,
@@ -135,42 +153,29 @@ export type NestedType<
 type Primitive = string | number | boolean | symbol | bigint | null | undefined
 
 /**
- * Distinguish a tuple from a regular array. Tuples have a literal
- * `length` (`2`, `3`, ...); arrays have `length: number`.
+ * Distinguish a tuple from a regular array.
  *
- *   IsTuple<[string, number]>  // true
- *   IsTuple<string[]>          // false
+ *   `IsTuple<[string, number]>` → `true`
+ *   `IsTuple<string[]>` → `false`
  *
- * Used by `WithIndexedUndefined` to skip taint on tuple positions
- * (which are guaranteed to be defined at runtime once the tuple is
- * structurally complete) while still tainting unbounded array
- * elements (where `arr[N]` can return `undefined` for out-of-bounds
- * reads).
+ * Useful for write-side helpers that need to preserve tuple
+ * positions instead of widening to `Array<element>`.
  */
 export type IsTuple<T extends readonly unknown[]> = number extends T['length'] ? false : true
 
 /**
- * "Honest read shape" for a form value. Tags every UNBOUNDED array's
- * element type with `| undefined` so consumer code that touches
- * `prev.posts[5]` or similar must narrow before using the result —
- * matching the runtime reality that array index reads can fall off
- * the end. Recurses into objects and tuple positions; leaves Date /
- * RegExp / Map / Set / class instances untouched.
+ * Tags every unbounded array's element type with `| undefined` so
+ * code reading `arr[N]` has to narrow before using the result. This
+ * mirrors the runtime reality that out-of-bounds reads return
+ * `undefined`.
  *
- * Used for:
- * - Whole-form callback `prev` in `setValue(cb)` (the live form is
- *   read; the runtime structural-completeness invariant guarantees
- *   the form is structurally complete after every write, but doesn't
- *   guarantee any particular array LENGTH).
- * - `getValue(path)` returns at array sub-paths.
+ * Used by `getValue()` and the whole-form `setValue((prev) => …)`
+ * callback's `prev` argument so accessors are honest about
+ * possibly-missing array positions. Tuple positions are preserved
+ * unchanged — they're guaranteed by their position in the type.
  *
- * NOT applied to:
- * - Path-form callback `prev` in `setValue(path, cb)` — the runtime
- *   auto-defaults `prev` from `schema.getDefaultAtPath(path)` when
- *   the slot is missing, so the strict `NestedType` is honest there.
- * - `setValue` value form — write shapes stay strict so consumers
- *   can't accidentally pass partial-array values that the type
- *   system promises but the validation layer rejects.
+ * `Date`, `RegExp`, `Map`, `Set`, and function instances pass
+ * through.
  */
 export type WithIndexedUndefined<T> = T extends
   | Date
@@ -188,14 +193,14 @@ export type WithIndexedUndefined<T> = T extends
       : T
 
 /**
- * Like `NestedType` but tracks whether a numerical-index segment was
- * crossed during the walk. Once tainted, every subsequent result is
- * `T | undefined`. Use for the READ side of path-walking APIs
- * (`getValue`, `register`'s value ref) where the runtime can return
- * `undefined` if the array index is out of bounds.
+ * Path-resolved type for read-side APIs. Like `NestedType`, but once
+ * the walk crosses an array index segment the resulting type is
+ * tagged `| undefined` (the runtime can return undefined for
+ * out-of-bounds reads).
  *
- * The strict `NestedType` stays in place for write-side APIs and for
- * path-form callback prev (which is auto-defaulted at runtime).
+ * Used by `getValue(path)` and `register(path).innerRef` so the
+ * compile-time type honours the runtime possibility of a missing
+ * array position.
  */
 export type NestedReadType<
   RootValue,

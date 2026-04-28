@@ -146,6 +146,15 @@ function couldResolveToFileType(value: SummarizedProp['value']): boolean {
   return inner.toLowerCase() === 'file'
 }
 
+/**
+ * Vue compiler node transform for `<input v-register>` and
+ * `<textarea v-register>`. Injects the `:value` / `:checked`
+ * bindings required for SSR-correct initial render.
+ *
+ * Wired automatically by `@chemical-x/forms/vite` and
+ * `@chemical-x/forms/nuxt`. Use directly only when integrating with
+ * a custom bundler.
+ */
 export const inputTextAreaNodeTransform: NodeTransform = (node) => {
   try {
     if (node.type !== NodeTypes.ELEMENT) return

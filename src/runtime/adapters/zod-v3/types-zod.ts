@@ -34,7 +34,11 @@ export type PossiblyWrappedZodSchema<
           ? z.ZodEffects<PossiblyWrappedZodSchema<NextChild, Target>>
           : never
 
-// typeName does in fact exist on ZodTypeAny
+/**
+ * Narrow accessor type for Zod v3's internal `_def`. Only useful
+ * when writing a custom adapter that needs to read internals
+ * directly. Most consumers should never reach for this.
+ */
 export interface ZodTypeWithInnerType extends z.ZodTypeAny {
   _def: {
     typeName: string
@@ -42,6 +46,14 @@ export interface ZodTypeWithInnerType extends z.ZodTypeAny {
   }
 }
 
+/**
+ * The "honest read shape" of a Zod v3 schema — fields under records,
+ * arrays, and dynamic boundaries are tagged optional/undefined to
+ * reflect the runtime reality that those slots may be missing.
+ *
+ * Used internally by the v3 adapter as the read-side type for
+ * `getValue` / `getFieldState`. Not commonly needed in consumer code.
+ */
 export type TypeWithNullableDynamicKeys<
   Schema extends z.ZodSchema,
   CrossedBoundary extends boolean = false,

@@ -10,34 +10,34 @@ import type { GenericForm } from '../types/types-core'
 import { ambientProvideHistory } from './use-abstract-form'
 
 /**
- * Access the ambient form's API from a descendant component without
- * prop-threading. Two resolution modes:
+ * Access an existing form from a descendant component without
+ * passing it through props.
  *
- * - `useFormContext<Form>()` — resolves via `inject(kFormContext)`, the
- *   FormStore that the nearest ancestor `useForm()` call provided.
- *   Anonymous forms fill the ambient slot; keyed forms do not.
+ * Two ways to call it:
  *
- * - `useFormContext<Form>(key)` — looks the form up by its key in the
- *   app registry. Lets a distant component reach a specific form
- *   without being a descendant of its `useForm` owner.
+ * ```ts
+ * // Reach the nearest ancestor's anonymous useForm() call.
+ * const form = useFormContext<SignupShape>()
  *
- * Both modes return `null` on miss (no ambient form, or the named key
- * isn't registered) and emit a dev-mode `console.warn` pointing at the
- * call site. Production is silent. The nullable return forces narrowing
- * — `if (ctx) ctx.register(...)` — so a typo'd key or a parent that
- * unmounts mid-render degrades gracefully instead of throwing.
+ * // Reach a specific form by its key — works from anywhere in the app.
+ * const cart = useFormContext<CartShape>('cart')
+ * ```
  *
- * The consumer supplies the `Form` generic — Vue's InjectionKey erases
- * generics across the provide/inject boundary, so the library can't
- * recover the shape on the caller's behalf. The returned API (when
- * non-null) is type-identical to `useForm`'s return.
+ * Returns `null` when no matching form exists (no ambient ancestor, or
+ * the named key isn't registered). A dev-mode warning points at the
+ * call site to help diagnose typos. Always narrow before using:
  *
- * Both resolution modes ref-count the consumer, so the FormStore stays
- * alive for this component's effect scope and is released back to the
- * registry's eviction path on unmount. That means a form created by a
- * parent and accessed via this composable in a child component
- * survives until the LAST consumer unmounts, which is the correct
- * lifetime for shared forms.
+ * ```ts
+ * const form = useFormContext<Shape>('signup')
+ * if (!form) return
+ * form.register('email')
+ * ```
+ *
+ * Pass the `Form` generic explicitly — Vue's provide/inject erases
+ * generics, so the library can't recover the shape automatically.
+ *
+ * The form is kept alive for this component's lifetime; once every
+ * consumer unmounts, the form is cleaned up automatically.
  */
 export function useFormContext<
   Form extends GenericForm,

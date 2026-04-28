@@ -5,28 +5,33 @@ import { vRegisterHintTransform } from './runtime/lib/core/transforms/v-register
 import { vRegisterPreambleTransform } from './runtime/lib/core/transforms/v-register-preamble-transform'
 import type { ChemicalXFormsDefaults } from './runtime/types/types-api'
 
-// Module options TypeScript interface definition
+/**
+ * Options accepted by `@chemical-x/forms/nuxt` under the `chemicalX`
+ * config key.
+ *
+ * ```ts
+ * // nuxt.config.ts
+ * export default defineNuxtConfig({
+ *   modules: ['@chemical-x/forms/nuxt'],
+ *   chemicalX: {
+ *     defaults: { fieldValidation: { debounceMs: 100 } },
+ *   },
+ * })
+ * ```
+ */
 export interface CXModuleOptions {
   /**
    * App-level defaults applied to every `useForm` call. Per-form
    * options always win. See `ChemicalXFormsDefaults` for the
-   * supported option set and merge semantics.
-   *
-   * Configure via `nuxt.config.ts`:
-   *
-   *   export default defineNuxtConfig({
-   *     modules: ['@chemical-x/forms/nuxt'],
-   *     chemicalX: {
-   *       defaults: { fieldValidation: { debounceMs: 100 } },
-   *     },
-   *   })
+   * supported option set and merge rules.
    */
   defaults?: ChemicalXFormsDefaults
 }
 
 /**
- * Shape of the Nuxt runtime-config slot the module populates. Read by
- * `runtime/plugins/chemical-x.ts` via `useRuntimeConfig().public.chemicalX`.
+ * Shape of the Nuxt public runtime-config slot the module populates.
+ * Reach it via `useRuntimeConfig().public.chemicalX` if you need to
+ * read the configured defaults outside the form library itself.
  */
 export type CXRuntimeConfig = {
   defaults: ChemicalXFormsDefaults

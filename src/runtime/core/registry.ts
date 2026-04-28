@@ -18,56 +18,72 @@ import { detectSSR, type SSRDetectOptions } from './ssr'
  * the specific form type via `useForm`'s overloads.
  */
 
+/**
+ * Serialised snapshot of one form's state, captured by
+ * `renderChemicalXState` for SSR and replayed by
+ * `hydrateChemicalXState` on the client. Round-trips through
+ * JSON-safe tuples; field references are intentionally omitted
+ * (DOM nodes don't survive serialisation).
+ */
 export type SerializedFormData = {
+  /** The form's value at snapshot time. */
   readonly form: unknown
   /**
-   * Schema-driven errors at SSR snapshot time. Replays into the
-   * client's `schemaErrors` Map at hydration. Cleared by reset and
-   * by submit-success on the client side.
+   * Errors produced by the schema at snapshot time. Replayed into
+   * the client form's error state at hydration; cleared on
+   * successful re-validation client-side.
    */
   readonly schemaErrors: ReadonlyArray<readonly [string, unknown]>
   /**
-   * User-injected errors at SSR snapshot time (typically populated
-   * by `setFieldErrors` / `addFieldErrors` — fed from `parseApiErrors`
-   * for server responses — during the server render). Replays into
-   * `userErrors` at hydration; persists across client-side schema
-   * revalidation and successful submits.
+   * Errors set explicitly via `setFieldErrors` / `addFieldErrors`
+   * (typically from a server response parsed via `parseApiErrors`)
+   * at snapshot time. Replayed at hydration; persists across
+   * client-side re-validation.
    */
   readonly userErrors: ReadonlyArray<readonly [string, unknown]>
+  /** Per-field metadata (timestamps, raw values, connection flags) captured at snapshot time. */
   readonly fields: ReadonlyArray<readonly [string, unknown]>
 }
 
 export type PendingHydration = Map<FormKey, SerializedFormData>
 
+/**
+ * The library's per-Vue-app container. One `ChemicalXRegistry` is
+ * created per `app.use(createChemicalXForms())` call.
+ *
+ * Most consumers never touch this directly — `useForm` and
+ * `useFormContext` reach the registry on your behalf. Access it
+ * explicitly only when wiring SSR or a custom plugin integration.
+ */
 export type ChemicalXRegistry = {
+  /** Live forms keyed by `FormKey`. */
   readonly forms: Map<FormKey, FormStore<GenericForm>>
+  /** Snapshots staged by `hydrateChemicalXState` waiting to be consumed by the next `useForm` call. */
   readonly pendingHydration: PendingHydration
+  /** `true` while running on the server during SSR; `false` on the client. */
   readonly isSSR: boolean
-  /**
-   * App-level defaults applied to every `useForm` call. Frozen-empty
-   * when the consumer doesn't pass `defaults` — `useAbstractForm`
-   * always reads from this slot, so a sentinel beats `?.` everywhere.
-   */
+  /** App-level defaults applied to every `useForm` call. */
   readonly defaults: ChemicalXFormsDefaults
   /**
-   * Ref-counts `useForm` consumers per key. Each `useForm` call pairs a
-   * `trackConsumer(key)` on mount with the returned dispose on unmount.
-   * When the last consumer for a key disposes, the FormStore is evicted
-   * from `forms` — preventing long-lived SPAs from accumulating detached
-   * form state across page navigations.
+   * Track a consumer of `key`. Returns a dispose function — call it
+   * when the consumer unmounts. The form is evicted automatically
+   * when the last consumer disposes, so long-running SPAs don't
+   * leak detached state across navigations.
    */
   readonly trackConsumer: (key: FormKey) => () => void
   /**
-   * Drain async work registered on every live FormStore, then resolve.
-   * Used by SSR shutdown helpers and tests that need to deterministically
-   * settle pending storage writes before tearing down the app. Eviction
-   * via `trackConsumer` already drains per-form; this is the global
-   * variant for "drain everything, the app is going away."
+   * Wait for all pending persistence writes across every live form
+   * to settle. Useful for SSR shutdown and integration tests that
+   * need a deterministic teardown.
    */
   readonly shutdown: () => Promise<void>
 }
 
-/** Registry is placed on the Vue app via `app.provide(kChemicalXRegistry, …)`. */
+/**
+ * The Vue `InjectionKey` under which the registry is provided on the
+ * app. Most consumers never need this — `useForm` and
+ * `useFormContext` resolve the registry automatically.
+ */
 export const kChemicalXRegistry: InjectionKey<ChemicalXRegistry> = Symbol(
   'chemical-x-forms:registry'
 )
@@ -92,15 +108,22 @@ declare module 'vue' {
   }
 }
 
+/** Options for `createRegistry`. */
 export type CreateRegistryOptions = SSRDetectOptions & {
   /**
-   * App-level defaults stored on the registry and merged into every
-   * `useForm` call. Per-form options always win. Omit to use the
-   * library-level fallbacks (an empty object is equivalent).
+   * App-level defaults applied to every `useForm` call. Per-form
+   * options always win. Omitted is equivalent to `{}`.
    */
   defaults?: ChemicalXFormsDefaults
 }
 
+/**
+ * Create a fresh `ChemicalXRegistry`. `createChemicalXForms()` calls
+ * this internally — most consumers never need to call it directly.
+ * Use it when building a custom plugin that doesn't want the
+ * `createChemicalXForms` plugin's auto-install behaviour (e.g. test
+ * harnesses, embedded apps).
+ */
 export function createRegistry(options: CreateRegistryOptions = {}): ChemicalXRegistry {
   const isSSR = detectSSR(options)
   // Frozen so accidental writes downstream throw in dev. Public surface
@@ -166,21 +189,20 @@ export function createRegistry(options: CreateRegistryOptions = {}): ChemicalXRe
 }
 
 /**
- * Inside a component's setup() (or any synchronous code called during
- * setup), returns the current Vue app's registry. Throws a typed error
- * for each of the two distinct failure modes:
+ * Look up the current app's registry from inside a component's
+ * `setup()` (or any synchronous code on the setup call stack).
  *
- * - `OutsideSetupError` — called from outside a Vue setup context (an
- *   event handler, watcher, or async callback after mount). The fix is
- *   to move the call into setup or mount a child component whose setup
- *   runs the composable.
+ * Most consumers don't need this — `useForm` and `useFormContext`
+ * call it on your behalf. Reach for it directly when building
+ * custom integrations that need the raw registry.
  *
- * - `RegistryNotInstalledError` — called inside setup, but the plugin
- *   wasn't installed on the app. The fix is `app.use(createChemicalXForms())`.
- *
- * The split matters because pre-disambiguation a single error message
- * mixed both fixes ("install via app.use(...)") even when the plugin
- * was already installed and the real cause was lifecycle.
+ * Throws:
+ * - `OutsideSetupError` when called outside a Vue setup context
+ *   (e.g. from an event handler or async callback). Move the call
+ *   into setup, or trigger it from a child component.
+ * - `RegistryNotInstalledError` when called inside setup but the
+ *   plugin wasn't installed. Add
+ *   `app.use(createChemicalXForms())` to your app entry.
  */
 export function useRegistry(): ChemicalXRegistry {
   const instance = getCurrentInstance()
@@ -194,7 +216,14 @@ export function useRegistry(): ChemicalXRegistry {
   return registry
 }
 
-/** Look up the registry from an App reference (used by serialization helpers). */
+/**
+ * Look up a Vue app's registry by `App` reference. Used by
+ * SSR helpers (`renderChemicalXState`, `hydrateChemicalXState`) that
+ * run outside a component setup context.
+ *
+ * Throws `RegistryNotInstalledError` when the app hasn't been wired
+ * with `createChemicalXForms()`.
+ */
 export function getRegistryFromApp(app: App): ChemicalXRegistry {
   const registry = app._chemicalX
   if (registry === undefined) {

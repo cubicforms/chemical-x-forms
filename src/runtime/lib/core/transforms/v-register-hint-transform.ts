@@ -50,6 +50,15 @@ const HINT_MARKER = '__cxRv'
 const HINT_PREFIX = `((${HINT_MARKER}) => (${HINT_MARKER}?.markConnectedOptimistically?.(), ${HINT_MARKER}))(`
 const HINT_SUFFIX = `)`
 
+/**
+ * Vue compiler node transform that wraps every `v-register`
+ * expression in a small IIFE so the directive can flag a field as
+ * connected during SSR. Eliminates the `false → true` flicker on
+ * `getFieldState(path).isConnected` after hydration.
+ *
+ * Must run after `vRegisterPreambleTransform`. Wired automatically
+ * by `@chemical-x/forms/vite` and `@chemical-x/forms/nuxt`.
+ */
 export const vRegisterHintTransform: NodeTransform = (node) => {
   try {
     if (node.type !== NodeTypes.ELEMENT) return

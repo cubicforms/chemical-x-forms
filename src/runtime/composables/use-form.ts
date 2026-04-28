@@ -13,7 +13,30 @@ import type {
 } from '../adapters/zod-v3/types-zod-adapter'
 import { useAbstractForm } from './use-abstract-form'
 
-// Overload the useForm type definition to signal that zod schemas have 1st class support
+/**
+ * Create a form bound to a Zod v3 schema (or any compatible
+ * `AbstractSchema`).
+ *
+ * ```ts
+ * import { useForm } from '@chemical-x/forms/zod-v3'
+ * import { z } from 'zod'
+ *
+ * const form = useForm({
+ *   schema: z.object({
+ *     email: z.string().email(),
+ *     password: z.string().min(8),
+ *   }),
+ *   defaultValues: { email: '' },
+ *   fieldValidation: { on: 'blur' },
+ * })
+ * ```
+ *
+ * Returns a form API exposing `register`, `getValue`, `setValue`,
+ * `handleSubmit`, `state`, field-array helpers, and more. See
+ * `UseAbstractFormReturnType` for the full surface.
+ *
+ * For Zod v4, import from `@chemical-x/forms/zod` instead.
+ */
 export function useForm<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
   configuration: UseFormConfiguration<
     Form,

@@ -1,63 +1,39 @@
 /**
- * `useRegister()` — ambient bridge for component authors who wrap a
- * single field with custom presentation. The parent passes a
- * RegisterValue to the component:
+ * `useRegister()` — for component authors wrapping a single form
+ * field. Read the parent's `v-register` binding inside the component
+ * and re-bind it onto an inner native element so the wrapper still
+ * participates in the form lifecycle.
  *
- *   <MyInput v-register="form.register('email', { persist: true })" />
+ * Usage in the parent:
  *
- * The select-transform's component branch turns that into two
- * AST-level prop injections — `:value="reg.innerRef.value"` and
- * `:registerValue="reg"`. `useRegister()` reads the latter from
- * `attrs` and returns a `ComputedRef<RegisterValue | undefined>` the
- * child applies to its inner native element:
+ * ```vue
+ * <MyInput v-register="form.register('email')" />
+ * ```
  *
- *   <script setup lang="ts">
- *   import { useRegister } from '@chemical-x/forms'
- *   const register = useRegister()
- *   </script>
+ * Inside the wrapper component:
  *
- *   <template>
- *     <div class="wrapper">
- *       <input v-register="register" />
- *     </div>
- *   </template>
+ * ```vue
+ * <script setup lang="ts">
+ * import { useRegister } from '@chemical-x/forms'
+ * const register = useRegister()
+ * </script>
  *
- * Side effect: stamps a unique-symbol marker on the rendered root
- * DOM element via `onMounted`. The parent's directive's deferred
- * warn check (in `vRegisterDynamic.created` → nextTick) reads the
- * marker to suppress the "is a no-op" warn — without it, components
- * deeply nested in a parent's render tree would always warn (the
- * directive can't reach the child's instance via `binding.instance`,
- * since that's the page/parent component, whose `subTree` is the
- * outer element tree, not the child component vnode directly).
+ * <template>
+ *   <div class="wrapper">
+ *     <input v-register="register" />
+ *   </div>
+ * </template>
+ * ```
  *
- * The marker on `el` is enough because the warn-suppression decision
- * runs after `onMounted` (Vue's nextTick fires after post-render
- * effects), by which point the marker is set if useRegister was
- * called during the child's setup.
+ * Returns a `ComputedRef<RegisterValue | undefined>`. The value is
+ * `undefined` when the component is rendered without a parent
+ * `v-register` (a dev-mode warning surfaces). Always pass the result
+ * to `v-register` directly; the directive handles the undefined case
+ * gracefully.
  *
- * The actual bug-fix (don't clobber form state via bubbled events
- * reading `el.value` off a non-form root) is handled in the
- * directive's listener bodies — they bail when the rendered root
- * isn't a supported tag and the assigner is the default. See
- * `directive.ts > shouldBailListener` for that contract.
- *
- * Three resolution modes:
- *
- *   1. Inside child setup, parent passed `registerValue` →
- *      `ComputedRef<RegisterValue>`.
- *   2. Inside child setup, NO parent `registerValue` (component
- *      rendered standalone) → `ComputedRef<undefined>` + one-shot
- *      dev-warn pointing at the call site.
- *   3. Outside any setup scope → `ComputedRef<undefined>` + one-shot
- *      dev-warn. NEVER throws (matches the recent useFormContext
- *      shift toward warn-and-degrade, PR #149).
- *
- * For compound components reaching multiple fields (or for any path-
- * addressed register call), use `useFormContext<Form>(key?)` and call
- * `ctx.register('a.b.c')` directly — that composable already handles
- * typed sub-paths, structured paths, getFieldState, etc. `useRegister`
- * stays a single-purpose ambient hook for the "wrap one field" case.
+ * For wrappers that need to bind multiple fields (compound forms),
+ * use `useFormContext<Form>(key?)` instead and call `ctx.register(...)`
+ * directly.
  */
 import {
   computed,

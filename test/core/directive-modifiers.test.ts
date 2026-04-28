@@ -133,7 +133,11 @@ describe('vRegisterText — `.trim`', () => {
     document.body.innerHTML = ''
   })
 
-  it('input event writes the trimmed value', () => {
+  it('input event writes the RAW value (deferred trim — no per-keystroke strip)', () => {
+    // Per-keystroke trim fights Vue's :value patch — typing a
+    // trailing space would otherwise collapse before the user could
+    // keep typing (regression #16b). The trim is committed on blur
+    // by the change-normalization listener instead.
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
@@ -143,20 +147,22 @@ describe('vRegisterText — `.trim`', () => {
 
     input.value = '  hello  '
     input.dispatchEvent(new Event('input'))
-    expect(setValue).toHaveBeenCalledWith('hello', expect.objectContaining({}))
+    expect(setValue).toHaveBeenCalledWith('  hello  ', expect.objectContaining({}))
   })
 
-  it('change event normalizes the visible DOM (trims el.value on blur)', () => {
+  it('change event commits the trimmed value to the model AND normalizes the DOM', () => {
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
-    const { value } = makeRegisterValue('')
+    const { value, setValue } = makeRegisterValue('')
 
     hooks.created?.(input, makeBinding(value, { trim: true }), makeVNode({}), null)
 
     input.value = '  hello  '
     input.dispatchEvent(new Event('change'))
+    // Both DOM and model arrive at the canonical trimmed form.
     expect(input.value).toBe('hello')
+    expect(setValue).toHaveBeenLastCalledWith('hello', expect.objectContaining({}))
   })
 })
 
@@ -263,7 +269,7 @@ describe('vRegisterText — combined modifiers', () => {
     expect(setValue).toHaveBeenCalledWith(99, expect.objectContaining({}))
   })
 
-  it('`.trim.number`: input writes trim-then-cast; change re-runs both', () => {
+  it('`.trim.number`: input writes the cast value (trim is deferred); change commits and normalizes', () => {
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
@@ -271,6 +277,9 @@ describe('vRegisterText — combined modifiers', () => {
 
     hooks.created?.(input, makeBinding(value, { trim: true, number: true }), makeVNode({}), null)
 
+    // Input listener writes the cast value. Trim is deferred — but
+    // `looseToNumber('  42  ')` calls `parseFloat`, which already
+    // handles surrounding whitespace, so the model still lands on 42.
     input.value = '  42  '
     input.dispatchEvent(new Event('input'))
     expect(setValue).toHaveBeenCalledWith(42, expect.objectContaining({}))
@@ -287,7 +296,7 @@ describe('vRegisterText — combined modifiers', () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe('vRegisterText — <textarea> reuses the same variant', () => {
-  it('`.trim` works on textarea', () => {
+  it('`.trim` works on textarea — input writes raw, change commits trimmed', () => {
     const ta = document.createElement('textarea')
     document.body.appendChild(ta)
     const { value, setValue } = makeRegisterValue('')
@@ -296,7 +305,11 @@ describe('vRegisterText — <textarea> reuses the same variant', () => {
 
     ta.value = '  multi line  '
     ta.dispatchEvent(new Event('input'))
-    expect(setValue).toHaveBeenCalledWith('multi line', expect.objectContaining({}))
+    expect(setValue).toHaveBeenLastCalledWith('  multi line  ', expect.objectContaining({}))
+
+    ta.dispatchEvent(new Event('change'))
+    expect(setValue).toHaveBeenLastCalledWith('multi line', expect.objectContaining({}))
+    expect(ta.value).toBe('multi line')
   })
 })
 
@@ -557,18 +570,19 @@ beforeEach(() => {
 
 /**
  * Spike `16b` reported "can't use the spacebar at all" on a
- * `.trim`-modified text input. The trim runs at input time, so
- * a leading space is stripped before the assigner — but the user's
- * typing flow assumes the space is part of "hello world", not a
- * leading-whitespace-then-content pattern. Reproduce + pin behavior
- * here so the fix doesn't regress.
+ * `.trim`-modified text input. Pre-fix the directive trimmed the
+ * value on every input event; that wrote the trimmed string to the
+ * model, Vue's `:value` patch then pulled the DOM back to match
+ * the (shorter) model on the next render and the user's
+ * just-typed space disappeared. Fix: defer the trim to `change`
+ * (blur) and let mid-typing writes keep their whitespace.
  */
 describe('regression: vRegisterText × `.trim` × spacebar after text', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
   })
 
-  it('typing a trailing space after content writes the trimmed value (no internal space loss)', () => {
+  it('typing a trailing space after content writes the RAW value (deferred trim)', () => {
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
@@ -581,14 +595,12 @@ describe('regression: vRegisterText × `.trim` × spacebar after text', () => {
     input.dispatchEvent(new Event('input'))
     expect(setValue).toHaveBeenLastCalledWith('hello', expect.objectContaining({}))
 
-    // User then types a trailing space (now el.value = "hello ").
-    // The trimmed write is still "hello" so the form state doesn't
-    // change. The CRITICAL property: el.value must remain "hello "
-    // in the DOM so the user can keep typing (next char produces
-    // "hello w" → trim "hello w" → form sees the space preserved).
+    // User then types a trailing space. With deferred trim the model
+    // sees the raw "hello " so Vue's :value patch stays in sync
+    // with the DOM and the space the user is mid-typing survives.
     input.value = 'hello '
     input.dispatchEvent(new Event('input'))
-
+    expect(setValue).toHaveBeenLastCalledWith('hello ', expect.objectContaining({}))
     expect(input.value).toBe('hello ')
   })
 
@@ -606,11 +618,42 @@ describe('regression: vRegisterText × `.trim` × spacebar after text', () => {
       input.dispatchEvent(new Event('input'))
     }
 
-    // After the full sequence the form should hold "hello w" — the
-    // internal space survives because String.prototype.trim() only
-    // strips leading/trailing whitespace.
+    // After the full sequence the form holds the raw "hello w" —
+    // deferred trim does not strip the trailing space until blur.
     expect(setValue).toHaveBeenLastCalledWith('hello w', expect.objectContaining({}))
     expect(input.value).toBe('hello w')
+  })
+
+  it('many leading spaces survive until a real character is typed AND blur is committed', () => {
+    // Pre-fix scenario: user mashes the spacebar (form="" each
+    // keystroke under per-keystroke trim). DOM accumulates spaces.
+    // First non-space keystroke triggers per-keystroke trim → form
+    // becomes "a", patchDOMProp pulls DOM back from "          a"
+    // to "a", wiping the user's spaces. With deferred trim, every
+    // intermediate write is the raw el.value; no pull-back happens.
+    // The trim is committed only on blur.
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue('')
+
+    hooks.created?.(input, makeBinding(value, { trim: true }), makeVNode({}), null)
+
+    const tenSpaces = ' '.repeat(10)
+    input.value = tenSpaces
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenLastCalledWith(tenSpaces, expect.objectContaining({}))
+
+    // First real character — model still receives the raw value.
+    input.value = `${tenSpaces}a`
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenLastCalledWith(`${tenSpaces}a`, expect.objectContaining({}))
+    expect(input.value).toBe(`${tenSpaces}a`)
+
+    // Blur commits the trim — DOM and model agree on "a".
+    input.dispatchEvent(new Event('change'))
+    expect(setValue).toHaveBeenLastCalledWith('a', expect.objectContaining({}))
+    expect(input.value).toBe('a')
   })
 })
 

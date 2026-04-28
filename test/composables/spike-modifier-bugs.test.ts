@@ -155,10 +155,10 @@ describe('regression: 16b — `<input v-register.trim>` spacebar after content',
     input.dispatchEvent(new Event('input'))
     await flush()
 
-    // The user typed a space. The trimmed write is "" (which equals
-    // the form's current "" value, so the identity short-circuit
-    // skips the form replacement entirely; no re-render fires; the
-    // user's space stays visible until they type a real character).
+    // The user typed a space. With deferred trim the input listener
+    // writes the raw " " to the model — DOM and model agree, Vue's
+    // :value patch leaves el.value alone, the user's space stays
+    // visible. The trim is committed later on blur (`change`).
     expect(input.value).toBe(' ')
   })
 })

@@ -398,7 +398,16 @@ const vRegisterText: RegisterTextCustomDirective = {
       const target = e.target as ComposingTarget
       if (target === null || target.composing) return
       let domValue: string | number = el.value
-      if (trim === true) {
+      // Deferred-to-blur trim: only trim here when this listener is
+      // already on `change` (i.e. `.lazy.trim`). Per-keystroke trim
+      // on the `input` event fights Vue's `:value` patch — when the
+      // user types a trailing space the trimmed write reaches the
+      // model first, Vue's patch then sees `el.value` ahead of the
+      // model and rewrites the DOM back to the trimmed form,
+      // swallowing the space the user is still typing. The `change`-
+      // bound normalization listener below catches the canonical
+      // trimmed write at blur instead.
+      if (trim === true && lazy === true) {
         domValue = domValue.trim()
       }
       if (castToNumber) {
@@ -428,6 +437,16 @@ const vRegisterText: RegisterTextCustomDirective = {
         if (trim === true) normalized = normalized.trim()
         if (castToNumber) normalized = looseToNumber(normalized)
         el.value = typeof normalized === 'number' ? String(normalized) : normalized
+        // Catch up the model on blur for non-lazy `.trim`. The input
+        // listener wrote the raw mid-typing value (deferred trim);
+        // here on `change` we commit the canonical trimmed form so
+        // the DOM and the model agree once the user leaves the
+        // field. Under `.lazy.trim`, the input listener (on
+        // `change`) already wrote the trimmed value, so this branch
+        // skips to avoid a redundant duplicate write.
+        if (trim === true && lazy !== true) {
+          el[assignKey]?.(normalized)
+        }
       })
     }
     if (lazy !== true) {

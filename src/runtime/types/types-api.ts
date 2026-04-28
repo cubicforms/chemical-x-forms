@@ -967,10 +967,14 @@ export type RegisterTextModifier =
    */
   | 'lazy'
   /**
-   * Strip leading and trailing whitespace before writing. The
-   * value the form sees is the trimmed string; on blur the
-   * visible DOM value is also re-trimmed so the input itself
-   * shows the normalised text.
+   * Strip leading and trailing whitespace on blur. The form holds
+   * the user's raw input (whitespace included) while they're
+   * typing; on `change` (blur / commit) the value is trimmed
+   * once and written back to both the model and the visible DOM.
+   * Per-keystroke trim was rejected because it fights Vue's
+   * `:value` patch — typing a trailing space would otherwise
+   * collapse before the user could keep typing. Combine with
+   * `.lazy` to skip the mid-typing writes entirely.
    */
   | 'trim'
   /**

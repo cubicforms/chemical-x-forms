@@ -151,6 +151,27 @@ describe('displayValue', () => {
     form.setValue('count', 200)
     expect(binding.displayValue.value).toBe('200')
   })
+
+  it('shares `lastTypedForm` across multiple register() calls for the same path', () => {
+    // Two `<input v-register>` bindings to the same path each call
+    // `register('count')` — every render produces fresh RegisterValue
+    // objects, but they must share the typed-form state so the
+    // sibling input doesn't desync mid-typing. Storage updates live;
+    // both bindings' displayValue must surface the typed form.
+    const schema = z.object({ count: z.number() })
+    const { app, form } = setupForm(schema, { count: 0 })
+    apps.push(app)
+    const a = form.register('count')
+    const b = form.register('count')
+    // Same ref instance — sharing is by identity, not by copy.
+    expect(a.lastTypedForm).toBe(b.lastTypedForm)
+    form.setValue('count', 100)
+    a.lastTypedForm.value = '1e2'
+    // B sees A's write because they share the ref.
+    expect(b.lastTypedForm.value).toBe('1e2')
+    expect(a.displayValue.value).toBe('1e2')
+    expect(b.displayValue.value).toBe('1e2')
+  })
 })
 
 describe('markTransientEmpty', () => {

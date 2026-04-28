@@ -3,7 +3,7 @@ import type { RegisterOptions, RegisterValue, WriteMeta } from '../types/types-a
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { __DEV__ } from './dev'
-import { canonicalizePath, type Path } from './paths'
+import { canonicalizePath, type Path, type PathKey } from './paths'
 import { PERSISTENCE_MODULE_KEY } from './persistence'
 
 /**
@@ -71,6 +71,17 @@ const warnedMissingPersistConfig: WeakSet<FormStore<GenericForm>> | null = __DEV
   : null
 
 export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
+  // Path-keyed cache of typed-form refs. Lifted out of the per-call
+  // closure so multiple `register(path)` invocations for the same
+  // path — e.g. two `<input v-register>` bindings to `'numberText'`,
+  // or repeated calls inside a render function — share the same ref.
+  // Without sharing, the directive's keystroke listener writes to
+  // RegisterValue A's `lastTypedForm` while RegisterValue B's
+  // `displayValue` reads its own (always-null) ref, and Vue patches
+  // B's DOM to the canonical `String(storage)` mid-typing — yanking
+  // the user's caret on a sibling input.
+  const lastTypedFormByPath = new Map<PathKey, Ref<string | null>>()
+
   return function register(
     pathInput: string | Path,
     options?: RegisterOptions
@@ -86,8 +97,14 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
     // which Vue would otherwise patch into the DOM and yank the
     // cursor away from the user's caret. After blur the typed form
     // is cleared so `displayValue` falls back to the honest canonical
-    // form — what the user sees matches what's in storage.
-    const lastTypedForm = ref<string | null>(null)
+    // form — what the user sees matches what's in storage. Shared
+    // across all RegisterValues for the same path so paired inputs
+    // stay in sync mid-typing.
+    let lastTypedForm = lastTypedFormByPath.get(pathKey)
+    if (lastTypedForm === undefined) {
+      lastTypedForm = ref<string | null>(null)
+      lastTypedFormByPath.set(pathKey, lastTypedForm)
+    }
 
     // String-form view of the path's storage value, with `''` returned
     // for transient-empty membership and for null/undefined storage.

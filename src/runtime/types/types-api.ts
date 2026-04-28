@@ -144,7 +144,59 @@ export type AbstractSchema<Form, GetValueFormType> = {
    * populated `errors` array.
    */
   validateAtPath(data: unknown, path: Path | undefined): Promise<ValidationResponse<Form>>
+  /**
+   * Sync sister to `getSchemasAtPath` / `validateAtPath`. Returns the
+   * set of primitive `typeof`-style kinds the path's leaf schema
+   * accepts at write time. Wrappers (`.optional`, `.nullable`,
+   * `.default`, `.refine`, `.transform`, `.pipe`, `.readonly`,
+   * `.catch`, `.lazy`) are peeled; refinement-level constraints
+   * (`.email()`, `.min(N)`, enum membership, literal equality, regex)
+   * are IGNORED — they're a validation-time concern.
+   *
+   * Used by `setValueAtPath` to gate writes synchronously without
+   * round-tripping through async `validateAtPath`. The returned set
+   * unions across union branches and intersects across intersection
+   * sides.
+   *
+   * Conventions:
+   * - Empty set → permissive ("unknown / unconstrained"). The runtime
+   *   gate treats this as "accept anything." Surfaces for `z.any()` /
+   *   `z.unknown()` / `z.never()` and the lazy-peel-failure case.
+   * - For `z.enum(['a','b'])` (string entries): returns `{'string'}`.
+   *   For numeric enums: `{'number'}`.
+   * - For `z.literal(x)`: returns `{primitiveKindOf(x)}`.
+   * - For `z.object(...)`: `{'object'}`. For `z.array(...)`: `{'array'}`.
+   *   The runtime walker recurses into entries / elements at write time.
+   * - For nullable / optional wrappers: adds `'null'` / `'undefined'`
+   *   to the inner's set.
+   */
+  getSlimPrimitiveTypesAtPath(path: Path): Set<SlimPrimitiveKind>
 }
+
+/**
+ * The set of primitive "kinds" the slim-primitive write contract
+ * recognises. Drawn from `typeof` plus a few well-known reference
+ * shapes (`Date`, `Array`, `Map`, `Set`, plain `object`, `null`).
+ *
+ * The runtime gate's `slimKindOf(value)` returns one of these for a
+ * value; the adapter's `getSlimPrimitiveTypesAtPath(path)` returns
+ * the set of kinds the path's leaf schema accepts. A write is gated
+ * by `accepted.has(slimKindOf(value))`.
+ */
+export type SlimPrimitiveKind =
+  | 'string'
+  | 'number'
+  | 'boolean'
+  | 'bigint'
+  | 'date'
+  | 'null'
+  | 'undefined'
+  | 'object'
+  | 'array'
+  | 'symbol'
+  | 'function'
+  | 'map'
+  | 'set'
 
 /**
  * Status the `validate()` reactive ref exposes. `pending: true` means a

@@ -1,5 +1,10 @@
 import type { z } from 'zod'
-import type { AbstractSchema, FormKey, ValidationError } from '../../types/types-api'
+import type {
+  AbstractSchema,
+  FormKey,
+  SlimPrimitiveKind,
+  ValidationError,
+} from '../../types/types-api'
 import type { DeepPartial, GenericForm } from '../../types/types-core'
 import { assertSupportedKinds } from './assert-supported'
 import { zodIssuesToValidationErrors } from './errors'
@@ -7,6 +12,7 @@ import { fingerprintZodSchema } from './fingerprint'
 import { deriveDefault, getDefaultValuesFromZodSchema } from './default-values'
 import { assertZodVersion, kindOf, unwrapInner } from './introspect'
 import { getNestedZodSchemasAtPath } from './path-walker'
+import { PERMISSIVE, slimPrimitivesOf } from './slim-primitives'
 
 /**
  * Zod v4 adapter — implements `AbstractSchema` against Zod v4's public
@@ -200,6 +206,20 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
               },
             }) as unknown as ReturnType<AbstractSchema<Form, Form>['getSchemasAtPath']>[number]
         )
+      },
+
+      getSlimPrimitiveTypesAtPath(path): Set<SlimPrimitiveKind> {
+        // Resolve every leaf candidate at the path (unions return
+        // multiple) and union their slim-primitive sets. Empty path
+        // is the root form: always an object.
+        if (path.length === 0) return new Set(['object'])
+        const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+        if (resolved.length === 0) return new Set(PERMISSIVE)
+        const out = new Set<SlimPrimitiveKind>()
+        for (const candidate of resolved) {
+          for (const k of slimPrimitivesOf(candidate)) out.add(k)
+        }
+        return out
       },
 
       async validateAtPath(data, path): ReturnType<AbstractSchema<Form, Form>['validateAtPath']> {

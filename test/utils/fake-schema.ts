@@ -78,6 +78,13 @@ export function fakeSchema<F extends GenericForm>(
       void path
       return []
     },
+    getSlimPrimitiveTypesAtPath(path) {
+      void path
+      // Permissive default: tests that don't model schema kinds get a
+      // permissive write-gate. Tests that need stricter behaviour
+      // override this method on the returned object.
+      return new Set(['string', 'number', 'boolean', 'object', 'array', 'null', 'undefined'])
+    },
     async validateAtPath(data, path): Promise<ValidationResponse<F>> {
       if (validator) return await validator(data, path)
       return {

@@ -43,12 +43,13 @@ function mountWith<S extends z.ZodObject>(
   const captured: { api?: ReturnType<typeof useForm<S>> } = {}
   const App = defineComponent({
     setup() {
-      captured.api = useForm({
+      const config = {
         schema,
         key: `slim-defaults-${Math.random().toString(36).slice(2)}`,
         validationMode,
-        defaultValues: defaults as z.infer<S>,
-      })
+        defaultValues: defaults,
+      }
+      captured.api = (useForm as (cfg: unknown) => ReturnType<typeof useForm<S>>)(config)
       return () => h('div')
     },
   })

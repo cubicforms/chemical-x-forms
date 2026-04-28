@@ -971,10 +971,7 @@ export type RegisterTextModifier =
    * the user's raw input (whitespace included) while they're
    * typing; on `change` (blur / commit) the value is trimmed
    * once and written back to both the model and the visible DOM.
-   * Per-keystroke trim was rejected because it fights Vue's
-   * `:value` patch — typing a trailing space would otherwise
-   * collapse before the user could keep typing. Combine with
-   * `.lazy` to skip the mid-typing writes entirely.
+   * Combine with `.lazy` to skip the mid-typing writes entirely.
    */
   | 'trim'
   /**

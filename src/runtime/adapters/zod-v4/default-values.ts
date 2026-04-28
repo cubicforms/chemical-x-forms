@@ -1,6 +1,8 @@
 import type { z } from 'zod'
-import { isPlainRecord, setAtPath } from '../../core/path-walker'
+import { getAtPath, isPlainRecord, setAtPath } from '../../core/path-walker'
+import { slimKindOf } from '../../core/slim-primitive-gate'
 import { getDiscriminatedUnionFirstOption, unwrapToDiscriminatedUnion } from './discriminator'
+import { slimPrimitivesOf } from './slim-primitives'
 import {
   getCatchDefault,
   getDefaultValue,
@@ -241,7 +243,21 @@ export function getDefaultValuesFromZodSchema<Form>(
     return { data: firstParse.data as Form, success: true, slimSchema }
   }
 
-  // Validate-then-fix: walk issues and fill defaults per path.
+  // Validate-then-fix: walk issues and fill defaults per path. Under
+  // the slim-primitive write contract, we only fix issues that violate
+  // STRUCTURAL or PRIMITIVE-TYPE shape. Refinement-level issues (enum
+  // membership, literal equality, .email/.min(N)/regex, custom
+  // refines, unrecognized_keys) pass THROUGH unchanged — the user's
+  // defaultValues are preserved verbatim and the strict-mode
+  // validation pass downstream surfaces the error at construction.
+  //
+  // The discriminant: look up the actual offending value at the
+  // issue's path and check its slim primitive kind against the
+  // candidate schema's slim primitive set. If the value's kind IS in
+  // the set, the issue is refinement-level → skip. If it's NOT in
+  // the set, the issue is primitive/structural → fix. This unifies
+  // every issue code under one check rather than enumerating refinement
+  // codes (which differ between Zod versions and grow over time).
   let fixedData = merged as Record<string, unknown>
   for (const issue of firstParse.error.issues) {
     const pathSegments = issue.path.map((seg) => (typeof seg === 'number' ? seg : String(seg))) as (
@@ -255,6 +271,14 @@ export function getDefaultValuesFromZodSchema<Form>(
     if (candidates.length === 0) continue
     const candidate = candidates[0]
     if (candidate === undefined) continue
+
+    // Refinement-vs-primitive classification.
+    const valueAtPath = getAtPath(merged, pathSegments)
+    const slimKinds = slimPrimitivesOf(candidate)
+    if (slimKinds.size > 0 && slimKinds.has(slimKindOf(valueAtPath))) {
+      // Refinement-level: pass through unchanged.
+      continue
+    }
 
     // Some issues don't carry a type path: fall back to deriving a default
     // for the schema at that location.

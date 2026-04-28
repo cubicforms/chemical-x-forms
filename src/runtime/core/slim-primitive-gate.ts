@@ -45,8 +45,11 @@ function shouldWarnOnce(store: object, key: string): boolean {
  * Map a value to its slim primitive kind. Mirrors the adapter walker's
  * leaf-level mapping so the same kind names compare across the
  * accept-set boundary.
+ *
+ * Exported so the default-values pipelines can reuse the same
+ * primitive-vs-refinement classification logic the runtime gate uses.
  */
-function slimKindOf(value: unknown): SlimPrimitiveKind {
+export function slimKindOf(value: unknown): SlimPrimitiveKind {
   if (value === null) return 'null'
   if (value === undefined) return 'undefined'
   if (Array.isArray(value)) return 'array'

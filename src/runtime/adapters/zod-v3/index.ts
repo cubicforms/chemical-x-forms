@@ -10,6 +10,8 @@ import type {
   SlimPrimitiveKind,
   ValidationError,
 } from '../../types/types-api'
+import { getAtPath } from '../../core/path-walker'
+import { slimKindOf } from '../../core/slim-primitive-gate'
 
 // The adapter speaks the pre-rewrite dotted-string path format at the
 // AbstractSchema boundary; core passes dotted strings to validateAtPath
@@ -138,8 +140,22 @@ export function zodAdapter<
 
         // `if (success) return ...` above handles the happy path; below we're
         // always in the failure case.
+        //
+        // Under the slim-primitive write contract, the validate-then-fix
+        // loop only patches issues that violate STRUCTURAL or PRIMITIVE-TYPE
+        // shape. Refinement-level issues (invalid_enum_value, invalid_literal,
+        // invalid_string, too_small, too_big, custom, unrecognized_keys)
+        // pass THROUGH unchanged — the user's defaultValues are preserved
+        // verbatim and the strict-mode validation pass downstream surfaces
+        // the error at construction.
+        //
+        // The classifier: look up the actual offending value at the issue's
+        // path and check its slim primitive kind against the candidate
+        // schema's slim primitive set. If the value's kind IS in the set,
+        // the issue is refinement-level → skip. If it's NOT in the set,
+        // the issue is primitive/structural → fix. Unifies every issue
+        // code under one check.
         {
-          // use error messages to dynamically construct correct initial state
           for (const issue of error.issues) {
             const schemasAtPath = getNestedZodSchemasAtPath(slimSchema, issue.path)
             // `set` from lodash accepts a Segment[] directly; keeps the
@@ -152,6 +168,17 @@ export function zodAdapter<
                 `No schemas at path '${path.join(PATH_SEPARATOR)}' for key '${_formKey}'`
               )
               continue
+            }
+
+            // Refinement-vs-primitive classification.
+            const candidate = schemasAtPath[0]
+            if (candidate !== undefined) {
+              const valueAtPath = getAtPath(rawDefaultValues, path)
+              const slimKinds = slimPrimitivesV3(candidate as z.ZodTypeAny)
+              if (slimKinds.size > 0 && slimKinds.has(slimKindOf(valueAtPath))) {
+                // Refinement-level: pass through unchanged.
+                continue
+              }
             }
 
             for (const schemaAtPath of schemasAtPath) {
@@ -179,21 +206,47 @@ export function zodAdapter<
                 continue
               }
 
-              if (issue.code === 'invalid_enum_value') {
-                const [defaultValue, found] = unwrapDefault(schemaAtPath)
-                set(fixedData, path, found ? defaultValue : issue.options[0])
+              // Wrong-primitive issues with non-invalid_type codes (e.g.,
+              // invalid_enum_value where the offending value is a number
+              // against a string-enum). Fall back to the schema's default.
+              const [defaultValue, found] = unwrapDefault(schemaAtPath)
+              if (found) {
+                set(fixedData, path, defaultValue)
                 continue
               }
-
-              if (issue.code === 'invalid_literal') {
-                set(fixedData, path, issue.expected)
-                continue
+              // Last-ditch: derive a default for the schema kind at this
+              // path. Skips if no useful default emerges.
+              const ctx: DefaultValueContext = {
+                formKey: _formKey,
+                discriminator: {
+                  isDiscriminatorKey: false,
+                  schema: undefined,
+                  useDefaultSchemaValues: false,
+                },
               }
-
-              const { success, data } = slimSchema.safeParse(fixedData)
-              if (success) {
-                fixedData = data // nested state resolved at path!
-                break
+              // Use the slim primitive's first kind to derive a default.
+              const slimKinds = slimPrimitivesV3(schemaAtPath as z.ZodTypeAny)
+              const firstKind = [...slimKinds][0]
+              if (firstKind !== undefined) {
+                const expected =
+                  firstKind === 'string'
+                    ? 'string'
+                    : firstKind === 'number'
+                      ? 'number'
+                      : firstKind === 'boolean'
+                        ? 'boolean'
+                        : firstKind === 'bigint'
+                          ? 'bigint'
+                          : firstKind === 'date'
+                            ? 'date'
+                            : firstKind === 'array'
+                              ? 'array'
+                              : firstKind === 'object'
+                                ? 'object'
+                                : null
+                if (expected !== null) {
+                  set(fixedData, path, getDefaultValue(expected, ctx))
+                }
               }
             }
           }

@@ -149,8 +149,7 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
       },
 
       setValueWithInternalPath: (value: unknown, meta?: WriteMeta): boolean => {
-        state.setValueAtPath(segments, value, meta)
-        return true
+        return state.setValueAtPath(segments, value, meta)
       },
 
       // Called by the `vRegisterHint` compile-time transform's wrapping

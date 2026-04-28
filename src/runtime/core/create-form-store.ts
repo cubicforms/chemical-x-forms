@@ -14,6 +14,7 @@ import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS } from './defaults'
 import { diffAndApply } from './diff-apply'
 import { canonicalizePath, type Path, type PathKey, type Segment } from './paths'
 import { getAtPath, mergeStructural, setAtPath, setAtPathWithSchemaFill } from './path-walker'
+import { isSlimPrimitiveValid } from './slim-primitive-gate'
 import {
   createPersistOptInRegistry,
   type PersistOptInRegistry,
@@ -135,8 +136,12 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    * computes `meta.persist` from the per-element opt-in registry; other
    * internal call sites pass `meta.persist = hasAnyOptInForPath(path)`.
    * Public `form.setValue` passes no meta.
+   *
+   * Returns `false` when the slim-primitive gate rejects the write
+   * (the value's primitive shape doesn't match the schema's slim
+   * shape at the path). The store is unchanged in that case.
    */
-  setValueAtPath(path: Path, value: unknown, meta?: WriteMeta): void
+  setValueAtPath(path: Path, value: unknown, meta?: WriteMeta): boolean
   getValueAtPath(path: Path): unknown
 
   // --- reset ---
@@ -533,7 +538,15 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     }
   }
 
-  function setValueAtPath(path: Path, value: unknown, meta?: WriteMeta): void {
+  function setValueAtPath(path: Path, value: unknown, meta?: WriteMeta): boolean {
+    // Slim-primitive write gate: every leaf in the value must match
+    // the schema's slim primitive set at its sub-path. Refinement-level
+    // constraints (.email/.min/enum membership/etc.) are NOT enforced
+    // here — they're a validation concern. See ./slim-primitive-gate.ts.
+    if (!isSlimPrimitiveValid(schema, form, path, value)) {
+      return false
+    }
+
     // Structural-completeness invariant: every write must leave the
     // form satisfying the slim schema. Two ingress points to fill:
     //   1. The target value (consumer may have passed a partial; the
@@ -552,6 +565,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     if (fieldValidationMode === 'change') {
       scheduleFieldValidation(path, false /* debounced */)
     }
+    return true
   }
 
   /**
@@ -941,7 +955,17 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // Leaf shortcut: direct originals hit means one setValueAtPath does it.
     const leafEntry = originals.get(targetKey)
     if (leafEntry !== undefined) {
-      setValueAtPath(targetSegments, leafEntry.value)
+      const wrote = setValueAtPath(targetSegments, leafEntry.value)
+      if (!wrote) {
+        // Originals come from the construction-time pipeline, which
+        // guarantees primitive-correctness. A rejected reset write
+        // signals an invariant violation upstream.
+        console.error(
+          `[@chemical-x/forms] resetField: leaf write rejected for path '${targetKey}' — ` +
+            `originals contain a value that doesn't satisfy the slim primitive shape. ` +
+            `This is a bug in the construction pipeline.`
+        )
+      }
       schemaErrors.delete(targetKey)
       userErrors.delete(targetKey)
       clearFieldRecordFlags(targetKey)
@@ -974,7 +998,14 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     }
     if (!anyMatch) return // nothing tracked under this prefix; no-op
 
-    setValueAtPath(targetSegments, subtree)
+    const wroteSubtree = setValueAtPath(targetSegments, subtree)
+    if (!wroteSubtree) {
+      console.error(
+        `[@chemical-x/forms] resetField: subtree write rejected at path '${targetKey}' — ` +
+          `originals contain values that don't satisfy the slim primitive shape. ` +
+          `This is a bug in the construction pipeline.`
+      )
+    }
 
     // Clear errors and reset field-record flags for the target + every
     // descendant. Segments come from the stored records (each ValidationError

@@ -692,7 +692,19 @@ export type RegisterValue<Value = unknown> = {
   persistOptIns: PersistOptInRegistry
 }
 
-export type CustomDirectiveRegisterAssignerFn = (value: unknown) => void
+/**
+ * Returns `true` when the underlying setValue write succeeded, `false`
+ * when the slim-primitive gate rejected it. Listeners (e.g.
+ * vRegisterSelect's change handler) use the boolean to gate
+ * post-write side effects like the `_assigning` flag, so the DOM
+ * auto-reverts on rejection.
+ *
+ * Consumer-installed assigners (via `el[assignKey]` or
+ * `onUpdate:registerValue`) MAY return undefined for back-compat —
+ * the listener treats undefined as "succeeded" since pre-rewrite
+ * consumers had no way to signal otherwise.
+ */
+export type CustomDirectiveRegisterAssignerFn = (value: unknown) => boolean | undefined
 export type CustomRegisterDirective<T, Modifiers extends string = string> = ObjectDirective<
   T & {
     _assigning?: boolean

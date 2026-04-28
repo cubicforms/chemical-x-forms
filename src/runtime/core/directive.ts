@@ -176,12 +176,17 @@ const getModelAssigner = (
   // The default assigner below auto-attaches per-element meta.
   const fn: unknown = vnode.props?.['onUpdate:registerValue']
   if (isArray(fn)) {
-    return (value) =>
+    return (value) => {
       invokeArrayFns(
         fn.filter((x) => isFunction(x)) as ((...args: unknown[]) => unknown)[],
         value,
         registerValue
       )
+      // Multi-listener case: no single boolean to surface. Return
+      // undefined so the listener treats this as "succeeded" — matches
+      // the back-compat contract for consumer-installed assigners.
+      return undefined
+    }
   }
   if (isFunction(fn)) {
     return fn as CustomDirectiveRegisterAssignerFn
@@ -189,9 +194,12 @@ const getModelAssigner = (
   // Default-installed assigner. Tagged so the listener-body bail
   // (`shouldBailListener`) can distinguish it from consumer overrides
   // and prevent the bubbled-write bug on non-supported roots.
+  //
+  // Returns the underlying setValue boolean so listeners (e.g.
+  // vRegisterSelect's change handler) can detect rejection and gate
+  // post-write side effects like the `_assigning` flag.
   const defaultAssigner: CustomDirectiveRegisterAssignerFn = (value) => {
-    registerValue.setValueWithInternalPath(value, computePersistMeta(el, registerValue))
-    return undefined
+    return registerValue.setValueWithInternalPath(value, computePersistMeta(el, registerValue))
   }
   ;(defaultAssigner as unknown as DefaultAssignerCarrier)[DEFAULT_ASSIGNER_TAG] = true
   return defaultAssigner
@@ -506,13 +514,22 @@ const vRegisterSelect: RegisterSelectCustomDirective = {
       const selectedVal = Array.prototype.filter
         .call(el.options, (o: HTMLOptionElement) => o.selected)
         .map((o: HTMLOptionElement) => (number === true ? looseToNumber(getValue(o)) : getValue(o)))
-      el[assignKey]?.(
+      const wrote = el[assignKey]?.(
         el.multiple ? (isSetModel ? new Set(selectedVal) : selectedVal) : selectedVal[0]
       )
-      el._assigning = true
-      void nextTick(() => {
-        el._assigning = false
-      })
+      // Only set `_assigning` when the write actually landed. A
+      // rejected write (slim-primitive gate said no) should NOT
+      // suppress the next `updated` hook's `setSelected` — we want
+      // the DOM to revert to `innerRef.value` since the form state
+      // didn't change. `undefined` from a consumer-installed assigner
+      // counts as "succeeded" for back-compat (their assigner has no
+      // way to signal otherwise).
+      if (wrote !== false) {
+        el._assigning = true
+        void nextTick(() => {
+          el._assigning = false
+        })
+      }
     })
     setAssignFunction(el, vnode, value)
   },

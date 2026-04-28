@@ -19,7 +19,7 @@ import type { FormStore } from './create-form-store'
 import { buildFieldArrayApi } from './field-arrays'
 import { buildFieldStateAccessor } from './field-state-api'
 import type { HistoryModule } from './history'
-import { getAtPath, mergeStructural } from './path-walker'
+import { getAtPath } from './path-walker'
 import { canonicalizePath, type Path, type Segment } from './paths'
 import { PERSISTENCE_MODULE_KEY, type PersistenceModule } from './persistence'
 import { enforceSensitiveCheck } from './persistence/sensitive-names'
@@ -103,9 +103,11 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
         typeof pathOrValue === 'function'
           ? (pathOrValue as (prev: unknown) => unknown)(state.form.value)
           : pathOrValue
-      const completed = mergeStructural(state.schema, [], next)
-      state.applyFormReplacement(completed as Form)
-      return true
+      // Route through setValueAtPath at the empty path so the
+      // slim-primitive gate runs against the whole-form value too.
+      // mergeStructural still handles the partial-replacement fill
+      // inside setValueAtPath.
+      return state.setValueAtPath([], next)
     }
     const segments = canonicalizePath(pathOrValue as string | Path).segments
     // Path-form callback: when the slot at `segments` is unpopulated,
@@ -121,8 +123,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     } else {
       resolvedValue = maybeValue
     }
-    state.setValueAtPath(segments, resolvedValue)
-    return true
+    return state.setValueAtPath(segments, resolvedValue)
   }
 
   // --- Error store API — dotted-key record for back-compat ---

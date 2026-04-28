@@ -826,15 +826,34 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
 
     const optionValue = getValue(option)
     if (isMultiple) {
+      const optionType = typeof optionValue
       if (isArrayValue) {
-        const optionType = typeof optionValue
         // fast path for string / number values
         if (optionType === 'string' || optionType === 'number') {
           option.selected = externalValue.some((v) => String(v) === String(optionValue))
         } else {
           option.selected = looseIndexOf(externalValue, optionValue) > -1
         }
+      } else if (optionType === 'string' || optionType === 'number') {
+        // Set + primitive option: mirror the Array branch's
+        // `String(v) === String(optionValue)` coercion. Without this,
+        // `Set{1}.has('1')` is `false` (Set membership is strict
+        // equality), so a `Set<number>` model against string-valued
+        // options silently fails to drive the DOM on mount. Iterating
+        // is O(N) per option but multi-selects are small, and the
+        // ergonomic win matches the Array fast path's permissiveness.
+        let matched = false
+        for (const v of externalValue as Set<unknown>) {
+          if (String(v) === String(optionValue)) {
+            matched = true
+            break
+          }
+        }
+        option.selected = matched
       } else {
+        // Set + non-primitive option (rare — option value bound via
+        // `:value="someObject"`): identity-based `.has` keeps Vue
+        // parity since `String({})` is useless for comparison.
         option.selected = (externalValue as Set<unknown>).has(optionValue)
       }
     } else if (looseEqual(optionValue, externalValue)) {

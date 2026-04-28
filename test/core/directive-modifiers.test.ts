@@ -592,6 +592,39 @@ describe('vRegisterSelect — multi-select (Array / Set models)', () => {
     expect(select.options[2]?.selected).toBe(true)
   })
 
+  it('mounted: Set<number> model selects matching string-valued options (cross-type coercion)', () => {
+    // `Set.has('1')` returns false for `Set{1}` in raw JS, so the
+    // string-coercion fast path mirrors the Array branch's behavior:
+    // `String(v) === String(optionValue)` lets `Set<number>` work
+    // against string-valued options (and vice versa).
+    const select = makeSelectWithOptions(['10', '20', '30'])
+    document.body.appendChild(select)
+    const { value } = makeRegisterValue<Set<number>>(new Set([10, 30]))
+
+    hooks.created?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+    hooks.mounted?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    expect(select.options[0]?.selected).toBe(true)
+    expect(select.options[1]?.selected).toBe(false)
+    expect(select.options[2]?.selected).toBe(true)
+  })
+
+  it('mounted: Set<string> model selects matching numeric options (reverse cross-type)', () => {
+    // The other direction — option values are still strings (DOM
+    // contract) but the Set's strings happen to look numeric. The
+    // coercion compares both via `String(...)` so the match holds.
+    const select = makeSelectWithOptions(['10', '20', '30'])
+    document.body.appendChild(select)
+    const { value } = makeRegisterValue<Set<string>>(new Set(['20', '30']))
+
+    hooks.created?.(select, makeBinding(value, {}), makeVNode({}), null)
+    hooks.mounted?.(select, makeBinding(value, {}), makeVNode({}), null)
+
+    expect(select.options[0]?.selected).toBe(false)
+    expect(select.options[1]?.selected).toBe(true)
+    expect(select.options[2]?.selected).toBe(true)
+  })
+
   it('warns and bails when a multi-select binding receives a scalar model in DEV', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const select = makeSelectWithOptions(['a', 'b'])

@@ -4,6 +4,7 @@ import { createApp, defineComponent, h, nextTick, withDirectives, type App } fro
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
+import { CxErrorCode } from '../../src/runtime/core/error-codes'
 import { canonicalizePath } from '../../src/runtime/core/paths'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
@@ -165,8 +166,8 @@ describe('persistence — transient-empty round-trips across mount', () => {
     const handler = captured.handleSubmit(onSubmit, onError)
     await handler()
     expect(onSubmit).not.toHaveBeenCalled()
-    const errs = onError.mock.calls[0]?.[0] as Array<{ message: string }>
-    expect(errs?.some((e) => e.message === 'No value supplied')).toBe(true)
+    const errs = onError.mock.calls[0]?.[0] as Array<{ code: string }>
+    expect(errs?.some((e) => e.code === CxErrorCode.NoValueSupplied)).toBe(true)
   })
 
   it('writes the transientEmptyPaths field after a numeric clear', async () => {

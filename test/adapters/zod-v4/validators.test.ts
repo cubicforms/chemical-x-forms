@@ -21,6 +21,9 @@ describe('zod v4 adapter — refine / superRefine error paths', () => {
     expect(result.errors).toHaveLength(1)
     expect(result.errors?.[0]?.path).toEqual(['username'])
     expect(result.errors?.[0]?.message).toBe('too short')
+    // .refine emits Zod's `custom` issue code; the adapter forwards it
+    // verbatim under the `zod:` prefix.
+    expect(result.errors?.[0]?.code).toBe('zod:custom')
   })
 
   it('.refine with explicit path redirects the error to that path', async () => {
@@ -39,6 +42,7 @@ describe('zod v4 adapter — refine / superRefine error paths', () => {
     expect(result.errors).toHaveLength(1)
     expect(result.errors?.[0]?.path).toEqual(['confirm'])
     expect(result.errors?.[0]?.message).toBe('passwords differ')
+    expect(result.errors?.[0]?.code).toBe('zod:custom')
   })
 
   it('.superRefine preserves the issue path it sets, including numeric segments', async () => {
@@ -174,5 +178,6 @@ describe('zod v4 adapter — validateAtPath forwards issue paths under a prefix'
     expect(result.success).toBe(false)
     expect(result.errors?.[0]?.path).toEqual(['age'])
     expect(result.errors?.[0]?.message).toBe('non-negative')
+    expect(result.errors?.[0]?.code).toBe('zod:custom')
   })
 })

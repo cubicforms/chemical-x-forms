@@ -1,3 +1,5 @@
+import type { Unset } from '../core/unset'
+
 /**
  * The minimum shape any form value satisfies — a plain record. Use
  * as a constraint for composables that work generically across forms
@@ -318,4 +320,49 @@ export type WriteShape<T> = T extends string | number | boolean | bigint | null 
           : Array<WriteShape<U>>
         : T extends object
           ? { [K in keyof T]: WriteShape<T[K]> }
+          : T
+
+/**
+ * Like `WriteShape<T>`, but additionally widens every primitive leaf
+ * (`string`, `number`, `boolean`, `bigint`) to admit `Unset` — the
+ * brand-typed sentinel consumers pass to indicate "this leaf starts
+ * displayed-empty" in `defaultValues`, `setValue`, and `reset`.
+ *
+ * Non-primitive leaves (`Date`, `RegExp`, `Map`, `Set`, functions)
+ * stay strict — `defaultValues: { joinedAt: unset }` against
+ * `z.date()` is a type error.
+ *
+ * The recursion mirrors `WriteShape<T>` exactly so `defaultValues`
+ * stays compatible at every nested position; the only divergence is
+ * the leaf widening. Tuple positions, unbounded arrays, and nested
+ * records all flow through unchanged.
+ *
+ * Example:
+ *
+ *   DefaultValuesShape<{ income: number; name: string; age: 21 }>
+ *     // → { income: number | Unset; name: string | Unset; age: number | Unset }
+ *
+ * Used by `UseFormConfiguration.defaultValues`, `setValue`'s value
+ * parameter, and `reset`'s parameter (commit 7 widens all three).
+ */
+export type DefaultValuesShape<T> = T extends string | number | boolean | bigint | null | undefined
+  ? T extends string
+    ? string | Unset
+    : T extends number
+      ? number | Unset
+      : T extends boolean
+        ? boolean | Unset
+        : T extends bigint
+          ? bigint | Unset
+          : T
+  : T extends Date | RegExp | Map<unknown, unknown> | Set<unknown> | ((...args: never) => unknown)
+    ? T
+    : T extends readonly [unknown, ...unknown[]]
+      ? { -readonly [K in keyof T]: DefaultValuesShape<T[K]> }
+      : T extends ReadonlyArray<infer U>
+        ? IsTuple<T> extends true
+          ? { -readonly [K in keyof T]: DefaultValuesShape<T[K]> }
+          : Array<DefaultValuesShape<U>>
+        : T extends object
+          ? { [K in keyof T]: DefaultValuesShape<T[K]> }
           : T

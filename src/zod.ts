@@ -28,3 +28,5 @@ export type { ZodKind } from './runtime/adapters/zod-v4'
 // discoverability alongside useForm.
 export { useFormContext } from './runtime/composables/use-form-context'
 export { useRegister } from './runtime/composables/use-register'
+export { unset, isUnset } from './runtime/core/unset'
+export type { Unset } from './runtime/core/unset'

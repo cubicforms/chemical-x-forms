@@ -53,6 +53,12 @@ export { useRegister } from './runtime/composables/use-register'
 // but exported for advanced consumers who install directives themselves).
 export { vRegister, isRegisterValue, assignKey } from './runtime/core/directive'
 
+// The `unset` sentinel — pass in `defaultValues`, `setValue`, or `reset`
+// to mark a primitive leaf as displayed-empty while storage holds the
+// slim default. See `src/runtime/core/unset.ts` for the full docblock.
+export { unset, isUnset } from './runtime/core/unset'
+export type { Unset } from './runtime/core/unset'
+
 // Public types
 export type {
   AbstractSchema,
@@ -105,6 +111,7 @@ export type {
 
 export type {
   DeepPartial,
+  DefaultValuesShape,
   FlatPath,
   GenericForm,
   IsTuple,

@@ -419,7 +419,28 @@ const vRegisterText: RegisterTextCustomDirective = {
         // raises "Required" if the schema demands a number (the
         // public-housing footgun fix). Without this, the directive's
         // pre-fix skip-on-empty silently desynced storage from UI.
+        //
+        // `<input type="number">` quirk: the browser blanks `el.value`
+        // mid-typing for malformed input (`1e` is incomplete scientific
+        // notation, so the browser hides the typed text from
+        // `el.value` even though it's still visually in the DOM).
+        // `validity.badInput` is `true` in that case and `false` for
+        // a genuine empty field — we use it to distinguish a real
+        // user-clear (mark) from a transient mid-edit (skip). Without
+        // this guard, typing `1e` into a `type="number"` field fires
+        // `markTransientEmpty`, `displayValue` recomputes to `''`,
+        // Vue patches the DOM and yanks the user's `1e` away.
         if (domValue === '') {
+          // Guard against non-input elements with custom assigners
+          // (the directive bails on default-assigner non-inputs via
+          // `shouldBailListener`, but a consumer-installed assigner
+          // can land on any tag — `validity` only exists on form
+          // controls). The cast types `validity` as optional to
+          // capture that shape.
+          const validity = (el as { validity?: ValidityState }).validity
+          if (validity?.badInput === true) {
+            return
+          }
           if (isRegisterValue(value)) {
             value.lastTypedForm.value = null
             value.markTransientEmpty()

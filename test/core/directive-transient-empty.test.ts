@@ -808,3 +808,101 @@ describe('directive — `.number` overflow (Infinity) refusal', () => {
     expect(setValue).toHaveBeenLastCalledWith(Number.MAX_VALUE, expect.objectContaining({}))
   })
 })
+
+describe('directive — `<input type="number">` mid-typing badInput is not a clear', () => {
+  // 16e regression: typing `1e` into `<input type="number">` blanked
+  // the visible field. The browser exposes `el.value === ''` for
+  // malformed mid-edit input (because `1e` isn't a complete scientific
+  // notation literal) even though `1e` is still visible in the DOM.
+  // Pre-fix the directive's input listener saw the empty value and
+  // fired `markTransientEmpty`, which made `displayValue` recompute
+  // to `''`; Vue's `:value` patch then yanked the user's typed `1e`
+  // away. The fix uses `validity.badInput` to distinguish a real
+  // user-clear (`badInput === false`) from a transient mid-edit
+  // (`badInput === true`). The check is benign for `.number` text
+  // inputs (which use a `beforeinput` regex filter upstream — `el.value`
+  // never blanks unexpectedly there, so `badInput` stays `false`).
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  function withBadInput(input: HTMLInputElement, badInput: boolean): void {
+    // jsdom's ValidityState doesn't reflect type=number malformed-input
+    // semantics, so we shim a partial ValidityState onto the element
+    // for these tests. Mirrors the shape of the real browser API the
+    // directive consults.
+    Object.defineProperty(input, 'validity', {
+      configurable: true,
+      get(): { badInput: boolean } {
+        return { badInput }
+      },
+    })
+  }
+
+  it('skips markTransientEmpty when `validity.badInput` is true on empty el.value', () => {
+    const input = document.createElement('input')
+    input.type = 'number'
+    document.body.appendChild(input)
+    const { value, markTransientEmpty, setValue } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, {}), makeVNode({ type: 'number' }), null)
+
+    // User typed `1e` — browser shows it in DOM but blanks el.value
+    // and flags badInput. The directive must NOT markTransientEmpty.
+    input.value = ''
+    withBadInput(input, true)
+    input.dispatchEvent(new Event('input'))
+
+    expect(markTransientEmpty).not.toHaveBeenCalled()
+    expect(setValue).not.toHaveBeenCalled()
+    // lastTypedForm untouched — display continues to track storage.
+    expect(value.lastTypedForm.value).toBeNull()
+  })
+
+  it('marks transient-empty when `validity.badInput` is false on empty el.value (real user clear)', () => {
+    const input = document.createElement('input')
+    input.type = 'number'
+    document.body.appendChild(input)
+    const { value, markTransientEmpty } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, {}), makeVNode({ type: 'number' }), null)
+
+    input.value = ''
+    withBadInput(input, false)
+    input.dispatchEvent(new Event('input'))
+
+    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
+  })
+
+  it('the badInput skip lets the eventual valid `1e2` commit live (post-fix smoke test)', () => {
+    // Walk the full typing path: `1` commits 1, `1e` is mid-edit
+    // (badInput=true, skipped, storage stays 1, DOM keeps `1e`),
+    // `1e2` commits 100. The user finishes typing and storage
+    // reaches the right value.
+    const input = document.createElement('input')
+    input.type = 'number'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, {}), makeVNode({ type: 'number' }), null)
+
+    input.value = '1'
+    withBadInput(input, false)
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenLastCalledWith(1, expect.objectContaining({}))
+
+    setValue.mockClear()
+    // `1e` — browser blanks el.value, sets badInput.
+    input.value = ''
+    withBadInput(input, true)
+    input.dispatchEvent(new Event('input'))
+    // No write — storage stays at 1.
+    expect(setValue).not.toHaveBeenCalled()
+
+    // `1e2` — browser un-blanks el.value, badInput clears.
+    input.value = '1e2'
+    withBadInput(input, false)
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenLastCalledWith(100, expect.objectContaining({}))
+  })
+})

@@ -966,6 +966,31 @@ export type RegisterValue<Value = unknown> = {
    * @internal
    */
   persistOptIns: PersistOptInRegistry
+  /**
+   * Read-only, string-form view of the field's current value — what
+   * the compile-time `:value` injection reads on every input /
+   * textarea / select bound by `v-register`.
+   *
+   * Returns `''` when the path is in the form's `transientEmptyPaths`
+   * set OR storage is `null` / `undefined`; otherwise stringifies
+   * the storage value via `String(...)`. The transient-empty branch
+   * lets the user clear a numeric field without the next Vue render
+   * patching `el.value` back to `'0'` (the slim default).
+   */
+  displayValue: Readonly<Ref<string>>
+  /**
+   * Add this field's path to the form's `transientEmptyPaths` set,
+   * writing the slim default to storage. Returns the `setValueAtPath`
+   * boolean (`true` accepted, `false` rejected by the slim-primitive
+   * gate). Inherits the binding's `persist` meta so the mark rides
+   * the same persistence channel as user-typed writes.
+   *
+   * Called by the directive's input listener on numeric clear (commit
+   * 5) and by the imperative `setValue(path, unset)` translation
+   * (commit 7). Don't call from consumer code.
+   * @internal
+   */
+  markTransientEmpty: () => boolean
 }
 
 /**

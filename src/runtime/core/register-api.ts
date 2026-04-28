@@ -79,6 +79,25 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
 
     const innerRef = computed(() => state.getValueAtPath(segments)) as Readonly<Ref<unknown>>
 
+    // String-form view of the path's storage value, with `''` returned
+    // for transient-empty membership and for null/undefined storage.
+    // The transient-empty branch is what lets a user clear a numeric
+    // field: even though storage holds 0, the `:value` binding reads
+    // displayValue and writes `''` to el.value, so Vue's next render
+    // doesn't undo the user's clear.
+    const displayValue = computed(() => {
+      if (state.transientEmptyPaths.has(pathKey)) return ''
+      const raw = state.getValueAtPath(segments)
+      if (raw === null || raw === undefined) return ''
+      return String(raw)
+    }) as Readonly<Ref<string>>
+
+    // Slim default precomputed at register-time. The schema is fixed
+    // for the form's lifetime, so this is safe to cache; downstream
+    // `markTransientEmpty` calls reuse it without re-walking the
+    // schema tree.
+    const slimDefault = state.schema.getDefaultAtPath(segments)
+
     const persist = options?.persist === true
     const acknowledgeSensitive = options?.acknowledgeSensitive === true
 
@@ -130,6 +149,20 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
 
     return {
       innerRef,
+      displayValue,
+
+      markTransientEmpty: (): boolean => {
+        // Mirror the binding's persist meta so the transient-empty
+        // mark rides the same persistence channel as user-typed
+        // writes — without this, refresh after a clear silently loses
+        // the empty state. The slim default keeps storage well-typed
+        // (the schema's getDefaultAtPath returns 0 for z.number(), ''
+        // for z.string(), false for z.boolean(), etc.).
+        return state.setValueAtPath(segments, slimDefault, {
+          transientEmpty: true,
+          persist,
+        })
+      },
 
       registerElement: (element: HTMLElement): void => {
         // Skip non-form elements. Prevents accidental registration of

@@ -3,7 +3,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DirectiveBinding } from 'vue'
-import { nextTick, ref } from 'vue'
+import { nextTick, ref, type Ref } from 'vue'
 import { assignKey, vRegister } from '../../src/runtime/core/directive'
 import { createPersistOptInRegistry } from '../../src/runtime/core/persistence/opt-in-registry'
 import type { PathKey } from '../../src/runtime/core/paths'
@@ -31,6 +31,8 @@ function makeRegisterValue<T>(initial: T): {
   const setValue = vi.fn(() => true)
   const value: RegisterValue<T> = {
     innerRef: ref(initial) as RegisterValue<T>['innerRef'],
+    displayValue: ref('') as Readonly<Ref<string>>,
+    markTransientEmpty: () => true,
     registerElement: register,
     deregisterElement: deregister,
     setValueWithInternalPath: setValue,

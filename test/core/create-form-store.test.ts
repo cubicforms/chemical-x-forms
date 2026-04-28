@@ -85,7 +85,7 @@ describe('createFormStore', () => {
       const stateB = makeState({ formKey: 'formB' })
       stateA.setSchemaErrorsForPath(
         ['email'],
-        [{ message: 'bad', path: ['email'], formKey: 'formA' }]
+        [{ message: 'bad', path: ['email'], formKey: 'formA', code: 'cx:test-fixture' }]
       )
       expect(stateA.getErrorsForPath(['email'])).toHaveLength(1)
       expect(stateB.getErrorsForPath(['email'])).toHaveLength(0)
@@ -162,7 +162,9 @@ describe('createFormStore', () => {
   describe('errors', () => {
     it('setSchemaErrorsForPath stores and clears per path', () => {
       const state = makeState()
-      const errs: ValidationError[] = [{ message: 'bad', path: ['email'], formKey: 'test' }]
+      const errs: ValidationError[] = [
+        { message: 'bad', path: ['email'], formKey: 'test', code: 'cx:test-fixture' },
+      ]
       state.setSchemaErrorsForPath(['email'], errs)
       expect(state.getErrorsForPath(['email'])).toEqual(errs)
       state.setSchemaErrorsForPath(['email'], [])
@@ -173,28 +175,37 @@ describe('createFormStore', () => {
       const state = makeState()
       state.setSchemaErrorsForPath(
         ['email'],
-        [{ message: 'old', path: ['email'], formKey: 'test' }]
+        [{ message: 'old', path: ['email'], formKey: 'test', code: 'cx:test-fixture' }]
       )
-      state.setAllSchemaErrors([{ message: 'new', path: ['password'], formKey: 'test' }])
+      state.setAllSchemaErrors([
+        { message: 'new', path: ['password'], formKey: 'test', code: 'cx:test-fixture' },
+      ])
       expect(state.getErrorsForPath(['email'])).toEqual([])
       expect(state.getErrorsForPath(['password'])).toEqual([
-        { message: 'new', path: ['password'], formKey: 'test' },
+        { message: 'new', path: ['password'], formKey: 'test', code: 'cx:test-fixture' },
       ])
     })
 
     it('addUserErrors appends to existing user entries at the same path', () => {
       const state = makeState()
-      state.addUserErrors([{ message: 'first', path: ['email'], formKey: 'test' }])
-      state.addUserErrors([{ message: 'second', path: ['email'], formKey: 'test' }])
+      state.addUserErrors([
+        { message: 'first', path: ['email'], formKey: 'test', code: 'cx:test-fixture' },
+      ])
+      state.addUserErrors([
+        { message: 'second', path: ['email'], formKey: 'test', code: 'cx:test-fixture' },
+      ])
       expect(state.getErrorsForPath(['email'])).toHaveLength(2)
     })
 
     it('clearSchemaErrors() with no args removes all schema errors for this form', () => {
       const state = makeState()
-      state.setSchemaErrorsForPath(['email'], [{ message: 'a', path: ['email'], formKey: 'test' }])
+      state.setSchemaErrorsForPath(
+        ['email'],
+        [{ message: 'a', path: ['email'], formKey: 'test', code: 'cx:test-fixture' }]
+      )
       state.setSchemaErrorsForPath(
         ['password'],
-        [{ message: 'b', path: ['password'], formKey: 'test' }]
+        [{ message: 'b', path: ['password'], formKey: 'test', code: 'cx:test-fixture' }]
       )
       state.clearSchemaErrors()
       expect(state.getErrorsForPath(['email'])).toEqual([])
@@ -203,10 +214,13 @@ describe('createFormStore', () => {
 
     it('clearSchemaErrors(path) targets a specific path', () => {
       const state = makeState()
-      state.setSchemaErrorsForPath(['email'], [{ message: 'a', path: ['email'], formKey: 'test' }])
+      state.setSchemaErrorsForPath(
+        ['email'],
+        [{ message: 'a', path: ['email'], formKey: 'test', code: 'cx:test-fixture' }]
+      )
       state.setSchemaErrorsForPath(
         ['password'],
-        [{ message: 'b', path: ['password'], formKey: 'test' }]
+        [{ message: 'b', path: ['password'], formKey: 'test', code: 'cx:test-fixture' }]
       )
       state.clearSchemaErrors(['email'])
       expect(state.getErrorsForPath(['email'])).toEqual([])
@@ -220,10 +234,12 @@ describe('createFormStore', () => {
 
     it('setSchemaErrorsForPath does NOT touch userErrors', () => {
       const state = makeState()
-      state.setAllUserErrors([{ message: 'user', path: ['email'], formKey: 'test' }])
+      state.setAllUserErrors([
+        { message: 'user', path: ['email'], formKey: 'test', code: 'cx:test-fixture' },
+      ])
       state.setSchemaErrorsForPath(
         ['email'],
-        [{ message: 'schema', path: ['email'], formKey: 'test' }]
+        [{ message: 'schema', path: ['email'], formKey: 'test', code: 'cx:test-fixture' }]
       )
       expect(state.userErrors.size).toBe(1)
       expect(state.schemaErrors.size).toBe(1)
@@ -236,9 +252,11 @@ describe('createFormStore', () => {
       const state = makeState()
       state.setSchemaErrorsForPath(
         ['email'],
-        [{ message: 'schema', path: ['email'], formKey: 'test' }]
+        [{ message: 'schema', path: ['email'], formKey: 'test', code: 'cx:test-fixture' }]
       )
-      state.setAllUserErrors([{ message: 'user', path: ['email'], formKey: 'test' }])
+      state.setAllUserErrors([
+        { message: 'user', path: ['email'], formKey: 'test', code: 'cx:test-fixture' },
+      ])
       expect(state.schemaErrors.size).toBe(1)
       expect(state.userErrors.size).toBe(1)
     })
@@ -247,9 +265,11 @@ describe('createFormStore', () => {
       const state = makeState()
       state.setSchemaErrorsForPath(
         ['email'],
-        [{ message: 'schema', path: ['email'], formKey: 'test' }]
+        [{ message: 'schema', path: ['email'], formKey: 'test', code: 'cx:test-fixture' }]
       )
-      state.setAllUserErrors([{ message: 'user', path: ['email'], formKey: 'test' }])
+      state.setAllUserErrors([
+        { message: 'user', path: ['email'], formKey: 'test', code: 'cx:test-fixture' },
+      ])
       state.clearSchemaErrors()
       expect(state.schemaErrors.size).toBe(0)
       expect(state.userErrors.size).toBe(1)
@@ -259,9 +279,11 @@ describe('createFormStore', () => {
       const state = makeState()
       state.setSchemaErrorsForPath(
         ['email'],
-        [{ message: 'schema', path: ['email'], formKey: 'test' }]
+        [{ message: 'schema', path: ['email'], formKey: 'test', code: 'cx:test-fixture' }]
       )
-      state.setAllUserErrors([{ message: 'user', path: ['email'], formKey: 'test' }])
+      state.setAllUserErrors([
+        { message: 'user', path: ['email'], formKey: 'test', code: 'cx:test-fixture' },
+      ])
       state.clearUserErrors()
       expect(state.userErrors.size).toBe(0)
       expect(state.schemaErrors.size).toBe(1)
@@ -334,7 +356,7 @@ describe('createFormStore', () => {
       const state = makeState()
       state.setSchemaErrorsForPath(
         ['profile', 'name'],
-        [{ message: 'x', path: ['profile', 'name'], formKey: 'test' }]
+        [{ message: 'x', path: ['profile', 'name'], formKey: 'test', code: 'cx:test-fixture' }]
       )
       // Reading via any canonical-equivalent path returns the same entry.
       expect(state.getErrorsForPath(['profile', 'name'])).toHaveLength(1)
@@ -347,7 +369,7 @@ describe('createFormStore', () => {
       const state = createFormStore({ formKey: 'odd', schema: oddSchema })
       state.setSchemaErrorsForPath(
         ['profile.name'],
-        [{ message: 'x', path: ['profile.name'], formKey: 'odd' }]
+        [{ message: 'x', path: ['profile.name'], formKey: 'odd', code: 'cx:test-fixture' }]
       )
       expect(state.getErrorsForPath(['profile.name'])).toHaveLength(1)
       expect(state.getErrorsForPath(['profile', 'name'])).toHaveLength(0)

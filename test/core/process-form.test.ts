@@ -38,7 +38,9 @@ describe('buildProcessForm', () => {
   function alwaysInvalid() {
     const validator = (_data: unknown, _path: Path | undefined): ValidationResponse<Signup> => ({
       data: undefined,
-      errors: [{ message: 'Enter a valid email', path: ['email'], formKey: 'pf' }],
+      errors: [
+        { message: 'Enter a valid email', path: ['email'], formKey: 'pf', code: 'cx:test-fixture' },
+      ],
       success: false,
       formKey: 'pf',
     })
@@ -73,7 +75,7 @@ describe('buildProcessForm', () => {
       if (r.value.pending) throw new Error('unreachable')
       expect(r.value.success).toBe(false)
       expect(r.value.errors).toEqual([
-        { message: 'Enter a valid email', path: ['email'], formKey: 'pf' },
+        { message: 'Enter a valid email', path: ['email'], formKey: 'pf', code: 'cx:test-fixture' },
       ])
     })
 
@@ -107,7 +109,7 @@ describe('buildProcessForm', () => {
       const response = await validateAsync()
       expect(response.success).toBe(false)
       expect(response.errors).toEqual([
-        { message: 'Enter a valid email', path: ['email'], formKey: 'pf' },
+        { message: 'Enter a valid email', path: ['email'], formKey: 'pf', code: 'cx:test-fixture' },
       ])
     })
 
@@ -145,7 +147,7 @@ describe('buildProcessForm', () => {
       const { handleSubmit } = buildProcessForm(state)
       state.setSchemaErrorsForPath(
         ['email'],
-        [{ message: 'stale', path: ['email'], formKey: 'pf' }]
+        [{ message: 'stale', path: ['email'], formKey: 'pf', code: 'cx:test-fixture' }]
       )
 
       await handleSubmit(async () => {})()
@@ -451,7 +453,7 @@ describe('buildProcessForm', () => {
       // overwrite reset's empty schemaErrors.
       releaseValidate({
         data: undefined,
-        errors: [{ message: 'Invalid', path: ['email'], formKey: 'pf' }],
+        errors: [{ message: 'Invalid', path: ['email'], formKey: 'pf', code: 'cx:test-fixture' }],
         success: false,
         formKey: 'pf',
       })
@@ -478,7 +480,9 @@ describe('buildProcessForm', () => {
       await Promise.resolve()
       state.reset()
       // Consumer writes a fresh schema error after reset.
-      state.setAllSchemaErrors([{ message: 'Server-rejected', path: ['email'], formKey: 'pf' }])
+      state.setAllSchemaErrors([
+        { message: 'Server-rejected', path: ['email'], formKey: 'pf', code: 'api:validation' },
+      ])
       // Validation now resolves SUCCESS; pre-fix the success path would
       // call clearSchemaErrors and erase the entry above.
       const successData: Signup = { email: '', password: '' }

@@ -80,14 +80,18 @@ describe('useForm — isDirty / isValid form-level aggregates', () => {
   it('recording errors via setFieldErrors flips isValid false', () => {
     const { app, form } = harness()
     apps.push(app)
-    form.setFieldErrors([{ path: ['email'], message: 'required', formKey: form.key }])
+    form.setFieldErrors([
+      { path: ['email'], message: 'required', formKey: form.key, code: 'api:validation' },
+    ])
     expect(form.state.isValid).toBe(false)
   })
 
   it('clearing errors flips isValid back to true', () => {
     const { app, form } = harness()
     apps.push(app)
-    form.setFieldErrors([{ path: ['email'], message: 'required', formKey: form.key }])
+    form.setFieldErrors([
+      { path: ['email'], message: 'required', formKey: form.key, code: 'api:validation' },
+    ])
     expect(form.state.isValid).toBe(false)
     form.clearFieldErrors()
     expect(form.state.isValid).toBe(true)

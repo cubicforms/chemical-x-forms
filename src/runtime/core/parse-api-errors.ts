@@ -1,5 +1,6 @@
 import type {
   ApiErrorDetails,
+  ApiErrorEntry,
   ApiErrorEnvelope,
   FormKey,
   ValidationError,
@@ -88,14 +89,23 @@ export const PARSE_API_ERRORS_DEFAULTS = {
  *
  * Recognised payload shapes:
  *
- * - Wrapped envelope: `{ error: { details: { email: ['taken'] } } }`
- * - Unwrapped envelope: `{ details: { email: ['taken'] } }`
- * - Raw details record: `{ email: ['taken'], password: 'too short' }`
+ * - Wrapped envelope:
+ *   `{ error: { details: { email: { message: 'taken', code: 'api:duplicate-email' } } } }`
+ * - Unwrapped envelope:
+ *   `{ details: { email: { message: 'taken', code: 'api:duplicate-email' } } }`
+ * - Raw details record:
+ *   `{ email: { message: 'taken', code: 'api:duplicate-email' } }`
  * - `null` / `undefined` — returns `{ ok: true, errors: [] }`
  *
- * Each detail entry may be a single message string or an array;
- * arrays expand into one `ValidationError` per message, so the UI
- * can render multiple errors per field.
+ * Every entry must be `{ message: string, code: string }` (both
+ * required). The `code` is forwarded verbatim onto the produced
+ * `ValidationError`. Pick a prefix on the server (`api:`, `auth:`,
+ * etc.) and stay consistent so error renderers can branch on it.
+ *
+ * Each detail key's value can be a single entry or an array; arrays
+ * expand into one `ValidationError` per entry, so a single field can
+ * carry multiple distinct failures (e.g. `password` is too short
+ * *and* missing a digit, each with its own code).
  *
  * Dotted keys (`"address.line1"`) are split into structured paths
  * automatically. Use a custom server response shape outside these
@@ -138,8 +148,8 @@ export function parseApiErrors(
 
   const errors: ValidationError[] = []
   let totalSegments = 0
-  for (const [key, messages] of Object.entries(details)) {
-    const messageList = Array.isArray(messages) ? messages : [messages]
+  for (const [key, value] of Object.entries(details)) {
+    const entryList = Array.isArray(value) ? value : [value]
     // `canonicalizePath` throws `InvalidPathError` for dotted strings with
     // empty segments (e.g. `'. '`, `'a..b'`). A misbehaving server can
     // genuinely emit such a key; the hydrator is a normaliser, not a
@@ -169,12 +179,16 @@ export function parseApiErrors(
         rejected: `payload total path segments exceeds maxTotalSegments=${maxTotalSegments}`,
       }
     }
-    for (const message of messageList) {
-      if (typeof message !== 'string' || message.length === 0) continue
+    for (const entry of entryList) {
+      // Empty messages are dropped silently (a server emitting
+      // `{ message: '' }` is malformed but recoverable — we skip the
+      // entry rather than fail the whole payload).
+      if (entry.message.length === 0) continue
       errors.push({
-        message,
+        message: entry.message,
         path: Array.from(segments),
         formKey: options.formKey,
+        code: entry.code,
       })
     }
   }
@@ -192,7 +206,7 @@ function extractDetails(payload: Record<string, unknown>): ExtractResult {
       return { ok: true, details: {} }
     }
     if (isDetailsRecord(inner)) return { ok: true, details: inner }
-    return { ok: false, reason: 'error.details was not a record of string | string[]' }
+    return { ok: false, reason: 'error.details entries must be { message, code } objects' }
   }
 
   // `{ error: 'oops' }` / `{ error: 42 }` is a malformed wrapped envelope —
@@ -211,7 +225,7 @@ function extractDetails(payload: Record<string, unknown>): ExtractResult {
     const inner = payload['details']
     if (inner === undefined) return { ok: true, details: {} }
     if (isDetailsRecord(inner)) return { ok: true, details: inner }
-    return { ok: false, reason: 'details was not a record of string | string[]' }
+    return { ok: false, reason: 'details entries must be { message, code } objects' }
   }
 
   if (isDetailsRecord(payload)) return { ok: true, details: payload }
@@ -222,6 +236,12 @@ function extractDetails(payload: Record<string, unknown>): ExtractResult {
   return { ok: false, reason: 'unrecognised payload shape' }
 }
 
+function isApiErrorEntry(value: unknown): value is ApiErrorEntry {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const obj = value as { message?: unknown; code?: unknown }
+  return typeof obj.message === 'string' && typeof obj.code === 'string'
+}
+
 function isDetailsRecord(value: unknown): value is ApiErrorDetails {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
   // Reject prototype-polluted keys — we don't use them here, but downstream
@@ -229,8 +249,8 @@ function isDetailsRecord(value: unknown): value is ApiErrorDetails {
   const record = value as Record<string, unknown>
   for (const k of Object.keys(record)) {
     const v = record[k]
-    if (typeof v === 'string') continue
-    if (Array.isArray(v) && v.every((s) => typeof s === 'string')) continue
+    if (isApiErrorEntry(v)) continue
+    if (Array.isArray(v) && v.every((entry) => isApiErrorEntry(entry))) continue
     return false
   }
   return true

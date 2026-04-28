@@ -159,8 +159,13 @@ describe('initial validation seed — hydration takes precedence', () => {
         password: config.constraints?.password ?? '',
       },
       errors: [
-        { path: ['email'], message: 'seeded email error', formKey: 'hyd' },
-        { path: ['password'], message: 'seeded password error', formKey: 'hyd' },
+        { path: ['email'], message: 'seeded email error', formKey: 'hyd', code: 'cx:test-fixture' },
+        {
+          path: ['password'],
+          message: 'seeded password error',
+          formKey: 'hyd',
+          code: 'cx:test-fixture',
+        },
       ],
       success: false,
       formKey: 'hyd',
@@ -193,15 +198,30 @@ describe('initial validation seed — hydration takes precedence', () => {
     failingDefaultsSchema.getDefaultValues = () => ({
       data: { email: '', password: '' },
       errors: [
-        { path: ['email'], message: 'seed should not appear', formKey: 'hyd2' },
-        { path: ['password'], message: 'seed should not appear', formKey: 'hyd2' },
+        {
+          path: ['email'],
+          message: 'seed should not appear',
+          formKey: 'hyd2',
+          code: 'cx:test-fixture',
+        },
+        {
+          path: ['password'],
+          message: 'seed should not appear',
+          formKey: 'hyd2',
+          code: 'cx:test-fixture',
+        },
       ],
       success: false,
       formKey: 'hyd2',
     })
 
     const onlyServerError = [
-      { path: ['email'] as const, message: 'server email rejection', formKey: 'hyd2' },
+      {
+        path: ['email'] as const,
+        message: 'server email rejection',
+        formKey: 'hyd2',
+        code: 'api:validation',
+      },
     ]
     const emailKey = canonicalizePath(['email']).key
 

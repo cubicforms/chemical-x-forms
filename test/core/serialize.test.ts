@@ -29,9 +29,11 @@ describe('renderChemicalXState', () => {
     // populate userErrors; here we test both round-trip independently.
     state.setSchemaErrorsForPath(
       ['email'],
-      [{ message: 'taken', path: ['email'], formKey: 'signup' }]
+      [{ message: 'taken', path: ['email'], formKey: 'signup', code: 'cx:test-fixture' }]
     )
-    state.setAllUserErrors([{ message: 'banned-domain', path: ['email'], formKey: 'signup' }])
+    state.setAllUserErrors([
+      { message: 'banned-domain', path: ['email'], formKey: 'signup', code: 'api:validation' },
+    ])
     const payload = renderChemicalXState(app)
     expect(payload.forms).toHaveLength(1)
     const entry = payload.forms[0]

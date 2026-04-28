@@ -13,6 +13,7 @@ import type {
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { __DEV__ } from './dev'
+import { CxErrorCode } from './error-codes'
 import { SubmitErrorHandlerError } from './errors'
 import { canonicalizePath, type Path, type Segment } from './paths'
 
@@ -94,7 +95,14 @@ export function buildProcessForm<F extends GenericForm>(
         // adapter-level error so the form surfaces something.
         result.value = {
           pending: false,
-          errors: [{ message: adapterThrowMessage(err), path: [], formKey: state.formKey }],
+          errors: [
+            {
+              message: adapterThrowMessage(err),
+              path: [],
+              formKey: state.formKey,
+              code: CxErrorCode.AdapterThrew,
+            },
+          ],
           success: false,
           formKey: state.formKey,
         }
@@ -394,6 +402,7 @@ function collectRequiredEmptyErrors<F extends GenericForm>(
       message: 'No value supplied',
       path: [...segments],
       formKey: state.formKey,
+      code: CxErrorCode.NoValueSupplied,
     })
   }
   return errors

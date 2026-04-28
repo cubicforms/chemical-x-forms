@@ -51,9 +51,13 @@ function constraintsAreSlimValid(slimSchema: z.ZodSchema, constraints: unknown):
   }
 }
 
+import { __DEV__ } from '../../core/dev'
+import { CxErrorCode } from '../../core/error-codes'
 import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from './types-zod'
 import { fingerprintZodSchema } from './fingerprint'
 import { isZodSchemaType } from './helpers'
+
+let warnedZodCodeMissing = false
 
 /**
  * Wrap a Zod v3 `ZodObject` schema in an `AbstractSchema` factory.
@@ -296,11 +300,7 @@ export function zodAdapter<
 
         return {
           data: finalData as Form,
-          errors: error.issues.map((issue) => ({
-            message: issue.message,
-            path: coercePathSegments(issue.path),
-            formKey: _formKey,
-          })),
+          errors: zodIssuesToValidationErrors(error.issues, _formKey),
           success: false,
           formKey: _formKey,
         }
@@ -470,6 +470,20 @@ export function zodAdapter<
 function zodIssuesToValidationErrors(issues: z.ZodIssue[], formKey: FormKey): ValidationError[] {
   const validationErrors: ValidationError[] = []
   for (const issue of issues) {
+    let code: string
+    if (typeof issue.code === 'string' && issue.code.length > 0) {
+      code = `zod:${issue.code}`
+    } else {
+      code = 'zod:unknown'
+      if (__DEV__ && !warnedZodCodeMissing) {
+        warnedZodCodeMissing = true
+        console.warn(
+          '[@chemical-x/forms] zod-v3 adapter received an issue with no string `code`; ' +
+            "stamping `'zod:unknown'`. This usually means a custom Zod plugin emitted " +
+            'an issue without the standard code field.'
+        )
+      }
+    }
     validationErrors.push({
       message: issue.message,
       // `ValidationError.path` is `(string | number)[]` per the
@@ -480,6 +494,7 @@ function zodIssuesToValidationErrors(issues: z.ZodIssue[], formKey: FormKey): Va
       // Mirrors v4's behaviour at the same site.
       path: coercePathSegments(issue.path),
       formKey: formKey,
+      code,
     })
   }
 
@@ -667,6 +682,7 @@ const NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA = (path: (string | number)[], 
       message: `Programming Error: useForm.validateAtPath failed to find 1 or more schemas corresponding to the path ${path} in the concrete schema. Does the nested schema exist on form with key '${formKey}'?`,
       path,
       formKey,
+      code: CxErrorCode.PathNotFound,
     },
   ] satisfies ValidationError[]
 

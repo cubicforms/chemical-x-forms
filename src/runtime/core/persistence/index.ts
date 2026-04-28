@@ -126,8 +126,12 @@ export type PersistedPayload<Form> = {
  * v=3: adds `data.transientEmptyPaths` for round-tripping the
  * transient-empty UI state across persistence + SSR. v=2 envelopes
  * are dropped with a one-time dev-warn (commit 6 of the unset feature).
+ *
+ * v=4: `ValidationError` gained a required `code` field. Persisted
+ * `schemaErrors` / `userErrors` now include `code`; v=3 payloads are
+ * dropped with a one-time dev-warn.
  */
-export const PERSISTED_ENVELOPE_VERSION = 3
+export const PERSISTED_ENVELOPE_VERSION = 4
 
 /**
  * `value` is expected to be a raw `PersistedPayload` (parsed JSON or

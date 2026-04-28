@@ -59,10 +59,18 @@ export { vRegister, isRegisterValue, assignKey } from './runtime/core/directive'
 export { unset, isUnset } from './runtime/core/unset'
 export type { Unset } from './runtime/core/unset'
 
+// Stable error-code identifiers for library-emitted ValidationErrors.
+// Use in tests and error-routing UI in place of brittle message-string
+// matching. `cx:` prefix denotes the framework-agnostic core; the Zod
+// adapter emits `zod:` codes (computed from `issue.code`) and consumer
+// codes use whatever prefix the consumer picks (`api:`, `auth:`, etc.).
+export { CxErrorCode } from './runtime/core/error-codes'
+
 // Public types
 export type {
   AbstractSchema,
   ApiErrorDetails,
+  ApiErrorEntry,
   ApiErrorEnvelope,
   ChemicalXFormsDefaults,
   CurrentValueContext,

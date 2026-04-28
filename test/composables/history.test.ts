@@ -113,7 +113,9 @@ describe('history — default (history: true)', () => {
     // forward. Sequence below captures: form='a' (no errors),
     // setFieldErrors lands, form='b' snapshot now has the errors.
     api.setValue('email', 'a')
-    api.setFieldErrors([{ path: ['email'], message: 'bad', formKey: api.key }])
+    api.setFieldErrors([
+      { path: ['email'], message: 'bad', formKey: api.key, code: 'api:validation' },
+    ])
     api.setValue('email', 'b')
     // clear errors live, then mutate form once more so the NEXT
     // snapshot captures the cleared state.

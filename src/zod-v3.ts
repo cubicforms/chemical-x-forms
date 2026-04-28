@@ -27,6 +27,7 @@ export { useFormContext } from './runtime/composables/use-form-context'
 export { useRegister } from './runtime/composables/use-register'
 export { zodAdapter } from './runtime/adapters/zod-v3'
 export { isZodSchemaType } from './runtime/adapters/zod-v3/helpers'
+export { CxErrorCode } from './runtime/core/error-codes'
 export { unset, isUnset } from './runtime/core/unset'
 export type { Unset } from './runtime/core/unset'
 export type {

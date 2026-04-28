@@ -124,7 +124,7 @@ describe('persistence — transient-empty round-trips across mount', () => {
     localStorage.setItem(
       fpKey('te-rt'),
       JSON.stringify({
-        v: 3,
+        v: 4,
         data: { form: { income: 0 }, transientEmptyPaths: [incomeKey] },
       })
     )
@@ -209,7 +209,7 @@ describe('persistence — transient-empty round-trips across mount', () => {
     const raw = localStorage.getItem(fpKey('te-write'))
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string)
-    expect(payload.v).toBe(3)
+    expect(payload.v).toBe(4)
     const incomeKey = canonicalizePath('income').key
     expect(payload.data.transientEmptyPaths).toContain(incomeKey)
   })
@@ -222,7 +222,7 @@ describe('persistence — transient-empty round-trips across mount', () => {
     localStorage.setItem(
       fpKey('te-hyd'),
       JSON.stringify({
-        v: 3,
+        v: 4,
         data: { form: { income: 100 }, transientEmptyPaths: [] },
       })
     )

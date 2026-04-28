@@ -57,7 +57,12 @@
       error: {
         code: 'VALIDATION_ERROR',
         message: 'Invalid input',
-        details: { username: ['Username taken', 'Reserved word'] },
+        details: {
+          username: [
+            { message: 'Username taken', code: 'api:duplicate-username' },
+            { message: 'Reserved word', code: 'api:reserved-word' },
+          ],
+        },
       },
     },
     { formKey: apiErrorForm.key }

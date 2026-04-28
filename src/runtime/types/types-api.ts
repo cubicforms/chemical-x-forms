@@ -42,6 +42,17 @@ export type ValidationError = {
   path: (string | number)[]
   /** Identifies which form produced this error. */
   formKey: FormKey
+  /**
+   * Stable machine identifier for the failure, scoped by prefix:
+   *
+   * - `cx:` — library-internal codes (see `CxErrorCode`).
+   * - `zod:` — forwarded from a Zod issue's `code`.
+   * - consumer-defined — anything else (e.g. `api:duplicate-email`,
+   *   `auth:expired-token`). Pick a prefix and stay consistent so
+   *   error renderers and tests can branch on `code` instead of
+   *   exact-message string matching.
+   */
+  code: string
 }
 
 /** Settled validation result when the form (or subtree) parsed successfully. */
@@ -1328,18 +1339,38 @@ export type FormFieldErrors<Form extends GenericForm> = Partial<
 >
 
 /**
- * Shape of a server-side error details record. Keys are dotted field
- * paths; values are either a single error message or a list. This is
- * the shape `parseApiErrors` consumes — most DRF / FastAPI / Rails-style
- * APIs return error payloads in this form.
+ * A single server-side error entry. Carries both the human-readable
+ * `message` and a stable `code` identifier — both fields are required.
+ * The `code` is stamped verbatim onto the produced `ValidationError`,
+ * so consumers can branch on it without string-matching on `message`.
+ *
+ * Pick a prefix for your codes (`api:`, `auth:`, etc.) and stay
+ * consistent so error-rendering UIs can switch on the code.
  */
-export type ApiErrorDetails = Record<string, string | string[]>
+export type ApiErrorEntry = {
+  /** Human-readable failure description. */
+  message: string
+  /**
+   * Stable machine identifier for the failure (e.g. `'api:duplicate-email'`).
+   * Forwarded verbatim onto the produced `ValidationError`.
+   */
+  code: string
+}
+
+/**
+ * Shape of a server-side error details record. Keys are dotted field
+ * paths; values are a single `{ message, code }` entry or a list of
+ * them. Multiple entries at the same path produce multiple
+ * `ValidationError`s — useful for a single field that fails multiple
+ * checks (e.g. `password` is too short *and* missing a digit).
+ */
+export type ApiErrorDetails = Record<string, ApiErrorEntry | ApiErrorEntry[]>
 
 /**
  * Outer envelope `parseApiErrors` accepts. Both the wrapped form
  * (`{ error: { details } }`) and the unwrapped form (`{ details }`)
- * are recognised; raw detail records (`{ email: ['taken'] }`) are
- * also accepted directly.
+ * are recognised; raw detail records (`{ email: { message, code } }`)
+ * are also accepted directly.
  */
 export type ApiErrorEnvelope = {
   /** Wrapped error envelope — `parseApiErrors` reads `details` from inside. */

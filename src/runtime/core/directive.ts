@@ -406,10 +406,17 @@ const vRegisterText: RegisterTextCustomDirective = {
       }
       el[assignKey]?.(domValue)
     })
-    if (trim === true) {
+    if (trim === true || castToNumber) {
       addEventListener(el, 'change', () => {
         if (shouldBailListener(el)) return
-        el.value = el.value.trim()
+        // Mirror Vue's `castValue(el.value, trim, castToNumber)` so the
+        // visible DOM normalizes after blur for both modifiers — without
+        // the cast branch, a user typing ` 12 ` into a `.number` input
+        // sees ` 12 ` stick after blur instead of `12`.
+        let normalized: string | number = el.value
+        if (trim === true) normalized = normalized.trim()
+        if (castToNumber) normalized = looseToNumber(normalized)
+        el.value = typeof normalized === 'number' ? String(normalized) : normalized
       })
     }
     if (lazy !== true) {
@@ -431,7 +438,8 @@ const vRegisterText: RegisterTextCustomDirective = {
   },
   beforeUpdate(el, { value, oldValue, modifiers: { lazy, trim, number } }, vnode) {
     setAssignFunction(el, vnode, value)
-    // avoid clearing unresolved text. #2302
+    // Skip the el.value sync while the user is mid-IME-composition;
+    // overwriting `el.value` would clobber the unresolved input.
     if ((el as { composing?: boolean }).composing === true) return
     if (!isRegisterValue(value)) return
 
@@ -445,11 +453,24 @@ const vRegisterText: RegisterTextCustomDirective = {
       return
     }
 
-    if (document.activeElement === el && el.type !== 'range') {
-      // #8546
+    // ShadowRoot-aware activeElement check: a v-register'd input mounted
+    // inside a shadow tree's `activeElement` lives on the rootNode, not
+    // on `document`. Falling back to `document.activeElement === el` for
+    // shadow-mounted inputs would always be `false`, defeating the
+    // lazy/trim escape-hatches below.
+    const rootNode = el.getRootNode()
+    const activeElement =
+      rootNode instanceof Document || rootNode instanceof ShadowRoot ? rootNode.activeElement : null
+    if (activeElement === el && el.type !== 'range') {
+      // Lazy escape: the consumer chose `change`-only updates. While
+      // the user is still editing, suppress reverse-syncs that would
+      // otherwise revert their typing on every parent re-render.
       if (lazy === true && value.innerRef.value === oldValue) {
         return
       }
+      // Trim escape: same rationale — the trimmed-but-otherwise-equal
+      // value is what we'd land on at blur anyway, so don't fight the
+      // user's whitespace mid-typing.
       if (trim === true && el.value.trim() === newValue) {
         return
       }

@@ -5,7 +5,7 @@ import type {
   UseAbstractFormReturnType,
   UseFormConfiguration,
 } from '../types/types-api'
-import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
+import type { DeepPartial, DefaultValuesShape, GenericForm } from '../types/types-core'
 import type { TypeWithNullableDynamicKeys } from '../adapters/zod-v3/types-zod'
 import type {
   UnwrapZodObject,
@@ -31,7 +31,7 @@ export function useForm<Form extends GenericForm, GetValueFormType extends Gener
     Form,
     GetValueFormType,
     AbstractSchema<Form, GetValueFormType>,
-    DeepPartial<WriteShape<Form>>
+    DeepPartial<DefaultValuesShape<Form>>
   >
 ): UseAbstractFormReturnType<Form, GetValueFormType>
 /**
@@ -63,7 +63,7 @@ export function useForm<
 >(
   configuration: UseFormConfigurationWithZod<
     Schema,
-    DeepPartial<WriteShape<z.infer<UnwrapZodObject<Schema>>>>
+    DeepPartial<DefaultValuesShape<z.infer<UnwrapZodObject<Schema>>>>
   >
 ): UseAbstractFormReturnType<z.infer<UnwrapZodObject<Schema>>, GetValueFormType>
 export function useForm<
@@ -76,9 +76,12 @@ export function useForm<
         Form,
         GetValueFormType,
         AbstractSchema<Form, GetValueFormType>,
-        DeepPartial<WriteShape<Form>>
+        DeepPartial<DefaultValuesShape<Form>>
       >
-    | UseFormConfigurationWithZod<Schema, DeepPartial<WriteShape<z.infer<UnwrapZodObject<Schema>>>>>
+    | UseFormConfigurationWithZod<
+        Schema,
+        DeepPartial<DefaultValuesShape<z.infer<UnwrapZodObject<Schema>>>>
+      >
 ): UseAbstractFormReturnType<Form, GetValueFormType> {
   function isZodType(value: unknown): value is z.ZodType {
     return typeof value === 'object' && value !== null && '_def' in value
@@ -104,9 +107,9 @@ export function useForm<
       Form,
       GetValueFormType,
       AbstractSchema<Form, GetValueFormType>,
-      DeepPartial<WriteShape<Form>>
+      DeepPartial<DefaultValuesShape<Form>>
     >),
     schema: abstractSchema,
-    defaultValues: configuration.defaultValues as DeepPartial<WriteShape<Form>>,
+    defaultValues: configuration.defaultValues as DeepPartial<DefaultValuesShape<Form>>,
   })
 }

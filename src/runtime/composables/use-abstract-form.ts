@@ -32,6 +32,7 @@ import {
 import { canonicalizePath, type Path, type PathKey } from '../core/paths'
 import { deleteAtPath, getAtPath, setAtPath, isPlainRecord } from '../core/path-walker'
 import { kFormContext, useRegistry } from '../core/registry'
+import { walkUnsetSentinels } from '../core/unset-walker'
 import type {
   AbstractSchema,
   ChemicalXFormsDefaults,
@@ -41,7 +42,7 @@ import type {
   UseFormConfiguration,
   ValidationError,
 } from '../types/types-api'
-import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
+import type { DeepPartial, DefaultValuesShape, GenericForm, WriteShape } from '../types/types-core'
 
 /**
  * Schema-agnostic `useForm`. Accepts any object that implements
@@ -73,7 +74,7 @@ export function useAbstractForm<
     Form,
     GetValueFormType,
     AbstractSchema<Form, GetValueFormType>,
-    DeepPartial<WriteShape<Form>>
+    DeepPartial<DefaultValuesShape<Form>>
   >
 ): UseAbstractFormReturnType<Form, GetValueFormType> {
   const key = resolveFormKey(configuration.key)
@@ -222,7 +223,7 @@ function mergeWithDefaults<
   Form extends GenericForm,
   GetValueFormType extends GenericForm,
   Schema extends AbstractSchema<Form, GetValueFormType>,
-  Defaults extends DeepPartial<WriteShape<Form>>,
+  Defaults extends DeepPartial<DefaultValuesShape<Form>>,
 >(
   defaults: ChemicalXFormsDefaults,
   configuration: UseFormConfiguration<Form, GetValueFormType, Schema, Defaults>
@@ -255,20 +256,48 @@ const HISTORY_MODULE_KEY = 'history'
 function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
   key: FormKey,
   schema: AbstractSchema<F, G>,
-  configuration: UseFormConfiguration<F, G, AbstractSchema<F, G>, DeepPartial<WriteShape<F>>>,
+  configuration: UseFormConfiguration<
+    F,
+    G,
+    AbstractSchema<F, G>,
+    DeepPartial<DefaultValuesShape<F>>
+  >,
   registry: ReturnType<typeof useRegistry>
 ): FormStore<F, G> {
   const pending = registry.pendingHydration.get(key)
   if (pending !== undefined) registry.pendingHydration.delete(key)
-  const state = createFormStore<F, G>({
+  // Pre-pass: replace every `unset` sentinel in defaultValues with the
+  // schema's slim default and collect the corresponding path keys.
+  // The walker mirrors `DefaultValuesShape<T>`'s recursion; runtime
+  // landing of `unset` at a non-primitive leaf produces a dev-warn
+  // (TS catches this at compile time but plain-JS consumers bypass).
+  const walked =
+    configuration.defaultValues !== undefined
+      ? walkUnsetSentinels(
+          configuration.defaultValues,
+          schema as unknown as AbstractSchema<GenericForm, GenericForm>
+        )
+      : { cleanedValues: undefined, paths: [] }
+  // Hydration precedence: when a hydration payload is present its
+  // `transientEmptyPaths` field is the authoritative truth. We still
+  // run the walker to scrub `unset` symbols out of `defaultValues` (so
+  // they never reach storage), but discard the discovered paths in
+  // favour of the hydrated set. Without this, a server-rendered form
+  // with no transient-empty paths would gain ones the client's
+  // construction-time defaults invented.
+  const initialTransientEmpty: ReadonlyArray<string> | undefined =
+    pending === undefined ? walked.paths : undefined
+  const createOptions: Parameters<typeof createFormStore<F, G>>[0] = {
     formKey: key,
     schema,
-    defaultValues: configuration.defaultValues,
+    defaultValues: walked.cleanedValues as DeepPartial<WriteShape<F>> | undefined,
     validationMode: configuration.validationMode,
     hydration: pending,
     fieldValidation: configuration.fieldValidation,
     isSSR: registry.isSSR,
-  })
+    ...(initialTransientEmpty !== undefined ? { initialTransientEmpty } : {}),
+  }
+  const state = createFormStore<F, G>(createOptions)
   // Storage type is FormStore<GenericForm>; the lookup above narrows
   // back to the caller's (F, G) via the `existing as FormStore<Form,
   // GetValueFormType>` cast. The registry Map is intentionally

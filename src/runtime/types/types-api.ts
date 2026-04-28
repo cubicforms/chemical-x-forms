@@ -1,10 +1,11 @@
-import type { ObjectDirective, Ref } from 'vue'
+import type { ComputedRef, ObjectDirective, Ref } from 'vue'
 import type { Path, PathKey } from '../core/paths'
 import type { PersistOptInRegistry } from '../core/persistence/opt-in-registry'
 import type {
   ArrayItem,
   ArrayPath,
   DeepPartial,
+  DefaultValuesShape,
   FlatPath,
   GenericForm,
   IsObjectOrArray,
@@ -554,7 +555,7 @@ export type UseFormConfiguration<
   Form extends GenericForm,
   GetValueFormType,
   Schema extends AbstractSchema<Form, GetValueFormType>,
-  DefaultValues extends DeepPartial<WriteShape<Form>>,
+  DefaultValues extends DeepPartial<DefaultValuesShape<Form>>,
 > = {
   /**
    * The schema describing the form's shape and validation rules.
@@ -799,6 +800,22 @@ export type MetaTrackerValue = {
   formKey: FormKey
   /** Dotted-string path to this leaf. */
   path: string | null
+  /**
+   * `true` when the path is in the form's transient-empty set —
+   * storage holds the slim default but the UI displays empty.
+   * Either the user cleared the field (numeric inputs auto-mark on
+   * empty DOM via the directive) or the consumer marked it
+   * declaratively via `defaultValues: { x: unset }` /
+   * imperatively via `setValue('x', unset)`.
+   *
+   * Submit-time validation raises "Required" for transient-empty
+   * paths whose schema is required (no `.optional()` / `.nullable()`
+   * / `.default()`), so most consumers can ignore this field — it's
+   * the safety net's input. Read it directly when you want to drive
+   * conditional UI ("undecided checkbox" indicator, "review
+   * unanswered fields" hint, etc.) BEFORE submission triggers.
+   */
+  pendingEmpty: boolean
 }
 export type MetaTracker = Record<string, MetaTrackerValue>
 export type MetaTrackerStore = Map<FormKey, MetaTracker>
@@ -1170,7 +1187,7 @@ export type RegisterDirective =
  * objects) against the schema's defaults after the callback returns,
  * so partial returns are safe.
  */
-export type SetValueCallback<Read> = (prev: Read) => Read
+export type SetValueCallback<Read, Write = Read> = (prev: Read) => Read | Write
 
 /**
  * The value argument of `form.setValue`. Either the next value
@@ -1183,7 +1200,7 @@ export type SetValueCallback<Read> = (prev: Read) => Read
  *   to `Write`). For whole-form callbacks the read shape tags
  *   array elements as possibly-undefined to reflect runtime reality.
  */
-export type SetValuePayload<Write, Read = Write> = Write | SetValueCallback<Read>
+export type SetValuePayload<Write, Read = Write> = Write | SetValueCallback<Read, Write>
 
 type DeepFlatten<T> =
   // If it's not an object, just leave it as-is
@@ -1244,6 +1261,14 @@ export type FieldState<Value = unknown> = DeepFlatten<
     pristine: boolean
     /** `true` when `currentValue` differs from `originalValue`. */
     dirty: boolean
+    /**
+     * `true` when this path is in the form's transient-empty set —
+     * storage holds the slim default but the UI displays empty.
+     * Surfaces both as a top-level field here AND via `meta.pendingEmpty`
+     * (the meta projection mirrors the same value). Read whichever
+     * matches your access pattern.
+     */
+    pendingEmpty: boolean
   }
 >
 export type DOMFieldStateStore = Map<string, DOMFieldState | undefined>
@@ -1554,7 +1579,12 @@ export type UseAbstractFormReturnType<
      * values, failing `.email()`, etc.) succeed and surface as
      * field errors instead.
      */
-    <Value extends SetValuePayload<WriteShape<Form>, WithIndexedUndefined<WriteShape<Form>>>>(
+    <
+      Value extends SetValuePayload<
+        DefaultValuesShape<Form>,
+        WithIndexedUndefined<WriteShape<Form>>
+      >,
+    >(
       value: Value
     ): boolean
     /**
@@ -1564,17 +1594,20 @@ export type UseAbstractFormReturnType<
      * ```ts
      * form.setValue('email', 'a@b.c')
      * form.setValue('count', (prev) => prev + 1)
+     * form.setValue('income', unset) // numeric leaf marked displayed-empty
      * ```
      *
      * Returns `true` when the write was accepted, `false` when the
      * value didn't match the slot's expected primitive type.
      * Refinement-level mismatches succeed and surface as field
-     * errors.
+     * errors. Pass the `unset` symbol at any primitive leaf to mark
+     * it transient-empty (storage holds the slim default; UI displays
+     * empty; submit raises "Required" for required schemas).
      */
     <
       Path extends FlatPath<Form>,
       Value extends SetValuePayload<
-        WriteShape<NestedType<Form, Path>>,
+        DefaultValuesShape<NestedType<Form, Path>>,
         NonNullable<WriteShape<NestedType<Form, Path>>>
       >,
     >(
@@ -1738,7 +1771,7 @@ export type UseAbstractFormReturnType<
    * The next edit on a still-mounted opted-in input will start
    * persisting again automatically.
    */
-  reset: (nextDefaultValues?: DeepPartial<WriteShape<Form>>) => void
+  reset: (nextDefaultValues?: DeepPartial<DefaultValuesShape<Form>>) => void
 
   /**
    * Restore a single field (or a sub-tree like `'user'`) to its
@@ -1858,4 +1891,26 @@ export type UseAbstractFormReturnType<
     index: number,
     value: ArrayItem<Form, Path>
   ) => void
+  /**
+   * Read-only view of the form's transient-empty path set. Each entry
+   * is a canonical `PathKey` (the `JSON.stringify(segments)` form
+   * `canonicalizePath` produces). The set is reactive — Vue 3.5
+   * tracks `.has()` / `for..of` / size accesses, so consumers can
+   * drive conditional UI off it directly:
+   *
+   * ```ts
+   * watchEffect(() => {
+   *   if (form.transientEmptyPaths.value.size > 0) {
+   *     console.warn('unanswered fields:', [...form.transientEmptyPaths.value])
+   *   }
+   * })
+   * ```
+   *
+   * For per-path access, use `getFieldState(path).meta.pendingEmpty`.
+   * Writes happen through `setValue(path, unset)`,
+   * `markTransientEmpty()` on a register binding, and the directive's
+   * input listener on numeric clear. Mutating the snapshot returned
+   * here does nothing — it's `Object.freeze`-d.
+   */
+  transientEmptyPaths: ComputedRef<ReadonlySet<string>>
 }

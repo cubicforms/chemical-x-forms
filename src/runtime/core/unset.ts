@@ -36,7 +36,7 @@ declare const _unsetBrand: unique symbol
 
 export type Unset = typeof _unsetBrand
 
-export const unset = Symbol.for('@chemical-x/forms/unset') as Unset
+export const unset: Unset = Symbol.for('@chemical-x/forms/unset') as Unset
 
 export function isUnset(value: unknown): value is Unset {
   return value === unset

@@ -13,18 +13,20 @@ import type {
   ValidationError,
   ValidationResponseWithoutValue,
 } from '../types/types-api'
-import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
+import type { DeepPartial, DefaultValuesShape, GenericForm } from '../types/types-core'
 import { __DEV__ } from './dev'
 import type { FormStore } from './create-form-store'
 import { buildFieldArrayApi } from './field-arrays'
 import { buildFieldStateAccessor } from './field-state-api'
 import type { HistoryModule } from './history'
 import { getAtPath } from './path-walker'
-import { canonicalizePath, type Path, type Segment } from './paths'
+import { canonicalizePath, type Path, type PathKey, type Segment } from './paths'
 import { PERSISTENCE_MODULE_KEY, type PersistenceModule } from './persistence'
 import { enforceSensitiveCheck } from './persistence/sensitive-names'
 import { buildProcessForm } from './process-form'
 import { buildRegister } from './register-api'
+import { isUnset } from './unset'
+import { walkUnsetSentinels } from './unset-walker'
 
 export type BuildFormApiOptions = {
   /** Forwarded to buildProcessForm. See `UseFormConfiguration.onInvalidSubmit`. */
@@ -103,13 +105,40 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
         typeof pathOrValue === 'function'
           ? (pathOrValue as (prev: unknown) => unknown)(state.form.value)
           : pathOrValue
-      // Route through setValueAtPath at the empty path so the
-      // slim-primitive gate runs against the whole-form value too.
-      // mergeStructural still handles the partial-replacement fill
-      // inside setValueAtPath.
-      return state.setValueAtPath([], next)
+      // Whole-form `unset` sentinels (consumer wrote `setValue(unset)`
+      // or returned `unset` for some leaf in a function form) flow
+      // through the walker — every leaf gets translated, the cleaned
+      // value lands in storage, and the discovered paths are added to
+      // `transientEmptyPaths` via direct setValueAtPath calls (the
+      // gate hook handles the bookkeeping).
+      const walked = walkUnsetSentinels(
+        next,
+        state.schema as unknown as Parameters<typeof walkUnsetSentinels>[1]
+      )
+      const ok = state.setValueAtPath([], walked.cleanedValues)
+      if (!ok) return false
+      // Mark each transient-empty path. `setValueAtPath` was just called
+      // with cleaned values, so the gate hook's implicit-unmark would
+      // have removed any prior transient-empty entries for the paths
+      // we just touched — re-add them now.
+      for (const pathKey of walked.paths) {
+        const segments = JSON.parse(pathKey) as Path
+        state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
+          transientEmpty: true,
+        })
+      }
+      return true
     }
     const segments = canonicalizePath(pathOrValue as string | Path).segments
+    // `unset` at a specific path: resolve the slim default and route
+    // through `setValueAtPath` with `transientEmpty: true`. Storage
+    // gets the well-typed default; the path is marked for the
+    // displayValue / required-empty machinery.
+    if (isUnset(maybeValue)) {
+      return state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
+        transientEmpty: true,
+      })
+    }
     // Path-form callback: when the slot at `segments` is unpopulated,
     // hand the consumer the schema's default at that path instead of
     // `undefined` so `(prev) => prev.first.toUpperCase()` is safe.
@@ -120,6 +149,13 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       const current = state.getValueAtPath(segments)
       const prev = current === undefined ? state.schema.getDefaultAtPath(segments) : current
       resolvedValue = (maybeValue as (prev: unknown) => unknown)(prev)
+      // Callback returned `unset` — translate the same way as the
+      // direct case above.
+      if (isUnset(resolvedValue)) {
+        return state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
+          transientEmpty: true,
+        })
+      }
     } else {
       resolvedValue = maybeValue
     }
@@ -259,8 +295,36 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // opt-in registry is NOT touched: directives are still mounted and
   // the next user keystroke on an opted-in input re-populates the
   // entry naturally.
-  const reset = (nextDefaultValues?: DeepPartial<WriteShape<Form>>): void => {
-    state.reset(nextDefaultValues)
+  const reset = (nextDefaultValues?: DeepPartial<DefaultValuesShape<Form>>): void => {
+    if (nextDefaultValues === undefined) {
+      state.reset()
+    } else {
+      // Walk the consumer's overrides for `unset` symbols, replacing
+      // them with the schema's slim defaults and capturing the marked
+      // paths. The cleaned values land in form storage via state.reset;
+      // the marked paths get added back via direct setValueAtPath
+      // calls AFTER the reset so the FormStore's own reset (which
+      // clears the transient-empty set in the args branch) doesn't
+      // wipe them.
+      const walked = walkUnsetSentinels(
+        nextDefaultValues,
+        state.schema as unknown as Parameters<typeof walkUnsetSentinels>[1]
+      )
+      // After the walker, `cleanedValues` has had every `unset` symbol
+      // replaced with the schema's slim default — the result is
+      // structurally compatible with `WriteShape<Form>`, so the cast
+      // here is safe.
+      state.reset(walked.cleanedValues as DeepPartial<unknown> as Parameters<typeof state.reset>[0])
+      for (const pathKey of walked.paths) {
+        const segments = JSON.parse(pathKey) as Path
+        state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
+          transientEmpty: true,
+        })
+        // Mirror the new baseline into originalsTransientEmpty so the
+        // post-reset state is the dirty=false reference.
+        state.originalsTransientEmpty.add(pathKey as PathKey)
+      }
+    }
     if (persistence !== undefined) {
       // Fire-and-forget — reset is sync from the consumer's POV; the
       // wipe lands a moment later. Errors are absorbed by the adapter
@@ -317,6 +381,17 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // --- Field arrays ---
   const fieldArrays = buildFieldArrayApi(state)
 
+  // --- Bulk transient-empty introspection ---
+  // Read-only view of the form's transient-empty path set. Vue 3.5
+  // tracks `.has()` / `for..of` / size accesses on a reactive Set,
+  // so the computed below is a lazy, dependency-tracked passthrough.
+  // Wrapped in `Object.freeze` so consumers can't mutate the snapshot
+  // they receive — writes still go through `setValue(_, unset)` /
+  // `markTransientEmpty()` / the directive's input listener.
+  const transientEmptyPathsView = computed<ReadonlySet<string>>(() => {
+    return Object.freeze(new Set<string>(state.transientEmptyPaths))
+  })
+
   return {
     getFieldState: getFieldState as UseAbstractFormReturnType<
       Form,
@@ -355,6 +430,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     swap: fieldArrays.swap as UseAbstractFormReturnType<Form, GetValueFormType>['swap'],
     move: fieldArrays.move as UseAbstractFormReturnType<Form, GetValueFormType>['move'],
     replace: fieldArrays.replace as UseAbstractFormReturnType<Form, GetValueFormType>['replace'],
+    transientEmptyPaths: transientEmptyPathsView,
   }
 }
 

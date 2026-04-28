@@ -319,4 +319,220 @@ describe('directive — `.number` × text-input beforeinput filter', () => {
     // value out.
     expect(ev.defaultPrevented).toBe(false)
   })
+
+  it('allows scientific-notation characters (e, E, +, -) for parity with native type="number"', () => {
+    // 16e regression: the original regex `^-?\d*\.?\d*$` blocked `e`,
+    // so `1e3` was un-typeable on a `.number` text input even though
+    // the directive's `looseToNumber` cast handles it natively. The
+    // widened regex `^-?\d*\.?\d*([eE][+-]?\d*)?$` accepts the full
+    // partial-typing path: `1`, `1e`, `1e-`, `1e-3`.
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    // Build up `1e-3` keystroke-by-keystroke; every intermediate state
+    // must pass the filter or the user can't get to the final value.
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      ['', '1'],
+      ['1', 'e'],
+      ['1e', '-'],
+      ['1e-', '3'],
+      ['1e-3', '4'], // continued digits in exponent
+    ]
+    for (const [current, key] of cases) {
+      input.value = current
+      input.setSelectionRange(current.length, current.length)
+      const ev = new InputEvent('beforeinput', {
+        data: key,
+        inputType: 'insertText',
+        cancelable: true,
+      })
+      input.dispatchEvent(ev)
+      expect(ev.defaultPrevented).toBe(false)
+    }
+
+    // Capital E is also accepted.
+    input.value = '2'
+    input.setSelectionRange(1, 1)
+    const capE = new InputEvent('beforeinput', {
+      data: 'E',
+      inputType: 'insertText',
+      cancelable: true,
+    })
+    input.dispatchEvent(capE)
+    expect(capE.defaultPrevented).toBe(false)
+
+    // `+` after the e is allowed.
+    input.value = '2E'
+    input.setSelectionRange(2, 2)
+    const plus = new InputEvent('beforeinput', {
+      data: '+',
+      inputType: 'insertText',
+      cancelable: true,
+    })
+    input.dispatchEvent(plus)
+    expect(plus.defaultPrevented).toBe(false)
+  })
+
+  it('blocks duplicate exponent markers (e.g., 1ee3, 1e3e)', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    // Second `e` after `1e` must be rejected — `1ee3` isn't valid.
+    input.value = '1e'
+    input.setSelectionRange(2, 2)
+    const ev = new InputEvent('beforeinput', {
+      data: 'e',
+      inputType: 'insertText',
+      cancelable: true,
+    })
+    input.dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(true)
+
+    // `1e3e` — `e` after digit-in-exponent — also rejected.
+    input.value = '1e3'
+    input.setSelectionRange(3, 3)
+    const ev2 = new InputEvent('beforeinput', {
+      data: 'e',
+      inputType: 'insertText',
+      cancelable: true,
+    })
+    input.dispatchEvent(ev2)
+    expect(ev2.defaultPrevented).toBe(true)
+  })
+
+  it('blocks a decimal point inside the exponent (1e3.5 is invalid scientific notation)', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '1e3'
+    input.setSelectionRange(3, 3)
+    const ev = new InputEvent('beforeinput', {
+      data: '.',
+      inputType: 'insertText',
+      cancelable: true,
+    })
+    input.dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(true)
+  })
+})
+
+describe('directive — `.number` blur cleanup (16d regression: lone period)', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('clears the DOM when blur leaves a lone period in a `.number` text input', () => {
+    // 16d regression: typing `.` then blurring used to leave `.` in
+    // the DOM because `looseToNumber('.')` returns the original
+    // string, and the change-normalizer wrote that string back via
+    // `el.value = '.'`. Native `<input type="number">` clears `.`
+    // on blur — the `.number` text input now matches.
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '.'
+    input.dispatchEvent(new Event('change'))
+    expect(input.value).toBe('')
+  })
+
+  it('clears the DOM for a lone minus sign on blur', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '-'
+    input.dispatchEvent(new Event('change'))
+    expect(input.value).toBe('')
+  })
+
+  it('clears the DOM for a partial scientific-notation residue on blur (e.g., `e`)', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = 'e'
+    input.dispatchEvent(new Event('change'))
+    expect(input.value).toBe('')
+  })
+
+  it('normalizes `1.` to `1` on blur (parseFloat-castable partial input)', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '1.'
+    input.dispatchEvent(new Event('change'))
+    expect(input.value).toBe('1')
+  })
+
+  it('preserves `1.5` on blur (already-canonical castable input)', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '1.5'
+    input.dispatchEvent(new Event('change'))
+    expect(input.value).toBe('1.5')
+  })
+
+  it('commits `1e3` to canonical `1000` on blur for a `.number` text input', () => {
+    // Scientific-notation input was unblocked at the beforeinput
+    // layer — verify the blur normalizer takes the cast representation
+    // (`String(1000)` is `'1000'`, NOT `'1e3'`).
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '1e3'
+    input.dispatchEvent(new Event('change'))
+    expect(input.value).toBe('1000')
+  })
+
+  it('clears the DOM under `.lazy.number` when blur leaves a lone period', () => {
+    // The lazy variant uses the `change` event for the input
+    // listener AND the blur normalizer — both fire on blur. Order:
+    // listener-1 markTransientEmpty's, listener-2 cleans the DOM.
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, markTransientEmpty } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { lazy: true, number: true }), makeVNode({}), null)
+
+    input.value = '.'
+    input.dispatchEvent(new Event('change'))
+    expect(input.value).toBe('')
+    expect(markTransientEmpty).toHaveBeenCalled()
+  })
 })

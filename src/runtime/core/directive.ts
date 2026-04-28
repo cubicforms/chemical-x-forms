@@ -446,7 +446,26 @@ const vRegisterText: RegisterTextCustomDirective = {
         // sees ` 12 ` stick after blur instead of `12`.
         let normalized: string | number = el.value
         if (trim === true) normalized = normalized.trim()
-        if (castToNumber) normalized = looseToNumber(normalized)
+        if (castToNumber) {
+          const cast = looseToNumber(normalized)
+          if (typeof cast === 'number') {
+            // Castable on blur: write the canonical String(number)
+            // form so partial-but-castable input ('1.', '01', '1e3')
+            // commits to its normalized representation.
+            el.value = String(cast)
+          } else {
+            // Uncastable mid-edit residue (lone '.', '-', 'abc') —
+            // match native `<input type="number">` blur behaviour and
+            // clear the DOM. The keystroke listener has already
+            // markTransientEmpty'd the path, so storage / displayValue
+            // already reflect ''; this aligns the visible DOM with
+            // them. Without this, Vue's reactivity sees no change to
+            // displayValue ('' → '') and skips patching the DOM,
+            // leaving the un-castable string visible.
+            el.value = ''
+          }
+          return
+        }
         el.value = typeof normalized === 'number' ? String(normalized) : normalized
         // Catch up the model on blur for non-lazy `.trim`. The input
         // listener wrote the raw mid-typing value (deferred trim);
@@ -473,9 +492,13 @@ const vRegisterText: RegisterTextCustomDirective = {
     // DOM layer so `el.value` never holds garbage. Native
     // `<input type="number">` already filters at the browser layer,
     // so we skip the listener there to avoid double-filtering. The
-    // regex allows an optional leading `-`, a single `.`, and any
-    // number of digits; partial states (e.g. just `-` or `1.`) are
-    // accepted as the user is still typing. Composition events
+    // regex allows an optional leading `-`, a single `.`, any number
+    // of digits, and an optional scientific-notation suffix
+    // (`[eE][+-]?\d*`) so devs get parity with native `type="number"`
+    // for inputs like `1e3`. Partial states (just `-`, `1.`, `1e`,
+    // `1e-`) are accepted as the user is still typing; the blur
+    // normalizer commits the cast value (or clears the DOM if the
+    // residue is non-castable). Composition events
     // (`insertCompositionText`) aren't blocked — IME input proceeds
     // normally and the directive's `compositionend` handler catches
     // the final value.
@@ -494,7 +517,7 @@ const vRegisterText: RegisterTextCustomDirective = {
         const start = el.selectionStart ?? 0
         const end = el.selectionEnd ?? 0
         const next = el.value.slice(0, start) + data + el.value.slice(end)
-        if (!/^-?\d*\.?\d*$/.test(next)) ev.preventDefault()
+        if (!/^-?\d*\.?\d*([eE][+-]?\d*)?$/.test(next)) ev.preventDefault()
       })
     }
   },

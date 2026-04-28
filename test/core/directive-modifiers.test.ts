@@ -208,7 +208,10 @@ describe('vRegisterText — `.number`', () => {
 
     hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
 
-    input.value = 'not-a-number'
+    // `'xyz'` is non-castable AND has no `e`/`E` — keeps this test on
+    // the immediate markTransientEmpty path. Strings containing `e`
+    // hit the scientific-notation deferral instead (covered separately).
+    input.value = 'xyz'
     input.dispatchEvent(new Event('input'))
     expect(setValue).not.toHaveBeenCalled()
     expect(markTransientEmpty).toHaveBeenCalledTimes(1)

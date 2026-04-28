@@ -423,6 +423,19 @@ const vRegisterText: RegisterTextCustomDirective = {
           if (isRegisterValue(value)) value.markTransientEmpty()
           return
         }
+        // Mid-typing scientific notation: defer the storage write to
+        // blur. Without this, typing `3e4` casts to 30000 and Vue's
+        // `:value="displayValue"` patch yanks the DOM from `3e4` to
+        // `30000`, so the user can't keep typing toward `3e45`. By
+        // skipping the write while the DOM contains `[eE]`, storage
+        // (and therefore `displayValue`) stays stable; Vue sees no
+        // change and leaves the DOM alone. The change-event normalizer
+        // below commits the canonical cast on blur. Lazy mode is on
+        // the change event already, so deferring there would never
+        // commit — gated on `lazy !== true`.
+        if (lazy !== true && typeof domValue === 'string' && /[eE]/.test(domValue)) {
+          return
+        }
         domValue = looseToNumber(domValue)
         if (typeof domValue !== 'number') {
           // Non-castable garbage like "abc" — text input with `.number`,
@@ -453,16 +466,27 @@ const vRegisterText: RegisterTextCustomDirective = {
             // form so partial-but-castable input ('1.', '01', '1e3')
             // commits to its normalized representation.
             el.value = String(cast)
+            // Commit the cast to the model on blur. Required for the
+            // mid-typing scientific-notation deferral path: the input
+            // listener skipped writes while DOM contained `[eE]`, so
+            // storage is stale and must be caught up here. The
+            // identity short-circuit in the gate makes this a no-op
+            // for non-deferred castable input (`1.5` → `1.5`). Skipped
+            // under `.lazy`, where the input listener already runs on
+            // the same change event and writes ahead of this handler.
+            if (lazy !== true) el[assignKey]?.(cast)
           } else {
             // Uncastable mid-edit residue (lone '.', '-', 'abc') —
             // match native `<input type="number">` blur behaviour and
             // clear the DOM. The keystroke listener has already
-            // markTransientEmpty'd the path, so storage / displayValue
-            // already reflect ''; this aligns the visible DOM with
-            // them. Without this, Vue's reactivity sees no change to
-            // displayValue ('' → '') and skips patching the DOM,
-            // leaving the un-castable string visible.
+            // markTransientEmpty'd the path for non-lazy in most
+            // cases; under the scientific-notation deferral it may
+            // not have, so re-mark here defensively. Without this,
+            // Vue's reactivity sees no change to displayValue and
+            // skips patching the DOM, leaving the un-castable string
+            // visible.
             el.value = ''
+            if (isRegisterValue(value)) value.markTransientEmpty()
           }
           return
         }

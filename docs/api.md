@@ -231,12 +231,34 @@ plus a stable `PathKey`. Use when building custom adapters.
 ### `parseApiErrors(payload, options) → ParseApiErrorsResult`
 
 Pure transformation: takes a server response in the common shapes
-(`{ error: { details } }`, `{ details }`, or a raw `{ path: msg[] }`
+(`{ error: { details } }`, `{ details }`, or a raw `{ path: entry }`
 record) and returns `{ ok, errors, rejected? }`. Pair with
 `form.setFieldErrors(result.errors)` to apply. The form's setter
 surface deliberately doesn't include a `…FromApi` shortcut — keeping
 the parse step explicit makes the data flow obvious and the parser
 unit-testable in isolation.
+
+**Wire format.** Every entry must be `{ message, code }` (both
+required strings). The `code` is forwarded verbatim onto the produced
+`ValidationError` so error renderers can branch on it without
+matching on the message string. A field's value can be a single
+entry or an array (multiple distinct failures at the same path).
+
+```jsonc
+{
+  "error": {
+    "details": {
+      "email": { "message": "taken", "code": "api:duplicate-email" },
+      "password": [
+        { "message": "too short", "code": "api:min-length" },
+        { "message": "no digit", "code": "api:digit-required" },
+      ],
+      "items.0.name": { "message": "blank", "code": "api:blank" },
+      "": { "message": "form-level failure", "code": "api:form" },
+    },
+  },
+}
+```
 
 ```ts
 const result = parseApiErrors(response, {
@@ -249,8 +271,46 @@ if (result.ok) form.setFieldErrors(result.errors)
 else console.warn('Bad payload:', result.rejected)
 ```
 
+Legacy string entries (`{ field: 'message string' }`) are rejected
+with `ok: false`. Pre-1.0; consumers needing per-call codes adapt
+their backend.
+
 See [server-errors recipe](./recipes/server-errors.md) for the full
 pattern.
+
+### Error codes
+
+Every `ValidationError` carries a required `code: string` for stable
+machine identification. Convention is `<scope>:<kebab-case>`:
+
+| Scope    | Owner              | Examples                                                                          |
+| -------- | ------------------ | --------------------------------------------------------------------------------- |
+| `cx:`    | Library core       | `cx:no-value-supplied`, `cx:adapter-threw`, `cx:path-not-found`                   |
+| `zod:`   | Zod adapter        | `zod:too_small`, `zod:invalid_format`, `zod:custom` (forwarded from `issue.code`) |
+| consumer | Your app / backend | `api:duplicate-email`, `auth:expired-token`, `myapp:account-locked`               |
+
+The library exports `CxErrorCode` for branching on internal codes:
+
+```ts
+import { CxErrorCode } from '@chemical-x/forms'
+// or '@chemical-x/forms/zod' / '@chemical-x/forms/zod-v3'
+
+if (error.code === CxErrorCode.NoValueSupplied) {
+  // user opened the form and hasn't filled this field yet
+}
+if (error.code.startsWith('zod:')) {
+  // schema-level validation failure
+}
+```
+
+`zod:` codes are computed inline (no enum) since Zod's code list
+evolves. String-match the prefix to handle "any zod error" generically,
+or check exact codes for fine-grained branching.
+
+The library never invents consumer-side codes — they originate in your
+backend payload (via `parseApiErrors`) or in `setFieldErrors` /
+`addFieldErrors` calls you make directly. Pick a prefix and stay
+consistent across your app.
 
 ### `unset`
 

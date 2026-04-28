@@ -793,42 +793,28 @@ const vRegisterSelect: RegisterSelectCustomDirective = {
   },
 }
 
-function getBaseValue(value: RegisterValue, el: HTMLSelectElement) {
-  const externalValue = value.innerRef.value
-  const options = el.options
-  if (typeof externalValue === 'string') {
-    const selectedOption = options[options.selectedIndex]
-    return selectedOption?.value ?? ''
-  }
-
-  const optionsArray = [...options]
-  if (externalValue instanceof Array) {
-    return optionsArray.reduce<string[]>((result, option) => {
-      if (option.selected) {
-        result.push(option.value)
-      }
-
-      return result
-    }, [])
-  }
-  return optionsArray.reduce<Set<string>>((result, option) => {
-    if (option.selected) result.add(option.value)
-    return result
-  }, new Set())
-}
-
 function setSelected(el: HTMLSelectElement, value: unknown) {
   if (!isRegisterValue(value)) return
 
+  // Use the model value directly — mirrors Vue's reference
+  // `vModelSelect.setSelected`. Pre-fix this went through a
+  // `getBaseValue` indirection that read DOM-current selection state
+  // instead of the model, returning an empty Set for single-select
+  // numeric models. The downstream `looseEqual('1', Set{})` always
+  // failed, so `selectedIndex` ended at `-1` (no option highlighted)
+  // even though the bound value matched an option. Single-select with
+  // number / string / boolean now correctly drives the DOM via
+  // `looseEqual` (which coerces primitives through `String(...)`),
+  // and multi-select uses the Array / Set membership it always did.
+  const externalValue = value.innerRef.value
   const isMultiple = el.multiple
-  const baseValue = getBaseValue(value, el)
-  const isArrayValue = isArray(baseValue)
+  const isArrayValue = isArray(externalValue)
 
-  if (isMultiple && !isArrayValue && !isSet(baseValue)) {
+  if (isMultiple && !isArrayValue && !isSet(externalValue)) {
     if (__DEV__) {
       warn(
         `<select multiple v-register> expected an Array or Set value for its binding, ` +
-          `but got ${Object.prototype.toString.call(baseValue).slice(8, -1)} instead.`
+          `but got ${Object.prototype.toString.call(externalValue).slice(8, -1)} instead.`
       )
     }
     return
@@ -844,14 +830,14 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
         const optionType = typeof optionValue
         // fast path for string / number values
         if (optionType === 'string' || optionType === 'number') {
-          option.selected = baseValue.some((v) => String(v) === String(optionValue))
+          option.selected = externalValue.some((v) => String(v) === String(optionValue))
         } else {
-          option.selected = looseIndexOf(baseValue, optionValue) > -1
+          option.selected = looseIndexOf(externalValue, optionValue) > -1
         }
       } else {
-        option.selected = (baseValue as Set<unknown>).has(optionValue)
+        option.selected = (externalValue as Set<unknown>).has(optionValue)
       }
-    } else if (looseEqual(getValue(option), baseValue)) {
+    } else if (looseEqual(optionValue, externalValue)) {
       if (el.selectedIndex !== i) el.selectedIndex = i
       return
     }

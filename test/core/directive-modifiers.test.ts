@@ -80,6 +80,7 @@ const hooks = vRegister as unknown as {
   created?: DirectiveHook
   mounted?: DirectiveHook
   beforeUpdate?: DirectiveHook
+  updated?: DirectiveHook
   beforeUnmount?: DirectiveHook
 }
 
@@ -391,6 +392,78 @@ describe('vRegisterSelect — `.number`', () => {
     opt0.selected = true
     select.dispatchEvent(new Event('change'))
     expect(setValue).toHaveBeenCalledWith(['1'], expect.objectContaining({}))
+  })
+
+  it('mounted: selects the option matching a numeric model (16f regression)', () => {
+    // Bug report: `<select v-register.number>` with model `1` left
+    // `selectedIndex = -1` (no option highlighted) even though the
+    // first option's value attribute was `"1"`. The pre-fix
+    // `getBaseValue` returned a Set of DOM-currently-selected
+    // values, which never compared equal to the model number.
+    const select = makeSelectWithOptions(['1', '2', '3'])
+    document.body.appendChild(select)
+    const { value } = makeRegisterValue(1 as unknown as never)
+
+    hooks.created?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+    hooks.mounted?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    expect(select.selectedIndex).toBe(0)
+  })
+
+  it('mounted: selects the option matching a string model', () => {
+    // Same path, string-valued model. Pre-fix `getBaseValue` read
+    // `el.options[el.selectedIndex].value` — effectively a no-op
+    // that left whatever the browser had selected by default. With
+    // the model-driven sync, the right option is selected even when
+    // the default selectedIndex doesn't match.
+    const select = makeSelectWithOptions(['a', 'b', 'c'])
+    document.body.appendChild(select)
+    const { value } = makeRegisterValue('c' as unknown as never)
+
+    hooks.created?.(select, makeBinding(value, {}), makeVNode({}), null)
+    hooks.mounted?.(select, makeBinding(value, {}), makeVNode({}), null)
+
+    expect(select.selectedIndex).toBe(2)
+  })
+
+  it('mounted: model with no matching option leaves selectedIndex = -1', () => {
+    const select = makeSelectWithOptions(['1', '2', '3'])
+    document.body.appendChild(select)
+    const { value } = makeRegisterValue(99 as unknown as never)
+
+    hooks.created?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+    hooks.mounted?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    expect(select.selectedIndex).toBe(-1)
+  })
+
+  it('mounted: multi-select with array model selects matching options', () => {
+    const select = makeSelectWithOptions(['1', '2', '3'])
+    select.multiple = true
+    document.body.appendChild(select)
+    const { value } = makeRegisterValue<number[]>([1, 3])
+
+    hooks.created?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+    hooks.mounted?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    expect(select.options[0]?.selected).toBe(true)
+    expect(select.options[1]?.selected).toBe(false)
+    expect(select.options[2]?.selected).toBe(true)
+  })
+
+  it('updated: re-syncs DOM when model changes', () => {
+    const select = makeSelectWithOptions(['1', '2', '3'])
+    document.body.appendChild(select)
+    const { value } = makeRegisterValue(1 as unknown as never)
+
+    hooks.created?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+    hooks.mounted?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+    expect(select.selectedIndex).toBe(0)
+
+    // Programmatic model change → trigger updated hook.
+    ;(value.innerRef as { value: unknown }).value = 3
+    hooks.updated?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+    expect(select.selectedIndex).toBe(2)
   })
 })
 

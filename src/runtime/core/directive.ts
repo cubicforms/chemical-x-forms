@@ -411,18 +411,29 @@ const vRegisterText: RegisterTextCustomDirective = {
         domValue = domValue.trim()
       }
       if (castToNumber) {
-        // Skip the assigner when a number cast is requested but the
-        // input is empty after trim — most commonly a backspace-clear
-        // on `<input type="number">`. `looseToNumber` returns the
-        // input string unchanged for unparseable values, so the
-        // slim-primitive gate would reject the string-going-to-number
-        // write and emit a noisy dev warning for what's actually a
-        // transient mid-edit state. Treat it as a no-op: the form
-        // stays at the last valid number, the user retains the empty
-        // DOM, and the dev warning is reserved for genuinely
-        // mismatched programmatic writes.
-        if (domValue === '') return
+        // Empty after the (deferred) trim — most commonly a backspace-
+        // clear on `<input type="number">` or a `.number` text input.
+        // Mark the path transient-empty rather than skipping silently:
+        // storage gets the slim default (0), the UI shows blank via
+        // `displayValue.value === ''`, and submit-time validation
+        // raises "Required" if the schema demands a number (the
+        // public-housing footgun fix). Without this, the directive's
+        // pre-fix skip-on-empty silently desynced storage from UI.
+        if (domValue === '') {
+          if (isRegisterValue(value)) value.markTransientEmpty()
+          return
+        }
         domValue = looseToNumber(domValue)
+        if (typeof domValue !== 'number') {
+          // Non-castable garbage like "abc" — text input with `.number`,
+          // not protected by the beforeinput filter (e.g. consumer
+          // pasted via JS or programmatic `el.value = 'abc'`). Treat
+          // as the empty case so the gate's slim-primitive rejection
+          // doesn't surface a dev warning for a transient mid-edit
+          // state.
+          if (isRegisterValue(value)) value.markTransientEmpty()
+          return
+        }
       }
       el[assignKey]?.(domValue)
     })
@@ -457,6 +468,34 @@ const vRegisterText: RegisterTextCustomDirective = {
       // this also fixes the issue where some browsers e.g. iOS Chrome
       // fires "change" instead of "input" on autocomplete.
       addEventListener(el, 'change', onCompositionEnd)
+    }
+    // `.number` × text input — block non-numeric characters at the
+    // DOM layer so `el.value` never holds garbage. Native
+    // `<input type="number">` already filters at the browser layer,
+    // so we skip the listener there to avoid double-filtering. The
+    // regex allows an optional leading `-`, a single `.`, and any
+    // number of digits; partial states (e.g. just `-` or `1.`) are
+    // accepted as the user is still typing. Composition events
+    // (`insertCompositionText`) aren't blocked — IME input proceeds
+    // normally and the directive's `compositionend` handler catches
+    // the final value.
+    if (number === true && vnode.props?.['type'] !== 'number') {
+      addEventListener(el, 'beforeinput', (e) => {
+        const ev = e as InputEvent
+        if (
+          ev.inputType !== 'insertText' &&
+          ev.inputType !== 'insertFromPaste' &&
+          ev.inputType !== 'insertFromDrop'
+        ) {
+          return
+        }
+        const data = ev.data
+        if (data === null) return
+        const start = el.selectionStart ?? 0
+        const end = el.selectionEnd ?? 0
+        const next = el.value.slice(0, start) + data + el.value.slice(end)
+        if (!/^-?\d*\.?\d*$/.test(next)) ev.preventDefault()
+      })
     }
   },
   // set value on mounted so it's after min/max for type="range"

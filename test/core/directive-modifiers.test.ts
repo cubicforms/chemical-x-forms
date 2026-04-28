@@ -191,17 +191,27 @@ describe('vRegisterText — `.number`', () => {
     expect(setValue).toHaveBeenCalledWith(12.5, expect.objectContaining({}))
   })
 
-  it('input event passes a non-numeric string through unchanged (looseToNumber returns input on parse failure)', () => {
+  it('input event marks transient-empty for non-numeric strings instead of attempting the write', () => {
+    // Pre-commit-5 the directive forwarded the unparseable string to
+    // the slim-primitive gate, which rejected it and emitted a noisy
+    // dev warning. Post-commit-5 the directive treats non-castable
+    // input the same as the empty case: route through
+    // `markTransientEmpty` so storage holds the slim default and the
+    // user retains the empty / partial DOM. Submit-time validation
+    // raises "Required" for required schemas.
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
     const { value, setValue } = makeRegisterValue('' as unknown as never)
+    const markTransientEmpty = vi.fn(() => true)
+    value.markTransientEmpty = markTransientEmpty
 
     hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
 
     input.value = 'not-a-number'
     input.dispatchEvent(new Event('input'))
-    expect(setValue).toHaveBeenCalledWith('not-a-number', expect.objectContaining({}))
+    expect(setValue).not.toHaveBeenCalled()
+    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
   })
 
   it('change event normalizes the visible DOM after Vue 3.5.33 parity fix', () => {
@@ -443,26 +453,28 @@ describe('chemical-x interactions: `.number` × slim-primitive gate', () => {
     document.body.innerHTML = ''
   })
 
-  it('rejected write (gate said no): listener completes silently, DOM keeps user input', () => {
+  it('non-castable input never reaches the gate — directive marks transient-empty instead', () => {
+    // Post-commit-5 the directive's `.number` listener short-circuits
+    // BEFORE the assigner when `looseToNumber` returns a non-number,
+    // so the slim-primitive gate never sees the bogus write. The
+    // user's typed input stays in the DOM (the directive doesn't
+    // roll back on transient-empty either) and submit-time
+    // validation raises "Required" if the schema demands a number.
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
 
-    // Mock assigner that rejects (e.g. slim-primitive gate sees a string
-    // going to a `z.number()` slot).
     const { value, setValue } = makeRegisterValue(0 as unknown as never)
-    setValue.mockImplementation(() => false)
+    const markTransientEmpty = vi.fn(() => true)
+    value.markTransientEmpty = markTransientEmpty
 
     hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
 
     input.value = 'abc'
     expect(() => input.dispatchEvent(new Event('input'))).not.toThrow()
 
-    // setValue called once, returned false. DOM still shows what the
-    // user typed (the directive does not roll the DOM back on a
-    // rejected write — that's `vRegisterSelect`'s job for selects).
-    expect(setValue).toHaveBeenCalledTimes(1)
-    expect(setValue).toHaveBeenCalledWith('abc', expect.objectContaining({}))
+    expect(setValue).not.toHaveBeenCalled()
+    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
     expect(input.value).toBe('abc')
   })
 })
@@ -721,23 +733,52 @@ describe('regression: vRegisterText × type="number" × backspace-to-empty', () 
     expect(setValue).not.toHaveBeenCalled()
   })
 
-  it('non-empty non-numeric input still attempts the write (gate decides)', () => {
-    // The skip-on-empty path is narrow — only blank `el.value`
-    // bypasses the assigner. A user typing "abc" still sends "abc"
-    // to the gate, which rejects and warns. That warning IS a
-    // useful signal: it indicates the input is producing values
-    // the schema doesn't accept structurally, vs. the transient
-    // empty-state UX of clearing the field.
+  it('non-empty non-numeric input routes through markTransientEmpty (no gate-rejection warning)', () => {
+    // Post-commit-5 the directive treats both "" and non-castable
+    // input ('abc') as the empty case: the assigner doesn't fire,
+    // and `markTransientEmpty` writes the slim default with the
+    // transient-empty meta. Submit-time validation raises "Required"
+    // for required schemas — the dev-warn-via-gate-rejection that
+    // pre-commit-5 surfaced was a worse UX than this.
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
     const { value, setValue } = makeRegisterValue(0 as unknown as never)
+    const markTransientEmpty = vi.fn(() => true)
+    value.markTransientEmpty = markTransientEmpty
 
     hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
 
     input.value = 'abc'
     input.dispatchEvent(new Event('input'))
+    expect(setValue).not.toHaveBeenCalled()
+    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
+  })
+
+  it('backspace-to-empty also routes through markTransientEmpty (commit 5)', () => {
+    // Pre-commit-5 the directive skipped the assigner silently — UI
+    // showed empty but storage held the previous valid number, so
+    // submit could ship a stale value. Post-commit-5 the empty case
+    // marks transient-empty: storage flips to the slim default and
+    // submit raises "Required" if the schema demands a number.
+    const input = document.createElement('input')
+    input.type = 'number'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue(0 as unknown as never)
+    const markTransientEmpty = vi.fn(() => true)
+    value.markTransientEmpty = markTransientEmpty
+
+    hooks.created?.(input, makeBinding(value, {}), makeVNode({ type: 'number' }), null)
+
+    input.value = '1'
+    input.dispatchEvent(new Event('input'))
     expect(setValue).toHaveBeenCalledTimes(1)
-    expect(setValue).toHaveBeenLastCalledWith('abc', expect.objectContaining({}))
+    expect(setValue).toHaveBeenLastCalledWith(1, expect.objectContaining({}))
+
+    setValue.mockClear()
+    input.value = ''
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).not.toHaveBeenCalled()
+    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
   })
 })

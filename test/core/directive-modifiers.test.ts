@@ -1,0 +1,552 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { DirectiveBinding } from 'vue'
+import { ref } from 'vue'
+import { vRegister } from '../../src/runtime/core/directive'
+import { createPersistOptInRegistry } from '../../src/runtime/core/persistence/opt-in-registry'
+import type { PathKey } from '../../src/runtime/core/paths'
+import type { RegisterValue } from '../../src/runtime/types/types-api'
+
+/**
+ * Modifier coverage for `v-register` (`.lazy`, `.trim`, `.number`).
+ * The runtime is ported from Vue's `vModelText` / `vModelSelect`;
+ * Vue tests its own modifier semantics in its own suite, but the
+ * port has additional chemical-x guards (`shouldBailListener`, the
+ * slim-primitive gate, value-swap migration) that intersect with
+ * the modifier paths and need direct coverage here.
+ *
+ * Every test goes through the directive's `created` / `beforeUpdate`
+ * hooks against a real jsdom element so the listeners actually
+ * attach and fire on dispatched DOM events.
+ */
+
+type Spy = ReturnType<typeof vi.fn>
+
+function makeRegisterValue<T>(initial: T): {
+  value: RegisterValue<T>
+  register: Spy
+  deregister: Spy
+  setValue: Spy
+} {
+  const register = vi.fn()
+  const deregister = vi.fn()
+  const setValue = vi.fn(() => true)
+  const value: RegisterValue<T> = {
+    innerRef: ref(initial) as RegisterValue<T>['innerRef'],
+    registerElement: register,
+    deregisterElement: deregister,
+    setValueWithInternalPath: setValue,
+    markConnectedOptimistically: () => undefined,
+    path: 'mock' as PathKey,
+    persist: false,
+    acknowledgeSensitive: false,
+    persistOptIns: createPersistOptInRegistry(),
+  }
+  return { value, register, deregister, setValue }
+}
+
+function makeBinding<T>(
+  rv: RegisterValue<T> | undefined,
+  modifiers: Record<string, true> = {}
+): DirectiveBinding {
+  return {
+    value: rv,
+    oldValue: null,
+    modifiers,
+    arg: undefined,
+    dir: {},
+    instance: null,
+  } as unknown as DirectiveBinding
+}
+
+type FakeVNode = { props: Record<string, unknown> }
+function makeVNode(props: Record<string, unknown> = {}): FakeVNode {
+  return { props }
+}
+
+type DirectiveHook = (
+  el: Element,
+  binding: DirectiveBinding,
+  vnode: FakeVNode,
+  prevNode: null
+) => void
+
+const hooks = vRegister as unknown as {
+  created?: DirectiveHook
+  mounted?: DirectiveHook
+  beforeUpdate?: DirectiveHook
+  beforeUnmount?: DirectiveHook
+}
+
+// ─────────────────────────────────────────────────────────────────
+// `<input type="text">` modifier matrix
+// ─────────────────────────────────────────────────────────────────
+
+describe('vRegisterText — `.lazy`', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('listener attaches to `change` not `input`', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue('')
+    hooks.created?.(input, makeBinding(value, { lazy: true }), makeVNode({}), null)
+
+    // Dispatching `input` MUST NOT write — listener gates on `change`.
+    input.value = 'typing'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).not.toHaveBeenCalled()
+
+    // Dispatching `change` writes.
+    input.dispatchEvent(new Event('change'))
+    expect(setValue).toHaveBeenCalledTimes(1)
+    expect(setValue).toHaveBeenCalledWith('typing', expect.objectContaining({}))
+  })
+
+  it('does NOT attach composition handlers under `.lazy`', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue('')
+
+    hooks.created?.(input, makeBinding(value, { lazy: true }), makeVNode({}), null)
+
+    // compositionstart / compositionend are wired only on the non-lazy
+    // path. With `.lazy` they should be absent. The functional probe:
+    // dispatching a compositionstart marks `composing: true` on the
+    // composition handler. With no handler attached, our internal state
+    // bag stays untouched. Easier check: ensure subsequent `change`
+    // writes go through unchanged regardless of composition events.
+    input.dispatchEvent(new Event('compositionstart'))
+    input.value = 'lazy-write'
+    input.dispatchEvent(new Event('change'))
+    expect(setValue).toHaveBeenCalledWith('lazy-write', expect.objectContaining({}))
+  })
+})
+
+describe('vRegisterText — `.trim`', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('input event writes the trimmed value', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue('')
+
+    hooks.created?.(input, makeBinding(value, { trim: true }), makeVNode({}), null)
+
+    input.value = '  hello  '
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenCalledWith('hello', expect.objectContaining({}))
+  })
+
+  it('change event normalizes the visible DOM (trims el.value on blur)', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value } = makeRegisterValue('')
+
+    hooks.created?.(input, makeBinding(value, { trim: true }), makeVNode({}), null)
+
+    input.value = '  hello  '
+    input.dispatchEvent(new Event('change'))
+    expect(input.value).toBe('hello')
+  })
+})
+
+describe('vRegisterText — `.number`', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('input event casts a parseable string to a number', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '42'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenCalledWith(42, expect.objectContaining({}))
+
+    setValue.mockClear()
+    input.value = '12.5'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenCalledWith(12.5, expect.objectContaining({}))
+  })
+
+  it('input event passes a non-numeric string through unchanged (looseToNumber returns input on parse failure)', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue('' as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = 'not-a-number'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenCalledWith('not-a-number', expect.objectContaining({}))
+  })
+
+  it('change event normalizes the visible DOM after Vue 3.5.33 parity fix', () => {
+    // The (a) divergence: Vue casts el.value on blur whenever
+    // EITHER trim OR castToNumber is true. Pre-fix, our port skipped
+    // this for `.number`. ` 12 ` would stay ` 12 ` after blur instead
+    // of becoming `12`.
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = ' 12 '
+    input.dispatchEvent(new Event('change'))
+    expect(input.value).toBe('12')
+  })
+
+  it('auto-applies cast for <input type="number"> without an explicit `.number` modifier', () => {
+    const input = document.createElement('input')
+    input.type = 'number'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, {}), makeVNode({ type: 'number' }), null)
+
+    input.value = '7'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenCalledWith(7, expect.objectContaining({}))
+  })
+})
+
+describe('vRegisterText — combined modifiers', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('`.lazy.trim`: change event writes the trimmed value', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue('')
+
+    hooks.created?.(input, makeBinding(value, { lazy: true, trim: true }), makeVNode({}), null)
+
+    input.value = '  spaced  '
+    // input alone shouldn't write under .lazy.
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).not.toHaveBeenCalled()
+    input.dispatchEvent(new Event('change'))
+    expect(setValue).toHaveBeenCalledWith('spaced', expect.objectContaining({}))
+  })
+
+  it('`.lazy.number`: change event writes the cast value', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { lazy: true, number: true }), makeVNode({}), null)
+
+    input.value = '99'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).not.toHaveBeenCalled()
+    input.dispatchEvent(new Event('change'))
+    expect(setValue).toHaveBeenCalledWith(99, expect.objectContaining({}))
+  })
+
+  it('`.trim.number`: input writes trim-then-cast; change re-runs both', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { trim: true, number: true }), makeVNode({}), null)
+
+    input.value = '  42  '
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenCalledWith(42, expect.objectContaining({}))
+
+    input.value = '  7  '
+    input.dispatchEvent(new Event('change'))
+    // After change the visible DOM is normalized.
+    expect(input.value).toBe('7')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// `<textarea>` smoke
+// ─────────────────────────────────────────────────────────────────
+
+describe('vRegisterText — <textarea> reuses the same variant', () => {
+  it('`.trim` works on textarea', () => {
+    const ta = document.createElement('textarea')
+    document.body.appendChild(ta)
+    const { value, setValue } = makeRegisterValue('')
+
+    hooks.created?.(ta, makeBinding(value, { trim: true }), makeVNode({}), null)
+
+    ta.value = '  multi line  '
+    ta.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenCalledWith('multi line', expect.objectContaining({}))
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// `<select>` modifier matrix
+// ─────────────────────────────────────────────────────────────────
+
+describe('vRegisterSelect — `.number`', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  function makeSelectWithOptions(options: string[]): HTMLSelectElement {
+    const select = document.createElement('select')
+    for (const v of options) {
+      const opt = document.createElement('option')
+      opt.value = v
+      opt.text = v
+      select.appendChild(opt)
+    }
+    return select
+  }
+
+  it('change event writes a numeric value for the selected option', () => {
+    const select = makeSelectWithOptions(['10', '20', '30'])
+    document.body.appendChild(select)
+    const { value, setValue } = makeRegisterValue(10 as unknown as never)
+
+    hooks.created?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    select.value = '20'
+    select.dispatchEvent(new Event('change'))
+    expect(setValue).toHaveBeenCalledWith(20, expect.objectContaining({}))
+  })
+
+  it('multi-select with `.number` produces a numeric array', () => {
+    const select = makeSelectWithOptions(['1', '2', '3'])
+    select.multiple = true
+    document.body.appendChild(select)
+    const { value, setValue } = makeRegisterValue<number[]>([])
+
+    hooks.created?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    const opt0 = select.options[0]
+    const opt2 = select.options[2]
+    if (opt0 === undefined || opt2 === undefined) throw new Error('unreachable')
+    opt0.selected = true
+    opt2.selected = true
+    select.dispatchEvent(new Event('change'))
+    expect(setValue).toHaveBeenCalledWith([1, 3], expect.objectContaining({}))
+  })
+
+  it('multi-select WITHOUT `.number` writes string values', () => {
+    const select = makeSelectWithOptions(['1', '2'])
+    select.multiple = true
+    document.body.appendChild(select)
+    const { value, setValue } = makeRegisterValue<string[]>([])
+
+    hooks.created?.(select, makeBinding(value, {}), makeVNode({}), null)
+
+    const opt0 = select.options[0]
+    if (opt0 === undefined) throw new Error('unreachable')
+    opt0.selected = true
+    select.dispatchEvent(new Event('change'))
+    expect(setValue).toHaveBeenCalledWith(['1'], expect.objectContaining({}))
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// `vRegisterText.beforeUpdate` lazy/trim escape-hatches
+// ─────────────────────────────────────────────────────────────────
+
+describe('vRegisterText.beforeUpdate — escape hatches under focus', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('`.lazy`: while focused, suppresses reverse-sync when value === oldValue', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    input.focus()
+    const { value } = makeRegisterValue('original')
+    value.innerRef = ref('mid-edit') as typeof value.innerRef
+
+    // User has typed 'half' — el.value represents in-progress input.
+    input.value = 'half'
+
+    // beforeUpdate fires with `value === oldValue` (the consumer ref
+    // didn't change between renders) — under `.lazy` while focused,
+    // we should NOT clobber el.value.
+    const binding = {
+      value,
+      oldValue: 'mid-edit',
+      modifiers: { lazy: true },
+      arg: undefined,
+      dir: {},
+      instance: null,
+    } as unknown as DirectiveBinding
+    hooks.beforeUpdate?.(input, binding, makeVNode({}), null)
+
+    expect(input.value).toBe('half')
+  })
+
+  it('`.trim`: while focused, suppresses reverse-sync when el.value.trim() === newValue', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    input.focus()
+    const { value } = makeRegisterValue('hello')
+
+    // User has trailing whitespace they're still managing.
+    input.value = 'hello '
+
+    const binding = makeBinding(value, { trim: true })
+    hooks.beforeUpdate?.(input, binding, makeVNode({}), null)
+
+    // el.value preserved — the trimmed form already matches the model.
+    expect(input.value).toBe('hello ')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// chemical-x-specific interactions
+// ─────────────────────────────────────────────────────────────────
+
+describe('chemical-x interactions: `.number` × slim-primitive gate', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('rejected write (gate said no): listener completes silently, DOM keeps user input', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+
+    // Mock assigner that rejects (e.g. slim-primitive gate sees a string
+    // going to a `z.number()` slot).
+    const { value, setValue } = makeRegisterValue(0 as unknown as never)
+    setValue.mockImplementation(() => false)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = 'abc'
+    expect(() => input.dispatchEvent(new Event('input'))).not.toThrow()
+
+    // setValue called once, returned false. DOM still shows what the
+    // user typed (the directive does not roll the DOM back on a
+    // rejected write — that's `vRegisterSelect`'s job for selects).
+    expect(setValue).toHaveBeenCalledTimes(1)
+    expect(setValue).toHaveBeenCalledWith('abc', expect.objectContaining({}))
+    expect(input.value).toBe('abc')
+  })
+})
+
+describe('chemical-x interactions: `.lazy` × value-swap', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('listener attaches at `created` regardless of value; post-swap writes route through `change` only', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+
+    // Created with undefined under `.lazy` — listener still attaches
+    // to `change` (modifier is read at created time, not at swap time).
+    hooks.created?.(
+      input,
+      makeBinding(undefined as unknown as RegisterValue<string>, { lazy: true }),
+      makeVNode({}),
+      null
+    )
+
+    // Swap in a real RV.
+    const next = makeRegisterValue('')
+    const swap = {
+      value: next.value,
+      oldValue: undefined,
+      modifiers: { lazy: true },
+      arg: undefined,
+      dir: {},
+      instance: null,
+    } as unknown as DirectiveBinding
+    hooks.beforeUpdate?.(input, swap, makeVNode({}), null)
+
+    // `input` event under .lazy should NOT write.
+    input.value = 'typed'
+    input.dispatchEvent(new Event('input'))
+    expect(next.setValue).not.toHaveBeenCalled()
+
+    // `change` event routes the write to the new RV.
+    input.dispatchEvent(new Event('change'))
+    expect(next.setValue).toHaveBeenCalledTimes(1)
+    expect(next.setValue).toHaveBeenCalledWith('typed', expect.objectContaining({}))
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// Dispatcher propagates modifiers
+// ─────────────────────────────────────────────────────────────────
+
+describe('vRegisterDynamic — propagates modifiers to the per-tag variant', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('`.lazy` on a text input reaches vRegisterText', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue('')
+
+    // Going through the umbrella `vRegister` (which IS vRegisterDynamic)
+    // exercises the dispatcher path in `vRegisterDynamic.created` →
+    // `callModelHook` → `vRegisterText.created`.
+    hooks.created?.(input, makeBinding(value, { lazy: true }), makeVNode({}), null)
+
+    input.value = 'x'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).not.toHaveBeenCalled()
+
+    input.dispatchEvent(new Event('change'))
+    expect(setValue).toHaveBeenCalledWith('x', expect.objectContaining({}))
+  })
+
+  it('`.number` on a select reaches vRegisterSelect', () => {
+    const select = document.createElement('select')
+    for (const v of ['1', '2', '3']) {
+      const opt = document.createElement('option')
+      opt.value = v
+      opt.text = v
+      select.appendChild(opt)
+    }
+    document.body.appendChild(select)
+    const { value, setValue } = makeRegisterValue(1 as unknown as never)
+
+    hooks.created?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    select.value = '2'
+    select.dispatchEvent(new Event('change'))
+    expect(setValue).toHaveBeenCalledWith(2, expect.objectContaining({}))
+  })
+})
+
+// Suppress dev-warn console noise from the directive's "is a no-op"
+// check (fires when v-register is bound to a non-supported root). None
+// of the tests above actually trigger it because every binding is on a
+// supported native element, but the deferred warn could surface if a
+// future test refactor changes that.
+beforeEach(() => {
+  vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+})

@@ -131,7 +131,7 @@ describe('v-register on Vue components — AST behaviour', () => {
   })
 
   describe('selectNodeTransform — fires on EVERY component with v-register (surprising ⚠)', () => {
-    it('injects :value="reg.innerRef.value" + :registerValue="reg" as component props', () => {
+    it('injects :value="reg.displayValue.value" + :registerValue="reg" as component props', () => {
       // The transform's branch `node.tagType === ElementTypes.COMPONENT`
       // makes ANY component with v-register a transform target — even
       // ones whose name has nothing to do with selecting (`<MyInput>`,
@@ -143,9 +143,9 @@ describe('v-register on Vue components — AST behaviour', () => {
       const code = compileWith(`<MyInput v-register="form.register('email')" />`, [
         selectNodeTransform,
       ])
-      expect(code).toContain('innerRef')
+      expect(code).toContain('displayValue')
       // Both keys appear in the generated component-prop object.
-      expect(code).toMatch(/value:\s*\(.*\)\?\.innerRef\.value/)
+      expect(code).toMatch(/value:\s*\(.*\)\?\.displayValue\.value/)
       expect(code).toContain('registerValue:')
     })
 
@@ -165,7 +165,7 @@ describe('v-register on Vue components — AST behaviour', () => {
         [selectNodeTransform]
       )
       // The component itself gets the value + registerValue prop pair.
-      expect(code).toContain('innerRef')
+      expect(code).toContain('displayValue')
       expect(code).toContain('registerValue:')
       // But the slot-content options stay raw — no `:selected` was
       // injected. Vue codegen still uses the keyword "selected" in
@@ -199,7 +199,7 @@ describe('v-register on Vue components — AST behaviour', () => {
         selectNodeTransform,
       ])
       for (const code of [pascal, explicitClose]) {
-        expect(code).toContain('innerRef')
+        expect(code).toContain('displayValue')
         expect(code).toContain('registerValue:')
       }
     })
@@ -217,7 +217,7 @@ describe('v-register on Vue components — AST behaviour', () => {
       // attributes — the documented assignKey escape hatch covers
       // that case.
       const code = compileWith(`<my-input v-register="reg" />`, [selectNodeTransform])
-      expect(code).toContain('innerRef')
+      expect(code).toContain('displayValue')
       expect(code).toContain('registerValue:')
       expect(code).toContain('_directive_register')
     })
@@ -231,7 +231,7 @@ describe('v-register on Vue components — AST behaviour', () => {
       // catches a hypothetical `<form-something v-register>` future
       // mistake.
       const code = compileWith(`<form v-register="reg" />`, [selectNodeTransform])
-      expect(code).not.toContain('innerRef')
+      expect(code).not.toContain('displayValue')
       expect(code).not.toContain('registerValue:')
     })
   })
@@ -258,7 +258,7 @@ describe('v-register on Vue components — AST behaviour', () => {
          </div>`
       )
       // selectNodeTransform contributed value: + registerValue:
-      expect(code).toContain('innerRef')
+      expect(code).toContain('displayValue')
       expect(code).toContain('registerValue:')
       // vRegisterHintTransform wrapped the directive expression.
       expect(code).toContain('markConnectedOptimistically')
@@ -273,11 +273,16 @@ describe('v-register on Vue components — AST behaviour', () => {
            <input v-register="form.register('name')" />
          </div>`
       )
-      // Native input gets innerRef from inputTextAreaNodeTransform;
-      // component gets innerRef from selectNodeTransform's component
-      // branch. Both produce innerRef — at least 2 occurrences.
+      // Native input still emits `innerRef` references inside the
+      // checkbox/radio equality branch of inputTextAreaNodeTransform's
+      // ternary (the runtime takes the value branch for text inputs,
+      // but Vue's static codegen emits both legs). Component takes the
+      // displayValue path through selectNodeTransform's component
+      // branch — no innerRef on that side.
       const innerRefHits = code.match(/innerRef/g)?.length ?? 0
-      expect(innerRefHits).toBeGreaterThanOrEqual(2)
+      expect(innerRefHits).toBeGreaterThanOrEqual(1)
+      const displayHits = code.match(/displayValue/g)?.length ?? 0
+      expect(displayHits).toBeGreaterThanOrEqual(2)
       // Both bindings hoist into the preamble.
       expect(code).toMatch(/_ctx\.form\.register\(['"]email['"]\)/)
       expect(code).toMatch(/_ctx\.form\.register\(['"]name['"]\)/)
@@ -292,7 +297,7 @@ describe('v-register on Vue components — AST behaviour', () => {
       // transform doesn't introspect the expression — it forwards as-is.
       const code = compileFull('<MyInput v-register="form.register(`${prefix}.email`)" />')
       expect(code).toContain('markConnectedOptimistically')
-      expect(code).toContain('innerRef')
+      expect(code).toContain('displayValue')
       // The template literal survives through identifier prefixing.
       expect(code).toContain('${_ctx.prefix}')
     })
@@ -328,7 +333,7 @@ describe('v-register on Vue components — AST behaviour', () => {
         selectNodeTransform,
         selectNodeTransform,
       ])
-      const valueHits = code.match(/value:\s*\(.*\)\?\.innerRef\.value/g)?.length ?? 0
+      const valueHits = code.match(/value:\s*\(.*\)\?\.displayValue\.value/g)?.length ?? 0
       const regValueHits = code.match(/registerValue:/g)?.length ?? 0
       expect(valueHits).toBe(1)
       expect(regValueHits).toBe(1)

@@ -231,10 +231,19 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
       const registerValueArr = Array.isArray(registerSummarizedProp.value)
         ? registerSummarizedProp.value
         : [registerSummarizedProp.value]
+      // Read `displayValue.value` rather than `innerRef.value` so the
+      // `:value` binding renders the transient-empty `''` when the
+      // user clears a numeric field. `displayValue` returns
+      // `String(storage)` for non-empty storage and `''` for both
+      // null/undefined storage and paths in the form's
+      // `transientEmptyPaths` set — a single read surface for the
+      // injected expression. For checkbox / radio (the ternary's
+      // truthy branch above), this leg is unreached, so behaviour
+      // there is unchanged.
       const valueExpression = createCompoundExpression([
         '(',
         ...registerValueArr,
-        ')?.innerRef?.value',
+        ')?.displayValue?.value',
       ])
       const valueOrCheckedProp: DirectiveNode = {
         // reconstruct the `value` attribute based on the provided v-registerer, now that the computation is complete

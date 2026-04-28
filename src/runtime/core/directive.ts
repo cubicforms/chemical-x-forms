@@ -441,6 +441,22 @@ const vRegisterText: RegisterTextCustomDirective = {
           }
           return
         }
+        if (!Number.isFinite(domValue)) {
+          // Overflow: parseFloat returned Infinity / -Infinity for
+          // values past Number.MAX_VALUE (e.g. `1e309`). Don't commit
+          // — Zod's z.number() rejects non-finite, and
+          // JSON.stringify() renders Infinity as `null`, both confusing
+          // for devs and downstream consumers. Snap the DOM back to
+          // the last good displayValue so the user gets immediate
+          // visual feedback that their input was rejected (analogous
+          // to a native `<input type="number" max>` cap). Storage
+          // stays at whatever the last finite write committed.
+          if (isRegisterValue(value)) {
+            const target = value.displayValue.value
+            if (el.value !== target) el.value = target
+          }
+          return
+        }
         // Castable: record the user's typed string so `displayValue`
         // surfaces it mid-typing. Storage commits real-time via the
         // assigner below; without `lastTypedForm`, Vue's `:value`
@@ -463,7 +479,7 @@ const vRegisterText: RegisterTextCustomDirective = {
         if (trim === true) normalized = normalized.trim()
         if (castToNumber) {
           const cast = looseToNumber(normalized)
-          if (typeof cast === 'number') {
+          if (typeof cast === 'number' && Number.isFinite(cast)) {
             // Blur: clear the typed-form override so `displayValue`
             // returns `String(storage)`. The DOM then patches to the
             // canonical form (`'1e2'` → `'100'`, `'01'` → `'1'`,
@@ -476,14 +492,14 @@ const vRegisterText: RegisterTextCustomDirective = {
             el.value = String(cast)
             if (lazy !== true) el[assignKey]?.(cast)
           } else {
-            // Uncastable mid-edit residue (lone '.', '-', 'abc') —
-            // match native `<input type="number">` blur behaviour and
-            // clear the DOM. The keystroke listener has already
-            // markTransientEmpty'd the path for non-lazy; under
-            // `.lazy.number` this is the first chance, so re-mark
-            // defensively. Without `el.value = ''`, Vue's `:value`
-            // patch would see no displayValue change and leave the
-            // residue visible.
+            // Uncastable mid-edit residue (lone '.', '-', 'abc') OR
+            // overflow (`1e309` parses to Infinity). Native
+            // `<input type="number">` blur behaviour clears in both
+            // cases; we match that. The keystroke listener has
+            // already markTransientEmpty'd uncastable input under
+            // non-lazy, but under `.lazy.number` (or for an overflow
+            // pasted directly via the change event) this is the first
+            // chance, so re-mark defensively.
             if (isRegisterValue(value)) {
               value.lastTypedForm.value = null
               value.markTransientEmpty()

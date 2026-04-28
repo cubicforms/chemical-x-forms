@@ -711,3 +711,100 @@ describe('directive — `.number` real-time storage updates with mid-typing DOM 
     expect(value.lastTypedForm.value).toBeNull()
   })
 })
+
+describe('directive — `.number` overflow (Infinity) refusal', () => {
+  // `parseFloat('1e309')` is `Infinity`. `typeof Infinity === 'number'`,
+  // so without an explicit guard the slim-primitive gate accepts it
+  // and storage holds `Infinity`. Downstream chaos:
+  //   - `JSON.stringify(Infinity)` is `'null'` → field state shows
+  //     `value: null`, devs think the form silently nulled out
+  //   - Zod's `z.number()` rejects with "expected number, received
+  //     number" (its quirky error for non-finite numerics)
+  // The directive refuses non-finite at the boundary: storage stays
+  // at the last good value (snap-back during typing), and blur
+  // clears + markTransientEmpty.
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('refuses to write Infinity to storage on input event (overflow)', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    // Establish a good value first so the snap-back has something to
+    // restore to.
+    input.value = '1e308'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenLastCalledWith(1e308, expect.objectContaining({}))
+    setValue.mockClear()
+
+    // Push past Number.MAX_VALUE — parseFloat returns Infinity.
+    input.value = '1e309'
+    input.dispatchEvent(new Event('input'))
+    // Storage refuses the Infinity write.
+    expect(setValue).not.toHaveBeenCalled()
+  })
+
+  it('snaps the DOM back to the last good displayValue on overflow keystroke', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value } = makeRegisterValue(0 as unknown as never)
+    // Pre-seed displayValue with a non-empty string so the snap-back
+    // assertion is meaningful (the mock starts at '').
+    ;(value.displayValue as unknown as { value: string }).value = '1e308'
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '1e309'
+    input.dispatchEvent(new Event('input'))
+    // DOM snapped back from `'1e309'` to `'1e308'`.
+    expect(input.value).toBe('1e308')
+  })
+
+  it('blur on an overflow residue clears the DOM and fires markTransientEmpty', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, markTransientEmpty } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '1e309'
+    input.dispatchEvent(new Event('change'))
+    expect(input.value).toBe('')
+    expect(markTransientEmpty).toHaveBeenCalled()
+  })
+
+  it('refuses negative overflow (`-1e309` → -Infinity)', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '-1e309'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).not.toHaveBeenCalled()
+  })
+
+  it('still accepts the largest finite Number (`1.7976931348623157e308` ≈ Number.MAX_VALUE)', () => {
+    // Sanity: the snap-back is gated on Number.isFinite — values at
+    // or below MAX_VALUE pass through unchanged.
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '1.7976931348623157e308'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenLastCalledWith(Number.MAX_VALUE, expect.objectContaining({}))
+  })
+})

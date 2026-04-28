@@ -200,11 +200,11 @@ pattern.
 ### Other exports
 
 - `parseDottedPath(s)` — string → `Segment[]`
-- `assignKey(el, key)` — low-level DOM marking used by `vRegister`
+- `assignKey` — `unique symbol` used to install a custom assigner on a v-register-bound element
 - `isRegisterValue(x)` — type guard for the object `register` returns
 - `ROOT_PATH` / `ROOT_PATH_KEY` — the empty path and its key
-- `PARSE_API_ERRORS_DEFAULTS` — `{ maxEntries: 1000, maxPathDepth: 32 }` constant
-- `InvalidPathError` / `RegistryNotInstalledError` / `ReservedFormKeyError` / `SensitivePersistFieldError` / `SubmitErrorHandlerError` — error classes
+- `PARSE_API_ERRORS_DEFAULTS` — `{ maxEntries: 1000, maxPathDepth: 32, maxTotalSegments: 10000 }` constant
+- `InvalidPathError` / `OutsideSetupError` / `RegistryNotInstalledError` / `ReservedFormKeyError` / `SensitivePersistFieldError` / `SubmitErrorHandlerError` — error classes
 
 ---
 
@@ -467,7 +467,11 @@ import type {
   ApiErrorEnvelope,
   ArrayItem,
   ArrayPath,
+  CurrentValueContext,
+  CurrentValueWithContext,
+  CustomDirectiveRegisterAssignerFn,
   DeepPartial,
+  DefaultValuesResponse,
   FieldState,
   FieldValidationConfig,
   FieldValidationMode,
@@ -479,24 +483,27 @@ import type {
   GenericForm,
   HandleSubmit,
   HistoryConfig,
-  DefaultValuesResponse,
   IsTuple,
+  MetaTrackerValue,
   NestedReadType,
   NestedType,
   OnError,
   OnInvalidSubmitPolicy,
   OnSubmit,
-  PendingValidationStatus,
   ParseApiErrorsOptions,
   ParseApiErrorsResult,
+  PendingValidationStatus,
   PersistConfig,
   PersistConfigOptions,
   PersistIncludeMode,
   ReactiveValidationStatus,
+  RegisterDirective,
+  RegisterFlatPath,
   RegisterValue,
   SetValueCallback,
   SetValuePayload,
   SettledValidationStatus,
+  SlimPrimitiveKind,
   SubmitHandler,
   UseAbstractFormReturnType,
   UseFormConfiguration,
@@ -566,10 +573,30 @@ string; formKey: FormKey }`.
   the data layer reports schema errors immediately when defaults fail.
   Use `'lax'` to opt out (multi-step wizards, placeholder rows in field
   arrays, any case where mounting with invalid data is expected).
-- **`AbstractSchema`** — the schema contract (5 methods:
+- **`AbstractSchema`** — the schema contract (6 methods:
   `fingerprint`, `getDefaultValues`, `getDefaultAtPath`,
-  `getSchemasAtPath`, `validateAtPath`). See
-  [custom-adapter recipe](./recipes/custom-adapter.md).
+  `getSchemasAtPath`, `validateAtPath`, `getSlimPrimitiveTypesAtPath`).
+  See [custom-adapter recipe](./recipes/custom-adapter.md).
+- **`SlimPrimitiveKind`** — the set of primitive `typeof`-style
+  kinds the slim-write contract recognises: `'string'`, `'number'`,
+  `'boolean'`, `'bigint'`, `'date'`, `'null'`, `'undefined'`,
+  `'object'`, `'array'`, `'symbol'`, `'function'`, `'map'`, `'set'`.
+  Returned by `AbstractSchema.getSlimPrimitiveTypesAtPath(path)`.
+- **`MetaTrackerValue`** — per-leaf metadata: `updatedAt`,
+  `rawValue`, `isConnected`, `formKey`, `path`. Surfaced via
+  `getFieldState(path).meta` and the `withMeta: true` overloads of
+  `getValue`.
+- **`CurrentValueContext` / `CurrentValueWithContext`** — argument
+  and return types for the metadata overloads of `getValue`.
+- **`RegisterDirective`** — the union of every `v-register`
+  directive variant (text input, select, checkbox, radio, dynamic).
+  Most consumers use this only when augmenting Vue's `GlobalDirectives`
+  manually; the Nuxt module wires it automatically.
+- **`CustomDirectiveRegisterAssignerFn`** — function shape for
+  custom assigners installed via the exported `assignKey` symbol.
+- **`RegisterFlatPath<Form>`** — the path-constraint type used by
+  `register(path)`. Consumers wrapping `register` in higher-order
+  helpers can re-use it to type their wrapper's path parameter.
 - **`FormStorage`** — the storage contract (4 methods: `getItem`,
   `setItem`, `removeItem`, `listKeys`). See
   [persistence recipe](./recipes/persistence.md).

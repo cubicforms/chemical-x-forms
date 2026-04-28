@@ -190,14 +190,14 @@ describe('persistence — localStorage backend', () => {
     const raw = await waitUntil(() => localStorage.getItem(fpKey('test-local')))
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { v: number; data: { form: { email: string } } }
-    expect(payload.v).toBe(2)
+    expect(payload.v).toBe(3)
     expect(payload.data.form.email).toBe('alice@example.com')
   })
 
   it('hydrates from a persisted payload on mount', async () => {
     localStorage.setItem(
       fpKey('test-hydrate'),
-      JSON.stringify({ v: 2, data: { form: { email: 'seed@example.com', password: 'pw' } } })
+      JSON.stringify({ v: 3, data: { form: { email: 'seed@example.com', password: 'pw' } } })
     )
     const { app, api } = mountForm({ storage: 'local', key: 'test-hydrate', debounceMs: 20 })
     apps.push(app)
@@ -250,7 +250,7 @@ describe('persistence — localStorage backend', () => {
   it('clears the persisted entry on submit success', async () => {
     localStorage.setItem(
       fpKey('test-clear'),
-      JSON.stringify({ v: 2, data: { form: { email: 'pre@x.com', password: 'pw' } } })
+      JSON.stringify({ v: 3, data: { form: { email: 'pre@x.com', password: 'pw' } } })
     )
     const { app, api } = mountForm({ storage: 'local', key: 'test-clear', debounceMs: 20 })
     apps.push(app)
@@ -720,7 +720,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
     // path's update — the other field's persisted value must survive.
     localStorage.setItem(
       fpKey('test-imp-merge'),
-      JSON.stringify({ v: 2, data: { form: { email: 'prev@x.com', password: 'prev-pw' } } })
+      JSON.stringify({ v: 3, data: { form: { email: 'prev@x.com', password: 'prev-pw' } } })
     )
     const handle: { api?: ApiReturn } = {}
     const App = defineComponent({
@@ -755,7 +755,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
   it('form.clearPersistedDraft() wipes the entry; form.clearPersistedDraft(path) wipes only that subpath', async () => {
     localStorage.setItem(
       fpKey('test-clear-api'),
-      JSON.stringify({ v: 2, data: { form: { email: 'a@x.com', password: 'pw' } } })
+      JSON.stringify({ v: 3, data: { form: { email: 'a@x.com', password: 'pw' } } })
     )
     const handle: { api?: ApiReturn } = {}
     const App = defineComponent({
@@ -904,7 +904,7 @@ describe('persistence — reset wipes the persisted draft', () => {
     // hydrates from the seed, password falls back to schema default.
     localStorage.setItem(
       fpKey('test-sparse-hydrate'),
-      JSON.stringify({ v: 2, data: { form: { email: 'sparse-seed@x.com' } } })
+      JSON.stringify({ v: 3, data: { form: { email: 'sparse-seed@x.com' } } })
     )
     const { app, api } = mountForm({
       storage: 'local',
@@ -1064,7 +1064,7 @@ describe('persistence — reset wipes the persisted draft', () => {
     // 'email'. Storage should drop email but keep password.
     localStorage.setItem(
       fpKey('test-reset-field'),
-      JSON.stringify({ v: 2, data: { form: { email: 'seed@x.com', password: 'seed-pw' } } })
+      JSON.stringify({ v: 3, data: { form: { email: 'seed@x.com', password: 'seed-pw' } } })
     )
     const { app, api } = mountForm({
       storage: 'local',
@@ -1148,7 +1148,7 @@ describe('persistence — shorthand config', () => {
     const raw = await waitUntil(() => localStorage.getItem(expectedKey), 1000)
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { v: number; data: { form: { email: string } } }
-    expect(payload.v).toBe(2)
+    expect(payload.v).toBe(3)
     expect(payload.data.form.email).toBe('shorthand@example.com')
   })
 
@@ -1251,7 +1251,7 @@ describe('persistence — cross-store cleanup at mount', () => {
     sessionStorage.setItem(key, JSON.stringify({ stale: 'data' }))
     // Current-fingerprint key in configured store stays (cleanup only
     // touches non-current-fingerprint orphans).
-    localStorage.setItem(fpKey(key), JSON.stringify({ v: 2, data: { form: { email: 'keep' } } }))
+    localStorage.setItem(fpKey(key), JSON.stringify({ v: 3, data: { form: { email: 'keep' } } }))
     expect(sessionStorage.getItem(key)).not.toBeNull()
     mountMinimal({ storage: 'local', key })
     // Cleanup is fire-and-forget; poll for the session entry to vanish.
@@ -1264,7 +1264,7 @@ describe('persistence — cross-store cleanup at mount', () => {
   it("configured 'session' wipes orphan entries from localStorage", async () => {
     const key = 'cleanup-shared-key-2'
     localStorage.setItem(key, JSON.stringify({ stale: 'data' }))
-    sessionStorage.setItem(fpKey(key), JSON.stringify({ v: 2, data: { form: { email: 'keep' } } }))
+    sessionStorage.setItem(fpKey(key), JSON.stringify({ v: 3, data: { form: { email: 'keep' } } }))
     mountMinimal({ storage: 'session', key })
     await waitUntil(() => (localStorage.getItem(key) === null ? true : null), 500)
     expect(localStorage.getItem(key)).toBeNull()
@@ -1348,11 +1348,11 @@ describe('persistence — cross-store cleanup at mount', () => {
     const expectedStorageKey = `chemical-x-forms:${formKey}`
     localStorage.setItem(
       expectedStorageKey,
-      JSON.stringify({ v: 2, data: { form: { email: 'old@x.com' } } })
+      JSON.stringify({ v: 3, data: { form: { email: 'old@x.com' } } })
     )
     sessionStorage.setItem(
       expectedStorageKey,
-      JSON.stringify({ v: 2, data: { form: { email: 'older@x.com' } } })
+      JSON.stringify({ v: 3, data: { form: { email: 'older@x.com' } } })
     )
     expect(localStorage.getItem(expectedStorageKey)).not.toBeNull()
     expect(sessionStorage.getItem(expectedStorageKey)).not.toBeNull()
@@ -1415,7 +1415,7 @@ describe('persistence — fingerprint-keyed storage + orphan cleanup', () => {
 
   it('schema-A → schema-B: fingerprint differs → no rehydration', async () => {
     const stalePayload = JSON.stringify({
-      v: 2,
+      v: 3,
       data: { form: { email: 'stale@x.com', password: 'stale' } },
     })
     localStorage.setItem('fp-mismatch:OLD-FINGERPRINT', stalePayload)
@@ -1427,14 +1427,14 @@ describe('persistence — fingerprint-keyed storage + orphan cleanup', () => {
 
   it('orphan cleanup: stale-fingerprint entries wiped on mount of the same form', async () => {
     const stalePayload = JSON.stringify({
-      v: 2,
+      v: 3,
       data: { form: { email: 'stale@x.com', password: 'stale' } },
     })
     localStorage.setItem('fp-orphan:OLD-FP-1', stalePayload)
     localStorage.setItem('fp-orphan:OLD-FP-2', stalePayload)
     localStorage.setItem(
       fpKey('fp-orphan'),
-      JSON.stringify({ v: 2, data: { form: { email: 'live@x.com', password: 'live' } } })
+      JSON.stringify({ v: 3, data: { form: { email: 'live@x.com', password: 'live' } } })
     )
     const { app, api } = mountForm({ storage: 'local', key: 'fp-orphan', debounceMs: 20 })
     apps.push(app)
@@ -1453,7 +1453,7 @@ describe('persistence — fingerprint-keyed storage + orphan cleanup', () => {
   it('orphan cleanup: pre-fingerprint legacy keys (no `:` suffix) are wiped', async () => {
     localStorage.setItem(
       'fp-legacy',
-      JSON.stringify({ v: 2, data: { form: { email: 'legacy@x.com', password: 'pw' } } })
+      JSON.stringify({ v: 3, data: { form: { email: 'legacy@x.com', password: 'pw' } } })
     )
     const { app } = mountForm({ storage: 'local', key: 'fp-legacy', debounceMs: 20 })
     apps.push(app)
@@ -1464,7 +1464,7 @@ describe('persistence — fingerprint-keyed storage + orphan cleanup', () => {
   it('orphan cleanup uses exact-or-`:`-prefix match (no sibling-form collision)', async () => {
     localStorage.setItem(
       fpKey('my-form-2'),
-      JSON.stringify({ v: 2, data: { form: { email: 'sibling@x.com', password: 'pw' } } })
+      JSON.stringify({ v: 3, data: { form: { email: 'sibling@x.com', password: 'pw' } } })
     )
     const { app } = mountForm({ storage: 'local', key: 'my-form', debounceMs: 20 })
     apps.push(app)
@@ -1509,9 +1509,9 @@ describe('FormStorage.listKeys — per-backend', () => {
     __resetIndexedDbForTests()
     const { createIndexedDbAdapter } = await import('../../src/runtime/core/persistence/indexeddb')
     const adapter = createIndexedDbAdapter()
-    await adapter.setItem('idb-test:a', { v: 2, data: { form: { x: 1 } } })
-    await adapter.setItem('idb-test:b:fp', { v: 2, data: { form: { x: 2 } } })
-    await adapter.setItem('other:x', { v: 2, data: { form: {} } })
+    await adapter.setItem('idb-test:a', { v: 3, data: { form: { x: 1 } } })
+    await adapter.setItem('idb-test:b:fp', { v: 3, data: { form: { x: 2 } } })
+    await adapter.setItem('other:x', { v: 3, data: { form: {} } })
     const keys = await adapter.listKeys('idb-test:')
     expect(keys.sort()).toEqual(['idb-test:a', 'idb-test:b:fp'])
     __resetIndexedDbForTests()

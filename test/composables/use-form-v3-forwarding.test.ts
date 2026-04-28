@@ -137,7 +137,7 @@ describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
     const fp = fingerprintZodSchema(schema)
     expect(key).toBe(`chemical-x-forms:v3-persist:${fp}`)
     expect(payload).toMatchObject({
-      v: 2,
+      v: 3,
       data: { form: { email: 'alice@example.com' } },
     })
   })

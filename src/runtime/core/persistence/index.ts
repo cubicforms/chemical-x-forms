@@ -6,6 +6,7 @@ import type {
   ValidationError,
 } from '../../types/types-api'
 import { PERSISTENCE_KEY_PREFIX } from '../defaults'
+import { __DEV__ } from '../dev'
 import { isPlainRecord, setAtPath, getAtPath } from '../path-walker'
 import type { Path, PathKey, Segment } from '../paths'
 
@@ -103,6 +104,15 @@ export type PersistedPayload<Form> = {
     readonly form: Form
     readonly schemaErrors?: ReadonlyArray<readonly [string, ValidationError[]]>
     readonly userErrors?: ReadonlyArray<readonly [string, ValidationError[]]>
+    /**
+     * Path keys that were in the form's `transientEmptyPaths` set at
+     * serialisation time. Optional — older v=2 envelopes don't carry it,
+     * and forms with no transient-empty paths skip the field too.
+     * Replayed into the reactive Set on the next mount so an accidental
+     * refresh preserves the user's "displayed empty" state across
+     * sessions. Introduced in envelope v=3.
+     */
+    readonly transientEmptyPaths?: ReadonlyArray<string>
   }
 }
 
@@ -112,8 +122,12 @@ export type PersistedPayload<Form> = {
  * envelopes with a different `v`. Schema-content invalidation is
  * handled at the storage key level (the `:${fingerprint}` suffix), so
  * consumers shouldn't see this number.
+ *
+ * v=3: adds `data.transientEmptyPaths` for round-tripping the
+ * transient-empty UI state across persistence + SSR. v=2 envelopes
+ * are dropped with a one-time dev-warn (commit 6 of the unset feature).
  */
-export const PERSISTED_ENVELOPE_VERSION = 2
+export const PERSISTED_ENVELOPE_VERSION = 3
 
 /**
  * `value` is expected to be a raw `PersistedPayload` (parsed JSON or
@@ -128,24 +142,72 @@ export const PERSISTED_ENVELOPE_VERSION = 2
 export function readPersistedPayload<Form>(value: unknown): PersistedPayload<Form> | null {
   if (value === null || value === undefined || typeof value !== 'object') return null
   const envelope = value as Partial<PersistedPayload<Form>>
-  if (typeof envelope.v !== 'number' || envelope.v !== PERSISTED_ENVELOPE_VERSION) return null
+  if (typeof envelope.v !== 'number') return null
+  if (envelope.v !== PERSISTED_ENVELOPE_VERSION) {
+    warnVersionMismatch(envelope.v)
+    return null
+  }
   if (envelope.data === undefined || typeof envelope.data !== 'object') return null
   return envelope as PersistedPayload<Form>
+}
+
+/**
+ * Tracks envelope versions we've already warned about during this
+ * session. The reader hits this for every form mount that finds
+ * stale persisted state, so a page with N saved drafts at an old
+ * version would otherwise produce N warnings of the same content.
+ * Module-scoped Set survives the test-suite hot-reload cycle but
+ * resets on each fresh page load — exactly the dedup window we want.
+ *
+ * `null` in production so the Set allocation tree-shakes out.
+ */
+const warnedVersions: Set<number> | null = __DEV__ ? new Set<number>() : null
+
+function warnVersionMismatch(observedVersion: number): void {
+  if (warnedVersions === null) return
+  if (warnedVersions.has(observedVersion)) return
+  warnedVersions.add(observedVersion)
+  console.warn(
+    `[@chemical-x/forms] dropping persisted draft (envelope v=${observedVersion}, ` +
+      `expected v=${PERSISTED_ENVELOPE_VERSION}). The library upgraded its ` +
+      `internal payload shape — drafts saved against an older version are not ` +
+      `restored. New drafts written from this session will use the current ` +
+      `envelope and round-trip cleanly. This warning is dev-only and fires once ` +
+      `per observed version per session.`
+  )
 }
 
 export function buildPersistedPayload<Form>(
   form: Form,
   include: 'form' | 'form+errors',
   schemaErrors: ReadonlyMap<string, ValidationError[]>,
-  userErrors: ReadonlyMap<string, ValidationError[]>
+  userErrors: ReadonlyMap<string, ValidationError[]>,
+  transientEmptyPaths?: ReadonlySet<string>
 ): PersistedPayload<Form> {
-  if (include === 'form') return { v: PERSISTED_ENVELOPE_VERSION, data: { form } }
+  // The transient-empty list is part of the form's restorable UI
+  // state — its visibility doesn't depend on the `include` mode
+  // (which only governs whether errors come along for the ride).
+  // Skip the field when the set is empty so v=3 round-trips with
+  // unchanged minimal payload size for forms that never go empty.
+  const transientList: ReadonlyArray<string> | undefined =
+    transientEmptyPaths !== undefined && transientEmptyPaths.size > 0
+      ? [...transientEmptyPaths]
+      : undefined
+
+  if (include === 'form') {
+    if (transientList === undefined) return { v: PERSISTED_ENVELOPE_VERSION, data: { form } }
+    return {
+      v: PERSISTED_ENVELOPE_VERSION,
+      data: { form, transientEmptyPaths: transientList },
+    }
+  }
   return {
     v: PERSISTED_ENVELOPE_VERSION,
     data: {
       form,
       schemaErrors: [...schemaErrors.entries()].map(([k, v]) => [k, [...v]] as const),
       userErrors: [...userErrors.entries()].map(([k, v]) => [k, [...v]] as const),
+      ...(transientList !== undefined ? { transientEmptyPaths: transientList } : {}),
     },
   }
 }

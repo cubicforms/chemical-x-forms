@@ -506,11 +506,19 @@ function wirePersistence<F extends GenericForm>(
     // the fingerprint suffix.
     const filteredSchemaErrors = filterErrorsByPaths(state.schemaErrors, optedInPaths)
     const filteredUserErrors = filterErrorsByPaths(state.userErrors, optedInPaths)
+    // Transient-empty paths are part of the restorable UI state, so
+    // they ride the same opt-in gate as form values: only persist
+    // the entries whose paths are also opted in for persistence.
+    const filteredTransientEmpty = new Set<string>()
+    for (const tk of state.transientEmptyPaths) {
+      if (optedInPaths.has(tk as PathKey)) filteredTransientEmpty.add(tk)
+    }
     const payload = buildPersistedPayload<F>(
       filteredForm,
       include,
       filteredSchemaErrors,
-      filteredUserErrors
+      filteredUserErrors,
+      filteredTransientEmpty
     )
     await adapter.setItem(key, payload)
   }, debounceMs)
@@ -582,6 +590,21 @@ function wirePersistence<F extends GenericForm>(
       // keep their schema defaults.
       const merged = mergeSparseHydration(toRaw(state.form.value) as F, payload.data.form)
       state.applyFormReplacement(merged)
+      // Restore the transient-empty UI state from the persisted
+      // payload. This rebaselines BOTH the live set AND the originals
+      // snapshot — the persisted UI state is the new "construction-
+      // time" reference for `reset()` semantics, so a subsequent
+      // reset() restores the empty fields the user had on the
+      // previous mount, not the freshly-constructed empty set. Form
+      // values rebaseline implicitly through `originals` (which the
+      // existing applyFormReplacement updates via diff-apply), so
+      // mirroring that behaviour here keeps the two domains aligned.
+      state.transientEmptyPaths.clear()
+      state.originalsTransientEmpty.clear()
+      for (const k of payload.data.transientEmptyPaths ?? []) {
+        state.transientEmptyPaths.add(k as PathKey)
+        state.originalsTransientEmpty.add(k as PathKey)
+      }
       if (include === 'form+errors') {
         // Each store rebuilds independently from its persisted entries.
         // Consumers who bumped `version` already had their payload
@@ -648,13 +671,21 @@ function wirePersistence<F extends GenericForm>(
     const baseForm = existing?.data.form ?? ({} as F)
     const value = getAtPath(toRaw(state.form.value), path)
     const nextForm = setAtPath(baseForm, path, value) as F
+    // Refresh this path's transient-empty entry while preserving
+    // entries for OTHER paths the previous mount persisted.
+    const { key: pathKey } = canonicalizePath(path)
+    const transientSet = new Set<string>(existing?.data.transientEmptyPaths ?? [])
+    if (state.transientEmptyPaths.has(pathKey)) transientSet.add(pathKey)
+    else transientSet.delete(pathKey)
     if (include === 'form') {
-      await adapter.setItem(key, buildPersistedPayload<F>(nextForm, 'form', new Map(), new Map()))
+      await adapter.setItem(
+        key,
+        buildPersistedPayload<F>(nextForm, 'form', new Map(), new Map(), transientSet)
+      )
       return
     }
     // include === 'form+errors': preserve the rest of the persisted
     // error map and refresh the entry for this path's canonical key.
-    const { key: pathKey } = canonicalizePath(path)
     const schemaMap = new Map<string, ValidationError[]>(existing?.data.schemaErrors ?? [])
     const userMap = new Map<string, ValidationError[]>(existing?.data.userErrors ?? [])
     const currentSchema = state.schemaErrors.get(pathKey)
@@ -671,7 +702,7 @@ function wirePersistence<F extends GenericForm>(
     }
     await adapter.setItem(
       key,
-      buildPersistedPayload<F>(nextForm, 'form+errors', schemaMap, userMap)
+      buildPersistedPayload<F>(nextForm, 'form+errors', schemaMap, userMap, transientSet)
     )
   }
 
@@ -699,18 +730,27 @@ function wirePersistence<F extends GenericForm>(
       await adapter.removeItem(key)
       return
     }
+    const { key: pathKey } = canonicalizePath(path)
+    // Drop the cleared path from the persisted transient-empty list
+    // so a later mount doesn't restore an "empty" UI state for a
+    // path that no longer has any value behind it.
+    const transientSet = new Set(
+      (existing.data.transientEmptyPaths ?? []).filter((k) => k !== pathKey)
+    )
     if (include === 'form') {
-      await adapter.setItem(key, buildPersistedPayload<F>(nextForm, 'form', new Map(), new Map()))
+      await adapter.setItem(
+        key,
+        buildPersistedPayload<F>(nextForm, 'form', new Map(), new Map(), transientSet)
+      )
       return
     }
-    const { key: pathKey } = canonicalizePath(path)
     const schemaErrors = (existing.data.schemaErrors ?? []).filter(([k]) => k !== pathKey)
     const userErrors = (existing.data.userErrors ?? []).filter(([k]) => k !== pathKey)
     const schemaMap = new Map<string, ValidationError[]>(schemaErrors.map(([k, v]) => [k, [...v]]))
     const userMap = new Map<string, ValidationError[]>(userErrors.map(([k, v]) => [k, [...v]]))
     await adapter.setItem(
       key,
-      buildPersistedPayload<F>(nextForm, 'form+errors', schemaMap, userMap)
+      buildPersistedPayload<F>(nextForm, 'form+errors', schemaMap, userMap, transientSet)
     )
   }
 

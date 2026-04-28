@@ -40,6 +40,11 @@ export function renderChemicalXState(app: App): SerializedChemicalXState {
   const registry = getRegistryFromApp(app)
   const forms: Array<readonly [FormKey, SerializedFormData]> = []
   for (const [key, state] of registry.forms) {
+    // Skip the transient-empty field when the set is empty so the
+    // wire payload stays minimal for forms that don't use it. The
+    // optional shape on the consuming side handles the absence
+    // cleanly (defaults to "no transient-empty paths").
+    const transientList = Array.from(state.transientEmptyPaths)
     forms.push([
       key,
       {
@@ -47,6 +52,7 @@ export function renderChemicalXState(app: App): SerializedChemicalXState {
         schemaErrors: Array.from(state.schemaErrors.entries()),
         userErrors: Array.from(state.userErrors.entries()),
         fields: Array.from(state.fields.entries()),
+        ...(transientList.length > 0 ? { transientEmptyPaths: transientList } : {}),
       },
     ])
   }

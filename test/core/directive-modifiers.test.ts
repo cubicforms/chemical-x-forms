@@ -467,6 +467,147 @@ describe('vRegisterSelect — `.number`', () => {
   })
 })
 
+describe('vRegisterSelect — multi-select (Array / Set models)', () => {
+  // The directive captures `isSet(innerRef.value)` at `created` time
+  // (`isSetModel`) and uses it to decide whether change events write
+  // an Array or a Set. setSelected (mount/updated) drives DOM from
+  // the model directly, mirroring Vue's vModelSelect reference.
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  function makeSelectWithOptions(options: string[]): HTMLSelectElement {
+    const select = document.createElement('select')
+    select.multiple = true
+    for (const v of options) {
+      const opt = document.createElement('option')
+      opt.value = v
+      opt.text = v
+      select.appendChild(opt)
+    }
+    return select
+  }
+
+  it('mounted: array-of-strings model selects matching options', () => {
+    const select = makeSelectWithOptions(['a', 'b', 'c'])
+    document.body.appendChild(select)
+    const { value } = makeRegisterValue<string[]>(['a', 'c'])
+
+    hooks.created?.(select, makeBinding(value, {}), makeVNode({}), null)
+    hooks.mounted?.(select, makeBinding(value, {}), makeVNode({}), null)
+
+    expect(select.options[0]?.selected).toBe(true)
+    expect(select.options[1]?.selected).toBe(false)
+    expect(select.options[2]?.selected).toBe(true)
+  })
+
+  it('mounted: Set-of-strings model selects matching options', () => {
+    const select = makeSelectWithOptions(['a', 'b', 'c'])
+    document.body.appendChild(select)
+    const { value } = makeRegisterValue<Set<string>>(new Set(['b', 'c']))
+
+    hooks.created?.(select, makeBinding(value, {}), makeVNode({}), null)
+    hooks.mounted?.(select, makeBinding(value, {}), makeVNode({}), null)
+
+    expect(select.options[0]?.selected).toBe(false)
+    expect(select.options[1]?.selected).toBe(true)
+    expect(select.options[2]?.selected).toBe(true)
+  })
+
+  it('change event writes an Array when the initial model was an Array', () => {
+    const select = makeSelectWithOptions(['a', 'b', 'c'])
+    document.body.appendChild(select)
+    const { value, setValue } = makeRegisterValue<string[]>([])
+
+    hooks.created?.(select, makeBinding(value, {}), makeVNode({}), null)
+
+    const opt0 = select.options[0]
+    const opt2 = select.options[2]
+    if (opt0 === undefined || opt2 === undefined) throw new Error('unreachable')
+    opt0.selected = true
+    opt2.selected = true
+    select.dispatchEvent(new Event('change'))
+    expect(setValue).toHaveBeenCalledWith(['a', 'c'], expect.objectContaining({}))
+  })
+
+  it('change event writes a Set when the initial model was a Set', () => {
+    const select = makeSelectWithOptions(['a', 'b', 'c'])
+    document.body.appendChild(select)
+    const { value, setValue } = makeRegisterValue<Set<string>>(new Set())
+
+    hooks.created?.(select, makeBinding(value, {}), makeVNode({}), null)
+
+    const opt1 = select.options[1]
+    if (opt1 === undefined) throw new Error('unreachable')
+    opt1.selected = true
+    select.dispatchEvent(new Event('change'))
+    const written = setValue.mock.calls[0]?.[0] as Set<string>
+    expect(written).toBeInstanceOf(Set)
+    expect([...written]).toEqual(['b'])
+  })
+
+  it('change event with no selections writes an empty Array', () => {
+    const select = makeSelectWithOptions(['a', 'b'])
+    document.body.appendChild(select)
+    const { value, setValue } = makeRegisterValue<string[]>(['a'])
+
+    hooks.created?.(select, makeBinding(value, {}), makeVNode({}), null)
+    hooks.mounted?.(select, makeBinding(value, {}), makeVNode({}), null)
+    const opt0 = select.options[0]
+    if (opt0 === undefined) throw new Error('unreachable')
+    expect(opt0.selected).toBe(true)
+
+    // Deselect everything.
+    opt0.selected = false
+    select.dispatchEvent(new Event('change'))
+    expect(setValue).toHaveBeenCalledWith([], expect.objectContaining({}))
+  })
+
+  it('updated: re-syncs DOM when model array changes', () => {
+    const select = makeSelectWithOptions(['a', 'b', 'c'])
+    document.body.appendChild(select)
+    const { value } = makeRegisterValue<string[]>(['a'])
+
+    hooks.created?.(select, makeBinding(value, {}), makeVNode({}), null)
+    hooks.mounted?.(select, makeBinding(value, {}), makeVNode({}), null)
+    expect(select.options[0]?.selected).toBe(true)
+    expect(select.options[2]?.selected).toBe(false)
+    ;(value.innerRef as { value: string[] }).value = ['b', 'c']
+    hooks.updated?.(select, makeBinding(value, {}), makeVNode({}), null)
+    expect(select.options[0]?.selected).toBe(false)
+    expect(select.options[1]?.selected).toBe(true)
+    expect(select.options[2]?.selected).toBe(true)
+  })
+
+  it('mounted: with `.number`, array-of-numbers model selects matching options', () => {
+    const select = makeSelectWithOptions(['10', '20', '30'])
+    document.body.appendChild(select)
+    const { value } = makeRegisterValue<number[]>([10, 30])
+
+    hooks.created?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+    hooks.mounted?.(select, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    expect(select.options[0]?.selected).toBe(true)
+    expect(select.options[1]?.selected).toBe(false)
+    expect(select.options[2]?.selected).toBe(true)
+  })
+
+  it('warns and bails when a multi-select binding receives a scalar model in DEV', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const select = makeSelectWithOptions(['a', 'b'])
+    document.body.appendChild(select)
+    // Misuse: scalar against `multiple`. The directive returns
+    // early after warning so DOM is left as-is.
+    const { value } = makeRegisterValue('a' as unknown as never)
+
+    hooks.created?.(select, makeBinding(value, {}), makeVNode({}), null)
+    hooks.mounted?.(select, makeBinding(value, {}), makeVNode({}), null)
+
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+})
+
 // ─────────────────────────────────────────────────────────────────
 // `vRegisterText.beforeUpdate` lazy/trim escape-hatches
 // ─────────────────────────────────────────────────────────────────

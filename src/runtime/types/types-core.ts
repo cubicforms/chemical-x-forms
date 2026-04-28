@@ -255,3 +255,62 @@ export type ArrayPath<Form, P extends FlatPath<Form> = FlatPath<Form>> = P exten
  */
 export type ArrayItem<Form, Path extends ArrayPath<Form>> =
   NestedType<Form, Path> extends ReadonlyArray<infer Item> ? Item : never
+
+/**
+ * Widens primitive-literal leaves to their primitive supertype to
+ * match the runtime "slim-primitive write contract."
+ *
+ *   WriteShape<{ color: 'red' | 'green' }>
+ *     // → { color: string }
+ *   WriteShape<{ kind: 'on' }>
+ *     // → { kind: string }
+ *   WriteShape<{ count: 42 }>
+ *     // → { count: number }
+ *
+ * The runtime gate accepts any value at a path whose primitive type
+ * matches the schema's slim primitive set at that path. Refinement-
+ * level constraints (enum membership, literal equality, .email,
+ * .min(N), regex, custom refines) are NOT enforced at write time —
+ * they surface via field-level validation. The type widening here
+ * mirrors that runtime behaviour, so `setValue('color', 'magenta')`
+ * and `defaultValues: { color: 'teal' }` are not TS errors despite
+ * being out-of-enum at the validation layer.
+ *
+ * Tuple positions preserve their literal types via the homomorphic
+ * mapped form (`{ [K in keyof T]: ... }` over a readonly tuple
+ * preserves the position labels), so `[string, number]` stays a
+ * 2-tuple of widened primitives instead of collapsing to
+ * `Array<string | number>`.
+ *
+ * Date / RegExp / Map / Set / function instances pass through
+ * unchanged — those aren't "primitive literals" and the runtime
+ * accepts them as their own slim kinds. Tuple-detection runs before
+ * the array-recursion branch so positionally-typed array literals
+ * survive intact.
+ *
+ * Read-side types (handleSubmit's `data` argument,
+ * validate*() result payloads) intentionally stay STRICT — those
+ * payloads have been parsed by the schema, so the widened shape
+ * doesn't apply.
+ */
+export type WriteShape<T> = T extends string | number | boolean | bigint | null | undefined
+  ? T extends string
+    ? string
+    : T extends number
+      ? number
+      : T extends boolean
+        ? boolean
+        : T extends bigint
+          ? bigint
+          : T
+  : T extends Date | RegExp | Map<unknown, unknown> | Set<unknown> | ((...args: never) => unknown)
+    ? T
+    : T extends readonly [unknown, ...unknown[]]
+      ? { -readonly [K in keyof T]: WriteShape<T[K]> }
+      : T extends ReadonlyArray<infer U>
+        ? IsTuple<T> extends true
+          ? { -readonly [K in keyof T]: WriteShape<T[K]> }
+          : Array<WriteShape<U>>
+        : T extends object
+          ? { [K in keyof T]: WriteShape<T[K]> }
+          : T

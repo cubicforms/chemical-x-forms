@@ -45,7 +45,7 @@ export function fakeSchema<F extends GenericForm>(
   const schema: AbstractSchema<F, F> = {
     fingerprint: () => fingerprint,
     getDefaultValues(config): DefaultValuesResponse<F> {
-      const merged = mergeDeepPartial(defaults, config.constraints) as F
+      const merged = mergeDeepPartial(defaults, config.constraints as DeepPartial<F>) as F
       return {
         data: merged,
         errors: undefined,

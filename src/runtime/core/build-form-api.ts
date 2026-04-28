@@ -13,7 +13,7 @@ import type {
   ValidationError,
   ValidationResponseWithoutValue,
 } from '../types/types-api'
-import type { DeepPartial, GenericForm } from '../types/types-core'
+import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
 import { __DEV__ } from './dev'
 import type { FormStore } from './create-form-store'
 import { buildFieldArrayApi } from './field-arrays'
@@ -251,7 +251,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // opt-in registry is NOT touched: directives are still mounted and
   // the next user keystroke on an opted-in input re-populates the
   // entry naturally.
-  const reset = (nextDefaultValues?: DeepPartial<Form>): void => {
+  const reset = (nextDefaultValues?: DeepPartial<WriteShape<Form>>): void => {
     state.reset(nextDefaultValues)
     if (persistence !== undefined) {
       // Fire-and-forget — reset is sync from the consumer's POV; the

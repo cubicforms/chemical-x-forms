@@ -41,7 +41,7 @@ import type {
   UseFormConfiguration,
   ValidationError,
 } from '../types/types-api'
-import type { DeepPartial, GenericForm } from '../types/types-core'
+import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
 
 /**
  * useForm's abstract entry point. The Zod-typed `useForm` sitting at
@@ -70,7 +70,7 @@ export function useAbstractForm<
     Form,
     GetValueFormType,
     AbstractSchema<Form, GetValueFormType>,
-    DeepPartial<Form>
+    DeepPartial<WriteShape<Form>>
   >
 ): UseAbstractFormReturnType<Form, GetValueFormType> {
   const key = resolveFormKey(configuration.key)
@@ -219,7 +219,7 @@ function mergeWithDefaults<
   Form extends GenericForm,
   GetValueFormType extends GenericForm,
   Schema extends AbstractSchema<Form, GetValueFormType>,
-  Defaults extends DeepPartial<Form>,
+  Defaults extends DeepPartial<WriteShape<Form>>,
 >(
   defaults: ChemicalXFormsDefaults,
   configuration: UseFormConfiguration<Form, GetValueFormType, Schema, Defaults>
@@ -252,7 +252,7 @@ const HISTORY_MODULE_KEY = 'history'
 function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
   key: FormKey,
   schema: AbstractSchema<F, G>,
-  configuration: UseFormConfiguration<F, G, AbstractSchema<F, G>, DeepPartial<F>>,
+  configuration: UseFormConfiguration<F, G, AbstractSchema<F, G>, DeepPartial<WriteShape<F>>>,
   registry: ReturnType<typeof useRegistry>
 ): FormStore<F, G> {
   const pending = registry.pendingHydration.get(key)

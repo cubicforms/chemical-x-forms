@@ -11,6 +11,7 @@ import type {
   NestedReadType,
   NestedType,
   WithIndexedUndefined,
+  WriteShape,
 } from './types-core'
 
 export type FormKey = string
@@ -58,7 +59,7 @@ export type ValidationMode = 'strict' | 'lax'
 type GetDefaultValuesConfig<Form> = {
   useDefaultSchemaValues: boolean
   validationMode?: ValidationMode
-  constraints?: DeepPartial<Form> | undefined
+  constraints?: DeepPartial<WriteShape<Form>> | undefined
 }
 
 export type AbstractSchema<Form, GetValueFormType> = {
@@ -369,7 +370,7 @@ export type UseFormConfiguration<
   Form extends GenericForm,
   GetValueFormType,
   Schema extends AbstractSchema<Form, GetValueFormType>,
-  DefaultValues extends DeepPartial<Form>,
+  DefaultValues extends DeepPartial<WriteShape<Form>>,
 > = {
   schema: Schema | ((key: FormKey) => Schema)
   /**
@@ -966,18 +967,25 @@ export type UseAbstractFormReturnType<
       : Readonly<Ref<NestedReadType<GetValueFormType, Path>>>
   }
   // setValue WRITES the form. Both forms drop `DeepPartial` — write
-  // shapes lead with the strict NestedType. The runtime mergeStructural
-  // completes any partial writes, so casts still work; types are honest
-  // about what consumers SHOULD pass.
+  // shapes lead with the WriteShape-widened NestedType. WriteShape
+  // widens primitive-literal leaves (`'red' | 'green'` → `string`,
+  // `42` → `number`) so writes admit refinement-invalid values that
+  // satisfy the slim primitive contract; the runtime gate + field
+  // validation handle refinement-level enforcement.
   //
   // Whole-form: `prev` is undefined-tainted (read shape); return is
-  // strict (write shape). Path-form: both prev and return are strict
-  // (runtime auto-defaults prev when the slot is missing).
+  // the widened write shape. Path-form: both prev and return are
+  // widened (runtime auto-defaults prev when the slot is missing).
   setValue: {
-    <Value extends SetValuePayload<Form, WithIndexedUndefined<Form>>>(value: Value): boolean
+    <Value extends SetValuePayload<WriteShape<Form>, WithIndexedUndefined<WriteShape<Form>>>>(
+      value: Value
+    ): boolean
     <
       Path extends FlatPath<Form>,
-      Value extends SetValuePayload<NestedType<Form, Path>, NonNullable<NestedType<Form, Path>>>,
+      Value extends SetValuePayload<
+        WriteShape<NestedType<Form, Path>>,
+        NonNullable<WriteShape<NestedType<Form, Path>>>
+      >,
     >(
       path: Path,
       value: Value
@@ -1101,7 +1109,7 @@ export type UseAbstractFormReturnType<
    *     opt-in registry is NOT touched, so the next user keystroke on
    *     a still-mounted opted-in input re-populates the entry naturally.
    */
-  reset: (nextDefaultValues?: DeepPartial<Form>) => void
+  reset: (nextDefaultValues?: DeepPartial<WriteShape<Form>>) => void
 
   /**
    * Restore a single field (or a whole sub-tree, when `path` names a

@@ -9,7 +9,7 @@ import type {
   ValidationMode,
   WriteMeta,
 } from '../types/types-api'
-import type { DeepPartial, GenericForm } from '../types/types-core'
+import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
 import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS } from './defaults'
 import { diffAndApply } from './diff-apply'
 import { canonicalizePath, type Path, type PathKey, type Segment } from './paths'
@@ -145,7 +145,7 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   getValueAtPath(path: Path): unknown
 
   // --- reset ---
-  reset(nextDefaultValues?: DeepPartial<F>): void
+  reset(nextDefaultValues?: DeepPartial<WriteShape<F>>): void
   resetField(path: Path): void
 
   // --- errors ---
@@ -333,7 +333,7 @@ export type FormStoreHydration = {
 export type CreateFormStoreOptions<F extends GenericForm, G extends GenericForm = F> = {
   readonly formKey: FormKey
   readonly schema: AbstractSchema<F, G>
-  readonly defaultValues?: DeepPartial<F> | undefined
+  readonly defaultValues?: DeepPartial<WriteShape<F>> | undefined
   readonly validationMode?: ValidationMode | undefined
   readonly hydration?: FormStoreHydration | undefined
   readonly fieldValidation?: FieldValidationConfig | undefined
@@ -386,7 +386,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   const completedConstraints =
     defaultValues === undefined
       ? undefined
-      : (mergeStructural(schema, [], defaultValues) as DeepPartial<F>)
+      : (mergeStructural(schema, [], defaultValues) as DeepPartial<WriteShape<F>>)
   const schemaResponse: DefaultValuesResponse<F> = schema.getDefaultValues({
     useDefaultSchemaValues: true,
     constraints: completedConstraints,
@@ -876,7 +876,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
 
   // --- Reset ---
 
-  function reset(nextDefaultValues?: DeepPartial<F>): void {
+  function reset(nextDefaultValues?: DeepPartial<WriteShape<F>>): void {
     // Fall back to construction-time `defaultValues` when the caller
     // doesn't provide a fresh override. Otherwise `reset()` produces
     // schema-only defaults — losing the consumer's initial state from

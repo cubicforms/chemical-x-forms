@@ -11,7 +11,7 @@ import type {
   UseAbstractFormReturnType,
   UseFormConfiguration,
 } from '../../types/types-api'
-import type { DeepPartial, GenericForm } from '../../types/types-core'
+import type { DeepPartial, GenericForm, WriteShape } from '../../types/types-core'
 import { zodV4Adapter } from './adapter'
 
 export { zodV4Adapter as zodAdapter } from './adapter'
@@ -32,7 +32,7 @@ export function useForm<Schema extends z.ZodObject>(
         z.output<Schema> extends GenericForm ? z.output<Schema> : never,
         z.output<Schema> extends GenericForm ? z.output<Schema> : never
       >,
-      DeepPartial<z.output<Schema> extends GenericForm ? z.output<Schema> : never>
+      DeepPartial<WriteShape<z.output<Schema> extends GenericForm ? z.output<Schema> : never>>
     >,
     'schema'
   > & { schema: Schema }

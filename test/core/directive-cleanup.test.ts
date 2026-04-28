@@ -366,3 +366,196 @@ describe('v-register directive — undefined binding (inert)', () => {
     warnSpy.mockRestore()
   })
 })
+
+/**
+ * Runtime swap: the binding value changes between renders. The
+ * primary trigger is the `useRegister` flow — a wrapper component
+ * mounts before its parent passes `registerValue`, so the directive
+ * sees `undefined` on `created` and a real `RegisterValue` on the
+ * next `beforeUpdate`. The reverse (RV → undefined) is symmetric.
+ *
+ * Two contracts the swap must satisfy:
+ *
+ * 1. The assigner installed on the element must reflect the latest
+ *    value — input events route writes to the new RV's
+ *    `setValueWithInternalPath`, not the old one.
+ * 2. Element registration must mirror the binding's lifecycle:
+ *    transitioning to a real RV calls `registerElement` (so the
+ *    field becomes connected for `focusFirstError` and the
+ *    `isConnected` field-state flag); transitioning away calls
+ *    `deregisterElement` on the prior RV (so a stale opt-in
+ *    doesn't keep the element pinned in the form's element map).
+ */
+describe('v-register directive — runtime value swap', () => {
+  function makeBindingWithOld<T>(
+    rv: RegisterValue<T> | undefined,
+    oldRv: RegisterValue<T> | undefined
+  ): DirectiveBinding {
+    return {
+      value: rv,
+      oldValue: oldRv,
+      modifiers: {},
+      arg: undefined,
+      dir: {},
+      instance: null,
+    } as unknown as DirectiveBinding
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('undefined → RegisterValue: registerElement on the new RV is called', () => {
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const vnode = makeVNode({})
+
+    // Initial render: undefined.
+    const initial = makeBinding(undefined as unknown as RegisterValue<string>)
+    hooks.created?.(input, initial, vnode, null)
+
+    // Re-render: real RV arrives.
+    const next = makeRegisterValue('')
+    const swap = makeBindingWithOld(next.value, undefined)
+    hooks.beforeUpdate?.(input, swap, vnode, null)
+
+    expect(next.register).toHaveBeenCalledTimes(1)
+    expect(next.register).toHaveBeenCalledWith(input)
+  })
+
+  it('undefined → RegisterValue: input event routes the write to the new RV', () => {
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const vnode = makeVNode({})
+
+    const initial = makeBinding(undefined as unknown as RegisterValue<string>)
+    hooks.created?.(input, initial, vnode, null)
+
+    const next = makeRegisterValue('')
+    const swap = makeBindingWithOld(next.value, undefined)
+    hooks.beforeUpdate?.(input, swap, vnode, null)
+
+    input.value = 'typed'
+    input.dispatchEvent(new Event('input'))
+
+    expect(next.setValue).toHaveBeenCalledTimes(1)
+    expect(next.setValue).toHaveBeenCalledWith('typed', expect.objectContaining({}))
+  })
+
+  it('RegisterValue → undefined: deregisterElement on the prior RV is called', () => {
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const vnode = makeVNode({})
+
+    const initial = makeRegisterValue('start')
+    const initialBinding = makeBinding(initial.value)
+    hooks.created?.(input, initialBinding, vnode, null)
+    expect(initial.register).toHaveBeenCalledTimes(1)
+
+    const swap = makeBindingWithOld(undefined, initial.value)
+    hooks.beforeUpdate?.(input, swap, vnode, null)
+
+    expect(initial.deregister).toHaveBeenCalledTimes(1)
+    expect(initial.deregister).toHaveBeenCalledWith(input)
+  })
+
+  it('RegisterValue → undefined: subsequent input event no-ops (no writes to the prior RV)', () => {
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const vnode = makeVNode({})
+
+    const initial = makeRegisterValue('start')
+    const initialBinding = makeBinding(initial.value)
+    hooks.created?.(input, initialBinding, vnode, null)
+
+    const swap = makeBindingWithOld(undefined, initial.value)
+    hooks.beforeUpdate?.(input, swap, vnode, null)
+
+    initial.setValue.mockClear()
+
+    input.value = 'after-swap'
+    input.dispatchEvent(new Event('input'))
+
+    expect(initial.setValue).not.toHaveBeenCalled()
+  })
+
+  it('RegisterValue → different RegisterValue: the new RV gets registerElement, the old gets deregisterElement', () => {
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const vnode = makeVNode({})
+
+    const first = makeRegisterValue('a')
+    const created = makeBinding(first.value)
+    hooks.created?.(input, created, vnode, null)
+    expect(first.register).toHaveBeenCalledTimes(1)
+
+    const second = makeRegisterValue('b')
+    const swap = makeBindingWithOld(second.value, first.value)
+    hooks.beforeUpdate?.(input, swap, vnode, null)
+
+    expect(first.deregister).toHaveBeenCalledTimes(1)
+    expect(second.register).toHaveBeenCalledTimes(1)
+
+    // New writes route to the new RV only.
+    input.value = 'after-swap'
+    input.dispatchEvent(new Event('input'))
+    expect(first.setValue).not.toHaveBeenCalled()
+    expect(second.setValue).toHaveBeenCalledTimes(1)
+  })
+
+  it('same path, fresh RV reference (parent re-render): no spurious deregister/register thrash', () => {
+    // form.register('email') returns a fresh object each call; every
+    // parent re-render hands beforeUpdate a referentially-different
+    // value at the same conceptual path. The diff must short-circuit
+    // (same path + same persistOptIns registry → already registered)
+    // so the element doesn't deregister-and-re-register on every
+    // tick.
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const vnode = makeVNode({})
+
+    const first = makeRegisterValue('a')
+    hooks.created?.(input, makeBinding(first.value), vnode, null)
+    expect(first.register).toHaveBeenCalledTimes(1)
+
+    // Build a second RV that mirrors the first's path + opt-in registry —
+    // simulates `form.register('email')` returning a fresh object on
+    // the next render but resolving the same field.
+    const fresh = makeRegisterValue('a')
+    fresh.value.path = first.value.path
+    fresh.value.persistOptIns = first.value.persistOptIns
+
+    const swap = makeBindingWithOld(fresh.value, first.value)
+    hooks.beforeUpdate?.(input, swap, vnode, null)
+
+    expect(first.deregister).not.toHaveBeenCalled()
+    expect(fresh.register).not.toHaveBeenCalled()
+  })
+
+  it('same form, different path (dynamic v-register expression): deregisters old path, registers new', () => {
+    // `<input v-register="form.register(`item.${i}`)" />` — the path
+    // is dynamic and changes when `i` updates. The element must
+    // migrate its registration entry from the old path to the new
+    // one so `getFieldState`'s `isConnected` flag and
+    // `focusFirstError`'s element lookup track the active path.
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    const vnode = makeVNode({})
+
+    const oldPath = makeRegisterValue('a')
+    oldPath.value.path = 'item.0' as PathKey
+    hooks.created?.(input, makeBinding(oldPath.value), vnode, null)
+    expect(oldPath.register).toHaveBeenCalledTimes(1)
+
+    const newPath = makeRegisterValue('a')
+    newPath.value.path = 'item.1' as PathKey
+    // Same form's registry — only the path changes.
+    newPath.value.persistOptIns = oldPath.value.persistOptIns
+
+    const swap = makeBindingWithOld(newPath.value, oldPath.value)
+    hooks.beforeUpdate?.(input, swap, vnode, null)
+
+    expect(oldPath.deregister).toHaveBeenCalledTimes(1)
+    expect(newPath.register).toHaveBeenCalledTimes(1)
+  })
+})

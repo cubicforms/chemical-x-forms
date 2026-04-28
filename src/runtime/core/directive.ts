@@ -270,6 +270,49 @@ function syncPersistOptIn(el: HTMLElement, value: unknown, oldValue: unknown): v
   }
 }
 
+/**
+ * Migrate the element's registration entry across binding-value
+ * transitions. Symmetric with `syncPersistOptIn` for the
+ * persistence opt-in dimension; this one tracks element-to-path
+ * registration the form's element map relies on for
+ * `getFieldState(path).meta.isConnected`, `focusFirstError`, and
+ * `scrollToFirstError`.
+ *
+ * Cases:
+ *   - undefined → undefined: nothing to do.
+ *   - undefined → RV: register the new RV's element (the per-tag
+ *     `created` hook skipped this when the binding mounted with an
+ *     undefined value, so we have to catch up here).
+ *   - RV → undefined: deregister the old RV's element.
+ *   - RV → RV (same path + same form): no-op. `register('foo')`
+ *     returns a fresh closure on every parent re-render; without
+ *     the early-out, every tick would deregister-and-re-register
+ *     the element, thrashing the `isConnected` flag.
+ *   - RV → RV (different path or different form): deregister old,
+ *     register new. Covers dynamic-path templates
+ *     (`v-register="form.register(\`item.${i}\`)"`) and the
+ *     cross-form case where a wrapper component switches the
+ *     `registerValue` it forwards.
+ */
+function syncElementRegistration(el: HTMLElement, value: unknown, oldValue: unknown): void {
+  const wasRegistered = isRegisterValue(oldValue)
+  const isRegistered = isRegisterValue(value)
+  if (!wasRegistered && !isRegistered) return
+
+  if (wasRegistered && isRegistered) {
+    const old = oldValue
+    const next = value
+    if (old.path === next.path && old.persistOptIns === next.persistOptIns) return
+  }
+
+  if (wasRegistered) {
+    oldValue.deregisterElement(el)
+  }
+  if (isRegistered) {
+    value.registerElement(el)
+  }
+}
+
 function onCompositionStart(e: Event) {
   const target = e.target as ComposingTarget
   if (!target) return
@@ -732,6 +775,12 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
     // prior RegisterValue so the helper can diff persist / path / registry
     // and migrate the entry without thrashing.
     syncPersistOptIn(el, binding.value, binding.oldValue)
+    // Same diff for the form's element map. Catches the
+    // `useRegister`-driven swap (binding mounted with `undefined`,
+    // a real RV arrives on the next render), the dynamic-path case,
+    // and the cross-form swap. Same-path + same-form transitions
+    // short-circuit so identity-stable bindings don't thrash.
+    syncElementRegistration(el, binding.value, binding.oldValue)
     callModelHook(el, binding, vnode, prevVNode, 'beforeUpdate')
   },
   updated(el, binding, vnode, prevVNode) {

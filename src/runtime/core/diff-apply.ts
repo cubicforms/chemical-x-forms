@@ -2,10 +2,8 @@ import type { Path, Segment } from './paths'
 
 /**
  * Structural diff/apply walker. Used by the state layer to emit per-leaf
- * patches when `setValue` replaces a subtree. Replaces the pre-rewrite
- * pattern of flattening both old and new forms into dotted records, then
- * computing set differences — that approach was O(n) per keystroke in the
- * full form's leaf count; this is O(size-of-changed-subtree).
+ * patches when `setValue` replaces a subtree. Cost scales with the
+ * size of the changed subtree, not the full form's leaf count.
  *
  * "Leaves" are anything that's not a plain object or array: strings, numbers,
  * booleans, null, undefined, Date, Map, Set, class instances, functions, etc.

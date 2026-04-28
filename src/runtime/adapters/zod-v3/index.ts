@@ -13,10 +13,10 @@ import type {
 import { getAtPath } from '../../core/path-walker'
 import { slimKindOf } from '../../core/slim-primitive-gate'
 
-// The adapter speaks the pre-rewrite dotted-string path format at the
-// AbstractSchema boundary; core passes dotted strings to validateAtPath
-// and getSchemasAtPath for now. Phase 4 migrates the adapter to
-// `Path` (Segment[]) as part of the v3/v4 split.
+// The adapter exchanges dotted-string paths with core at the
+// AbstractSchema boundary (`validateAtPath`, `getSchemasAtPath`).
+// A future revision may migrate the adapter to structured `Path`
+// (Segment[]) without changing the public surface.
 const PATH_SEPARATOR = '.'
 
 // Shared cap for every wrapper-peeling / unwrap helper in this file.

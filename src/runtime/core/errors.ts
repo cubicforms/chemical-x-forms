@@ -1,7 +1,7 @@
 /**
- * Typed error classes used across the core runtime. Each replaces a silent
- * failure mode in the pre-rewrite code (console.error + return [] / return
- * undefined patterns) with a named, instance-checkable error.
+ * Typed error classes used across the core runtime. Each is an
+ * instance-checkable signal for a distinct misuse or invariant
+ * violation, in place of `console.error` + a sentinel return.
  */
 
 export class InvalidPathError extends Error {

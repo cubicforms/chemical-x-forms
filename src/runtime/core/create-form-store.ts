@@ -22,14 +22,13 @@ import {
 
 /**
  * Per-form closure state — the single store owned by each `useForm` call.
- * Replaces five separate `useState`-backed composables from the pre-rewrite
- * code (form, summary, element, field-state, meta-tracker, error), and in
- * doing so fixes the cross-form DOM state collision that stemmed from those
- * stores being keyed only by `path` instead of `(formKey, path)`.
+ * Bundles the form value, the summary record, element references, field
+ * state, the meta tracker, and the error stores under one keyed-by-
+ * `(formKey, path)` instance so cross-form DOM state cannot collide.
  *
  * This is NOT a singleton. Each call to `useForm` creates its own FormStore
- * instance and holds onto it via closure. The registry (Phase 2) provides
- * SSR hydration; otherwise the state is per-component-per-form.
+ * instance and holds onto it via closure. The registry provides SSR
+ * hydration; otherwise the state is per-component-per-form.
  */
 
 /** Per-path field status. Replaced wholesale (not mutated in place) on every change. */
@@ -858,7 +857,8 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     touchFieldRecord(key, path, {
       focused,
       blurred: !focused,
-      // `touched` becomes true on blur (matches the pre-rewrite contract).
+      // `touched` flips to true on blur and stays true thereafter; while
+      // a field is currently focused we keep whatever value it held.
       touched: focused ? (fields.get(key)?.touched ?? null) : true,
     })
     // On blur (focused → false), `fieldValidation: { on: 'blur' }` fires

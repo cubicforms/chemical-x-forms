@@ -10,18 +10,15 @@ import { PERSISTENCE_MODULE_KEY } from './persistence'
  * Register API factory. Given a FormStore, returns a `register(path)` that
  * produces a RegisterValue suitable for the v-register directive.
  *
- * Changes from the pre-rewrite register.ts:
+ * Design points:
  *
- * - No `elementHelperCache`: that cache was a workaround for the
- *   inefficiency of recreating focus/blur listeners per registration.
- *   Now, listeners are created per-element-registration and stored on the
- *   element itself via a symbol, then removed on deregistration. Simpler
- *   and less state.
- * - No metaTracker.rawValue aliasing: innerRef reads form.value directly
- *   via getValueAtPath. The pre-rewrite code dual-tracked raw vs form
- *   values to paper over reactive-update timing; with the new synchronous
- *   diff-apply writer, that's unnecessary.
- * - Cross-form isolation is by construction: every call to buildRegister
+ * - Focus/blur listeners are attached per-element-registration and stored
+ *   on the element itself via a symbol, then removed on deregistration.
+ *   No registration-time helper cache.
+ * - `innerRef` reads `form.value` directly via `getValueAtPath`; there's
+ *   no separate raw-vs-form tracking. The synchronous diff-apply writer
+ *   keeps the two values in lock-step.
+ * - Cross-form isolation is by construction: every call to `buildRegister`
  *   closes over a FormStore<F> unique to one form.
  */
 
@@ -136,8 +133,8 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
 
       registerElement: (element: HTMLElement): void => {
         // Skip non-form elements. Prevents accidental registration of
-        // component wrapper divs (a fallthrough-attribute scenario in the
-        // pre-rewrite code).
+        // component wrapper divs when fallthrough attributes carry the
+        // directive past the intended `<input>` / `<select>` / `<textarea>`.
         if (!INTERACTIVE_TAG_NAMES.has(element.tagName)) return
         const added = state.registerElement(segments, element)
         if (added) attachFocusListeners(state, segments, element)

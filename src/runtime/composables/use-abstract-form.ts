@@ -55,11 +55,12 @@ import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
  *   registry has a pending hydration entry for the key, threads it into
  *   createFormStore so the client side starts from the server's snapshot.
  * - Builds register / getFieldState / validate / handleSubmit from that
- *   FormStore via the Phase 1b factories.
+ *   FormStore via the per-store factories.
  *
- * The old pre-rewrite implementation stitched together five separate Nuxt
- * useState composables and a cache in register.ts. This file collapses all
- * of that into one registry-backed closure.
+ * Everything related to one `useForm({ key })` call lives behind one
+ * registry-backed closure — the form value, summary, element references,
+ * field state, meta tracker, and error stores are all reached through the
+ * same `FormStore` instance.
  */
 
 export function useAbstractForm<
@@ -83,8 +84,8 @@ export function useAbstractForm<
   const resolvedSchema = getComputedSchema(key, configuration.schema)
 
   // One FormStore per (app, formKey). Multiple useForm calls with the same
-  // key resolve to the same instance — matches the pre-rewrite "shared
-  // store" semantic that forms with the same key were intended to share.
+  // key resolve to the same instance — that's the shared-store semantic
+  // for forms that explicitly opt in to a stable key.
   const registry = useRegistry()
 
   // Merge app-level defaults from the registry over per-form options.
@@ -439,8 +440,7 @@ function wirePersistence<F extends GenericForm>(
   // structural schema change (added/removed/renamed field, type swap)
   // produces a different fingerprint, so the new mount looks up a fresh
   // key — the old draft becomes an orphan, cleaned up in the same mount
-  // by `cleanupOrphanKeys` below. Replaces the manual `version: number`
-  // protocol that was previously the consumer's responsibility.
+  // by `cleanupOrphanKeys` below. No manual version protocol required.
   const fingerprint = state.schema.fingerprint()
   const base = resolveStorageKeyBase(config, state.formKey)
   const key = `${base}:${fingerprint}`

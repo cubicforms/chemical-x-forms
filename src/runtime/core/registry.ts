@@ -7,11 +7,10 @@ import { OutsideSetupError, RegistryNotInstalledError } from './errors'
 import { detectSSR, type SSRDetectOptions } from './ssr'
 
 /**
- * Per-Vue-app container for all form state instances. Replaces the
- * singleton `useState(key, ...)` pattern that tied the pre-rewrite runtime
- * to Nuxt. Each `app.use(createChemicalXForms())` call gets its own
- * registry — making the library work under bare Vue 3 + SSR (via
- * `@vue/server-renderer`) as a first-class target, not just Nuxt.
+ * Per-Vue-app container for all form state instances. Each
+ * `app.use(createChemicalXForms())` call gets its own registry,
+ * so the library runs under bare Vue 3 + SSR (via
+ * `@vue/server-renderer`) and Nuxt with the same code path.
  *
  * Each form's state lives in `forms: Map<FormKey, FormStore<GenericForm>>`.
  * The type relaxation at storage time is necessary because different

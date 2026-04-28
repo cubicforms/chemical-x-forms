@@ -701,9 +701,10 @@ export type RegisterValue<Value = unknown> = {
  * auto-reverts on rejection.
  *
  * Consumer-installed assigners (via `el[assignKey]` or
- * `onUpdate:registerValue`) MAY return undefined for back-compat —
- * the listener treats undefined as "succeeded" since pre-rewrite
- * consumers had no way to signal otherwise.
+ * `onUpdate:registerValue`) MAY return `undefined`. The listener
+ * treats `undefined` as "succeeded" so consumer assigners that
+ * have no slim-primitive feedback to give can keep the existing
+ * `void`-returning shape.
  */
 export type CustomDirectiveRegisterAssignerFn = (value: unknown) => boolean | undefined
 export type CustomRegisterDirective<T, Modifiers extends string = string> = ObjectDirective<

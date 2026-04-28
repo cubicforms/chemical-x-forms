@@ -733,7 +733,6 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
     // Remove internal state that the directive attaches directly to the
     // element. If the element is reused (<KeepAlive>, v-show), stale flags
     // like `composing: true` (IME in progress) would swallow user input.
-    // The pre-rewrite code left these in place — a silent bug.
     delete (el as { composing?: boolean }).composing
     delete (el as { _assigning?: boolean })._assigning
     delete (el as unknown as { [k: symbol]: unknown })[assignKey]

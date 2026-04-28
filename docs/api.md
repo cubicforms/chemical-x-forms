@@ -285,6 +285,23 @@ Three places accept the sentinel:
 - **`reset({ … })`** — same translation; the post-reset state
   becomes the new dirty=false baseline.
 
+**Auto-mark on construction.** A freshly opened form has no user
+input yet, so every primitive leaf the consumer didn't supply in
+`defaultValues` is auto-marked `pendingEmpty`. This means
+`useForm({ schema: z.object({ email: z.string() }) })` (no
+`defaultValues`) starts with `email` in the transient-empty set —
+its `displayValue` is `''`, and `handleSubmit` raises `"Required"`
+until the user types something. To opt a leaf out of auto-mark,
+supply a non-`unset` value for it: `defaultValues: { email: '' }`
+explicitly tells the library "yes, empty string is intentional."
+Auto-mark recurses through nested objects and respects partial
+defaults (`{ user: { name: 'a' } }` against `user.{name, age}`
+auto-marks `user.age`). It does NOT recurse into arrays — array
+elements are runtime-added; opt them in per-element via `unset`.
+Hydration overrides: when the form is rehydrated from a persisted
+draft or SSR payload, the hydrated `transientEmptyPaths` list is
+authoritative and auto-mark does not fire.
+
 **Submit / validate honor the sentinel.** A transient-empty path
 bound to a _required_ schema (no `.optional()` / `.nullable()` /
 `.default(N)` / `.catch(N)`) raises a synthesized `"Required"`

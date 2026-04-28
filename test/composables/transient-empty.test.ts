@@ -188,7 +188,9 @@ describe('form.transientEmptyPaths bulk accessor', () => {
   })
 
   it('reflects marks and unmarks reactively', () => {
-    const { app, form } = setupForm(z.object({ count: z.number() }))
+    // Explicit defaults so the bulk view starts at size 0; the unspecified-
+    // leaf auto-mark covered separately in the auto-mark suite below.
+    const { app, form } = setupForm(z.object({ count: z.number() }), { count: 0 })
     apps.push(app)
     expect(form.transientEmptyPaths.value.size).toBe(0)
     form.setValue('count', unset)
@@ -204,14 +206,186 @@ describe('runtime guard: unset on non-primitive leaf', () => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  it('does not crash and does not mark when slim default is non-primitive (object)', () => {
-    // Object leaf — schema's getDefaultAtPath returns {}. The walker
-    // emits a dev-warn and writes the default without marking.
+  it('does not mark the object path itself, but recurses into the slim subtree to auto-mark primitive children', () => {
+    // Object leaf — schema's getDefaultAtPath returns the structural
+    // default `{ name: '' }`. The walker emits a dev-warn for the
+    // misuse, replaces with the slim default, and recurses into the
+    // subtree so unspecified primitive children still get auto-marked
+    // (consistent with omitting the object entirely).
     const { app, form } = setupForm(z.object({ profile: z.object({ name: z.string() }) }), {
       profile: unset as unknown as { name: string },
     })
     apps.push(app)
-    // No mark; storage gets the object default.
+    // Object path itself NOT marked — `unset` at non-primitive is a
+    // misuse; the dev-warn signals "library is recovering."
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('profile').key)).toBe(false)
+    // Children auto-marked: the consumer didn't supply `profile.name`,
+    // so it's logically "blank" in the freshly opened form.
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('profile.name').key)).toBe(true)
+  })
+})
+
+describe('auto-mark: unspecified primitive leaves are pendingEmpty on construction', () => {
+  // Rationale: a freshly opened form has no user input yet, so every
+  // primitive leaf the consumer didn't explicitly fill is logically
+  // "blank." This is the public-housing footgun fix taken to its
+  // logical conclusion — devs no longer have to remember `unset` for
+  // every leaf to get the right submit semantics. To opt a leaf out
+  // of auto-mark, supply a non-`unset` value for it in defaultValues.
+  const apps: App[] = []
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+  })
+
+  it('email example: useForm({ schema: z.object({ email: z.string() }) }) marks email', () => {
+    const { app, form } = setupForm(z.object({ email: z.string() }))
+    apps.push(app)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('email').key)).toBe(true)
+    expect(form.transientEmptyPaths.value.size).toBe(1)
+  })
+
+  it('marks every primitive leaf when defaultValues is omitted entirely', () => {
+    const { app, form } = setupForm(
+      z.object({ name: z.string(), age: z.number(), agreed: z.boolean() })
+    )
+    apps.push(app)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('name').key)).toBe(true)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('age').key)).toBe(true)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('agreed').key)).toBe(true)
+    expect(form.transientEmptyPaths.value.size).toBe(3)
+  })
+
+  it('partial defaults: auto-marks only unspecified leaves', () => {
+    const { app, form } = setupForm(z.object({ name: z.string(), age: z.number() }), {
+      name: 'alice',
+    })
+    apps.push(app)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('name').key)).toBe(false)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('age').key)).toBe(true)
+    expect(form.getValue('name').value).toBe('alice')
+    expect(form.getValue('age').value).toBe(0)
+  })
+
+  it('explicit slim-default value still opts the leaf out of auto-mark', () => {
+    // `defaultValues: { count: 0 }` — the consumer wrote 0 explicitly,
+    // so the leaf is NOT transient-empty even though storage matches
+    // the slim default. The opt-out signal is "consumer supplied a
+    // non-`unset` value", not "consumer supplied a non-default value".
+    const { app, form } = setupForm(z.object({ count: z.number() }), { count: 0 })
+    apps.push(app)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('count').key)).toBe(false)
     expect(form.transientEmptyPaths.value.size).toBe(0)
+  })
+
+  it('nested object: marks unspecified leaves at their canonical paths', () => {
+    const { app, form } = setupForm(
+      z.object({ user: z.object({ name: z.string(), age: z.number() }) }),
+      { user: { name: 'alice' } }
+    )
+    apps.push(app)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('user.name').key)).toBe(false)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('user.age').key)).toBe(true)
+  })
+
+  it('nested object: omitting the outer object recurses to mark all primitive leaves below', () => {
+    const { app, form } = setupForm(
+      z.object({ user: z.object({ name: z.string(), age: z.number() }) })
+    )
+    apps.push(app)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('user.name').key)).toBe(true)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('user.age').key)).toBe(true)
+    // The object path itself is NOT marked — only primitive leaves are.
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('user').key)).toBe(false)
+  })
+
+  it('optional leaf: marks the path even though slim default is undefined', () => {
+    const { app, form } = setupForm(z.object({ note: z.string().optional() }))
+    apps.push(app)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('note').key)).toBe(true)
+    // Storage is undefined per the optional schema — the mark is
+    // about UI/display intent, not about validation requiredness.
+    expect(form.getValue('note').value).toBeUndefined()
+  })
+
+  it('nullable leaf: marks the path even though slim default is null', () => {
+    const { app, form } = setupForm(z.object({ note: z.string().nullable() }))
+    apps.push(app)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('note').key)).toBe(true)
+    expect(form.getValue('note').value).toBeNull()
+  })
+
+  it('.default(N): marks the path; storage holds N (the default-author intent)', () => {
+    const { app, form } = setupForm(z.object({ count: z.number().default(7) }))
+    apps.push(app)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('count').key)).toBe(true)
+    expect(form.getValue('count').value).toBe(7)
+  })
+
+  it('arrays: pass through without marking elements (runtime-added)', () => {
+    const { app, form } = setupForm(z.object({ tags: z.array(z.string()) }))
+    apps.push(app)
+    // `tags` itself is a non-primitive leaf — not marked.
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('tags').key)).toBe(false)
+    // No spurious indexed marks either.
+    expect(form.transientEmptyPaths.value.size).toBe(0)
+  })
+
+  it('explicit value at a leaf does NOT mark even if value happens to equal slim default', () => {
+    const { app, form } = setupForm(z.object({ name: z.string(), age: z.number() }), {
+      name: '',
+      age: 0,
+    })
+    apps.push(app)
+    // Both leaves had user-supplied values (matching slim defaults)
+    // — neither is auto-marked.
+    expect(form.transientEmptyPaths.value.size).toBe(0)
+  })
+
+  it('explicit unset still works alongside auto-mark', () => {
+    // `count` via explicit unset, `name` via auto-mark — same outcome
+    // (both end up in the set). The difference is documentation: `unset`
+    // is the dev's deliberate signal, auto-mark is the inferred default.
+    const { app, form } = setupForm(z.object({ count: z.number(), name: z.string() }), {
+      count: unset,
+    })
+    apps.push(app)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('count').key)).toBe(true)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('name').key)).toBe(true)
+  })
+
+  it('auto-marks ride into the post-construction baseline (reset restores them)', () => {
+    const { app, form } = setupForm(z.object({ count: z.number() }))
+    apps.push(app)
+    // Construction auto-marks `count`.
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('count').key)).toBe(true)
+    // User types a value — mark is removed.
+    form.setValue('count', 42)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('count').key)).toBe(false)
+    // reset() with no args should restore the construction baseline.
+    form.reset()
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('count').key)).toBe(true)
+  })
+
+  it('reset(args) auto-marks unspecified leaves in the new defaults', () => {
+    const { app, form } = setupForm(z.object({ name: z.string(), age: z.number() }), {
+      name: 'alice',
+      age: 30,
+    })
+    apps.push(app)
+    expect(form.transientEmptyPaths.value.size).toBe(0)
+    // Reset with a partial — `age` is omitted, so it gets auto-marked.
+    form.reset({ name: 'bob' })
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('name').key)).toBe(false)
+    expect(form.transientEmptyPaths.value.has(canonicalizePath('age').key)).toBe(true)
+    expect(form.getValue('name').value).toBe('bob')
+    expect(form.getValue('age').value).toBe(0)
+  })
+
+  it('isDirty stays false on construction even with auto-marks', () => {
+    // Construction-time auto-marks ARE the baseline — they shouldn't
+    // count as "dirty" (the user hasn't done anything yet).
+    const { app, form } = setupForm(z.object({ count: z.number(), name: z.string() }))
+    apps.push(app)
+    expect(form.state.isDirty).toBe(false)
   })
 })

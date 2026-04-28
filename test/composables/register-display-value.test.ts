@@ -14,13 +14,17 @@ import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-ap
  * contract directly through the register binding.
  */
 
-function setupForm<F extends z.ZodObject<Record<string, z.ZodType>>>(schema: F) {
+function setupForm<F extends z.ZodObject<Record<string, z.ZodType>>>(
+  schema: F,
+  defaultValues?: Parameters<typeof useForm<F>>[0]['defaultValues']
+) {
   let captured!: UseAbstractFormReturnType<z.output<F> & Record<string, unknown>>
   const Probe = defineComponent({
     setup() {
       captured = useForm({
         schema,
         key: `disp-${Math.random().toString(36).slice(2)}`,
+        ...(defaultValues !== undefined ? { defaultValues } : {}),
       }) as unknown as UseAbstractFormReturnType<z.output<F> & Record<string, unknown>>
       return () => h('div')
     },
@@ -70,7 +74,9 @@ describe('displayValue', () => {
 
   it('returns "" when the path is in transientEmptyPaths', () => {
     const schema = z.object({ count: z.number() })
-    const { app, form } = setupForm(schema)
+    // Pass explicit defaults to opt out of construction-time auto-mark
+    // — this test isolates the markTransientEmpty() flip path.
+    const { app, form } = setupForm(schema, { count: 0 })
     apps.push(app)
     const binding = form.register('count')
     expect(binding.displayValue.value).toBe('0')
@@ -90,7 +96,9 @@ describe('displayValue', () => {
 
   it('reactively updates when storage changes', () => {
     const schema = z.object({ count: z.number() })
-    const { app, form } = setupForm(schema)
+    // Explicit defaults so the binding starts un-marked (auto-mark
+    // would prepopulate transientEmptyPaths and force '').
+    const { app, form } = setupForm(schema, { count: 0 })
     apps.push(app)
     const binding = form.register('count')
     expect(binding.displayValue.value).toBe('0')

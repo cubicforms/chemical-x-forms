@@ -213,4 +213,47 @@ describe('persistence — transient-empty round-trips across mount', () => {
     const incomeKey = canonicalizePath('income').key
     expect(payload.data.transientEmptyPaths).toContain(incomeKey)
   })
+
+  it('hydration overrides construction-time auto-mark — persisted empty list wins', async () => {
+    // The form has no defaultValues, so construction-time auto-mark
+    // would mark `income`. But a v=3 payload pre-seeded with an EMPTY
+    // `transientEmptyPaths` list (representing "user previously filled
+    // this in") must override — the hydrated set is the truth.
+    localStorage.setItem(
+      fpKey('te-hyd'),
+      JSON.stringify({
+        v: 3,
+        data: { form: { income: 100 }, transientEmptyPaths: [] },
+      })
+    )
+
+    let captured: ReturnType<typeof useForm<typeof schema>> | undefined
+    const App = defineComponent({
+      setup() {
+        const form = useForm({
+          schema,
+          key: 'te-hyd-form',
+          persist: { storage: 'local', key: 'te-hyd', debounceMs: 10 },
+        })
+        captured = form
+        return () =>
+          withDirectives(
+            h('input', {
+              type: 'number',
+              'data-test': 'income',
+            }),
+            [[vRegister, form.register('income', { persist: true })]]
+          )
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    apps.push(app)
+    app.mount(document.createElement('div'))
+
+    await flushAll()
+
+    if (captured === undefined) throw new Error('form not captured')
+    expect(captured.transientEmptyPaths.value.size).toBe(0)
+    expect(captured.getValue('income').value).toBe(100)
+  })
 })

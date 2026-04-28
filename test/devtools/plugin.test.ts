@@ -170,6 +170,9 @@ describe('DevTools plugin — inspector + timeline wiring', () => {
         handle.api = useForm({
           schema: z.object({ email: z.string() }),
           key: 'dev-timeline',
+          // Explicit defaults opt out of construction-time auto-mark so
+          // handleSubmit can succeed without a synthesized "Required" error.
+          defaultValues: { email: '' },
         })
         return () => h('div')
       },

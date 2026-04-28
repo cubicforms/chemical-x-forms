@@ -268,16 +268,17 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
   if (pending !== undefined) registry.pendingHydration.delete(key)
   // Pre-pass: replace every `unset` sentinel in defaultValues with the
   // schema's slim default and collect the corresponding path keys.
-  // The walker mirrors `DefaultValuesShape<T>`'s recursion; runtime
-  // landing of `unset` at a non-primitive leaf produces a dev-warn
-  // (TS catches this at compile time but plain-JS consumers bypass).
-  const walked =
-    configuration.defaultValues !== undefined
-      ? walkUnsetSentinels(
-          configuration.defaultValues,
-          schema as unknown as AbstractSchema<GenericForm, GenericForm>
-        )
-      : { cleanedValues: undefined, paths: [] }
+  // Also auto-marks every primitive leaf the consumer did NOT cover —
+  // a freshly opened form has no user input yet, so unspecified leaves
+  // are logically blank. Devs opt a leaf out by supplying a non-`unset`
+  // value for it. The walker mirrors `DefaultValuesShape<T>`'s
+  // recursion; runtime landing of `unset` at a non-primitive leaf
+  // produces a dev-warn (TS catches this at compile time but plain-JS
+  // consumers bypass).
+  const walked = walkUnsetSentinels(
+    configuration.defaultValues,
+    schema as unknown as AbstractSchema<GenericForm, GenericForm>
+  )
   // Hydration precedence: when a hydration payload is present its
   // `transientEmptyPaths` field is the authoritative truth. We still
   // run the walker to scrub `unset` symbols out of `defaultValues` (so

@@ -1,4 +1,4 @@
-import { computed, type Ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import type { RegisterOptions, RegisterValue, WriteMeta } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
@@ -79,16 +79,40 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
 
     const innerRef = computed(() => state.getValueAtPath(segments)) as Readonly<Ref<unknown>>
 
+    // The user's currently-typed string form for numeric fields,
+    // populated by the directive on every keystroke and cleared on
+    // blur. Lets `displayValue` surface the typed form (e.g. `'1e2'`)
+    // mid-typing instead of the canonical `String(storage)` (`'100'`),
+    // which Vue would otherwise patch into the DOM and yank the
+    // cursor away from the user's caret. After blur the typed form
+    // is cleared so `displayValue` falls back to the honest canonical
+    // form — what the user sees matches what's in storage.
+    const lastTypedForm = ref<string | null>(null)
+
     // String-form view of the path's storage value, with `''` returned
     // for transient-empty membership and for null/undefined storage.
     // The transient-empty branch is what lets a user clear a numeric
     // field: even though storage holds 0, the `:value` binding reads
     // displayValue and writes `''` to el.value, so Vue's next render
     // doesn't undo the user's clear.
+    //
+    // Typed-form preference (numeric only): when `lastTypedForm` is
+    // set AND `parseFloat(lastTypedForm)` equals the current numeric
+    // storage, return the typed form. Storage commits live (typing
+    // `1e2` writes 100 to storage immediately), but the DOM keeps
+    // showing `1e2` until blur — at which point the directive clears
+    // `lastTypedForm` and Vue patches the DOM to `String(100)` =
+    // `'100'`. The check naturally invalidates on programmatic
+    // setValue / hydration / reset (different storage value → fall
+    // back to `String(...)`).
     const displayValue = computed(() => {
       if (state.transientEmptyPaths.has(pathKey)) return ''
       const raw = state.getValueAtPath(segments)
       if (raw === null || raw === undefined) return ''
+      const typed = lastTypedForm.value
+      if (typed !== null && typeof raw === 'number' && parseFloat(typed) === raw) {
+        return typed
+      }
       return String(raw)
     }) as Readonly<Ref<string>>
 
@@ -150,6 +174,7 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
     return {
       innerRef,
       displayValue,
+      lastTypedForm,
 
       markTransientEmpty: (): boolean => {
         // Mirror the binding's persist meta so the transient-empty

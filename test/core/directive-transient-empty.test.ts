@@ -31,6 +31,7 @@ function makeRegisterValue<T>(initial: T): {
     innerRef: ref(initial) as RegisterValue<T>['innerRef'],
     displayValue: ref('') as Readonly<Ref<string>>,
     markTransientEmpty,
+    lastTypedForm: ref<string | null>(null),
     registerElement: vi.fn(),
     deregisterElement: vi.fn(),
     setValueWithInternalPath: setValue,
@@ -539,127 +540,21 @@ describe('directive — `.number` blur cleanup (16d regression: lone period)', (
   })
 })
 
-describe('directive — `.number` mid-typing scientific notation deferral', () => {
+describe('directive — `.number` real-time storage updates with mid-typing DOM preservation', () => {
+  // Storage commits on every keystroke that parses to a number;
+  // `lastTypedForm` keeps Vue's `:value` patch from yanking the DOM
+  // away from the user's caret. Blur clears `lastTypedForm` so the
+  // post-blur DOM matches `String(storage)` exactly.
   beforeEach(() => {
     document.body.innerHTML = ''
   })
 
-  it('does NOT write storage on input events while DOM contains `e` (lets user finish typing)', () => {
-    // Bug report: typing `3e45` previously committed `30000` to
-    // storage after `3e4`, which made `displayValue` re-render to
-    // `'30000'`, which made Vue patch the DOM, which yanked the
-    // user's cursor and stripped the in-flight `5`. Fix: while
-    // DOM contains `[eE]`, defer the write so storage / displayValue
-    // stay stable, Vue skips the patch, and the DOM keeps what the
+  it('writes storage in real-time as scientific notation resolves (1 → 1, 1e → 1, 1e2 → 100)', () => {
+    // Bug report (16c): typing `1e2` used to leave storage at `1`
+    // until blur because the `[eE]` deferral skipped writes. Now
+    // storage updates as soon as the typed form parses to a new
+    // number, while `lastTypedForm` keeps the DOM showing what the
     // user typed.
-    const input = document.createElement('input')
-    input.type = 'text'
-    document.body.appendChild(input)
-    const { value, setValue } = makeRegisterValue(0 as unknown as never)
-
-    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
-
-    // Build up `3e45` keystroke-by-keystroke. Only the initial `3`
-    // commits; everything containing `e` defers.
-    input.value = '3'
-    input.dispatchEvent(new Event('input'))
-    expect(setValue).toHaveBeenLastCalledWith(3, expect.objectContaining({}))
-
-    setValue.mockClear()
-    input.value = '3e'
-    input.dispatchEvent(new Event('input'))
-    expect(setValue).not.toHaveBeenCalled()
-
-    input.value = '3e4'
-    input.dispatchEvent(new Event('input'))
-    expect(setValue).not.toHaveBeenCalled()
-
-    input.value = '3e45'
-    input.dispatchEvent(new Event('input'))
-    expect(setValue).not.toHaveBeenCalled()
-
-    // DOM stays exactly what the user typed — no Vue patch yanked it.
-    expect(input.value).toBe('3e45')
-  })
-
-  it('also defers for capital `E` in scientific notation', () => {
-    const input = document.createElement('input')
-    input.type = 'text'
-    document.body.appendChild(input)
-    const { value, setValue } = makeRegisterValue(0 as unknown as never)
-
-    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
-
-    input.value = '2E10'
-    input.dispatchEvent(new Event('input'))
-    expect(setValue).not.toHaveBeenCalled()
-  })
-
-  it('blur commits the canonical cast to the model after a deferred scientific entry', () => {
-    // The deferral leaves storage stale during typing; the change-
-    // event normalizer must catch up by writing the cast value on
-    // blur. Without this, `3e45` would never reach storage.
-    const input = document.createElement('input')
-    input.type = 'text'
-    document.body.appendChild(input)
-    const { value, setValue } = makeRegisterValue(0 as unknown as never)
-
-    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
-
-    input.value = '3'
-    input.dispatchEvent(new Event('input'))
-    input.value = '3e45'
-    input.dispatchEvent(new Event('input'))
-    setValue.mockClear()
-
-    input.dispatchEvent(new Event('change'))
-    expect(setValue).toHaveBeenCalledWith(3e45, expect.objectContaining({}))
-    expect(input.value).toBe(String(3e45))
-  })
-
-  it('blur commits a cast for trailing partial scientific (`3e` → 3) and normalizes DOM', () => {
-    const input = document.createElement('input')
-    input.type = 'text'
-    document.body.appendChild(input)
-    const { value, setValue } = makeRegisterValue(0 as unknown as never)
-
-    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
-
-    input.value = '3'
-    input.dispatchEvent(new Event('input'))
-    setValue.mockClear()
-    input.value = '3e'
-    input.dispatchEvent(new Event('input'))
-    expect(setValue).not.toHaveBeenCalled()
-
-    input.dispatchEvent(new Event('change'))
-    // `parseFloat('3e')` is 3 (parseFloat is permissive), so the
-    // commit is `3` and the DOM cleans to `'3'`.
-    expect(setValue).toHaveBeenCalledWith(3, expect.objectContaining({}))
-    expect(input.value).toBe('3')
-  })
-
-  it('non-castable `e`-containing residue (e.g., lone `e`) clears DOM and markTransientEmpty fires on blur', () => {
-    const input = document.createElement('input')
-    input.type = 'text'
-    document.body.appendChild(input)
-    const { value, markTransientEmpty } = makeRegisterValue(0 as unknown as never)
-
-    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
-
-    input.value = 'e'
-    input.dispatchEvent(new Event('input'))
-    // Mid-typing: deferred, no markTransientEmpty yet.
-    expect(markTransientEmpty).not.toHaveBeenCalled()
-
-    input.dispatchEvent(new Event('change'))
-    expect(input.value).toBe('')
-    expect(markTransientEmpty).toHaveBeenCalled()
-  })
-
-  it('NON-scientific input still writes per-keystroke (deferral is gated on `[eE]`)', () => {
-    // Regression check: typing `1.5` (no `e`) must keep writing on
-    // every keystroke so the model stays live.
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
@@ -670,16 +565,138 @@ describe('directive — `.number` mid-typing scientific notation deferral', () =
     input.value = '1'
     input.dispatchEvent(new Event('input'))
     expect(setValue).toHaveBeenLastCalledWith(1, expect.objectContaining({}))
+    expect(value.lastTypedForm.value).toBe('1')
 
-    input.value = '1.5'
+    // `parseFloat('1e')` is 1 (permissive); storage stays at 1, but
+    // the typed form updates so the DOM keeps showing `1e`.
+    input.value = '1e'
     input.dispatchEvent(new Event('input'))
-    expect(setValue).toHaveBeenLastCalledWith(1.5, expect.objectContaining({}))
+    expect(setValue).toHaveBeenLastCalledWith(1, expect.objectContaining({}))
+    expect(value.lastTypedForm.value).toBe('1e')
+
+    input.value = '1e2'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenLastCalledWith(100, expect.objectContaining({}))
+    expect(value.lastTypedForm.value).toBe('1e2')
   })
 
-  it('`.lazy.number` does NOT defer — listener already runs on blur', () => {
-    // Lazy mode listens on `change` (not `input`), so the listener
-    // already fires only on blur. Deferring there would skip the
-    // commit entirely — the deferral is gated on `lazy !== true`.
+  it('records the typed form for capital `E`', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '2E10'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenLastCalledWith(2e10, expect.objectContaining({}))
+    expect(value.lastTypedForm.value).toBe('2E10')
+  })
+
+  it('records the typed form across the full `3e45` typing path so the user can finish typing', () => {
+    // Original cursor-yank bug (16e variant): typing `3e4` flips
+    // storage to 30000, Vue's `:value` patch overwrites the DOM
+    // from `3e4` to `30000`, the user's `5` lands in the wrong
+    // place. With `lastTypedForm`, `displayValue` returns the
+    // typed form for the patch, so the DOM equals what's already
+    // there — Vue's idempotent set leaves the cursor alone.
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    for (const typed of ['3', '3e', '3e4', '3e45']) {
+      input.value = typed
+      input.dispatchEvent(new Event('input'))
+      expect(value.lastTypedForm.value).toBe(typed)
+    }
+  })
+
+  it('blur clears the typed form and normalizes the DOM to `String(storage)`', () => {
+    // Per design: post-blur display matches storage (honest). The
+    // user types `1e2`, storage holds 100, DOM shows `1e2` while
+    // typing — but on blur the DOM patches to `100`.
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '1e2'
+    input.dispatchEvent(new Event('input'))
+    expect(value.lastTypedForm.value).toBe('1e2')
+
+    input.dispatchEvent(new Event('change'))
+    expect(value.lastTypedForm.value).toBeNull()
+    expect(input.value).toBe('100')
+  })
+
+  it('blur normalizes a non-castable scientific residue (`3e` → `3`) and clears typed form', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '3e'
+    input.dispatchEvent(new Event('input'))
+    expect(value.lastTypedForm.value).toBe('3e')
+
+    input.dispatchEvent(new Event('change'))
+    // `parseFloat('3e')` is 3 → DOM normalizes to `'3'`.
+    expect(input.value).toBe('3')
+    expect(value.lastTypedForm.value).toBeNull()
+  })
+
+  it('non-castable input (`xyz`) markTransientEmpty fires immediately, not deferred to blur', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, markTransientEmpty } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = 'xyz'
+    input.dispatchEvent(new Event('input'))
+    // No deferral — the keystroke listener marks immediately.
+    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
+    expect(value.lastTypedForm.value).toBeNull()
+  })
+
+  it('NON-scientific input writes per-keystroke and tracks typed form (`1`, `1.`, `1.50`)', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '1'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenLastCalledWith(1, expect.objectContaining({}))
+    expect(value.lastTypedForm.value).toBe('1')
+
+    input.value = '1.'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenLastCalledWith(1, expect.objectContaining({}))
+    expect(value.lastTypedForm.value).toBe('1.')
+
+    input.value = '1.50'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenLastCalledWith(1.5, expect.objectContaining({}))
+    expect(value.lastTypedForm.value).toBe('1.50')
+  })
+
+  it('`.lazy.number` writes on blur and clears typed form via the change normalizer', () => {
+    // Lazy mode wires the input listener to `change`, so the
+    // commit-and-clear cycle happens entirely on blur — the input
+    // listener writes storage AND records the typed form, the
+    // change normalizer immediately clears it and normalizes DOM.
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
@@ -690,5 +707,7 @@ describe('directive — `.number` mid-typing scientific notation deferral', () =
     input.value = '3e45'
     input.dispatchEvent(new Event('change'))
     expect(setValue).toHaveBeenCalledWith(3e45, expect.objectContaining({}))
+    expect(input.value).toBe(String(3e45))
+    expect(value.lastTypedForm.value).toBeNull()
   })
 })

@@ -37,6 +37,7 @@ function makeRegisterValue<T>(initial: T): {
     innerRef: ref(initial) as RegisterValue<T>['innerRef'],
     displayValue: ref('') as Readonly<Ref<string>>,
     markTransientEmpty: () => true,
+    lastTypedForm: ref<string | null>(null),
     registerElement: register,
     deregisterElement: deregister,
     setValueWithInternalPath: setValue,

@@ -1008,6 +1008,30 @@ export type RegisterValue<Value = unknown> = {
    * @internal
    */
   markTransientEmpty: () => boolean
+  /**
+   * The user's most recently typed string form for this field while
+   * mid-typing, or `null` once the field has been blurred / cleared.
+   * The directive populates this on every committable input event
+   * and clears it on the change (blur) event so:
+   *
+   *   - Mid-typing: `displayValue` returns the typed form (e.g.
+   *     `'1e2'`) when it parses back to current storage. Vue's
+   *     `:value` patch then targets the typed form, which already
+   *     equals the DOM — idempotent, no cursor reset.
+   *   - On blur: `displayValue` falls back to `String(storage)`
+   *     (`'100'`), Vue patches the DOM to match. The user sees
+   *     exactly what's stored.
+   *
+   * Why a separate field: JavaScript's Number carries no
+   * representation info — `1e2 === 100`, so `String(parseFloat('1e2'))`
+   * yields `'100'`. Tracking the typed form lets us avoid Vue's
+   * mid-typing DOM yank without lying about storage.
+   *
+   * Only meaningful for `.number` text inputs and `<input type="number">`;
+   * other bindings ignore it.
+   * @internal
+   */
+  lastTypedForm: Ref<string | null>
 }
 
 /**

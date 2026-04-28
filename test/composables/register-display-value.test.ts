@@ -116,6 +116,41 @@ describe('displayValue', () => {
     form.setValue('count', 5)
     expect(binding.displayValue.value).toBe('5')
   })
+
+  it('prefers `lastTypedForm` over `String(storage)` when it parses to the same number', () => {
+    // `1e2 === 100` in JS; the typed form `'1e2'` and the canonical
+    // `String(100) === '100'` are both legitimate views. The directive
+    // populates `lastTypedForm` mid-typing so the input keeps showing
+    // what the user typed even though storage holds 100.
+    const schema = z.object({ count: z.number() })
+    const { app, form } = setupForm(schema, { count: 0 })
+    apps.push(app)
+    const binding = form.register('count')
+    form.setValue('count', 100)
+    expect(binding.displayValue.value).toBe('100')
+    binding.lastTypedForm.value = '1e2'
+    expect(binding.displayValue.value).toBe('1e2')
+    // Clearing falls back to the canonical String form (post-blur path).
+    binding.lastTypedForm.value = null
+    expect(binding.displayValue.value).toBe('100')
+  })
+
+  it('falls back to `String(storage)` when `lastTypedForm` no longer parses to current storage', () => {
+    // Programmatic `setValue` (or hydration / reset) advances storage
+    // out from under a stale `lastTypedForm` — the parse-equality
+    // check naturally invalidates without explicit reset wiring.
+    const schema = z.object({ count: z.number() })
+    const { app, form } = setupForm(schema, { count: 0 })
+    apps.push(app)
+    const binding = form.register('count')
+    form.setValue('count', 100)
+    binding.lastTypedForm.value = '1e2'
+    expect(binding.displayValue.value).toBe('1e2')
+    // Storage advances to 200; `parseFloat('1e2') === 100 ≠ 200`, so
+    // the typed form is ignored and the honest canonical wins.
+    form.setValue('count', 200)
+    expect(binding.displayValue.value).toBe('200')
+  })
 })
 
 describe('markTransientEmpty', () => {

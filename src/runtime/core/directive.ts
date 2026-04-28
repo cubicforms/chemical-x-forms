@@ -402,6 +402,17 @@ const vRegisterText: RegisterTextCustomDirective = {
         domValue = domValue.trim()
       }
       if (castToNumber) {
+        // Skip the assigner when a number cast is requested but the
+        // input is empty after trim — most commonly a backspace-clear
+        // on `<input type="number">`. `looseToNumber` returns the
+        // input string unchanged for unparseable values, so the
+        // slim-primitive gate would reject the string-going-to-number
+        // write and emit a noisy dev warning for what's actually a
+        // transient mid-edit state. Treat it as a no-op: the form
+        // stays at the last valid number, the user retains the empty
+        // DOM, and the dev warning is reserved for genuinely
+        // mismatched programmatic writes.
+        if (domValue === '') return
         domValue = looseToNumber(domValue)
       }
       el[assignKey]?.(domValue)

@@ -550,3 +550,149 @@ describe('vRegisterDynamic — propagates modifiers to the per-tag variant', () 
 beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 })
+
+// ─────────────────────────────────────────────────────────────────
+// Regression: spike-discovered bugs
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Spike `16b` reported "can't use the spacebar at all" on a
+ * `.trim`-modified text input. The trim runs at input time, so
+ * a leading space is stripped before the assigner — but the user's
+ * typing flow assumes the space is part of "hello world", not a
+ * leading-whitespace-then-content pattern. Reproduce + pin behavior
+ * here so the fix doesn't regress.
+ */
+describe('regression: vRegisterText × `.trim` × spacebar after text', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('typing a trailing space after content writes the trimmed value (no internal space loss)', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue('')
+
+    hooks.created?.(input, makeBinding(value, { trim: true }), makeVNode({}), null)
+
+    // User types "hello"
+    input.value = 'hello'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenLastCalledWith('hello', expect.objectContaining({}))
+
+    // User then types a trailing space (now el.value = "hello ").
+    // The trimmed write is still "hello" so the form state doesn't
+    // change. The CRITICAL property: el.value must remain "hello "
+    // in the DOM so the user can keep typing (next char produces
+    // "hello w" → trim "hello w" → form sees the space preserved).
+    input.value = 'hello '
+    input.dispatchEvent(new Event('input'))
+
+    expect(input.value).toBe('hello ')
+  })
+
+  it('typing "hello world" character-by-character preserves the internal space', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue('')
+
+    hooks.created?.(input, makeBinding(value, { trim: true }), makeVNode({}), null)
+
+    const sequence = ['h', 'he', 'hel', 'hell', 'hello', 'hello ', 'hello w']
+    for (const next of sequence) {
+      input.value = next
+      input.dispatchEvent(new Event('input'))
+    }
+
+    // After the full sequence the form should hold "hello w" — the
+    // internal space survives because String.prototype.trim() only
+    // strips leading/trailing whitespace.
+    expect(setValue).toHaveBeenLastCalledWith('hello w', expect.objectContaining({}))
+    expect(input.value).toBe('hello w')
+  })
+})
+
+/**
+ * Spike `16e` reported a noisy dev warning when backspacing a
+ * `<input type="number">` bound to `z.number()` from "1" to empty.
+ * The directive auto-casts via looseToNumber; an empty string isn't
+ * parseable, so looseToNumber returns the input unchanged and the
+ * slim-primitive gate sees a string heading to a numeric slot →
+ * rejection + dev-warn.
+ *
+ * Clearing a numeric input is a normal UI affordance; the dev-warn
+ * makes that look like a programmer error. The fix: the directive
+ * skips the assigner call when the input is empty AND a number cast
+ * is requested. Form state stays at the previous valid value, the
+ * user retains the empty DOM (mid-edit), and no dev-warn fires.
+ */
+describe('regression: vRegisterText × type="number" × backspace-to-empty', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('backspacing from "1" to "" does not call setValue (avoids slim-primitive rejection)', () => {
+    const input = document.createElement('input')
+    input.type = 'number'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue(0 as unknown as never)
+
+    // No explicit `.number` modifier — vnode.props.type='number'
+    // auto-applies the cast.
+    hooks.created?.(input, makeBinding(value, {}), makeVNode({ type: 'number' }), null)
+
+    // Type "1": writes 1 (the number).
+    input.value = '1'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenCalledTimes(1)
+    expect(setValue).toHaveBeenLastCalledWith(1, expect.objectContaining({}))
+
+    // Backspace to empty: directive must NOT call setValue with "".
+    // The form stays at the previously-accepted numeric value; the
+    // user can keep editing without the gate firing a dev-warn.
+    setValue.mockClear()
+    input.value = ''
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).not.toHaveBeenCalled()
+  })
+
+  it('explicit `.number` on a text input behaves the same way for empty input', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = '42'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenLastCalledWith(42, expect.objectContaining({}))
+
+    setValue.mockClear()
+    input.value = ''
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).not.toHaveBeenCalled()
+  })
+
+  it('non-empty non-numeric input still attempts the write (gate decides)', () => {
+    // The skip-on-empty path is narrow — only blank `el.value`
+    // bypasses the assigner. A user typing "abc" still sends "abc"
+    // to the gate, which rejects and warns. That warning IS a
+    // useful signal: it indicates the input is producing values
+    // the schema doesn't accept structurally, vs. the transient
+    // empty-state UX of clearing the field.
+    const input = document.createElement('input')
+    input.type = 'text'
+    document.body.appendChild(input)
+    const { value, setValue } = makeRegisterValue(0 as unknown as never)
+
+    hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
+
+    input.value = 'abc'
+    input.dispatchEvent(new Event('input'))
+    expect(setValue).toHaveBeenCalledTimes(1)
+    expect(setValue).toHaveBeenLastCalledWith('abc', expect.objectContaining({}))
+  })
+})

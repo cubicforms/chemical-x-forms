@@ -559,6 +559,20 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // ref-equal sub-trees, and the fill walker only queries the
     // schema at gap sites.
     const completedValue = mergeStructural(schema, path, value)
+    // Identity short-circuit: if the path's current value already
+    // matches what we'd write, skip the replacement. Without this,
+    // every keystroke that produces an unchanged trimmed/cast value
+    // (e.g. typing a trailing space into a `.trim` input — trim → ""
+    // → form already at "") would still replace `form.value` with a
+    // new object identity, triggering Vue to re-render the input and
+    // patch the `:value` binding (which compares against the live
+    // DOM `el.value`, not the previous vnode prop). The patch
+    // overwrites the user's transient whitespace and the spacebar
+    // appears broken.
+    const currentValue = getAtPath(form.value, path)
+    if (Object.is(currentValue, completedValue)) {
+      return true
+    }
     const nextForm = setAtPathWithSchemaFill(form.value, schema, path, completedValue) as F
     applyFormReplacement(nextForm, meta)
     if (fieldValidationMode === 'change') {

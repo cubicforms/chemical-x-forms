@@ -240,6 +240,43 @@ export type AbstractSchema<Form, GetValueFormType> = {
    *   to the inner's set.
    */
   getSlimPrimitiveTypesAtPath(path: Path): Set<SlimPrimitiveKind>
+  /**
+   * Return `true` if the leaf at `path` is required — i.e. the schema
+   * does NOT admit "empty" via `.optional()`, `.nullable()`,
+   * `.default(N)`, or `.catch(N)` at the leaf or any wrapper.
+   *
+   * Used by the submit / validate path to surface a "Required" error
+   * when a field is in the form's `transientEmptyPaths` set (the user
+   * cleared it or never answered) AND the schema treats the field as
+   * required. Without this, a strict `z.number()` would silently
+   * accept the slim default (`0`) for an unanswered field — the
+   * "public-housing" footgun where `$0 income` passes validation.
+   *
+   * Semantics:
+   * - **Optional / Nullable / Default / Catch** at any wrapper layer
+   *   (root or nested) → `false`. The schema author opted into
+   *   accepting empty.
+   * - **Readonly / Pipe / Lazy** wrappers are transparent — peel and
+   *   re-check the inner schema.
+   * - **Union / Discriminated union** → `false` if ANY branch admits
+   *   empty (the union accepts what the most permissive branch
+   *   accepts). This matches the parse-time "first success wins"
+   *   semantic of `validateAtPath`.
+   * - **Intersection** → `true` if EITHER side requires the path
+   *   (intersection requires both sides to accept; if one rejects
+   *   empty, the intersection rejects empty).
+   * - **Path doesn't exist in schema** → `false` (can't enforce
+   *   what we don't know about).
+   * - **Empty path (root)** → `true` (the root form is always
+   *   required as an object).
+   *
+   * Refinement-level constraints (`.min(1)`, `.refine(...)`,
+   * `.email()`) are NOT consulted here — those run at parse time
+   * inside `validateAtPath` and surface as schema errors regardless.
+   * `isRequiredAtPath` only answers the "is this leaf at all
+   * required?" question; the refinements layer on top.
+   */
+  isRequiredAtPath(path: Path): boolean
 }
 
 /**
@@ -404,6 +441,17 @@ export type PersistIncludeMode = 'form' | 'form+errors'
 export type WriteMeta = {
   /** When `true`, this write is forwarded to the configured persistence backend. */
   readonly persist?: boolean
+  /**
+   * When `true`, the path being written is added to the FormStore's
+   * `transientEmptyPaths` set — meaning storage holds a real, schema-
+   * conformant value (the slim default) but the UI should display the
+   * field as empty. The next write to that path WITHOUT this flag
+   * implicitly removes the path from the set (the user typed something
+   * real). Internal — set by `markTransientEmpty()` on the register
+   * binding and by the `unset` translation in `setValue` / `reset` /
+   * `useAbstractForm` construction. Don't set from consumer code.
+   */
+  readonly transientEmpty?: boolean
 }
 
 /**

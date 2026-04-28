@@ -34,6 +34,7 @@ type ZodTypeMap = {
   ZodReadonly: z.ZodReadonly<z.ZodTypeAny>
   ZodBranded: z.ZodBranded<z.ZodTypeAny, string | number | symbol>
   ZodCatch: z.ZodCatch<z.ZodTypeAny>
+  ZodIntersection: z.ZodIntersection<z.ZodTypeAny, z.ZodTypeAny>
 }
 
 /**

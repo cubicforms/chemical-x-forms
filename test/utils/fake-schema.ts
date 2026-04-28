@@ -85,6 +85,13 @@ export function fakeSchema<F extends GenericForm>(
       // override this method on the returned object.
       return new Set(['string', 'number', 'boolean', 'object', 'array', 'null', 'undefined'])
     },
+    isRequiredAtPath(path) {
+      void path
+      // Permissive default: fake-schema doesn't model required-ness.
+      // Tests that need to exercise the required-empty validation
+      // augmentation override this method on the returned object.
+      return false
+    },
     async validateAtPath(data, path): Promise<ValidationResponse<F>> {
       if (validator) return await validator(data, path)
       return {

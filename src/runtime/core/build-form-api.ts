@@ -189,6 +189,14 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     for (const [, { segments, value: original }] of state.originals) {
       if (!Object.is(getAtPath(state.form.value, segments), original)) return true
     }
+    // Storage matches but transient-empty membership might have
+    // changed (user cleared a field whose default was non-empty, or
+    // typed into a field that was construction-time-empty). Compare
+    // the live reactive set against the construction-time snapshot.
+    if (state.transientEmptyPaths.size !== state.originalsTransientEmpty.size) return true
+    for (const key of state.transientEmptyPaths) {
+      if (!state.originalsTransientEmpty.has(key)) return true
+    }
     return false
   })
 

@@ -10,7 +10,17 @@ import { assertSupportedKinds } from './assert-supported'
 import { zodIssuesToValidationErrors } from './errors'
 import { fingerprintZodSchema } from './fingerprint'
 import { deriveDefault, getDefaultValuesFromZodSchema } from './default-values'
-import { assertZodVersion, kindOf, unwrapInner } from './introspect'
+import {
+  assertZodVersion,
+  getDiscriminatedOptions,
+  getIntersectionLeft,
+  getIntersectionRight,
+  getUnionOptions,
+  kindOf,
+  unwrapInner,
+  unwrapLazy,
+  unwrapPipe,
+} from './introspect'
 import { getNestedZodSchemasAtPath } from './path-walker'
 import { PERMISSIVE, slimPrimitivesOf } from './slim-primitives'
 
@@ -96,6 +106,69 @@ const STRUCTURAL_KINDS: ReadonlySet<ReturnType<typeof kindOf>> = new Set([
 
 function isStructuralKind(kind: ReturnType<typeof kindOf>): boolean {
   return STRUCTURAL_KINDS.has(kind)
+}
+
+const MAX_REQUIRED_DEPTH = 64
+
+/**
+ * `true` if the leaf is required — `false` if any wrapper layer admits
+ * "empty" via `.optional()`, `.nullable()`, `.default(N)`, or
+ * `.catch(N)`. See `AbstractSchema.isRequiredAtPath` for the full
+ * semantic specification (union → permissive, intersection → strict,
+ * readonly/pipe/lazy → transparent peel).
+ */
+function isLeafRequired(schema: z.ZodType, depth = 0): boolean {
+  if (depth > MAX_REQUIRED_DEPTH) return true
+  const kind = kindOf(schema)
+  // Direct "schema accepts empty" wrappers and bare empty-marker leaves —
+  // short-circuit. `z.undefined()` / `z.null()` / `z.void()` inside a
+  // union (`z.union([z.number(), z.undefined()])`) are how schema authors
+  // express "this field can be absent" without a wrapper, so they count
+  // as not-required here.
+  if (
+    kind === 'optional' ||
+    kind === 'nullable' ||
+    kind === 'default' ||
+    kind === 'catch' ||
+    kind === 'undefined' ||
+    kind === 'null' ||
+    kind === 'void'
+  ) {
+    return false
+  }
+  // Transparent wrappers — peel and re-check.
+  if (kind === 'readonly') {
+    const inner = unwrapInner(schema)
+    return inner === undefined ? true : isLeafRequired(inner, depth + 1)
+  }
+  if (kind === 'pipe') {
+    // Use the input side: transient-empty is a write-time concern.
+    const inner = unwrapPipe(schema)
+    return inner === undefined ? true : isLeafRequired(inner, depth + 1)
+  }
+  if (kind === 'lazy') {
+    const inner = unwrapLazy(schema)
+    return inner === undefined ? true : isLeafRequired(inner, depth + 1)
+  }
+  // Union — required only if EVERY branch is required (any permissive
+  // branch makes the union permissive at parse time).
+  if (kind === 'union' || kind === 'discriminated-union') {
+    const options =
+      kind === 'discriminated-union' ? getDiscriminatedOptions(schema) : getUnionOptions(schema)
+    if (options.length === 0) return true
+    return options.every((opt) => isLeafRequired(opt as z.ZodType, depth + 1))
+  }
+  // Intersection — required if EITHER side is required (a parse must
+  // satisfy both; the strict side governs).
+  if (kind === 'intersection') {
+    const left = getIntersectionLeft(schema)
+    const right = getIntersectionRight(schema)
+    const leftReq = left === undefined ? true : isLeafRequired(left, depth + 1)
+    const rightReq = right === undefined ? true : isLeafRequired(right, depth + 1)
+    return leftReq || rightReq
+  }
+  // Direct primitive leaf or unsupported kind — required by default.
+  return true
 }
 
 /**
@@ -233,6 +306,20 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
           for (const k of slimPrimitivesOf(candidate)) out.add(k)
         }
         return out
+      },
+
+      isRequiredAtPath(path): boolean {
+        // Root form is always "required" in the structural sense — it's
+        // the object we're parsing. Submit/validate's required-empty
+        // check never sees the root path in `transientEmptyPaths`
+        // (the set tracks primitive leaves), so the value is academic.
+        if (path.length === 0) return true
+        const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+        if (resolved.length === 0) return false
+        // Every candidate must be required for the path overall to be
+        // required — matches the union "any-branch-permissive" rule
+        // when the path traverses a union.
+        return resolved.every((candidate) => isLeafRequired(candidate))
       },
 
       async validateAtPath(data, path): ReturnType<AbstractSchema<Form, Form>['validateAtPath']> {

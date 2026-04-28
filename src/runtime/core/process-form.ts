@@ -6,6 +6,7 @@ import type {
   OnSubmit,
   ReactiveValidationStatus,
   SubmitHandler,
+  ValidationError,
   ValidationResponse,
   ValidationResponseWithoutValue,
 } from '../types/types-api'
@@ -13,7 +14,7 @@ import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { __DEV__ } from './dev'
 import { SubmitErrorHandlerError } from './errors'
-import { canonicalizePath, type Path } from './paths'
+import { canonicalizePath, type Path, type Segment } from './paths'
 
 /**
  * Tracks FormStores for which we've already emitted the
@@ -165,7 +166,28 @@ export function buildProcessForm<F extends GenericForm>(
     // AbstractSchema.validateAtPath takes a canonical structured path
     // — Segment[] — so literal-dot field keys can't collide with the
     // sibling-pair form at the adapter boundary.
-    return (await state.schema.validateAtPath(data, path)) as ValidationResponse<F>
+    const baseResult = (await state.schema.validateAtPath(data, path)) as ValidationResponse<F>
+    // Required-empty augmentation. The schema can't tell the difference
+    // between "user typed 0" and "user didn't answer" because storage
+    // holds the slim default (`0` for `z.number()`) in both cases. We
+    // close the gap by consulting the form's `transientEmptyPaths` set:
+    // every path in there + a required leaf in the schema becomes a
+    // synthesised "Required" error. Empty set or no required leaves →
+    // no-op, return the base result unchanged.
+    const requiredErrors = collectRequiredEmptyErrors(state, path)
+    if (requiredErrors.length === 0) return baseResult
+    if (baseResult.success) {
+      return {
+        data: undefined,
+        errors: requiredErrors,
+        success: false,
+        formKey: state.formKey,
+      }
+    }
+    return {
+      ...baseResult,
+      errors: [...baseResult.errors, ...requiredErrors],
+    }
   }
 
   /**
@@ -332,6 +354,56 @@ function stripData<F extends GenericForm>(
 function adapterThrowMessage(err: unknown): string {
   if (err instanceof Error) return `Adapter validateAtPath threw: ${err.message}`
   return 'Adapter validateAtPath threw a non-Error value'
+}
+
+/**
+ * Synthesise a "Required" `ValidationError` for every path in the
+ * form's `transientEmptyPaths` whose schema requires the leaf — i.e.
+ * the schema is NOT `.optional()` / `.nullable()` / `.default(N)` /
+ * `.catch(N)` at that leaf. When a `scope` is provided (per-path
+ * `validate(path)` / `validateAsync(path)`), only paths inside the
+ * scope contribute; full-form validation passes `undefined` and
+ * checks every entry.
+ *
+ * Returns an empty array when nothing applies, so callers can
+ * fast-path without inspecting the result.
+ */
+function collectRequiredEmptyErrors<F extends GenericForm>(
+  state: FormStore<F>,
+  scope: Path | undefined
+): ValidationError[] {
+  if (state.transientEmptyPaths.size === 0) return []
+  const errors: ValidationError[] = []
+  for (const pathKey of state.transientEmptyPaths) {
+    // PathKey is `JSON.stringify(segments)` per `canonicalizePath`, so
+    // recovering the structured segments is `JSON.parse(...)`. Don't
+    // round-trip through `canonicalizePath(pathKey)` — that would treat
+    // the JSON-encoded string as a NEW dotted path and produce a single
+    // segment containing the literal JSON.
+    const segments = JSON.parse(pathKey) as Segment[]
+    if (scope !== undefined && !pathStartsWith(segments, scope)) continue
+    if (!state.schema.isRequiredAtPath(segments)) continue
+    errors.push({
+      message: 'Required',
+      path: [...segments],
+      formKey: state.formKey,
+    })
+  }
+  return errors
+}
+
+/**
+ * `true` if `target`'s segments start with `prefix`. Used by
+ * `collectRequiredEmptyErrors` to honour the per-path scope of
+ * `validate(path)` — only transient-empty paths inside the validated
+ * subtree raise required errors. An empty prefix matches every path.
+ */
+function pathStartsWith(target: Path, prefix: Path): boolean {
+  if (prefix.length > target.length) return false
+  for (let i = 0; i < prefix.length; i++) {
+    if (!Object.is(target[i], prefix[i])) return false
+  }
+  return true
 }
 
 function applyInvalidSubmitPolicy<F extends GenericForm>(

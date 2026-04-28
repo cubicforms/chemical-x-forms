@@ -346,6 +346,20 @@ export function zodAdapter<
           getAbstractSchema(_formKey, n as unknown as FormSchema, false)
         ) as unknown as AbstractSchema<unknown, GetValueFormType>[]
       },
+      isRequiredAtPath(path) {
+        // Root form is structurally required (it's the parsed object).
+        // The required-empty check tracks primitive leaves only, so this
+        // branch is academic for the call sites that matter.
+        if (path.length === 0) return true
+        // walkV3ToLeafSchema descends through structural shapes and peels
+        // wrappers between segments, but preserves the leaf's wrapper at
+        // the path's terminal position — so `path: ['name']` against
+        // `z.object({ name: z.optional(z.string()) })` returns the
+        // optional wrapper itself, which is what we need to inspect.
+        const leaf = walkV3ToLeafSchema(_zodSchema, path)
+        if (!leaf) return false
+        return isLeafRequiredV3(leaf)
+      },
       getSlimPrimitiveTypesAtPath(path) {
         if (path.length === 0) return new Set(['object'])
         const [strippedSchema] = stripRootSchema(_zodSchema, {
@@ -913,6 +927,69 @@ function walkV3ToLeafSchema(
     return undefined
   }
   return current
+}
+
+/**
+ * `true` if the v3 leaf schema is required — `false` if any wrapper
+ * layer admits "empty" via `.optional()`, `.nullable()`, `.default(N)`,
+ * or `.catch(N)`. Mirrors the v4 adapter's `isLeafRequired`.
+ *
+ * - `ZodOptional` / `ZodNullable` / `ZodDefault` / `ZodCatch` →
+ *   directly `false`.
+ * - `ZodReadonly` / `ZodPipeline` / `ZodBranded` / `ZodEffects` →
+ *   transparent peel and re-check inner.
+ * - `ZodUnion` / `ZodDiscriminatedUnion` → `false` if ANY branch
+ *   admits empty (matches union "first-success" semantic).
+ * - `ZodIntersection` → `true` if EITHER side is required (parse
+ *   must satisfy both).
+ * - Direct primitive / unknown kinds → `true` (required by default).
+ */
+function isLeafRequiredV3(schema: z.ZodTypeAny, depth = 0): boolean {
+  if (depth > MAX_UNWRAP_STEPS) return true
+  // Direct "schema accepts empty" wrappers and bare empty-marker leaves.
+  // `z.undefined()` / `z.null()` inside a union are how authors express
+  // "this field can be absent" without a wrapper.
+  if (
+    isZodSchemaType(schema, 'ZodOptional') ||
+    isZodSchemaType(schema, 'ZodNullable') ||
+    isZodSchemaType(schema, 'ZodDefault') ||
+    isZodSchemaType(schema, 'ZodCatch') ||
+    isZodSchemaType(schema, 'ZodUndefined') ||
+    isZodSchemaType(schema, 'ZodNull')
+  ) {
+    return false
+  }
+  // Transparent wrappers — peel and re-check.
+  if (isZodSchemaType(schema, 'ZodReadonly') || isZodSchemaType(schema, 'ZodBranded')) {
+    const inner = (schema._def as { innerType?: z.ZodTypeAny; type?: z.ZodTypeAny }).innerType
+    const branded = (schema._def as { type?: z.ZodTypeAny }).type
+    const next = inner ?? branded
+    return next === undefined ? true : isLeafRequiredV3(next, depth + 1)
+  }
+  if (isZodSchemaType(schema, 'ZodPipeline')) {
+    // Use the input side: transient-empty is a write-time concern.
+    const inner = (schema._def as { in?: z.ZodTypeAny }).in
+    return inner === undefined ? true : isLeafRequiredV3(inner, depth + 1)
+  }
+  if (isZodSchemaType(schema, 'ZodEffects')) {
+    const inner = (schema._def as { schema?: z.ZodTypeAny }).schema
+    return inner === undefined ? true : isLeafRequiredV3(inner, depth + 1)
+  }
+  // Union — required only if EVERY branch is required.
+  if (isZodSchemaType(schema, 'ZodUnion') || isZodSchemaType(schema, 'ZodDiscriminatedUnion')) {
+    const options = (schema._def as { options?: readonly z.ZodTypeAny[] }).options ?? []
+    if (options.length === 0) return true
+    return options.every((opt) => isLeafRequiredV3(opt, depth + 1))
+  }
+  // Intersection — required if either side rejects empty.
+  if (isZodSchemaType(schema, 'ZodIntersection')) {
+    const def = schema._def as { left?: z.ZodTypeAny; right?: z.ZodTypeAny }
+    const leftReq = def.left === undefined ? true : isLeafRequiredV3(def.left, depth + 1)
+    const rightReq = def.right === undefined ? true : isLeafRequiredV3(def.right, depth + 1)
+    return leftReq || rightReq
+  }
+  // Direct primitive / unsupported leaf — required by default.
+  return true
 }
 
 function unwrapToDiscriminatedUnion(

@@ -175,20 +175,28 @@ Bind to a native input, select, textarea, checkbox, or radio:
 <select v-register="form.register('country')">...</select>
 ```
 
-Or to a custom component — `useRegister()` in the child re-binds
-the parent's `v-register` onto an inner native element:
+Or to a custom component whose root is **not** a native input —
+`useRegister()` in the child reads the parent's binding so you can
+re-bind `v-register` onto an inner native element. When the
+wrapper's root _is_ the input itself, Vue's attribute fallthrough
+handles it and `useRegister` is unnecessary.
 
 ```vue
 <!-- Parent -->
-<MyInput v-register="form.register('email')" />
+<MyField label="Email" v-register="form.register('email')" />
 
-<!-- MyInput.vue -->
-<script setup>
+<!-- MyField.vue (root is <label>, not <input>) -->
+<script setup lang="ts">
   import { useRegister } from '@chemical-x/forms'
+  defineProps<{ label: string }>()
   const register = useRegister()
 </script>
+
 <template>
-  <input v-register="register" />
+  <label class="field">
+    <span>{{ label }}</span>
+    <input v-register="register" />
+  </label>
 </template>
 ```
 

@@ -1040,21 +1040,28 @@ export type RegisterModelDynamicCustomDirective = ObjectDirective<
  * </select>
  * ```
  *
- * Also works on custom components — call `useRegister()` in the
- * child's setup and re-bind `v-register` to an inner native
- * element. The wrapper participates in the form lifecycle as if
- * the inner element were bound directly:
+ * Also works on custom components whose root is NOT a native
+ * input — call `useRegister()` in the child's setup to read the
+ * parent's binding, then re-bind `v-register` onto an inner native
+ * element. (When the wrapper's root IS the input itself, attribute
+ * fallthrough handles it; `useRegister` is unnecessary.)
  *
  * ```vue
  * <!-- Parent -->
- * <MyInput v-register="form.register('email')" />
+ * <MyField label="Email" v-register="form.register('email')" />
  *
- * <!-- MyInput.vue -->
+ * <!-- MyField.vue (root is <label>, not <input>) -->
  * <script setup>
  * import { useRegister } from '@chemical-x/forms'
+ * defineProps<{ label: string }>()
  * const register = useRegister()
  * </script>
- * <template><input v-register="register" /></template>
+ * <template>
+ *   <label>
+ *     <span>{{ label }}</span>
+ *     <input v-register="register" />
+ *   </label>
+ * </template>
  * ```
  *
  * Modifier support varies by element:

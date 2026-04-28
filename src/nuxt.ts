@@ -129,13 +129,13 @@ declare module "vue" {
      * <input v-register="form.register('email')" />
      * \`\`\`
      *
-     * Also works on custom components — call \`useRegister()\` in
-     * the child's setup and re-bind \`v-register\` to an inner
-     * native element:
-     *
-     * \`\`\`vue
-     * <MyInput v-register="form.register('email')" />
-     * \`\`\`
+     * Also works on custom components whose root is NOT a native
+     * input — call \`useRegister()\` in the child's setup to read
+     * the parent's binding, then re-bind \`v-register\` onto an
+     * inner native element. (When the wrapper's root IS the input
+     * itself, attribute fallthrough handles it; \`useRegister\` is
+     * unnecessary.) See \`RegisterDirective\` for the full
+     * non-input-root example.
      *
      * Modifier support varies by element:
      *   - text / number / textarea: \`.lazy\`, \`.trim\`, \`.number\`

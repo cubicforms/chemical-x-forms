@@ -168,6 +168,29 @@ The `v-register` directive. Registered automatically by
 `createChemicalXForms`; exported for consumers installing directives
 manually.
 
+#### Modifiers
+
+`v-register` mirrors Vue's `v-model` modifier semantics, scoped per
+element type. Modifier names are typed — a typo (`v-register.lazi`)
+is a TypeScript error, not a silent runtime no-op.
+
+| Element                                                      | Modifier  | What it does                                                                                                                                                          |
+| ------------------------------------------------------------ | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<input type="text">`, `<input type="number">`, `<textarea>` | `.lazy`   | Write on `change` (blur) instead of `input`. Disables IME composition handlers — composition events don't gate writes.                                                |
+| `<input type="text">`, `<input type="number">`, `<textarea>` | `.trim`   | Strip leading/trailing whitespace before writing. Re-trims the visible DOM value on blur.                                                                             |
+| `<input type="text">`, `<input type="number">`, `<textarea>` | `.number` | Cast via `parseFloat` before writing; values that can't be parsed pass through unchanged. Auto-applied for `<input type="number">` — explicit `.number` is redundant. |
+| `<select>`                                                   | `.number` | Cast each selected option's `value` via `parseFloat` before writing. Mirrors Vue's `v-model` on `<select>`.                                                           |
+| `<input type="checkbox">`, `<input type="radio">`            | _(none)_  | No modifiers — Vue's v-model doesn't define any here either.                                                                                                          |
+
+Combine freely on text/textarea: `<input v-register.lazy.number="form.register('age')" />`.
+
+When the slim-primitive gate rejects a write produced by a modifier
+cast (e.g. `.number` × `'abc'` against a `z.number()` slot — the
+non-parseable string passes through `looseToNumber` unchanged), the
+directive's listener completes silently and the DOM keeps the user's
+input. The form state stays at its previous value. Field-level
+validation will surface a refinement error on the next render.
+
 ### `canonicalizePath(input) → { segments, key }`
 
 Normalise a dotted-string or array path into a structured `Path`

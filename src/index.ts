@@ -86,6 +86,8 @@ export type {
   RegisterDirective,
   RegisterFlatPath,
   RegisterOptions,
+  RegisterSelectModifier,
+  RegisterTextModifier,
   RegisterValue,
   SetValueCallback,
   SetValuePayload,

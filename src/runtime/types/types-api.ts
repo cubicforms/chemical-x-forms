@@ -953,22 +953,45 @@ export type CustomRegisterDirective<T, Modifiers extends string = string> = Obje
 >
 
 /**
+ * Modifier names supported by `v-register` on `<input type="text">`,
+ * `<input type="number">`, and `<textarea>`. Mirrors Vue's
+ * `v-model` modifier semantics on the same elements; combine freely
+ * (`<input v-register.lazy.trim.number="..." />`).
+ */
+export type RegisterTextModifier =
+  /**
+   * Write on `change` (blur) instead of `input`. The reactive
+   * model only updates after the user tabs/clicks out of the
+   * field. IME composition handlers are skipped under `.lazy` —
+   * composition events do not gate writes.
+   */
+  | 'lazy'
+  /**
+   * Strip leading and trailing whitespace before writing. The
+   * value the form sees is the trimmed string; on blur the
+   * visible DOM value is also re-trimmed so the input itself
+   * shows the normalised text.
+   */
+  | 'trim'
+  /**
+   * Cast the value via `parseFloat` before writing. Values that
+   * can't be parsed as a number (e.g. `'abc'`) pass through
+   * unchanged — the slim-primitive gate then sees a string
+   * heading to a numeric slot and rejects the write. Auto-applied
+   * for `<input type="number">`; explicit `.number` is redundant
+   * there.
+   */
+  | 'number'
+
+/**
  * v-register directive variant for `<input type="text">`,
- * `<input type="number">`, and `<textarea>`. Supports the same
- * modifiers as Vue's `v-model`:
- *
- * - `.lazy` — write on `change` (blur) instead of `input`.
- * - `.trim` — strip leading/trailing whitespace before writing;
- *   re-trim the visible DOM value on blur.
- * - `.number` — cast the value via `parseFloat` before writing
- *   (passes through unchanged when the value can't be parsed
- *   as a number). Auto-applied for `<input type="number">`.
- *
- * Combine freely: `<input v-register.lazy.number="..." />`.
+ * `<input type="number">`, and `<textarea>`. Supports the
+ * `.lazy`, `.trim`, and `.number` modifiers — see
+ * `RegisterTextModifier` for per-modifier semantics.
  */
 export type RegisterTextCustomDirective = CustomRegisterDirective<
   HTMLInputElement | HTMLTextAreaElement,
-  'trim' | 'number' | 'lazy'
+  RegisterTextModifier
 >
 
 /** v-register directive variant for checkboxes. No modifiers. */
@@ -977,11 +1000,26 @@ export type RegisterCheckboxCustomDirective = CustomRegisterDirective<HTMLInputE
 export type RegisterRadioCustomDirective = CustomRegisterDirective<HTMLInputElement>
 
 /**
- * v-register directive variant for `<select>`. Supports `.number`
- * (cast each selected option's value via `parseFloat` before
- * writing); mirrors Vue's `v-model` on `<select>`.
+ * Modifier name supported by `v-register` on `<select>`. Mirrors
+ * Vue's `v-model` `.number` on the same element.
  */
-export type RegisterSelectCustomDirective = CustomRegisterDirective<HTMLSelectElement, 'number'>
+export type RegisterSelectModifier =
+  /**
+   * Cast each selected option's `value` via `parseFloat` before
+   * writing. The form state holds numbers, not numeric strings —
+   * useful when option values are written as strings in the
+   * markup but the schema expects numbers.
+   */
+  'number'
+
+/**
+ * v-register directive variant for `<select>`. Supports `.number`
+ * — see `RegisterSelectModifier` for semantics.
+ */
+export type RegisterSelectCustomDirective = CustomRegisterDirective<
+  HTMLSelectElement,
+  RegisterSelectModifier
+>
 
 /** v-register directive variant for the dynamic input/select/textarea bridge. */
 export type RegisterModelDynamicCustomDirective = ObjectDirective<

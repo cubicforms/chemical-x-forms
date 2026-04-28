@@ -819,51 +819,71 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
     }
     return
   }
+  // Symmetric misuse: non-multiple select bound to an Array / Set
+  // model. The change handler would write `selectedVal[0]` (scalar)
+  // back, which the slim-primitive gate rejects against an Array
+  // path — so the user's clicks silently fail. Mount-time
+  // `looseEqual('a', ['a', 'b'])` also returns false, so no option
+  // ever appears highlighted. Bail with a dev-warn pointing at the
+  // fix (`add multiple` for list bindings, or use a scalar model).
+  if (!isMultiple && (isArrayValue || isSet(externalValue))) {
+    if (__DEV__) {
+      warn(
+        `<select v-register> (no \`multiple\` attribute) expected a scalar value for its ` +
+          `binding, but got ${Object.prototype.toString.call(externalValue).slice(8, -1)}. ` +
+          `Add the \`multiple\` attribute to bind to a list, or use a scalar schema (e.g. ` +
+          `\`z.string()\`) for a single-select binding.`
+      )
+    }
+    return
+  }
 
+  if (isMultiple) {
+    // Precompute a `Set<string>` of stringified model members once,
+    // then do O(1) lookups per option. Drops the per-option work
+    // from O(N) to O(1), so total `setSelected` cost is O(N + M)
+    // for an N-item model and an M-option <select> — matters for
+    // long forms (thousands of options or selected items). Both
+    // Array and Set primitive paths share this; only object-valued
+    // option binds (rare) keep their original identity comparisons.
+    const stringifiedMembers = new Set<string>()
+    const iter: Iterable<unknown> = isArrayValue
+      ? (externalValue as ReadonlyArray<unknown>)
+      : (externalValue as Set<unknown>)
+    for (const v of iter) stringifiedMembers.add(String(v))
+
+    for (let i = 0, l = el.options.length; i < l; i++) {
+      const option = el.options[i]
+      if (!option) continue
+      const optionValue = getValue(option)
+      const optionType = typeof optionValue
+      if (optionType === 'string' || optionType === 'number') {
+        option.selected = stringifiedMembers.has(String(optionValue))
+      } else if (isArrayValue) {
+        // Object option, Array model: structural equality via
+        // `looseIndexOf` (mirrors Vue's reference).
+        option.selected = looseIndexOf(externalValue, optionValue) > -1
+      } else {
+        // Object option, Set model: identity-based `.has` (Sets
+        // can't structurally compare without iterating, and Vue's
+        // reference uses identity here).
+        option.selected = (externalValue as Set<unknown>).has(optionValue)
+      }
+    }
+    return
+  }
+
+  // Non-multiple: find the first option matching the scalar model
+  // and set selectedIndex; clear if nothing matches.
   for (let i = 0, l = el.options.length; i < l; i++) {
     const option = el.options[i]
     if (!option) continue
-
-    const optionValue = getValue(option)
-    if (isMultiple) {
-      const optionType = typeof optionValue
-      if (isArrayValue) {
-        // fast path for string / number values
-        if (optionType === 'string' || optionType === 'number') {
-          option.selected = externalValue.some((v) => String(v) === String(optionValue))
-        } else {
-          option.selected = looseIndexOf(externalValue, optionValue) > -1
-        }
-      } else if (optionType === 'string' || optionType === 'number') {
-        // Set + primitive option: mirror the Array branch's
-        // `String(v) === String(optionValue)` coercion. Without this,
-        // `Set{1}.has('1')` is `false` (Set membership is strict
-        // equality), so a `Set<number>` model against string-valued
-        // options silently fails to drive the DOM on mount. Iterating
-        // is O(N) per option but multi-selects are small, and the
-        // ergonomic win matches the Array fast path's permissiveness.
-        let matched = false
-        for (const v of externalValue as Set<unknown>) {
-          if (String(v) === String(optionValue)) {
-            matched = true
-            break
-          }
-        }
-        option.selected = matched
-      } else {
-        // Set + non-primitive option (rare — option value bound via
-        // `:value="someObject"`): identity-based `.has` keeps Vue
-        // parity since `String({})` is useless for comparison.
-        option.selected = (externalValue as Set<unknown>).has(optionValue)
-      }
-    } else if (looseEqual(optionValue, externalValue)) {
+    if (looseEqual(getValue(option), externalValue)) {
       if (el.selectedIndex !== i) el.selectedIndex = i
       return
     }
   }
-  if (!isMultiple && el.selectedIndex !== -1) {
-    el.selectedIndex = -1
-  }
+  if (el.selectedIndex !== -1) el.selectedIndex = -1
 }
 
 // retrieve raw value set via :value bindings

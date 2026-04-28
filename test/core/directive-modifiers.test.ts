@@ -639,6 +639,35 @@ describe('vRegisterSelect — multi-select (Array / Set models)', () => {
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
   })
+
+  it('warns and bails when a non-multiple select receives an Array model in DEV', () => {
+    // Symmetric misuse: Array/Set model on a non-multiple `<select>`.
+    // The change handler would write `selectedVal[0]` (a scalar) to
+    // an Array path; the slim-primitive gate rejects, so user clicks
+    // silently fail. `looseEqual` also can't match a primitive option
+    // value to an Array, so no option ever appears highlighted on
+    // mount. Warn the dev to either add `multiple` or use a scalar
+    // schema.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    // Build a NON-multiple select for this test.
+    const select = document.createElement('select')
+    for (const v of ['a', 'b']) {
+      const opt = document.createElement('option')
+      opt.value = v
+      opt.text = v
+      select.appendChild(opt)
+    }
+    document.body.appendChild(select)
+    const { value } = makeRegisterValue<string[]>(['a'])
+
+    hooks.created?.(select, makeBinding(value, {}), makeVNode({}), null)
+    hooks.mounted?.(select, makeBinding(value, {}), makeVNode({}), null)
+
+    expect(warnSpy).toHaveBeenCalled()
+    // No option should be selected — bail leaves DOM as-is.
+    expect(select.selectedIndex).toBe(0) // browser default; not driven by us
+    warnSpy.mockRestore()
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────

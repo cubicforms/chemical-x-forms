@@ -511,11 +511,11 @@ drop writes.
 four patterns, each appropriate for different component shapes. The
 recommended pattern (for most cases) is `useRegister()`.
 
-### 1. Native form-element root (just works)
+### 1. Native form-element root
 
 When `MyComponent`'s root is `<input>` / `<select>` / `<textarea>`,
 the directive lands on the rendered DOM root and persistence /
-focus / blur tracking flows naturally.
+focus / blur tracking apply directly with no extra wiring.
 
 ```vue
 <!-- MyInput.vue -->

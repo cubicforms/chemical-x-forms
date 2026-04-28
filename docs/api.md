@@ -41,7 +41,7 @@ Options:
 | ----------------- | --------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `schema`          | `z.ZodType`                                                                                         | yes      | The Zod schema describing the form shape.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `key`             | `string`                                                                                            | no       | Form identity. Omit for one-off forms (runtime allocates a synthetic `__cx:anon:<id>` via `useId()`). Pass a string when you need cross-component lookup via `useFormContext(key)`, shared state across call-sites, a stable `persist` storage-key default, or a recognisable DevTools label. Keys starting with `__cx:` are reserved for the library's internal synthetic-key namespace; passing one throws `ReservedFormKeyError`.                                                                                                                                                                                                                                                                                                       |
-| `defaultValues`   | `DeepPartial<Form>`                                                                                 | no       | Constraints applied over schema defaults.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `defaultValues`   | `DeepPartial<WriteShape<Form>>`                                                                     | no       | Constraints applied over schema defaults. Refinement-invalid leaves that satisfy the slim primitive type at their path (e.g. `'teal'` against `z.enum(['red','green','blue'])`, a 4-character string against `z.string().min(8)`) pass through unchanged so SSR / autosave rehydration can land partial-but-saved state as-is. Wrong-primitive leaves (a number where a string is expected) are still replaced by the schema default.                                                                                                                                                                                                                                                                                                      |
 | `validationMode`  | `'lax'` \| `'strict'`                                                                               | no       | Defaults to `'strict'` — defaults that fail the schema seed `schemaErrors` at construction. Pass `'lax'` to opt out (multi-step wizards, placeholder rows). See [Types](#types).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `onInvalidSubmit` | `'none'` \| `'focus-first-error'` \| `'scroll-to-first-error'` \| `'both'`                          | no       | What to do when submit fails validation. See [recipe](./recipes/focus-on-error.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `fieldValidation` | `{ on, debounceMs }`                                                                                | no       | Live field validation. Default `{ on: 'change', debounceMs: 125 }` — errors track live. Pass `{ on: 'none' }` to opt out (submit-only). See [recipe](./recipes/field-level-validation.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -262,43 +262,80 @@ piece of form state as a named field. Grouped by concern:
 
 ### Reading values
 
-Reads use `NestedReadType<Form, Path>` — once the path crosses a
-numeric segment (e.g. `'posts.0.title'`), every result is
-`T | undefined`. Strict for paths that don't cross arrays; tuple
-positions stay strict (their length is static). Whole-form reads
-return `Readonly<Ref<WithIndexedUndefined<Form>>>` — every unbounded
-array's element type carries `| undefined`. Narrow with `?.` /
-optional checks at array-crossing paths.
+Reads reflect what's stored in the form. Storage holds slim-primitive-
+correct values under the [slim-write contract](#slim-write-contract):
+refinement-level constraints (`z.enum([...])`, `.min(N)`, `.email()`,
+`z.literal(...)`) are NOT enforced at write time — they surface as
+field errors instead. So `getValue` widens primitive-literal leaves to
+their primitive supertype (`'red' | 'green' | 'blue'` becomes `string`,
+`42` becomes `number`) to match what the store can actually hold.
 
-| Member                   | Type                                                  | What it does                                                                                                                            |
-| ------------------------ | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `getValue()`             | `Readonly<Ref<WithIndexedUndefined<Form>>>`           | Whole form reactive ref. Array elements typed `Item \| undefined`.                                                                      |
-| `getValue(path)`         | `Readonly<Ref<NestedReadType<Form, Path>>>`           | Single-field ref. Strict for non-array-crossing paths; `T \| undefined` once a numeric segment is crossed. Tuple positions stay strict. |
-| `getValue({ withMeta })` | `CurrentValueWithContext<WithIndexedUndefined<Form>>` | Whole form with meta. Same read-shape taint.                                                                                            |
-| `getFieldState(path)`    | `Ref<FieldState>`                                     | Per-field errors + touched / focused / blurred / isConnected flags.                                                                     |
+Array-crossing paths additionally taint with `| undefined`: once a
+path crosses a numeric segment (e.g. `'posts.0.title'`), every result
+is `T | undefined`. Tuple positions stay strict (their length is
+static). Whole-form reads taint every unbounded array's element type
+the same way. Narrow with `?.` / optional checks at array-crossing
+paths.
+
+For the strict, post-validation shape, route through `handleSubmit` /
+`validate*()` — those return the strict zod-inferred type and only
+fire after refinements are checked.
+
+| Member                   | Type                                                              | What it does                                                                                                                                                                                                                        |
+| ------------------------ | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getValue()`             | `Readonly<Ref<WithIndexedUndefined<WriteShape<Form>>>>`           | Whole form reactive ref. Primitive-literal leaves widened; array elements tainted `Item \| undefined`.                                                                                                                              |
+| `getValue(path)`         | `Readonly<Ref<NestedReadType<WriteShape<Form>, Path>>>`           | Single-field ref. Slim-widened at the leaf; `T \| undefined` once a numeric segment is crossed. Tuple positions stay strict.                                                                                                        |
+| `getValue({ withMeta })` | `CurrentValueWithContext<WithIndexedUndefined<WriteShape<Form>>>` | Whole form with meta. Same widening + taint.                                                                                                                                                                                        |
+| `getFieldState(path)`    | `Ref<FieldState<NestedReadType<WriteShape<Form>, Path>>>`         | Per-field state at the path. The data slots (`currentValue`, `originalValue`, `previousValue`) carry the widened leaf type; metadata (`errors`, `dirty`, `pristine`, `focused`, `blurred`, `touched`, `isConnected`) is unaffected. |
 
 ### Writing values
 
-Write APIs lead with strictness — `DeepPartial` is gone from both
-forms of `setValue`. Direct writes and the callback form's return
-value need the full write shape at the type level. Runtime
-mergeStructural still completes partials so dynamic / typecast
-inputs don't crash, but the type system points consumers at the
-canonical "give me the whole shape" pattern.
+#### Slim-write contract
 
-After every `setValue`, the form satisfies the slim schema (the
-structural-completeness invariant): sparse array writes auto-pad
-intermediate indices from the schema's element default, and partial
-object writes get sibling keys filled from the schema. Path-form
-callback `prev` is `NonNullable<NestedType<Form, Path>>` — fully
-defaulted before the callback fires, so consumer code reads
-`prev.first.toUpperCase()` without optional-chaining.
+Write surfaces (`setValue`, `setValueAtPath`, `defaultValues`,
+`reset`, persisted-state rehydration, `v-register` DOM-driven
+writes, field-array helpers) accept the slim primitive type at each
+path. The runtime gates writes on primitive `typeof`-style checks
+(`string`, `number`, `boolean`, `bigint`, `Date`, `null`,
+`undefined`, plain object, array, `Map`, `Set`); refinement-level
+constraints (`z.enum([...])`, `.email()`, `.min(N)`,
+`z.literal(...)`, regex matches) are NOT enforced at write time.
+They surface via the field-validation pipeline as entries in
+`fieldErrors` and are returned in full from `validate*()` /
+`handleSubmit` callbacks.
 
-| Member                     | Signature                                                                                                                                    | What it does                                                                                                                                                                                                                                                                                                                                                           |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `setValue(value)`          | `<V extends SetValuePayload<Form, WithIndexedUndefined<Form>>>(value: V) => boolean`                                                         | Replace the whole form. Callback form's `prev` is `WithIndexedUndefined<Form>` (honest about array-index reads). Programmatic — does NOT trigger persistence.                                                                                                                                                                                                          |
-| `setValue(path, value)`    | `<P extends FlatPath<Form>, V extends SetValuePayload<NestedType<Form, P>, NonNullable<NestedType<Form, P>>>>(path: P, value: V) => boolean` | Replace a single leaf or sub-tree. Callback form's `prev` is `NonNullable<NestedType<Form, P>>` — runtime auto-defaults missing slots before the callback fires. Programmatic — does NOT trigger persistence.                                                                                                                                                          |
-| `register(path, options?)` | `(path: P, options?: RegisterOptions) => RegisterValue<NestedReadType<Form, P>>`                                                             | Produces the binding the `v-register` directive consumes. Read shape carries `T \| undefined` at array-crossing paths; the directive renders `undefined` as empty correctly. `options.persist: true` opts the field into persistence; `options.acknowledgeSensitive: true` overrides the sensitive-name heuristic. See [persistence recipe](./recipes/persistence.md). |
+The TypeScript layer reflects this via `WriteShape<T>` — a
+recursive mapped type that widens primitive-literal leaves
+(`'red' | 'green' | 'blue'` → `string`, `42` → `number`) while
+preserving structure (objects recurse, tuples preserve positions,
+unbounded arrays widen elements). Object identity types like `Date`,
+`RegExp`, `Map`, `Set`, and functions pass through unchanged.
+
+`setValue` returns `boolean` — `true` on success, `false` when the
+slim-primitive gate rejected the write (wrong primitive at the
+path). Rejected writes also emit a one-shot dev-mode warning per
+`(path, kind)` pair. Field-array helpers (`append` / `prepend` /
+`insert` / `remove` / `swap` / `move` / `replace`) return the same
+boolean — `false` for both gate rejections and out-of-range index
+no-ops.
+
+#### Structural-completeness invariant
+
+After every `setValue`, the form satisfies the slim schema: sparse
+array writes auto-pad intermediate indices from the schema's
+element default, and partial object writes get sibling keys filled
+from the schema. Path-form callback `prev` is
+`NonNullable<NestedType<Form, Path>>` — fully defaulted before the
+callback fires, so consumer code reads `prev.first.toUpperCase()`
+without optional-chaining.
+
+#### Surfaces
+
+| Member                     | Signature                                                                                                                                                            | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setValue(value)`          | `<V extends SetValuePayload<WriteShape<Form>, WithIndexedUndefined<WriteShape<Form>>>>(value: V) => boolean`                                                         | Replace the whole form. Callback form's `prev` widens via `WriteShape<Form>` (matching what's actually storable) and taints array reads with `\| undefined`. Returns `false` if the slim-primitive gate rejects. Programmatic — does NOT trigger persistence.                                                                                                                                                                                |
+| `setValue(path, value)`    | `<P extends FlatPath<Form>, V extends SetValuePayload<WriteShape<NestedType<Form, P>>, NonNullable<WriteShape<NestedType<Form, P>>>>>(path: P, value: V) => boolean` | Replace a single leaf or sub-tree. Callback form's `prev` is `NonNullable<WriteShape<NestedType<Form, P>>>` — runtime auto-defaults missing slots before the callback fires. Returns `false` on slim-primitive rejection. Programmatic — does NOT trigger persistence.                                                                                                                                                                       |
+| `register(path, options?)` | `(path: P, options?: RegisterOptions) => RegisterValue<NestedReadType<WriteShape<Form>, P>>`                                                                         | Produces the binding the `v-register` directive consumes. `innerRef`'s read type widens via `WriteShape<Form>` (matches what's storable) and carries `\| undefined` at array-crossing paths; the directive renders `undefined` as empty correctly. `options.persist: true` opts the field into persistence; `options.acknowledgeSensitive: true` overrides the sensitive-name heuristic. See [persistence recipe](./recipes/persistence.md). |
 
 ### Validation + submission
 
@@ -363,10 +400,10 @@ with a dev-mode warning (use `setValue` / `handleSubmit` /
 
 ### Reset
 
-| Member             | Signature                            | What it does                                                                                                                               |
-| ------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `reset(next?)`     | `(next?: DeepPartial<Form>) => void` | Re-seed the whole form. Rebuilds originals, clears errors + touched + submit state. Wipes the persisted draft if `persist:` is configured. |
-| `resetField(path)` | `(path: FlatPath<Form>) => void`     | Restore one path (leaf or container) to its original value. Wipes the matching subpath from storage if `persist:` is configured.           |
+| Member             | Signature                                        | What it does                                                                                                                               |
+| ------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `reset(next?)`     | `(next?: DeepPartial<WriteShape<Form>>) => void` | Re-seed the whole form. Rebuilds originals, clears errors + touched + submit state. Wipes the persisted draft if `persist:` is configured. |
+| `resetField(path)` | `(path: FlatPath<Form>) => void`                 | Restore one path (leaf or container) to its original value. Wipes the matching subpath from storage if `persist:` is configured.           |
 
 ### Persistence (imperative)
 
@@ -392,15 +429,21 @@ configured — consistent API shape, zero overhead.
 
 ### Field arrays (typed)
 
-| Member                        | Signature                                                               |
-| ----------------------------- | ----------------------------------------------------------------------- |
-| `append(path, value)`         | Path narrowed to `ArrayPath<Form>`; value narrowed to `ArrayItem<...>`. |
-| `prepend(path, value)`        | Same typing as `append`.                                                |
-| `insert(path, index, value)`  | Same typing as `append`; index numeric.                                 |
-| `remove(path, index)`         | Numeric index.                                                          |
-| `swap(path, a, b)`            | Two numeric indices.                                                    |
-| `move(path, from, to)`        | Two numeric indices.                                                    |
-| `replace(path, index, value)` | Never grows the array.                                                  |
+All seven helpers return `boolean` — `true` on a successful write,
+`false` when the slim-primitive gate rejects the value or the
+operation is a no-op (out-of-range index on `remove` / `swap` /
+`move` / `replace`). Element types widen via
+`WriteShape<ArrayItem<...>>` to match what the store can hold.
+
+| Member                        | Returns   | Notes                                                                  |
+| ----------------------------- | --------- | ---------------------------------------------------------------------- |
+| `append(path, value)`         | `boolean` | Path narrowed to `ArrayPath<Form>`; value widened via `WriteShape<…>`. |
+| `prepend(path, value)`        | `boolean` | Same typing as `append`.                                               |
+| `insert(path, index, value)`  | `boolean` | Same typing as `append`; index numeric.                                |
+| `remove(path, index)`         | `boolean` | Numeric index. `false` on out-of-range.                                |
+| `swap(path, a, b)`            | `boolean` | Two numeric indices. `false` on out-of-range.                          |
+| `move(path, from, to)`        | `boolean` | Two numeric indices. `to` clamped to `[0, length]`.                    |
+| `replace(path, index, value)` | `boolean` | Never grows the array; `false` on out-of-range.                        |
 
 See [dynamic-field-arrays recipe](./recipes/dynamic-field-arrays.md)
 for the `v-for` pattern.
@@ -462,6 +505,7 @@ import type {
   ValidationResponse,
   ValidationResponseWithoutValue,
   WithIndexedUndefined,
+  WriteShape,
 } from '@chemical-x/forms'
 ```
 
@@ -476,8 +520,20 @@ The ones you'll touch most:
 - **`NestedReadType<Form, Path>`** — the read-side leaf type. Walks
   the path tracking whether a numeric segment was crossed; once
   tainted, all subsequent results are `T | undefined`. Tuple
-  positions stay strict. Used by `getValue` and `register`'s
-  return type.
+  positions stay strict. Composed with `WriteShape<...>` (see
+  below) at the call site for `getValue`, `getFieldState`, and
+  `register`.
+- **`WriteShape<T>`** — recursive mapped type that widens primitive-
+  literal leaves to their primitive supertype. `'red' | 'green'` →
+  `string`; `42` → `number`; nested objects recurse; tuples
+  preserve positions; unbounded arrays widen elements; `Date`,
+  `RegExp`, `Map`, `Set`, and functions pass through unchanged.
+  Applied to write surfaces (`setValue`, `defaultValues`,
+  `reset`, field-array helpers) and to read surfaces that observe
+  storage (`getValue`, `getFieldState.currentValue`,
+  `register.innerRef`). NOT applied to `handleSubmit` or
+  `validate*()` payloads — those run after validation, so the
+  strict zod-inferred shape is honest there.
 - **`WithIndexedUndefined<T>`** — recursive transform that taints
   every unbounded array's element type with `| undefined`. Tuples,
   `Date`, `RegExp`, `Map`, `Set`, and functions pass through
@@ -499,8 +555,13 @@ The ones you'll touch most:
   `Path`.
 - **`ValidationError`** — `{ path: readonly Segment[]; message:
 string; formKey: FormKey }`.
-- **`FieldState`** — `{ value, errors, isConnected, touched,
-focused, blurred, updatedAt }`.
+- **`FieldState<Value = unknown>`** — per-field reactive state at a
+  path: `currentValue` / `originalValue` / `previousValue` (typed
+  `Value`), `pristine` / `dirty` (booleans), `focused` / `blurred` /
+  `touched` (`boolean | null`), `errors` (`ValidationError[]`),
+  `meta` (`MetaTrackerValue`), and `isConnected` / `updatedAt`.
+  Defaults to `unknown` for legacy uses; `getFieldState(path)`
+  resolves `Value` to `WriteShape<NestedReadType<Form, Path>>`.
 - **`ValidationMode`** — `'lax' | 'strict'`. Defaults to `'strict'` —
   the data layer reports schema errors immediately when defaults fail.
   Use `'lax'` to opt out (multi-step wizards, placeholder rows in field

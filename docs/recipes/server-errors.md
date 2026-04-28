@@ -1,16 +1,10 @@
 # Server errors (HTTP 4xx validation failures)
 
-Client-side schema validation rejects bad shape before the request
-leaves the browser. The server has rules the client doesn't —
-"email already taken", "coupon expired", "we couldn't reach the
-payment provider" — and those come back as `fieldErrors` via the
-two-step pattern: parse the payload with `parseApiErrors`, write
-the result with `setFieldErrors` (or `addFieldErrors`).
-
-The form API has only one error setter on it (`setFieldErrors` /
-`addFieldErrors` / `clearFieldErrors`); shape adapters live as pure
-helpers exported alongside `useForm`. One canonical write surface,
-explicit transformation step.
+Server-side rules the client doesn't know — "email already taken",
+"coupon expired", "we couldn't reach the payment provider" — surface
+as `fieldErrors` via a two-step pattern: parse the payload with
+`parseApiErrors`, write the result with `setFieldErrors` (or
+`addFieldErrors`).
 
 ## The usual case
 
@@ -73,19 +67,6 @@ The two flavours surface together in `fieldErrors[path]` (schema
 entries first, user entries second), so templates render both
 without branching.
 
-## Why two steps instead of one
-
-Earlier versions shipped a `form.setFieldErrorsFromApi(payload)`
-shortcut. We removed it in 0.12: an error is an error, regardless
-of where it came from, and the form's setter surface should reflect
-that. Shape adapters belong as pure exported helpers — they're
-unit-testable in isolation, don't need a form mounted, and scale
-cleanly when other shapes (GraphQL, JSON:API, etc.) come along.
-
-The result is one canonical setter (`setFieldErrors`) plus
-composable parsers. The two-step pattern reads as what's actually
-happening: parse → write.
-
 ## The result type
 
 `parseApiErrors` returns a discriminated result so you can detect
@@ -103,8 +84,8 @@ type ParseApiErrorsResult = {
   empty (server returned a 422 with no field-level details).
 - `{ ok: false, errors: [], rejected }` — payload shape wasn't
   recognised. `rejected` carries a reason ("payload was string,
-  expected object", "details was not a record of string |
-  string[]", etc.). Log it; don't apply.
+  expected object", "entries must be `{ message, code }` objects",
+  etc.). Log it; don't apply.
 
 ```ts
 const result = parseApiErrors(err.data, { formKey: form.key })
@@ -117,35 +98,70 @@ if (result.ok) {
 
 ## Payload shapes
 
-Two shapes work out of the box. A wrapped envelope:
+Every entry is `{ message, code }` (both required). The `code` is
+forwarded verbatim onto the produced `ValidationError` so error
+renderers branch on `code` instead of message strings.
+
+A wrapped envelope:
 
 ```ts
 {
   error: {
     details: {
-      email: 'already taken',
-      password: ['too short', 'must contain a digit'],
+      email: { message: 'already taken', code: 'api:duplicate-email' },
+      password: [
+        { message: 'too short', code: 'api:min-length' },
+        { message: 'must contain a digit', code: 'api:digit-required' },
+      ],
     },
   },
 }
 ```
 
-Or a bare details record:
+A bare details record works the same way:
 
 ```ts
 {
-  email: 'already taken',
-  password: ['too short', 'must contain a digit'],
+  email: { message: 'already taken', code: 'api:duplicate-email' },
+  password: [
+    { message: 'too short', code: 'api:min-length' },
+    { message: 'must contain a digit', code: 'api:digit-required' },
+  ],
 }
 ```
 
-Keys are dotted paths (`'user.email'`, `'items.0.qty'`). Values can
-be a string or an array of strings — both normalise into
-`ValidationError[]`.
+Keys are dotted paths (`'user.email'`, `'items.0.qty'`). A field's
+value is either a single entry or an array — array entries each
+produce their own `ValidationError`, so a single field can carry
+multiple distinct failures with their own codes.
 
-Anything else — numbers, booleans, nested objects — returns
-`{ ok: false, rejected }`. Inspect the result to branch on that
-case.
+Pick a prefix for your codes (`api:`, `auth:`, `myapp:`) and stay
+consistent so consumer error-rendering UIs can switch on `code`.
+
+Legacy string entries (`{ email: 'taken' }`), entries missing
+`code`, and entries with non-string `code` are rejected as
+`{ ok: false, rejected }`.
+
+## Branching on `code`
+
+```ts
+import { CxErrorCode } from '@chemical-x/forms'
+
+for (const err of form.fieldErrors.email ?? []) {
+  if (err.code === 'api:duplicate-email') {
+    // server-side uniqueness failure
+  } else if (err.code === CxErrorCode.NoValueSupplied) {
+    // user opened the form and didn't fill the field
+  } else if (err.code.startsWith('zod:')) {
+    // schema-level validation failure
+  }
+}
+```
+
+`CxErrorCode` exports the library-internal codes; the `zod:` prefix
+is computed inline from `issue.code`; consumer codes (`api:`,
+`auth:`, etc.) come from the wire payload or direct
+`setFieldErrors` calls.
 
 ## Pairing with focus-on-error
 
@@ -180,9 +196,10 @@ parser and construct the entries directly:
 if (err.statusCode === 422) {
   form.clearFieldErrors('coupon')
   form.addFieldErrors(
-    (err.data.coupon ?? []).map((message: string) => ({
+    (err.data.coupon ?? []).map((entry: { message: string; code: string }) => ({
       path: ['coupon'],
-      message,
+      message: entry.message,
+      code: entry.code,
       formKey: form.key,
     }))
   )
@@ -251,9 +268,10 @@ can confuse error-surfacing logic. Pre-parse the payload with a Zod
 schema to reject anything unexpected:
 
 ```ts
+const Entry = z.object({ message: z.string(), code: z.string() })
 const ErrorPayload = z.object({
   error: z.object({
-    details: z.record(z.string(), z.union([z.string(), z.array(z.string())])),
+    details: z.record(z.string(), z.union([Entry, z.array(Entry)])),
   }),
 })
 

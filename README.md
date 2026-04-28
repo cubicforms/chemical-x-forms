@@ -90,7 +90,9 @@ See the [API reference](./docs/api.md) for the complete surface.
 - **Live validation** — debounced `'change'` mode by default; `'blur'` and `'none'` available; async refinements run from `handleSubmit`, the reactive `validate()` ref, and `validateAsync(path?)`.
 - **Field arrays** — `append` / `prepend` / `insert` / `remove` / `swap` / `move` / `replace`. Path and element type narrow at the call site.
 - **Drafts + undo / redo** — persistence to `localStorage`, `sessionStorage`, IndexedDB, or a custom [`FormStorage`](./docs/recipes/persistence.md#custom-backend); bounded snapshot stack with imperative `undo()` / `redo()` and `state.canUndo` / `state.canRedo` flags.
-- **Server errors** — `parseApiErrors(payload)` normalises the common envelope shapes into `ValidationError[]`; pass to `setFieldErrors` to apply. User-injected errors are stored separately from schema errors and survive schema revalidation and successful submits.
+- **Server errors** — `parseApiErrors(payload)` accepts a strict `{ message, code }` per-entry wire format, normalises into `ValidationError[]`, and pairs with `setFieldErrors`. User-injected errors are stored separately from schema errors and survive schema revalidation and successful submits.
+- **Stable error codes** — every `ValidationError` carries a required `code: string` for branching. `cx:` (library), `zod:` (adapter), and consumer-chosen prefixes coexist; `CxErrorCode` is exported for typed comparisons.
+- **Clearable required fields** — the `unset` sentinel (`defaultValues`, `setValue`, `reset`) marks a primitive leaf displayed-empty while storage stays well-typed. Submit fails with `'No value supplied'` for required schemas; `.optional()` / `.nullable()` / `.default(N)` opt out. Construction-time auto-mark applies to every primitive leaf the consumer didn't supply.
 - **SSR** — supported under Nuxt and bare Vue + `@vue/server-renderer`. Nuxt handles the payload round-trip automatically; bare Vue uses `renderChemicalXState` / `hydrateChemicalXState` (see [SSR recipe](./docs/recipes/ssr-hydration.md)).
 
 ## Documentation

@@ -237,14 +237,21 @@ The persisted payload contains only opted-in paths:
 
 // Persisted payload, written under key chemical-x-forms:signup:${fingerprint}
 {
-  v: 2,                                          // cx-internal envelope version
+  v: 4,                                          // cx-internal envelope version
   data: { form: { email: '…', phone: '…' } }     // no `cvv`
 }
 ```
 
-The `v: 2` field on the envelope is internal to cx — it tracks the
+The `v` field on the envelope is internal to cx — it tracks the
 on-disk format and is bumped only when cx itself changes the
-serialised shape. Consumers don't (and now can't) set it.
+serialised shape. Consumers don't (and now can't) set it. Drafts
+saved against a stale envelope version are dropped with a one-time
+dev-warn on read.
+
+The envelope also round-trips the form's transient-empty set when
+populated, so a numeric field cleared by the user stays visually
+empty after reload (storage holds the slim default; the displayed-
+empty state survives).
 
 On hydration, opted-in fields restore from storage; non-opted fields
 come from schema defaults. The opt-in set can change between mounts

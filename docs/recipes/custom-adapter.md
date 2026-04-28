@@ -7,7 +7,7 @@ without forking the library.
 
 ## The contract
 
-Five methods:
+Seven methods:
 
 ```ts
 type AbstractSchema<Form, GetValueFormType = Form> = {
@@ -15,6 +15,8 @@ type AbstractSchema<Form, GetValueFormType = Form> = {
   getDefaultValues(config): DefaultValuesResponse<Form>
   getDefaultAtPath(path: Path): unknown
   getSchemasAtPath(path: Path): AbstractSchema<unknown, GetValueFormType>[]
+  getSlimPrimitiveTypesAtPath(path: Path): Set<SlimPrimitiveKind>
+  isRequiredAtPath(path: Path): boolean
   validateAtPath(data: unknown, path: Path | undefined): Promise<ValidationResponse<Form>>
 }
 ```
@@ -36,6 +38,18 @@ type AbstractSchema<Form, GetValueFormType = Form> = {
   at `path`. `path` is the canonical `Segment[]`, not a dotted
   string. Advanced introspection hook; return `[]` if you don't
   use it.
+- **`getSlimPrimitiveTypesAtPath(path)`** — returns the set of
+  primitive `typeof`-style kinds the path's leaf accepts at write
+  time (`'string'`, `'number'`, `'boolean'`, `'bigint'`, etc.). The
+  runtime calls this to gate the slim-primitive write contract.
+  Return `PERMISSIVE` for paths the schema doesn't declare so
+  dynamic writes don't get rejected.
+- **`isRequiredAtPath(path)`** — returns `true` when the leaf is
+  required (no `.optional()` / `.nullable()` / `.default()` /
+  `.catch()` wrapper). Used by the transient-empty validation
+  augmentation to raise `'No value supplied'` for unfilled required
+  fields. Return `false` for any wrapper that admits the empty
+  case.
 - **`validateAtPath(data, path?)`** — returns
   `Promise<ValidationResponse>`. `path` is a `Segment[]` or
   `undefined` (whole-form validation).
@@ -113,6 +127,22 @@ export function myLibAdapter<F extends GenericForm>(schema: MyLibSchema<F>): Abs
       return []
     },
 
+    getSlimPrimitiveTypesAtPath(path) {
+      // Return the set of primitive `typeof`-style kinds the leaf
+      // at `path` accepts. Pick a sensible permissive fallback for
+      // unknown paths — over-rejecting writes here breaks dynamic
+      // / SSR-rehydration flows.
+      return walkSchemaToSlimPrimitives(schema, path) ?? PERMISSIVE
+    },
+
+    isRequiredAtPath(path) {
+      // Return true when the leaf is required. A wrapper around the
+      // leaf that admits the empty case (Optional, Nullable, Default,
+      // Catch) means the leaf is NOT required — return false.
+      const leaf = walkSchemaToLeaf(schema, path)
+      return leaf !== undefined && !isOptionalLikeWrapper(leaf)
+    },
+
     async validateAtPath(data, _path): Promise<ValidationResponse<F>> {
       const result = schema.parse(data)
       if (result.success) {
@@ -124,6 +154,10 @@ export function myLibAdapter<F extends GenericForm>(schema: MyLibSchema<F>): Abs
           path: issue.path,
           message: issue.message,
           formKey: '',
+          // Pick a stable scope prefix for your adapter and forward
+          // the library's issue code under it. Consumers branch on
+          // `error.code` for adapter-agnostic UI logic.
+          code: `mylib:${issue.code ?? 'unknown'}`,
         })),
         success: false,
         formKey: '',
@@ -335,8 +369,14 @@ Minimum coverage:
   around primitives).
 - `getDefaultAtPath` returns `undefined` for paths not in the
   schema.
+- `getSlimPrimitiveTypesAtPath` returns the leaf's primitive kinds
+  for known paths, and a permissive fallback for unknown paths.
+- `isRequiredAtPath` returns `true` for plain leaves and `false`
+  for `Optional` / `Nullable` / `Default` / `Catch` wrappers.
 - `validateAtPath` returns `{ success: true }` for valid input.
-- `validateAtPath` returns structured `ValidationError[]` for invalid input.
+- `validateAtPath` returns structured `ValidationError[]` for
+  invalid input — every entry carries a non-empty `code` under
+  your chosen scope prefix.
 - `validateAtPath(undefined)` validates the whole form.
 - `fingerprint()` is stable across calls on the same schema.
 - `fingerprint()` matches for two schemas with the same shape but

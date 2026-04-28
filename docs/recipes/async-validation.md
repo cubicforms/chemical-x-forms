@@ -84,7 +84,10 @@ validation run is in flight — submit, reactive `validate()`, or
 Async validation covers what the **schema** knows. Real server
 errors (payment declined, coupon expired) still arrive after a real
 POST — parse them via `parseApiErrors` and write them with
-`setFieldErrors` in your `catch`:
+`setFieldErrors` in your `catch`. Wire entries are
+`{ message, code }` (both required); see the
+[server-errors recipe](./server-errors.md) for the full payload
+shape.
 
 ```ts
 import { parseApiErrors } from '@chemical-x/forms'

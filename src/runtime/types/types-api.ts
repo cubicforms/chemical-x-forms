@@ -895,15 +895,28 @@ export type RegisterValue<Value = unknown> = {
    * template that reads `getFieldState(path).isConnected` doesn't
    * flicker on hydration. The `v-register` directive calls this for
    * you; no-op on the client.
+   * @internal
    */
   markConnectedOptimistically: () => void
-  /** Canonical path key. Used by directive integrations. */
+  /**
+   * Canonical path key. Used by directive integrations.
+   * @internal
+   */
   path: PathKey
-  /** Whether this binding opted into persistence via `register(path, { persist: true })`. */
+  /**
+   * Whether this binding opted into persistence via `register(path, { persist: true })`.
+   * @internal
+   */
   persist: boolean
-  /** Whether this binding acknowledged a sensitive-name override. */
+  /**
+   * Whether this binding acknowledged a sensitive-name override.
+   * @internal
+   */
   acknowledgeSensitive: boolean
-  /** Per-element persistence opt-in registry. Used by directive integrations. */
+  /**
+   * Per-element persistence opt-in registry. Used by directive integrations.
+   * @internal
+   */
   persistOptIns: PersistOptInRegistry
 }
 

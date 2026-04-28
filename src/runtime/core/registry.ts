@@ -56,9 +56,15 @@ export type PendingHydration = Map<FormKey, SerializedFormData>
  * explicitly only when wiring SSR or a custom plugin integration.
  */
 export type ChemicalXRegistry = {
-  /** Live forms keyed by `FormKey`. */
+  /**
+   * Live forms keyed by `FormKey`.
+   * @internal
+   */
   readonly forms: Map<FormKey, FormStore<GenericForm>>
-  /** Snapshots staged by `hydrateChemicalXState` waiting to be consumed by the next `useForm` call. */
+  /**
+   * Snapshots staged by `hydrateChemicalXState` waiting to be consumed by the next `useForm` call.
+   * @internal
+   */
   readonly pendingHydration: PendingHydration
   /** `true` while running on the server during SSR; `false` on the client. */
   readonly isSSR: boolean
@@ -69,12 +75,14 @@ export type ChemicalXRegistry = {
    * when the consumer unmounts. The form is evicted automatically
    * when the last consumer disposes, so long-running SPAs don't
    * leak detached state across navigations.
+   * @internal
    */
   readonly trackConsumer: (key: FormKey) => () => void
   /**
    * Wait for all pending persistence writes across every live form
    * to settle. Useful for SSR shutdown and integration tests that
    * need a deterministic teardown.
+   * @internal
    */
   readonly shutdown: () => Promise<void>
 }
@@ -101,9 +109,9 @@ export const kFormContext: InjectionKey<FormStore<GenericForm>> = Symbol(
   'chemical-x-forms:form-context'
 )
 
-/** Also attached to `app._chemicalX` so serialization helpers can access it without setup context. */
 declare module 'vue' {
   interface App {
+    /** @internal */
     _chemicalX?: ChemicalXRegistry
   }
 }

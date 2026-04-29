@@ -41,6 +41,31 @@ export type BuildFormApiOptions = {
 }
 
 /**
+ * Wrap a Set in a read-only facade. `Object.freeze(new Set(...))` does
+ * NOT prevent `add` / `delete` / `clear` mutations on the underlying
+ * Set — those methods bypass the frozen state. The Proxy traps the
+ * mutating methods and rebinds method/getter access to the underlying
+ * Set so internal-slot accesses (e.g. `size`, `has`) keep working.
+ */
+function readonlySetSnapshot<T>(source: Iterable<T>): ReadonlySet<T> {
+  const snapshot = new Set(source)
+  return new Proxy(snapshot, {
+    get(target, prop) {
+      if (prop === 'add' || prop === 'delete' || prop === 'clear') {
+        return () => {
+          throw new TypeError(`Cannot mutate readonly Set: '${String(prop)}' is not allowed.`)
+        }
+      }
+      // Bind the result to `target` so Set's internal-slot accessors
+      // (`size`, `has`, `forEach`, the iterator protocol) receive the
+      // underlying Set as `this` instead of the Proxy.
+      const value = Reflect.get(target, prop, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  }) as ReadonlySet<T>
+}
+
+/**
  * Build the public form API from a FormStore. Extracted from
  * `useAbstractForm` so that both the top-level form entry (which creates
  * a fresh state) and `useFormContext` (which resolves state from an
@@ -385,11 +410,13 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // Read-only view of the form's transient-empty path set. Vue 3.5
   // tracks `.has()` / `for..of` / size accesses on a reactive Set,
   // so the computed below is a lazy, dependency-tracked passthrough.
-  // Wrapped in `Object.freeze` so consumers can't mutate the snapshot
-  // they receive — writes still go through `setValue(_, unset)` /
+  // Wrapped in a Proxy that traps mutating methods so consumers can't
+  // pollute the snapshot they receive (`Object.freeze` does NOT make
+  // a Set readonly — `add` / `delete` / `clear` still work on frozen
+  // Sets). Writes still go through `setValue(_, unset)` /
   // `markTransientEmpty()` / the directive's input listener.
   const transientEmptyPathsView = computed<ReadonlySet<string>>(() => {
-    return Object.freeze(new Set<string>(state.transientEmptyPaths))
+    return readonlySetSnapshot(state.transientEmptyPaths)
   })
 
   return {

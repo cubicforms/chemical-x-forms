@@ -107,6 +107,15 @@ function generateEqualityExpression(
 
     // capture the current expression for the next round
     _previousOptionExpressions.push(['(', ...selectValueArr, ') === (', ...optionValueArr, ')'])
+    // Single-select branch String-coerces both sides to mirror the
+    // runtime directive's `looseEqual`-style match — a typed-numeric
+    // model (`z.number()`) matches `<option value="1">` at SSR time.
+    // The `typeof !== 'object'` guard preserves the pre-existing
+    // "array model on a single-select doesn't match" behaviour: an
+    // array stringifies to its joined elements, which would otherwise
+    // false-positive against a single-element option.
+    // The multi-select branch keeps `innerRef.value` because Array
+    // / Set models need findIndex / membership iteration.
     if (!noMultipleOptExpressions.length) {
       return [
         '(',
@@ -115,11 +124,13 @@ function generateEqualityExpression(
         ...selectValueArr,
         `)?.innerRef?.value?.findIndex?.(el => el === (`,
         ...optionValueArr,
-        `)) > -1) : ((`,
+        `)) > -1) : (typeof (`,
         ...selectValueArr,
-        `)?.innerRef?.value === (`,
+        `)?.innerRef?.value !== 'object' && String((`,
+        ...selectValueArr,
+        `)?.innerRef?.value) === String((`,
         ...optionValueArr,
-        `))`,
+        `)))`,
       ]
     }
 
@@ -132,11 +143,13 @@ function generateEqualityExpression(
       ...optionValueArr,
       `)) > -1) : ((`,
       ...noMultipleOptExpressions, // if true, we already found the relevant option
-      `) ? false : ((`,
+      `) ? false : (typeof (`,
       ...selectValueArr,
-      `)?.innerRef?.value === (`,
+      `)?.innerRef?.value !== 'object' && String((`,
+      ...selectValueArr,
+      `)?.innerRef?.value) === String((`,
       ...optionValueArr,
-      `)))`,
+      `))))`,
     ]
   }
 
@@ -266,9 +279,10 @@ function inferOptionValueFromChildren(node: TemplateChildNode | RootNode): strin
   // Mirror Vue's option-value semantic: trim leading/trailing whitespace
   // so `<option> apple </option>` matches a model value of `'apple'`.
   const text = only.content.trim()
-  // Escape single quotes so the rendered JS literal stays valid.
-  const escaped = text.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-  return `'${escaped}'`
+  // Emit a fully escaped JS string literal — `JSON.stringify` covers
+  // backslashes, quotes, and line terminators (`\n`, `\r`, U+2028,
+  // U+2029) so the synthesized literal stays single-line and valid.
+  return JSON.stringify(text)
 }
 
 /**

@@ -701,12 +701,23 @@ function wirePersistence<F extends GenericForm>(
     const baseForm = existing?.data.form ?? ({} as F)
     const value = getAtPath(toRaw(state.form.value), path)
     const nextForm = setAtPath(baseForm, path, value) as F
-    // Refresh this path's transient-empty entry while preserving
-    // entries for OTHER paths the previous mount persisted.
+    // Refresh this path's transient-empty entry — and any descendants
+    // — while preserving entries for OTHER paths the previous mount
+    // persisted. Non-leaf writes (`writePathImmediately('user')`)
+    // overwrite the entire subtree, so any disk entries below the
+    // write path are dropped first; the live in-memory set then
+    // contributes whatever marks are still active under that subtree.
     const { key: pathKey } = canonicalizePath(path)
-    const transientSet = new Set<string>(existing?.data.transientEmptyPaths ?? [])
-    if (state.transientEmptyPaths.has(pathKey)) transientSet.add(pathKey)
-    else transientSet.delete(pathKey)
+    const transientSet = new Set<string>(
+      (existing?.data.transientEmptyPaths ?? []).filter(
+        (k) => k !== pathKey && !isDescendantPathKey(k, pathKey)
+      )
+    )
+    for (const liveKey of state.transientEmptyPaths) {
+      if (liveKey === pathKey || isDescendantPathKey(liveKey, pathKey)) {
+        transientSet.add(liveKey)
+      }
+    }
     if (include === 'form') {
       await adapter.setItem(
         key,
@@ -761,11 +772,15 @@ function wirePersistence<F extends GenericForm>(
       return
     }
     const { key: pathKey } = canonicalizePath(path)
-    // Drop the cleared path from the persisted transient-empty list
-    // so a later mount doesn't restore an "empty" UI state for a
-    // path that no longer has any value behind it.
+    // Drop the cleared path AND every descendant from the persisted
+    // transient-empty list so a later mount doesn't restore an
+    // "empty" UI state for a path that no longer has any value
+    // behind it. Non-leaf clears (`clearPersistedDraft('user')`)
+    // wipe the whole user.* subtree.
     const transientSet = new Set(
-      (existing.data.transientEmptyPaths ?? []).filter((k) => k !== pathKey)
+      (existing.data.transientEmptyPaths ?? []).filter(
+        (k) => k !== pathKey && !isDescendantPathKey(k, pathKey)
+      )
     )
     if (include === 'form') {
       await adapter.setItem(
@@ -834,6 +849,24 @@ function isEmptyContainer(value: unknown): boolean {
   if (Array.isArray(value)) return value.length === 0
   if (isPlainRecord(value)) return Object.keys(value).length === 0
   return false
+}
+
+/**
+ * `true` when `candidate` names a strict descendant of `ancestor` in
+ * canonical PathKey form (`JSON.stringify(segments)`).
+ *
+ * `'["user"]'` is the ancestor; `'["user","age"]'` and
+ * `'["user","address","line1"]'` are descendants. A pure prefix match
+ * isn't enough — `'["userId"]'` shares the `'["user'` prefix with
+ * `'["user"]'` but is not a descendant. The check anchors on the
+ * comma that separates the parent's last segment from its first
+ * child segment.
+ */
+function isDescendantPathKey(candidate: string, ancestor: string): boolean {
+  if (candidate.length <= ancestor.length) return false
+  if (!ancestor.endsWith(']')) return false
+  const childPrefix = `${ancestor.slice(0, -1)},`
+  return candidate.startsWith(childPrefix)
 }
 
 export type { FieldStateView }

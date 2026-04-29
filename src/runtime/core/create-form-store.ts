@@ -1168,6 +1168,13 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
 
   function isPristineAtPath(path: Path): boolean {
     const { key, segments } = canonicalizePath(path)
+    // Storage match is necessary but not sufficient: a primitive leaf
+    // toggled between "displayed empty" (transient-empty + slim default)
+    // and "explicitly the slim default" carries the same storage value
+    // but differs visually. Compare both surfaces against the originals
+    // snapshot so the transient-empty contract dirties when membership
+    // diverges.
+    if (transientEmptyPaths.has(key) !== originalsTransientEmpty.has(key)) return false
     const entry = originals.get(key)
     if (entry === undefined) return true
     return Object.is(getAtPath(form.value, segments), entry.value)

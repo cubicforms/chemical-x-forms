@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
@@ -37,6 +37,11 @@ class MemoryStorage implements Storage {
     this.store.set(key, String(value))
   }
 }
+const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+const originalSessionStorageDescriptor = Object.getOwnPropertyDescriptor(
+  globalThis,
+  'sessionStorage'
+)
 Object.defineProperty(globalThis, 'localStorage', {
   value: new MemoryStorage(),
   configurable: true,
@@ -44,6 +49,21 @@ Object.defineProperty(globalThis, 'localStorage', {
 Object.defineProperty(globalThis, 'sessionStorage', {
   value: new MemoryStorage(),
   configurable: true,
+})
+
+afterAll(() => {
+  // Restore the platform Storage globals so later test files in the
+  // same worker observe jsdom's real implementations.
+  if (originalLocalStorageDescriptor !== undefined) {
+    Object.defineProperty(globalThis, 'localStorage', originalLocalStorageDescriptor)
+  } else {
+    delete (globalThis as { localStorage?: Storage }).localStorage
+  }
+  if (originalSessionStorageDescriptor !== undefined) {
+    Object.defineProperty(globalThis, 'sessionStorage', originalSessionStorageDescriptor)
+  } else {
+    delete (globalThis as { sessionStorage?: Storage }).sessionStorage
+  }
 })
 
 /**

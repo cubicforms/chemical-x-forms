@@ -85,10 +85,25 @@ Assume your library exposes:
 import type {
   AbstractSchema,
   DefaultValuesResponse,
+  SlimPrimitiveKind,
   ValidationError,
   ValidationResponse,
 } from '@chemical-x/forms'
 import type { DeepPartial, GenericForm } from '@chemical-x/forms'
+
+// Permissive fallback used by `getSlimPrimitiveTypesAtPath` when the
+// schema doesn't declare a path. Adapter-specific — your library's
+// supported primitive kinds may differ.
+const PERMISSIVE: ReadonlySet<SlimPrimitiveKind> = new Set<SlimPrimitiveKind>([
+  'string',
+  'number',
+  'boolean',
+  'bigint',
+  'symbol',
+  'date',
+  'undefined',
+  'null',
+])
 
 export function myLibAdapter<F extends GenericForm>(schema: MyLibSchema<F>): AbstractSchema<F, F> {
   return {

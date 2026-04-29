@@ -195,8 +195,12 @@ parser and construct the entries directly:
 ```ts
 if (err.statusCode === 422) {
   form.clearFieldErrors('coupon')
+  // Wire entries are { message, code } — the field's value can be
+  // a single entry or an array. Normalise so .map() handles both.
+  const raw = err.data.coupon
+  const entries: { message: string; code: string }[] = Array.isArray(raw) ? raw : raw ? [raw] : []
   form.addFieldErrors(
-    (err.data.coupon ?? []).map((entry: { message: string; code: string }) => ({
+    entries.map((entry) => ({
       path: ['coupon'],
       message: entry.message,
       code: entry.code,

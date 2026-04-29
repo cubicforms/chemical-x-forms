@@ -41,7 +41,7 @@ describe('selectNodeTransform — option value fallback (D3)', () => {
   it('falls back to static text content when value= is missing', () => {
     const code = compileWithTransform(`<select v-register="fruit"><option>apple</option></select>`)
     expect(countSelectedBindings(code)).toBeGreaterThan(0)
-    expect(code).toContain("'apple'") // synthesized as a string literal
+    expect(code).toContain('"apple"') // synthesized as a JSON string literal
   })
 
   it('synthesizes the value with whitespace trimmed', () => {
@@ -49,12 +49,24 @@ describe('selectNodeTransform — option value fallback (D3)', () => {
       `<select v-register="fruit"><option>  apple  </option></select>`
     )
     expect(countSelectedBindings(code)).toBeGreaterThan(0)
-    expect(code).toContain("'apple'")
+    expect(code).toContain('"apple"')
   })
 
   it('escapes single quotes in the synthesised text literal', () => {
     const code = compileWithTransform(`<select v-register="kind"><option>a'b</option></select>`)
-    expect(code).toContain("'a\\'b'")
+    // JSON.stringify wraps in double quotes — single quotes inside don't need escaping.
+    expect(code).toContain('"a\'b"')
+  })
+
+  it('emits a JSON string literal (covers backslashes alongside quotes and line terminators)', () => {
+    // JSON.stringify is the escape mechanism for option-value literals.
+    // A backslash in the option text round-trips as `\\` in the
+    // generated JS, locking the escape strategy without having to
+    // construct a template that survives Vue's text-node whitespace
+    // normalisation. JSON.stringify also handles U+2028 / U+2029 per
+    // the JSON spec.
+    const code = compileWithTransform(`<select v-register="kind"><option>a\\b</option></select>`)
+    expect(code).toContain('"a\\\\b"')
   })
 
   it('skips :selected binding when option children are interpolated', () => {

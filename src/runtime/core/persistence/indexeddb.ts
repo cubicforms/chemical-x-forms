@@ -65,6 +65,10 @@ function openDb(): Promise<IDBDatabase | null> {
           '[@chemical-x/forms] IndexedDB open blocked (another tab holds an older version); persistence disabled until the conflict resolves.'
         )
       }
+      // `onblocked` is transient — the holding tab can close at any
+      // moment. Clear the cache so the next persistence call retries
+      // the open instead of permanently no-opping.
+      dbPromise = null
       resolve(null)
     }
   })

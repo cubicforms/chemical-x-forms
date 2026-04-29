@@ -300,7 +300,7 @@ export type ArrayItem<Form, Path extends ArrayPath<Form>> =
  * payloads have been parsed by the schema, so the widened shape
  * doesn't apply.
  */
-export type WriteShape<T> = T extends string | number | boolean | bigint | null | undefined
+export type WriteShape<T> = T extends string | number | boolean | bigint | symbol | null | undefined
   ? T extends string
     ? string
     : T extends number
@@ -309,7 +309,9 @@ export type WriteShape<T> = T extends string | number | boolean | bigint | null 
         ? boolean
         : T extends bigint
           ? bigint
-          : T
+          : T extends symbol
+            ? symbol
+            : T
   : T extends Date | RegExp | Map<unknown, unknown> | Set<unknown> | ((...args: never) => unknown)
     ? T
     : T extends readonly [unknown, ...unknown[]]
@@ -345,7 +347,14 @@ export type WriteShape<T> = T extends string | number | boolean | bigint | null 
  * Used by `UseFormConfiguration.defaultValues`, `setValue`'s value
  * parameter, and `reset`'s parameter (commit 7 widens all three).
  */
-export type DefaultValuesShape<T> = T extends string | number | boolean | bigint | null | undefined
+export type DefaultValuesShape<T> = T extends
+  | string
+  | number
+  | boolean
+  | bigint
+  | symbol
+  | null
+  | undefined
   ? T extends string
     ? string | Unset
     : T extends number
@@ -354,7 +363,9 @@ export type DefaultValuesShape<T> = T extends string | number | boolean | bigint
         ? boolean | Unset
         : T extends bigint
           ? bigint | Unset
-          : T
+          : T extends symbol
+            ? symbol
+            : T
   : T extends Date | RegExp | Map<unknown, unknown> | Set<unknown> | ((...args: never) => unknown)
     ? T
     : T extends readonly [unknown, ...unknown[]]

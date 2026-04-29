@@ -160,6 +160,12 @@ export function createRegistry(options: CreateRegistryOptions = {}): ChemicalXRe
   // avoids triggering watchers when we increment on every mount.
   const consumers = new Map<FormKey, number>()
 
+  // Stores that have been evicted from `forms` but still have a
+  // pending drain. `shutdown()` awaits these too so a process-exit
+  // hook doesn't tear down before debounced writes from already-
+  // unmounted forms have a chance to flush.
+  const evicting = new Set<FormStore<GenericForm>>()
+
   function trackConsumer(key: FormKey): () => void {
     consumers.set(key, (consumers.get(key) ?? 0) + 1)
     let disposed = false
@@ -182,10 +188,12 @@ export function createRegistry(options: CreateRegistryOptions = {}): ChemicalXRe
         // closure here even after `forms.delete`.
         forms.delete(key)
         if (state !== undefined) {
+          evicting.add(state)
           void state
             .awaitPendingWrites()
             .catch(() => undefined)
             .finally(() => {
+              evicting.delete(state)
               state.dispose()
             })
         }
@@ -198,7 +206,9 @@ export function createRegistry(options: CreateRegistryOptions = {}): ChemicalXRe
   async function shutdown(): Promise<void> {
     // Snapshot the keys — `awaitPendingWrites` may resolve mid-iteration
     // and trigger eviction that mutates `forms` while we're walking.
-    const states = Array.from(forms.values())
+    // Include the evicting set so in-flight drains from already-
+    // unmounted forms also flush before shutdown returns.
+    const states = [...forms.values(), ...evicting]
     await Promise.allSettled(states.map((state) => state.awaitPendingWrites()))
   }
 

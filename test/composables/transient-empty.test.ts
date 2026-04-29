@@ -180,11 +180,17 @@ describe('form.transientEmptyPaths bulk accessor', () => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  it('returns a frozen snapshot — consumers cannot mutate', () => {
+  it('returns a readonly snapshot — consumers cannot mutate', () => {
     const { app, form } = setupForm(z.object({ count: z.number() }), { count: unset })
     apps.push(app)
     const snapshot = form.transientEmptyPaths.value
-    expect(Object.isFrozen(snapshot)).toBe(true)
+    // The snapshot is a Proxy that traps add / delete / clear so
+    // consumers can't pollute the cached view. `Object.isFrozen` is
+    // not a meaningful test here: frozen Sets remain mutable, so the
+    // real protection is the runtime throw on the mutating methods.
+    expect(() => (snapshot as unknown as Set<string>).add('foo')).toThrow(TypeError)
+    expect(() => (snapshot as unknown as Set<string>).delete('count')).toThrow(TypeError)
+    expect(() => (snapshot as unknown as Set<string>).clear()).toThrow(TypeError)
   })
 
   it('reflects marks and unmarks reactively', () => {

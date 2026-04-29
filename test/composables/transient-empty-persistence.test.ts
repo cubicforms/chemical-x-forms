@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
@@ -36,9 +36,20 @@ class MemoryStorage implements Storage {
   }
 }
 
+const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
 Object.defineProperty(globalThis, 'localStorage', {
   value: new MemoryStorage(),
   configurable: true,
+})
+
+afterAll(() => {
+  // Restore the platform localStorage so later test files in the
+  // same worker observe jsdom's real implementation.
+  if (originalLocalStorageDescriptor !== undefined) {
+    Object.defineProperty(globalThis, 'localStorage', originalLocalStorageDescriptor)
+  } else {
+    delete (globalThis as { localStorage?: Storage }).localStorage
+  }
 })
 
 const schema = z.object({ income: z.number() })

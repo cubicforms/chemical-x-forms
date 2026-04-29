@@ -219,6 +219,51 @@ describe('<input type="checkbox" v-register> — array group', () => {
     expect((root.querySelector('input.cherry') as HTMLInputElement).checked).toBe(true)
   })
 
+  it('falls back to el.value when Vue did not set _value (hydration with static value="...")', async () => {
+    // Repro for the playground bug: SSR renders <input value="apple">
+    // as a static attribute, then on hydration Vue's static-attr fast
+    // path skips patchProp, so `el._value` is never set. The directive's
+    // change handler must still resolve the option-value from the DOM
+    // attribute (el.value) rather than warn "missing value attribute".
+    //
+    // We simulate this by mounting the checkbox via h() (which DOES set
+    // _value) and then deleting `_value` before dispatching change —
+    // the post-hydration state in a real Nuxt app.
+    const schema = z.object({ fruits: z.array(z.string()) })
+    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+
+    const Parent = defineComponent({
+      setup() {
+        const form = useForm({ schema, key: 'cb-array-static-value', validationMode: 'lax' })
+        captured.api = form
+        return () =>
+          withDirectives(h('input', { type: 'checkbox', value: 'apple', class: 'apple' }), [
+            [vRegister, form.register('fruits')],
+          ])
+      },
+    })
+
+    app = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+
+    if (captured.api === undefined) throw new Error('unreachable')
+
+    const apple = root.querySelector('input.apple') as HTMLInputElement
+    // Strip the Vue-patched _value to mimic the hydrated-from-static-attr
+    // shape the directive sees in production. el.value (the DOM property)
+    // stays at 'apple' since that's set from the HTML value attribute.
+    delete (apple as unknown as { _value?: unknown })._value
+
+    apple.checked = true
+    dispatchChange(apple)
+    await flush()
+
+    expect(captured.api.getValue('fruits').value).toEqual(['apple'])
+  })
+
   it('warns once when an array-bound checkbox is missing a value attribute', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {

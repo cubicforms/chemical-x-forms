@@ -893,8 +893,24 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
 }
 
 // retrieve raw value set via :value bindings
+//
+// `explicitRequired` is the checkbox-array / checkbox-Set caller's way
+// of saying "the user must have provided an option-value via either a
+// dynamic `:value` binding (Vue sets `el._value`) OR a static `value`
+// attribute (DOM has `value` attribute set). If neither is present,
+// the default `el.value` of 'on' would silently add the bogus literal
+// 'on' to the array on every toggle — surface as undefined so the
+// caller can warn instead."
+//
+// Without the `hasAttribute('value')` fallback, the SSR + static-attr
+// hydration path fails: Vue's hydration skips patchProp for hoisted
+// static attributes, `el._value` is never set, but the DOM still
+// reflects the rendered `value="apple"` attribute. We need to honor
+// either signal.
 function getValue(el: HTMLOptionElement | HTMLInputElement, explicitRequired = false) {
-  return '_value' in el ? (el._value ?? undefined) : explicitRequired ? undefined : el.value
+  if ('_value' in el) return el._value
+  if (explicitRequired && !el.hasAttribute('value')) return undefined
+  return el.value
 }
 
 // retrieve raw value for true-value and false-value set via :true-value or :false-value bindings

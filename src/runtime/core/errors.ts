@@ -159,8 +159,8 @@ export class AnonPersistError extends Error {
   readonly callSite: string | undefined
   override readonly cause: 'no-key' | 'register-without-config'
   constructor(opts: {
-    schemaFields?: readonly string[]
-    callSite?: string
+    schemaFields?: readonly string[] | undefined
+    callSite?: string | undefined
     cause: 'no-key' | 'register-without-config'
   }) {
     super(formatAnonPersistMessage(opts))
@@ -171,8 +171,8 @@ export class AnonPersistError extends Error {
 }
 
 function formatAnonPersistMessage(opts: {
-  schemaFields?: readonly string[]
-  callSite?: string
+  schemaFields?: readonly string[] | undefined
+  callSite?: string | undefined
   cause: 'no-key' | 'register-without-config'
 }): string {
   const head =

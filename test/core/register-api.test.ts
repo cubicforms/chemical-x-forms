@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { createFormStore } from '../../src/runtime/core/create-form-store'
+import { AnonPersistError } from '../../src/runtime/core/errors'
 import { buildRegister } from '../../src/runtime/core/register-api'
 import { fakeSchema } from '../utils/fake-schema'
 
@@ -132,42 +133,29 @@ describe('buildRegister', () => {
     })
   })
 
-  describe('dev warnings', () => {
-    it('does NOT warn during SSR even when persistence module is absent', () => {
+  describe('persist contradiction throw', () => {
+    it('does NOT throw during SSR even when persistence module is absent', () => {
       // SSR deliberately skips wirePersistence (persistence is a
       // client-only concern), so during the server pass `state.modules`
       // never carries a persistence entry — even when the consumer DID
-      // configure `persist:` on useForm(). Without an SSR gate, the
-      // "register({ persist: true }) without persist: configured"
-      // warning would falsely fire on every server render.
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-      try {
-        const { register } = makeRegister({ isSSR: true })
-        register('email', { persist: true })
-        const matches = warnSpy.mock.calls
-          .map((args) => args.join(' '))
-          .filter((msg) => /no `persist` option configured/.test(msg))
-        expect(matches).toEqual([])
-      } finally {
-        warnSpy.mockRestore()
-      }
+      // configure `persist:` on useForm(). Without an SSR gate, every
+      // server render of `register({ persist: true })` would falsely
+      // throw. The client-side hydration pass re-checks against a
+      // freshly-wired module and throws correctly if the misuse is real.
+      const { register } = makeRegister({ isSSR: true })
+      expect(() => register('email', { persist: true })).not.toThrow()
     })
 
-    it('DOES warn off-SSR when persistence module is absent and the binding opts in', () => {
-      // The actual misuse case: client-side render, no persistence module
-      // (because `useForm()` had no `persist:` option), but a binding asks
-      // to opt in. This is the warning's intended trigger.
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    it('throws AnonPersistError(register-without-config) off-SSR when persistence module is absent and the binding opts in', () => {
+      const { register } = makeRegister()
+      let thrown: unknown
       try {
-        const { register } = makeRegister()
         register('note', { persist: true })
-        const matches = warnSpy.mock.calls
-          .map((args) => args.join(' '))
-          .filter((msg) => /no `persist` option configured/.test(msg))
-        expect(matches.length).toBe(1)
-      } finally {
-        warnSpy.mockRestore()
+      } catch (e) {
+        thrown = e
       }
+      expect(thrown).toBeInstanceOf(AnonPersistError)
+      expect((thrown as AnonPersistError).cause).toBe('register-without-config')
     })
   })
 })

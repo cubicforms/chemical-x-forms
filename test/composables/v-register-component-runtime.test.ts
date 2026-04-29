@@ -61,7 +61,14 @@ async function mountWithChild(
 
   const Parent = defineComponent({
     setup() {
-      const api = useForm({ schema, key: `comp-${Math.random().toString(36).slice(2)}` })
+      // When the test opts into per-element `persist: true`, the form
+      // must also configure `persist:` — opting a field into a feature
+      // the form doesn't have is now a contradiction throw.
+      const api = useForm({
+        schema,
+        key: `comp-${Math.random().toString(36).slice(2)}`,
+        ...(options?.persist ? { persist: { storage: 'local' as const, debounceMs: 1000 } } : {}),
+      })
       handle.api = api
       const rv = api.register('email', {
         ...(options?.persist ? { persist: true } : {}),

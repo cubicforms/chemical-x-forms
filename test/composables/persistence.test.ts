@@ -5,6 +5,7 @@ import { createApp, defineComponent, h, nextTick, withDirectives, type App } fro
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
+import { AnonPersistError } from '../../src/runtime/core/errors'
 import { __resetIndexedDbForTests } from '../../src/runtime/core/persistence/indexeddb'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
@@ -1184,17 +1185,20 @@ describe('persistence — reset wipes the persisted draft', () => {
     expect(api.getValue('password').value).toBe('')
   })
 
-  it('dev warns when persist is configured but no field opted in', async () => {
-    // No <input v-register> at all → no opt-ins. The dev warning should
-    // fire one microtask after construction.
+  it('dormant config (key + persist + zero opt-ins) does NOT throw and does NOT warn', async () => {
+    // Configuring the persistence capability without spending it on a
+    // register() call is a valid scaffolding state — the library
+    // shouldn't lecture the consumer for not exercising every option.
+    // No throw on construct, no microtask warn, no console noise.
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
       const App = defineComponent({
         setup() {
           useForm({
             schema,
-            key: 'no-opt-ins-warn',
-            persist: { storage: 'local', key: 'test-no-opt-warn', debounceMs: 20 },
+            key: 'dormant-config',
+            persist: { storage: 'local', key: 'test-dormant', debounceMs: 20 },
           })
           return () => h('div')
         },
@@ -1202,123 +1206,97 @@ describe('persistence — reset wipes the persisted draft', () => {
       const app = createApp(App).use(createChemicalXForms())
       const root = document.createElement('div')
       document.body.appendChild(root)
+      // Construct-time should NOT throw.
+      expect(() => app.mount(root)).not.toThrow()
+      apps.push(app)
+      await drain()
+      const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
+      const errorCalls = errorSpy.mock.calls.map((args) => args.join(' '))
+      const cxNoise = [...warnCalls, ...errorCalls].filter((m) => m.includes('[@chemical-x/forms]'))
+      expect(cxNoise).toEqual([])
+    } finally {
+      warnSpy.mockRestore()
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('throws AnonPersistError(no-key) when useForm({ persist }) is called without key:', () => {
+    // Anonymous keys (`__cx:anon:*`) drift across mounts; persistence
+    // wired against one is unsafe and forecloses on future encrypted
+    // backends. Throw at construct time with schemaFields + callSite
+    // baked into the error so the offender is identifiable from the
+    // message body alone.
+    const App = defineComponent({
+      setup() {
+        useForm({
+          schema,
+          // intentionally no key:
+          persist: { storage: 'local', key: 'whatever' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+
+    let thrown: unknown
+    try {
       app.mount(root)
-      apps.push(app)
-      // Drain the microtasks so the deferred warning fires.
-      await drain()
-      const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
-      const matched = warnCalls.find((msg) => /persist:.*configured.*no fields opted in/.test(msg))
-      expect(matched).toBeDefined()
-    } finally {
-      warnSpy.mockRestore()
+    } catch (e) {
+      thrown = e
     }
+    expect(thrown).toBeInstanceOf(AnonPersistError)
+    const err = thrown as AnonPersistError
+    expect(err.cause).toBe('no-key')
+    expect(err.schemaFields).toEqual(['email', 'password'])
+    expect(err.message).toContain('useForm({ persist: ... })')
+    expect(err.message).toContain('{ email, password }')
   })
 
-  it('does NOT warn when at least one field opted in', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    try {
-      const { app } = mountForm({ storage: 'local', key: 'test-warn-skip', debounceMs: 20 })
-      apps.push(app)
-      await drain()
-      const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
-      const matched = warnCalls.find((msg) => /persist:.*configured.*no fields opted in/.test(msg))
-      expect(matched).toBeUndefined()
-    } finally {
-      warnSpy.mockRestore()
-    }
-  })
+  it('throws AnonPersistError(register-without-config) when register({ persist: true }) runs on form without persist:', () => {
+    // The opt-in records silently today and nothing ever lands in
+    // storage — eager throw makes the misuse impossible to ignore.
+    const App = defineComponent({
+      setup() {
+        const api = useForm({ schema, key: 'opt-in-without-persist-config' })
+        return () =>
+          h(
+            'div',
+            withDirectives(h('input', { type: 'text' }), [
+              [vRegister, api.register('email', { persist: true })],
+            ])
+          )
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
 
-  it('dev warns when register({ persist: true }) is used on a form with no persist: configured', async () => {
-    // Symmetric to the "persist configured but no opt-ins" warning:
-    // user opted into persistence at the register() call site but
-    // forgot the `persist:` option on useForm(). Without this warning,
-    // the opt-in records silently and nothing ever lands in storage.
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    let thrown: unknown
     try {
-      const App = defineComponent({
-        setup() {
-          const api = useForm({ schema, key: 'opt-in-without-persist-config' })
-          // No persist option on useForm() — but the binding asks for it.
-          return () =>
-            h(
-              'div',
-              withDirectives(h('input', { type: 'text' }), [
-                [vRegister, api.register('email', { persist: true })],
-              ])
-            )
-        },
-      })
-      const app = createApp(App).use(createChemicalXForms())
-      const root = document.createElement('div')
-      document.body.appendChild(root)
       app.mount(root)
-      apps.push(app)
-      await drain()
-      const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
-      const matched = warnCalls.find((msg) =>
-        /register\('email', \{ persist: true \}\).*no `persist` option configured/.test(msg)
-      )
-      expect(matched).toBeDefined()
-    } finally {
-      warnSpy.mockRestore()
+    } catch (e) {
+      thrown = e
     }
+    expect(thrown).toBeInstanceOf(AnonPersistError)
+    const err = thrown as AnonPersistError
+    expect(err.cause).toBe('register-without-config')
+    expect(err.schemaFields).toEqual(['email', 'password'])
+    expect(err.message).toContain('register(_, { persist: true })')
   })
 
-  it('does NOT fire the symmetric warning when persist: IS configured', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    try {
-      // mountForm wires `persist: { storage: 'local', ... }` AND opts in
-      // both fields — so neither warning should fire.
+  it('does NOT throw when register({ persist: true }) runs on a form with persist: configured', () => {
+    // mountForm wires `persist: { storage: 'local', ... }` AND opts in
+    // both fields — no throw, no diagnostic.
+    expect(() => {
       const { app } = mountForm({
         storage: 'local',
-        key: 'test-no-symmetric-warn',
+        key: 'test-no-symmetric-throw',
         debounceMs: 20,
       })
       apps.push(app)
-      await drain()
-      const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
-      const matched = warnCalls.find((msg) => /no `persist` option configured/.test(msg))
-      expect(matched).toBeUndefined()
-    } finally {
-      warnSpy.mockRestore()
-    }
-  })
-
-  it('warns once per form even when multiple paths opt in', async () => {
-    // Dedupe: a template with N opted-in paths should produce ONE warning,
-    // not N. Keyed by FormStore.
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    try {
-      const App = defineComponent({
-        setup() {
-          const api = useForm({ schema, key: 'opt-in-dedupe' })
-          return () =>
-            h('div', [
-              withDirectives(h('input', { type: 'text' }), [
-                [vRegister, api.register('email', { persist: true })],
-              ]),
-              withDirectives(h('input', { type: 'text' }), [
-                [
-                  vRegister,
-                  api.register('password', { persist: true, acknowledgeSensitive: true }),
-                ],
-              ]),
-            ])
-        },
-      })
-      const app = createApp(App).use(createChemicalXForms())
-      const root = document.createElement('div')
-      document.body.appendChild(root)
-      app.mount(root)
-      apps.push(app)
-      await drain()
-      const matchCount = warnSpy.mock.calls
-        .map((args) => args.join(' '))
-        .filter((msg) => /no `persist` option configured/.test(msg)).length
-      expect(matchCount).toBe(1)
-    } finally {
-      warnSpy.mockRestore()
-    }
+    }).not.toThrow()
   })
 
   it('form.resetField(path) wipes only the matching subpath from storage', async () => {

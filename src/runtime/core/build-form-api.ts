@@ -473,6 +473,19 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     register: register as UseAbstractFormReturnType<Form, GetValueFormType>['register'],
     key: state.formKey,
     fieldErrors: fieldErrors as unknown as Readonly<FormFieldErrors<Form>>,
+    // `errors` is the renamed surface — same Proxy, new property name.
+    // Both names coexist during Phase B so C1 can sweep test sites
+    // mechanically; C2 deletes `fieldErrors`.
+    errors: fieldErrors as unknown as Readonly<FormFieldErrors<Form>>,
+    // `toRef(path)` — escape hatch for the rare case a consumer wants
+    // a Ref. Delegates to `getValueImpl` with the path-overload, which
+    // already returns `Readonly<Ref<...>>`. The slim-primitive write
+    // gate stays the only way into storage; readonly here matches.
+    toRef: ((path: string) =>
+      getValueImpl(path) as Readonly<Ref<unknown>>) as UseAbstractFormReturnType<
+      Form,
+      GetValueFormType
+    >['toRef'],
     setFieldErrors,
     addFieldErrors,
     clearFieldErrors,

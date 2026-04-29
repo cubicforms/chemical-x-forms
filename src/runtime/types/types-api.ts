@@ -1871,8 +1871,57 @@ export type UseAbstractFormReturnType<
    * Read-only — populate via `setFieldErrors`, `addFieldErrors`, and
    * `clearFieldErrors`. Server-side errors flow through
    * `parseApiErrors` first.
+   *
+   * @deprecated Use `form.errors` (same shape, renamed for Pinia
+   * naming parity). Removed in the next breaking release.
    */
   fieldErrors: Readonly<FormFieldErrors<Form>>
+
+  /**
+   * Reactive map of field errors, keyed by dotted path. Populated
+   * automatically by `handleSubmit` and per-field validation; cleared
+   * on validation success.
+   *
+   * Read in templates with no `.value`:
+   *
+   * ```vue
+   * <p v-if="form.errors.email">{{ form.errors.email[0].message }}</p>
+   * ```
+   *
+   * Watch from script via the getter form:
+   *
+   * ```ts
+   * watch(() => form.errors.email, (errors) => …)
+   * ```
+   *
+   * Use bracket access for nested dotted keys
+   * (`form.errors['user.profile.email']`) — JS dot notation splits
+   * on literal dots.
+   *
+   * Read-only — populate via `setFieldErrors`, `addFieldErrors`, and
+   * `clearFieldErrors`. Server-side errors flow through
+   * `parseApiErrors` first.
+   */
+  errors: Readonly<FormFieldErrors<Form>>
+
+  /**
+   * Escape hatch for the rare case a consumer needs a `Ref<T>` —
+   * e.g. handing the value to an external composable that expects a
+   * Vue ref, or watching a single path with `watch(formRef, ...)`.
+   *
+   * ```ts
+   * const emailRef = form.toRef('email')         // Readonly<Ref<string>>
+   * watch(emailRef, (next) => console.log(next))
+   * ```
+   *
+   * Returns `Readonly<Ref<...>>` — writes go through `setValue`,
+   * `register()`, or the field-array helpers, never via the ref.
+   * Prefer `form.values.email` for direct reads in templates +
+   * scripts; `toRef` is for ref-shaped interop only.
+   */
+  toRef: <Path extends FlatPath<Form>>(
+    path: Path
+  ) => Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
 
   /**
    * Replace every field error for this form with the provided list.

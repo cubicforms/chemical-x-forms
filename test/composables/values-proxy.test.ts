@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, isReactive, isReadonly, nextTick, watch } from 'vue'
+import { createApp, defineComponent, h, isReactive, isReadonly, isRef, nextTick, watch } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
@@ -211,18 +211,48 @@ describe('form.values — readonly reactive proxy', () => {
       unmount()
     }
   })
+})
 
-  it('coexists with the legacy getValue API during the proxy migration', () => {
+describe('form.errors — readonly proxy over the form error map', () => {
+  it('reflects user-injected errors on dotted-key access', () => {
     const { api, unmount } = mountForm()
     try {
-      // Both surfaces read the same underlying storage.
-      const fromLegacy = api.getValue('email').value
-      const fromProxy = api.values.email
-      expect(fromLegacy).toBe(fromProxy)
+      api.setFieldErrors([
+        {
+          path: ['email'],
+          message: 'taken',
+          code: 'custom',
+          formKey: api.key,
+        },
+      ])
+      expect(api.errors.email).toHaveLength(1)
+      expect(api.errors.email?.[0]?.message).toBe('taken')
+      expect(api.errors.age).toBeUndefined()
+    } finally {
+      unmount()
+    }
+  })
+})
 
-      api.setValue('age', 42)
-      expect(api.getValue('age').value).toBe(42)
-      expect(api.values.age).toBe(42)
+describe('form.toRef — escape hatch for ref-shaped interop', () => {
+  it('returns a Readonly<Ref<T>> matching the path value', () => {
+    const { api, unmount } = mountForm()
+    try {
+      const emailRef = api.toRef('email')
+      expect(isRef(emailRef)).toBe(true)
+      expect(emailRef.value).toBe('a@b.com')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('the returned ref reflects subsequent setValue mutations', async () => {
+    const { api, unmount } = mountForm()
+    try {
+      const emailRef = api.toRef('email')
+      api.setValue('email', 'changed@x.com')
+      await flush()
+      expect(emailRef.value).toBe('changed@x.com')
     } finally {
       unmount()
     }

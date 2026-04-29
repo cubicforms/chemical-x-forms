@@ -153,7 +153,12 @@ describe('form.fieldState — errors propagation', () => {
     const mounted = mountForm()
     app = mounted.app
     mounted.api.setFieldErrors([
-      { path: ['email'], message: 'taken' as const, code: 'custom' as const },
+      {
+        path: ['email'],
+        message: 'taken',
+        code: 'custom',
+        formKey: mounted.api.key,
+      },
     ])
     expect(mounted.api.fieldState.email.errors).toHaveLength(1)
     expect(mounted.api.fieldState.email.errors[0]?.message).toBe('taken')
@@ -163,29 +168,14 @@ describe('form.fieldState — errors propagation', () => {
     const mounted = mountForm()
     app = mounted.app
     mounted.api.setFieldErrors([
-      { path: ['email'], message: 'taken' as const, code: 'custom' as const },
+      {
+        path: ['email'],
+        message: 'taken',
+        code: 'custom',
+        formKey: mounted.api.key,
+      },
     ])
     expect(mounted.api.fieldState.email.errors).toHaveLength(1)
     expect(mounted.api.fieldState.password.errors).toEqual([])
-  })
-})
-
-describe('form.fieldState — coexists with legacy getFieldState', () => {
-  let app: App | undefined
-  afterEach(() => {
-    app?.unmount()
-    app = undefined
-    document.body.innerHTML = ''
-  })
-
-  it('both surfaces read the same underlying state', () => {
-    const mounted = mountForm()
-    app = mounted.app
-    mounted.api.setValue('email', 'sync@x.com')
-
-    const legacy = mounted.api.getFieldState('email').value
-    const proxy = mounted.api.fieldState.email
-    expect(legacy.value).toBe(proxy.value)
-    expect(legacy.dirty).toBe(proxy.dirty)
   })
 })

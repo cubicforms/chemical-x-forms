@@ -621,16 +621,23 @@ function wirePersistence<F extends GenericForm>(
       const merged = mergeSparseHydration(toRaw(state.form.value) as F, payload.data.form)
       state.applyFormReplacement(merged)
       // Restore the transient-empty UI state from the persisted
-      // payload. This rebaselines BOTH the live set AND the originals
-      // snapshot — the persisted UI state is the new "construction-
-      // time" reference for `reset()` semantics, so a subsequent
-      // reset() restores the empty fields the user had on the
-      // previous mount, not the freshly-constructed empty set. Form
-      // values rebaseline implicitly through `originals` (which the
-      // existing applyFormReplacement updates via diff-apply), so
-      // mirroring that behaviour here keeps the two domains aligned.
-      state.transientEmptyPaths.clear()
-      state.originalsTransientEmpty.clear()
+      // payload. Persistence is per-element opt-in, so the persisted
+      // payload only covers paths within the opt-in scope (the leaf
+      // paths populated in `payload.data.form`). Construction-time
+      // auto-marks for paths OUTSIDE that scope must survive — without
+      // this, a non-opted-in `z.number()` field's slim default (0)
+      // would lose its transient-empty mark on hydrate and surface
+      // as `'0'` in its <input> instead of empty.
+      //
+      // Within the opt-in scope, the persisted state IS the truth: a
+      // persisted path that's no longer transient-empty (the user
+      // typed) clears the construction-time mark, and a persisted
+      // path that IS transient-empty (still slim default) re-asserts.
+      const persistedLeafPaths = collectPersistedLeafPaths(payload.data.form)
+      for (const k of persistedLeafPaths) {
+        state.transientEmptyPaths.delete(k)
+        state.originalsTransientEmpty.delete(k)
+      }
       for (const k of payload.data.transientEmptyPaths ?? []) {
         state.transientEmptyPaths.add(k as PathKey)
         state.originalsTransientEmpty.add(k as PathKey)
@@ -849,6 +856,37 @@ function isEmptyContainer(value: unknown): boolean {
   if (Array.isArray(value)) return value.length === 0
   if (isPlainRecord(value)) return Object.keys(value).length === 0
   return false
+}
+
+/**
+ * Walk a sparse persisted form and collect the canonical PathKey of
+ * every leaf. "Leaf" = anything that isn't a plain object or array
+ * (so primitives, null, deserialized Dates / strings all count). The
+ * persisted form's leaves correspond 1:1 with the per-element opt-in
+ * scope at the time persistence wrote, which the hydration path uses
+ * to bound which transient-empty entries to overwrite.
+ */
+function collectPersistedLeafPaths(form: unknown): PathKey[] {
+  const out: PathKey[] = []
+  walk(form, [])
+  return out
+
+  function walk(node: unknown, prefix: Path): void {
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) {
+        walk(node[i], [...prefix, i])
+      }
+      return
+    }
+    if (isPlainRecord(node)) {
+      for (const key of Object.keys(node)) {
+        walk((node as Record<string, unknown>)[key], [...prefix, key])
+      }
+      return
+    }
+    if (prefix.length === 0) return // root scalar — no path to canonicalize
+    out.push(canonicalizePath(prefix).key)
+  }
 }
 
 /**

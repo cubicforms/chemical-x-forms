@@ -312,6 +312,103 @@ describe('persistence — localStorage backend', () => {
   })
 })
 
+/**
+ * Repro for the playground bug: salary (z.number(), no `register()`
+ * opt-in) showed `0` in its <input> on every page load instead of
+ * displaying as empty until the user typed.
+ *
+ * Cause: persistence's hydrate path called `transientEmptyPaths.clear()`
+ * and replaced the live set with the persisted array. The persisted
+ * array only ever contains paths the persistence layer has been writing
+ * for — i.e., paths within the per-element opt-in scope. Non-opted-in
+ * paths' construction-time auto-marks (number → 0 displayed as empty)
+ * got wiped on first hydrate, surfacing as `0` in the field.
+ */
+describe('persistence — non-opted-in transient-empty paths survive hydration', () => {
+  const apps: App[] = []
+  beforeEach(() => sessionStorage.clear())
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+    sessionStorage.clear()
+  })
+
+  it('keeps a non-opted-in number field auto-marked transient-empty on hydration', async () => {
+    const customSchema = z.object({
+      email: z.string(),
+      salary: z.number(),
+    })
+    const customFp = fingerprintZodSchema(customSchema)
+    // Default `resolveStorageKeyBase`: `${PERSISTENCE_KEY_PREFIX}${formKey}`,
+    // and PERSISTENCE_KEY_PREFIX is 'chemical-x-forms:'. Then the full
+    // storage key appends `:${fingerprint}`.
+    const customKey = `chemical-x-forms:test-non-optin-tep:${customFp}`
+
+    // Pre-seed sessionStorage with a payload representing the state
+    // after a user typed into the opted-in email field.
+    // `transientEmptyPaths: []` matches what the persistence-write
+    // path actually saves under those conditions: only paths within
+    // the write's path-scope are tracked, and email itself is no
+    // longer transient-empty post-typing.
+    sessionStorage.setItem(
+      customKey,
+      JSON.stringify({
+        v: 4,
+        data: { form: { email: 'seed@example.com' }, transientEmptyPaths: [] },
+      })
+    )
+
+    const captured: { api?: ReturnType<typeof useForm<typeof customSchema>> } = {}
+    const App = defineComponent({
+      setup() {
+        const api = useForm({
+          schema: customSchema,
+          key: 'test-non-optin-tep',
+          persist: { storage: 'session', debounceMs: 20 },
+        })
+        captured.api = api
+        return () =>
+          h('div', [
+            withDirectives(h('input', { type: 'text', class: 'email' }), [
+              [vRegister, api.register('email', { persist: true })],
+            ]),
+            // `salary` is NOT opted in for persistence.
+            withDirectives(h('input', { type: 'text', class: 'salary' }), [
+              [vRegister, api.register('salary')],
+            ]),
+          ])
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    await drain()
+
+    // Wait for the persistence hydrate to land (it's async — dynamic
+    // import + adapter.getItem + apply).
+    if (captured.api === undefined) throw new Error('unreachable')
+    await waitUntil(() =>
+      captured.api?.getValue('email').value === 'seed@example.com' ? true : null
+    )
+
+    // Sanity: email did hydrate (otherwise the test below isn't
+    // exercising the post-hydrate state at all).
+    expect(captured.api.getValue('email').value).toBe('seed@example.com')
+
+    // Critical assertion: the salary path is STILL in the
+    // transient-empty set after hydration. Pre-fix the persistence
+    // hydrate cleared the set and replaced it with the persisted
+    // (empty) array, dropping 'salary' from the set.
+    expect(captured.api.transientEmptyPaths.value.has('["salary"]')).toBe(true)
+
+    // The user-visible consequence: salary displays as '' (transient-
+    // empty bypass), not '0'. Storage still holds the slim default.
+    expect(captured.api.register('salary').displayValue.value).toBe('')
+    expect(captured.api.getValue('salary').value).toBe(0)
+  })
+})
+
 describe('persistence — sessionStorage backend', () => {
   const apps: App[] = []
   beforeEach(() => sessionStorage.clear())

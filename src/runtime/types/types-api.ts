@@ -1314,6 +1314,53 @@ export type FieldState<Value = unknown> = DeepFlatten<
     blank: boolean
   }
 >
+
+/**
+ * Runtime shape of a single FieldStateView entry surfaced through
+ * `form.fieldState.<path>`. Matches what `buildFieldStateAccessor`
+ * actually produces (slim shape, readonly across the board), as
+ * opposed to `FieldState<Value>` which is the typed public contract
+ * via `getFieldState(path)`. The runtime accessor's structural keys
+ * are what the proxy disambiguates against on each property read.
+ */
+export type FieldStateLeaf<Value = unknown> = {
+  readonly value: Value
+  readonly original: Value
+  readonly pristine: boolean
+  readonly dirty: boolean
+  readonly focused: boolean | null
+  readonly blurred: boolean | null
+  readonly touched: boolean | null
+  readonly isConnected: boolean
+  readonly updatedAt: string | null
+  readonly errors: readonly ValidationError[]
+  readonly path: ReadonlyArray<string | number>
+  readonly pendingEmpty: boolean
+}
+
+/**
+ * Recursive type behind `form.fieldState`. At every depth ≥ 1 the
+ * proxy exposes both the FieldStateLeaf at the current path AND
+ * descent into named children. FieldStateLeaf keys SHADOW any schema
+ * fields with conflicting names at depth 2+ (a documented edge case;
+ * top-level fields are unshadowed because the root proxy treats every
+ * access as descent — see `buildFieldStateProxy`).
+ */
+export type FieldStateMapEntry<T> = T extends object
+  ? FieldStateLeaf<T> & {
+      readonly [K in Exclude<keyof T, keyof FieldStateLeaf<T>>]: FieldStateMapEntry<T[K]>
+    }
+  : FieldStateLeaf<T>
+
+/**
+ * Type of `form.fieldState`. Object-shape mirroring the form's top
+ * level; descent into nested fields produces FieldStateLeaf-bearing
+ * entries via `FieldStateMapEntry`.
+ */
+export type FieldStateMap<Form extends GenericForm> = {
+  readonly [K in keyof Form]: FieldStateMapEntry<Form[K]>
+}
+
 export type DOMFieldStateStore = Map<string, DOMFieldState | undefined>
 
 /**
@@ -1632,6 +1679,32 @@ export type UseAbstractFormReturnType<
    * `validateAsync()` when you need the post-validation strict type.
    */
   values: Readonly<WithIndexedUndefined<WriteShape<GetValueFormType>>>
+
+  /**
+   * Reactive per-field state proxy. Pinia-style nested object — read
+   * leaf properties (`dirty`, `touched`, `errors`, `blurred`,
+   * `focused`, `pendingEmpty`, `currentValue`, …) directly off the
+   * field's path:
+   *
+   * ```vue
+   * <p v-if="form.fieldState.email.touched && form.fieldState.email.errors.length">
+   *   {{ form.fieldState.email.errors[0].message }}
+   * </p>
+   * <p>City dirty? {{ form.fieldState.address.city.dirty }}</p>
+   * ```
+   *
+   * The same proxy supports descent at every level — `address` reads
+   * the FieldStateLeaf for the address object, and `address.city`
+   * descends into the nested leaf.
+   *
+   * Shadowing: at depth 2+, FieldStateLeaf keys (`dirty`, `touched`,
+   * `errors`, `pendingEmpty`, `focused`, `blurred`, `value`,
+   * `original`, `pristine`, `isConnected`, `updatedAt`, `path`) win
+   * over schema field names. Top-level fields are NOT shadowed.
+   * Document edge case; rename the offending schema field if the
+   * collision matters.
+   */
+  fieldState: FieldStateMap<GetValueFormType>
 
   /**
    * Write to the form programmatically. Two forms:

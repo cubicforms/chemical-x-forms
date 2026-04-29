@@ -3,6 +3,7 @@ import type {
   CurrentValueContext,
   CurrentValueWithContext,
   FieldState,
+  FieldStateMap,
   FormErrorRecord,
   FormFieldErrors,
   FormState,
@@ -24,6 +25,7 @@ import { __DEV__ } from './dev'
 import type { FormStore } from './create-form-store'
 import { buildFieldArrayApi } from './field-arrays'
 import { buildFieldStateAccessor } from './field-state-api'
+import { buildFieldStateProxy } from './field-state-proxy'
 import type { HistoryModule } from './history'
 import { getAtPath } from './path-walker'
 import { canonicalizePath, type Path, type PathKey, type Segment } from './paths'
@@ -436,6 +438,14 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // `.value` access from their side.
   const valuesProxyComputed = buildValuesProxy(state.form)
 
+  // --- Pinia-style reactive per-field state proxy ---
+  // Allocated once per buildFormApi call (one per consumer). Each Proxy
+  // node memoizes its descendants and the per-path FieldStateView
+  // computed it reads through, so repeated access to the same path
+  // (`form.fieldState.email` twice) returns the same object — useful
+  // for downstream `===` checks and Vue's render diff.
+  const fieldStateProxy = buildFieldStateProxy(state)
+
   return {
     getFieldState: getFieldState as UseAbstractFormReturnType<
       Form,
@@ -453,6 +463,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
         WithIndexedUndefined<WriteShape<GetValueFormType>>
       >
     },
+    fieldState: fieldStateProxy as unknown as FieldStateMap<GetValueFormType>,
     setValue: setValueImpl as UseAbstractFormReturnType<Form, GetValueFormType>['setValue'],
     validate: validate as UseAbstractFormReturnType<Form, GetValueFormType>['validate'],
     validateAsync: validateAsync as UseAbstractFormReturnType<

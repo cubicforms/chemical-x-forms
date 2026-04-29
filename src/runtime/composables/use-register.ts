@@ -109,21 +109,35 @@ export function useRegister(): ComputedRef<RegisterValue | undefined> {
 
   const refreshAndStripBridgeAttrs = (): void => {
     const rawAttrs = instance.attrs as Record<string, unknown>
-    capturedRegisterValue.value = rawAttrs['registerValue'] as RegisterValue | undefined
-    if ('registerValue' in rawAttrs) delete rawAttrs['registerValue']
+    // Capture only when the bridge key is present. The strip below
+    // removes `registerValue` from attrs, so a second invocation of
+    // this function (e.g. `onBeforeMount` after the synchronous setup
+    // call) would otherwise overwrite the captured rv with `undefined`.
+    // Vue's `setFullProps` re-populates attrs on every parent render,
+    // so the `onBeforeUpdate` invocation correctly sees the key again
+    // and re-captures.
+    if ('registerValue' in rawAttrs) {
+      capturedRegisterValue.value = rawAttrs['registerValue'] as RegisterValue | undefined
+      delete rawAttrs['registerValue']
+    }
     if ('value' in rawAttrs) delete rawAttrs['value']
   }
-  // Defer the initial capture to `onBeforeMount` rather than running it
-  // synchronously in setup. Setup-time reads of `instance.attrs` race
-  // Vue's prop-patch lifecycle: under SSR (and on first CSR hydration
-  // for some patterns) the parent's `:registerValue` binding hasn't
-  // been propagated to attrs by the time setup runs, and the captured
-  // value lands as `undefined` — fingering the consumer with the
-  // "no parent registerValue prop" warn even though the parent passed
-  // v-register correctly. By onBeforeMount the prop has been wired,
-  // and the returned computed is read lazily by templates after
-  // mount-pass setup completes. Mirrors the radio directive's
-  // `created` → `mounted` fix (commit b0720c4).
+  // Capture+strip three times: synchronously in setup, then on
+  // beforeMount, then on every beforeUpdate. The synchronous call is
+  // load-bearing for SSR — Vue skips lifecycle hooks during
+  // `renderToString`, so an `onBeforeMount`-only capture leaves
+  // `capturedRegisterValue` at `undefined` and the directive's first
+  // server-side template read fires the no-parent-RV warn even when the
+  // parent passed v-register correctly. Vue's `setupComponent` runs
+  // `initProps` (which populates `instance.attrs.registerValue` from the
+  // parent's `:registerValue` binding injected by `selectNodeTransform`)
+  // before `setup()` runs, so the sync read sees the correct value on
+  // both server and client. The `onBeforeMount` hook stays as a defence
+  // in depth against any re-population that could happen after setup
+  // (e.g. from a parent's directive re-running) — idempotent, safe to
+  // duplicate. The `onBeforeUpdate` hook handles parent re-renders,
+  // where Vue's `setFullProps` runs again and re-puts the bridge keys.
+  refreshAndStripBridgeAttrs()
   onBeforeMount(refreshAndStripBridgeAttrs)
   onBeforeUpdate(refreshAndStripBridgeAttrs)
 

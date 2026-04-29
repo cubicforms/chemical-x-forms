@@ -209,18 +209,20 @@ array reads (`prev.posts[5]`) DO carry `| undefined` and need
 narrowing — that's the only case where defensive reads are still
 correct.
 
-## "`getValue('posts.0.title').value.toUpperCase()` started type-erroring"
+## "`form.values.posts[0].title.toUpperCase()` started type-erroring"
 
-`NestedReadType` lands in 0.12. Once a `getValue` / `register` path
-crosses an array index, the result carries `| undefined` (the
-runtime can return undefined for out-of-bounds reads). Narrow:
+Working as intended. Once a read path crosses an array index, the
+result carries `| undefined` — the runtime can return undefined for
+out-of-bounds reads, so the type tracks that. Narrow with optional
+chaining:
 
 ```ts
-form.getValue('posts.0.title').value?.toUpperCase() ?? ''
+form.values.posts[0]?.title?.toUpperCase() ?? ''
 ```
 
-Or use `getFieldState(...)` if you want errors + presence flags
-alongside the value.
+Or read from `form.fieldState.posts[0].title.value` if you also want
+the per-field flags (`dirty`, `errors`, `touched`) alongside the
+value. The same `| undefined` taint applies; narrow the same way.
 
 Tuple positions stay strict — out-of-bounds is a type-system error
 on tuples, not a runtime case.

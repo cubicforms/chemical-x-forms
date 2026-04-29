@@ -550,14 +550,14 @@ function createReadonlyErrorView<T extends FormErrorRecord>(source: ComputedRef<
     set() {
       if (__DEV__) {
         console.warn(
-          '[@chemical-x/forms] fieldErrors is read-only — write via setFieldErrors / addFieldErrors / clearFieldErrors.'
+          '[@chemical-x/forms] form.errors is read-only — write via setFieldErrors / addFieldErrors / clearFieldErrors.'
         )
       }
       return false
     },
     deleteProperty() {
       if (__DEV__) {
-        console.warn('[@chemical-x/forms] fieldErrors is read-only — clear via clearFieldErrors.')
+        console.warn('[@chemical-x/forms] form.errors is read-only — clear via clearFieldErrors.')
       }
       return false
     },

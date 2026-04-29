@@ -111,22 +111,24 @@ Weaker (remounts reset the counter) but good enough in-session.
 For lists that only ever append and never reorder, raw index keys
 are OK.
 
-## getValue vs getFieldState
+## values vs fieldState
 
-- `getValue('posts.0.title')` → `Readonly<Ref<string | undefined>>`.
-  Reads carry `| undefined` once a path crosses an array index — at
-  runtime, `posts[0]` could be missing (sparse, deleted, fresh-mount
-  empty). Narrow with `?.` / optional checks before non-null
-  operations. Tuple positions stay strict (their length is static).
-- `getFieldState('posts.0.title')` → `Ref<FieldState>`. Use for
-  errors + touched / focused / blurred.
+- `form.values.posts[0]?.title` → `string | undefined`. Reads carry
+  `| undefined` once a path crosses an array index — at runtime,
+  `posts[0]` could be missing (sparse, deleted, fresh-mount empty).
+  Narrow with `?.` / optional checks before non-null operations.
+  Tuple positions stay strict (their length is static).
+- `form.fieldState.posts[0].title` → reactive per-field state at the
+  path. Leaf props: `value`, `dirty`, `errors`, `touched`, `focused`,
+  `blurred`, `blank`, `isConnected`, `path`. Same `| undefined`
+  taint on `value` once an array index is crossed.
 
 ```vue
 <template>
   <div v-for="(post, index) in posts" :key="post.id">
     <input v-register="form.register(`posts.${index}.title`)" />
-    <span v-if="form.getFieldState(`posts.${index}.title`).value.errors.length > 0" class="error">
-      {{ form.getFieldState(`posts.${index}.title`).value.errors[0].message }}
+    <span v-if="form.fieldState.posts[index].title.errors.length > 0" class="error">
+      {{ form.fieldState.posts[index].title.errors[0].message }}
     </span>
   </div>
 </template>
@@ -137,10 +139,12 @@ The directive's `v-register` binding handles `undefined` correctly
 Defensive narrowing matters when scripts read the value:
 
 ```ts
-const title = form.getValue('posts.0.title')
-// title.value is `string | undefined`.
-const upper = title.value?.toUpperCase() ?? ''
+const upper = form.values.posts[0]?.title?.toUpperCase() ?? ''
 ```
+
+For ref-shaped interop (e.g. `watch(emailRef, …)` / external
+composables), use `form.toRef('posts.0.title')` to get a
+`Readonly<Ref<string | undefined>>` at the same path.
 
 ## Stale state on removal
 

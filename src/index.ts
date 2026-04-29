@@ -44,9 +44,10 @@ export { useAbstractForm as useForm } from './runtime/composables/use-abstract-f
 export { useFormContext } from './runtime/composables/use-form-context'
 
 // Ambient bridge for components that wrap a single field and want to
-// re-bind v-register onto an inner native element. See
-// `docs/recipes/components.md` for usage; for compound components
-// reaching multiple fields, prefer `useFormContext`.
+// re-bind v-register onto an inner native element. See the
+// `useRegister` section in `docs/api.md` for the wrapper-component
+// pattern; for compound components reaching multiple fields, prefer
+// `useFormContext`.
 export { useRegister } from './runtime/composables/use-register'
 
 // The v-register directive (registered automatically by createChemicalXForms,
@@ -76,6 +77,9 @@ export type {
   CustomDirectiveRegisterAssignerFn,
   DefaultValuesResponse,
   FieldState,
+  FieldStateLeaf,
+  FieldStateMap,
+  FieldStateMapEntry,
   FieldValidationConfig,
   FieldValidationMode,
   FormErrorRecord,
@@ -133,6 +137,7 @@ export type { Path, PathKey, Segment } from './runtime/core/paths'
 
 // Error classes
 export {
+  AnonPersistError,
   InvalidPathError,
   OutsideSetupError,
   RegistryNotInstalledError,

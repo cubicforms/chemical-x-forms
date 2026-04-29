@@ -390,7 +390,7 @@ brand-typed `unique symbol` flavor for type-level usage.
 - `isRegisterValue(x)` — type guard for the object `register` returns
 - `ROOT_PATH` / `ROOT_PATH_KEY` — the empty path and its key
 - `PARSE_API_ERRORS_DEFAULTS` — `{ maxEntries: 1000, maxPathDepth: 32, maxTotalSegments: 10000 }` constant
-- `InvalidPathError` / `OutsideSetupError` / `RegistryNotInstalledError` / `ReservedFormKeyError` / `SensitivePersistFieldError` / `SubmitErrorHandlerError` — error classes
+- `AnonPersistError` / `InvalidPathError` / `OutsideSetupError` / `RegistryNotInstalledError` / `ReservedFormKeyError` / `SensitivePersistFieldError` / `SubmitErrorHandlerError` — error classes
 
 ---
 
@@ -671,6 +671,9 @@ import type {
   DefaultValuesResponse,
   DefaultValuesShape,
   FieldState,
+  FieldStateLeaf,
+  FieldStateMap,
+  FieldStateMapEntry,
   FieldValidationConfig,
   FieldValidationMode,
   FlatPath,

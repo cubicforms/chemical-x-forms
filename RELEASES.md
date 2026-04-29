@@ -1,5 +1,16 @@
 # Releases
 
+## v0.12.1 — 2026-04-29
+
+## What's Changed
+* fix(slim-gate): reject unknown-path writes + property tests + KISS warn copy by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/154
+* chore(deps-dev): bump the dev-dependencies group with 3 updates by @dependabot[bot] in https://github.com/cubicforms/chemical-x-forms/pull/152
+
+
+**Full Changelog**: https://github.com/cubicforms/chemical-x-forms/compare/v0.12.0...v0.12.1
+
+---
+
 ## v0.12.0 — 2026-04-29
 
 ## What's Changed

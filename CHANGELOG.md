@@ -4,6 +4,9 @@
 
 _No unreleased changes yet._
 
+## v0.12.1
+_No unreleased changes yet._
+
 ## v0.12.0
 **Validation refactor: errors as a pure function of `(value, schema) +
 injected user errors`.** The data layer (errors as state) is now fully

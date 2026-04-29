@@ -1147,7 +1147,12 @@ describe('vRegisterRadio — hydration with static value attribute', () => {
     document.body.appendChild(input)
 
     const { value } = makeRegisterValue<string>('banana')
+    // Initial checked-state sync moved from `created` to `mounted` —
+    // `created` fires BEFORE Vue patches type / value / _value onto
+    // the element, so reading them at that point would always come
+    // back undefined. Call both hooks here to mirror Vue's lifecycle.
     hooks.created?.(input, makeBinding(value), makeVNode({ type: 'radio' }), null)
+    hooks.mounted?.(input, makeBinding(value), makeVNode({ type: 'radio' }), null)
 
     expect(input.checked).toBe(true)
   })
@@ -1160,6 +1165,7 @@ describe('vRegisterRadio — hydration with static value attribute', () => {
 
     const { value } = makeRegisterValue<string>('banana')
     hooks.created?.(input, makeBinding(value), makeVNode({ type: 'radio' }), null)
+    hooks.mounted?.(input, makeBinding(value), makeVNode({ type: 'radio' }), null)
 
     expect(input.checked).toBe(false)
   })

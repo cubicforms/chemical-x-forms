@@ -18,6 +18,10 @@
     agreedToTerms: z.boolean(),
     favoriteFruits: z.array(z.string()),
     newsletter: z.enum(['subscribe', 'unsubscribe']),
+    // Radio group — one register binding shared across multiple
+    // <input type="radio">, each with a distinct value=. Model is
+    // the option-value of the currently-checked radio.
+    subscriptionTier: z.enum(['free', 'pro', 'enterprise']),
   })
 
   const { register, getFieldState, handleSubmit, getValue } = useForm({
@@ -28,7 +32,6 @@
     key: 'login',
     persist: 'session',
     defaultValues: {
-      email: 'mango',
       favoriteFruits: ['banana'],
     },
   })
@@ -58,7 +61,7 @@
     <form @submit="onSubmit">
       <div>
         <label for="email">Email</label>
-        <input id="email" v-register.trim.lazy="register('email', { persist: true })" />
+        <input id="email" v-register.trim="register('email', { persist: true })" />
         <div>{{ displayError }}</div>
       </div>
       <br />
@@ -110,6 +113,24 @@
           Newsletter (single checkbox mapped to a string via :true-value / :false-value)
         </label>
       </div>
+
+      <hr />
+      <h3>Radio group</h3>
+      <fieldset>
+        <legend>Subscription tier (one register binding, distinct value= per radio)</legend>
+        <label>
+          <input v-register="register('subscriptionTier')" type="radio" value="free" />
+          Free
+        </label>
+        <label>
+          <input v-register="register('subscriptionTier')" type="radio" value="pro" />
+          Pro
+        </label>
+        <label>
+          <input v-register="register('subscriptionTier')" type="radio" value="enterprise" />
+          Enterprise
+        </label>
+      </fieldset>
 
       <button>Log in</button>
     </form>

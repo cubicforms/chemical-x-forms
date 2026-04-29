@@ -742,17 +742,26 @@ const vRegisterRadio: RegisterRadioCustomDirective = {
     if (!isRegisterValue(value)) return
 
     value.registerElement(el)
-    // Read the option-value via `getValue(el)` rather than
-    // `vnode.props?.['value']` for the same reason as setChecked:
-    // hydrated static `value="..."` attributes don't surface in
-    // vnode.props (Vue's static-attr fast path), so the prop-only
-    // read returned undefined and the radio mounted unchecked.
-    el.checked = looseEqual(value.innerRef.value, getValue(el))
     setAssignFunction(el, vnode, value)
     addEventListener(el, 'change', () => {
       if (shouldBailListener(el)) return
       el[assignKey]?.(getValue(el))
     })
+  },
+  // Initial checked-state sync runs in `mounted`, NOT `created` —
+  // Vue's directive lifecycle fires `created` BEFORE the element's
+  // attributes are patched (`type`, `value`, `_value` etc. aren't on
+  // the element yet), so `getValue(el)` would return `undefined` and
+  // every radio in a group would mount unchecked regardless of the
+  // model. Checkbox already uses `mounted: setChecked` for the same
+  // reason.
+  mounted(el, { value }) {
+    if (!isRegisterValue(value)) return
+    // Read the option-value via `getValue(el)` rather than
+    // `vnode.props?.['value']` so SSR-hydrated static `value="..."`
+    // attributes (which don't surface in vnode.props because Vue's
+    // static-attr fast path skips patchProp) still resolve correctly.
+    el.checked = looseEqual(value.innerRef.value, getValue(el))
   },
   beforeUpdate(el, { value, oldValue }, vnode) {
     if (!isRegisterValue(value)) return

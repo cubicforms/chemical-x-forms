@@ -2,7 +2,7 @@
 
 Server-side rules the client doesn't know — "email already taken",
 "coupon expired", "we couldn't reach the payment provider" — surface
-as `fieldErrors` via a two-step pattern: parse the payload with
+as `errors` via a two-step pattern: parse the payload with
 `parseApiErrors`, write the result with `setFieldErrors` (or
 `addFieldErrors`).
 
@@ -37,13 +37,13 @@ as `fieldErrors` via a two-step pattern: parse the payload with
 <template>
   <form @submit.prevent="onSubmit">
     <input v-register="form.register('email')" />
-    <small v-if="form.fieldErrors.email?.[0]">
-      {{ form.fieldErrors.email[0].message }}
+    <small v-if="form.errors.email?.[0]">
+      {{ form.errors.email[0].message }}
     </small>
 
     <input v-register="form.register('password')" type="password" />
-    <small v-if="form.fieldErrors.password?.[0]">
-      {{ form.fieldErrors.password[0].message }}
+    <small v-if="form.errors.password?.[0]">
+      {{ form.errors.password[0].message }}
     </small>
 
     <button :disabled="form.state.isSubmitting">Sign up</button>
@@ -63,7 +63,7 @@ against the field — that updates the schema-error half, but your
 API entries stay until you call `clearFieldErrors(path)` (or
 unmount the form).
 
-The two flavours surface together in `fieldErrors[path]` (schema
+The two flavours surface together in `errors[path]` (schema
 entries first, user entries second), so templates render both
 without branching.
 
@@ -147,7 +147,7 @@ Legacy string entries (`{ email: 'taken' }`), entries missing
 ```ts
 import { CxErrorCode } from '@chemical-x/forms'
 
-for (const err of form.fieldErrors.email ?? []) {
+for (const err of form.errors.email ?? []) {
   if (err.code === 'api:duplicate-email') {
     // server-side uniqueness failure
   } else if (err.code === CxErrorCode.NoValueSupplied) {
@@ -218,7 +218,7 @@ user-error store; merging is structural.
 ## Non-field errors
 
 Some server errors aren't tied to a field — rate limits, provider
-outages. They belong in `state.submitError`, not `fieldErrors`:
+outages. They belong in `state.submitError`, not `errors`:
 
 ```ts
 const onSubmit = form.handleSubmit(async (values) => {

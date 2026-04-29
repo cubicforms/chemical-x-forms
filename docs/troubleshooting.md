@@ -153,8 +153,8 @@ escape hatch).
 
 ## "Submit fails with 'No value supplied' on a field the user can leave blank"
 
-The path is in the form's blank set and bound to a
-required schema. Three resolutions, depending on intent:
+The path is in the form's `blankPaths` set and bound to a required
+schema. Three resolutions, depending on intent:
 
 - **The field is genuinely optional.** Wrap the schema:
   `z.string().optional()`, `z.number().nullable()`, or
@@ -264,10 +264,9 @@ return {
 ```
 
 See the [custom-adapter recipe](./recipes/custom-adapter.md) for
-the full contract including `isRequiredAtPath` (used by the
-blank validation augmentation) and
-`getSlimPrimitiveTypesAtPath` (used by the slim-primitive write
-gate).
+the full contract including `isRequiredAtPath` (used by the blank
+validation augmentation) and `getSlimPrimitiveTypesAtPath` (used
+by the slim-primitive write gate).
 
 ## "Dev warnings don't fire — am I in production?"
 

@@ -19,12 +19,12 @@ const signupSchema = z.object({
   password: z.string().min(8),
 })
 
-const { handleSubmit, fieldErrors } = useForm({ schema: signupSchema, key: 'signup' })
+const { handleSubmit, errors } = useForm({ schema: signupSchema, key: 'signup' })
 ```
 
 That's all the wiring you need. `handleSubmit` validates, waits for
 any async refinement to settle, and then dispatches to your callback
-(or populates `fieldErrors` if validation fails).
+(or populates `errors` if validation fails).
 
 ## Live "checking…" UI with `validate()`
 
@@ -57,7 +57,7 @@ For non-submit flows — a "continue" button on a wizard, a manual
 re-check after a server round-trip — `await` a single validation run:
 
 ```ts
-const { validateAsync, fieldErrors } = useForm({ schema, key: 'signup' })
+const { validateAsync, errors } = useForm({ schema, key: 'signup' })
 
 async function onContinueClick() {
   const result = await validateAsync()

@@ -339,7 +339,7 @@ Three places accept the sentinel:
 
 - **`defaultValues`** — every primitive leaf can be `unset`. The
   library walks the payload at construction and adds the leaf's path
-  to the form's blank set.
+  to the form's `blankPaths` set.
 - **`setValue(path, unset)`** — translated at the API boundary;
   storage gets the slim default with `blank: true` meta.
 - **`reset({ … })`** — same translation; the post-reset state
@@ -349,7 +349,7 @@ Three places accept the sentinel:
 input yet, so every primitive leaf the consumer didn't supply in
 `defaultValues` is auto-marked `blank`. This means
 `useForm({ schema: z.object({ email: z.string() }) })` (no
-`defaultValues`) starts with `email` in the blank set —
+`defaultValues`) starts with `email` in the form's `blankPaths` set —
 its `displayValue` is `''`, and `handleSubmit` raises `"No value supplied"`
 until the user types something. To opt a leaf out of auto-mark,
 supply a non-`unset` value for it: `defaultValues: { email: '' }`
@@ -362,22 +362,22 @@ Hydration overrides: when the form is rehydrated from a persisted
 draft or SSR payload, the hydrated `blankPaths` list is
 authoritative and auto-mark does not fire.
 
-**Submit / validate honor the sentinel.** A blank path
-bound to a _required_ schema (no `.optional()` / `.nullable()` /
-`.default(N)` / `.catch(N)`) raises a synthesized `"No value supplied"`
-error during `handleSubmit` / `validate` / `validateAsync`. Use
-this when "user didn't answer" must NOT silently submit as `0` /
-`''` / `false`. Optional / nullable / has-default schemas accept
-the empty case and don't raise.
+**Submit / validate honor the sentinel.** A blank path bound to a
+_required_ schema (no `.optional()` / `.nullable()` / `.default(N)` /
+`.catch(N)`) raises a synthesized `"No value supplied"` error during
+`handleSubmit` / `validate` / `validateAsync`. Use this when "user
+didn't answer" must NOT silently submit as `0` / `''` / `false`.
+Optional / nullable / has-default schemas accept the empty case and
+don't raise.
 
 The directive's input listener auto-marks numeric inputs on empty
 DOM (`<input type="number">` or `<input v-register.number>`); for
 strings and booleans the dev opts in via `unset` because the DOM
 state alone doesn't carry "user-cleared" intent.
 
-Per-path introspection: `form.getFieldState(path).value.blank`.
-Bulk introspection: `form.blankPaths.value` returns a
-frozen `ReadonlySet<PathKey>` of every marked leaf, suitable for
+Per-path introspection: `form.fieldState.<path>.blank`. Bulk
+introspection: `form.blankPaths.value` returns a frozen
+`ReadonlySet<PathKey>` of every marked leaf, suitable for
 "unanswered fields" logging or conditional UI.
 
 `isUnset(value)` is the runtime type guard. `Unset` is the
@@ -452,9 +452,10 @@ Reads reflect what's stored in the form. Storage holds slim-primitive-
 correct values under the [slim-write contract](#slim-write-contract):
 refinement-level constraints (`z.enum([...])`, `.min(N)`, `.email()`,
 `z.literal(...)`) are NOT enforced at write time — they surface as
-field errors instead. So `getValue` widens primitive-literal leaves to
-their primitive supertype (`'red' | 'green' | 'blue'` becomes `string`,
-`42` becomes `number`) to match what the store can actually hold.
+field errors instead. So read types widen primitive-literal leaves
+to their primitive supertype (`'red' | 'green' | 'blue'` becomes
+`string`, `42` becomes `number`) to match what the store can
+actually hold.
 
 Array-crossing paths additionally taint with `| undefined`: once a
 path crosses a numeric segment (e.g. `'posts.0.title'`), every result
@@ -467,12 +468,15 @@ For the strict, post-validation shape, route through `handleSubmit` /
 `validate*()` — those return the strict zod-inferred type and only
 fire after refinements are checked.
 
-| Member                   | Type                                                              | What it does                                                                                                                                                                                                                        |
-| ------------------------ | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `getValue()`             | `Readonly<Ref<WithIndexedUndefined<WriteShape<Form>>>>`           | Whole form reactive ref. Primitive-literal leaves widened; array elements tainted `Item \| undefined`.                                                                                                                              |
-| `getValue(path)`         | `Readonly<Ref<NestedReadType<WriteShape<Form>, Path>>>`           | Single-field ref. Slim-widened at the leaf; `T \| undefined` once a numeric segment is crossed. Tuple positions stay strict.                                                                                                        |
-| `getValue({ withMeta })` | `CurrentValueWithContext<WithIndexedUndefined<WriteShape<Form>>>` | Whole form with meta. Same widening + taint.                                                                                                                                                                                        |
-| `getFieldState(path)`    | `Ref<FieldState<NestedReadType<WriteShape<Form>, Path>>>`         | Per-field state at the path. The data slots (`currentValue`, `originalValue`, `previousValue`) carry the widened leaf type; metadata (`errors`, `dirty`, `pristine`, `focused`, `blurred`, `touched`, `isConnected`) is unaffected. |
+Reads are Pinia-style proxies — dot-access leaves directly with no
+`.value`, in templates and scripts identically.
+
+| Member        | Type                                                                | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `values`      | `Readonly<WithIndexedUndefined<WriteShape<Form>>>` (proxy)          | Whole-form reactive read. `form.values.email`, `form.values.address.city`, `form.values.posts[0]?.title`. Auto-unwraps in templates and scripts. Primitive-literal leaves widened; array elements tainted `Item \| undefined`.                                                                                                                                                                                                                            |
+| `fieldState`  | `FieldStateMap<Form>` (proxy)                                       | Reactive per-field state map. Dot-descend any path: `form.fieldState.email.dirty`, `form.fieldState.address.city.errors`. Leaf props: `value`, `original`, `dirty`, `pristine`, `focused`, `blurred`, `touched`, `errors`, `blank`, `isConnected`, `updatedAt`, `path`. A schema field named for one of those leaf props at depth ≥ 2 is shadowed (rename the field or read via `toRef`).                                                                  |
+| `errors`      | `Readonly<FormFieldErrors<Form>>` (proxy)                           | Per-field errors keyed by dotted path: `form.errors.email?.[0]?.message`. Schema entries first, user entries second. See the [error store](#error-store) section for setter helpers.                                                                                                                                                                                                                                                                       |
+| `toRef(path)` | `(path: FlatPath<Form>) => Readonly<Ref<NestedReadType<...>>>`      | Escape hatch — get a `Readonly<Ref>` at `path` for `watch()` or external composables that expect ref-shaped inputs. Read type matches `form.values.<path>` (slim-widened, array-tainted).                                                                                                                                                                                                                                                                  |
 
 ### Writing values
 
@@ -487,7 +491,7 @@ path. The runtime gates writes on primitive `typeof`-style checks
 constraints (`z.enum([...])`, `.email()`, `.min(N)`,
 `z.literal(...)`, regex matches) are NOT enforced at write time.
 They surface via the field-validation pipeline as entries in
-`fieldErrors` and are returned in full from `validate*()` /
+`form.errors` and are returned in full from `validate*()` /
 `handleSubmit` callbacks.
 
 The TypeScript layer reflects this via `WriteShape<T>` — a
@@ -547,7 +551,7 @@ the rationale.
 
 | Member                    | Type                                                                                                                                                                                                                                   |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fieldErrors`             | `Readonly<FormFieldErrors<Form>>` — Proxy view; dot-access leaves directly, no `.value`. Merges schema + user; schema entries first.                                                                                                   |
+| `errors`                  | `Readonly<FormFieldErrors<Form>>` — proxy view; dot-access leaves directly, no `.value`. Merges schema + user; schema entries first. Mirrored on `form.fieldState.<path>.errors`.                                                      |
 | `setFieldErrors(errors)`  | `(ValidationError[]) => void` — replaces the user-error store. For server / API responses, parse the payload via `parseApiErrors` (top-level helper) and feed the result here. See [server-errors recipe](./recipes/server-errors.md). |
 | `addFieldErrors(errors)`  | `(ValidationError[]) => void` — appends to the user-error store.                                                                                                                                                                       |
 | `clearFieldErrors(path?)` | `(path?) => void` — clears BOTH stores at the given path (or all paths if omitted). With live validation, the schema half re-populates on the next mutation if the value is still invalid.                                             |
@@ -636,10 +640,10 @@ for the `v-for` pattern.
 
 ### Blank introspection
 
-| Member                            | Type                  | What it does                                                                                                                                                                                                                                                                                                            |
-| --------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `blankPaths.value`                | `ReadonlySet<string>` | Frozen snapshot of every path-key currently in the form's blank set. Reactive — Vue tracks `.has()` / `.size` / iteration. Mutating the snapshot is a no-op (writes go through `setValue(_, unset)`, the directive's input listener, or `markBlank()` on a register binding). See `unset` exported from the core entry. |
-| `getFieldState(path).value.blank` | `boolean`             | Per-path equivalent: `true` while `path` is in the blank set.                                                                                                                                                                                                                                                           |
+| Member                    | Type                  | What it does                                                                                                                                                                                                                                                                                                                       |
+| ------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `blankPaths.value`        | `ReadonlySet<string>` | Frozen snapshot of every path-key currently in the form's `blankPaths` set. Reactive — Vue tracks `.has()` / `.size` / iteration. Mutating the snapshot is a no-op (writes go through `setValue(_, unset)`, the directive's input listener, or `markBlank()` on a register binding). See `unset` exported from the core entry.    |
+| `fieldState.<path>.blank` | `boolean`             | Per-path equivalent: `true` while `path` is in the form's `blankPaths` set.                                                                                                                                                                                                                                                        |
 
 ### Identity
 
@@ -723,15 +727,15 @@ The ones you'll touch most:
   the path tracking whether a numeric segment was crossed; once
   tainted, all subsequent results are `T | undefined`. Tuple
   positions stay strict. Composed with `WriteShape<...>` (see
-  below) at the call site for `getValue`, `getFieldState`, and
-  `register`.
+  below) at the call site for `register`, `values`, `fieldState`,
+  and `toRef`.
 - **`WriteShape<T>`** — recursive mapped type that widens primitive-
   literal leaves to their primitive supertype. `'red' | 'green'` →
   `string`; `42` → `number`; nested objects recurse; tuples
   preserve positions; unbounded arrays widen elements; `Date`,
   `RegExp`, `Map`, `Set`, and functions pass through unchanged.
-  Applied to read surfaces that observe storage (`getValue`,
-  `getFieldState.currentValue`, `register.innerRef`). NOT applied
+  Applied to read surfaces that observe storage (`form.values`,
+  `form.fieldState.<path>.value`, `register.innerRef`). NOT applied
   to `handleSubmit` or `validate*()` payloads — those run after
   validation, so the strict zod-inferred shape is honest there.
 - **`DefaultValuesShape<T>`** — `WriteShape<T>` plus the `unset`
@@ -765,13 +769,24 @@ The ones you'll touch most:
   `Path`.
 - **`ValidationError`** — `{ path: readonly Segment[]; message:
 string; formKey: FormKey }`.
-- **`FieldState<Value = unknown>`** — per-field reactive state at a
-  path: `currentValue` / `originalValue` / `previousValue` (typed
-  `Value`), `pristine` / `dirty` (booleans), `focused` / `blurred` /
-  `touched` (`boolean | null`), `errors` (`ValidationError[]`),
-  `meta` (`MetaTrackerValue`), and `isConnected` / `updatedAt`.
-  Defaults to `unknown` for legacy uses; `getFieldState(path)`
-  resolves `Value` to `WriteShape<NestedReadType<Form, Path>>`.
+- **`FieldStateLeaf<Value>`** — runtime shape of a single
+  `form.fieldState.<path>` read: `value` / `original` (typed
+  `Value`), `pristine` / `dirty` / `blank` (booleans), `focused` /
+  `blurred` / `touched` (`boolean | null`), `errors`
+  (`readonly ValidationError[]`), `path`, `isConnected`, `updatedAt`.
+  Schema fields with names matching these leaf keys at depth ≥ 2
+  are shadowed by the leaf — bracket-access via `toRef` is the
+  workaround.
+- **`FieldStateMap<Form>`** — the recursive type behind
+  `form.fieldState`. Top-level fields and nested objects are
+  reachable via dot-descent; leaf keys (`value`, `dirty`, `errors`,
+  …) read off the FieldStateLeaf at the current path.
+- **`FieldState<Value = unknown>`** — richer per-field type kept for
+  type-level utility code: `currentValue` / `originalValue` /
+  `previousValue` (typed `Value`), the same flag set as
+  `FieldStateLeaf`, plus `meta` (`MetaTrackerValue`). Returned by no
+  current public API directly; useful when type-narrowing or
+  building higher-order helpers.
 - **`ValidationMode`** — `'lax' | 'strict'`. Defaults to `'strict'` —
   the data layer reports schema errors immediately when defaults fail.
   Use `'lax'` to opt out (multi-step wizards, placeholder rows in field
@@ -786,11 +801,8 @@ string; formKey: FormKey }`.
   `'object'`, `'array'`, `'symbol'`, `'function'`, `'map'`, `'set'`.
   Returned by `AbstractSchema.getSlimPrimitiveTypesAtPath(path)`.
 - **`MetaTrackerValue`** — per-leaf metadata: `updatedAt`,
-  `rawValue`, `isConnected`, `formKey`, `path`. Surfaced via
-  `getFieldState(path).meta` and the `withMeta: true` overloads of
-  `getValue`.
-- **`CurrentValueContext` / `CurrentValueWithContext`** — argument
-  and return types for the metadata overloads of `getValue`.
+  `rawValue`, `isConnected`, `formKey`, `path`. Read from
+  `FieldState.meta` when type-narrowing through that surface.
 - **`RegisterDirective`** — the union of every `v-register`
   directive variant (text input, select, checkbox, radio, dynamic).
   Most consumers use this only when augmenting Vue's `GlobalDirectives`

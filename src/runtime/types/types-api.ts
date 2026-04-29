@@ -115,7 +115,7 @@ export type ValidationResponseWithoutValue<Form> = Omit<ValidationResponse<Form>
  * How strictly to validate when deriving default values at construction.
  *
  * - `'strict'` (default): the schema's defaults are validated immediately;
- *   any failures populate `fieldErrors` from the first frame so the data
+ *   any failures populate `form.errors` from the first frame so the data
  *   layer is honest about the schema's verdict. The UI decides when to
  *   *show* errors (gate on `state.touched`, `state.submitCount`, etc.).
  * - `'lax'`: refinements are stripped during default-values derivation
@@ -615,7 +615,7 @@ export type UseFormConfiguration<
    * How strictly to validate default values at construction.
    *
    * - `'strict'` (default): the schema is run against the derived
-   *   defaults immediately; any failures populate `fieldErrors` from
+   *   defaults immediately; any failures populate `form.errors` from
    *   the first frame. The UI decides when to *show* errors — gate
    *   on `state.touched`, `state.submitCount`, etc.
    * - `'lax'`: refinements are stripped during defaults derivation
@@ -791,8 +791,8 @@ export type HandleSubmit<Form extends GenericForm> = (
 ) => SubmitHandler
 
 /**
- * Per-leaf metadata tracked alongside a field's value. Returned by
- * `getValue({ withMeta: true })` and via `getFieldState(path).meta`.
+ * Per-leaf metadata tracked alongside a field's value. Read from
+ * `FieldState.meta` when type-narrowing through that surface.
  *
  * - `updatedAt` — ISO timestamp of the most recent write at this path,
  *   or `null` if the field has never been written.
@@ -939,7 +939,7 @@ export type RegisterValue<Value = unknown> = {
   setValueWithInternalPath: (value: unknown, meta?: WriteMeta) => boolean
   /**
    * Mark this field as DOM-connected during SSR so a server-rendered
-   * template that reads `getFieldState(path).isConnected` doesn't
+   * template that reads `form.fieldState.<path>.isConnected` doesn't
    * flicker on hydration. The `v-register` directive calls this for
    * you; no-op on the client.
    * @internal
@@ -1236,15 +1236,15 @@ export type DOMFieldState = {
   touched: boolean | null
 }
 /**
- * Reactive per-field state returned by `form.getFieldState(path)`.
- * Tracks the value at the path along with focus, dirty, and error
- * flags useful for inline validation UI.
+ * Richer per-field type kept for type-level utility code (e.g.
+ * higher-order helpers that pass field state around). Carries
+ * `currentValue` / `originalValue` / `previousValue` (typed `Value`),
+ * the same flag set as `FieldStateLeaf`, plus `meta`
+ * (`MetaTrackerValue`).
  *
- * ```ts
- * const state = form.getFieldState('email')
- * // Then in template:
- * //   <p v-if="state.touched && state.errors.length">{{ state.errors[0].message }}</p>
- * ```
+ * `form.fieldState.<path>` returns the slim `FieldStateLeaf` shape;
+ * pick `FieldState<Value>` for code that needs `meta` or the historical
+ * `previousValue` slot.
  */
 export type FieldState<Value = unknown> = DeepFlatten<
   DOMFieldState & {
@@ -1280,12 +1280,11 @@ export type FieldState<Value = unknown> = DeepFlatten<
 >
 
 /**
- * Runtime shape of a single FieldStateView entry surfaced through
- * `form.fieldState.<path>`. Matches what `buildFieldStateAccessor`
- * actually produces (slim shape, readonly across the board), as
- * opposed to `FieldState<Value>` which is the typed public contract
- * via `getFieldState(path)`. The runtime accessor's structural keys
- * are what the proxy disambiguates against on each property read.
+ * Per-field reactive shape returned by `form.fieldState.<path>`.
+ * Slim, readonly across the board. Schema fields with names matching
+ * a `FieldStateLeaf` key (`value`, `dirty`, `errors`, …) at depth ≥ 2
+ * are shadowed by the leaf — bracket-access via `toRef(path)` is the
+ * workaround.
  */
 export type FieldStateLeaf<Value = unknown> = {
   readonly value: Value
@@ -1329,7 +1328,7 @@ export type DOMFieldStateStore = Map<string, DOMFieldState | undefined>
 
 /**
  * Untyped error map keyed by dotted-string path. The same data
- * exposed by `form.fieldErrors`, but as a plain record — useful when
+ * exposed by `form.errors`, but as a plain record — useful when
  * routing API errors that may land on paths the form's TypeScript
  * type doesn't know about.
  */
@@ -1337,20 +1336,20 @@ export type FormErrorRecord = Record<string, ValidationError[]>
 export type FormErrorStore = Map<FormKey, FormErrorRecord>
 
 /**
- * Type of `form.fieldErrors`. Each known path in the form's schema
+ * Type of `form.errors`. Each known path in the form's schema
  * appears as an optional key whose value is the path's error list.
  *
  * Dot access works for top-level paths:
  *
  * ```ts
- * form.fieldErrors.email // ValidationError[] | undefined
+ * form.errors.email // ValidationError[] | undefined
  * ```
  *
  * Use bracket access for nested dotted keys (JS dot syntax splits on
  * literal dots):
  *
  * ```ts
- * form.fieldErrors['user.profile.email']
+ * form.errors['user.profile.email']
  * ```
  */
 export type FormFieldErrors<Form extends GenericForm> = Partial<
@@ -1418,7 +1417,7 @@ export type ApiErrorEnvelope = {
  * ```
  *
  * Per-field state (touched, dirty, errors) lives behind
- * `form.getFieldState(path)`; this is the aggregate view across the
+ * `form.fieldState.<path>`; this is the aggregate view across the
  * whole form.
  *
  * Read-only at runtime — assignments throw. Destructuring snapshots
@@ -1494,11 +1493,13 @@ export interface FormState {
  *
  * ```ts
  * const form = useForm({ schema })
- * form.register('email')      // bind to <input v-register>
- * form.getValue('email')      // Readonly<Ref<string>>
+ * form.register('email')        // bind to <input v-register>
+ * form.values.email             // current value (proxy, no .value)
+ * form.fieldState.email.dirty   // per-field flags
+ * form.errors.email             // ValidationError[] | undefined
  * form.setValue('email', 'a@b.c')
- * form.handleSubmit(onSubmit) // returns a submit handler
- * form.state.isSubmitting     // reactive flag
+ * form.handleSubmit(onSubmit)   // returns a submit handler
+ * form.state.isSubmitting       // form-level reactive flag
  * ```
  */
 export type UseAbstractFormReturnType<
@@ -1726,26 +1727,6 @@ export type UseAbstractFormReturnType<
    * Read in templates with no `.value`:
    *
    * ```vue
-   * <p v-if="form.fieldErrors.email">{{ form.fieldErrors.email[0].message }}</p>
-   * ```
-   *
-   * Watch from script via the getter form:
-   *
-   * ```ts
-   * watch(() => form.fieldErrors.email, (errors) => …)
-   * ```
-   *
-   * Use bracket access for nested dotted keys
-   * (`form.fieldErrors['user.profile.email']`) — JS dot notation
-   * splits on literal dots.
-   *
-   * Reactive map of field errors, keyed by dotted path. Populated
-   * automatically by `handleSubmit` and per-field validation; cleared
-   * on validation success.
-   *
-   * Read in templates with no `.value`:
-   *
-   * ```vue
    * <p v-if="form.errors.email">{{ form.errors.email[0].message }}</p>
    * ```
    *
@@ -1822,7 +1803,7 @@ export type UseAbstractFormReturnType<
    * shape. Read leaves directly with no `.value`.
    *
    * For per-field state (touched, focused, blurred, errors at one
-   * path), use `getFieldState(path)` instead.
+   * path), use `form.fieldState.<path>` instead.
    */
   state: FormState
 
@@ -1980,7 +1961,7 @@ export type UseAbstractFormReturnType<
    * })
    * ```
    *
-   * For per-path access, use `getFieldState(path).meta.blank`.
+   * For per-path access, use `form.fieldState.<path>.blank`.
    * Writes happen through `setValue(path, unset)`,
    * `markBlank()` on a register binding, and the directive's
    * input listener on numeric clear. Mutating the snapshot returned

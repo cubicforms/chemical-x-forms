@@ -59,7 +59,7 @@ Out-of-range behaviour:
   })
 
   const form = useForm({ schema, key: 'blog-editor' })
-  const posts = form.getValue('posts')
+  const posts = computed(() => form.values.posts ?? [])
 </script>
 
 <template>

@@ -80,6 +80,33 @@ export class ReservedFormKeyError extends Error {
 }
 
 /**
+ * Thrown (in dev) when `useForm({ persist: ... })` is configured on
+ * an anonymous form (no `key:` provided). The synthetic `__cx:anon:`
+ * identity isn't stable across remounts (Vue's `useId()` allocator
+ * drifts under HMR, and any sibling `useId()` call shifts subsequent
+ * IDs), so the persistence layer can't reliably find the previous
+ * mount's draft. Result: stale entries pile up in storage and the
+ * user's most recent edit doesn't always come back.
+ *
+ * Fix: pass an explicit `key` to `useForm()`.
+ *
+ * In production builds the runtime downgrades this to a one-shot
+ * `console.warn` so a deployed third-party app shipping the
+ * anti-pattern doesn't hard-crash.
+ */
+export class AnonPersistError extends Error {
+  override readonly name = 'AnonPersistError'
+  constructor() {
+    super(
+      '[@chemical-x/forms] persist: requires an explicit key on useForm().\n' +
+        '  Why: anonymous keys drift on remount AND can collide between forms — your data could leak across unrelated forms.\n' +
+        "  Fix: useForm({ schema, key: 'login', persist: '...' })\n" +
+        '  In prod: no throw — persistence is silently disabled and a one-time warn is logged.'
+    )
+  }
+}
+
+/**
  * Thrown when `register(path, { persist: true })` or `form.persist(path)`
  * targets a path whose name matches a sensitive-data heuristic
  * (password, cvv, ssn, token, etc.) without an explicit

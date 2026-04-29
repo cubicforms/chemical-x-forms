@@ -8,6 +8,7 @@ import { vRegister } from '../../src/runtime/core/directive'
 import { __resetIndexedDbForTests } from '../../src/runtime/core/persistence/indexeddb'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
+import { hashStableString } from '../../src/runtime/core/hash'
 
 /**
  * Node 25's native `localStorage` (behind `--experimental-webstorage`)
@@ -86,7 +87,11 @@ const schema = z.object({
  * pre-seeded entry is treated as an orphan (stale-fingerprint) and
  * cleaned up on mount instead of rehydrating.
  */
-const FP = fingerprintZodSchema(schema)
+// Storage keys hash the structural fingerprint via cyrb53 to avoid
+// embedding the schema's full shape in localStorage entries. Mirror
+// the runtime's transformation here so tests that pre-seed or read
+// keys directly use the same suffix the form looks up.
+const FP = hashStableString(fingerprintZodSchema(schema))
 const fpKey = (base: string): string => `${base}:${FP}`
 
 type ApiReturn = ReturnType<typeof useForm<typeof schema>>
@@ -337,10 +342,10 @@ describe('persistence — non-opted-in transient-empty paths survive hydration',
       email: z.string(),
       salary: z.number(),
     })
-    const customFp = fingerprintZodSchema(customSchema)
+    const customFp = hashStableString(fingerprintZodSchema(customSchema))
     // Default `resolveStorageKeyBase`: `${PERSISTENCE_KEY_PREFIX}${formKey}`,
     // and PERSISTENCE_KEY_PREFIX is 'chemical-x-forms:'. Then the full
-    // storage key appends `:${fingerprint}`.
+    // storage key appends `:${hashedFingerprint}`.
     const customKey = `chemical-x-forms:test-non-optin-tep:${customFp}`
 
     // Pre-seed sessionStorage with a payload representing the state
@@ -426,6 +431,134 @@ describe('persistence — sessionStorage backend', () => {
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { data: { form: { email: string } } }
     expect(payload.data.form.email).toBe('sess@example.com')
+  })
+})
+
+/**
+ * Repro for the playground bug: a developer wires `persist: 'local'`,
+ * the form writes to localStorage, then they switch to
+ * `persist: 'session'`. The sessionStorage entry appears (correctly)
+ * but the localStorage entry is left orphaned.
+ *
+ * The sweep at use-abstract-form.ts:150 (sweepNonConfiguredStandard
+ * StoresForOrphans) is supposed to handle this — it walks every
+ * non-configured standard backend and removes keys under the form's
+ * persistence base. The test below pins the contract for stable form
+ * keys; the anonymous-form variant is harder because the anon counter
+ * drifts under HMR (see the "stable across remounts" test).
+ */
+/**
+ * Anonymous + persist is unsafe by construction (synthetic key drifts
+ * on remount, can collide between unrelated forms with the same
+ * schema → cross-form data leakage). Dev throws AnonPersistError;
+ * prod warns and disables persistence for that form.
+ *
+ * Tests run with `__DEV__` true (Vitest default), so the throw path
+ * is exercised. The prod-warn-and-disable path is verified by
+ * stubbing `__DEV__` to false in a separate test.
+ */
+describe('persistence — anonymous useForm() rejects persist (dev throw)', () => {
+  const apps: App[] = []
+  beforeEach(() => {
+    sessionStorage.clear()
+    localStorage.clear()
+  })
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+    sessionStorage.clear()
+    localStorage.clear()
+  })
+
+  it('throws AnonPersistError when useForm has no key + persist is configured', () => {
+    const customSchema = z.object({ email: z.string() })
+    const App = defineComponent({
+      setup() {
+        // No `key:` → anonymous identity → throws.
+        useForm({ schema: customSchema, persist: 'session' })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    apps.push(app)
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+
+    // Vue's app.mount surfaces setup-time throws — capture and assert.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      let caught: unknown = null
+      try {
+        app.mount(root)
+      } catch (err) {
+        caught = err
+      }
+      // Vue may swallow the setup throw and route it through its
+      // app-level handler; either way the message must reach the
+      // console.error stream.
+      const seenViaErrSpy = errSpy.mock.calls
+        .flat()
+        .some(
+          (arg) =>
+            (arg instanceof Error && /persist:.*requires an explicit key/.test(arg.message)) ||
+            (typeof arg === 'string' && /persist:.*requires an explicit key/.test(arg))
+        )
+      const seenViaCatch =
+        caught instanceof Error && /persist:.*requires an explicit key/.test(caught.message)
+      expect(seenViaErrSpy || seenViaCatch).toBe(true)
+    } finally {
+      errSpy.mockRestore()
+    }
+  })
+
+  it('does NOT throw when useForm has an explicit key + persist', async () => {
+    const { app, type } = mountForm({ storage: 'session', key: 'test-explicit', debounceMs: 20 })
+    apps.push(app)
+    await drain()
+    type('email', 'works@example.com')
+    const raw = await waitUntil(() => sessionStorage.getItem(fpKey('test-explicit')))
+    expect(raw).not.toBeNull()
+  })
+})
+
+describe('persistence — backend swap cleans up the prior backend', () => {
+  const apps: App[] = []
+  beforeEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  it('switching local → session removes the old localStorage entry', async () => {
+    // Mount 1: persist to localStorage.
+    const first = mountForm({ storage: 'local', key: 'swap-test', debounceMs: 20 })
+    apps.push(first.app)
+    await drain()
+    first.type('email', 'mango')
+    await waitUntil(() => localStorage.getItem(fpKey('swap-test')))
+    expect(localStorage.getItem(fpKey('swap-test'))).not.toBeNull()
+    expect(sessionStorage.getItem(fpKey('swap-test'))).toBeNull()
+
+    // Tear down (mirrors the developer's edit-config-and-refresh flow).
+    first.app.unmount()
+    apps.length = 0
+
+    // Mount 2: SAME persist key, different storage backend.
+    const second = mountForm({ storage: 'session', key: 'swap-test', debounceMs: 20 })
+    apps.push(second.app)
+    // Drain microtasks for the cross-store sweep to land. The sweep
+    // is fire-and-forget; we wait via the negative-condition predicate.
+    await waitUntil(() => (localStorage.getItem(fpKey('swap-test')) === null ? true : null))
+
+    expect(localStorage.getItem(fpKey('swap-test'))).toBeNull()
+
+    // Sanity: writing into the new mount lands in sessionStorage.
+    second.type('email', 'mang')
+    await waitUntil(() => sessionStorage.getItem(fpKey('swap-test')))
+    expect(sessionStorage.getItem(fpKey('swap-test'))).not.toBeNull()
   })
 })
 

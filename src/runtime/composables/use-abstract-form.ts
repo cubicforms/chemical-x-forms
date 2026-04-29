@@ -9,7 +9,7 @@ import {
 } from '../core/defaults'
 import { __DEV__ } from '../core/dev'
 import { captureUserCallSite } from '../core/dev-stack-trace'
-import { ReservedFormKeyError } from '../core/errors'
+import { AnonPersistError, ReservedFormKeyError } from '../core/errors'
 import type { FieldStateView } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
 import { createHistoryModule, type HistoryModule } from '../core/history'
@@ -29,6 +29,7 @@ import {
   sweepNonConfiguredStandardStoresForOrphans,
   type PersistenceModule,
 } from '../core/persistence'
+import { hashStableString } from '../core/hash'
 import { canonicalizePath, type Path, type PathKey } from '../core/paths'
 import { deleteAtPath, getAtPath, setAtPath, isPlainRecord } from '../core/path-walker'
 import { kFormContext, useRegistry } from '../core/registry'
@@ -137,9 +138,21 @@ export function useAbstractForm<
   //
   // The shorthand input (`persist: 'local'`, `persist: customAdapter`)
   // is normalised to the resolved options bag once at this boundary —
+  // Anonymous + persist enforcement. Dev throws (catches the bug at
+  // the offending useForm() call); prod returns `true` so the wiring
+  // block below skips entirely AND cleans up any prior persisted
+  // entries — we'd rather pretend persist wasn't configured than
+  // silently mis-route data between forms that happened to share an
+  // anon id. Runs regardless of SSR / first-mount-vs-rehook so the
+  // dev-mode throw fires on the SSR pass too (without a server-side
+  // throw, the SSR pass would succeed silently and the client would
+  // throw on hydration — that surfaces as a confusing hydration
+  // mismatch instead of pointing at the actual config bug).
+  const persistDisabledByAnonRule =
+    merged.persist !== undefined && enforceAnonPersistRule(state.formKey, registry.isSSR)
   // everything below operates on the resolved shape.
   if (existing === undefined && !registry.isSSR) {
-    if (merged.persist !== undefined) {
+    if (merged.persist !== undefined && !persistDisabledByAnonRule) {
       const resolvedPersist = normalizePersistConfig(merged.persist)
       const persistenceBase = resolveStorageKeyBase(resolvedPersist, state.formKey)
       // Cross-store orphan cleanup: any standard backend not matching
@@ -157,11 +170,11 @@ export function useAbstractForm<
       state.registerDrain(() => persistenceModule.awaitPendingWrites())
       state.registerCleanup(() => persistenceModule.dispose())
     } else {
-      // No `persist:` configured. The form might have HAD persistence
-      // in a prior deployment that the dev has since removed. Sweep
-      // every cx-managed key under the default base from every
-      // standard backend so removing the option actually removes the
-      // on-disk artifact across all fingerprints that ever ran.
+      // Either the dev didn't configure `persist:` OR we just disabled
+      // it via the anon-persist rule. Either way, sweep every
+      // cx-managed key under this form's base across all standard
+      // backends so dropping (or refusing to wire) persistence
+      // actually leaves storage clean.
       void sweepAllOrphansAcrossStandardStores(`${PERSISTENCE_KEY_PREFIX}${state.formKey}`)
     }
   }
@@ -473,7 +486,14 @@ function wirePersistence<F extends GenericForm>(
   // produces a different fingerprint, so the new mount looks up a fresh
   // key — the old draft becomes an orphan, cleaned up in the same mount
   // by `cleanupOrphanKeys` below. No manual version protocol required.
-  const fingerprint = state.schema.fingerprint()
+  // Hash the long structural fingerprint into a fixed-size token before
+  // baking it into the storage key. The raw fingerprint is the
+  // schema's full shape stringified (`object{"address":object{...}}`),
+  // which works correctly for invalidation but produces 200+ char
+  // storage keys for non-trivial schemas AND leaks the schema's
+  // structure into client-side storage. The hash preserves
+  // determinism (same schema → same hash) without either downside.
+  const fingerprint = hashStableString(state.schema.fingerprint())
   const base = resolveStorageKeyBase(config, state.formKey)
   const key = `${base}:${fingerprint}`
   const debounceMs = config.debounceMs ?? DEFAULT_PERSISTENCE_DEBOUNCE_MS
@@ -856,6 +876,53 @@ function isEmptyContainer(value: unknown): boolean {
   if (Array.isArray(value)) return value.length === 0
   if (isPlainRecord(value)) return Object.keys(value).length === 0
   return false
+}
+
+/**
+ * Tracks the FormStore identities the anon-persist warn already
+ * fired for in production. Dev-mode throws (via AnonPersistError)
+ * don't need a dedupe set — the throw aborts the call before
+ * subsequent identical calls can land.
+ */
+const warnedAnonPersistKeys: Set<string> = new Set<string>()
+
+/**
+ * Anonymous + `persist:` is unsafe by construction: the synthetic
+ * `__cx:anon:<id>` identity drifts on every remount (Vue's `useId()`
+ * allocator is per-app and per-tree-position; HMR rebuilds the
+ * instance) AND can collide between two unrelated anon forms that
+ * happen to land on the same id. With matching schemas + backend,
+ * the second form would read the first's draft and write back over
+ * it — actual cross-form data leakage, not just stale entries.
+ *
+ * Two-tier handling:
+ *   - **Dev** (`__DEV__` true): throw `AnonPersistError`. Hard-fails
+ *     the call at the offending useForm() site.
+ *   - **Prod**: one-shot `console.warn` + return `true` so the
+ *     caller skips persistence wiring entirely. A deployed app
+ *     shipping the anti-pattern shouldn't hard-crash, but it also
+ *     shouldn't silently mis-route data — disabling the mechanism
+ *     is the safe failure.
+ *
+ * Returns `true` when persistence MUST be skipped (anon + persist).
+ */
+function enforceAnonPersistRule(formKey: string, isSSR: boolean): boolean {
+  if (!formKey.startsWith(ANONYMOUS_FORM_KEY_PREFIX)) return false
+  if (__DEV__) throw new AnonPersistError()
+  // Production: warn + tell the caller to skip wiring. Client-only
+  // warn (skip server logs to avoid spamming SSR per-request output).
+  // Persist is still skipped on the SSR pass — same disabling
+  // outcome — just without the log noise.
+  if (!isSSR && !warnedAnonPersistKeys.has(formKey)) {
+    warnedAnonPersistKeys.add(formKey)
+    console.warn(
+      "[@chemical-x/forms] persist: ignored — anonymous useForm() can't safely persist " +
+        '(key drift + cross-form collision risk).\n' +
+        '  Persistence is disabled for this form; the app keeps working.\n' +
+        "  Fix: useForm({ schema, key: 'login', persist: '...' })"
+    )
+  }
+  return true
 }
 
 /**

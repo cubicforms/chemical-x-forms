@@ -7,6 +7,7 @@ import { vRegister } from '../../src/runtime/core/directive'
 import { CxErrorCode } from '../../src/runtime/core/error-codes'
 import { canonicalizePath } from '../../src/runtime/core/paths'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
+import { hashStableString } from '../../src/runtime/core/hash'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 
 /**
@@ -53,7 +54,10 @@ afterAll(() => {
 })
 
 const schema = z.object({ income: z.number() })
-const FP = fingerprintZodSchema(schema)
+// Storage keys hash the structural fingerprint via cyrb53; mirror that
+// transformation here so tests pre-seeding or reading keys directly
+// resolve to the same suffix the form looks up.
+const FP = hashStableString(fingerprintZodSchema(schema))
 const fpKey = (base: string): string => `${base}:${FP}`
 
 async function flushAll(rounds = 12): Promise<void> {

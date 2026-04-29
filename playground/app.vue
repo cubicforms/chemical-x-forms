@@ -22,7 +22,15 @@
 
   const { register, getFieldState, handleSubmit, getValue } = useForm({
     schema: login,
+    // Explicit key required for `persist:` to round-trip reliably —
+    // anon keys drift across mounts (HMR / refresh / SSR↔CSR) and the
+    // persistence layer would orphan entries on every reload.
+    key: 'login',
     persist: 'session',
+    defaultValues: {
+      email: 'mango',
+      favoriteFruits: ['banana'],
+    },
   })
   const field = getFieldState('salary')
 
@@ -50,7 +58,7 @@
     <form @submit="onSubmit">
       <div>
         <label for="email">Email</label>
-        <input id="email" v-register="register('email', { persist: true })" />
+        <input id="email" v-register.trim.lazy="register('email', { persist: true })" />
         <div>{{ displayError }}</div>
       </div>
       <br />
@@ -62,7 +70,7 @@
 
       <div>
         <label for="salary">Salary</label>
-        <input id="salary" v-register="register('salary')" />
+        <input id="salary" v-register.number="register('salary')" />
       </div>
 
       <hr />

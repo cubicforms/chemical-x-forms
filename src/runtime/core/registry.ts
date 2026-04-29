@@ -44,14 +44,14 @@ export type SerializedFormData = {
   /** Per-field metadata (timestamps, raw values, connection flags) captured at snapshot time. */
   readonly fields: ReadonlyArray<readonly [string, unknown]>
   /**
-   * Path keys that were in the form's `transientEmptyPaths` set at
+   * Path keys that were in the form's `blankPaths` set at
    * snapshot time. Round-trips the "displayed empty" UI state across
    * the SSR boundary — without it, the client briefly renders
    * `String(slim-default)` (e.g. `'0'`) for fields the server
    * rendered as blank. Optional in the wire format so older payload
    * shapes deserialise cleanly.
    */
-  readonly transientEmptyPaths?: ReadonlyArray<string>
+  readonly blankPaths?: ReadonlyArray<string>
 }
 
 export type PendingHydration = Map<FormKey, SerializedFormData>

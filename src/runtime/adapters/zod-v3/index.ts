@@ -179,7 +179,9 @@ export function zodAdapter<
             const path = coercePathSegments(issue.path)
             if (!schemasAtPath.length) {
               console.error(
-                `No schemas at path '${path.join(PATH_SEPARATOR)}' for key '${_formKey}'`
+                `[@chemical-x/forms] zod-v3 adapter: no schema at path ` +
+                  `'${path.join(PATH_SEPARATOR)}' for key '${_formKey}'. ` +
+                  `Skipping the issue. (This is a library-internal invariant — please file a bug.)`
               )
               continue
             }
@@ -373,7 +375,10 @@ export function zodAdapter<
           stripConfig: { stripDefaultValues: true, stripZodEffects: true },
         })
         const resolved = getNestedZodSchemasAtPath(slimSchema, path)
-        if (resolved.length === 0) return new Set(PERMISSIVE_V3)
+        // Path doesn't resolve in the schema → no kinds accepted.
+        // The gate's membership check rejects every kind against an
+        // empty set, blocking writes to typo / unknown paths.
+        if (resolved.length === 0) return new Set()
         const out = new Set<SlimPrimitiveKind>()
         for (const candidate of resolved) {
           for (const k of slimPrimitivesV3(candidate as z.ZodTypeAny)) out.add(k)
@@ -736,6 +741,14 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
       }
 
       return foundSchemas
+    } else {
+      // Hit a non-container (leaf primitive, wrapper, union — anything
+      // we don't recognise as descendable) but more segments remain.
+      // The path goes deeper than the schema admits; return empty
+      // so callers (slim-gate, validateAtPath, getDefaultAtPath)
+      // treat it as unresolvable rather than falsely binding to the
+      // last container's leaf. Mirrors v4's path-walker leaf branches.
+      return []
     }
   }
 
@@ -983,7 +996,7 @@ function isLeafRequiredV3(schema: z.ZodTypeAny, depth = 0): boolean {
     return next === undefined ? true : isLeafRequiredV3(next, depth + 1)
   }
   if (isZodSchemaType(schema, 'ZodPipeline')) {
-    // Use the input side: transient-empty is a write-time concern.
+    // Use the input side: blank is a write-time concern.
     const inner = (schema._def as { in?: z.ZodTypeAny }).in
     return inner === undefined ? true : isLeafRequiredV3(inner, depth + 1)
   }
@@ -1347,7 +1360,11 @@ function getDefaultValuesFromZodSchema<
       if (inner) return generateValue(inner)
     }
 
-    console.warn(`Unsupported schema: ${schema.constructor.name} (key '${formKey}')`)
+    console.warn(
+      `[@chemical-x/forms] zod-v3 adapter: unsupported schema kind ` +
+        `'${schema.constructor.name}' on form '${formKey}'. Defaulting the field to null. ` +
+        `Use a supported zod kind (object/array/record/string/number/etc.) at this path.`
+    )
     return null
   }
 

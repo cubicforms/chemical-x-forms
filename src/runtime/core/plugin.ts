@@ -67,9 +67,9 @@ export function createChemicalXForms(options: ChemicalXFormsPluginOptions = {}):
       if (app._chemicalX !== undefined) {
         if (__DEV__) {
           console.warn(
-            '[@chemical-x/forms] createChemicalXForms() install was called more than once on the same app. ' +
-              'The second install is a no-op; the existing registry is preserved. ' +
-              'Likely cause: registering the plugin twice (vite + nuxt module + manual `app.use`).'
+            '[@chemical-x/forms] createChemicalXForms() install was called twice on the same app; ' +
+              'the second call is a no-op. ' +
+              'Likely cause: registering the plugin via both the Nuxt module AND a manual `app.use(...)`.'
           )
         }
         return

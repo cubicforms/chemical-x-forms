@@ -369,7 +369,8 @@ function setAssignFunction(
   }
   if (!isRegisterValue(value)) {
     warn(
-      `v-register expected value of type RegisterValue, got value of type ${typeof value} instead. Please check your v-register value.`
+      `v-register expected a RegisterValue, got '${typeof value}'. ` +
+        `Bind to form.register('field') — not the field's ref, value, or path string.`
     )
     el[assignKey] = makeNoopAssigner()
     return
@@ -413,7 +414,7 @@ const vRegisterText: RegisterTextCustomDirective = {
       if (castToNumber) {
         // Empty after the (deferred) trim — most commonly a backspace-
         // clear on `<input type="number">` or a `.number` text input.
-        // Mark the path transient-empty rather than skipping silently:
+        // Mark the path blank rather than skipping silently:
         // storage gets the slim default (0), the UI shows blank via
         // `displayValue.value === ''`, and submit-time validation
         // raises "No value supplied" if the schema demands a number (the
@@ -428,7 +429,7 @@ const vRegisterText: RegisterTextCustomDirective = {
         // a genuine empty field — we use it to distinguish a real
         // user-clear (mark) from a transient mid-edit (skip). Without
         // this guard, typing `1e` into a `type="number"` field fires
-        // `markTransientEmpty`, `displayValue` recomputes to `''`,
+        // `markBlank`, `displayValue` recomputes to `''`,
         // Vue patches the DOM and yanks the user's `1e` away.
         if (domValue === '') {
           // Guard against non-input elements with custom assigners
@@ -443,7 +444,7 @@ const vRegisterText: RegisterTextCustomDirective = {
           }
           if (isRegisterValue(value)) {
             value.lastTypedForm.value = null
-            value.markTransientEmpty()
+            value.markBlank()
           }
           return
         }
@@ -458,7 +459,7 @@ const vRegisterText: RegisterTextCustomDirective = {
           // state.
           if (isRegisterValue(value)) {
             value.lastTypedForm.value = null
-            value.markTransientEmpty()
+            value.markBlank()
           }
           return
         }
@@ -517,13 +518,13 @@ const vRegisterText: RegisterTextCustomDirective = {
             // overflow (`1e309` parses to Infinity). Native
             // `<input type="number">` blur behaviour clears in both
             // cases; we match that. The keystroke listener has
-            // already markTransientEmpty'd uncastable input under
+            // already markBlank'd uncastable input under
             // non-lazy, but under `.lazy.number` (or for an overflow
             // pasted directly via the change event) this is the first
             // chance, so re-mark defensively.
             if (isRegisterValue(value)) {
               value.lastTypedForm.value = null
-              value.markTransientEmpty()
+              value.markBlank()
             }
             el.value = ''
           }
@@ -656,7 +657,9 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
       if (isArray(modelValue)) {
         if (elementValue === undefined) {
           warn(
-            'checkbox bound to a v-registerer array or set does not have an explicit value, state not updated.'
+            'Checkbox bound to an array model is missing a `value` attribute — ' +
+              'cannot determine which item to add or remove. ' +
+              'Add value="..." to each <input type="checkbox">.'
           )
           return
         }
@@ -672,7 +675,9 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
       } else if (isSet(modelValue)) {
         if (elementValue === undefined) {
           warn(
-            'Please add `value` prop to checkbox or pass RegisterValue of primitive value to register.'
+            'Checkbox bound to a Set model is missing a `value` attribute — ' +
+              'cannot determine which item to add or remove. ' +
+              'Add value="..." to each <input type="checkbox">.'
           )
           return
         }
@@ -696,7 +701,7 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
   },
 }
 
-function setChecked(el: HTMLInputElement, { value, oldValue }: DirectiveBinding, vnode: VNode) {
+function setChecked(el: HTMLInputElement, { value, oldValue }: DirectiveBinding, _vnode: VNode) {
   // store the v-registerer value on the element so it can be accessed by the
   // change listener.
   if (!isRegisterValue(value)) return
@@ -704,10 +709,19 @@ function setChecked(el: HTMLInputElement, { value, oldValue }: DirectiveBinding,
   const originalValue = value.innerRef.value
   let checked: boolean
 
+  // Read the option-value via `getValue(el)` rather than
+  // `vnode.props?.['value']`. On SSR + hydration, Vue skips
+  // `patchProp` for hoisted static `value="..."` attributes — vnode
+  // props don't carry the value AND `el._value` is never set, so the
+  // old code returned undefined and unchecked the box even when the
+  // DOM `value` attribute matched the model. `getValue` (post the
+  // static-attr fix) checks `_value` first, then the DOM property,
+  // so all three paths (Vue dynamic, Vue hydrated static, manual
+  // setAttribute) resolve identically.
   if (isArray(originalValue)) {
-    checked = looseIndexOf(originalValue, vnode.props?.['value']) > -1
+    checked = looseIndexOf(originalValue, getValue(el)) > -1
   } else if (isSet(originalValue)) {
-    checked = originalValue.has(vnode.props?.['value'])
+    checked = originalValue.has(getValue(el))
   } else {
     if (originalValue === oldValue) {
       return
@@ -728,20 +742,33 @@ const vRegisterRadio: RegisterRadioCustomDirective = {
     if (!isRegisterValue(value)) return
 
     value.registerElement(el)
-    // setAssignFunction(el, vnode, value)
-    el.checked = looseEqual(value.innerRef.value, vnode.props?.['value'])
     setAssignFunction(el, vnode, value)
     addEventListener(el, 'change', () => {
       if (shouldBailListener(el)) return
       el[assignKey]?.(getValue(el))
     })
   },
+  // Initial checked-state sync runs in `mounted`, NOT `created` —
+  // Vue's directive lifecycle fires `created` BEFORE the element's
+  // attributes are patched (`type`, `value`, `_value` etc. aren't on
+  // the element yet), so `getValue(el)` would return `undefined` and
+  // every radio in a group would mount unchecked regardless of the
+  // model. Checkbox already uses `mounted: setChecked` for the same
+  // reason.
+  mounted(el, { value }) {
+    if (!isRegisterValue(value)) return
+    // Read the option-value via `getValue(el)` rather than
+    // `vnode.props?.['value']` so SSR-hydrated static `value="..."`
+    // attributes (which don't surface in vnode.props because Vue's
+    // static-attr fast path skips patchProp) still resolve correctly.
+    el.checked = looseEqual(value.innerRef.value, getValue(el))
+  },
   beforeUpdate(el, { value, oldValue }, vnode) {
     if (!isRegisterValue(value)) return
 
     setAssignFunction(el, vnode, value)
     if (value.innerRef.value !== oldValue) {
-      el.checked = looseEqual(value.innerRef.value, vnode.props?.['value'])
+      el.checked = looseEqual(value.innerRef.value, getValue(el))
     }
   },
 }
@@ -813,8 +840,9 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
   if (isMultiple && !isArrayValue && !isSet(externalValue)) {
     if (__DEV__) {
       warn(
-        `<select multiple v-register> expected an Array or Set value for its binding, ` +
-          `but got ${Object.prototype.toString.call(externalValue).slice(8, -1)} instead.`
+        `<select multiple v-register> expected an Array or Set, got ` +
+          `${Object.prototype.toString.call(externalValue).slice(8, -1)}. ` +
+          `Bind to a list-typed schema (e.g. z.array(z.string()) or z.set(z.string())).`
       )
     }
     return
@@ -887,8 +915,24 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
 }
 
 // retrieve raw value set via :value bindings
+//
+// `explicitRequired` is the checkbox-array / checkbox-Set caller's way
+// of saying "the user must have provided an option-value via either a
+// dynamic `:value` binding (Vue sets `el._value`) OR a static `value`
+// attribute (DOM has `value` attribute set). If neither is present,
+// the default `el.value` of 'on' would silently add the bogus literal
+// 'on' to the array on every toggle — surface as undefined so the
+// caller can warn instead."
+//
+// Without the `hasAttribute('value')` fallback, the SSR + static-attr
+// hydration path fails: Vue's hydration skips patchProp for hoisted
+// static attributes, `el._value` is never set, but the DOM still
+// reflects the rendered `value="apple"` attribute. We need to honor
+// either signal.
 function getValue(el: HTMLOptionElement | HTMLInputElement, explicitRequired = false) {
-  return '_value' in el ? (el._value ?? undefined) : explicitRequired ? undefined : el.value
+  if ('_value' in el) return el._value
+  if (explicitRequired && !el.hasAttribute('value')) return undefined
+  return el.value
 }
 
 // retrieve raw value for true-value and false-value set via :true-value or :false-value bindings

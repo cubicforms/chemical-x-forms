@@ -72,9 +72,36 @@ export class ReservedFormKeyError extends Error {
   override readonly name = 'ReservedFormKeyError'
   constructor(key: string) {
     super(
-      `[@chemical-x/forms] The form key "${key}" uses the reserved "__cx:" namespace. ` +
-        `This prefix is reserved for the library's internal synthetic keys (anonymous useForm calls). ` +
-        `Pick a different prefix for your form.`
+      `[@chemical-x/forms] Form key "${key}" uses the reserved "__cx:" namespace. ` +
+        `Use a different prefix — "__cx:" is for library-internal synthetic keys ` +
+        `(anonymous useForm() calls without an explicit key).`
+    )
+  }
+}
+
+/**
+ * Thrown (in dev) when `useForm({ persist: ... })` is configured on
+ * an anonymous form (no `key:` provided). The synthetic `__cx:anon:`
+ * identity isn't stable across remounts (Vue's `useId()` allocator
+ * drifts under HMR, and any sibling `useId()` call shifts subsequent
+ * IDs), so the persistence layer can't reliably find the previous
+ * mount's draft. Result: stale entries pile up in storage and the
+ * user's most recent edit doesn't always come back.
+ *
+ * Fix: pass an explicit `key` to `useForm()`.
+ *
+ * In production builds the runtime downgrades this to a one-shot
+ * `console.warn` so a deployed third-party app shipping the
+ * anti-pattern doesn't hard-crash.
+ */
+export class AnonPersistError extends Error {
+  override readonly name = 'AnonPersistError'
+  constructor() {
+    super(
+      '[@chemical-x/forms] persist: requires an explicit key on useForm().\n' +
+        '  Why: anonymous keys drift on remount AND can collide between forms — your data could leak across unrelated forms.\n' +
+        "  Fix: useForm({ schema, key: 'login', persist: '...' })\n" +
+        '  In prod: no throw — persistence is silently disabled and a one-time warn is logged.'
     )
   }
 }
@@ -97,12 +124,11 @@ export class SensitivePersistFieldError extends Error {
   constructor(path: ReadonlyArray<string | number> | string) {
     const display = Array.isArray(path) ? path.join('.') : String(path)
     super(
-      `[@chemical-x/forms] The path "${display}" matches a sensitive-name ` +
-        `pattern (password / cvv / ssn / token / etc.). Persisting sensitive ` +
-        `data to client-side storage (localStorage / sessionStorage / IndexedDB) ` +
-        `is a compliance risk (HIPAA / PII / PCI-DSS / SOC2). If you genuinely ` +
-        `intend to persist this path, pass \`acknowledgeSensitive: true\` to ` +
-        `register() (or to form.persist()) to opt out of this check.`
+      `[@chemical-x/forms] Refusing to persist "${display}" — this path matches a ` +
+        `sensitive-name pattern (password / cvv / ssn / token / etc.). Storing sensitive ` +
+        `data in client-side storage is a compliance risk (HIPAA / PII / PCI-DSS / SOC2). ` +
+        `Fix: persist this server-side, OR pass \`acknowledgeSensitive: true\` to register() ` +
+        `(or form.persist()) if the client-side persistence is intentional.`
     )
   }
 }

@@ -108,4 +108,138 @@ describe('inputTextAreaNodeTransform', () => {
       expect(() => compileWithTransform(`<input v-register />`)).not.toThrow()
     })
   })
+
+  /**
+   * Repro for the playground bug: `<input type="checkbox" value="apple"
+   * v-register="...">` lost its static `value` attribute in the
+   * generated render code, so SSR HTML had no `value` attribute. Post-
+   * hydration the directive's change handler couldn't determine the
+   * option-value of the checkbox in an array group.
+   *
+   * The static `value=` on a checkbox / radio is the OPTION-value (a
+   * discriminator within the group), not display state — it must
+   * survive the transform. The synthesized binding the transform
+   * injects resolves to `:checked` for checkbox / radio at runtime,
+   * which is a different attribute key from `value`, so keeping the
+   * static `value` attribute alongside it is conflict-free.
+   */
+  describe('preserves static value attribute on checkbox / radio', () => {
+    // The assertions look for the literal in the form `value: "apple"`
+    // — that's how Vue's compiler emits an object-property entry for a
+    // static attribute. The literal `"apple"` ALSO appears inside the
+    // synthesized equality expression (`...?.includes("apple")`), so
+    // `toContain('"apple"')` would false-pass even pre-fix; the
+    // key-value-pair regex is what specifically catches "did the
+    // static attribute survive as an own prop on the props object".
+    it('keeps value="apple" on a static-type checkbox', () => {
+      const code = compileWithTransform(
+        `<input type="checkbox" value="apple" v-register="fruits" />`
+      )
+      expect(code).toMatch(/\bvalue:\s*"apple"/)
+    })
+
+    it('keeps value="apple" on a static-type radio', () => {
+      const code = compileWithTransform(`<input type="radio" value="apple" v-register="fruit" />`)
+      expect(code).toMatch(/\bvalue:\s*"apple"/)
+    })
+
+    it('still strips a colliding value attr on a text-type input', () => {
+      // Negative case — for text inputs, the synthesized binding
+      // resolves to `:value` and would clash with a static `value`.
+      // The transform's removal still applies there.
+      const code = compileWithTransform(`<input type="text" value="ignored" v-register="email" />`)
+      // The static `value: "ignored"` key-value pair must NOT appear
+      // in the props object. (The literal `"ignored"` itself does
+      // appear inside the synthesized conditional's equality leg —
+      // that's expected and unrelated.)
+      expect(code).not.toMatch(/\bvalue:\s*"ignored"/)
+    })
+
+    it('matches type="CHECKBOX" / "Radio" case-insensitively', () => {
+      // HTML spec: `type` is ASCII case-insensitive. The compile-time
+      // `isStaticTypeOneOf` already normalises, but the runtime
+      // selection-label expression compares the type string against
+      // lowercase 'checkbox' / 'radio' — without case folding there,
+      // a `type="CHECKBOX"` input has its static `value` preserved
+      // (per `keepStaticValue`) but still emits `:value=` instead of
+      // `:checked=`, breaking SSR initial checked state. Both halves
+      // need the case-insensitive treatment.
+      const upperCheckbox = compileWithTransform(
+        `<input type="CHECKBOX" value="apple" v-register="fruits" />`
+      )
+      expect(upperCheckbox).toMatch(/\bvalue:\s*"apple"/)
+      // Selection-label expression must lowercase the type before
+      // comparing — String(...).toLowerCase() shows up in the
+      // generated render code.
+      expect(upperCheckbox).toContain('.toLowerCase()')
+
+      const mixedRadio = compileWithTransform(
+        `<input type="Radio" value="apple" v-register="fruit" />`
+      )
+      expect(mixedRadio).toMatch(/\bvalue:\s*"apple"/)
+      expect(mixedRadio).toContain('.toLowerCase()')
+    })
+  })
+
+  /**
+   * Repro for the playground newsletter bug: the checkbox flashed
+   * checked → unchecked → checked on every refresh.
+   *
+   * Pre-fix the synthesized `:checked` equality compared the model
+   * against a SINGLE element-side value (the static `value=` attr,
+   * defaulting to `''` when missing) for ALL three branches —
+   * Array.includes, Set.has, AND scalar `===`. That works for the
+   * array / Set group case (where `value="apple"` is the option-value)
+   * but is wrong for two scalar shapes:
+   *
+   *   1. Single boolean (`z.boolean()` with no value attr): the
+   *      equality is `model === ''` — always false, even when the
+   *      box should be checked. SSR renders unchecked, the directive's
+   *      setChecked corrects after mount → visible flash.
+   *   2. Single string mapped via `:true-value` (e.g. `z.enum([...])`
+   *      with `:true-value="'subscribe'"`): the equality is
+   *      `model === ''` instead of `model === 'subscribe'`. Same
+   *      flash.
+   *
+   * Post-fix the scalar branch uses the `:true-value` (or, for the
+   * boolean case, the literal `true`) — matching the runtime's
+   * `getCheckboxValue(el, true)` fallback. SSR renders checked when
+   * it should be, and there's no flash on hydration.
+   */
+  describe('checkbox scalar equality target', () => {
+    it('uses :true-value as the scalar equality target', () => {
+      const code = compileWithTransform(
+        `<input type="checkbox" :true-value="'subscribe'" v-register="newsletter" />`
+      )
+      // The scalar leg should compare against 'subscribe', not ''.
+      // We assert the literal appears in an equality position
+      // immediately followed by `)` (the scalar branch's closing).
+      expect(code).toMatch(/===\s*\('subscribe'\)/)
+    })
+
+    it('uses literal `true` as the scalar equality target when no value / true-value', () => {
+      const code = compileWithTransform(`<input type="checkbox" v-register="agreed" />`)
+      // Boolean checkbox: the scalar branch must compare against
+      // `true`, not `''` (which would always evaluate false against
+      // `false`/`true` model values).
+      expect(code).toMatch(/===\s*\(true\)/)
+    })
+
+    it('uses value= as the scalar equality target on radio', () => {
+      // Radio model is always scalar; the option-value (`value=`)
+      // IS the right discriminator there.
+      const code = compileWithTransform(`<input type="radio" value="apple" v-register="fruit" />`)
+      expect(code).toMatch(/===\s*\("apple"\)/)
+    })
+
+    it('checkbox group keeps option-value for the array/Set legs', () => {
+      // The group case must still use `value="apple"` for
+      // includes / has — only the scalar branch changes.
+      const code = compileWithTransform(
+        `<input type="checkbox" value="apple" v-register="fruits" />`
+      )
+      expect(code).toContain('?.includes("apple")')
+      expect(code).toContain('?.has("apple")')
+    })
+  })
 })

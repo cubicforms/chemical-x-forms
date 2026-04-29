@@ -36,7 +36,7 @@ function makeRegisterValue<T>(initial: T): {
   const value: RegisterValue<T> = {
     innerRef: ref(initial) as RegisterValue<T>['innerRef'],
     displayValue: ref('') as Readonly<Ref<string>>,
-    markTransientEmpty: () => true,
+    markBlank: () => true,
     lastTypedForm: ref<string | null>(null),
     registerElement: register,
     deregisterElement: deregister,
@@ -193,30 +193,30 @@ describe('vRegisterText — `.number`', () => {
     expect(setValue).toHaveBeenCalledWith(12.5, expect.objectContaining({}))
   })
 
-  it('input event marks transient-empty for non-numeric strings instead of attempting the write', () => {
+  it('input event marks blank for non-numeric strings instead of attempting the write', () => {
     // Pre-commit-5 the directive forwarded the unparseable string to
     // the slim-primitive gate, which rejected it and emitted a noisy
     // dev warning. Post-commit-5 the directive treats non-castable
     // input the same as the empty case: route through
-    // `markTransientEmpty` so storage holds the slim default and the
+    // `markBlank` so storage holds the slim default and the
     // user retains the empty / partial DOM. Submit-time validation
     // raises "Required" for required schemas.
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
     const { value, setValue } = makeRegisterValue('' as unknown as never)
-    const markTransientEmpty = vi.fn(() => true)
-    value.markTransientEmpty = markTransientEmpty
+    const markBlank = vi.fn(() => true)
+    value.markBlank = markBlank
 
     hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
 
     // `'xyz'` is non-castable AND has no `e`/`E` — keeps this test on
-    // the immediate markTransientEmpty path. Strings containing `e`
+    // the immediate markBlank path. Strings containing `e`
     // hit the scientific-notation deferral instead (covered separately).
     input.value = 'xyz'
     input.dispatchEvent(new Event('input'))
     expect(setValue).not.toHaveBeenCalled()
-    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
+    expect(markBlank).toHaveBeenCalledTimes(1)
   })
 
   it('change event normalizes the visible DOM after Vue 3.5.33 parity fix', () => {
@@ -733,20 +733,20 @@ describe('chemical-x interactions: `.number` × slim-primitive gate', () => {
     document.body.innerHTML = ''
   })
 
-  it('non-castable input never reaches the gate — directive marks transient-empty instead', () => {
+  it('non-castable input never reaches the gate — directive marks blank instead', () => {
     // Post-commit-5 the directive's `.number` listener short-circuits
     // BEFORE the assigner when `looseToNumber` returns a non-number,
     // so the slim-primitive gate never sees the bogus write. The
     // user's typed input stays in the DOM (the directive doesn't
-    // roll back on transient-empty either) and submit-time
+    // roll back on blank either) and submit-time
     // validation raises "Required" if the schema demands a number.
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
 
     const { value, setValue } = makeRegisterValue(0 as unknown as never)
-    const markTransientEmpty = vi.fn(() => true)
-    value.markTransientEmpty = markTransientEmpty
+    const markBlank = vi.fn(() => true)
+    value.markBlank = markBlank
 
     hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
 
@@ -754,7 +754,7 @@ describe('chemical-x interactions: `.number` × slim-primitive gate', () => {
     expect(() => input.dispatchEvent(new Event('input'))).not.toThrow()
 
     expect(setValue).not.toHaveBeenCalled()
-    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
+    expect(markBlank).toHaveBeenCalledTimes(1)
     expect(input.value).toBe('abc')
   })
 })
@@ -1013,40 +1013,40 @@ describe('regression: vRegisterText × type="number" × backspace-to-empty', () 
     expect(setValue).not.toHaveBeenCalled()
   })
 
-  it('non-empty non-numeric input routes through markTransientEmpty (no gate-rejection warning)', () => {
+  it('non-empty non-numeric input routes through markBlank (no gate-rejection warning)', () => {
     // Post-commit-5 the directive treats both "" and non-castable
     // input ('abc') as the empty case: the assigner doesn't fire,
-    // and `markTransientEmpty` writes the slim default with the
-    // transient-empty meta. Submit-time validation raises "Required"
+    // and `markBlank` writes the slim default with the
+    // blank meta. Submit-time validation raises "Required"
     // for required schemas — the dev-warn-via-gate-rejection that
     // pre-commit-5 surfaced was a worse UX than this.
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
     const { value, setValue } = makeRegisterValue(0 as unknown as never)
-    const markTransientEmpty = vi.fn(() => true)
-    value.markTransientEmpty = markTransientEmpty
+    const markBlank = vi.fn(() => true)
+    value.markBlank = markBlank
 
     hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
 
     input.value = 'abc'
     input.dispatchEvent(new Event('input'))
     expect(setValue).not.toHaveBeenCalled()
-    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
+    expect(markBlank).toHaveBeenCalledTimes(1)
   })
 
-  it('backspace-to-empty also routes through markTransientEmpty (commit 5)', () => {
+  it('backspace-to-empty also routes through markBlank (commit 5)', () => {
     // Pre-commit-5 the directive skipped the assigner silently — UI
     // showed empty but storage held the previous valid number, so
     // submit could ship a stale value. Post-commit-5 the empty case
-    // marks transient-empty: storage flips to the slim default and
+    // marks blank: storage flips to the slim default and
     // submit raises "Required" if the schema demands a number.
     const input = document.createElement('input')
     input.type = 'number'
     document.body.appendChild(input)
     const { value, setValue } = makeRegisterValue(0 as unknown as never)
-    const markTransientEmpty = vi.fn(() => true)
-    value.markTransientEmpty = markTransientEmpty
+    const markBlank = vi.fn(() => true)
+    value.markBlank = markBlank
 
     hooks.created?.(input, makeBinding(value, {}), makeVNode({ type: 'number' }), null)
 
@@ -1059,6 +1059,114 @@ describe('regression: vRegisterText × type="number" × backspace-to-empty', () 
     input.value = ''
     input.dispatchEvent(new Event('input'))
     expect(setValue).not.toHaveBeenCalled()
-    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
+    expect(markBlank).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// `<input type="checkbox">` setChecked: hydration-with-static-attribute case
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Repro for the playground bug where SSR rendered `<input type="checkbox"
+ * value="banana">` with a static `value` attribute. On client hydration
+ * Vue's static-attr fast path skips `patchProp`, so `el._value` is
+ * never set AND `vnode.props['value']` is undefined for hoisted attrs.
+ * The directive's `setChecked` was reading `vnode.props?.['value']`
+ * exclusively — got undefined — and unchecked the box even though state
+ * contained 'banana' and the DOM attribute was set.
+ *
+ * The fix routes setChecked's option-value lookup through the same
+ * `getValue(el)` helper the change handler uses (post the prior
+ * static-attr fix), which falls back to the DOM `value` property
+ * when neither `_value` nor a vnode prop is present.
+ */
+describe('vRegisterCheckbox.setChecked — hydration with static value attribute', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('mounts with el.checked=true when array model contains the static-attribute value (no vnode.props.value, no _value)', () => {
+    const input = document.createElement('input')
+    input.type = 'checkbox'
+    // Static attribute path — sets the attribute AND el.value, but
+    // crucially does NOT set el._value (Vue's renderer would).
+    input.setAttribute('value', 'banana')
+    document.body.appendChild(input)
+
+    const { value } = makeRegisterValue<string[]>(['banana'])
+
+    // Both vnode.props.value AND el._value are absent — the exact
+    // shape the directive sees on a hydrated static-attr checkbox.
+    hooks.created?.(input, makeBinding(value), makeVNode({ type: 'checkbox' }), null)
+    hooks.mounted?.(input, makeBinding(value), makeVNode({ type: 'checkbox' }), null)
+
+    expect(input.checked).toBe(true)
+  })
+
+  it('mounts with el.checked=false when array model does NOT contain the static-attribute value', () => {
+    const input = document.createElement('input')
+    input.type = 'checkbox'
+    input.setAttribute('value', 'apple')
+    document.body.appendChild(input)
+
+    const { value } = makeRegisterValue<string[]>(['banana'])
+    hooks.created?.(input, makeBinding(value), makeVNode({ type: 'checkbox' }), null)
+    hooks.mounted?.(input, makeBinding(value), makeVNode({ type: 'checkbox' }), null)
+
+    expect(input.checked).toBe(false)
+  })
+
+  it('Set model: mounts with el.checked=true when the Set contains the static-attribute value', () => {
+    const input = document.createElement('input')
+    input.type = 'checkbox'
+    input.setAttribute('value', 'banana')
+    document.body.appendChild(input)
+
+    const { value } = makeRegisterValue<Set<string>>(new Set(['banana']))
+    hooks.created?.(input, makeBinding(value), makeVNode({ type: 'checkbox' }), null)
+    hooks.mounted?.(input, makeBinding(value), makeVNode({ type: 'checkbox' }), null)
+
+    expect(input.checked).toBe(true)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// `<input type="radio">` created/beforeUpdate: same hydration shape
+// ─────────────────────────────────────────────────────────────────
+
+describe('vRegisterRadio — hydration with static value attribute', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('mounts with el.checked=true when state matches the static-attribute value (no vnode.props.value, no _value)', () => {
+    const input = document.createElement('input')
+    input.type = 'radio'
+    input.setAttribute('value', 'banana')
+    document.body.appendChild(input)
+
+    const { value } = makeRegisterValue<string>('banana')
+    // Initial checked-state sync moved from `created` to `mounted` —
+    // `created` fires BEFORE Vue patches type / value / _value onto
+    // the element, so reading them at that point would always come
+    // back undefined. Call both hooks here to mirror Vue's lifecycle.
+    hooks.created?.(input, makeBinding(value), makeVNode({ type: 'radio' }), null)
+    hooks.mounted?.(input, makeBinding(value), makeVNode({ type: 'radio' }), null)
+
+    expect(input.checked).toBe(true)
+  })
+
+  it('mounts with el.checked=false when state does NOT match the static-attribute value', () => {
+    const input = document.createElement('input')
+    input.type = 'radio'
+    input.setAttribute('value', 'apple')
+    document.body.appendChild(input)
+
+    const { value } = makeRegisterValue<string>('banana')
+    hooks.created?.(input, makeBinding(value), makeVNode({ type: 'radio' }), null)
+    hooks.mounted?.(input, makeBinding(value), makeVNode({ type: 'radio' }), null)
+
+    expect(input.checked).toBe(false)
   })
 })

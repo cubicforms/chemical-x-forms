@@ -46,7 +46,7 @@ type AbstractSchema<Form, GetValueFormType = Form> = {
   dynamic writes don't get rejected.
 - **`isRequiredAtPath(path)`** — returns `true` when the leaf is
   required (no `.optional()` / `.nullable()` / `.default()` /
-  `.catch()` wrapper). Used by the transient-empty validation
+  `.catch()` wrapper). Used by the blank validation
   augmentation to raise `'No value supplied'` for unfilled required
   fields. Return `false` for any wrapper that admits the empty
   case.

@@ -339,17 +339,17 @@ Three places accept the sentinel:
 
 - **`defaultValues`** — every primitive leaf can be `unset`. The
   library walks the payload at construction and adds the leaf's path
-  to the form's transient-empty set.
+  to the form's blank set.
 - **`setValue(path, unset)`** — translated at the API boundary;
-  storage gets the slim default with `transientEmpty: true` meta.
+  storage gets the slim default with `blank: true` meta.
 - **`reset({ … })`** — same translation; the post-reset state
   becomes the new dirty=false baseline.
 
 **Auto-mark on construction.** A freshly opened form has no user
 input yet, so every primitive leaf the consumer didn't supply in
-`defaultValues` is auto-marked `pendingEmpty`. This means
+`defaultValues` is auto-marked `blank`. This means
 `useForm({ schema: z.object({ email: z.string() }) })` (no
-`defaultValues`) starts with `email` in the transient-empty set —
+`defaultValues`) starts with `email` in the blank set —
 its `displayValue` is `''`, and `handleSubmit` raises `"No value supplied"`
 until the user types something. To opt a leaf out of auto-mark,
 supply a non-`unset` value for it: `defaultValues: { email: '' }`
@@ -359,10 +359,10 @@ defaults (`{ user: { name: 'a' } }` against `user.{name, age}`
 auto-marks `user.age`). It does NOT recurse into arrays — array
 elements are runtime-added; opt them in per-element via `unset`.
 Hydration overrides: when the form is rehydrated from a persisted
-draft or SSR payload, the hydrated `transientEmptyPaths` list is
+draft or SSR payload, the hydrated `blankPaths` list is
 authoritative and auto-mark does not fire.
 
-**Submit / validate honor the sentinel.** A transient-empty path
+**Submit / validate honor the sentinel.** A blank path
 bound to a _required_ schema (no `.optional()` / `.nullable()` /
 `.default(N)` / `.catch(N)`) raises a synthesized `"No value supplied"`
 error during `handleSubmit` / `validate` / `validateAsync`. Use
@@ -375,8 +375,8 @@ DOM (`<input type="number">` or `<input v-register.number>`); for
 strings and booleans the dev opts in via `unset` because the DOM
 state alone doesn't carry "user-cleared" intent.
 
-Per-path introspection: `form.getFieldState(path).value.pendingEmpty`.
-Bulk introspection: `form.transientEmptyPaths.value` returns a
+Per-path introspection: `form.getFieldState(path).value.blank`.
+Bulk introspection: `form.blankPaths.value` returns a
 frozen `ReadonlySet<PathKey>` of every marked leaf, suitable for
 "unanswered fields" logging or conditional UI.
 
@@ -634,12 +634,12 @@ operation is a no-op (out-of-range index on `remove` / `swap` /
 See [dynamic-field-arrays recipe](./recipes/dynamic-field-arrays.md)
 for the `v-for` pattern.
 
-### Transient-empty introspection
+### Blank introspection
 
-| Member                                   | Type                  | What it does                                                                                                                                                                                                                                                                                                                               |
-| ---------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `transientEmptyPaths.value`              | `ReadonlySet<string>` | Frozen snapshot of every path-key currently in the form's transient-empty set. Reactive — Vue tracks `.has()` / `.size` / iteration. Mutating the snapshot is a no-op (writes go through `setValue(_, unset)`, the directive's input listener, or `markTransientEmpty()` on a register binding). See `unset` exported from the core entry. |
-| `getFieldState(path).value.pendingEmpty` | `boolean`             | Per-path equivalent: `true` while `path` is in the transient-empty set.                                                                                                                                                                                                                                                                    |
+| Member                            | Type                  | What it does                                                                                                                                                                                                                                                                                                            |
+| --------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `blankPaths.value`                | `ReadonlySet<string>` | Frozen snapshot of every path-key currently in the form's blank set. Reactive — Vue tracks `.has()` / `.size` / iteration. Mutating the snapshot is a no-op (writes go through `setValue(_, unset)`, the directive's input listener, or `markBlank()` on a register binding). See `unset` exported from the core entry. |
+| `getFieldState(path).value.blank` | `boolean`             | Per-path equivalent: `true` while `path` is in the blank set.                                                                                                                                                                                                                                                           |
 
 ### Identity
 

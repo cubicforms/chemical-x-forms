@@ -118,6 +118,15 @@ export default [
     },
   },
 
+  // Playground components mirror the user-facing test app structure;
+  // the multi-word rule isn't useful for these throwaway repros.
+  {
+    files: ['playground/components/**/*.vue'],
+    rules: {
+      'vue/multi-word-component-names': 'off',
+    },
+  },
+
   // File structure rules
   {
     files: ['**/*.{js,ts,vue}'],

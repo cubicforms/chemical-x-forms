@@ -1,91 +1,141 @@
 <script setup lang="ts">
-  // Explicit zod-v4 import: Phase 7.1 dropped the `useZod` Nuxt option, so
-  // the Nuxt-auto-imported `useForm` is now the schema-agnostic abstract
-  // composable. Use the /zod subpath (v4) or /zod-v3 for zod-typed forms.
   import { useForm } from '@chemical-x/forms/zod'
-  import { parseApiErrors } from '@chemical-x/forms'
-  import { z } from 'zod'
+  import z from 'zod'
+  import Child from './components/Child.vue'
 
-  // -- Original demo: register + getValue across multiple inputs --
-  const schema = z.object({ fruit: z.string() })
-  const { register, getValue } = useForm({ schema, key: 'example-form' })
-  const registerValue = register('fruit')
-
-  // -- New error API demo --
-  const signupSchema = z.object({
-    email: z.string().email('Enter a valid email'),
-    password: z.string().min(8, 'At least 8 characters'),
-  })
-  const signupForm = useForm({ schema: signupSchema, key: 'signup' })
-  const {
-    register: registerSignup,
-    fieldErrors: signupErrors,
-    handleSubmit: handleSignupSubmit,
-    setFieldErrors,
-    clearFieldErrors,
-    getFieldState,
-  } = signupForm
-
-  const emailReg = registerSignup('email')
-  const passwordReg = registerSignup('password')
-
-  // handleSubmit wraps the user callback: validation failure auto-populates
-  // signupErrors, success clears it. The user's onSubmit can then parse
-  // a server response via parseApiErrors() and write the result with
-  // setFieldErrors(...) to layer server-side errors on top.
-  const onSubmit = handleSignupSubmit(async (values) => {
-    // simulate server returning a 422
-    const apiResult = parseApiErrors(
-      { error: { details: { email: ['Already taken'] } } },
-      { formKey: signupForm.key }
-    )
-    if (apiResult.ok) setFieldErrors(apiResult.errors)
-    // eslint-disable-next-line no-console
-    console.log('client-validated values:', values)
+  const login = z.object({
+    email: z.email(),
+    password: z.string(),
+    address: z.object({
+      city: z.string(),
+    }),
+    salary: z.number(),
+    // Checkbox demos:
+    //   - boolean → single checkbox (true/false)
+    //   - array → checkbox group (membership add/remove)
+    //   - enum + :true-value/:false-value → single checkbox mapped
+    //     to one of two strings
+    agreedToTerms: z.boolean(),
+    favoriteFruits: z.array(z.string()),
+    newsletter: z.enum(['subscribe', 'unsubscribe']),
+    // Radio group — one register binding shared across multiple
+    // <input type="radio">, each with a distinct value=. Model is
+    // the option-value of the currently-checked radio.
+    subscriptionTier: z.enum(['free', 'pro', 'enterprise']),
   })
 
-  const emailFieldState = getFieldState('email')
+  const { register, getFieldState, handleSubmit, getValue } = useForm({
+    schema: login,
+    // Explicit key required for `persist:` to round-trip reliably —
+    // anon keys drift across mounts (HMR / refresh / SSR↔CSR) and the
+    // persistence layer would orphan entries on every reload.
+    key: 'login',
+    persist: 'session',
+    defaultValues: {
+      favoriteFruits: ['banana'],
+    },
+  })
+  const field = getFieldState('salary')
+
+  const displayError = computed(() => {
+    if (!field.value.touched) return ''
+    const msg = field.value.errors?.[0]?.message ?? ''
+    return msg
+  })
+
+  const onSubmit = handleSubmit(
+    (values) => {
+      // eslint-disable-next-line no-console
+      console.log('Success!', values)
+    },
+    (errors) => {
+      // eslint-disable-next-line no-console
+      console.log('Nope!', errors)
+    }
+  )
 </script>
 
 <template>
-  <div style="font-family: system-ui; max-width: 640px; margin: 2rem auto; padding: 0 1rem">
-    <h1>chemical-x-forms playground</h1>
-
-    <h2>Original API</h2>
-    <p>current fruit: '{{ getValue('fruit').value }}'</p>
-    <input v-register="registerValue" />
-    <hr />
-    <input v-register="registerValue" />
-    <hr />
-    <RootInput :fruit="registerValue" />
-
-    <h2 style="margin-top: 2rem">Error API (new in 0.6)</h2>
-    <form style="display: flex; flex-direction: column; gap: 1rem" @submit.prevent="onSubmit">
-      <label style="display: flex; flex-direction: column; gap: 0.25rem">
-        <span>Email</span>
-        <input v-register="emailReg" type="email" />
-        <small v-if="signupErrors.email?.[0]" style="color: #dc2626">
-          {{ signupErrors.email[0].message }}
-        </small>
-      </label>
-
-      <label style="display: flex; flex-direction: column; gap: 0.25rem">
-        <span>Password</span>
-        <input v-register="passwordReg" type="password" />
-        <small v-if="signupErrors.password?.[0]" style="color: #dc2626">
-          {{ signupErrors.password[0].message }}
-        </small>
-      </label>
-
-      <div style="display: flex; gap: 0.5rem">
-        <button type="submit">Submit</button>
-        <button type="button" @click="clearFieldErrors()">Clear errors</button>
+  <div>
+    <NuxtRouteAnnouncer />
+    <form @submit="onSubmit">
+      <div>
+        <label for="email">Email</label>
+        <input id="email" v-register.trim="register('email', { persist: true })" />
       </div>
+      <br />
+
+      <div>
+        <label for="password">Password</label>
+        <Child id="password" />
+      </div>
+
+      <div>
+        <label for="salary">Salary</label>
+        <input id="salary" v-register.number="register('salary')" />
+        <div>{{ displayError }}</div>
+      </div>
+
+      <hr />
+      <h3>Checkboxes</h3>
+
+      <div>
+        <label>
+          <input v-register="register('agreedToTerms')" type="checkbox" />
+          I agree to the terms (single boolean)
+        </label>
+      </div>
+
+      <fieldset>
+        <legend>Favorite fruits (array group — share one register binding)</legend>
+        <label>
+          <input v-register="register('favoriteFruits')" type="checkbox" value="apple" />
+          Apple
+        </label>
+        <label>
+          <input v-register="register('favoriteFruits')" type="checkbox" value="banana" />
+          Banana
+        </label>
+        <label>
+          <input v-register="register('favoriteFruits')" type="checkbox" value="cherry" />
+          Cherry
+        </label>
+      </fieldset>
+
+      <div>
+        <label>
+          <input
+            v-register="register('newsletter')"
+            type="checkbox"
+            :true-value="'subscribe'"
+            :false-value="'unsubscribe'"
+          />
+          Newsletter (single checkbox mapped to a string via :true-value / :false-value)
+        </label>
+      </div>
+
+      <hr />
+      <h3>Radio group</h3>
+      <fieldset>
+        <legend>Subscription tier (one register binding, distinct value= per radio)</legend>
+        <label>
+          <input v-register="register('subscriptionTier')" type="radio" value="free" />
+          Free
+        </label>
+        <label>
+          <input v-register="register('subscriptionTier')" type="radio" value="pro" />
+          Pro
+        </label>
+        <label>
+          <input v-register="register('subscriptionTier')" type="radio" value="enterprise" />
+          Enterprise
+        </label>
+      </fieldset>
+
+      <button>Log in</button>
     </form>
 
-    <h3 style="margin-top: 1.5rem">Same data via getFieldState (FieldState.errors)</h3>
-    <pre style="background: #f8fafc; padding: 0.75rem; border-radius: 6px">{{
-      JSON.stringify(emailFieldState.errors, null, 2)
-    }}</pre>
+    <pre>{{ getValue().value }}</pre>
+    <pre>{{ JSON.stringify(field, null, 2) }}</pre>
   </div>
 </template>

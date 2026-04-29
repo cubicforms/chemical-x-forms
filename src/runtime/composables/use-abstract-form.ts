@@ -9,7 +9,7 @@ import {
 } from '../core/defaults'
 import { __DEV__ } from '../core/dev'
 import { captureUserCallSite } from '../core/dev-stack-trace'
-import { ReservedFormKeyError } from '../core/errors'
+import { AnonPersistError, ReservedFormKeyError } from '../core/errors'
 import type { FieldStateView } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
 import { createHistoryModule, type HistoryModule } from '../core/history'
@@ -29,6 +29,7 @@ import {
   sweepNonConfiguredStandardStoresForOrphans,
   type PersistenceModule,
 } from '../core/persistence'
+import { hashStableString } from '../core/hash'
 import { canonicalizePath, type Path, type PathKey } from '../core/paths'
 import { deleteAtPath, getAtPath, setAtPath, isPlainRecord } from '../core/path-walker'
 import { kFormContext, useRegistry } from '../core/registry'
@@ -137,9 +138,21 @@ export function useAbstractForm<
   //
   // The shorthand input (`persist: 'local'`, `persist: customAdapter`)
   // is normalised to the resolved options bag once at this boundary —
+  // Anonymous + persist enforcement. Dev throws (catches the bug at
+  // the offending useForm() call); prod returns `true` so the wiring
+  // block below skips entirely AND cleans up any prior persisted
+  // entries — we'd rather pretend persist wasn't configured than
+  // silently mis-route data between forms that happened to share an
+  // anon id. Runs regardless of SSR / first-mount-vs-rehook so the
+  // dev-mode throw fires on the SSR pass too (without a server-side
+  // throw, the SSR pass would succeed silently and the client would
+  // throw on hydration — that surfaces as a confusing hydration
+  // mismatch instead of pointing at the actual config bug).
+  const persistDisabledByAnonRule =
+    merged.persist !== undefined && enforceAnonPersistRule(state.formKey, registry.isSSR)
   // everything below operates on the resolved shape.
   if (existing === undefined && !registry.isSSR) {
-    if (merged.persist !== undefined) {
+    if (merged.persist !== undefined && !persistDisabledByAnonRule) {
       const resolvedPersist = normalizePersistConfig(merged.persist)
       const persistenceBase = resolveStorageKeyBase(resolvedPersist, state.formKey)
       // Cross-store orphan cleanup: any standard backend not matching
@@ -157,11 +170,11 @@ export function useAbstractForm<
       state.registerDrain(() => persistenceModule.awaitPendingWrites())
       state.registerCleanup(() => persistenceModule.dispose())
     } else {
-      // No `persist:` configured. The form might have HAD persistence
-      // in a prior deployment that the dev has since removed. Sweep
-      // every cx-managed key under the default base from every
-      // standard backend so removing the option actually removes the
-      // on-disk artifact across all fingerprints that ever ran.
+      // Either the dev didn't configure `persist:` OR we just disabled
+      // it via the anon-persist rule. Either way, sweep every
+      // cx-managed key under this form's base across all standard
+      // backends so dropping (or refusing to wire) persistence
+      // actually leaves storage clean.
       void sweepAllOrphansAcrossStandardStores(`${PERSISTENCE_KEY_PREFIX}${state.formKey}`)
     }
   }
@@ -280,13 +293,13 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
     schema as unknown as AbstractSchema<GenericForm, GenericForm>
   )
   // Hydration precedence: when a hydration payload is present its
-  // `transientEmptyPaths` field is the authoritative truth. We still
+  // `blankPaths` field is the authoritative truth. We still
   // run the walker to scrub `unset` symbols out of `defaultValues` (so
   // they never reach storage), but discard the discovered paths in
   // favour of the hydrated set. Without this, a server-rendered form
-  // with no transient-empty paths would gain ones the client's
+  // with no blank paths would gain ones the client's
   // construction-time defaults invented.
-  const initialTransientEmpty: ReadonlyArray<string> | undefined =
+  const initialBlankPaths: ReadonlyArray<string> | undefined =
     pending === undefined ? walked.paths : undefined
   const createOptions: Parameters<typeof createFormStore<F, G>>[0] = {
     formKey: key,
@@ -296,7 +309,7 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
     hydration: pending,
     fieldValidation: configuration.fieldValidation,
     isSSR: registry.isSSR,
-    ...(initialTransientEmpty !== undefined ? { initialTransientEmpty } : {}),
+    ...(initialBlankPaths !== undefined ? { initialBlankPaths } : {}),
   }
   const state = createFormStore<F, G>(createOptions)
   // Storage type is FormStore<GenericForm>; the lookup above narrows
@@ -473,7 +486,14 @@ function wirePersistence<F extends GenericForm>(
   // produces a different fingerprint, so the new mount looks up a fresh
   // key — the old draft becomes an orphan, cleaned up in the same mount
   // by `cleanupOrphanKeys` below. No manual version protocol required.
-  const fingerprint = state.schema.fingerprint()
+  // Hash the long structural fingerprint into a fixed-size token before
+  // baking it into the storage key. The raw fingerprint is the
+  // schema's full shape stringified (`object{"address":object{...}}`),
+  // which works correctly for invalidation but produces 200+ char
+  // storage keys for non-trivial schemas AND leaks the schema's
+  // structure into client-side storage. The hash preserves
+  // determinism (same schema → same hash) without either downside.
+  const fingerprint = hashStableString(state.schema.fingerprint())
   const base = resolveStorageKeyBase(config, state.formKey)
   const key = `${base}:${fingerprint}`
   const debounceMs = config.debounceMs ?? DEFAULT_PERSISTENCE_DEBOUNCE_MS
@@ -536,11 +556,11 @@ function wirePersistence<F extends GenericForm>(
     // the fingerprint suffix.
     const filteredSchemaErrors = filterErrorsByPaths(state.schemaErrors, optedInPaths)
     const filteredUserErrors = filterErrorsByPaths(state.userErrors, optedInPaths)
-    // Transient-empty paths are part of the restorable UI state, so
+    // Blank paths are part of the restorable UI state, so
     // they ride the same opt-in gate as form values: only persist
     // the entries whose paths are also opted in for persistence.
     const filteredTransientEmpty = new Set<string>()
-    for (const tk of state.transientEmptyPaths) {
+    for (const tk of state.blankPaths) {
       if (optedInPaths.has(tk as PathKey)) filteredTransientEmpty.add(tk)
     }
     const payload = buildPersistedPayload<F>(
@@ -620,20 +640,27 @@ function wirePersistence<F extends GenericForm>(
       // keep their schema defaults.
       const merged = mergeSparseHydration(toRaw(state.form.value) as F, payload.data.form)
       state.applyFormReplacement(merged)
-      // Restore the transient-empty UI state from the persisted
-      // payload. This rebaselines BOTH the live set AND the originals
-      // snapshot — the persisted UI state is the new "construction-
-      // time" reference for `reset()` semantics, so a subsequent
-      // reset() restores the empty fields the user had on the
-      // previous mount, not the freshly-constructed empty set. Form
-      // values rebaseline implicitly through `originals` (which the
-      // existing applyFormReplacement updates via diff-apply), so
-      // mirroring that behaviour here keeps the two domains aligned.
-      state.transientEmptyPaths.clear()
-      state.originalsTransientEmpty.clear()
-      for (const k of payload.data.transientEmptyPaths ?? []) {
-        state.transientEmptyPaths.add(k as PathKey)
-        state.originalsTransientEmpty.add(k as PathKey)
+      // Restore the blank UI state from the persisted
+      // payload. Persistence is per-element opt-in, so the persisted
+      // payload only covers paths within the opt-in scope (the leaf
+      // paths populated in `payload.data.form`). Construction-time
+      // auto-marks for paths OUTSIDE that scope must survive — without
+      // this, a non-opted-in `z.number()` field's slim default (0)
+      // would lose its blank mark on hydrate and surface
+      // as `'0'` in its <input> instead of empty.
+      //
+      // Within the opt-in scope, the persisted state IS the truth: a
+      // persisted path that's no longer blank (the user
+      // typed) clears the construction-time mark, and a persisted
+      // path that IS blank (still slim default) re-asserts.
+      const persistedLeafPaths = collectPersistedLeafPaths(payload.data.form)
+      for (const k of persistedLeafPaths) {
+        state.blankPaths.delete(k)
+        state.originalBlankPaths.delete(k)
+      }
+      for (const k of payload.data.blankPaths ?? []) {
+        state.blankPaths.add(k as PathKey)
+        state.originalBlankPaths.add(k as PathKey)
       }
       if (include === 'form+errors') {
         // Each store rebuilds independently from its persisted entries.
@@ -672,10 +699,10 @@ function wirePersistence<F extends GenericForm>(
         if (disposed) return
         if (state.persistOptIns.isEmpty()) {
           console.warn(
-            `[@chemical-x/forms] Persistence is configured for form ` +
-              `"${state.formKey}" but no fields opted in. Each persisted ` +
-              `field needs \`register('foo', { persist: true })\`, or call ` +
-              `\`form.persist('foo')\` for an explicit checkpoint. ` +
+            `[@chemical-x/forms] useForm({ persist: ... }) is configured on form ` +
+              `"${state.formKey}" but no fields opted in — nothing will be saved. ` +
+              `Fix: add \`{ persist: true }\` to register() calls, ` +
+              `e.g. register('email', { persist: true }). ` +
               `See ./docs/recipes/persistence.md.`
           )
         }
@@ -701,7 +728,7 @@ function wirePersistence<F extends GenericForm>(
     const baseForm = existing?.data.form ?? ({} as F)
     const value = getAtPath(toRaw(state.form.value), path)
     const nextForm = setAtPath(baseForm, path, value) as F
-    // Refresh this path's transient-empty entry — and any descendants
+    // Refresh this path's blank entry — and any descendants
     // — while preserving entries for OTHER paths the previous mount
     // persisted. Non-leaf writes (`writePathImmediately('user')`)
     // overwrite the entire subtree, so any disk entries below the
@@ -709,11 +736,11 @@ function wirePersistence<F extends GenericForm>(
     // contributes whatever marks are still active under that subtree.
     const { key: pathKey } = canonicalizePath(path)
     const transientSet = new Set<string>(
-      (existing?.data.transientEmptyPaths ?? []).filter(
+      (existing?.data.blankPaths ?? []).filter(
         (k) => k !== pathKey && !isDescendantPathKey(k, pathKey)
       )
     )
-    for (const liveKey of state.transientEmptyPaths) {
+    for (const liveKey of state.blankPaths) {
       if (liveKey === pathKey || isDescendantPathKey(liveKey, pathKey)) {
         transientSet.add(liveKey)
       }
@@ -773,12 +800,12 @@ function wirePersistence<F extends GenericForm>(
     }
     const { key: pathKey } = canonicalizePath(path)
     // Drop the cleared path AND every descendant from the persisted
-    // transient-empty list so a later mount doesn't restore an
+    // blank list so a later mount doesn't restore an
     // "empty" UI state for a path that no longer has any value
     // behind it. Non-leaf clears (`clearPersistedDraft('user')`)
     // wipe the whole user.* subtree.
     const transientSet = new Set(
-      (existing.data.transientEmptyPaths ?? []).filter(
+      (existing.data.blankPaths ?? []).filter(
         (k) => k !== pathKey && !isDescendantPathKey(k, pathKey)
       )
     )
@@ -849,6 +876,84 @@ function isEmptyContainer(value: unknown): boolean {
   if (Array.isArray(value)) return value.length === 0
   if (isPlainRecord(value)) return Object.keys(value).length === 0
   return false
+}
+
+/**
+ * Tracks the FormStore identities the anon-persist warn already
+ * fired for in production. Dev-mode throws (via AnonPersistError)
+ * don't need a dedupe set — the throw aborts the call before
+ * subsequent identical calls can land.
+ */
+const warnedAnonPersistKeys: Set<string> = new Set<string>()
+
+/**
+ * Anonymous + `persist:` is unsafe by construction: the synthetic
+ * `__cx:anon:<id>` identity drifts on every remount (Vue's `useId()`
+ * allocator is per-app and per-tree-position; HMR rebuilds the
+ * instance) AND can collide between two unrelated anon forms that
+ * happen to land on the same id. With matching schemas + backend,
+ * the second form would read the first's draft and write back over
+ * it — actual cross-form data leakage, not just stale entries.
+ *
+ * Two-tier handling:
+ *   - **Dev** (`__DEV__` true): throw `AnonPersistError`. Hard-fails
+ *     the call at the offending useForm() site.
+ *   - **Prod**: one-shot `console.warn` + return `true` so the
+ *     caller skips persistence wiring entirely. A deployed app
+ *     shipping the anti-pattern shouldn't hard-crash, but it also
+ *     shouldn't silently mis-route data — disabling the mechanism
+ *     is the safe failure.
+ *
+ * Returns `true` when persistence MUST be skipped (anon + persist).
+ */
+function enforceAnonPersistRule(formKey: string, isSSR: boolean): boolean {
+  if (!formKey.startsWith(ANONYMOUS_FORM_KEY_PREFIX)) return false
+  if (__DEV__) throw new AnonPersistError()
+  // Production: warn + tell the caller to skip wiring. Client-only
+  // warn (skip server logs to avoid spamming SSR per-request output).
+  // Persist is still skipped on the SSR pass — same disabling
+  // outcome — just without the log noise.
+  if (!isSSR && !warnedAnonPersistKeys.has(formKey)) {
+    warnedAnonPersistKeys.add(formKey)
+    console.warn(
+      "[@chemical-x/forms] persist: ignored — anonymous useForm() can't safely persist " +
+        '(key drift + cross-form collision risk).\n' +
+        '  Persistence is disabled for this form; the app keeps working.\n' +
+        "  Fix: useForm({ schema, key: 'login', persist: '...' })"
+    )
+  }
+  return true
+}
+
+/**
+ * Walk a sparse persisted form and collect the canonical PathKey of
+ * every leaf. "Leaf" = anything that isn't a plain object or array
+ * (so primitives, null, deserialized Dates / strings all count). The
+ * persisted form's leaves correspond 1:1 with the per-element opt-in
+ * scope at the time persistence wrote, which the hydration path uses
+ * to bound which blank entries to overwrite.
+ */
+function collectPersistedLeafPaths(form: unknown): PathKey[] {
+  const out: PathKey[] = []
+  walk(form, [])
+  return out
+
+  function walk(node: unknown, prefix: Path): void {
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) {
+        walk(node[i], [...prefix, i])
+      }
+      return
+    }
+    if (isPlainRecord(node)) {
+      for (const key of Object.keys(node)) {
+        walk((node as Record<string, unknown>)[key], [...prefix, key])
+      }
+      return
+    }
+    if (prefix.length === 0) return // root scalar — no path to canonicalize
+    out.push(canonicalizePath(prefix).key)
+  }
 }
 
 /**

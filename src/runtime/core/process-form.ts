@@ -138,10 +138,10 @@ export function buildProcessForm<F extends GenericForm>(
     ) {
       warnedNoScopeStores.add(state as FormStore<GenericForm>)
       console.warn(
-        '[@chemical-x/forms] validate() called outside a Vue effect scope. ' +
-          'The reactive watcher will not be released until the JS engine garbage-collects the form ' +
-          '— move the call into setup() / a child component, or wrap in `effectScope().run(...)`. ' +
-          'Tests can suppress this warning by mocking console.warn for the run.'
+        '[@chemical-x/forms] validate() called outside a Vue effect scope; ' +
+          'its reactive watcher will leak until the form is garbage-collected. ' +
+          'Fix: call validate() inside setup() / a child component, ' +
+          'or wrap the call in `effectScope().run(...)`.'
       )
     }
     return result as Readonly<Ref<ReactiveValidationStatus<F>>>
@@ -178,7 +178,7 @@ export function buildProcessForm<F extends GenericForm>(
     // Required-empty augmentation. The schema can't tell the difference
     // between "user typed 0" and "user didn't answer" because storage
     // holds the slim default (`0` for `z.number()`) in both cases. We
-    // close the gap by consulting the form's `transientEmptyPaths` set:
+    // close the gap by consulting the form's `blankPaths` set:
     // every path in there + a required leaf in the schema becomes a
     // synthesised "No value supplied" error. Empty set or no required leaves →
     // no-op, return the base result unchanged.
@@ -366,7 +366,7 @@ function adapterThrowMessage(err: unknown): string {
 
 /**
  * Synthesise a "No value supplied" `ValidationError` for every path in the
- * form's `transientEmptyPaths` whose schema requires the leaf — i.e.
+ * form's `blankPaths` whose schema requires the leaf — i.e.
  * the schema is NOT `.optional()` / `.nullable()` / `.default(N)` /
  * `.catch(N)` at that leaf. When a `scope` is provided (per-path
  * `validate(path)` / `validateAsync(path)`), only paths inside the
@@ -380,9 +380,9 @@ function collectRequiredEmptyErrors<F extends GenericForm>(
   state: FormStore<F>,
   scope: Path | undefined
 ): ValidationError[] {
-  if (state.transientEmptyPaths.size === 0) return []
+  if (state.blankPaths.size === 0) return []
   const errors: ValidationError[] = []
-  for (const pathKey of state.transientEmptyPaths) {
+  for (const pathKey of state.blankPaths) {
     // PathKey is `JSON.stringify(segments)` per `canonicalizePath`, so
     // recovering the structured segments is `JSON.parse(...)`. Don't
     // round-trip through `canonicalizePath(pathKey)` — that would treat
@@ -392,7 +392,7 @@ function collectRequiredEmptyErrors<F extends GenericForm>(
     if (scope !== undefined && !pathStartsWith(segments, scope)) continue
     if (!state.schema.isRequiredAtPath(segments)) continue
     errors.push({
-      // The path is in `transientEmptyPaths` — the user hasn't
+      // The path is in `blankPaths` — the user hasn't
       // committed a value yet (or explicitly cleared via `unset` /
       // a numeric DOM clear). The schema requires a value here.
       // Message wording differentiates from a generic schema failure
@@ -411,7 +411,7 @@ function collectRequiredEmptyErrors<F extends GenericForm>(
 /**
  * `true` if `target`'s segments start with `prefix`. Used by
  * `collectRequiredEmptyErrors` to honour the per-path scope of
- * `validate(path)` — only transient-empty paths inside the validated
+ * `validate(path)` — only blank paths inside the validated
  * subtree raise required errors. An empty prefix matches every path.
  */
 function pathStartsWith(target: Path, prefix: Path): boolean {

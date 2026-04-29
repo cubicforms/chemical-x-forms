@@ -93,8 +93,14 @@ function isLeafValue(value: unknown): boolean {
  * dev-warn naming the bad path + offending kind + accepted kinds).
  *
  * Conventions:
- * - Empty accept set → permissive (matches `z.any()` / `z.unknown()`
- *   and the unresolvable-path case). Allow the write.
+ * - Empty accept set → REJECT every kind. This covers `z.never()`
+ *   (intentionally accepts nothing) AND unresolvable paths (typo
+ *   in `register('addr.zipp')` against a schema that doesn't have
+ *   that field — silently accepting the write would create a phantom
+ *   slot in storage). `z.any()` / `z.unknown()` / `z.void()` and the
+ *   lazy-peel-failure case return the FULL permissive set, so they
+ *   accept anything via the membership check below — they don't go
+ *   through this branch.
  * - The value AT the write path is also checked: writing `'oops'`
  *   to a path expecting `'object'` is rejected at the top-level.
  * - For wrappers like `.optional()` / `.nullable()`, the adapter's
@@ -120,13 +126,18 @@ function walk(
   // schema's slim kinds at this path? Recurse into containers
   // afterwards — the recursion checks the elements' kinds at
   // the sub-paths.
+  //
+  // An empty accept set means the schema rejects every kind at this
+  // path: either the path doesn't resolve (typo / unknown leaf) or
+  // the path resolves to `z.never()`. Either way, the membership
+  // check below rejects, blocking the write. `z.any()` / `z.unknown()`
+  // / `z.void()` and the lazy-peel-failure case return the full
+  // permissive set — those still accept any kind.
   const accepted = schema.getSlimPrimitiveTypesAtPath(path)
-  if (accepted.size > 0) {
-    const kind = isLeafValue(value) ? slimKindOf(value) : Array.isArray(value) ? 'array' : 'object'
-    if (!accepted.has(kind)) {
-      reportRejection(store, path, kind, accepted)
-      return false
-    }
+  const kind = isLeafValue(value) ? slimKindOf(value) : Array.isArray(value) ? 'array' : 'object'
+  if (!accepted.has(kind)) {
+    reportRejection(store, path, kind, accepted)
+    return false
   }
 
   if (Array.isArray(value)) {
@@ -158,12 +169,50 @@ function reportRejection(
   const dotted = path.map((s: Segment) => String(s)).join('.') || '(root)'
   const key = `${dotted}::${kind}`
   if (!shouldWarnOnce(store, key)) return
-  const acceptedList = [...accepted].sort().join(', ')
 
+  // KISS rule: state the problem in one sentence, then list the fix.
+  // Devs scan the first line; everything after is the recipe.
+
+  // Path doesn't resolve (or resolves to z.never). The headline names
+  // the actual cause; z.never is rare enough that it doesn't deserve
+  // top billing.
+  if (accepted.size === 0) {
+    console.warn(
+      `[@chemical-x/forms] Cannot write to '${dotted}' — this path is not in your schema.\n` +
+        `  Fix: check for a typo in register('${dotted}'); it should match a leaf key in your schema.\n` +
+        `  (If the path resolves to z.never, the schema explicitly admits no values — relax the schema if intentional.)\n` +
+        `  The write was a no-op.`
+    )
+    return
+  }
+
+  const expected = formatExpectedKinds(accepted)
+
+  // String-to-number is the most common gate rejection in real apps:
+  // a plain `<input v-register>` against a `z.number()` field reads
+  // `el.value` as a string. Show both v-register fix paths verbatim
+  // so the dev can copy-paste rather than parse "slim primitive set".
+  if (kind === 'string' && accepted.has('number')) {
+    console.warn(
+      `[@chemical-x/forms] Cannot write a string to '${dotted}' — the schema expects ${expected}.\n` +
+        `  Fix: add type="number" to the input, OR use the .number modifier on v-register:\n` +
+        `    <input type="number" v-register="register('${dotted}')" />\n` +
+        `    <input v-register.number="register('${dotted}')" />\n` +
+        `  The write was a no-op.`
+    )
+    return
+  }
+
+  // Generic kind mismatch — no built-in DOM coercion path to suggest.
   console.warn(
-    `[@chemical-x/forms] write rejected: value of kind '${kind}' is not assignable to ` +
-      `path '${dotted}' (slim primitive set: { ${acceptedList} }). ` +
-      `Refinement-level constraints (.email(), .min(N), enum membership, etc.) are NOT ` +
-      `enforced at write time — only the primitive shape. The write was a no-op.`
+    `[@chemical-x/forms] Cannot write a ${kind} to '${dotted}' — the schema expects ${expected}.\n` +
+      `  The write was a no-op.`
   )
+}
+
+function formatExpectedKinds(accepted: Set<SlimPrimitiveKind>): string {
+  const list = [...accepted].sort()
+  if (list.length === 1) return list[0] as string
+  if (list.length === 2) return `${list[0]} or ${list[1]}`
+  return `one of: ${list.join(', ')}`
 }

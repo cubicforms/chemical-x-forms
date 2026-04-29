@@ -7,10 +7,11 @@ import { vRegister } from '../../src/runtime/core/directive'
 import { CxErrorCode } from '../../src/runtime/core/error-codes'
 import { canonicalizePath } from '../../src/runtime/core/paths'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
+import { hashStableString } from '../../src/runtime/core/hash'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 
 /**
- * Round-trip coverage for transient-empty across `localStorage`
+ * Round-trip coverage for blank across `localStorage`
  * persistence + the v=2→v=3 envelope bump.
  */
 
@@ -53,7 +54,10 @@ afterAll(() => {
 })
 
 const schema = z.object({ income: z.number() })
-const FP = fingerprintZodSchema(schema)
+// Storage keys hash the structural fingerprint via cyrb53; mirror that
+// transformation here so tests pre-seeding or reading keys directly
+// resolve to the same suffix the form looks up.
+const FP = hashStableString(fingerprintZodSchema(schema))
 const fpKey = (base: string): string => `${base}:${FP}`
 
 async function flushAll(rounds = 12): Promise<void> {
@@ -115,7 +119,7 @@ describe('persistence — v=2 envelope rejection emits a one-time dev-warn', () 
   })
 })
 
-describe('persistence — transient-empty round-trips across mount', () => {
+describe('persistence — blank round-trips across mount', () => {
   const apps: App[] = []
 
   beforeEach(() => {
@@ -127,17 +131,17 @@ describe('persistence — transient-empty round-trips across mount', () => {
     document.body.innerHTML = ''
   })
 
-  it('a v=3 payload with transientEmptyPaths restores the empty UI state on next mount', async () => {
+  it('a v=3 payload with blankPaths restores the empty UI state on next mount', async () => {
     const incomeKey = canonicalizePath('income').key
     // Pre-seed a v=3 payload that mirrors what the lib would have
     // written on a previous session: storage holds the slim default
-    // (0) but the path is in `transientEmptyPaths` so the UI
+    // (0) but the path is in `blankPaths` so the UI
     // re-renders blank.
     localStorage.setItem(
       fpKey('te-rt'),
       JSON.stringify({
         v: 4,
-        data: { form: { income: 0 }, transientEmptyPaths: [incomeKey] },
+        data: { form: { income: 0 }, blankPaths: [incomeKey] },
       })
     )
 
@@ -181,7 +185,7 @@ describe('persistence — transient-empty round-trips across mount', () => {
     expect(errs?.some((e) => e.code === CxErrorCode.NoValueSupplied)).toBe(true)
   })
 
-  it('writes the transientEmptyPaths field after a numeric clear', async () => {
+  it('writes the blankPaths field after a numeric clear', async () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     const App = defineComponent({
@@ -209,7 +213,7 @@ describe('persistence — transient-empty round-trips across mount', () => {
 
     const input = document.querySelector('input[data-test="income"]') as HTMLInputElement
     // Type a value to trigger the persistence opt-in path, then
-    // clear to trigger markTransientEmpty + a follow-up persist.
+    // clear to trigger markBlank + a follow-up persist.
     input.value = '5'
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await flushAll()
@@ -223,19 +227,19 @@ describe('persistence — transient-empty round-trips across mount', () => {
     const payload = JSON.parse(raw as string)
     expect(payload.v).toBe(4)
     const incomeKey = canonicalizePath('income').key
-    expect(payload.data.transientEmptyPaths).toContain(incomeKey)
+    expect(payload.data.blankPaths).toContain(incomeKey)
   })
 
   it('hydration overrides construction-time auto-mark — persisted empty list wins', async () => {
     // The form has no defaultValues, so construction-time auto-mark
     // would mark `income`. But a v=3 payload pre-seeded with an EMPTY
-    // `transientEmptyPaths` list (representing "user previously filled
+    // `blankPaths` list (representing "user previously filled
     // this in") must override — the hydrated set is the truth.
     localStorage.setItem(
       fpKey('te-hyd'),
       JSON.stringify({
         v: 4,
-        data: { form: { income: 100 }, transientEmptyPaths: [] },
+        data: { form: { income: 100 }, blankPaths: [] },
       })
     )
 
@@ -265,7 +269,7 @@ describe('persistence — transient-empty round-trips across mount', () => {
     await flushAll()
 
     if (captured === undefined) throw new Error('form not captured')
-    expect(captured.transientEmptyPaths.value.size).toBe(0)
+    expect(captured.blankPaths.value.size).toBe(0)
     expect(captured.getValue('income').value).toBe(100)
   })
 })

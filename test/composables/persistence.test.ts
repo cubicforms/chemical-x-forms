@@ -8,6 +8,7 @@ import { vRegister } from '../../src/runtime/core/directive'
 import { __resetIndexedDbForTests } from '../../src/runtime/core/persistence/indexeddb'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
+import { hashStableString } from '../../src/runtime/core/hash'
 
 /**
  * Node 25's native `localStorage` (behind `--experimental-webstorage`)
@@ -86,7 +87,11 @@ const schema = z.object({
  * pre-seeded entry is treated as an orphan (stale-fingerprint) and
  * cleaned up on mount instead of rehydrating.
  */
-const FP = fingerprintZodSchema(schema)
+// Storage keys hash the structural fingerprint via cyrb53 to avoid
+// embedding the schema's full shape in localStorage entries. Mirror
+// the runtime's transformation here so tests that pre-seed or read
+// keys directly use the same suffix the form looks up.
+const FP = hashStableString(fingerprintZodSchema(schema))
 const fpKey = (base: string): string => `${base}:${FP}`
 
 type ApiReturn = ReturnType<typeof useForm<typeof schema>>
@@ -312,6 +317,117 @@ describe('persistence — localStorage backend', () => {
   })
 })
 
+/**
+ * Repro for the playground bug: salary (z.number(), no `register()`
+ * opt-in) showed `0` in its <input> on every page load instead of
+ * displaying as empty until the user typed.
+ *
+ * Cause: persistence's hydrate path called `blankPaths.clear()`
+ * and replaced the live set with the persisted array. The persisted
+ * array only ever contains paths the persistence layer has been writing
+ * for — i.e., paths within the per-element opt-in scope. Non-opted-in
+ * paths' construction-time auto-marks (number → 0 displayed as empty)
+ * got wiped on first hydrate, surfacing as `0` in the field.
+ */
+describe('persistence — non-opted-in blank paths survive hydration', () => {
+  const apps: App[] = []
+  beforeEach(() => sessionStorage.clear())
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+    sessionStorage.clear()
+  })
+
+  it('keeps a non-opted-in number field auto-marked blank on hydration', async () => {
+    const customSchema = z.object({
+      email: z.string(),
+      salary: z.number(),
+    })
+    const customFp = hashStableString(fingerprintZodSchema(customSchema))
+    // Default `resolveStorageKeyBase`: `${PERSISTENCE_KEY_PREFIX}${formKey}`,
+    // and PERSISTENCE_KEY_PREFIX is 'chemical-x-forms:'. Then the full
+    // storage key appends `:${hashedFingerprint}`.
+    const customKey = `chemical-x-forms:test-non-optin-tep:${customFp}`
+
+    // Pre-seed sessionStorage with a payload representing the state
+    // after a user typed into the opted-in email field.
+    // `blankPaths: []` matches what the persistence-write
+    // path actually saves under those conditions: only paths within
+    // the write's path-scope are tracked, and email itself is no
+    // longer blank post-typing.
+    sessionStorage.setItem(
+      customKey,
+      JSON.stringify({
+        v: 4,
+        data: { form: { email: 'seed@example.com' }, blankPaths: [] },
+      })
+    )
+
+    const captured: { api?: ReturnType<typeof useForm<typeof customSchema>> } = {}
+    const App = defineComponent({
+      setup() {
+        const api = useForm({
+          schema: customSchema,
+          key: 'test-non-optin-tep',
+          persist: { storage: 'session', debounceMs: 20 },
+        })
+        captured.api = api
+        return () =>
+          h('div', [
+            withDirectives(h('input', { type: 'text', class: 'email' }), [
+              [vRegister, api.register('email', { persist: true })],
+            ]),
+            // `salary` is NOT opted in for persistence. Use
+            // `type="number"` so this test exercises the exact
+            // browser-DOM path the playground bug reproduces (the
+            // user-visible regression was that the numeric input
+            // displayed `0` after hydration when it should have
+            // displayed empty).
+            withDirectives(h('input', { type: 'number', class: 'salary' }), [
+              [vRegister, api.register('salary')],
+            ]),
+          ])
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    await drain()
+
+    // Wait for the persistence hydrate to land (it's async — dynamic
+    // import + adapter.getItem + apply).
+    if (captured.api === undefined) throw new Error('unreachable')
+    await waitUntil(() =>
+      captured.api?.getValue('email').value === 'seed@example.com' ? true : null
+    )
+
+    // Sanity: email did hydrate (otherwise the test below isn't
+    // exercising the post-hydrate state at all).
+    expect(captured.api.getValue('email').value).toBe('seed@example.com')
+
+    // Critical assertion: the salary path is STILL in the
+    // blank set after hydration. Pre-fix the persistence
+    // hydrate cleared the set and replaced it with the persisted
+    // (empty) array, dropping 'salary' from the set.
+    expect(captured.api.blankPaths.value.has('["salary"]')).toBe(true)
+
+    // The user-visible consequence: the registered displayValue is
+    // `''` (blank bypass), not `'0'`. The compile-time
+    // input-text-area transform binds `:value="...displayValue.value"`
+    // on the rendered <input>, so this assertion is the runtime
+    // contract that drives the user-visible empty field. Storage
+    // still holds the slim default.
+    //
+    // (The DOM <input>.value would also be `''` in production via
+    // that synthesized binding; raw-`h()` tests skip the transform,
+    // so the DOM-side check would only pass if we compiled the
+    // template — overkill for this regression.)
+    expect(captured.api.register('salary').displayValue.value).toBe('')
+    expect(captured.api.getValue('salary').value).toBe(0)
+  })
+})
+
 describe('persistence — sessionStorage backend', () => {
   const apps: App[] = []
   beforeEach(() => sessionStorage.clear())
@@ -329,6 +445,134 @@ describe('persistence — sessionStorage backend', () => {
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { data: { form: { email: string } } }
     expect(payload.data.form.email).toBe('sess@example.com')
+  })
+})
+
+/**
+ * Repro for the playground bug: a developer wires `persist: 'local'`,
+ * the form writes to localStorage, then they switch to
+ * `persist: 'session'`. The sessionStorage entry appears (correctly)
+ * but the localStorage entry is left orphaned.
+ *
+ * The sweep at use-abstract-form.ts:150 (sweepNonConfiguredStandard
+ * StoresForOrphans) is supposed to handle this — it walks every
+ * non-configured standard backend and removes keys under the form's
+ * persistence base. The test below pins the contract for stable form
+ * keys; the anonymous-form variant is harder because the anon counter
+ * drifts under HMR (see the "stable across remounts" test).
+ */
+/**
+ * Anonymous + persist is unsafe by construction (synthetic key drifts
+ * on remount, can collide between unrelated forms with the same
+ * schema → cross-form data leakage). Dev throws AnonPersistError;
+ * prod warns and disables persistence for that form.
+ *
+ * Tests run with `__DEV__` true (Vitest default), so the throw path
+ * is exercised. The prod-warn-and-disable path is verified by
+ * stubbing `__DEV__` to false in a separate test.
+ */
+describe('persistence — anonymous useForm() rejects persist (dev throw)', () => {
+  const apps: App[] = []
+  beforeEach(() => {
+    sessionStorage.clear()
+    localStorage.clear()
+  })
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+    sessionStorage.clear()
+    localStorage.clear()
+  })
+
+  it('throws AnonPersistError when useForm has no key + persist is configured', () => {
+    const customSchema = z.object({ email: z.string() })
+    const App = defineComponent({
+      setup() {
+        // No `key:` → anonymous identity → throws.
+        useForm({ schema: customSchema, persist: 'session' })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    apps.push(app)
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+
+    // Vue's app.mount surfaces setup-time throws — capture and assert.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      let caught: unknown = null
+      try {
+        app.mount(root)
+      } catch (err) {
+        caught = err
+      }
+      // Vue may swallow the setup throw and route it through its
+      // app-level handler; either way the message must reach the
+      // console.error stream.
+      const seenViaErrSpy = errSpy.mock.calls
+        .flat()
+        .some(
+          (arg) =>
+            (arg instanceof Error && /persist:.*requires an explicit key/.test(arg.message)) ||
+            (typeof arg === 'string' && /persist:.*requires an explicit key/.test(arg))
+        )
+      const seenViaCatch =
+        caught instanceof Error && /persist:.*requires an explicit key/.test(caught.message)
+      expect(seenViaErrSpy || seenViaCatch).toBe(true)
+    } finally {
+      errSpy.mockRestore()
+    }
+  })
+
+  it('does NOT throw when useForm has an explicit key + persist', async () => {
+    const { app, type } = mountForm({ storage: 'session', key: 'test-explicit', debounceMs: 20 })
+    apps.push(app)
+    await drain()
+    type('email', 'works@example.com')
+    const raw = await waitUntil(() => sessionStorage.getItem(fpKey('test-explicit')))
+    expect(raw).not.toBeNull()
+  })
+})
+
+describe('persistence — backend swap cleans up the prior backend', () => {
+  const apps: App[] = []
+  beforeEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  it('switching local → session removes the old localStorage entry', async () => {
+    // Mount 1: persist to localStorage.
+    const first = mountForm({ storage: 'local', key: 'swap-test', debounceMs: 20 })
+    apps.push(first.app)
+    await drain()
+    first.type('email', 'mango')
+    await waitUntil(() => localStorage.getItem(fpKey('swap-test')))
+    expect(localStorage.getItem(fpKey('swap-test'))).not.toBeNull()
+    expect(sessionStorage.getItem(fpKey('swap-test'))).toBeNull()
+
+    // Tear down (mirrors the developer's edit-config-and-refresh flow).
+    first.app.unmount()
+    apps.length = 0
+
+    // Mount 2: SAME persist key, different storage backend.
+    const second = mountForm({ storage: 'session', key: 'swap-test', debounceMs: 20 })
+    apps.push(second.app)
+    // Drain microtasks for the cross-store sweep to land. The sweep
+    // is fire-and-forget; we wait via the negative-condition predicate.
+    await waitUntil(() => (localStorage.getItem(fpKey('swap-test')) === null ? true : null))
+
+    expect(localStorage.getItem(fpKey('swap-test'))).toBeNull()
+
+    // Sanity: writing into the new mount lands in sessionStorage.
+    second.type('email', 'mang')
+    await waitUntil(() => sessionStorage.getItem(fpKey('swap-test')))
+    expect(sessionStorage.getItem(fpKey('swap-test'))).not.toBeNull()
   })
 })
 
@@ -963,9 +1207,7 @@ describe('persistence — reset wipes the persisted draft', () => {
       // Drain the microtasks so the deferred warning fires.
       await drain()
       const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
-      const matched = warnCalls.find((msg) =>
-        /Persistence is configured.*no fields opted in/.test(msg)
-      )
+      const matched = warnCalls.find((msg) => /persist:.*configured.*no fields opted in/.test(msg))
       expect(matched).toBeDefined()
     } finally {
       warnSpy.mockRestore()
@@ -979,9 +1221,7 @@ describe('persistence — reset wipes the persisted draft', () => {
       apps.push(app)
       await drain()
       const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
-      const matched = warnCalls.find((msg) =>
-        /Persistence is configured.*no fields opted in/.test(msg)
-      )
+      const matched = warnCalls.find((msg) => /persist:.*configured.*no fields opted in/.test(msg))
       expect(matched).toBeUndefined()
     } finally {
       warnSpy.mockRestore()
@@ -1016,7 +1256,7 @@ describe('persistence — reset wipes the persisted draft', () => {
       await drain()
       const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
       const matched = warnCalls.find((msg) =>
-        /register\('email', \{ persist: true \}\).*no `persist:` option is configured/.test(msg)
+        /register\('email', \{ persist: true \}\).*no `persist` option configured/.test(msg)
       )
       expect(matched).toBeDefined()
     } finally {
@@ -1037,7 +1277,7 @@ describe('persistence — reset wipes the persisted draft', () => {
       apps.push(app)
       await drain()
       const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
-      const matched = warnCalls.find((msg) => /no `persist:` option is configured/.test(msg))
+      const matched = warnCalls.find((msg) => /no `persist` option configured/.test(msg))
       expect(matched).toBeUndefined()
     } finally {
       warnSpy.mockRestore()
@@ -1074,7 +1314,7 @@ describe('persistence — reset wipes the persisted draft', () => {
       await drain()
       const matchCount = warnSpy.mock.calls
         .map((args) => args.join(' '))
-        .filter((msg) => /no `persist:` option is configured/.test(msg)).length
+        .filter((msg) => /no `persist` option configured/.test(msg)).length
       expect(matchCount).toBe(1)
     } finally {
       warnSpy.mockRestore()

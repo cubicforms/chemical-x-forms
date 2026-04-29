@@ -7,7 +7,7 @@ import { isUnset } from './unset'
 /**
  * Walk a defaults / setValue / reset payload depth-first and produce
  * the cleaned-up storage tree plus the set of paths to mark as
- * transient-empty (`pendingEmpty`). Used at three boundaries:
+ * blank (`blank`). Used at three boundaries:
  *
  *   - `useAbstractForm` construction (defaultValues pre-pass)
  *   - `setValue(path, unset)` translation
@@ -175,12 +175,10 @@ function warnNonPrimitiveLeaf(segments: Segment[], slim: unknown): void {
   warnedNonPrimitivePaths.add(dotted)
   const slimType = slim === null ? 'null' : slim instanceof Date ? 'Date' : typeof slim
   console.warn(
-    `[@chemical-x/forms] \`unset\` is only supported at primitive leaves ` +
-      `(string / number / boolean / bigint, plus their optional / nullable ` +
-      `variants); got "${slimType}" at "${dotted || '<root>'}". The slim ` +
-      `default is written to storage but the path is NOT marked transient-` +
-      `empty. The TypeScript \`DefaultValuesShape<T>\` widening prevents ` +
-      `this at compile time — this dev-warn fires once per offending path ` +
-      `to catch plain-JS consumers and dynamic plumbing that bypasses TS.`
+    `[@chemical-x/forms] \`unset\` at "${dotted || '<root>'}" is a no-op — ` +
+      `unset only works at primitive leaves (string / number / boolean / bigint, ` +
+      `plus their optional / nullable variants), got "${slimType}". ` +
+      `The slim default was written but the path is NOT marked blank. ` +
+      `(TypeScript catches this at compile time; this warn covers plain-JS callers.)`
   )
 }

@@ -17,23 +17,42 @@ import { canonicalizePath, type Path } from './paths'
  */
 
 export type FieldStateView = {
+  /** The current value at this path. */
   readonly value: unknown
+  /** The value the field was initialised with. */
   readonly original: unknown
+  /** `true` when `value` matches `original`. */
   readonly pristine: boolean
+  /** `true` when `value` differs from `original`. */
   readonly dirty: boolean
+  /** `true` while the input has DOM focus; `null` until the first focus event. */
   readonly focused: boolean | null
+  /** Flips to `true` on the first blur and stays there; `null` until then. */
   readonly blurred: boolean | null
+  /** Flips to `true` on the first blur AFTER a focus and stays there; `null` until then. */
   readonly touched: boolean | null
+  /** `true` while at least one DOM input is registered to this path. */
   readonly isConnected: boolean
+  /** ISO timestamp of the most recent write; `null` until the first write. */
   readonly updatedAt: string | null
+  /** Validation errors at this path (schema + user errors merged). Empty when valid. */
   readonly errors: ValidationError[]
+  /** Canonical path segments — same shape as the input to `getFieldState`. */
   readonly path: Path
   /**
-   * `true` when this path is in the form's transient-empty set —
-   * storage holds the slim default but the UI displays empty.
-   * See `MetaTrackerValue.pendingEmpty` for the full contract.
+   * `true` when the user hasn't supplied a value yet — the input
+   * renders as empty even though storage holds a slim default
+   * (e.g. `0` for `z.number()`, `''` for `z.string()`). Answers
+   * the question: "Is this field empty because the user left it
+   * blank, or because the slim default happens to be `0` / `''`?"
+   *
+   * Becomes `false` on the first keystroke / programmatic write;
+   * toggles back via `setValue(path, unset)` / `markBlank()`
+   * / clearing a `<input type="number">`. Submit-time validation
+   * surfaces "No value supplied" for required fields that are still
+   * `blank`.
    */
-  readonly pendingEmpty: boolean
+  readonly blank: boolean
 }
 
 export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<F>) {
@@ -71,7 +90,7 @@ export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<
         updatedAt: record?.updatedAt ?? null,
         errors,
         path: segments,
-        pendingEmpty: state.transientEmptyPaths.has(key),
+        blank: state.blankPaths.has(key),
       }
     })
   }

@@ -7,6 +7,7 @@ import { vRegister } from '../../src/runtime/core/directive'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { useForm } from '../../src/zod-v3'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v3/fingerprint'
+import { hashStableString } from '../../src/runtime/core/hash'
 
 /**
  * Regression pin: the zod v3 `useForm` wrapper used to hand-pick the
@@ -134,7 +135,7 @@ describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
 
     expect(setItem).toHaveBeenCalled()
     const [key, payload] = setItem.mock.calls[0] ?? []
-    const fp = fingerprintZodSchema(schema)
+    const fp = hashStableString(fingerprintZodSchema(schema))
     expect(key).toBe(`chemical-x-forms:v3-persist:${fp}`)
     expect(payload).toMatchObject({
       v: 4,

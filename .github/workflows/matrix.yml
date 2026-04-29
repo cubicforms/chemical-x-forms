@@ -49,6 +49,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      # Generate playground/.nuxt/imports.d.ts so the eslint config can
+      # parse Nuxt's auto-imports (`computed`, `useState`, etc.) and
+      # `no-undef` doesn't false-fail on auto-imported names. The full
+      # `test` job below also runs this before `pnpm check`; mirroring
+      # the same step here keeps the dedicated lint job self-contained.
+      - name: Prepare Nuxt auto-imports
+        run: pnpm dev:prepare
+
       - name: ESLint
         run: pnpm lint
 

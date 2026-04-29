@@ -1302,12 +1302,11 @@ export type FieldStateLeaf<Value = unknown> = {
 }
 
 /**
- * Recursive type behind `form.fieldState`. At every depth ≥ 1 the
- * proxy exposes both the FieldStateLeaf at the current path AND
- * descent into named children. FieldStateLeaf keys SHADOW any schema
- * fields with conflicting names at depth 2+ (a documented edge case;
- * top-level fields are unshadowed because the root proxy treats every
- * access as descent — see `buildFieldStateProxy`).
+ * Recursive type behind `form.fieldState`. At every depth ≥ 1 each
+ * node carries both the `FieldStateLeaf` for the current path AND
+ * descent into named children. Leaf keys (`value`, `dirty`, `errors`,
+ * …) shadow schema fields with conflicting names at depth ≥ 2;
+ * top-level fields are not shadowed.
  */
 export type FieldStateMapEntry<T> = T extends object
   ? FieldStateLeaf<T> & {
@@ -1316,9 +1315,9 @@ export type FieldStateMapEntry<T> = T extends object
   : FieldStateLeaf<T>
 
 /**
- * Type of `form.fieldState`. Object-shape mirroring the form's top
- * level; descent into nested fields produces FieldStateLeaf-bearing
- * entries via `FieldStateMapEntry`.
+ * Type of `form.fieldState` — root object that mirrors the form's
+ * top level; nested descent produces `FieldStateLeaf`-bearing nodes
+ * via `FieldStateMapEntry`.
  */
 export type FieldStateMap<Form extends GenericForm> = {
   readonly [K in keyof Form]: FieldStateMapEntry<Form[K]>
@@ -1538,7 +1537,7 @@ export type UseAbstractFormReturnType<
    * ```
    *
    * Writes are blocked at the proxy boundary — go through `setValue`,
-   * `setValues`, the directive, or one of the field-array helpers. The
+   * the directive, or one of the field-array helpers. The
    * slim-primitive write gate stays the only path into storage.
    *
    * Reads reflect what's storable: enum-typed slots widen to their
@@ -1550,9 +1549,8 @@ export type UseAbstractFormReturnType<
 
   /**
    * Reactive per-field state proxy. Pinia-style nested object — read
-   * leaf properties (`dirty`, `touched`, `errors`, `blurred`,
-   * `focused`, `blank`, `currentValue`, …) directly off the
-   * field's path:
+   * leaf properties (`value`, `dirty`, `touched`, `errors`, `blurred`,
+   * `focused`, `blank`, …) directly off the field's path:
    *
    * ```vue
    * <p v-if="form.fieldState.email.touched && form.fieldState.email.errors.length">

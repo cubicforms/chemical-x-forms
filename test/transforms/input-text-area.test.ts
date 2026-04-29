@@ -155,4 +155,66 @@ describe('inputTextAreaNodeTransform', () => {
       expect(code).not.toMatch(/\bvalue:\s*"ignored"/)
     })
   })
+
+  /**
+   * Repro for the playground newsletter bug: the checkbox flashed
+   * checked → unchecked → checked on every refresh.
+   *
+   * Pre-fix the synthesized `:checked` equality compared the model
+   * against a SINGLE element-side value (the static `value=` attr,
+   * defaulting to `''` when missing) for ALL three branches —
+   * Array.includes, Set.has, AND scalar `===`. That works for the
+   * array / Set group case (where `value="apple"` is the option-value)
+   * but is wrong for two scalar shapes:
+   *
+   *   1. Single boolean (`z.boolean()` with no value attr): the
+   *      equality is `model === ''` — always false, even when the
+   *      box should be checked. SSR renders unchecked, the directive's
+   *      setChecked corrects after mount → visible flash.
+   *   2. Single string mapped via `:true-value` (e.g. `z.enum([...])`
+   *      with `:true-value="'subscribe'"`): the equality is
+   *      `model === ''` instead of `model === 'subscribe'`. Same
+   *      flash.
+   *
+   * Post-fix the scalar branch uses the `:true-value` (or, for the
+   * boolean case, the literal `true`) — matching the runtime's
+   * `getCheckboxValue(el, true)` fallback. SSR renders checked when
+   * it should be, and there's no flash on hydration.
+   */
+  describe('checkbox scalar equality target', () => {
+    it('uses :true-value as the scalar equality target', () => {
+      const code = compileWithTransform(
+        `<input type="checkbox" :true-value="'subscribe'" v-register="newsletter" />`
+      )
+      // The scalar leg should compare against 'subscribe', not ''.
+      // We assert the literal appears in an equality position
+      // immediately followed by `)` (the scalar branch's closing).
+      expect(code).toMatch(/===\s*\('subscribe'\)/)
+    })
+
+    it('uses literal `true` as the scalar equality target when no value / true-value', () => {
+      const code = compileWithTransform(`<input type="checkbox" v-register="agreed" />`)
+      // Boolean checkbox: the scalar branch must compare against
+      // `true`, not `''` (which would always evaluate false against
+      // `false`/`true` model values).
+      expect(code).toMatch(/===\s*\(true\)/)
+    })
+
+    it('uses value= as the scalar equality target on radio', () => {
+      // Radio model is always scalar; the option-value (`value=`)
+      // IS the right discriminator there.
+      const code = compileWithTransform(`<input type="radio" value="apple" v-register="fruit" />`)
+      expect(code).toMatch(/===\s*\("apple"\)/)
+    })
+
+    it('checkbox group keeps option-value for the array/Set legs', () => {
+      // The group case must still use `value="apple"` for
+      // includes / has — only the scalar branch changes.
+      const code = compileWithTransform(
+        `<input type="checkbox" value="apple" v-register="fruits" />`
+      )
+      expect(code).toContain('?.includes("apple")')
+      expect(code).toContain('?.has("apple")')
+    })
+  })
 })

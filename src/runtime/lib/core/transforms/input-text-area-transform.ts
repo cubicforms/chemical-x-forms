@@ -54,12 +54,27 @@ function getSummarizedPropValue(exp: ExpressionNode): SummarizedProp['value'] {
 
 function generateEqualityExpression(
   registerValue: SummarizedProp['value'],
-  elementValue: SummarizedProp['value']
+  optionValue: SummarizedProp['value'],
+  scalarTarget: SummarizedProp['value']
 ): CompoundExpressionNode['children'] {
   const registerValueArr = Array.isArray(registerValue) ? registerValue : [registerValue]
-  const elementValueArr = Array.isArray(elementValue) ? elementValue : [elementValue]
+  const optionValueArr = Array.isArray(optionValue) ? optionValue : [optionValue]
+  const scalarTargetArr = Array.isArray(scalarTarget) ? scalarTarget : [scalarTarget]
 
-  // account for register value being an array, set, or some other value
+  // Discriminator selection:
+  //   - Array model     → membership of the option-value (e.g. value="apple")
+  //   - Set model       → membership of the option-value
+  //   - Scalar model    → equality with the scalar-equality target
+  //
+  // The scalar target differs from the option-value for two checkbox
+  // shapes that the directive's runtime `setChecked` already handles
+  // via `getCheckboxValue(el, true)`:
+  //
+  //   - boolean model + no `value=` → target is `true`
+  //   - string model + `:true-value="'X'"` → target is `'X'`
+  //
+  // For radio inputs the model is always scalar and the discriminator
+  // IS the option-value, so `optionValue === scalarTarget` there.
   return [
     'Array.isArray((',
     ...registerValueArr,
@@ -67,19 +82,19 @@ function generateEqualityExpression(
     '(',
     ...registerValueArr,
     ')?.innerRef?.value?.includes(',
-    ...elementValueArr,
+    ...optionValueArr,
     ') : ',
     '(',
     ...registerValueArr,
     ')?.innerRef?.value instanceof Set ? (',
     ...registerValueArr,
     ')?.innerRef?.value?.has(',
-    ...elementValueArr,
+    ...optionValueArr,
     ') : ',
     '((',
     ...registerValueArr,
     ')?.innerRef?.value === (',
-    ...elementValueArr,
+    ...scalarTargetArr,
     '))',
   ]
 }
@@ -258,8 +273,10 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
       // `:value`) leaves the SSR HTML without the attribute, and on
       // hydration the directive can't tell which option this checkbox
       // represents.
-      const keepStaticValue =
-        typeProp !== undefined && isStaticTypeOneOf(typeProp.value, ['checkbox', 'radio'])
+      const isStaticCheckbox =
+        typeProp !== undefined && isStaticTypeOneOf(typeProp.value, ['checkbox'])
+      const isStaticRadio = typeProp !== undefined && isStaticTypeOneOf(typeProp.value, ['radio'])
+      const keepStaticValue = isStaticCheckbox || isStaticRadio
       removePropsByName(props, keepStaticValue ? ['checked'] : ['checked', 'value'])
       const registerValueArr = Array.isArray(registerSummarizedProp.value)
         ? registerSummarizedProp.value
@@ -278,6 +295,26 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
         ...registerValueArr,
         ')?.displayValue?.value',
       ])
+
+      // Scalar-equality target. Three cases (see the long-form comment
+      // on `generateEqualityExpression`):
+      //   - static checkbox + `:true-value="X"` → X (the explicit
+      //     mapped string the model takes when checked)
+      //   - static checkbox without `:true-value` → boolean `true`
+      //     (matches the runtime's `getCheckboxValue(el, true)` default)
+      //   - static radio → the option-value (since radio model is
+      //     always scalar and the `value=` IS the discriminator)
+      //   - dynamic type → fall back to the option-value (current
+      //     behaviour); a dynamic-type element can't be statically
+      //     classified into checkbox vs radio vs text.
+      const trueValueIndex = elementProps.findIndex((p) => isExactKey(p.key, 'true-value'))
+      const trueValueProp = elementProps[trueValueIndex]
+      const scalarTarget: SummarizedProp['value'] = isStaticCheckbox
+        ? trueValueProp !== undefined
+          ? trueValueProp.value
+          : 'true'
+        : elementValueSummarizedProp.value
+
       const valueOrCheckedProp: DirectiveNode = {
         // reconstruct the `value` attribute based on the provided v-registerer, now that the computation is complete
         arg: elementSelectionLabelExpression,
@@ -288,7 +325,8 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
           // resolves to a boolean
           ...generateEqualityExpression(
             registerSummarizedProp.value,
-            elementValueSummarizedProp.value
+            elementValueSummarizedProp.value,
+            scalarTarget
           ),
           ') : (',
           // resolves to the provided register value

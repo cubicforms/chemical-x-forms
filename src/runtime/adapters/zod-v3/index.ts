@@ -179,7 +179,9 @@ export function zodAdapter<
             const path = coercePathSegments(issue.path)
             if (!schemasAtPath.length) {
               console.error(
-                `No schemas at path '${path.join(PATH_SEPARATOR)}' for key '${_formKey}'`
+                `[@chemical-x/forms] zod-v3 adapter: no schema at path ` +
+                  `'${path.join(PATH_SEPARATOR)}' for key '${_formKey}'. ` +
+                  `Skipping the issue. (This is a library-internal invariant — please file a bug.)`
               )
               continue
             }
@@ -1358,7 +1360,11 @@ function getDefaultValuesFromZodSchema<
       if (inner) return generateValue(inner)
     }
 
-    console.warn(`Unsupported schema: ${schema.constructor.name} (key '${formKey}')`)
+    console.warn(
+      `[@chemical-x/forms] zod-v3 adapter: unsupported schema kind ` +
+        `'${schema.constructor.name}' on form '${formKey}'. Defaulting the field to null. ` +
+        `Use a supported zod kind (object/array/record/string/number/etc.) at this path.`
+    )
     return null
   }
 

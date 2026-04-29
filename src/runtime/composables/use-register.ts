@@ -130,7 +130,9 @@ function warnOutsideSetup(): void {
   warnedOutsideSetup = true
   const frame = captureUserCallSite()
   console.warn(
-    `[@chemical-x/forms] useRegister called outside of a component setup; returning ComputedRef<undefined>.` +
+    `[@chemical-x/forms] useRegister() called outside a component setup; returning ComputedRef<undefined>. ` +
+      `Fix: call it inside <script setup> or a setup() function — not from an event handler ` +
+      `or async callback.` +
       (frame !== undefined ? ` ${frame}` : '')
   )
 }

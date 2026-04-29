@@ -963,9 +963,7 @@ describe('persistence — reset wipes the persisted draft', () => {
       // Drain the microtasks so the deferred warning fires.
       await drain()
       const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
-      const matched = warnCalls.find((msg) =>
-        /Persistence is configured.*no fields opted in/.test(msg)
-      )
+      const matched = warnCalls.find((msg) => /persist:.*configured.*no fields opted in/.test(msg))
       expect(matched).toBeDefined()
     } finally {
       warnSpy.mockRestore()
@@ -979,9 +977,7 @@ describe('persistence — reset wipes the persisted draft', () => {
       apps.push(app)
       await drain()
       const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
-      const matched = warnCalls.find((msg) =>
-        /Persistence is configured.*no fields opted in/.test(msg)
-      )
+      const matched = warnCalls.find((msg) => /persist:.*configured.*no fields opted in/.test(msg))
       expect(matched).toBeUndefined()
     } finally {
       warnSpy.mockRestore()
@@ -1016,7 +1012,7 @@ describe('persistence — reset wipes the persisted draft', () => {
       await drain()
       const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
       const matched = warnCalls.find((msg) =>
-        /register\('email', \{ persist: true \}\).*no `persist:` option is configured/.test(msg)
+        /register\('email', \{ persist: true \}\).*no `persist` option configured/.test(msg)
       )
       expect(matched).toBeDefined()
     } finally {
@@ -1037,7 +1033,7 @@ describe('persistence — reset wipes the persisted draft', () => {
       apps.push(app)
       await drain()
       const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
-      const matched = warnCalls.find((msg) => /no `persist:` option is configured/.test(msg))
+      const matched = warnCalls.find((msg) => /no `persist` option configured/.test(msg))
       expect(matched).toBeUndefined()
     } finally {
       warnSpy.mockRestore()
@@ -1074,7 +1070,7 @@ describe('persistence — reset wipes the persisted draft', () => {
       await drain()
       const matchCount = warnSpy.mock.calls
         .map((args) => args.join(' '))
-        .filter((msg) => /no `persist:` option is configured/.test(msg)).length
+        .filter((msg) => /no `persist` option configured/.test(msg)).length
       expect(matchCount).toBe(1)
     } finally {
       warnSpy.mockRestore()

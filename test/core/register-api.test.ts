@@ -146,7 +146,7 @@ describe('buildRegister', () => {
         register('email', { persist: true })
         const matches = warnSpy.mock.calls
           .map((args) => args.join(' '))
-          .filter((msg) => /no `persist:` option is configured/.test(msg))
+          .filter((msg) => /no `persist` option configured/.test(msg))
         expect(matches).toEqual([])
       } finally {
         warnSpy.mockRestore()
@@ -163,7 +163,7 @@ describe('buildRegister', () => {
         register('note', { persist: true })
         const matches = warnSpy.mock.calls
           .map((args) => args.join(' '))
-          .filter((msg) => /no `persist:` option is configured/.test(msg))
+          .filter((msg) => /no `persist` option configured/.test(msg))
         expect(matches.length).toBe(1)
       } finally {
         warnSpy.mockRestore()

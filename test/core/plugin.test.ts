@@ -58,7 +58,7 @@ describe('createChemicalXForms', () => {
       expect(secondRegistry).toBe(firstRegistry)
       // Single dev warning fired.
       const matched = warnSpy.mock.calls.filter((c: unknown[]) =>
-        String(c[0]).includes('createChemicalXForms() install was called more than once')
+        String(c[0]).includes('createChemicalXForms() install was called twice')
       )
       expect(matched.length).toBe(1)
     } finally {

@@ -369,7 +369,8 @@ function setAssignFunction(
   }
   if (!isRegisterValue(value)) {
     warn(
-      `v-register expected value of type RegisterValue, got value of type ${typeof value} instead. Please check your v-register value.`
+      `v-register expected a RegisterValue, got '${typeof value}'. ` +
+        `Bind to form.register('field') — not the field's ref, value, or path string.`
     )
     el[assignKey] = makeNoopAssigner()
     return
@@ -656,7 +657,9 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
       if (isArray(modelValue)) {
         if (elementValue === undefined) {
           warn(
-            'checkbox bound to a v-registerer array or set does not have an explicit value, state not updated.'
+            'Checkbox bound to an array model is missing a `value` attribute — ' +
+              'cannot determine which item to add or remove. ' +
+              'Add value="..." to each <input type="checkbox">.'
           )
           return
         }
@@ -672,7 +675,9 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
       } else if (isSet(modelValue)) {
         if (elementValue === undefined) {
           warn(
-            'Please add `value` prop to checkbox or pass RegisterValue of primitive value to register.'
+            'Checkbox bound to a Set model is missing a `value` attribute — ' +
+              'cannot determine which item to add or remove. ' +
+              'Add value="..." to each <input type="checkbox">.'
           )
           return
         }
@@ -813,8 +818,9 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
   if (isMultiple && !isArrayValue && !isSet(externalValue)) {
     if (__DEV__) {
       warn(
-        `<select multiple v-register> expected an Array or Set value for its binding, ` +
-          `but got ${Object.prototype.toString.call(externalValue).slice(8, -1)} instead.`
+        `<select multiple v-register> expected an Array or Set, got ` +
+          `${Object.prototype.toString.call(externalValue).slice(8, -1)}. ` +
+          `Bind to a list-typed schema (e.g. z.array(z.string()) or z.set(z.string())).`
       )
     }
     return

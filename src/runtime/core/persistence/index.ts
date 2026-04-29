@@ -172,12 +172,10 @@ function warnVersionMismatch(observedVersion: number): void {
   if (warnedVersions.has(observedVersion)) return
   warnedVersions.add(observedVersion)
   console.warn(
-    `[@chemical-x/forms] dropping persisted draft (envelope v=${observedVersion}, ` +
-      `expected v=${PERSISTED_ENVELOPE_VERSION}). The library upgraded its ` +
-      `internal payload shape — drafts saved against an older version are not ` +
-      `restored. New drafts written from this session will use the current ` +
-      `envelope and round-trip cleanly. This warning is dev-only and fires once ` +
-      `per observed version per session.`
+    `[@chemical-x/forms] Dropping persisted draft — envelope v=${observedVersion}, ` +
+      `but this version of the library expects v=${PERSISTED_ENVELOPE_VERSION}. ` +
+      `The persisted shape changed across releases; older drafts can't be restored. ` +
+      `New drafts saved this session will use the current envelope.`
   )
 }
 

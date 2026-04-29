@@ -672,10 +672,10 @@ function wirePersistence<F extends GenericForm>(
         if (disposed) return
         if (state.persistOptIns.isEmpty()) {
           console.warn(
-            `[@chemical-x/forms] Persistence is configured for form ` +
-              `"${state.formKey}" but no fields opted in. Each persisted ` +
-              `field needs \`register('foo', { persist: true })\`, or call ` +
-              `\`form.persist('foo')\` for an explicit checkpoint. ` +
+            `[@chemical-x/forms] useForm({ persist: ... }) is configured on form ` +
+              `"${state.formKey}" but no fields opted in — nothing will be saved. ` +
+              `Fix: add \`{ persist: true }\` to register() calls, ` +
+              `e.g. register('email', { persist: true }). ` +
               `See ./docs/recipes/persistence.md.`
           )
         }

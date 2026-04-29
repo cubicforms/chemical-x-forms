@@ -178,12 +178,11 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
         // The console auto-renders its own clickable stack below the
         // message anyway.
         console.warn(
-          `[@chemical-x/forms] register('${display}', { persist: true }) was used on form ` +
-            `"${state.formKey}", but no \`persist:\` option is configured on useForm(). The ` +
-            `opt-in is recorded, but no writes will land in any storage backend. Add ` +
-            `\`persist: 'local'\` (or another backend) to your useForm() options. To find the ` +
-            `offending call, search your codebase for \`register('${display}'\`. See ` +
-            `./docs/recipes/persistence.md.`
+          `[@chemical-x/forms] register('${display}', { persist: true }) is set on form ` +
+            `"${state.formKey}", but useForm() has no \`persist\` option configured — ` +
+            `nothing will be saved to storage. ` +
+            `Fix: add \`persist: 'local'\` (or 'session' / 'indexeddb') to your useForm() options. ` +
+            `See ./docs/recipes/persistence.md.`
         )
       }
     }

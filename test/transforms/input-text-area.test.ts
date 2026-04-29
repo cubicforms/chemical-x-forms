@@ -154,6 +154,31 @@ describe('inputTextAreaNodeTransform', () => {
       // that's expected and unrelated.)
       expect(code).not.toMatch(/\bvalue:\s*"ignored"/)
     })
+
+    it('matches type="CHECKBOX" / "Radio" case-insensitively', () => {
+      // HTML spec: `type` is ASCII case-insensitive. The compile-time
+      // `isStaticTypeOneOf` already normalises, but the runtime
+      // selection-label expression compares the type string against
+      // lowercase 'checkbox' / 'radio' — without case folding there,
+      // a `type="CHECKBOX"` input has its static `value` preserved
+      // (per `keepStaticValue`) but still emits `:value=` instead of
+      // `:checked=`, breaking SSR initial checked state. Both halves
+      // need the case-insensitive treatment.
+      const upperCheckbox = compileWithTransform(
+        `<input type="CHECKBOX" value="apple" v-register="fruits" />`
+      )
+      expect(upperCheckbox).toMatch(/\bvalue:\s*"apple"/)
+      // Selection-label expression must lowercase the type before
+      // comparing — String(...).toLowerCase() shows up in the
+      // generated render code.
+      expect(upperCheckbox).toContain('.toLowerCase()')
+
+      const mixedRadio = compileWithTransform(
+        `<input type="Radio" value="apple" v-register="fruit" />`
+      )
+      expect(mixedRadio).toMatch(/\bvalue:\s*"apple"/)
+      expect(mixedRadio).toContain('.toLowerCase()')
+    })
   })
 
   /**

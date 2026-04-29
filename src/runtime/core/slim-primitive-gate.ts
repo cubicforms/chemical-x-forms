@@ -93,8 +93,14 @@ function isLeafValue(value: unknown): boolean {
  * dev-warn naming the bad path + offending kind + accepted kinds).
  *
  * Conventions:
- * - Empty accept set → permissive (matches `z.any()` / `z.unknown()`
- *   and the unresolvable-path case). Allow the write.
+ * - Empty accept set → REJECT every kind. This covers `z.never()`
+ *   (intentionally accepts nothing) AND unresolvable paths (typo
+ *   in `register('addr.zipp')` against a schema that doesn't have
+ *   that field — silently accepting the write would create a phantom
+ *   slot in storage). `z.any()` / `z.unknown()` / `z.void()` and the
+ *   lazy-peel-failure case return the FULL permissive set, so they
+ *   accept anything via the membership check below — they don't go
+ *   through this branch.
  * - The value AT the write path is also checked: writing `'oops'`
  *   to a path expecting `'object'` is rejected at the top-level.
  * - For wrappers like `.optional()` / `.nullable()`, the adapter's

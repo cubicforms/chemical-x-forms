@@ -376,8 +376,13 @@ describe('persistence — non-opted-in transient-empty paths survive hydration',
             withDirectives(h('input', { type: 'text', class: 'email' }), [
               [vRegister, api.register('email', { persist: true })],
             ]),
-            // `salary` is NOT opted in for persistence.
-            withDirectives(h('input', { type: 'text', class: 'salary' }), [
+            // `salary` is NOT opted in for persistence. Use
+            // `type="number"` so this test exercises the exact
+            // browser-DOM path the playground bug reproduces (the
+            // user-visible regression was that the numeric input
+            // displayed `0` after hydration when it should have
+            // displayed empty).
+            withDirectives(h('input', { type: 'number', class: 'salary' }), [
               [vRegister, api.register('salary')],
             ]),
           ])
@@ -407,8 +412,17 @@ describe('persistence — non-opted-in transient-empty paths survive hydration',
     // (empty) array, dropping 'salary' from the set.
     expect(captured.api.transientEmptyPaths.value.has('["salary"]')).toBe(true)
 
-    // The user-visible consequence: salary displays as '' (transient-
-    // empty bypass), not '0'. Storage still holds the slim default.
+    // The user-visible consequence: the registered displayValue is
+    // `''` (transient-empty bypass), not `'0'`. The compile-time
+    // input-text-area transform binds `:value="...displayValue.value"`
+    // on the rendered <input>, so this assertion is the runtime
+    // contract that drives the user-visible empty field. Storage
+    // still holds the slim default.
+    //
+    // (The DOM <input>.value would also be `''` in production via
+    // that synthesized binding; raw-`h()` tests skip the transform,
+    // so the DOM-side check would only pass if we compiled the
+    // template — overkill for this regression.)
     expect(captured.api.register('salary').displayValue.value).toBe('')
     expect(captured.api.getValue('salary').value).toBe(0)
   })

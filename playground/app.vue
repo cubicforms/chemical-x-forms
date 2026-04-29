@@ -62,7 +62,6 @@
       <div>
         <label for="email">Email</label>
         <input id="email" v-register.trim="register('email', { persist: true })" />
-        <div>{{ displayError }}</div>
       </div>
       <br />
 
@@ -74,6 +73,7 @@
       <div>
         <label for="salary">Salary</label>
         <input id="salary" v-register.number="register('salary')" />
+        <div>{{ displayError }}</div>
       </div>
 
       <hr />

@@ -236,15 +236,26 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
 
     // this gets paired with `value` to get the [selectionLabel]=[label] prop for the given input
     // checkbox and radio are marked as selected via `checked`, others typically use `value`
+    //
+    // The HTML spec matches `type` ASCII case-insensitively, so
+    // `<input type="CHECKBOX">` and `<input type="Radio">` produce the
+    // same runtime element as their lowercase counterparts. The
+    // injected expression normalizes via `String(t).toLowerCase()`
+    // before comparing — the compile-time `isStaticTypeOneOf` already
+    // uses case-insensitive matching, so without the runtime
+    // normalization a `type="CHECKBOX"` input would have its static
+    // `value` preserved (per `keepStaticValue`) but still emit
+    // `:value="..."` instead of `:checked="..."`, breaking SSR initial
+    // checked state.
     const elementSelectionLabelExpression = createCompoundExpression([
       '(',
-      '(',
+      'String((',
       ...inputTypeExpressionArray,
-      ')',
+      ')).toLowerCase()',
       " === 'checkbox' || ",
-      '(',
+      'String((',
       ...inputTypeExpressionArray,
-      ") === 'radio'",
+      ")).toLowerCase() === 'radio'",
       ") ? 'checked' : 'value'",
     ])
 

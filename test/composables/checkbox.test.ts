@@ -300,7 +300,7 @@ describe('<input type="checkbox" v-register> — array group', () => {
       const matched = warnSpy.mock.calls
         .map((args) => args.join(' '))
         .filter((m) => /missing a `value` attribute/.test(m))
-      expect(matched.length).toBeGreaterThan(0)
+      expect(matched).toHaveLength(1)
     } finally {
       warnSpy.mockRestore()
     }

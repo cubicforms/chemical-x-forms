@@ -213,7 +213,10 @@ export function arbitraryValueOfKind(kind: ComparableKind): fc.Arbitrary<unknown
     case 'string':
       return fc.string({ maxLength: 16 })
     case 'number':
-      return fc.float({ noNaN: true })
+      // `noNaN` blocks Number.NaN but fast-check still emits ±Infinity
+      // by default (min/max default to ±Infinity). Both options are
+      // needed to guarantee a finite, deep-equal-comparable number.
+      return fc.float({ noNaN: true, noDefaultInfinity: true })
     case 'boolean':
       return fc.boolean()
     case 'bigint':

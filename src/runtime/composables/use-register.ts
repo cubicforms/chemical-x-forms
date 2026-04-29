@@ -38,6 +38,7 @@
 import {
   computed,
   getCurrentInstance,
+  onBeforeMount,
   onBeforeUpdate,
   onMounted,
   shallowRef,
@@ -112,7 +113,18 @@ export function useRegister(): ComputedRef<RegisterValue | undefined> {
     if ('registerValue' in rawAttrs) delete rawAttrs['registerValue']
     if ('value' in rawAttrs) delete rawAttrs['value']
   }
-  refreshAndStripBridgeAttrs()
+  // Defer the initial capture to `onBeforeMount` rather than running it
+  // synchronously in setup. Setup-time reads of `instance.attrs` race
+  // Vue's prop-patch lifecycle: under SSR (and on first CSR hydration
+  // for some patterns) the parent's `:registerValue` binding hasn't
+  // been propagated to attrs by the time setup runs, and the captured
+  // value lands as `undefined` — fingering the consumer with the
+  // "no parent registerValue prop" warn even though the parent passed
+  // v-register correctly. By onBeforeMount the prop has been wired,
+  // and the returned computed is read lazily by templates after
+  // mount-pass setup completes. Mirrors the radio directive's
+  // `created` → `mounted` fix (commit b0720c4).
+  onBeforeMount(refreshAndStripBridgeAttrs)
   onBeforeUpdate(refreshAndStripBridgeAttrs)
 
   return computed(() => {

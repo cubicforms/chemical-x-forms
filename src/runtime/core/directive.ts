@@ -414,7 +414,7 @@ const vRegisterText: RegisterTextCustomDirective = {
       if (castToNumber) {
         // Empty after the (deferred) trim — most commonly a backspace-
         // clear on `<input type="number">` or a `.number` text input.
-        // Mark the path transient-empty rather than skipping silently:
+        // Mark the path blank rather than skipping silently:
         // storage gets the slim default (0), the UI shows blank via
         // `displayValue.value === ''`, and submit-time validation
         // raises "No value supplied" if the schema demands a number (the
@@ -429,7 +429,7 @@ const vRegisterText: RegisterTextCustomDirective = {
         // a genuine empty field — we use it to distinguish a real
         // user-clear (mark) from a transient mid-edit (skip). Without
         // this guard, typing `1e` into a `type="number"` field fires
-        // `markTransientEmpty`, `displayValue` recomputes to `''`,
+        // `markBlank`, `displayValue` recomputes to `''`,
         // Vue patches the DOM and yanks the user's `1e` away.
         if (domValue === '') {
           // Guard against non-input elements with custom assigners
@@ -444,7 +444,7 @@ const vRegisterText: RegisterTextCustomDirective = {
           }
           if (isRegisterValue(value)) {
             value.lastTypedForm.value = null
-            value.markTransientEmpty()
+            value.markBlank()
           }
           return
         }
@@ -459,7 +459,7 @@ const vRegisterText: RegisterTextCustomDirective = {
           // state.
           if (isRegisterValue(value)) {
             value.lastTypedForm.value = null
-            value.markTransientEmpty()
+            value.markBlank()
           }
           return
         }
@@ -518,13 +518,13 @@ const vRegisterText: RegisterTextCustomDirective = {
             // overflow (`1e309` parses to Infinity). Native
             // `<input type="number">` blur behaviour clears in both
             // cases; we match that. The keystroke listener has
-            // already markTransientEmpty'd uncastable input under
+            // already markBlank'd uncastable input under
             // non-lazy, but under `.lazy.number` (or for an overflow
             // pasted directly via the change event) this is the first
             // chance, so re-mark defensively.
             if (isRegisterValue(value)) {
               value.lastTypedForm.value = null
-              value.markTransientEmpty()
+              value.markBlank()
             }
             el.value = ''
           }

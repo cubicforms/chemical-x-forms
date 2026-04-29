@@ -441,12 +441,12 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
       : [registerSummarizedProp?.value ?? 'undefined']
     // Read `displayValue.value` rather than `innerRef.value` so
     // selects share the same single read surface as text inputs.
-    // The directive never marks select paths transient-empty (no
+    // The directive never marks select paths blank (no
     // DOM "empty" state), so in normal flow `displayValue` is just
     // `String(storage)` — identical to today. The edge case where a
     // consumer programmatically calls `setValue(numericPath, unset)`
     // bound to a `<select>` is documented in the docs (browser falls
-    // back to first option; meta.pendingEmpty surfaces the intent).
+    // back to first option; meta.blank surfaces the intent).
     const initExpression = createCompoundExpression([
       '(',
       ...valuePropExpArray,

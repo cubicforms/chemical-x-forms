@@ -8,7 +8,7 @@ import { attachRegistryToApp, createRegistry } from '../../src/runtime/core/regi
 import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
 
 /**
- * Coverage for `displayValue` and `markTransientEmpty` on
+ * Coverage for `displayValue` and `markBlank` on
  * `RegisterValue` (commit 3). The transforms (`commit 4`) and
  * directive (commit 5) plug these into the UI flow; here we test the
  * contract directly through the register binding.
@@ -72,17 +72,17 @@ describe('displayValue', () => {
     expect(form.register('note').displayValue.value).toBe('')
   })
 
-  it('returns "" when the path is in transientEmptyPaths', () => {
+  it('returns "" when the path is in blankPaths', () => {
     const schema = z.object({ count: z.number() })
     // Pass explicit defaults to opt out of construction-time auto-mark
-    // — this test isolates the markTransientEmpty() flip path.
+    // — this test isolates the markBlank() flip path.
     const { app, form } = setupForm(schema, { count: 0 })
     apps.push(app)
     const binding = form.register('count')
     expect(binding.displayValue.value).toBe('0')
-    // Mark transient-empty — storage stays at slim default but
+    // Mark blank — storage stays at slim default but
     // displayValue switches to ''.
-    binding.markTransientEmpty()
+    binding.markBlank()
     expect(binding.displayValue.value).toBe('')
   })
 
@@ -97,7 +97,7 @@ describe('displayValue', () => {
   it('reactively updates when storage changes', () => {
     const schema = z.object({ count: z.number() })
     // Explicit defaults so the binding starts un-marked (auto-mark
-    // would prepopulate transientEmptyPaths and force '').
+    // would prepopulate blankPaths and force '').
     const { app, form } = setupForm(schema, { count: 0 })
     apps.push(app)
     const binding = form.register('count')
@@ -106,12 +106,12 @@ describe('displayValue', () => {
     expect(binding.displayValue.value).toBe('7')
   })
 
-  it('reactively switches when transient-empty membership changes', () => {
+  it('reactively switches when blank membership changes', () => {
     const schema = z.object({ count: z.number() })
     const { app, form } = setupForm(schema)
     apps.push(app)
     const binding = form.register('count')
-    binding.markTransientEmpty()
+    binding.markBlank()
     expect(binding.displayValue.value).toBe('')
     form.setValue('count', 5)
     expect(binding.displayValue.value).toBe('5')
@@ -174,7 +174,7 @@ describe('displayValue', () => {
   })
 })
 
-describe('markTransientEmpty', () => {
+describe('markBlank', () => {
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
@@ -187,11 +187,11 @@ describe('markTransientEmpty', () => {
     form.setValue('count', 99)
 
     const binding = form.register('count')
-    const ok = binding.markTransientEmpty()
+    const ok = binding.markBlank()
     expect(ok).toBe(true)
     // Slim default for z.number() is 0.
     expect(form.getValue('count').value).toBe(0)
-    // pendingEmpty surfaces through the form's transientEmptyPaths
+    // blank surfaces through the form's blankPaths
     // (commit 7 wires the public meta accessor; for now we read the
     // FormStore set indirectly via getValue still showing 0 with
     // displayValue '').
@@ -202,7 +202,7 @@ describe('markTransientEmpty', () => {
     const schema = z.object({ count: z.number() })
     const { app, form } = setupForm(schema)
     apps.push(app)
-    expect(form.register('count').markTransientEmpty()).toBe(true)
+    expect(form.register('count').markBlank()).toBe(true)
   })
 
   it('uses the canonical path key when adding to the reactive set', () => {
@@ -210,8 +210,8 @@ describe('markTransientEmpty', () => {
     const { app, form } = setupForm(schema)
     apps.push(app)
     const binding = form.register('user.income')
-    binding.markTransientEmpty()
-    // displayValue branch hits via state.transientEmptyPaths.has(pathKey).
+    binding.markBlank()
+    // displayValue branch hits via state.blankPaths.has(pathKey).
     expect(binding.displayValue.value).toBe('')
     void canonicalizePath('user.income')
   })
@@ -221,7 +221,7 @@ describe('markTransientEmpty', () => {
     const { app, form } = setupForm(schema)
     apps.push(app)
     const binding = form.register('count')
-    binding.markTransientEmpty()
+    binding.markBlank()
     expect(binding.displayValue.value).toBe('')
     form.setValue('count', 5)
     expect(binding.displayValue.value).toBe('5')

@@ -153,7 +153,7 @@ escape hatch).
 
 ## "Submit fails with 'No value supplied' on a field the user can leave blank"
 
-The path is in the form's transient-empty set and bound to a
+The path is in the form's blank set and bound to a
 required schema. Three resolutions, depending on intent:
 
 - **The field is genuinely optional.** Wrap the schema:
@@ -265,7 +265,7 @@ return {
 
 See the [custom-adapter recipe](./recipes/custom-adapter.md) for
 the full contract including `isRequiredAtPath` (used by the
-transient-empty validation augmentation) and
+blank validation augmentation) and
 `getSlimPrimitiveTypesAtPath` (used by the slim-primitive write
 gate).
 

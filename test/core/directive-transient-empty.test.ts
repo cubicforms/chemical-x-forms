@@ -11,7 +11,7 @@ import type { RegisterValue } from '../../src/runtime/types/types-api'
 
 /**
  * Coverage for commit 5's directive wiring: empty / non-castable input
- * routes through `markTransientEmpty` instead of the silent skip-on-empty
+ * routes through `markBlank` instead of the silent skip-on-empty
  * (which left UI and storage desynced) or the slim-primitive gate
  * rejection (which surfaced a noisy dev warn). Plus the `.number` ×
  * text-input `beforeinput` filter that blocks non-numeric characters
@@ -22,15 +22,15 @@ type Spy = ReturnType<typeof vi.fn>
 
 function makeRegisterValue<T>(initial: T): {
   value: RegisterValue<T>
-  markTransientEmpty: Spy
+  markBlank: Spy
   setValue: Spy
 } {
-  const markTransientEmpty = vi.fn(() => true)
+  const markBlank = vi.fn(() => true)
   const setValue = vi.fn(() => true)
   const value: RegisterValue<T> = {
     innerRef: ref(initial) as RegisterValue<T>['innerRef'],
     displayValue: ref('') as Readonly<Ref<string>>,
-    markTransientEmpty,
+    markBlank,
     lastTypedForm: ref<string | null>(null),
     registerElement: vi.fn(),
     deregisterElement: vi.fn(),
@@ -41,7 +41,7 @@ function makeRegisterValue<T>(initial: T): {
     acknowledgeSensitive: false,
     persistOptIns: createPersistOptInRegistry(),
   }
-  return { value, markTransientEmpty, setValue }
+  return { value, markBlank, setValue }
 }
 
 function makeBinding<T>(
@@ -66,16 +66,16 @@ const hooks = vRegister as unknown as {
   created?: (el: HTMLElement, binding: DirectiveBinding, vnode: VNode, prev: unknown) => void
 }
 
-describe('directive — transient-empty on numeric clear', () => {
+describe('directive — blank on numeric clear', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
   })
 
-  it('<input type="number"> backspaced to empty calls markTransientEmpty', () => {
+  it('<input type="number"> backspaced to empty calls markBlank', () => {
     const input = document.createElement('input')
     input.type = 'number'
     document.body.appendChild(input)
-    const { value, markTransientEmpty, setValue } = makeRegisterValue(0 as unknown as never)
+    const { value, markBlank, setValue } = makeRegisterValue(0 as unknown as never)
 
     hooks.created?.(input, makeBinding(value, {}), makeVNode({ type: 'number' }), null)
 
@@ -84,19 +84,19 @@ describe('directive — transient-empty on numeric clear', () => {
     expect(setValue).toHaveBeenLastCalledWith(5, expect.objectContaining({}))
 
     setValue.mockClear()
-    markTransientEmpty.mockClear()
+    markBlank.mockClear()
     input.value = ''
     input.dispatchEvent(new Event('input'))
 
     expect(setValue).not.toHaveBeenCalled()
-    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
+    expect(markBlank).toHaveBeenCalledTimes(1)
   })
 
-  it('<input type="text" v-register.number> empty input calls markTransientEmpty', () => {
+  it('<input type="text" v-register.number> empty input calls markBlank', () => {
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
-    const { value, markTransientEmpty, setValue } = makeRegisterValue(0 as unknown as never)
+    const { value, markBlank, setValue } = makeRegisterValue(0 as unknown as never)
 
     hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
 
@@ -105,42 +105,42 @@ describe('directive — transient-empty on numeric clear', () => {
     expect(setValue).toHaveBeenLastCalledWith(7, expect.objectContaining({}))
 
     setValue.mockClear()
-    markTransientEmpty.mockClear()
+    markBlank.mockClear()
     input.value = ''
     input.dispatchEvent(new Event('input'))
 
     expect(setValue).not.toHaveBeenCalled()
-    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
+    expect(markBlank).toHaveBeenCalledTimes(1)
   })
 
-  it('non-numeric input on `.number` text input calls markTransientEmpty (no gate-rejection)', () => {
+  it('non-numeric input on `.number` text input calls markBlank (no gate-rejection)', () => {
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
-    const { value, markTransientEmpty, setValue } = makeRegisterValue(0 as unknown as never)
+    const { value, markBlank, setValue } = makeRegisterValue(0 as unknown as never)
 
     hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
 
-    // `'xyz'` keeps this test on the immediate markTransientEmpty path
+    // `'xyz'` keeps this test on the immediate markBlank path
     // (no `e`/`E`, so the scientific-notation deferral does not apply).
     input.value = 'xyz'
     input.dispatchEvent(new Event('input'))
 
     expect(setValue).not.toHaveBeenCalled()
-    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
+    expect(markBlank).toHaveBeenCalledTimes(1)
   })
 
   it('typing a real value after clear sends the value through the assigner (implicit unmark)', () => {
     const input = document.createElement('input')
     input.type = 'number'
     document.body.appendChild(input)
-    const { value, markTransientEmpty, setValue } = makeRegisterValue(0 as unknown as never)
+    const { value, markBlank, setValue } = makeRegisterValue(0 as unknown as never)
 
     hooks.created?.(input, makeBinding(value, {}), makeVNode({ type: 'number' }), null)
 
     input.value = ''
     input.dispatchEvent(new Event('input'))
-    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
+    expect(markBlank).toHaveBeenCalledTimes(1)
     expect(setValue).not.toHaveBeenCalled()
 
     input.value = '12'
@@ -152,7 +152,7 @@ describe('directive — transient-empty on numeric clear', () => {
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
-    const { value, markTransientEmpty, setValue } = makeRegisterValue('' as unknown as never)
+    const { value, markBlank, setValue } = makeRegisterValue('' as unknown as never)
 
     hooks.created?.(input, makeBinding(value, {}), makeVNode({}), null)
 
@@ -161,16 +161,16 @@ describe('directive — transient-empty on numeric clear', () => {
     expect(setValue).toHaveBeenCalledTimes(1)
 
     setValue.mockClear()
-    markTransientEmpty.mockClear()
+    markBlank.mockClear()
     input.value = ''
     input.dispatchEvent(new Event('input'))
 
     // String inputs send '' through the regular assigner — no auto-mark.
     // The DOM doesn't tell us "user typed empty" vs "user hasn't typed",
-    // so the dev opts in to transient-empty via the unset symbol if
+    // so the dev opts in to blank via the unset symbol if
     // they want that semantic.
     expect(setValue).toHaveBeenCalledWith('', expect.objectContaining({}))
-    expect(markTransientEmpty).not.toHaveBeenCalled()
+    expect(markBlank).not.toHaveBeenCalled()
   })
 })
 
@@ -525,18 +525,18 @@ describe('directive — `.number` blur cleanup (16d regression: lone period)', (
   it('clears the DOM under `.lazy.number` when blur leaves a lone period', () => {
     // The lazy variant uses the `change` event for the input
     // listener AND the blur normalizer — both fire on blur. Order:
-    // listener-1 markTransientEmpty's, listener-2 cleans the DOM.
+    // listener-1 markBlank's, listener-2 cleans the DOM.
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
-    const { value, markTransientEmpty } = makeRegisterValue(0 as unknown as never)
+    const { value, markBlank } = makeRegisterValue(0 as unknown as never)
 
     hooks.created?.(input, makeBinding(value, { lazy: true, number: true }), makeVNode({}), null)
 
     input.value = '.'
     input.dispatchEvent(new Event('change'))
     expect(input.value).toBe('')
-    expect(markTransientEmpty).toHaveBeenCalled()
+    expect(markBlank).toHaveBeenCalled()
   })
 })
 
@@ -653,18 +653,18 @@ describe('directive — `.number` real-time storage updates with mid-typing DOM 
     expect(value.lastTypedForm.value).toBeNull()
   })
 
-  it('non-castable input (`xyz`) markTransientEmpty fires immediately, not deferred to blur', () => {
+  it('non-castable input (`xyz`) markBlank fires immediately, not deferred to blur', () => {
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
-    const { value, markTransientEmpty } = makeRegisterValue(0 as unknown as never)
+    const { value, markBlank } = makeRegisterValue(0 as unknown as never)
 
     hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
 
     input.value = 'xyz'
     input.dispatchEvent(new Event('input'))
     // No deferral — the keystroke listener marks immediately.
-    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
+    expect(markBlank).toHaveBeenCalledTimes(1)
     expect(value.lastTypedForm.value).toBeNull()
   })
 
@@ -722,7 +722,7 @@ describe('directive — `.number` overflow (Infinity) refusal', () => {
   //     number" (its quirky error for non-finite numerics)
   // The directive refuses non-finite at the boundary: storage stays
   // at the last good value (snap-back during typing), and blur
-  // clears + markTransientEmpty.
+  // clears + markBlank.
   beforeEach(() => {
     document.body.innerHTML = ''
   })
@@ -766,18 +766,18 @@ describe('directive — `.number` overflow (Infinity) refusal', () => {
     expect(input.value).toBe('1e308')
   })
 
-  it('blur on an overflow residue clears the DOM and fires markTransientEmpty', () => {
+  it('blur on an overflow residue clears the DOM and fires markBlank', () => {
     const input = document.createElement('input')
     input.type = 'text'
     document.body.appendChild(input)
-    const { value, markTransientEmpty } = makeRegisterValue(0 as unknown as never)
+    const { value, markBlank } = makeRegisterValue(0 as unknown as never)
 
     hooks.created?.(input, makeBinding(value, { number: true }), makeVNode({}), null)
 
     input.value = '1e309'
     input.dispatchEvent(new Event('change'))
     expect(input.value).toBe('')
-    expect(markTransientEmpty).toHaveBeenCalled()
+    expect(markBlank).toHaveBeenCalled()
   })
 
   it('refuses negative overflow (`-1e309` → -Infinity)', () => {
@@ -815,7 +815,7 @@ describe('directive — `<input type="number">` mid-typing badInput is not a cle
   // malformed mid-edit input (because `1e` isn't a complete scientific
   // notation literal) even though `1e` is still visible in the DOM.
   // Pre-fix the directive's input listener saw the empty value and
-  // fired `markTransientEmpty`, which made `displayValue` recompute
+  // fired `markBlank`, which made `displayValue` recompute
   // to `''`; Vue's `:value` patch then yanked the user's typed `1e`
   // away. The fix uses `validity.badInput` to distinguish a real
   // user-clear (`badInput === false`) from a transient mid-edit
@@ -839,31 +839,31 @@ describe('directive — `<input type="number">` mid-typing badInput is not a cle
     })
   }
 
-  it('skips markTransientEmpty when `validity.badInput` is true on empty el.value', () => {
+  it('skips markBlank when `validity.badInput` is true on empty el.value', () => {
     const input = document.createElement('input')
     input.type = 'number'
     document.body.appendChild(input)
-    const { value, markTransientEmpty, setValue } = makeRegisterValue(0 as unknown as never)
+    const { value, markBlank, setValue } = makeRegisterValue(0 as unknown as never)
 
     hooks.created?.(input, makeBinding(value, {}), makeVNode({ type: 'number' }), null)
 
     // User typed `1e` — browser shows it in DOM but blanks el.value
-    // and flags badInput. The directive must NOT markTransientEmpty.
+    // and flags badInput. The directive must NOT markBlank.
     input.value = ''
     withBadInput(input, true)
     input.dispatchEvent(new Event('input'))
 
-    expect(markTransientEmpty).not.toHaveBeenCalled()
+    expect(markBlank).not.toHaveBeenCalled()
     expect(setValue).not.toHaveBeenCalled()
     // lastTypedForm untouched — display continues to track storage.
     expect(value.lastTypedForm.value).toBeNull()
   })
 
-  it('marks transient-empty when `validity.badInput` is false on empty el.value (real user clear)', () => {
+  it('marks blank when `validity.badInput` is false on empty el.value (real user clear)', () => {
     const input = document.createElement('input')
     input.type = 'number'
     document.body.appendChild(input)
-    const { value, markTransientEmpty } = makeRegisterValue(0 as unknown as never)
+    const { value, markBlank } = makeRegisterValue(0 as unknown as never)
 
     hooks.created?.(input, makeBinding(value, {}), makeVNode({ type: 'number' }), null)
 
@@ -871,7 +871,7 @@ describe('directive — `<input type="number">` mid-typing badInput is not a cle
     withBadInput(input, false)
     input.dispatchEvent(new Event('input'))
 
-    expect(markTransientEmpty).toHaveBeenCalledTimes(1)
+    expect(markBlank).toHaveBeenCalledTimes(1)
   })
 
   it('the badInput skip lets the eventual valid `1e2` commit live (post-fix smoke test)', () => {

@@ -32,7 +32,7 @@ function makeRegisterValue<T>(initial: T): {
   const value: RegisterValue<T> = {
     innerRef: ref(initial) as RegisterValue<T>['innerRef'],
     displayValue: ref('') as Readonly<Ref<string>>,
-    markTransientEmpty: () => true,
+    markBlank: () => true,
     lastTypedForm: ref<string | null>(null),
     registerElement: register,
     deregisterElement: deregister,

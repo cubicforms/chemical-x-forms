@@ -322,14 +322,14 @@ describe('persistence — localStorage backend', () => {
  * opt-in) showed `0` in its <input> on every page load instead of
  * displaying as empty until the user typed.
  *
- * Cause: persistence's hydrate path called `transientEmptyPaths.clear()`
+ * Cause: persistence's hydrate path called `blankPaths.clear()`
  * and replaced the live set with the persisted array. The persisted
  * array only ever contains paths the persistence layer has been writing
  * for — i.e., paths within the per-element opt-in scope. Non-opted-in
  * paths' construction-time auto-marks (number → 0 displayed as empty)
  * got wiped on first hydrate, surfacing as `0` in the field.
  */
-describe('persistence — non-opted-in transient-empty paths survive hydration', () => {
+describe('persistence — non-opted-in blank paths survive hydration', () => {
   const apps: App[] = []
   beforeEach(() => sessionStorage.clear())
   afterEach(() => {
@@ -337,7 +337,7 @@ describe('persistence — non-opted-in transient-empty paths survive hydration',
     sessionStorage.clear()
   })
 
-  it('keeps a non-opted-in number field auto-marked transient-empty on hydration', async () => {
+  it('keeps a non-opted-in number field auto-marked blank on hydration', async () => {
     const customSchema = z.object({
       email: z.string(),
       salary: z.number(),
@@ -350,15 +350,15 @@ describe('persistence — non-opted-in transient-empty paths survive hydration',
 
     // Pre-seed sessionStorage with a payload representing the state
     // after a user typed into the opted-in email field.
-    // `transientEmptyPaths: []` matches what the persistence-write
+    // `blankPaths: []` matches what the persistence-write
     // path actually saves under those conditions: only paths within
     // the write's path-scope are tracked, and email itself is no
-    // longer transient-empty post-typing.
+    // longer blank post-typing.
     sessionStorage.setItem(
       customKey,
       JSON.stringify({
         v: 4,
-        data: { form: { email: 'seed@example.com' }, transientEmptyPaths: [] },
+        data: { form: { email: 'seed@example.com' }, blankPaths: [] },
       })
     )
 
@@ -407,13 +407,13 @@ describe('persistence — non-opted-in transient-empty paths survive hydration',
     expect(captured.api.getValue('email').value).toBe('seed@example.com')
 
     // Critical assertion: the salary path is STILL in the
-    // transient-empty set after hydration. Pre-fix the persistence
+    // blank set after hydration. Pre-fix the persistence
     // hydrate cleared the set and replaced it with the persisted
     // (empty) array, dropping 'salary' from the set.
-    expect(captured.api.transientEmptyPaths.value.has('["salary"]')).toBe(true)
+    expect(captured.api.blankPaths.value.has('["salary"]')).toBe(true)
 
     // The user-visible consequence: the registered displayValue is
-    // `''` (transient-empty bypass), not `'0'`. The compile-time
+    // `''` (blank bypass), not `'0'`. The compile-time
     // input-text-area transform binds `:value="...displayValue.value"`
     // on the rendered <input>, so this assertion is the runtime
     // contract that drives the user-visible empty field. Storage

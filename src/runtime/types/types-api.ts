@@ -262,7 +262,7 @@ export type AbstractSchema<Form, GetValueFormType> = {
    * `.default(N)`, or `.catch(N)` at the leaf or any wrapper.
    *
    * Used by the submit / validate path to surface a "No value supplied" error
-   * when a field is in the form's `transientEmptyPaths` set (the user
+   * when a field is in the form's `blankPaths` set (the user
    * cleared it or never answered) AND the schema treats the field as
    * required. Without this, a strict `z.number()` would silently
    * accept the slim default (`0`) for an unanswered field — the
@@ -459,15 +459,15 @@ export type WriteMeta = {
   readonly persist?: boolean
   /**
    * When `true`, the path being written is added to the FormStore's
-   * `transientEmptyPaths` set — meaning storage holds a real, schema-
+   * `blankPaths` set — meaning storage holds a real, schema-
    * conformant value (the slim default) but the UI should display the
    * field as empty. The next write to that path WITHOUT this flag
    * implicitly removes the path from the set (the user typed something
-   * real). Internal — set by `markTransientEmpty()` on the register
+   * real). Internal — set by `markBlank()` on the register
    * binding and by the `unset` translation in `setValue` / `reset` /
    * `useAbstractForm` construction. Don't set from consumer code.
    */
-  readonly transientEmpty?: boolean
+  readonly blank?: boolean
 }
 
 /**
@@ -816,21 +816,24 @@ export type MetaTrackerValue = {
   /** Dotted-string path to this leaf. */
   path: string | null
   /**
-   * `true` when the path is in the form's transient-empty set —
-   * storage holds the slim default but the UI displays empty.
-   * Either the user cleared the field (numeric inputs auto-mark on
-   * empty DOM via the directive) or the consumer marked it
-   * declaratively via `defaultValues: { x: unset }` /
-   * imperatively via `setValue('x', unset)`.
+   * `true` when this field is **blank** — the user hasn't supplied
+   * a value yet, even though storage holds a slim default. Answers:
+   * "Is this field empty because the user left it blank, or because
+   * the slim default happens to be `0` / `''`?"
    *
-   * Submit-time validation raises "No value supplied" for transient-empty
-   * paths whose schema is required (no `.optional()` / `.nullable()`
-   * / `.default()`), so most consumers can ignore this field — it's
-   * the safety net's input. Read it directly when you want to drive
+   * Set by the directive on numeric clear, by `setValue(path, unset)`,
+   * by `register({ persist: true })` calls reading hydrated state,
+   * and at construction for any leaf the consumer didn't explicitly
+   * supply. Cleared on the first non-`unset` write.
+   *
+   * Submit-time validation raises "No value supplied" for required
+   * paths (no `.optional()` / `.nullable()` / `.default()`) that are
+   * still `blank`, so most consumers can ignore this flag — it's the
+   * safety net's input. Read it directly when you want to drive
    * conditional UI ("undecided checkbox" indicator, "review
    * unanswered fields" hint, etc.) BEFORE submission triggers.
    */
-  pendingEmpty: boolean
+  blank: boolean
 }
 export type MetaTracker = Record<string, MetaTrackerValue>
 export type MetaTrackerStore = Map<FormKey, MetaTracker>
@@ -1003,15 +1006,15 @@ export type RegisterValue<Value = unknown> = {
    * the compile-time `:value` injection reads on every input /
    * textarea / select bound by `v-register`.
    *
-   * Returns `''` when the path is in the form's `transientEmptyPaths`
+   * Returns `''` when the path is in the form's `blankPaths`
    * set OR storage is `null` / `undefined`; otherwise stringifies
-   * the storage value via `String(...)`. The transient-empty branch
+   * the storage value via `String(...)`. The blank branch
    * lets the user clear a numeric field without the next Vue render
    * patching `el.value` back to `'0'` (the slim default).
    */
   displayValue: Readonly<Ref<string>>
   /**
-   * Add this field's path to the form's `transientEmptyPaths` set,
+   * Add this field's path to the form's `blankPaths` set,
    * writing the slim default to storage. Returns the `setValueAtPath`
    * boolean (`true` accepted, `false` rejected by the slim-primitive
    * gate). Inherits the binding's `persist` meta so the mark rides
@@ -1022,7 +1025,7 @@ export type RegisterValue<Value = unknown> = {
    * (commit 7). Don't call from consumer code.
    * @internal
    */
-  markTransientEmpty: () => boolean
+  markBlank: () => boolean
   /**
    * The user's most recently typed string form for this field while
    * mid-typing, or `null` once the field has been blurred / cleared.
@@ -1301,13 +1304,14 @@ export type FieldState<Value = unknown> = DeepFlatten<
     /** `true` when `currentValue` differs from `originalValue`. */
     dirty: boolean
     /**
-     * `true` when this path is in the form's transient-empty set —
-     * storage holds the slim default but the UI displays empty.
-     * Surfaces both as a top-level field here AND via `meta.pendingEmpty`
+     * `true` when this field is blank — no user value supplied yet,
+     * even though storage holds a slim default. Answers: "Was this
+     * field blank originally, or was `0` / `''` already there?"
+     * Surfaces both as a top-level field here AND via `meta.blank`
      * (the meta projection mirrors the same value). Read whichever
      * matches your access pattern.
      */
-    pendingEmpty: boolean
+    blank: boolean
   }
 >
 export type DOMFieldStateStore = Map<string, DOMFieldState | undefined>
@@ -1660,7 +1664,7 @@ export type UseAbstractFormReturnType<
      * value didn't match the slot's expected primitive type.
      * Refinement-level mismatches succeed and surface as field
      * errors. Pass the `unset` symbol at any primitive leaf to mark
-     * it transient-empty (storage holds the slim default; UI displays
+     * it blank (storage holds the slim default; UI displays
      * empty; submit raises "No value supplied" for required schemas).
      */
     <
@@ -1951,7 +1955,7 @@ export type UseAbstractFormReturnType<
     value: ArrayItem<Form, Path>
   ) => void
   /**
-   * Read-only view of the form's transient-empty path set. Each entry
+   * Read-only view of the form's blank path set. Each entry
    * is a canonical `PathKey` (the `JSON.stringify(segments)` form
    * `canonicalizePath` produces). The set is reactive — Vue 3.5
    * tracks `.has()` / `for..of` / size accesses, so consumers can
@@ -1959,17 +1963,17 @@ export type UseAbstractFormReturnType<
    *
    * ```ts
    * watchEffect(() => {
-   *   if (form.transientEmptyPaths.value.size > 0) {
-   *     console.warn('unanswered fields:', [...form.transientEmptyPaths.value])
+   *   if (form.blankPaths.value.size > 0) {
+   *     console.warn('unanswered fields:', [...form.blankPaths.value])
    *   }
    * })
    * ```
    *
-   * For per-path access, use `getFieldState(path).meta.pendingEmpty`.
+   * For per-path access, use `getFieldState(path).meta.blank`.
    * Writes happen through `setValue(path, unset)`,
-   * `markTransientEmpty()` on a register binding, and the directive's
+   * `markBlank()` on a register binding, and the directive's
    * input listener on numeric clear. Mutating the snapshot returned
    * here does nothing — it's `Object.freeze`-d.
    */
-  transientEmptyPaths: ComputedRef<ReadonlySet<string>>
+  blankPaths: ComputedRef<ReadonlySet<string>>
 }

@@ -143,7 +143,7 @@ function isLeafRequired(schema: z.ZodType, depth = 0): boolean {
     return inner === undefined ? true : isLeafRequired(inner, depth + 1)
   }
   if (kind === 'pipe') {
-    // Use the input side: transient-empty is a write-time concern.
+    // Use the input side: blank is a write-time concern.
     const inner = unwrapPipe(schema)
     return inner === undefined ? true : isLeafRequired(inner, depth + 1)
   }
@@ -315,7 +315,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
       isRequiredAtPath(path): boolean {
         // Root form is always "required" in the structural sense — it's
         // the object we're parsing. Submit/validate's required-empty
-        // check never sees the root path in `transientEmptyPaths`
+        // check never sees the root path in `blankPaths`
         // (the set tracks primitive leaves), so the value is academic.
         if (path.length === 0) return true
         const resolved = getNestedZodSchemasAtPath(rootSchema, path)

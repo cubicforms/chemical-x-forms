@@ -134,7 +134,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       // or returned `unset` for some leaf in a function form) flow
       // through the walker — every leaf gets translated, the cleaned
       // value lands in storage, and the discovered paths are added to
-      // `transientEmptyPaths` via direct setValueAtPath calls (the
+      // `blankPaths` via direct setValueAtPath calls (the
       // gate hook handles the bookkeeping).
       const walked = walkUnsetSentinels(
         next,
@@ -142,26 +142,26 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       )
       const ok = state.setValueAtPath([], walked.cleanedValues)
       if (!ok) return false
-      // Mark each transient-empty path. `setValueAtPath` was just called
+      // Mark each blank path. `setValueAtPath` was just called
       // with cleaned values, so the gate hook's implicit-unmark would
-      // have removed any prior transient-empty entries for the paths
+      // have removed any prior blank entries for the paths
       // we just touched — re-add them now.
       for (const pathKey of walked.paths) {
         const segments = JSON.parse(pathKey) as Path
         state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
-          transientEmpty: true,
+          blank: true,
         })
       }
       return true
     }
     const segments = canonicalizePath(pathOrValue as string | Path).segments
     // `unset` at a specific path: resolve the slim default and route
-    // through `setValueAtPath` with `transientEmpty: true`. Storage
+    // through `setValueAtPath` with `blank: true`. Storage
     // gets the well-typed default; the path is marked for the
     // displayValue / required-empty machinery.
     if (isUnset(maybeValue)) {
       return state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
-        transientEmpty: true,
+        blank: true,
       })
     }
     // Path-form callback: when the slot at `segments` is unpopulated,
@@ -178,7 +178,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       // direct case above.
       if (isUnset(resolvedValue)) {
         return state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
-          transientEmpty: true,
+          blank: true,
         })
       }
     } else {
@@ -250,13 +250,13 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     for (const [, { segments, value: original }] of state.originals) {
       if (!Object.is(getAtPath(state.form.value, segments), original)) return true
     }
-    // Storage matches but transient-empty membership might have
+    // Storage matches but blank membership might have
     // changed (user cleared a field whose default was non-empty, or
     // typed into a field that was construction-time-empty). Compare
     // the live reactive set against the construction-time snapshot.
-    if (state.transientEmptyPaths.size !== state.originalsTransientEmpty.size) return true
-    for (const key of state.transientEmptyPaths) {
-      if (!state.originalsTransientEmpty.has(key)) return true
+    if (state.blankPaths.size !== state.originalBlankPaths.size) return true
+    for (const key of state.blankPaths) {
+      if (!state.originalBlankPaths.has(key)) return true
     }
     return false
   })
@@ -329,7 +329,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       // paths. The cleaned values land in form storage via state.reset;
       // the marked paths get added back via direct setValueAtPath
       // calls AFTER the reset so the FormStore's own reset (which
-      // clears the transient-empty set in the args branch) doesn't
+      // clears the blank set in the args branch) doesn't
       // wipe them.
       const walked = walkUnsetSentinels(
         nextDefaultValues,
@@ -343,11 +343,11 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       for (const pathKey of walked.paths) {
         const segments = JSON.parse(pathKey) as Path
         state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
-          transientEmpty: true,
+          blank: true,
         })
-        // Mirror the new baseline into originalsTransientEmpty so the
+        // Mirror the new baseline into originalBlankPaths so the
         // post-reset state is the dirty=false reference.
-        state.originalsTransientEmpty.add(pathKey as PathKey)
+        state.originalBlankPaths.add(pathKey as PathKey)
       }
     }
     if (persistence !== undefined) {
@@ -406,17 +406,17 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // --- Field arrays ---
   const fieldArrays = buildFieldArrayApi(state)
 
-  // --- Bulk transient-empty introspection ---
-  // Read-only view of the form's transient-empty path set. Vue 3.5
+  // --- Bulk blank introspection ---
+  // Read-only view of the form's blank path set. Vue 3.5
   // tracks `.has()` / `for..of` / size accesses on a reactive Set,
   // so the computed below is a lazy, dependency-tracked passthrough.
   // Wrapped in a Proxy that traps mutating methods so consumers can't
   // pollute the snapshot they receive (`Object.freeze` does NOT make
   // a Set readonly — `add` / `delete` / `clear` still work on frozen
   // Sets). Writes still go through `setValue(_, unset)` /
-  // `markTransientEmpty()` / the directive's input listener.
-  const transientEmptyPathsView = computed<ReadonlySet<string>>(() => {
-    return readonlySetSnapshot(state.transientEmptyPaths)
+  // `markBlank()` / the directive's input listener.
+  const blankPathsView = computed<ReadonlySet<string>>(() => {
+    return readonlySetSnapshot(state.blankPaths)
   })
 
   return {
@@ -457,7 +457,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     swap: fieldArrays.swap as UseAbstractFormReturnType<Form, GetValueFormType>['swap'],
     move: fieldArrays.move as UseAbstractFormReturnType<Form, GetValueFormType>['move'],
     replace: fieldArrays.replace as UseAbstractFormReturnType<Form, GetValueFormType>['replace'],
-    transientEmptyPaths: transientEmptyPathsView,
+    blankPaths: blankPathsView,
   }
 }
 

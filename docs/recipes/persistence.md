@@ -248,7 +248,7 @@ serialised shape. Consumers don't (and now can't) set it. Drafts
 saved against a stale envelope version are dropped with a one-time
 dev-warn on read.
 
-The envelope also round-trips the form's transient-empty set when
+The envelope also round-trips the form's blank set when
 populated, so a numeric field cleared by the user stays visually
 empty after reload (storage holds the slim default; the displayed-
 empty state survives).

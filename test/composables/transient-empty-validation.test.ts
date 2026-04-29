@@ -10,7 +10,7 @@ import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-ap
 
 /**
  * `handleSubmit` / `validate` / `validateAsync` synthesise a "Required"
- * error for every path in the form's `transientEmptyPaths` set whose
+ * error for every path in the form's `blankPaths` set whose
  * schema is required (no `.optional()` / `.nullable()` / `.default()` /
  * `.catch()` wrapper). This is the public-housing footgun fix: a user
  * who didn't answer "what is your income?" must NOT silently submit
@@ -47,7 +47,7 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  it('raises "Required" for a transient-empty z.number() path', async () => {
+  it('raises "Required" for a blank z.number() path', async () => {
     const schema = z.object({
       income: z.number(),
       name: z.string(),
@@ -57,7 +57,7 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     apps.push(app)
 
     const incomeKey = canonicalizePath('income').key
-    // Mark income as transient-empty via the runtime channel.
+    // Mark income as blank via the runtime channel.
     // setValueWithInternalPath isn't exposed; call setValueAtPath
     // directly through the form store via setValue's leaf form +
     // a meta-aware injector. For this test we reach into the store
@@ -73,10 +73,10 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     const binding = form.register('income') as unknown as {
       setValueWithInternalPath: (
         v: unknown,
-        meta?: { transientEmpty?: boolean; persist?: boolean }
+        meta?: { blank?: boolean; persist?: boolean }
       ) => boolean
     }
-    binding.setValueWithInternalPath(0, { transientEmpty: true })
+    binding.setValueWithInternalPath(0, { blank: true })
 
     const onSubmit = vi.fn()
     const onError = vi.fn()
@@ -99,7 +99,7 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     void incomeKey
   })
 
-  it('does NOT raise for an optional path even when transient-empty', async () => {
+  it('does NOT raise for an optional path even when blank', async () => {
     const schema = z.object({
       income: z.number().optional(),
     })
@@ -107,9 +107,9 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     apps.push(app)
 
     const binding = form.register('income') as unknown as {
-      setValueWithInternalPath: (v: unknown, meta?: { transientEmpty?: boolean }) => boolean
+      setValueWithInternalPath: (v: unknown, meta?: { blank?: boolean }) => boolean
     }
-    binding.setValueWithInternalPath(undefined, { transientEmpty: true })
+    binding.setValueWithInternalPath(undefined, { blank: true })
 
     const onSubmit = vi.fn()
     const onError = vi.fn()
@@ -120,7 +120,7 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     expect(onError).not.toHaveBeenCalled()
   })
 
-  it('does NOT raise for a .default(N) path even when transient-empty', async () => {
+  it('does NOT raise for a .default(N) path even when blank', async () => {
     const schema = z.object({
       income: z.number().default(0),
     })
@@ -128,9 +128,9 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     apps.push(app)
 
     const binding = form.register('income') as unknown as {
-      setValueWithInternalPath: (v: unknown, meta?: { transientEmpty?: boolean }) => boolean
+      setValueWithInternalPath: (v: unknown, meta?: { blank?: boolean }) => boolean
     }
-    binding.setValueWithInternalPath(0, { transientEmpty: true })
+    binding.setValueWithInternalPath(0, { blank: true })
 
     const onSubmit = vi.fn()
     const onError = vi.fn()
@@ -141,7 +141,7 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     expect(onError).not.toHaveBeenCalled()
   })
 
-  it('does NOT raise for a .nullable() path even when transient-empty', async () => {
+  it('does NOT raise for a .nullable() path even when blank', async () => {
     const schema = z.object({
       income: z.number().nullable(),
     })
@@ -149,9 +149,9 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     apps.push(app)
 
     const binding = form.register('income') as unknown as {
-      setValueWithInternalPath: (v: unknown, meta?: { transientEmpty?: boolean }) => boolean
+      setValueWithInternalPath: (v: unknown, meta?: { blank?: boolean }) => boolean
     }
-    binding.setValueWithInternalPath(null, { transientEmpty: true })
+    binding.setValueWithInternalPath(null, { blank: true })
 
     const onSubmit = vi.fn()
     const onError = vi.fn()
@@ -170,9 +170,9 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     apps.push(app)
 
     const binding = form.register('name') as unknown as {
-      setValueWithInternalPath: (v: unknown, meta?: { transientEmpty?: boolean }) => boolean
+      setValueWithInternalPath: (v: unknown, meta?: { blank?: boolean }) => boolean
     }
-    binding.setValueWithInternalPath('', { transientEmpty: true })
+    binding.setValueWithInternalPath('', { blank: true })
 
     const onSubmit = vi.fn()
     const onError = vi.fn()
@@ -198,9 +198,9 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     apps.push(app)
 
     const binding = form.register('agreed') as unknown as {
-      setValueWithInternalPath: (v: unknown, meta?: { transientEmpty?: boolean }) => boolean
+      setValueWithInternalPath: (v: unknown, meta?: { blank?: boolean }) => boolean
     }
-    binding.setValueWithInternalPath(false, { transientEmpty: true })
+    binding.setValueWithInternalPath(false, { blank: true })
 
     const onSubmit = vi.fn()
     const onError = vi.fn()
@@ -224,9 +224,9 @@ describe('validateAsync — surfaces required-empty errors', () => {
     apps.push(app)
 
     const binding = form.register('income') as unknown as {
-      setValueWithInternalPath: (v: unknown, meta?: { transientEmpty?: boolean }) => boolean
+      setValueWithInternalPath: (v: unknown, meta?: { blank?: boolean }) => boolean
     }
-    binding.setValueWithInternalPath(0, { transientEmpty: true })
+    binding.setValueWithInternalPath(0, { blank: true })
 
     const result = await form.validateAsync()
     expect(result.success).toBe(false)
@@ -245,13 +245,13 @@ describe('validateAsync — surfaces required-empty errors', () => {
     apps.push(app)
 
     const incomeBinding = form.register('income') as unknown as {
-      setValueWithInternalPath: (v: unknown, meta?: { transientEmpty?: boolean }) => boolean
+      setValueWithInternalPath: (v: unknown, meta?: { blank?: boolean }) => boolean
     }
     const nameBinding = form.register('name') as unknown as {
-      setValueWithInternalPath: (v: unknown, meta?: { transientEmpty?: boolean }) => boolean
+      setValueWithInternalPath: (v: unknown, meta?: { blank?: boolean }) => boolean
     }
-    incomeBinding.setValueWithInternalPath(0, { transientEmpty: true })
-    nameBinding.setValueWithInternalPath('', { transientEmpty: true })
+    incomeBinding.setValueWithInternalPath(0, { blank: true })
+    nameBinding.setValueWithInternalPath('', { blank: true })
 
     // Validate just the income subtree — the name's required-empty
     // error should NOT contribute (different path scope).
@@ -280,13 +280,13 @@ describe('public-housing scenario', () => {
     apps.push(app)
 
     // Simulate the user opening the form and immediately clicking
-    // submit. The directive (commit 5) marks transient-empty on
+    // submit. The directive (commit 5) marks blank on
     // numeric clear; here we mark income directly to mirror the
     // user's "didn't type anything" state.
     const incomeBinding = form.register('income') as unknown as {
-      setValueWithInternalPath: (v: unknown, meta?: { transientEmpty?: boolean }) => boolean
+      setValueWithInternalPath: (v: unknown, meta?: { blank?: boolean }) => boolean
     }
-    incomeBinding.setValueWithInternalPath(0, { transientEmpty: true })
+    incomeBinding.setValueWithInternalPath(0, { blank: true })
 
     // Fill in name + agreedToTerms so the only error is Required on income.
     form.setValue('name', 'alice')
@@ -316,9 +316,9 @@ describe('public-housing scenario', () => {
     apps.push(app)
 
     const incomeBinding = form.register('income') as unknown as {
-      setValueWithInternalPath: (v: unknown, meta?: { transientEmpty?: boolean }) => boolean
+      setValueWithInternalPath: (v: unknown, meta?: { blank?: boolean }) => boolean
     }
-    incomeBinding.setValueWithInternalPath(undefined, { transientEmpty: true })
+    incomeBinding.setValueWithInternalPath(undefined, { blank: true })
     form.setValue('name', 'alice')
 
     const onSubmit = vi.fn()

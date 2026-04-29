@@ -105,14 +105,14 @@ export type PersistedPayload<Form> = {
     readonly schemaErrors?: ReadonlyArray<readonly [string, ValidationError[]]>
     readonly userErrors?: ReadonlyArray<readonly [string, ValidationError[]]>
     /**
-     * Path keys that were in the form's `transientEmptyPaths` set at
+     * Path keys that were in the form's `blankPaths` set at
      * serialisation time. Optional — older v=2 envelopes don't carry it,
-     * and forms with no transient-empty paths skip the field too.
+     * and forms with no blank paths skip the field too.
      * Replayed into the reactive Set on the next mount so an accidental
      * refresh preserves the user's "displayed empty" state across
      * sessions. Introduced in envelope v=3.
      */
-    readonly transientEmptyPaths?: ReadonlyArray<string>
+    readonly blankPaths?: ReadonlyArray<string>
   }
 }
 
@@ -123,8 +123,8 @@ export type PersistedPayload<Form> = {
  * handled at the storage key level (the `:${fingerprint}` suffix), so
  * consumers shouldn't see this number.
  *
- * v=3: adds `data.transientEmptyPaths` for round-tripping the
- * transient-empty UI state across persistence + SSR. v=2 envelopes
+ * v=3: adds `data.blankPaths` for round-tripping the
+ * blank UI state across persistence + SSR. v=2 envelopes
  * are dropped with a one-time dev-warn (commit 6 of the unset feature).
  *
  * v=4: `ValidationError` gained a required `code` field. Persisted
@@ -184,23 +184,21 @@ export function buildPersistedPayload<Form>(
   include: 'form' | 'form+errors',
   schemaErrors: ReadonlyMap<string, ValidationError[]>,
   userErrors: ReadonlyMap<string, ValidationError[]>,
-  transientEmptyPaths?: ReadonlySet<string>
+  blankPaths?: ReadonlySet<string>
 ): PersistedPayload<Form> {
-  // The transient-empty list is part of the form's restorable UI
+  // The blank list is part of the form's restorable UI
   // state — its visibility doesn't depend on the `include` mode
   // (which only governs whether errors come along for the ride).
   // Skip the field when the set is empty so v=3 round-trips with
   // unchanged minimal payload size for forms that never go empty.
   const transientList: ReadonlyArray<string> | undefined =
-    transientEmptyPaths !== undefined && transientEmptyPaths.size > 0
-      ? [...transientEmptyPaths]
-      : undefined
+    blankPaths !== undefined && blankPaths.size > 0 ? [...blankPaths] : undefined
 
   if (include === 'form') {
     if (transientList === undefined) return { v: PERSISTED_ENVELOPE_VERSION, data: { form } }
     return {
       v: PERSISTED_ENVELOPE_VERSION,
-      data: { form, transientEmptyPaths: transientList },
+      data: { form, blankPaths: transientList },
     }
   }
   return {
@@ -209,7 +207,7 @@ export function buildPersistedPayload<Form>(
       form,
       schemaErrors: [...schemaErrors.entries()].map(([k, v]) => [k, [...v]] as const),
       userErrors: [...userErrors.entries()].map(([k, v]) => [k, [...v]] as const),
-      ...(transientList !== undefined ? { transientEmptyPaths: transientList } : {}),
+      ...(transientList !== undefined ? { blankPaths: transientList } : {}),
     },
   }
 }

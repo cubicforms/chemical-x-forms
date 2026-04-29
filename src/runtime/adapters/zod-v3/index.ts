@@ -996,7 +996,7 @@ function isLeafRequiredV3(schema: z.ZodTypeAny, depth = 0): boolean {
     return next === undefined ? true : isLeafRequiredV3(next, depth + 1)
   }
   if (isZodSchemaType(schema, 'ZodPipeline')) {
-    // Use the input side: transient-empty is a write-time concern.
+    // Use the input side: blank is a write-time concern.
     const inner = (schema._def as { in?: z.ZodTypeAny }).in
     return inner === undefined ? true : isLeafRequiredV3(inner, depth + 1)
   }

@@ -293,13 +293,13 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
     schema as unknown as AbstractSchema<GenericForm, GenericForm>
   )
   // Hydration precedence: when a hydration payload is present its
-  // `transientEmptyPaths` field is the authoritative truth. We still
+  // `blankPaths` field is the authoritative truth. We still
   // run the walker to scrub `unset` symbols out of `defaultValues` (so
   // they never reach storage), but discard the discovered paths in
   // favour of the hydrated set. Without this, a server-rendered form
-  // with no transient-empty paths would gain ones the client's
+  // with no blank paths would gain ones the client's
   // construction-time defaults invented.
-  const initialTransientEmpty: ReadonlyArray<string> | undefined =
+  const initialBlankPaths: ReadonlyArray<string> | undefined =
     pending === undefined ? walked.paths : undefined
   const createOptions: Parameters<typeof createFormStore<F, G>>[0] = {
     formKey: key,
@@ -309,7 +309,7 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
     hydration: pending,
     fieldValidation: configuration.fieldValidation,
     isSSR: registry.isSSR,
-    ...(initialTransientEmpty !== undefined ? { initialTransientEmpty } : {}),
+    ...(initialBlankPaths !== undefined ? { initialBlankPaths } : {}),
   }
   const state = createFormStore<F, G>(createOptions)
   // Storage type is FormStore<GenericForm>; the lookup above narrows
@@ -556,11 +556,11 @@ function wirePersistence<F extends GenericForm>(
     // the fingerprint suffix.
     const filteredSchemaErrors = filterErrorsByPaths(state.schemaErrors, optedInPaths)
     const filteredUserErrors = filterErrorsByPaths(state.userErrors, optedInPaths)
-    // Transient-empty paths are part of the restorable UI state, so
+    // Blank paths are part of the restorable UI state, so
     // they ride the same opt-in gate as form values: only persist
     // the entries whose paths are also opted in for persistence.
     const filteredTransientEmpty = new Set<string>()
-    for (const tk of state.transientEmptyPaths) {
+    for (const tk of state.blankPaths) {
       if (optedInPaths.has(tk as PathKey)) filteredTransientEmpty.add(tk)
     }
     const payload = buildPersistedPayload<F>(
@@ -640,27 +640,27 @@ function wirePersistence<F extends GenericForm>(
       // keep their schema defaults.
       const merged = mergeSparseHydration(toRaw(state.form.value) as F, payload.data.form)
       state.applyFormReplacement(merged)
-      // Restore the transient-empty UI state from the persisted
+      // Restore the blank UI state from the persisted
       // payload. Persistence is per-element opt-in, so the persisted
       // payload only covers paths within the opt-in scope (the leaf
       // paths populated in `payload.data.form`). Construction-time
       // auto-marks for paths OUTSIDE that scope must survive — without
       // this, a non-opted-in `z.number()` field's slim default (0)
-      // would lose its transient-empty mark on hydrate and surface
+      // would lose its blank mark on hydrate and surface
       // as `'0'` in its <input> instead of empty.
       //
       // Within the opt-in scope, the persisted state IS the truth: a
-      // persisted path that's no longer transient-empty (the user
+      // persisted path that's no longer blank (the user
       // typed) clears the construction-time mark, and a persisted
-      // path that IS transient-empty (still slim default) re-asserts.
+      // path that IS blank (still slim default) re-asserts.
       const persistedLeafPaths = collectPersistedLeafPaths(payload.data.form)
       for (const k of persistedLeafPaths) {
-        state.transientEmptyPaths.delete(k)
-        state.originalsTransientEmpty.delete(k)
+        state.blankPaths.delete(k)
+        state.originalBlankPaths.delete(k)
       }
-      for (const k of payload.data.transientEmptyPaths ?? []) {
-        state.transientEmptyPaths.add(k as PathKey)
-        state.originalsTransientEmpty.add(k as PathKey)
+      for (const k of payload.data.blankPaths ?? []) {
+        state.blankPaths.add(k as PathKey)
+        state.originalBlankPaths.add(k as PathKey)
       }
       if (include === 'form+errors') {
         // Each store rebuilds independently from its persisted entries.
@@ -728,7 +728,7 @@ function wirePersistence<F extends GenericForm>(
     const baseForm = existing?.data.form ?? ({} as F)
     const value = getAtPath(toRaw(state.form.value), path)
     const nextForm = setAtPath(baseForm, path, value) as F
-    // Refresh this path's transient-empty entry — and any descendants
+    // Refresh this path's blank entry — and any descendants
     // — while preserving entries for OTHER paths the previous mount
     // persisted. Non-leaf writes (`writePathImmediately('user')`)
     // overwrite the entire subtree, so any disk entries below the
@@ -736,11 +736,11 @@ function wirePersistence<F extends GenericForm>(
     // contributes whatever marks are still active under that subtree.
     const { key: pathKey } = canonicalizePath(path)
     const transientSet = new Set<string>(
-      (existing?.data.transientEmptyPaths ?? []).filter(
+      (existing?.data.blankPaths ?? []).filter(
         (k) => k !== pathKey && !isDescendantPathKey(k, pathKey)
       )
     )
-    for (const liveKey of state.transientEmptyPaths) {
+    for (const liveKey of state.blankPaths) {
       if (liveKey === pathKey || isDescendantPathKey(liveKey, pathKey)) {
         transientSet.add(liveKey)
       }
@@ -800,12 +800,12 @@ function wirePersistence<F extends GenericForm>(
     }
     const { key: pathKey } = canonicalizePath(path)
     // Drop the cleared path AND every descendant from the persisted
-    // transient-empty list so a later mount doesn't restore an
+    // blank list so a later mount doesn't restore an
     // "empty" UI state for a path that no longer has any value
     // behind it. Non-leaf clears (`clearPersistedDraft('user')`)
     // wipe the whole user.* subtree.
     const transientSet = new Set(
-      (existing.data.transientEmptyPaths ?? []).filter(
+      (existing.data.blankPaths ?? []).filter(
         (k) => k !== pathKey && !isDescendantPathKey(k, pathKey)
       )
     )
@@ -931,7 +931,7 @@ function enforceAnonPersistRule(formKey: string, isSSR: boolean): boolean {
  * (so primitives, null, deserialized Dates / strings all count). The
  * persisted form's leaves correspond 1:1 with the per-element opt-in
  * scope at the time persistence wrote, which the hydration path uses
- * to bound which transient-empty entries to overwrite.
+ * to bound which blank entries to overwrite.
  */
 function collectPersistedLeafPaths(form: unknown): PathKey[] {
   const out: PathKey[] = []

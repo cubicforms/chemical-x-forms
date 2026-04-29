@@ -107,8 +107,8 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
     }
 
     // String-form view of the path's storage value, with `''` returned
-    // for transient-empty membership and for null/undefined storage.
-    // The transient-empty branch is what lets a user clear a numeric
+    // for blank membership and for null/undefined storage.
+    // The blank branch is what lets a user clear a numeric
     // field: even though storage holds 0, the `:value` binding reads
     // displayValue and writes `''` to el.value, so Vue's next render
     // doesn't undo the user's clear.
@@ -123,7 +123,7 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
     // setValue / hydration / reset (different storage value → fall
     // back to `String(...)`).
     const displayValue = computed(() => {
-      if (state.transientEmptyPaths.has(pathKey)) return ''
+      if (state.blankPaths.has(pathKey)) return ''
       const raw = state.getValueAtPath(segments)
       if (raw === null || raw === undefined) return ''
       const typed = lastTypedForm.value
@@ -135,7 +135,7 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
 
     // Slim default precomputed at register-time. The schema is fixed
     // for the form's lifetime, so this is safe to cache; downstream
-    // `markTransientEmpty` calls reuse it without re-walking the
+    // `markBlank` calls reuse it without re-walking the
     // schema tree.
     const slimDefault = state.schema.getDefaultAtPath(segments)
 
@@ -192,15 +192,15 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
       displayValue,
       lastTypedForm,
 
-      markTransientEmpty: (): boolean => {
-        // Mirror the binding's persist meta so the transient-empty
+      markBlank: (): boolean => {
+        // Mirror the binding's persist meta so the blank
         // mark rides the same persistence channel as user-typed
         // writes — without this, refresh after a clear silently loses
         // the empty state. The slim default keeps storage well-typed
         // (the schema's getDefaultAtPath returns 0 for z.number(), ''
         // for z.string(), false for z.boolean(), etc.).
         return state.setValueAtPath(segments, slimDefault, {
-          transientEmpty: true,
+          blank: true,
           persist,
         })
       },

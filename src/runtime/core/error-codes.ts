@@ -22,7 +22,7 @@
  * ```
  */
 export const CxErrorCode = {
-  /** A required field is in the transient-empty set — user hasn't supplied a value. */
+  /** A required field is in the blank set — user hasn't supplied a value. */
   NoValueSupplied: 'cx:no-value-supplied',
   /** The schema adapter's `validateAtPath` threw synchronously. */
   AdapterThrew: 'cx:adapter-threw',

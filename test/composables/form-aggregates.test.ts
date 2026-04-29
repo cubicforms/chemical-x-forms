@@ -34,9 +34,9 @@ function harness(initial?: Partial<SignupForm>) {
         schema: fakeSchema<SignupForm>(merged),
         key: `agg-${Math.random().toString(36).slice(2)}`,
         // Explicit defaultValues opt out of construction-time auto-mark
-        // (every primitive leaf would otherwise be `pendingEmpty`); this
+        // (every primitive leaf would otherwise be `blank`); this
         // suite pins the dirty/valid round-trip semantics independent of
-        // the transient-empty layer.
+        // the blank layer.
         defaultValues: merged,
       })
       return () => h('div')

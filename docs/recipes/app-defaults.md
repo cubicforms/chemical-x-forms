@@ -119,11 +119,11 @@ Three patterns:
 import { unset } from '@chemical-x/forms/zod'
 
 // 1. Plain values — explicit defaults flow into storage and the form
-//    is not transient-empty for those leaves.
+//    is not blank for those leaves.
 useForm({ schema, defaultValues: { email: 'me@example.com', count: 10 } })
 
 // 2. Omit defaultValues entirely — every primitive leaf (string,
-//    number, boolean, bigint) is auto-marked transient-empty at
+//    number, boolean, bigint) is auto-marked blank at
 //    construction. Storage holds the schema's slim defaults; the
 //    form displays empty; submit raises 'No value supplied' for
 //    required schemas.
@@ -132,7 +132,7 @@ useForm({ schema })
 // 3. Mark specific leaves as `unset` — those leaves are transient-
 //    empty; siblings without an explicit value are auto-marked too.
 useForm({ schema, defaultValues: { email: unset, count: 10 } })
-//                                  ^^^^^^^^^^^^^ transient-empty
+//                                  ^^^^^^^^^^^^^ blank
 //                                                  ^^^^^^^^^ explicit value
 ```
 
@@ -140,9 +140,9 @@ useForm({ schema, defaultValues: { email: unset, count: 10 } })
 identically — same semantic everywhere.
 
 The auto-mark and the explicit `unset` paths converge on the same
-state: the path lives in the form's transient-empty set, surfaced
-via `getFieldState(path).value.pendingEmpty` and
-`form.transientEmptyPaths.value` for bulk introspection. Submit /
+state: the path lives in the form's blank set, surfaced
+via `getFieldState(path).value.blank` and
+`form.blankPaths.value` for bulk introspection. Submit /
 validate / validateAsync raise `'No value supplied'` (`code:
 'cx:no-value-supplied'`) for required schemas; `.optional()` /
 `.nullable()` / `.default(N)` / `.catch(N)` schemas accept the
@@ -151,7 +151,7 @@ empty case.
 To opt a leaf OUT of auto-mark, supply a non-`unset` value for it
 (`defaultValues: { email: '' }` is the explicit "empty string is
 intentional" signal — storage holds `''` and the path is NOT
-transient-empty).
+blank).
 
 ## Alternative: userland wrapper
 

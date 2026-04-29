@@ -5,7 +5,7 @@ import { zodAdapter } from '../../../src/runtime/adapters/zod-v4'
 /**
  * Adapter-level tests for `isRequiredAtPath`. The submit / validate
  * required-empty augmentation calls this to decide whether a path in
- * the form's `transientEmptyPaths` set should raise a "Required"
+ * the form's `blankPaths` set should raise a "Required"
  * error. Semantics: required = no `.optional()` / `.nullable()` /
  * `.default()` / `.catch()` wrapper at any layer of the leaf.
  */

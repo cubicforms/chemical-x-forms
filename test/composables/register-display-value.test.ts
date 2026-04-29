@@ -190,8 +190,8 @@ describe('markBlank', () => {
     const ok = binding.markBlank()
     expect(ok).toBe(true)
     // Slim default for z.number() is 0.
-    expect(form.getValue('count').value).toBe(0)
-    // blank surfaces through the form's blankPaths
+    expect(form.values.count).toBe(0)
+    // pendingEmpty surfaces through the form's transientEmptyPaths
     // (commit 7 wires the public meta accessor; for now we read the
     // FormStore set indirectly via getValue still showing 0 with
     // displayValue '').

@@ -79,7 +79,7 @@ describe('setValue — intermediate array slots fill with schema element default
 
     // Indices 0..4 should be schema element defaults — { name: '', age: 0 } —
     // NOT null. Index 5 is the consumer's write.
-    expect(form.getValue('people').value).toEqual([
+    expect(form.values.people).toEqual([
       { name: '', age: 0 },
       { name: '', age: 0 },
       { name: '', age: 0 },
@@ -99,7 +99,7 @@ describe('setValue — intermediate array slots fill with schema element default
     form.setValue('people.5', { name: 'Eve', age: 22 })
 
     // Existing 0,1 preserved. 2..4 are schema element defaults. 5 is the new value.
-    expect(form.getValue('people').value).toEqual([
+    expect(form.values.people).toEqual([
       { name: 'Alice', age: 25 },
       { name: 'Bob', age: 28 },
       { name: '', age: 0 },
@@ -115,7 +115,7 @@ describe('setValue — intermediate array slots fill with schema element default
 
     form.setValue('people.5', () => ({ name: 'Dave', age: 40 }))
 
-    expect(form.getValue('people').value).toEqual([
+    expect(form.values.people).toEqual([
       { name: '', age: 0 },
       { name: '', age: 0 },
       { name: '', age: 0 },
@@ -146,7 +146,7 @@ describe('setValue — path-form callback `prev` is the schema element default w
     expect(receivedPrev).toEqual({ name: '', age: 0 })
 
     // The consumer's spread + override produces a complete Person.
-    expect(form.getValue('people').value[0]).toEqual({ name: 'Alice', age: 0 })
+    expect(form.values.people[0]).toEqual({ name: 'Alice', age: 0 })
   })
 
   it('callback prev for an existing slot is the existing value, not a fresh default', () => {
@@ -160,7 +160,7 @@ describe('setValue — path-form callback `prev` is the schema element default w
     })
 
     expect(receivedPrev).toEqual({ name: 'Existing', age: 99 })
-    expect(form.getValue('people').value[0]).toEqual({ name: 'Existing', age: 100 })
+    expect(form.values.people[0]).toEqual({ name: 'Existing', age: 100 })
   })
 
   it('callback prev for a missing high index also gets the element default', () => {
@@ -177,7 +177,7 @@ describe('setValue — path-form callback `prev` is the schema element default w
     expect(receivedPrev).toEqual({ name: '', age: 0 })
     // Intermediates 0..4 also defaulted (the structural fill from the
     // first describe block); index 5 is the consumer's spread + override.
-    expect(form.getValue('people').value).toEqual([
+    expect(form.values.people).toEqual([
       { name: '', age: 0 },
       { name: '', age: 0 },
       { name: '', age: 0 },
@@ -245,7 +245,7 @@ describe('setValue — intermediate object gaps fill with schema defaults', () =
 
     // Consumer wrote `name`. The lib must fill the rest of `profile`
     // with the schema default, not leave `age`/`bio` as undefined.
-    expect(form.getValue('user.profile').value).toEqual({
+    expect(form.values.user.profile).toEqual({
       name: 'Alice',
       age: 0,
       bio: '',
@@ -265,7 +265,7 @@ describe('setValue — intermediate object gaps fill with schema defaults', () =
     // prev is the whole profile default — every required field present.
     expect(receivedPrev).toEqual({ name: '', age: 0, bio: '' })
     // Result is a structurally-complete profile.
-    expect(form.getValue('user.profile').value).toEqual({
+    expect(form.values.user.profile).toEqual({
       name: 'Bob',
       age: 0,
       bio: '',
@@ -347,7 +347,7 @@ describe('setValue — combined: object + array intermediate fill via callback',
     // The whole address subtree is structurally correct: street preserved
     // from defaultValues, people populated through index 4, intermediates
     // 0..3 are schema element defaults, index 4 is the callback's result.
-    expect(form.getValue('address').value).toEqual({
+    expect(form.values.address).toEqual({
       street: '123 Main St',
       people: [
         { name: '', age: 0 },
@@ -436,7 +436,7 @@ describe('setValue — deep cascade fills every traversed slot completely', () =
     // consumer's `street` overlaid — `city` was filled from the schema
     // element default, NOT dropped just because the path didn't name
     // it.
-    expect(form.getValue('people').value).toEqual([
+    expect(form.values.people).toEqual([
       { name: '', age: 0, addresses: [] },
       { name: '', age: 0, addresses: [] },
       {
@@ -468,7 +468,7 @@ describe('setValue — deep cascade fills every traversed slot completely', () =
     expect(receivedPrev).toEqual({ street: '', city: '' })
 
     // Same shape guarantee as the value-form variant above.
-    expect(form.getValue('people').value).toEqual([
+    expect(form.values.people).toEqual([
       { name: '', age: 0, addresses: [] },
       { name: '', age: 0, addresses: [] },
       {
@@ -493,7 +493,7 @@ describe('setValue — deep cascade fills every traversed slot completely', () =
 
     // Second write should only touch the leaf — every intermediate
     // already exists, no fill triggers, and the value lands cleanly.
-    const people = form.getValue('people').value
+    const people = form.values.people
     expect(people).toHaveLength(3)
     const target = (people as CascadeForm['people'])[2]?.addresses[3]
     expect(target).toEqual({ street: 'Second', city: '' })
@@ -547,7 +547,7 @@ describe('setValue — tuple intermediate positions fill with schema position de
     form.setValue('coords.2', 99)
 
     // Index 1 should be the schema's position-1 default (0), not undefined.
-    expect(form.getValue('coords').value).toEqual([42, 0, 99])
+    expect(form.values.coords).toEqual([42, 0, 99])
   })
 })
 
@@ -580,7 +580,7 @@ describe('reset / resetField — structural completeness preserved', () => {
     // schema-incomplete shape from the prior write.
     form.reset()
 
-    expect(form.getValue('people').value).toEqual([
+    expect(form.values.people).toEqual([
       { name: 'Alice', age: 25 },
       { name: 'Bob', age: 28 },
     ])
@@ -596,7 +596,7 @@ describe('reset / resetField — structural completeness preserved', () => {
     form.setValue('people.0.name', 'Mutated')
     form.resetField('people')
 
-    expect(form.getValue('people').value).toEqual([
+    expect(form.values.people).toEqual([
       { name: 'Alice', age: 25 },
       { name: 'Bob', age: 28 },
     ])
@@ -617,7 +617,7 @@ describe('setValue — partial value writes are filled with schema defaults', ()
     // the lib should fill `age` from the schema default.
     form.setValue('people', [{ name: 'Alice' } as Form['people'][number]])
 
-    expect(form.getValue('people').value).toEqual([{ name: 'Alice', age: 0 }])
+    expect(form.values.people).toEqual([{ name: 'Alice', age: 0 }])
   })
 
   it('writing a partial object via the value form fills missing fields', () => {
@@ -626,7 +626,7 @@ describe('setValue — partial value writes are filled with schema defaults', ()
 
     form.setValue('user.profile', { name: 'Carol' } as ProfileForm['user']['profile'])
 
-    expect(form.getValue('user.profile').value).toEqual({
+    expect(form.values.user.profile).toEqual({
       name: 'Carol',
       age: 0,
       bio: '',

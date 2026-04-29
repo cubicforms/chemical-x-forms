@@ -99,8 +99,8 @@ describe('app-level defaults — validationMode', () => {
     // errors.
     const { app, api } = mountWithDefaults({ validationMode: 'lax' }, {})
     apps.push(app)
-    expect(api.fieldErrors.email).toBeUndefined()
-    expect(api.fieldErrors.password).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
+    expect(api.errors.password).toBeUndefined()
     expect(api.state.isValid).toBe(true)
   })
 
@@ -109,8 +109,8 @@ describe('app-level defaults — validationMode', () => {
     // errors get seeded.
     const { app, api } = mountWithDefaults({ validationMode: 'lax' }, { validationMode: 'strict' })
     apps.push(app)
-    expect(api.fieldErrors.email?.[0]?.message).toBe('bad email')
-    expect(api.fieldErrors.password?.[0]?.message).toBe('min 8 chars')
+    expect(api.errors.email?.[0]?.message).toBe('bad email')
+    expect(api.errors.password?.[0]?.message).toBe('min 8 chars')
     expect(api.state.isValid).toBe(false)
   })
 
@@ -119,7 +119,7 @@ describe('app-level defaults — validationMode', () => {
     // createFormStore applies → 'strict' → seed fires.
     const { app, api } = mountWithDefaults({}, {})
     apps.push(app)
-    expect(api.fieldErrors.email?.[0]?.message).toBe('bad email')
+    expect(api.errors.email?.[0]?.message).toBe('bad email')
     expect(api.state.isValid).toBe(false)
   })
 })
@@ -150,7 +150,7 @@ describe('app-level defaults — fieldValidation field-level merge', () => {
     // need to wait the library default (125ms).
     await vi.advanceTimersByTimeAsync(75)
     await drainMicrotasks()
-    expect(api.fieldErrors.email?.[0]?.message).toBe('bad email')
+    expect(api.errors.email?.[0]?.message).toBe('bad email')
   })
 
   it('per-form debounceMs overrides default debounceMs', async () => {
@@ -165,7 +165,7 @@ describe('app-level defaults — fieldValidation field-level merge', () => {
     // Per-form debounceMs wins → 25ms, not 500ms.
     await vi.advanceTimersByTimeAsync(40)
     await drainMicrotasks()
-    expect(api.fieldErrors.email?.[0]?.message).toBe('bad email')
+    expect(api.errors.email?.[0]?.message).toBe('bad email')
   })
 
   it("default fieldValidation applies entirely when per-form doesn't pass any", async () => {
@@ -179,7 +179,7 @@ describe('app-level defaults — fieldValidation field-level merge', () => {
     api.setValue('password', 'x')
     await vi.advanceTimersByTimeAsync(50)
     await drainMicrotasks()
-    expect(api.fieldErrors.password?.[0]?.message).toBe('min 8 chars')
+    expect(api.errors.password?.[0]?.message).toBe('min 8 chars')
   })
 })
 
@@ -194,7 +194,7 @@ describe('app-level defaults — anonymous + multi-form', () => {
     // should still apply.
     const { app, api } = mountWithDefaults({ validationMode: 'lax' }, {})
     apps.push(app)
-    expect(api.fieldErrors.email).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
     // Sanity: this anonymous form's key starts with the reserved prefix.
     expect(api.key.startsWith(ANONYMOUS_FORM_KEY_PREFIX)).toBe(true)
   })
@@ -223,8 +223,8 @@ describe('app-level defaults — anonymous + multi-form', () => {
     document.body.appendChild(root)
     app.mount(root)
     apps.push(app)
-    expect(handles.a?.fieldErrors.email).toBeUndefined()
-    expect(handles.b?.fieldErrors.email).toBeUndefined()
+    expect(handles.a?.errors.email).toBeUndefined()
+    expect(handles.b?.errors.email).toBeUndefined()
   })
 })
 
@@ -264,7 +264,7 @@ describe('app-level defaults — v3 wrapper regression', () => {
     app.mount(root)
     apps.push(app)
     // Lax → no construction-time seed → fieldErrors empty.
-    expect(handle.api?.fieldErrors.email).toBeUndefined()
-    expect(handle.api?.fieldErrors.password).toBeUndefined()
+    expect(handle.api?.errors.email).toBeUndefined()
+    expect(handle.api?.errors.password).toBeUndefined()
   })
 })

@@ -93,7 +93,7 @@ describe('async validation — handleSubmit awaits async refinements', () => {
     )
     await handler()
     expect(onErrorFired).toBe(true)
-    const emailErrors = api.fieldErrors.email
+    const emailErrors = api.errors.email
     expect(emailErrors?.[0]?.message).toBe('Email already registered')
   })
 

@@ -50,7 +50,7 @@ describe('slim-primitive write gate — accepted writes (slim type matches)', ()
     const ok = (api.setValue as (path: 'email', value: unknown) => boolean)('email', 'luigi')
     await flush()
     expect(ok).toBe(true)
-    expect(api.getValue('email').value).toBe('luigi')
+    expect(api.values.email).toBe('luigi')
   })
 
   it('z.enum accepts any string (out-of-enum passes through)', async () => {
@@ -60,7 +60,7 @@ describe('slim-primitive write gate — accepted writes (slim type matches)', ()
     const ok = (api.setValue as (path: 'color', value: unknown) => boolean)('color', 'magenta')
     await flush()
     expect(ok).toBe(true)
-    expect(api.getValue('color').value).toBe('magenta')
+    expect(api.values.color).toBe('magenta')
   })
 
   it('z.literal(string) accepts any string', async () => {
@@ -70,7 +70,7 @@ describe('slim-primitive write gate — accepted writes (slim type matches)', ()
     const ok = (api.setValue as (path: 'mode', value: unknown) => boolean)('mode', 'off')
     await flush()
     expect(ok).toBe(true)
-    expect(api.getValue('mode').value).toBe('off')
+    expect(api.values.mode).toBe('off')
   })
 
   it('z.union([string, number]) accepts strings AND numbers, rejects booleans', async () => {
@@ -81,16 +81,16 @@ describe('slim-primitive write gate — accepted writes (slim type matches)', ()
 
     expect(setVal('field', 'x')).toBe(true)
     await flush()
-    expect(api.getValue('field').value).toBe('x')
+    expect(api.values.field).toBe('x')
 
     expect(setVal('field', 42)).toBe(true)
     await flush()
-    expect(api.getValue('field').value).toBe(42)
+    expect(api.values.field).toBe(42)
 
     expect(setVal('field', true)).toBe(false)
     await flush()
     // Still 42 — the boolean write was rejected.
-    expect(api.getValue('field').value).toBe(42)
+    expect(api.values.field).toBe(42)
   })
 
   it('z.string().nullable() accepts null', async () => {
@@ -100,7 +100,7 @@ describe('slim-primitive write gate — accepted writes (slim type matches)', ()
     const ok = (api.setValue as (path: 'note', value: unknown) => boolean)('note', null)
     await flush()
     expect(ok).toBe(true)
-    expect(api.getValue('note').value).toBe(null)
+    expect(api.values.note).toBe(null)
   })
 
   it('z.string().optional() accepts undefined', async () => {
@@ -110,7 +110,7 @@ describe('slim-primitive write gate — accepted writes (slim type matches)', ()
     const ok = (api.setValue as (path: 'note', value: unknown) => boolean)('note', undefined)
     await flush()
     expect(ok).toBe(true)
-    expect(api.getValue('note').value).toBe(undefined)
+    expect(api.values.note).toBe(undefined)
   })
 })
 
@@ -131,55 +131,55 @@ describe('slim-primitive write gate — rejected writes (wrong primitive)', () =
     const schema = z.object({ age: z.number() })
     const { api, app } = makeMounter(schema)()
     apps.push(app)
-    const before = api.getValue('age').value
+    const before = api.values.age
     const ok = (api.setValue as (path: 'age', value: unknown) => boolean)('age', 'twenty')
     await flush()
     expect(ok).toBe(false)
-    expect(api.getValue('age').value).toBe(before)
+    expect(api.values.age).toBe(before)
   })
 
   it('z.boolean(): rejects a string write', async () => {
     const schema = z.object({ flag: z.boolean() })
     const { api, app } = makeMounter(schema)()
     apps.push(app)
-    const before = api.getValue('flag').value
+    const before = api.values.flag
     const ok = (api.setValue as (path: 'flag', value: unknown) => boolean)('flag', 'no')
     await flush()
     expect(ok).toBe(false)
-    expect(api.getValue('flag').value).toBe(before)
+    expect(api.values.flag).toBe(before)
   })
 
   it('z.enum([...strings]): rejects a number write', async () => {
     const schema = z.object({ color: z.enum(['red', 'green', 'blue']) })
     const { api, app } = makeMounter(schema)()
     apps.push(app)
-    const before = api.getValue('color').value
+    const before = api.values.color
     const ok = (api.setValue as (path: 'color', value: unknown) => boolean)('color', 1)
     await flush()
     expect(ok).toBe(false)
-    expect(api.getValue('color').value).toBe(before)
+    expect(api.values.color).toBe(before)
   })
 
   it('z.bigint(): rejects a string write', async () => {
     const schema = z.object({ count: z.bigint() })
     const { api, app } = makeMounter(schema)()
     apps.push(app)
-    const before = api.getValue('count').value
+    const before = api.values.count
     const ok = (api.setValue as (path: 'count', value: unknown) => boolean)('count', 'abc')
     await flush()
     expect(ok).toBe(false)
-    expect(api.getValue('count').value).toBe(before)
+    expect(api.values.count).toBe(before)
   })
 
   it('z.string() (non-nullable): rejects null', async () => {
     const schema = z.object({ note: z.string() })
     const { api, app } = makeMounter(schema)()
     apps.push(app)
-    const before = api.getValue('note').value
+    const before = api.values.note
     const ok = (api.setValue as (path: 'note', value: unknown) => boolean)('note', null)
     await flush()
     expect(ok).toBe(false)
-    expect(api.getValue('note').value).toBe(before)
+    expect(api.values.note).toBe(before)
   })
 
   it('rejection emits a dev-warn naming the path + offending kind', async () => {
@@ -239,14 +239,14 @@ describe('slim-primitive write gate — subtree writes', () => {
     })
     const { api, app } = makeMounter(schema)()
     apps.push(app)
-    const before = api.getValue('user').value
+    const before = api.values.user
     const ok = (api.setValue as (path: 'user', value: unknown) => boolean)('user', {
       name: 'Bob',
       age: 'twenty', // wrong primitive at user.age
     })
     await flush()
     expect(ok).toBe(false)
-    expect(api.getValue('user').value).toEqual(before)
+    expect(api.values.user).toEqual(before)
     warnSpy.mockRestore()
   })
 
@@ -262,7 +262,7 @@ describe('slim-primitive write gate — subtree writes', () => {
     })
     await flush()
     expect(ok).toBe(true)
-    expect(api.getValue('user').value).toEqual({ name: 'Bob', age: 30 })
+    expect(api.values.user).toEqual({ name: 'Bob', age: 30 })
   })
 
   it('writing a string at a path expecting an object rejects', async () => {

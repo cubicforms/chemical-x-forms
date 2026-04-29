@@ -29,7 +29,7 @@ describe('vRegisterPreambleTransform', () => {
     it('emits a data-cx-pre-mark prop on the root element when v-register bindings exist', () => {
       const code = compileWithTransforms(
         `<div>
-           <pre>{{ form.getFieldState('password').value }}</pre>
+           <pre>{{ form.fieldState.password }}</pre>
            <input v-register="form.register('password')" />
          </div>`
       )

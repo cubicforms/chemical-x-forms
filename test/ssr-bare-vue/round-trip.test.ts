@@ -28,8 +28,7 @@ function makeApp(opts: { ssr: boolean; initialEmail?: string }) {
         schema: fakeSchema<Form>({ email: opts.initialEmail ?? '', password: '' }),
         key: 'signup',
       })
-      const emailRef = form.getValue('email')
-      return () => h('div', { id: 'root' }, [h('span', { id: 'email' }, String(emailRef.value))])
+      return () => h('div', { id: 'root' }, [h('span', { id: 'email' }, String(form.values.email))])
     },
   })
   const app = createSSRApp(App)

@@ -10,8 +10,8 @@ import { createChemicalXForms } from '../../src/runtime/core/plugin'
  * exists to fix a longstanding template footgun:
  *
  *   <template>
- *     {{ form.fieldErrors.email }}        ✅ works (this file proves it)
- *     {{ form.fieldErrors.value.email }}  ❌ no longer compiles, no .value
+ *     {{ form.errors.email }}        ✅ works (this file proves it)
+ *     {{ form.errors.value.email }}  ❌ no longer compiles, no .value
  *   </template>
  *
  * Vue auto-unwraps refs when they are TOP-LEVEL setup-return bindings.
@@ -68,29 +68,29 @@ describe('fieldErrors — template-friendly Proxy view', () => {
     ])
 
     // The whole point of this change: dot-access returns the array directly.
-    expect(api.fieldErrors.email?.[0]?.message).toBe('bad email')
+    expect(api.errors.email?.[0]?.message).toBe('bad email')
   })
 
   it('reflects updates after setFieldErrors / clearFieldErrors', () => {
     const { app, api } = mount()
     apps.push(app)
 
-    expect(api.fieldErrors.email).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
 
     api.setFieldErrors([
       { path: ['email'], message: 'taken', formKey: api.key, code: 'api:validation' },
     ])
-    expect(api.fieldErrors.email?.[0]?.message).toBe('taken')
+    expect(api.errors.email?.[0]?.message).toBe('taken')
 
     api.clearFieldErrors('email')
-    expect(api.fieldErrors.email).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
   })
 
   it('exposes only the keys present in the underlying record', () => {
     const { app, api } = mount()
     apps.push(app)
 
-    expect(Object.keys(api.fieldErrors)).toEqual([])
+    expect(Object.keys(api.errors)).toEqual([])
 
     api.setFieldErrors([
       { path: ['email'], message: 'bad email', formKey: api.key, code: 'api:validation' },
@@ -99,7 +99,7 @@ describe('fieldErrors — template-friendly Proxy view', () => {
 
     // Object.keys traverses the Proxy's ownKeys + getOwnPropertyDescriptor
     // traps; the result must match the underlying record exactly.
-    expect(new Set(Object.keys(api.fieldErrors))).toEqual(new Set(['email', 'password']))
+    expect(new Set(Object.keys(api.errors))).toEqual(new Set(['email', 'password']))
   })
 
   it('JSON.stringify produces the same shape as the underlying record', () => {
@@ -110,7 +110,7 @@ describe('fieldErrors — template-friendly Proxy view', () => {
       { path: ['email'], message: 'bad email', formKey: api.key, code: 'api:validation' },
     ])
 
-    const serialised = JSON.parse(JSON.stringify(api.fieldErrors))
+    const serialised = JSON.parse(JSON.stringify(api.errors))
     expect(serialised).toEqual({
       email: [{ path: ['email'], message: 'bad email', formKey: api.key, code: 'api:validation' }],
     })
@@ -120,13 +120,13 @@ describe('fieldErrors — template-friendly Proxy view', () => {
     const { app, api } = mount()
     apps.push(app)
 
-    expect('email' in api.fieldErrors).toBe(false)
+    expect('email' in api.errors).toBe(false)
 
     api.setFieldErrors([
       { path: ['email'], message: 'bad email', formKey: api.key, code: 'api:validation' },
     ])
-    expect('email' in api.fieldErrors).toBe(true)
-    expect('password' in api.fieldErrors).toBe(false)
+    expect('email' in api.errors).toBe(true)
+    expect('password' in api.errors).toBe(false)
   })
 })
 
@@ -152,13 +152,13 @@ describe('fieldErrors — readonly contract', () => {
     expect(() => {
       // @ts-expect-error — fieldErrors is Readonly at the type level;
       // we're proving the runtime trap matches the type promise.
-      api.fieldErrors.email = [
+      api.errors.email = [
         { path: ['email'], message: 'mutated directly', formKey: api.key, code: 'api:validation' },
       ]
     }).toThrow(TypeError)
 
     // Underlying record must remain empty.
-    expect(api.fieldErrors.email).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
     expect(warnSpy).toHaveBeenCalled()
   })
 
@@ -172,11 +172,11 @@ describe('fieldErrors — readonly contract', () => {
 
     expect(() => {
       // @ts-expect-error — see above.
-      delete api.fieldErrors.email
+      delete api.errors.email
     }).toThrow(TypeError)
 
     // Entry survives the rejected delete.
-    expect(api.fieldErrors.email?.[0]?.message).toBe('bad email')
+    expect(api.errors.email?.[0]?.message).toBe('bad email')
     expect(warnSpy).toHaveBeenCalled()
   })
 })
@@ -194,7 +194,7 @@ describe('fieldErrors — reactivity in render scope', () => {
       setup() {
         api = useForm({ schema, key: 'fielderrs-reactive', validationMode: 'lax' })
         return () => {
-          renderedMessage = api.fieldErrors.email?.[0]?.message ?? ''
+          renderedMessage = api.errors.email?.[0]?.message ?? ''
           return h('div', renderedMessage)
         }
       },
@@ -226,7 +226,7 @@ describe('fieldErrors — reactivity in render scope', () => {
     const stop = vi.fn()
     const { watch } = await import('vue')
     const watcher = watch(
-      () => api.fieldErrors.email?.[0]?.message,
+      () => api.errors.email?.[0]?.message,
       (next) => {
         observed.push(next)
       }

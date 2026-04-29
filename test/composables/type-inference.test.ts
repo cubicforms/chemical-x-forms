@@ -1,6 +1,5 @@
 import { describe, expectTypeOf, it } from 'vitest'
 import { z } from 'zod'
-import type { Ref } from 'vue'
 import type { FormState } from '../../src'
 import type { useForm } from '../../src/zod'
 import type { WithIndexedUndefined } from '../../src/runtime/types/types-core'
@@ -97,49 +96,38 @@ describe('useForm type inference — factory signature', () => {
     void missingSchemaConfig
   })
 
-  it('returns the inferred Form shape at the top-level getValue() (with array taint)', () => {
-    // After the Phase-4 read-type honesty pass, `getValue()` returns the
-    // form wrapped in `WithIndexedUndefined` — `value.tags[N]` etc. is
+  it('returns the inferred Form shape on form.values (with array taint)', () => {
+    // `form.values` is a Pinia-style readonly proxy over the form
+    // wrapped in `WithIndexedUndefined` — `values.tags[N]` etc. is
     // `string | undefined` since arrays can be out-of-bounds at runtime.
-    const whole = form.getValue()
-    expectTypeOf(whole.value).toEqualTypeOf<WithIndexedUndefined<ExpectedForm>>()
+    expectTypeOf(form.values).toEqualTypeOf<Readonly<WithIndexedUndefined<ExpectedForm>>>()
   })
 })
 
-describe('useForm type inference — getValue', () => {
-  it('scalar leaf path → Readonly<Ref<leaf type>>', () => {
-    expectTypeOf(form.getValue('email')).toEqualTypeOf<Readonly<Ref<string>>>()
-    expectTypeOf(form.getValue('age')).toEqualTypeOf<Readonly<Ref<number>>>()
-    expectTypeOf(form.getValue('active')).toEqualTypeOf<Readonly<Ref<boolean>>>()
+describe('useForm type inference — form.values', () => {
+  it('scalar leaf is the leaf type directly (no Ref)', () => {
+    expectTypeOf(form.values.email).toEqualTypeOf<string>()
+    expectTypeOf(form.values.age).toEqualTypeOf<number>()
+    expectTypeOf(form.values.active).toEqualTypeOf<boolean>()
   })
 
-  it('nested object path', () => {
-    expectTypeOf(form.getValue('profile.name')).toEqualTypeOf<Readonly<Ref<string>>>()
+  it('nested object descent', () => {
+    expectTypeOf(form.values.profile.name).toEqualTypeOf<string>()
   })
 
   it('optional nested field preserves `| undefined`', () => {
-    expectTypeOf(form.getValue('profile.bio')).toEqualTypeOf<Readonly<Ref<string | undefined>>>()
+    expectTypeOf(form.values.profile.bio).toEqualTypeOf<string | undefined>()
   })
 
-  it('array index path is undefined-tainted (out-of-bounds is honest)', () => {
-    // After Phase 4, paths through a numeric segment yield `T | undefined`
-    // — `tags[5]` against a length-2 array returns `undefined` at runtime,
-    // and the type now reflects that.
-    expectTypeOf(form.getValue('tags.0')).toEqualTypeOf<Readonly<Ref<string | undefined>>>()
+  it('array index is undefined-tainted (out-of-bounds is honest)', () => {
+    // Numeric index access through a Vue readonly array proxy returns
+    // `T | undefined` — same honesty pass.
+    expectTypeOf(form.values.tags[0]).toEqualTypeOf<string | undefined>()
   })
 
-  it('array-of-object nested path (posts.N.field) is tainted past the array boundary', () => {
-    expectTypeOf(form.getValue('posts.0.title')).toEqualTypeOf<Readonly<Ref<string | undefined>>>()
-    expectTypeOf(form.getValue('posts.0.views')).toEqualTypeOf<Readonly<Ref<number | undefined>>>()
-  })
-
-  it('rejects paths not present in the schema', () => {
-    // @ts-expect-error - 'nope' is not a top-level key
-    form.getValue('nope')
-    // @ts-expect-error - 'profile.nonexistent' not in profile shape
-    form.getValue('profile.nonexistent')
-    // @ts-expect-error - 'posts.0.bad' not on the post shape
-    form.getValue('posts.0.bad')
+  it('array-of-object nested path (posts[N].field) is tainted past the array boundary', () => {
+    expectTypeOf(form.values.posts[0]?.title).toEqualTypeOf<string | undefined>()
+    expectTypeOf(form.values.posts[0]?.views).toEqualTypeOf<number | undefined>()
   })
 })
 
@@ -278,18 +266,17 @@ describe('useForm type inference — handleSubmit', () => {
   })
 })
 
-describe('useForm type inference — getFieldState + fieldErrors', () => {
-  it('getFieldState returns a Ref<FieldState> with a typed errors array', () => {
-    const fs = form.getFieldState('email')
-    expectTypeOf(fs.value.errors).toMatchTypeOf<ReadonlyArray<{ message: string }>>()
+describe('useForm type inference — fieldState + errors', () => {
+  it('form.fieldState exposes a typed errors array on each path', () => {
+    expectTypeOf(form.fieldState.email.errors).toMatchTypeOf<ReadonlyArray<{ message: string }>>()
   })
 
-  it('fieldErrors is a Readonly<FormFieldErrors<Form>> (Proxy view, no .value)', () => {
+  it('form.errors is a Readonly<FormFieldErrors<Form>> (Proxy view, no .value)', () => {
     // Internally backed by a ComputedRef + Proxy; the public type is
     // the unwrapped record so templates can dot-access without `.value`.
-    expectTypeOf(form.fieldErrors).toMatchTypeOf<Record<string, unknown>>()
-    // @ts-expect-error — fieldErrors is no longer a Ref, so `.value` is gone.
-    void form.fieldErrors.value
+    expectTypeOf(form.errors).toMatchTypeOf<Record<string, unknown>>()
+    // @ts-expect-error — errors is not a Ref, so `.value` is gone.
+    void form.errors.value
   })
 })
 

@@ -231,9 +231,9 @@ describe('persistence — localStorage backend', () => {
     // Poll the getValue ref until the replacement lands rather than
     // wagering a fixed sleep — the adapter's dynamic import alone can
     // take a variable number of microtasks on a cold CI runner.
-    await waitUntil(() => (api.getValue('email').value === 'seed@example.com' ? true : null))
-    expect(api.getValue('email').value).toBe('seed@example.com')
-    expect(api.getValue('password').value).toBe('pw')
+    await waitUntil(() => (api.values.email === 'seed@example.com' ? true : null))
+    expect(api.values.email).toBe('seed@example.com')
+    expect(api.values.password).toBe('pw')
   })
 
   it('drops AND wipes a version-mismatched payload', async () => {
@@ -251,7 +251,7 @@ describe('persistence — localStorage backend', () => {
     // Hydration is async, so wait for the wipe to land before asserting.
     await waitUntil(() => (localStorage.getItem(fpKey('test-vmismatch')) === null ? true : null))
     expect(localStorage.getItem(fpKey('test-vmismatch'))).toBeNull()
-    expect(api.getValue('email').value).toBe('')
+    expect(api.values.email).toBe('')
   })
 
   it('wipes a malformed-shape payload on mount', async () => {
@@ -270,7 +270,7 @@ describe('persistence — localStorage backend', () => {
     apps.push(app)
     await waitUntil(() => (localStorage.getItem(fpKey('test-malformed')) === null ? true : null))
     expect(localStorage.getItem(fpKey('test-malformed'))).toBeNull()
-    expect(api.getValue('email').value).toBe('')
+    expect(api.values.email).toBe('')
   })
 
   it('clears the persisted entry on submit success', async () => {
@@ -284,7 +284,7 @@ describe('persistence — localStorage backend', () => {
     // and is async, so wait for the form to actually carry the seed
     // value before we submit. Otherwise a submit-during-hydration
     // races the clear-on-success path.
-    await waitUntil(() => (api.getValue('email').value === 'pre@x.com' ? true : null))
+    await waitUntil(() => (api.values.email === 'pre@x.com' ? true : null))
     const handler = api.handleSubmit(async () => {})
     await handler()
     // The onSubmitSuccess listener fires a fire-and-forget
@@ -600,8 +600,8 @@ describe('persistence — IndexedDB backend', () => {
     __resetIndexedDbForTests()
     const second = mountForm({ storage: 'indexeddb', key: 'test-idb-rt', debounceMs: 20 })
     apps.push(second.app)
-    await waitUntil(() => (second.api.getValue('email').value === 'idb@example.com' ? true : null))
-    expect(second.api.getValue('email').value).toBe('idb@example.com')
+    await waitUntil(() => (second.api.values.email === 'idb@example.com' ? true : null))
+    expect(second.api.values.email).toBe('idb@example.com')
   })
 })
 
@@ -743,7 +743,7 @@ describe('persistence — per-element opt-in', () => {
     expect(localStorage.getItem(fpKey('test-no-flag'))).toBeNull()
     // Sanity: the value still landed in the form ref (writes work, just
     // no persistence).
-    expect(handle.api?.getValue('email').value).toBe('no-opt-in@example.com')
+    expect(handle.api?.values.email).toBe('no-opt-in@example.com')
   })
 
   it('two inputs on the same path: only the opted-in one persists', async () => {
@@ -1006,7 +1006,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
     app.mount(root)
     apps.push(app)
     // Wait for hydration to land.
-    await waitUntil(() => (handle.api?.getValue('email').value === 'prev@x.com' ? true : null))
+    await waitUntil(() => (handle.api?.values.email === 'prev@x.com' ? true : null))
 
     handle.api?.setValue('email', 'updated@example.com')
     await handle.api?.persist('email')
@@ -1040,7 +1040,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
     document.body.appendChild(root)
     app.mount(root)
     apps.push(app)
-    await waitUntil(() => (handle.api?.getValue('email').value === 'a@x.com' ? true : null))
+    await waitUntil(() => (handle.api?.values.email === 'a@x.com' ? true : null))
 
     // Subpath wipe — email gone, password remains.
     await handle.api?.clearPersistedDraft('email')
@@ -1100,7 +1100,7 @@ describe('persistence — reset wipes the persisted draft', () => {
     // Storage wipe is fire-and-forget — poll for the entry to disappear.
     await waitUntil(() => (localStorage.getItem(fpKey('test-reset')) === null ? true : null))
     expect(localStorage.getItem(fpKey('test-reset'))).toBeNull()
-    expect(api.getValue('email').value).toBe('')
+    expect(api.values.email).toBe('')
   })
 
   it('sparse payload — only opted-in paths reach storage', async () => {
@@ -1163,7 +1163,7 @@ describe('persistence — reset wipes the persisted draft', () => {
     // password is in the form value (in memory) but NOT in the
     // persisted payload — sparse payload contract.
     expect('password' in payload.data.form).toBe(false)
-    expect(handle.api?.getValue('password').value).toBe('never-persisted')
+    expect(handle.api?.values.password).toBe('never-persisted')
   })
 
   it('sparse hydration — opted-in paths restore; non-opted paths come from schema defaults', async () => {
@@ -1179,10 +1179,10 @@ describe('persistence — reset wipes the persisted draft', () => {
       debounceMs: 20,
     })
     apps.push(app)
-    await waitUntil(() => (api.getValue('email').value === 'sparse-seed@x.com' ? true : null))
-    expect(api.getValue('email').value).toBe('sparse-seed@x.com')
+    await waitUntil(() => (api.values.email === 'sparse-seed@x.com' ? true : null))
+    expect(api.values.email).toBe('sparse-seed@x.com')
     // password wasn't in the persisted payload → schema default ('').
-    expect(api.getValue('password').value).toBe('')
+    expect(api.values.password).toBe('')
   })
 
   it('dormant config (key + persist + zero opt-ins) does NOT throw and does NOT warn', async () => {
@@ -1312,7 +1312,7 @@ describe('persistence — reset wipes the persisted draft', () => {
       debounceMs: 20,
     })
     apps.push(app)
-    await waitUntil(() => (api.getValue('email').value === 'seed@x.com' ? true : null))
+    await waitUntil(() => (api.values.email === 'seed@x.com' ? true : null))
 
     api.resetField('email')
     // Wait for the fire-and-forget clearPersistedDraft to land.
@@ -1662,7 +1662,7 @@ describe('persistence — fingerprint-keyed storage + orphan cleanup', () => {
     const { app, api } = mountForm({ storage: 'local', key: 'fp-mismatch', debounceMs: 20 })
     apps.push(app)
     await drain()
-    expect(api.getValue('email').value).toBe('')
+    expect(api.values.email).toBe('')
   })
 
   it('orphan cleanup: stale-fingerprint entries wiped on mount of the same form', async () => {
@@ -1678,7 +1678,7 @@ describe('persistence — fingerprint-keyed storage + orphan cleanup', () => {
     )
     const { app, api } = mountForm({ storage: 'local', key: 'fp-orphan', debounceMs: 20 })
     apps.push(app)
-    await waitUntil(() => (api.getValue('email').value === 'live@x.com' ? true : null))
+    await waitUntil(() => (api.values.email === 'live@x.com' ? true : null))
     await waitUntil(() =>
       localStorage.getItem('fp-orphan:OLD-FP-1') === null &&
       localStorage.getItem('fp-orphan:OLD-FP-2') === null

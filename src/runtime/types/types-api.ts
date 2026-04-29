@@ -1697,6 +1697,10 @@ export type UseAbstractFormReturnType<
    * the FieldStateLeaf for the address object, and `address.city`
    * descends into the nested leaf.
    *
+   * Leaf values follow the slim WriteShape contract: enum-typed leaves
+   * widen to their primitive supertype. The errors array, dirty flag,
+   * focus state, etc. are unaffected.
+   *
    * Shadowing: at depth 2+, FieldStateLeaf keys (`dirty`, `touched`,
    * `errors`, `pendingEmpty`, `focused`, `blurred`, `value`,
    * `original`, `pristine`, `isConnected`, `updatedAt`, `path`) win
@@ -1704,7 +1708,7 @@ export type UseAbstractFormReturnType<
    * Document edge case; rename the offending schema field if the
    * collision matters.
    */
-  fieldState: FieldStateMap<GetValueFormType>
+  fieldState: FieldStateMap<WriteShape<GetValueFormType>>
 
   /**
    * Write to the form programmatically. Two forms:

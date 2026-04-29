@@ -371,7 +371,7 @@ describe('useRegister — sentinel suppresses parent-directive warn', () => {
 
     if (formApi === undefined) throw new Error('unreachable')
     formApi.setValue('email', 'seed@example.com')
-    expect(formApi.getValue('email').value).toBe('seed@example.com')
+    expect(formApi.values.email).toBe('seed@example.com')
 
     // Type into the inner input. Without the bail, the wrapper's
     // bubbled `input` listener would read `el.value` off the div and
@@ -382,7 +382,7 @@ describe('useRegister — sentinel suppresses parent-directive warn', () => {
     innerInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flush()
 
-    expect(formApi.getValue('email').value).toBe('seed@example.com')
+    expect(formApi.values.email).toBe('seed@example.com')
   })
 })
 
@@ -444,7 +444,7 @@ describe('useRegister — inner v-register receives full directive lifecycle', (
     innerInput.focus()
     innerInput.dispatchEvent(new Event('focus', { bubbles: true }))
     await flush()
-    expect(captured.api.getFieldState('email').value.focused).toBe(true)
+    expect(captured.api.fieldState.email.focused).toBe(true)
   })
 })
 

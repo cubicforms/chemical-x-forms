@@ -139,7 +139,7 @@ describe('useRegister — template-compiled v-register reaches inner input', () 
     innerInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flush()
 
-    expect(captured.api.getValue('email').value).toBe('typed-via-template')
+    expect(captured.api.values.email).toBe('typed-via-template')
   })
 
   it('focus on the inner input flips the form-state focused flag (template-compiled)', async () => {
@@ -184,7 +184,7 @@ describe('useRegister — template-compiled v-register reaches inner input', () 
     // The inner input is what FormStore registered (via the directive
     // that landed on it from the inner `<input v-register>`). Focus
     // listeners are installed at registerElement time on that element.
-    expect(captured.api.getFieldState('email').value.focused).toBe(true)
+    expect(captured.api.fieldState.email.focused).toBe(true)
   })
 
   // Direct assertion that the directive used in the template path is

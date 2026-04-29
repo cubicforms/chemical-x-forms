@@ -71,7 +71,7 @@ describe('v-register on Vue components — AST behaviour', () => {
     it('hoists a component binding into :data-cx-pre-mark on the first root element', () => {
       const code = compileWith(
         `<div>
-           <pre>{{ form.getFieldState('email').value }}</pre>
+           <pre>{{ form.fieldState.email }}</pre>
            <MyInput v-register="form.register('email')" />
          </div>`,
         [vRegisterPreambleTransform, vRegisterHintTransform]
@@ -243,7 +243,7 @@ describe('v-register on Vue components — AST behaviour', () => {
       expect(() =>
         compileFull(
           `<div>
-             <pre>{{ form.getFieldState('email').value }}</pre>
+             <pre>{{ form.fieldState.email }}</pre>
              <MyInput v-register="form.register('email')" />
            </div>`
         )
@@ -253,7 +253,7 @@ describe('v-register on Vue components — AST behaviour', () => {
     it('combines select-transform component-prop injection + hint wrapper + preamble hoist', () => {
       const code = compileFull(
         `<div>
-           <pre>{{ form.getFieldState('email').value }}</pre>
+           <pre>{{ form.fieldState.email }}</pre>
            <MyInput v-register="form.register('email')" />
          </div>`
       )

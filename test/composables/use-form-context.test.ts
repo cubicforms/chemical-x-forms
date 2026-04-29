@@ -54,9 +54,9 @@ describe('useFormContext — ambient provide/inject', () => {
     expect(shared.parent).toBeDefined()
     expect(shared.child).toBeDefined()
     shared.parent?.setValue('email', 'first@x')
-    expect(shared.child?.getValue('email').value).toBe('first@x')
+    expect(shared.child?.values.email).toBe('first@x')
     shared.child?.setValue('profile.name', 'alice')
-    expect(shared.parent?.getValue('profile.name').value).toBe('alice')
+    expect(shared.parent?.values.profile.name).toBe('alice')
 
     app.unmount()
   })
@@ -238,7 +238,7 @@ describe('useFormContext — explicit key resolution', () => {
     // the same key is read. We prove that by reading back via the same
     // sibling handle; the registry is a single source of truth.
     shared.sibling?.setValue('email', 'from-sibling@x')
-    expect(shared.sibling?.getValue('email').value).toBe('from-sibling@x')
+    expect(shared.sibling?.values.email).toBe('from-sibling@x')
     app.unmount()
   })
 

@@ -114,6 +114,27 @@ export function buildFieldStateProxy<F extends GenericForm>(
           // proxy's.
           return true
         },
+        // Iteration support: at non-root paths, expose the FieldStateLeaf
+        // keys so `JSON.stringify(form.fieldState.email)` produces the
+        // expected leaf snapshot (matching the legacy
+        // `JSON.stringify(form.getFieldState('email').value)` shape).
+        // At the root, return `[]` — the root has no FieldStateView and
+        // schema field names aren't enumerable through the proxy.
+        ownKeys() {
+          return view !== null ? Array.from(FIELD_STATE_KEYS) : []
+        },
+        getOwnPropertyDescriptor(_, key) {
+          if (typeof key !== 'string') return undefined
+          if (view !== null && FIELD_STATE_KEYS.has(key)) {
+            return {
+              configurable: true,
+              enumerable: true,
+              value: (view.value as Record<string, unknown>)[key],
+              writable: false,
+            }
+          }
+          return undefined
+        },
         // Block writes at the proxy boundary. Mutations go through
         // `setValue`, the directive, or the field-array helpers.
         set() {

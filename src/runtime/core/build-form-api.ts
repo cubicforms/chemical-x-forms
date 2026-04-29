@@ -3,7 +3,6 @@ import type {
   CurrentValueContext,
   CurrentValueWithContext,
   FieldState,
-  FieldStateMap,
   FormErrorRecord,
   FormFieldErrors,
   FormState,
@@ -463,7 +462,10 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
         WithIndexedUndefined<WriteShape<GetValueFormType>>
       >
     },
-    fieldState: fieldStateProxy as unknown as FieldStateMap<GetValueFormType>,
+    fieldState: fieldStateProxy as unknown as UseAbstractFormReturnType<
+      Form,
+      GetValueFormType
+    >['fieldState'],
     setValue: setValueImpl as UseAbstractFormReturnType<Form, GetValueFormType>['setValue'],
     validate: validate as UseAbstractFormReturnType<Form, GetValueFormType>['validate'],
     validateAsync: validateAsync as UseAbstractFormReturnType<

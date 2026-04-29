@@ -95,7 +95,7 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     expect(requiredErr?.path).toEqual(['income'])
     // Anchor the human-readable message once; downstream tests assert on `code`.
     expect(requiredErr?.message).toBe('No value supplied')
-    expect(form.fieldErrors['income']?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(form.errors['income']?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
     void incomeKey
   })
 

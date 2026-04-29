@@ -132,3 +132,61 @@ export class SensitivePersistFieldError extends Error {
     )
   }
 }
+
+/**
+ * Thrown when persistence is misconfigured in a way that would either
+ * (a) silently drop writes, or (b) namespace storage under a
+ * non-deterministic synthetic key — both of which become security bugs
+ * the moment encrypted persistence backends are added (the same key
+ * may be derived for two unrelated forms).
+ *
+ * Two `cause` values, one error shape:
+ *
+ *   - `'no-key'` — `useForm({ persist: ... })` called without `key:`.
+ *     Anonymous keys (`__cx:anon:*`) drift across mounts; persisting
+ *     to a non-deterministic location is refused outright.
+ *
+ *   - `'register-without-config'` — `register(_, { persist: true })`
+ *     declared on a form whose `useForm()` options omit `persist:`.
+ *     The opt-in is recorded but nothing would ever land in storage.
+ *
+ * Fix: align the two layers — set `persist:` + `key:` on `useForm()`,
+ * or remove `{ persist: true }` from the offending `register()` call.
+ */
+export class AnonPersistError extends Error {
+  override readonly name = 'AnonPersistError'
+  readonly schemaFields: readonly string[] | undefined
+  readonly callSite: string | undefined
+  override readonly cause: 'no-key' | 'register-without-config'
+  constructor(opts: {
+    schemaFields?: readonly string[]
+    callSite?: string
+    cause: 'no-key' | 'register-without-config'
+  }) {
+    super(formatAnonPersistMessage(opts))
+    this.schemaFields = opts.schemaFields
+    this.callSite = opts.callSite
+    this.cause = opts.cause
+  }
+}
+
+function formatAnonPersistMessage(opts: {
+  schemaFields?: readonly string[]
+  callSite?: string
+  cause: 'no-key' | 'register-without-config'
+}): string {
+  const head =
+    opts.cause === 'no-key'
+      ? `useForm({ persist: ... }) requires an explicit \`key:\`. Anonymous synthetic keys (\`__cx:anon:*\`) drift across mounts and can collide between unrelated forms — refusing to persist to a non-deterministic location.`
+      : `register(_, { persist: true }) declared on a form whose useForm() options have no \`persist:\` configured. The opt-in is recorded but nothing would ever land in storage.`
+  const fields =
+    opts.schemaFields !== undefined && opts.schemaFields.length > 0
+      ? ` Form fields: { ${opts.schemaFields.join(', ')} }.`
+      : ''
+  const fix =
+    opts.cause === 'no-key'
+      ? ` Fix: add \`key: '<stable-id>'\` to useForm().`
+      : ` Fix: add \`persist: 'session'\` (or 'local') and \`key:\` to useForm(), or remove \`{ persist: true }\` from this register() call.`
+  const where = opts.callSite !== undefined ? ` ${opts.callSite}` : ''
+  return `[@chemical-x/forms] ${head}${fields}${fix}${where}`
+}

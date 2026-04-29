@@ -73,8 +73,6 @@ export type {
   ApiErrorEntry,
   ApiErrorEnvelope,
   ChemicalXFormsDefaults,
-  CurrentValueContext,
-  CurrentValueWithContext,
   CustomDirectiveRegisterAssignerFn,
   DefaultValuesResponse,
   FieldState,

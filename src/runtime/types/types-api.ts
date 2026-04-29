@@ -838,42 +838,6 @@ export type MetaTrackerValue = {
 export type MetaTracker = Record<string, MetaTrackerValue>
 export type MetaTrackerStore = Map<FormKey, MetaTracker>
 
-/**
- * Options for the `getValue(...)` overloads that opt into metadata.
- *
- * ```ts
- * const view = form.getValue({ withMeta: true })
- * view.currentValue.value // the form value
- * view.meta.value         // per-leaf metadata
- * ```
- */
-export type CurrentValueContext<WithMeta extends boolean = false> = {
-  /** Set to `true` to receive both the value ref and a per-leaf metadata ref. */
-  withMeta?: WithMeta
-}
-
-type RemapLeafNodes<T, V, Q = NonNullable<T>> =
-  Q extends Record<string, unknown>
-    ? { [K in keyof Q]: RemapLeafNodes<Q[K], V> }
-    : Q extends Array<infer U>
-      ? Array<RemapLeafNodes<U, V>>
-      : V
-
-/**
- * Return value of `getValue({ withMeta: true })` and
- * `getValue(path, { withMeta: true })`.
- *
- * `currentValue` carries the live reactive value at the requested
- * scope; `meta` carries a parallel tree where each leaf is the
- * `MetaTrackerValue` for the corresponding field.
- */
-export type CurrentValueWithContext<Value, FormSubtree = Value> = {
-  /** Live reactive value at the requested scope. */
-  currentValue: Readonly<Ref<Value>>
-  /** Parallel metadata tree — leaves are `MetaTrackerValue` records. */
-  meta: Readonly<Ref<DeepPartial<RemapLeafNodes<FormSubtree, MetaTrackerValue>>>>
-}
-
 // This generic generates full paths and paths that point to string arrays
 // This staisfies ts edge case for multi-select and multi-checkbox elements
 export type RegisterFlatPath<Form, Key extends keyof Form = keyof Form> =
@@ -1542,19 +1506,6 @@ export type UseAbstractFormReturnType<
   GetValueFormType extends GenericForm = Form,
 > = {
   /**
-   * Reactive per-field state at `path`: `currentValue`, focus/blur
-   * flags, dirty/pristine, errors, etc. See `FieldState` for the
-   * full shape.
-   *
-   * ```ts
-   * const state = form.getFieldState('email')
-   * // <p v-if="state.touched && state.errors.length">…</p>
-   * ```
-   */
-  getFieldState: <Path extends FlatPath<Form, keyof Form, true>>(
-    path: Path
-  ) => Ref<FieldState<NestedReadType<WriteShape<GetValueFormType>, Path>>>
-  /**
    * Wraps your submit logic with validation and error routing.
    *
    * ```ts
@@ -1568,90 +1519,6 @@ export type UseAbstractFormReturnType<
    * fired, so `data.email` is guaranteed to satisfy `.email()`.
    */
   handleSubmit: HandleSubmit<Form>
-  /**
-   * Read the form's current value as a reactive ref.
-   *
-   * - `getValue()` — whole form.
-   * - `getValue(path)` — value at `path`.
-   * - `getValue({ withMeta: true })` — whole form + a sibling
-   *   `meta` ref carrying per-leaf metadata.
-   * - `getValue(path, { withMeta: true })` — same, scoped to `path`.
-   *
-   * ```ts
-   * const email = form.getValue('email')      // Readonly<Ref<string>>
-   * const all = form.getValue()               // Readonly<Ref<Form>>
-   * ```
-   *
-   * Reads reflect what's storable: enum-typed slots widen to their
-   * primitive supertype (e.g. `string`) so refinement-invalid but
-   * structurally-valid values are visible. Use `handleSubmit` /
-   * `validate*()` when you need the post-validation strict type.
-   */
-  getValue: {
-    /**
-     * Read the whole form as a reactive ref.
-     *
-     * ```ts
-     * const all = form.getValue() // Readonly<Ref<Form>>
-     * ```
-     *
-     * Reads reflect what's storable: enum-typed slots widen to their
-     * primitive supertype (e.g. `string`) so refinement-invalid but
-     * structurally-valid values are visible. Use `handleSubmit` /
-     * `validate*()` when you need the post-validation strict type.
-     */
-    (): Readonly<Ref<WithIndexedUndefined<WriteShape<GetValueFormType>>>>
-    /**
-     * Read the value at `path` as a reactive ref.
-     *
-     * ```ts
-     * const email = form.getValue('email') // Readonly<Ref<string>>
-     * ```
-     *
-     * Reads reflect what's storable: enum-typed slots widen to their
-     * primitive supertype (e.g. `string`) so refinement-invalid but
-     * structurally-valid values are visible. Use `handleSubmit` /
-     * `validate*()` when you need the post-validation strict type.
-     */
-    <Path extends FlatPath<Form>>(
-      path: Path
-    ): Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
-    /**
-     * Read the whole form along with per-leaf metadata.
-     *
-     * ```ts
-     * const view = form.getValue({ withMeta: true })
-     * view.currentValue.value // the form value
-     * view.meta.value         // per-leaf MetaTrackerValue tree
-     * ```
-     *
-     * Pass `{ withMeta: false }` (or omit `withMeta`) for the same
-     * shape as `getValue()`.
-     */
-    <WithMeta extends boolean>(
-      context: CurrentValueContext<WithMeta>
-    ): WithMeta extends true
-      ? CurrentValueWithContext<WithIndexedUndefined<WriteShape<GetValueFormType>>>
-      : Readonly<Ref<WithIndexedUndefined<WriteShape<GetValueFormType>>>>
-    /**
-     * Read the value at `path` along with per-leaf metadata.
-     *
-     * ```ts
-     * const view = form.getValue('email', { withMeta: true })
-     * view.currentValue.value // the email value
-     * view.meta.value         // metadata for that leaf
-     * ```
-     *
-     * Pass `{ withMeta: false }` (or omit `withMeta`) for the same
-     * shape as `getValue(path)`.
-     */
-    <Path extends FlatPath<Form>, WithMeta extends boolean>(
-      path: Path,
-      context: CurrentValueContext<WithMeta>
-    ): WithMeta extends true
-      ? CurrentValueWithContext<NestedReadType<WriteShape<GetValueFormType>, Path>>
-      : Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
-  }
 
   /**
    * Reactive readonly proxy over the form's storage value. Read
@@ -1872,16 +1739,6 @@ export type UseAbstractFormReturnType<
    * (`form.fieldErrors['user.profile.email']`) — JS dot notation
    * splits on literal dots.
    *
-   * Read-only — populate via `setFieldErrors`, `addFieldErrors`, and
-   * `clearFieldErrors`. Server-side errors flow through
-   * `parseApiErrors` first.
-   *
-   * @deprecated Use `form.errors` (same shape, renamed for Pinia
-   * naming parity). Removed in the next breaking release.
-   */
-  fieldErrors: Readonly<FormFieldErrors<Form>>
-
-  /**
    * Reactive map of field errors, keyed by dotted path. Populated
    * automatically by `handleSubmit` and per-field validation; cleared
    * on validation success.

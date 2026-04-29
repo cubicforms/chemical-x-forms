@@ -1,8 +1,5 @@
 import { computed, reactive, readonly, type ComputedRef, type Ref } from 'vue'
 import type {
-  CurrentValueContext,
-  CurrentValueWithContext,
-  FieldState,
   FormErrorRecord,
   FormFieldErrors,
   FormState,
@@ -23,7 +20,6 @@ import type {
 import { __DEV__ } from './dev'
 import type { FormStore } from './create-form-store'
 import { buildFieldArrayApi } from './field-arrays'
-import { buildFieldStateAccessor } from './field-state-api'
 import { buildFieldStateProxy } from './field-state-proxy'
 import type { HistoryModule } from './history'
 import { getAtPath } from './path-walker'
@@ -89,7 +85,6 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   options: BuildFormApiOptions = {}
 ): UseAbstractFormReturnType<Form, GetValueFormType> {
   const register = buildRegister(state) as (path: string | Path) => RegisterValue<unknown>
-  const getFieldStateBuilt = buildFieldStateAccessor(state)
   // Don't set `onInvalidSubmit: undefined` — exactOptionalPropertyTypes
   // treats an explicit-undefined value differently from an omitted
   // property. Only pass the key when the consumer opted in.
@@ -101,30 +96,18 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     handleSubmit,
   } = buildProcessForm(state, processOptions)
 
-  const getFieldState = (pathInput: string) =>
-    getFieldStateBuilt(pathInput) as unknown as Ref<FieldState>
-
   const validate = (pathInput?: string) =>
     validateBuilt(pathInput) as Ref<ReactiveValidationStatus<Form>>
 
   const validateAsync = (pathInput?: string) =>
     validateAsyncBuilt(pathInput) as Promise<ValidationResponseWithoutValue<Form>>
 
-  // --- getValue / setValue (overloaded) ---
-  function getValueImpl(
-    pathOrContext?: string | CurrentValueContext<boolean>,
-    maybeContext?: CurrentValueContext<boolean>
-  ): unknown {
-    if (pathOrContext === undefined) {
-      return state.form as unknown as Readonly<Ref<GetValueFormType>>
-    }
-    if (typeof pathOrContext === 'object') {
-      return contextualiseValue(state, [], pathOrContext)
-    }
-    const segments = canonicalizePath(pathOrContext).segments
-    if (maybeContext !== undefined) {
-      return contextualiseValue(state, segments, maybeContext)
-    }
+  // --- toRef escape hatch — Readonly<Ref<...>> for the rare case
+  // a consumer needs ref-shaped interop (external composables that
+  // expect a Vue ref, watchers reading a single path). Writes still
+  // funnel through `setValue`, never via the ref.
+  function pathToRef(pathInput: string): Readonly<Ref<unknown>> {
+    const segments = canonicalizePath(pathInput).segments
     return computed(() => getAtPath(state.form.value, segments)) as Readonly<Ref<unknown>>
   }
 
@@ -446,12 +429,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   const fieldStateProxy = buildFieldStateProxy(state)
 
   return {
-    getFieldState: getFieldState as UseAbstractFormReturnType<
-      Form,
-      GetValueFormType
-    >['getFieldState'],
     handleSubmit,
-    getValue: getValueImpl as UseAbstractFormReturnType<Form, GetValueFormType>['getValue'],
     // `values` is a getter so reads route through the wrapping computed
     // and pick up reactivity at the call site (every consumer template
     // / effect that reads `form.values.<x>` subscribes to the underlying
@@ -474,20 +452,8 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     >['validateAsync'],
     register: register as UseAbstractFormReturnType<Form, GetValueFormType>['register'],
     key: state.formKey,
-    fieldErrors: fieldErrors as unknown as Readonly<FormFieldErrors<Form>>,
-    // `errors` is the renamed surface — same Proxy, new property name.
-    // Both names coexist during Phase B so C1 can sweep test sites
-    // mechanically; C2 deletes `fieldErrors`.
     errors: fieldErrors as unknown as Readonly<FormFieldErrors<Form>>,
-    // `toRef(path)` — escape hatch for the rare case a consumer wants
-    // a Ref. Delegates to `getValueImpl` with the path-overload, which
-    // already returns `Readonly<Ref<...>>`. The slim-primitive write
-    // gate stays the only way into storage; readonly here matches.
-    toRef: ((path: string) =>
-      getValueImpl(path) as Readonly<Ref<unknown>>) as UseAbstractFormReturnType<
-      Form,
-      GetValueFormType
-    >['toRef'],
+    toRef: pathToRef as UseAbstractFormReturnType<Form, GetValueFormType>['toRef'],
     setFieldErrors,
     addFieldErrors,
     clearFieldErrors,
@@ -535,21 +501,6 @@ function appendStoreToRecord(
       else existingForKey.push(err)
     }
   }
-}
-
-function contextualiseValue<F extends GenericForm>(
-  state: FormStore<F>,
-  segments: Path,
-  context: CurrentValueContext<boolean>
-): unknown {
-  const currentValue = computed(() => getAtPath(state.form.value, segments))
-  if (context.withMeta === true) {
-    return {
-      currentValue: currentValue as Readonly<Ref<unknown>>,
-      meta: computed(() => ({})) as Readonly<Ref<unknown>>,
-    } as unknown as CurrentValueWithContext<unknown>
-  }
-  return currentValue as Readonly<Ref<unknown>>
 }
 
 /**

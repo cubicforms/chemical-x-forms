@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, type App } from 'vue'
+import { type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { flush, makeMounter as makeMounterShared } from '../utils/form-harness'
 
 /**
  * The slim-primitive write contract.
@@ -27,31 +27,13 @@ import { createChemicalXForms } from '../../src/runtime/core/plugin'
  * `false`; the form value at the path is unchanged.
  */
 
-async function flush(): Promise<void> {
-  for (let i = 0; i < 4; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
-
+// Local typed wrapper around the shared harness — this file's tests
+// access useForm<S>'s typed return (e.g. `api.setValue`'s typed
+// `path` parameter) so we narrow back from the harness's `any` here.
 function makeMounter<S extends z.ZodObject>(schema: S) {
-  return function mount(): { api: ReturnType<typeof useForm<S>>; app: App } {
-    const captured: { api?: ReturnType<typeof useForm<S>> } = {}
-    const App = defineComponent({
-      setup() {
-        captured.api = useForm({
-          schema,
-          key: `slim-${Math.random().toString(36).slice(2)}`,
-          validationMode: 'lax',
-        })
-        return () => h('div')
-      },
-    })
-    const app = createApp(App).use(createChemicalXForms())
-    const root = document.createElement('div')
-    document.body.appendChild(root)
-    app.mount(root)
-    return { api: captured.api as ReturnType<typeof useForm<S>>, app }
+  return makeMounterShared(useForm, schema) as () => {
+    api: ReturnType<typeof useForm<S>>
+    app: App
   }
 }
 
@@ -321,5 +303,86 @@ describe('slim-primitive write gate — non-form-key permissive shapes', () => {
     const setVal = api.setValue as (path: 'payload', value: unknown) => boolean
     expect(setVal('payload', 1)).toBe(true)
     expect(setVal('payload', 'x')).toBe(true)
+  })
+})
+
+/**
+ * Writes against paths the schema doesn't define MUST be rejected.
+ * The slim-primitive gate's previous "empty accept set → permissive"
+ * rule conflated three semantically distinct cases: `z.any()`,
+ * `z.never()`, and unknown-path. Only `z.any()` should be permissive.
+ *
+ * Without this, registering an input at a typo path
+ * (`register('address.salary')` against `address: { city }`) silently
+ * creates a bogus `address.salary` slot in the form on first
+ * keystroke, breaking the structural-completeness invariant.
+ */
+describe('slim-primitive write gate — unknown schema paths', () => {
+  const apps: App[] = []
+  let warnSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterEach(async () => {
+    while (apps.length > 0) apps.pop()?.unmount()
+    warnSpy.mockRestore()
+    await flush()
+  })
+
+  it('rejects writes to a leaf path the schema does not define', async () => {
+    const schema = z.object({
+      address: z.object({ city: z.string() }),
+    })
+    const { api, app } = makeMounter(schema)()
+    apps.push(app)
+    const before = JSON.parse(JSON.stringify(api.getValue().value))
+    const ok = (api.setValue as (path: string, value: unknown) => boolean)('address.salary', 'abc')
+    await flush()
+    expect(ok).toBe(false)
+    // Form value unchanged — no `address.salary` slot created.
+    expect(api.getValue().value).toEqual(before)
+  })
+
+  it('rejects writes to an unknown root-level path', async () => {
+    const schema = z.object({ name: z.string() })
+    const { api, app } = makeMounter(schema)()
+    apps.push(app)
+    const before = JSON.parse(JSON.stringify(api.getValue().value))
+    const ok = (api.setValue as (path: string, value: unknown) => boolean)('phantom', 'x')
+    await flush()
+    expect(ok).toBe(false)
+    expect(api.getValue().value).toEqual(before)
+  })
+
+  it('rejects writes that would create a deeply-nested unknown path', async () => {
+    const schema = z.object({
+      profile: z.object({
+        details: z.object({ name: z.string() }),
+      }),
+    })
+    const { api, app } = makeMounter(schema)()
+    apps.push(app)
+    const before = JSON.parse(JSON.stringify(api.getValue().value))
+    const ok = (api.setValue as (path: string, value: unknown) => boolean)(
+      'profile.details.unknown',
+      'x'
+    )
+    await flush()
+    expect(ok).toBe(false)
+    expect(api.getValue().value).toEqual(before)
+  })
+
+  it('rejection emits a dev-warn naming the unknown path', async () => {
+    const schema = z.object({
+      address: z.object({ city: z.string() }),
+    })
+    const { api, app } = makeMounter(schema)()
+    apps.push(app)
+    ;(api.setValue as (path: string, value: unknown) => boolean)('address.salary', 'abc')
+    await flush()
+    expect(warnSpy).toHaveBeenCalled()
+    const message = warnSpy.mock.calls.flat().join(' ')
+    expect(message).toMatch(/address\.salary/)
   })
 })

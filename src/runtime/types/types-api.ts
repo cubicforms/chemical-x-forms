@@ -240,9 +240,13 @@ export type AbstractSchema<Form, GetValueFormType> = {
    * sides.
    *
    * Conventions:
-   * - Empty set → permissive ("unknown / unconstrained"). The runtime
-   *   gate treats this as "accept anything." Surfaces for `z.any()` /
-   *   `z.unknown()` / `z.never()` and the lazy-peel-failure case.
+   * - Empty set → no kind admitted. The runtime gate rejects every
+   *   write to the path. Surfaces for `z.never()` AND for paths that
+   *   don't resolve in the schema (typo / unknown leaf).
+   * - Permissive set (every kind) → "unknown / unconstrained." The
+   *   gate accepts any value. Surfaces for `z.any()` / `z.unknown()`
+   *   / `z.void()` and the lazy-peel-failure case where the adapter
+   *   can't introspect the schema.
    * - For `z.enum(['a','b'])` (string entries): returns `{'string'}`.
    *   For numeric enums: `{'number'}`.
    * - For `z.literal(x)`: returns `{primitiveKindOf(x)}`.

@@ -23,7 +23,7 @@ import {
   unwrapPipe,
 } from './introspect'
 import { getNestedZodSchemasAtPath } from './path-walker'
-import { PERMISSIVE, slimPrimitivesOf } from './slim-primitives'
+import { slimPrimitivesOf } from './slim-primitives'
 
 /**
  * Zod v4 adapter — implements `AbstractSchema` against Zod v4's public
@@ -301,7 +301,10 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         // is the root form: always an object.
         if (path.length === 0) return new Set(['object'])
         const resolved = getNestedZodSchemasAtPath(rootSchema, path)
-        if (resolved.length === 0) return new Set(PERMISSIVE)
+        // Path doesn't resolve in the schema → no kinds accepted.
+        // The gate's membership check rejects every kind against an
+        // empty set, blocking writes to typo / unknown paths.
+        if (resolved.length === 0) return new Set()
         const out = new Set<SlimPrimitiveKind>()
         for (const candidate of resolved) {
           for (const k of slimPrimitivesOf(candidate)) out.add(k)

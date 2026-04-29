@@ -120,13 +120,18 @@ function walk(
   // schema's slim kinds at this path? Recurse into containers
   // afterwards — the recursion checks the elements' kinds at
   // the sub-paths.
+  //
+  // An empty accept set means the schema rejects every kind at this
+  // path: either the path doesn't resolve (typo / unknown leaf) or
+  // the path resolves to `z.never()`. Either way, the membership
+  // check below rejects, blocking the write. `z.any()` / `z.unknown()`
+  // / `z.void()` and the lazy-peel-failure case return the full
+  // permissive set — those still accept any kind.
   const accepted = schema.getSlimPrimitiveTypesAtPath(path)
-  if (accepted.size > 0) {
-    const kind = isLeafValue(value) ? slimKindOf(value) : Array.isArray(value) ? 'array' : 'object'
-    if (!accepted.has(kind)) {
-      reportRejection(store, path, kind, accepted)
-      return false
-    }
+  const kind = isLeafValue(value) ? slimKindOf(value) : Array.isArray(value) ? 'array' : 'object'
+  if (!accepted.has(kind)) {
+    reportRejection(store, path, kind, accepted)
+    return false
   }
 
   if (Array.isArray(value)) {
@@ -158,8 +163,22 @@ function reportRejection(
   const dotted = path.map((s: Segment) => String(s)).join('.') || '(root)'
   const key = `${dotted}::${kind}`
   if (!shouldWarnOnce(store, key)) return
-  const acceptedList = [...accepted].sort().join(', ')
 
+  // An empty accept set means the path either doesn't resolve in the
+  // schema (typo / unknown leaf) or resolves to `z.never()`. The two
+  // surface differently in the message so the dev knows whether to
+  // fix the path or relax the schema.
+  if (accepted.size === 0) {
+    console.warn(
+      `[@chemical-x/forms] write rejected: path '${dotted}' is not defined in the schema, ` +
+        `or resolves to a type (z.never) that admits no values. The write was a no-op. ` +
+        `Check for typos in your register('${dotted}') call, or relax the schema if the path ` +
+        `is intentional.`
+    )
+    return
+  }
+
+  const acceptedList = [...accepted].sort().join(', ')
   console.warn(
     `[@chemical-x/forms] write rejected: value of kind '${kind}' is not assignable to ` +
       `path '${dotted}' (slim primitive set: { ${acceptedList} }). ` +

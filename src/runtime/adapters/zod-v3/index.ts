@@ -373,7 +373,10 @@ export function zodAdapter<
           stripConfig: { stripDefaultValues: true, stripZodEffects: true },
         })
         const resolved = getNestedZodSchemasAtPath(slimSchema, path)
-        if (resolved.length === 0) return new Set(PERMISSIVE_V3)
+        // Path doesn't resolve in the schema → no kinds accepted.
+        // The gate's membership check rejects every kind against an
+        // empty set, blocking writes to typo / unknown paths.
+        if (resolved.length === 0) return new Set()
         const out = new Set<SlimPrimitiveKind>()
         for (const candidate of resolved) {
           for (const k of slimPrimitivesV3(candidate as z.ZodTypeAny)) out.add(k)
@@ -736,6 +739,14 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
       }
 
       return foundSchemas
+    } else {
+      // Hit a non-container (leaf primitive, wrapper, union — anything
+      // we don't recognise as descendable) but more segments remain.
+      // The path goes deeper than the schema admits; return empty
+      // so callers (slim-gate, validateAtPath, getDefaultAtPath)
+      // treat it as unresolvable rather than falsely binding to the
+      // last container's leaf. Mirrors v4's path-walker leaf branches.
+      return []
     }
   }
 

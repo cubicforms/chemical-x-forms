@@ -47,6 +47,9 @@ coverage
 .nyc_output
 /.husky/_
 
+# Claude Code (auto-memory + plan files; per-developer, not committed)
+.claude
+
 # VSCode
 .vscode/*
 !.vscode/settings.json

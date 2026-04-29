@@ -1550,7 +1550,7 @@ export type UseAbstractFormReturnType<
   /**
    * Reactive per-field state proxy. Pinia-style nested object — read
    * leaf properties (`dirty`, `touched`, `errors`, `blurred`,
-   * `focused`, `pendingEmpty`, `currentValue`, …) directly off the
+   * `focused`, `blank`, `currentValue`, …) directly off the
    * field's path:
    *
    * ```vue
@@ -1569,7 +1569,7 @@ export type UseAbstractFormReturnType<
    * focus state, etc. are unaffected.
    *
    * Shadowing: at depth 2+, FieldStateLeaf keys (`dirty`, `touched`,
-   * `errors`, `pendingEmpty`, `focused`, `blurred`, `value`,
+   * `errors`, `blank`, `focused`, `blurred`, `value`,
    * `original`, `pristine`, `isConnected`, `updatedAt`, `path`) win
    * over schema field names. Top-level fields are NOT shadowed.
    * Document edge case; rename the offending schema field if the

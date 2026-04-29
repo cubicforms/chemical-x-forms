@@ -147,7 +147,7 @@ describe('reset(args) with unset', () => {
     form.reset({ count: unset })
     expect(form.values.count).toBe(0)
     expect(form.blankPaths.value.has(canonicalizePath('count').key)).toBe(true)
-    // Dirty resets to false: the new baseline is "transient-empty for this path".
+    // Dirty resets to false: the new baseline is "blank for this path".
     expect(form.state.isDirty).toBe(false)
   })
 })

@@ -164,25 +164,49 @@ function reportRejection(
   const key = `${dotted}::${kind}`
   if (!shouldWarnOnce(store, key)) return
 
-  // An empty accept set means the path either doesn't resolve in the
-  // schema (typo / unknown leaf) or resolves to `z.never()`. The two
-  // surface differently in the message so the dev knows whether to
-  // fix the path or relax the schema.
+  // KISS rule: state the problem in one sentence, then list the fix.
+  // Devs scan the first line; everything after is the recipe.
+
+  // Path doesn't resolve (or resolves to z.never). The headline names
+  // the actual cause; z.never is rare enough that it doesn't deserve
+  // top billing.
   if (accepted.size === 0) {
     console.warn(
-      `[@chemical-x/forms] write rejected: path '${dotted}' is not defined in the schema, ` +
-        `or resolves to a type (z.never) that admits no values. The write was a no-op. ` +
-        `Check for typos in your register('${dotted}') call, or relax the schema if the path ` +
-        `is intentional.`
+      `[@chemical-x/forms] Cannot write to '${dotted}' — this path is not in your schema.\n` +
+        `  Fix: check for a typo in register('${dotted}'); it should match a leaf key in your schema.\n` +
+        `  (If the path resolves to z.never, the schema explicitly admits no values — relax the schema if intentional.)\n` +
+        `  The write was a no-op.`
     )
     return
   }
 
-  const acceptedList = [...accepted].sort().join(', ')
+  const expected = formatExpectedKinds(accepted)
+
+  // String-to-number is the most common gate rejection in real apps:
+  // a plain `<input v-register>` against a `z.number()` field reads
+  // `el.value` as a string. Show both v-register fix paths verbatim
+  // so the dev can copy-paste rather than parse "slim primitive set".
+  if (kind === 'string' && accepted.has('number')) {
+    console.warn(
+      `[@chemical-x/forms] Cannot write a string to '${dotted}' — the schema expects ${expected}.\n` +
+        `  Fix: add type="number" to the input, OR use the .number modifier on v-register:\n` +
+        `    <input type="number" v-register="register('${dotted}')" />\n` +
+        `    <input v-register.number="register('${dotted}')" />\n` +
+        `  The write was a no-op.`
+    )
+    return
+  }
+
+  // Generic kind mismatch — no built-in DOM coercion path to suggest.
   console.warn(
-    `[@chemical-x/forms] write rejected: value of kind '${kind}' is not assignable to ` +
-      `path '${dotted}' (slim primitive set: { ${acceptedList} }). ` +
-      `Refinement-level constraints (.email(), .min(N), enum membership, etc.) are NOT ` +
-      `enforced at write time — only the primitive shape. The write was a no-op.`
+    `[@chemical-x/forms] Cannot write a ${kind} to '${dotted}' — the schema expects ${expected}.\n` +
+      `  The write was a no-op.`
   )
+}
+
+function formatExpectedKinds(accepted: Set<SlimPrimitiveKind>): string {
+  const list = [...accepted].sort()
+  if (list.length === 1) return list[0] as string
+  if (list.length === 2) return `${list[0]} or ${list[1]}`
+  return `one of: ${list.join(', ')}`
 }

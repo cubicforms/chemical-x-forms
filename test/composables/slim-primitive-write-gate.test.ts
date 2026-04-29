@@ -196,6 +196,22 @@ describe('slim-primitive write gate — rejected writes (wrong primitive)', () =
     expect(message).toMatch(/string|number/)
   })
 
+  it('string-to-number rejection points at the v-register fix paths (type="number" or .number)', async () => {
+    // KISS rule for warns: tell the dev what to do, not just what's
+    // wrong. The string-to-number case is the most common slim-gate
+    // rejection in real apps (a plain `<input v-register>` against a
+    // `z.number()` field types as a string), so the warn must show
+    // both fixes verbatim.
+    const schema = z.object({ salary: z.number() })
+    const { api, app } = makeMounter(schema)()
+    apps.push(app)
+    ;(api.setValue as (path: 'salary', value: unknown) => boolean)('salary', '123')
+    await flush()
+    const message = warnSpy.mock.calls.flat().join(' ')
+    expect(message).toContain('type="number"')
+    expect(message).toContain('.number')
+  })
+
   it('repeated rejection at the same path emits ONE warn (one-shot dedupe)', async () => {
     const schema = z.object({ age: z.number() })
     const { api, app } = makeMounter(schema)()
@@ -384,5 +400,20 @@ describe('slim-primitive write gate — unknown schema paths', () => {
     expect(warnSpy).toHaveBeenCalled()
     const message = warnSpy.mock.calls.flat().join(' ')
     expect(message).toMatch(/address\.salary/)
+  })
+
+  it('unknown-path rejection tells the dev the path is not in the schema', async () => {
+    // KISS rule: name the actual problem ("not in your schema") so the
+    // dev can act on it without a domain lesson on slim primitives.
+    const schema = z.object({
+      address: z.object({ city: z.string() }),
+    })
+    const { api, app } = makeMounter(schema)()
+    apps.push(app)
+    ;(api.setValue as (path: string, value: unknown) => boolean)('address.salary', 'abc')
+    await flush()
+    const message = warnSpy.mock.calls.flat().join(' ')
+    expect(message).toContain('not in your schema')
+    expect(message).toContain('typo')
   })
 })

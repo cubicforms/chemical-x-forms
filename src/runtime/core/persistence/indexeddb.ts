@@ -1,3 +1,4 @@
+import { __DEV__ } from '../dev'
 import type { FormStorage } from '../../types/types-api'
 
 /**
@@ -9,6 +10,11 @@ import type { FormStorage } from '../../types/types-api'
  * Size budget: ≤1 KB gzip (verified via size-limit). Consumers who
  * want richer IDB features (indexes, cursors, transactions) should
  * roll their own `FormStorage`.
+ *
+ * Open failures (private mode, blocked DB, unsupported environment)
+ * resolve `dbPromise` to `null`; subsequent reads/writes silently
+ * no-op so the form stays usable. A one-shot dev warning surfaces
+ * the degradation so the developer notices.
  */
 
 const DB_NAME = 'chemical-x-forms'
@@ -16,6 +22,13 @@ const STORE_NAME = 'kv'
 const DB_VERSION = 1
 
 let dbPromise: Promise<IDBDatabase | null> | null = null
+// One-shot dev-warn flags for adapter-level failures. Module-scoped
+// so the warning only fires once per process — re-opening the DB
+// after `__resetIndexedDbForTests` clears `dbPromise` but leaves
+// these flags alone (tests that want a fresh warn-state should
+// reset them via the test hook below).
+let warnedOnOpenFailure = false
+let warnedOnWriteFailure = false
 
 function openDb(): Promise<IDBDatabase | null> {
   if (dbPromise !== null) return dbPromise
@@ -35,10 +48,29 @@ function openDb(): Promise<IDBDatabase | null> {
     request.onerror = () => {
       // Drop to null so subsequent calls don't retry a broken open —
       // the form just runs without persistence.
-      console.warn('[@chemical-x/forms] IndexedDB open failed; persistence disabled', request.error)
+      if (__DEV__ && !warnedOnOpenFailure) {
+        warnedOnOpenFailure = true
+        console.warn(
+          '[@chemical-x/forms] IndexedDB open failed; persistence disabled. ' +
+            'Common causes: private-mode disabled IDB, browser quota policy.',
+          request.error
+        )
+      }
       resolve(null)
     }
-    request.onblocked = () => resolve(null)
+    request.onblocked = () => {
+      if (__DEV__ && !warnedOnOpenFailure) {
+        warnedOnOpenFailure = true
+        console.warn(
+          '[@chemical-x/forms] IndexedDB open blocked (another tab holds an older version); persistence disabled until the conflict resolves.'
+        )
+      }
+      // `onblocked` is transient — the holding tab can close at any
+      // moment. Clear the cache so the next persistence call retries
+      // the open instead of permanently no-opping.
+      dbPromise = null
+      resolve(null)
+    }
   })
   return dbPromise
 }
@@ -97,7 +129,20 @@ function runWriteOp(fn: (store: IDBObjectStore) => void): Promise<void> {
         }
         fn(tx.objectStore(STORE_NAME))
         tx.oncomplete = () => resolve()
-        tx.onabort = () => resolve()
+        tx.onabort = () => {
+          // QuotaExceededError, version-change, constraint violation
+          // — all surface as a transaction abort. One-shot dev warn so
+          // the developer notices instead of silently losing writes.
+          if (__DEV__ && !warnedOnWriteFailure) {
+            warnedOnWriteFailure = true
+            console.warn(
+              '[@chemical-x/forms] IndexedDB transaction aborted; subsequent writes will silently no-op. ' +
+                'Common cause: storage quota exceeded.',
+              tx.error
+            )
+          }
+          resolve()
+        }
         tx.onerror = () => resolve()
       })
   )
@@ -140,4 +185,6 @@ export function createIndexedDbAdapter(): FormStorage {
  */
 export function __resetIndexedDbForTests(): void {
   dbPromise = null
+  warnedOnOpenFailure = false
+  warnedOnWriteFailure = false
 }

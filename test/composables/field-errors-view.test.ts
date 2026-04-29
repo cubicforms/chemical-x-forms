@@ -63,7 +63,9 @@ describe('fieldErrors — template-friendly Proxy view', () => {
     const { app, api } = mount()
     apps.push(app)
 
-    api.setFieldErrors([{ path: ['email'], message: 'bad email', formKey: api.key }])
+    api.setFieldErrors([
+      { path: ['email'], message: 'bad email', formKey: api.key, code: 'api:validation' },
+    ])
 
     // The whole point of this change: dot-access returns the array directly.
     expect(api.fieldErrors.email?.[0]?.message).toBe('bad email')
@@ -75,7 +77,9 @@ describe('fieldErrors — template-friendly Proxy view', () => {
 
     expect(api.fieldErrors.email).toBeUndefined()
 
-    api.setFieldErrors([{ path: ['email'], message: 'taken', formKey: api.key }])
+    api.setFieldErrors([
+      { path: ['email'], message: 'taken', formKey: api.key, code: 'api:validation' },
+    ])
     expect(api.fieldErrors.email?.[0]?.message).toBe('taken')
 
     api.clearFieldErrors('email')
@@ -89,8 +93,8 @@ describe('fieldErrors — template-friendly Proxy view', () => {
     expect(Object.keys(api.fieldErrors)).toEqual([])
 
     api.setFieldErrors([
-      { path: ['email'], message: 'bad email', formKey: api.key },
-      { path: ['password'], message: 'min 8', formKey: api.key },
+      { path: ['email'], message: 'bad email', formKey: api.key, code: 'api:validation' },
+      { path: ['password'], message: 'min 8', formKey: api.key, code: 'api:validation' },
     ])
 
     // Object.keys traverses the Proxy's ownKeys + getOwnPropertyDescriptor
@@ -102,11 +106,13 @@ describe('fieldErrors — template-friendly Proxy view', () => {
     const { app, api } = mount()
     apps.push(app)
 
-    api.setFieldErrors([{ path: ['email'], message: 'bad email', formKey: api.key }])
+    api.setFieldErrors([
+      { path: ['email'], message: 'bad email', formKey: api.key, code: 'api:validation' },
+    ])
 
     const serialised = JSON.parse(JSON.stringify(api.fieldErrors))
     expect(serialised).toEqual({
-      email: [{ path: ['email'], message: 'bad email', formKey: api.key }],
+      email: [{ path: ['email'], message: 'bad email', formKey: api.key, code: 'api:validation' }],
     })
   })
 
@@ -116,7 +122,9 @@ describe('fieldErrors — template-friendly Proxy view', () => {
 
     expect('email' in api.fieldErrors).toBe(false)
 
-    api.setFieldErrors([{ path: ['email'], message: 'bad email', formKey: api.key }])
+    api.setFieldErrors([
+      { path: ['email'], message: 'bad email', formKey: api.key, code: 'api:validation' },
+    ])
     expect('email' in api.fieldErrors).toBe(true)
     expect('password' in api.fieldErrors).toBe(false)
   })
@@ -144,7 +152,9 @@ describe('fieldErrors — readonly contract', () => {
     expect(() => {
       // @ts-expect-error — fieldErrors is Readonly at the type level;
       // we're proving the runtime trap matches the type promise.
-      api.fieldErrors.email = [{ path: ['email'], message: 'mutated directly', formKey: api.key }]
+      api.fieldErrors.email = [
+        { path: ['email'], message: 'mutated directly', formKey: api.key, code: 'api:validation' },
+      ]
     }).toThrow(TypeError)
 
     // Underlying record must remain empty.
@@ -156,7 +166,9 @@ describe('fieldErrors — readonly contract', () => {
     const { app, api } = mount()
     apps.push(app)
 
-    api.setFieldErrors([{ path: ['email'], message: 'bad email', formKey: api.key }])
+    api.setFieldErrors([
+      { path: ['email'], message: 'bad email', formKey: api.key, code: 'api:validation' },
+    ])
 
     expect(() => {
       // @ts-expect-error — see above.
@@ -195,7 +207,9 @@ describe('fieldErrors — reactivity in render scope', () => {
 
     expect(renderedMessage).toBe('')
 
-    api.setFieldErrors([{ path: ['email'], message: 'bad email', formKey: api.key }])
+    api.setFieldErrors([
+      { path: ['email'], message: 'bad email', formKey: api.key, code: 'api:validation' },
+    ])
     await nextTick()
     expect(renderedMessage).toBe('bad email')
 
@@ -218,10 +232,14 @@ describe('fieldErrors — reactivity in render scope', () => {
       }
     )
 
-    api.setFieldErrors([{ path: ['email'], message: 'first', formKey: api.key }])
+    api.setFieldErrors([
+      { path: ['email'], message: 'first', formKey: api.key, code: 'api:validation' },
+    ])
     await nextTick()
 
-    api.setFieldErrors([{ path: ['email'], message: 'second', formKey: api.key }])
+    api.setFieldErrors([
+      { path: ['email'], message: 'second', formKey: api.key, code: 'api:validation' },
+    ])
     await nextTick()
 
     api.clearFieldErrors('email')

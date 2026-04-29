@@ -160,7 +160,7 @@ Both resolution modes ref-count on the form's registry entry. In
 practice:
 
 - The form survives until every component that reached it unmounts.
-- You don't coordinate cleanup — it just works.
+- Cleanup is automatic — no explicit dispose call from the consumer.
 - A form accessed only by `useFormContext(key)` stays alive as long
   as at least one consumer is mounted, even if the original
   `useForm` owner unmounted first.

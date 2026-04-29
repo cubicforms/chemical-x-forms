@@ -43,16 +43,39 @@ export { useAbstractForm as useForm } from './runtime/composables/use-abstract-f
 // docblock for the type-erasure reasoning.
 export { useFormContext } from './runtime/composables/use-form-context'
 
+// Ambient bridge for components that wrap a single field and want to
+// re-bind v-register onto an inner native element. See
+// `docs/recipes/components.md` for usage; for compound components
+// reaching multiple fields, prefer `useFormContext`.
+export { useRegister } from './runtime/composables/use-register'
+
 // The v-register directive (registered automatically by createChemicalXForms,
 // but exported for advanced consumers who install directives themselves).
 export { vRegister, isRegisterValue, assignKey } from './runtime/core/directive'
+
+// The `unset` sentinel — pass in `defaultValues`, `setValue`, or `reset`
+// to mark a primitive leaf as displayed-empty while storage holds the
+// slim default. See `src/runtime/core/unset.ts` for the full docblock.
+export { unset, isUnset } from './runtime/core/unset'
+export type { Unset } from './runtime/core/unset'
+
+// Stable error-code identifiers for library-emitted ValidationErrors.
+// Use in tests and error-routing UI in place of brittle message-string
+// matching. `cx:` prefix denotes the framework-agnostic core; the Zod
+// adapter emits `zod:` codes (computed from `issue.code`) and consumer
+// codes use whatever prefix the consumer picks (`api:`, `auth:`, etc.).
+export { CxErrorCode } from './runtime/core/error-codes'
 
 // Public types
 export type {
   AbstractSchema,
   ApiErrorDetails,
+  ApiErrorEntry,
   ApiErrorEnvelope,
   ChemicalXFormsDefaults,
+  CurrentValueContext,
+  CurrentValueWithContext,
+  CustomDirectiveRegisterAssignerFn,
   DefaultValuesResponse,
   FieldState,
   FieldValidationConfig,
@@ -65,6 +88,7 @@ export type {
   FormStorageKind,
   HandleSubmit,
   HistoryConfig,
+  MetaTrackerValue,
   OnError,
   OnInvalidSubmitPolicy,
   OnSubmit,
@@ -73,11 +97,16 @@ export type {
   PersistConfigOptions,
   PersistIncludeMode,
   ReactiveValidationStatus,
+  RegisterDirective,
+  RegisterFlatPath,
   RegisterOptions,
+  RegisterSelectModifier,
+  RegisterTextModifier,
   RegisterValue,
   SetValueCallback,
   SetValuePayload,
   SettledValidationStatus,
+  SlimPrimitiveKind,
   SubmitHandler,
   UseAbstractFormReturnType,
   UseFormConfiguration,
@@ -90,6 +119,7 @@ export type {
 
 export type {
   DeepPartial,
+  DefaultValuesShape,
   FlatPath,
   GenericForm,
   IsTuple,

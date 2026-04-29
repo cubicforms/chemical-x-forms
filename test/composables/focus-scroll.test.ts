@@ -38,6 +38,7 @@ function mountWith(options: {
           message: `${k} is bad`,
           path: [k as string],
           formKey: 'focus-scroll-form',
+          code: 'cx:test-fixture',
         }))
         return {
           data: undefined,

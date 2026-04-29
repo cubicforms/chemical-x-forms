@@ -8,7 +8,13 @@ import type {
   ValidationMode,
 } from '../../types/types-api'
 
+/**
+ * Configuration object for the Zod v3 `useForm` overload. Same
+ * shape as the schema-agnostic `UseFormConfiguration`, but with
+ * `schema` constrained to a `z.ZodObject` (or wrapped form).
+ */
 export type UseFormConfigurationWithZod<Schema extends z.ZodType<unknown>, DefaultValues> = {
+  /** A Zod v3 `ZodObject` schema (or one wrapped in `.optional()` / `.nullable()` / `.default()` / `.refine()`). */
   schema: Schema extends z.ZodType<unknown>
     ? UnwrapZodObject<Schema> extends z.ZodObject<z.ZodRawShape>
       ? Schema
@@ -27,7 +33,14 @@ export type UseFormConfigurationWithZod<Schema extends z.ZodType<unknown>, Defau
   history?: HistoryConfig
 }
 
-// Recursively unwraps Zod types like ZodDefault, ZodOptional, ZodNullable, etc.
+/**
+ * Peel `.optional()` / `.nullable()` / `.default()` / `.refine()` /
+ * `.transform()` wrappers off a Zod v3 schema to reach the inner
+ * `ZodObject`. Returns `never` if no `ZodObject` is found.
+ *
+ * Used internally by the v3 `useForm` overload to verify the
+ * supplied schema bottoms out at a `ZodObject`.
+ */
 export type UnwrapZodObject<T> =
   T extends z.ZodEffects<infer Inner>
     ? UnwrapZodObject<Inner>

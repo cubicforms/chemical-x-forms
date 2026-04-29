@@ -1,19 +1,24 @@
 import { InvalidPathError } from './errors'
 
 /**
- * Structured path primitives. The core runtime treats paths as
- * `readonly Segment[]` internally; dotted-string inputs are canonicalised at
- * public API boundaries. This keeps field names containing `.` lossless when
- * the array form is used, and matches lodash `get` semantics for numeric
- * segments (integer-looking strings normalise to numbers).
+ * Path primitives for advanced integrations. The form library accepts
+ * paths in dotted-string form (`'user.email'`) at every public API.
+ * These primitives are exposed for adapter authors who need to
+ * canonicalise user-provided paths.
  */
 
 declare const pathKeyBrand: unique symbol
 
-/** A stable Map-key derived from a canonical Path. Not parseable; compare by equality only. */
+/**
+ * Branded string identifier for a canonicalised path. Useful as a
+ * `Map` key — two paths that resolve to the same canonical form
+ * produce the same `PathKey`. Treat as opaque; don't try to parse.
+ */
 export type PathKey = string & { readonly [pathKeyBrand]: 'PathKey' }
 
+/** A single path segment — a property name or array index. */
 export type Segment = string | number
+/** A structured path as a read-only sequence of segments. */
 export type Path = readonly Segment[]
 
 /** Tests an integer-like string without leading zeros. `'0'` | `'1'` | `'42'` pass; `'01'`, `'-1'`, `'1.5'` do not. */
@@ -36,13 +41,17 @@ function normalizeSegment(raw: Segment): Segment {
 }
 
 /**
- * Parse a dotted-string path into segments.
+ * Parse a dotted-string path into structured segments.
  *
- * - `''` parses to an empty path (represents the root of the form).
- * - Empty segments between dots (e.g. `'a..b'`) throw `InvalidPathError`.
- * - Whitespace is NOT trimmed; `' a'` is a segment with a literal leading
- *   space. Use array form for unusual keys.
- * - Integer-looking segments normalise to numbers.
+ * ```ts
+ * parseDottedPath('user.address.line1')   // ['user', 'address', 'line1']
+ * parseDottedPath('items.0.name')         // ['items', 0, 'name']
+ * parseDottedPath('')                     // [] (root)
+ * ```
+ *
+ * Throws `InvalidPathError` for paths with empty segments
+ * (`'a..b'`, leading or trailing dots). For keys containing literal
+ * dots, pass an array form (`['user.name']`) instead.
  */
 export function parseDottedPath(path: string): Segment[] {
   if (path.length === 0) return []
@@ -79,14 +88,20 @@ const CANONICAL_STRING_CACHE_MAX = 128
 const canonicalStringCache = new Map<string, { segments: readonly Segment[]; key: PathKey }>()
 
 /**
- * Canonicalise a path input into a structured form plus a stable string key.
- * Accepts either dotted-string or array form; array form is lossless.
+ * Canonicalise a path into structured segments plus a stable string
+ * key. Accepts either dotted-string or array form; integer-looking
+ * segments normalise to numbers.
  *
- * The PathKey is derived via `JSON.stringify` on the normalised segments,
- * guaranteeing collision-free encoding even if segment strings contain the
- * null byte or any other character.
+ * ```ts
+ * canonicalizePath('items.0.name')
+ * // { segments: ['items', 0, 'name'], key: '["items",0,"name"]' as PathKey }
  *
- * Dotted-string inputs are LRU-cached; see `canonicalStringCache` above.
+ * canonicalizePath(['items', 0, 'name'])
+ * // → same result
+ * ```
+ *
+ * The returned `key` is suitable as a `Map`/`Set` key — equal paths
+ * produce equal keys regardless of input form.
  */
 export function canonicalizePath(input: string | Path): {
   segments: readonly Segment[]
@@ -118,6 +133,10 @@ export function canonicalizePath(input: string | Path): {
   return { segments, key }
 }
 
-/** The root path: an empty tuple. `PathKey` is `'[]'`. */
+/**
+ * The root path — an empty segment tuple. Pass to APIs that accept
+ * a `Path` to address the form value as a whole.
+ */
 export const ROOT_PATH: Path = Object.freeze([])
+/** Stable string key for the root path. */
 export const ROOT_PATH_KEY = '[]' as PathKey

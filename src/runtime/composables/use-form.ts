@@ -5,7 +5,7 @@ import type {
   UseAbstractFormReturnType,
   UseFormConfiguration,
 } from '../types/types-api'
-import type { DeepPartial, GenericForm } from '../types/types-core'
+import type { DeepPartial, DefaultValuesShape, GenericForm } from '../types/types-core'
 import type { TypeWithNullableDynamicKeys } from '../adapters/zod-v3/types-zod'
 import type {
   UnwrapZodObject,
@@ -13,20 +13,58 @@ import type {
 } from '../adapters/zod-v3/types-zod-adapter'
 import { useAbstractForm } from './use-abstract-form'
 
-// Overload the useForm type definition to signal that zod schemas have 1st class support
+/**
+ * Create a form bound to a custom `AbstractSchema` adapter.
+ *
+ * ```ts
+ * import { useForm } from '@chemical-x/forms/zod-v3'
+ *
+ * const form = useForm({ schema: myAdapter, defaultValues: { … } })
+ * ```
+ *
+ * For Zod schemas, prefer the overload that accepts a `ZodObject`
+ * directly — it wraps the adapter automatically. For Zod v4, import
+ * from `@chemical-x/forms/zod` instead.
+ */
 export function useForm<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
   configuration: UseFormConfiguration<
     Form,
     GetValueFormType,
     AbstractSchema<Form, GetValueFormType>,
-    DeepPartial<Form>
+    DeepPartial<DefaultValuesShape<Form>>
   >
 ): UseAbstractFormReturnType<Form, GetValueFormType>
+/**
+ * Create a form bound to a Zod v3 `ZodObject` schema.
+ *
+ * ```ts
+ * import { useForm } from '@chemical-x/forms/zod-v3'
+ * import { z } from 'zod'
+ *
+ * const form = useForm({
+ *   schema: z.object({
+ *     email: z.string().email(),
+ *     password: z.string().min(8),
+ *   }),
+ *   defaultValues: { email: '' },
+ *   fieldValidation: { on: 'blur' },
+ * })
+ * ```
+ *
+ * Returns a form API exposing `register`, `getValue`, `setValue`,
+ * `handleSubmit`, `state`, field-array helpers, and more. See
+ * `UseAbstractFormReturnType` for the full surface.
+ *
+ * For Zod v4, import from `@chemical-x/forms/zod` instead.
+ */
 export function useForm<
   Schema extends z.ZodObject<z.ZodRawShape>,
   GetValueFormType extends GenericForm = TypeWithNullableDynamicKeys<Schema>,
 >(
-  configuration: UseFormConfigurationWithZod<Schema, DeepPartial<z.infer<UnwrapZodObject<Schema>>>>
+  configuration: UseFormConfigurationWithZod<
+    Schema,
+    DeepPartial<DefaultValuesShape<z.infer<UnwrapZodObject<Schema>>>>
+  >
 ): UseAbstractFormReturnType<z.infer<UnwrapZodObject<Schema>>, GetValueFormType>
 export function useForm<
   Schema extends z.ZodSchema<unknown>,
@@ -38,9 +76,12 @@ export function useForm<
         Form,
         GetValueFormType,
         AbstractSchema<Form, GetValueFormType>,
-        DeepPartial<Form>
+        DeepPartial<DefaultValuesShape<Form>>
       >
-    | UseFormConfigurationWithZod<Schema, DeepPartial<z.infer<UnwrapZodObject<Schema>>>>
+    | UseFormConfigurationWithZod<
+        Schema,
+        DeepPartial<DefaultValuesShape<z.infer<UnwrapZodObject<Schema>>>>
+      >
 ): UseAbstractFormReturnType<Form, GetValueFormType> {
   function isZodType(value: unknown): value is z.ZodType {
     return typeof value === 'object' && value !== null && '_def' in value
@@ -66,9 +107,9 @@ export function useForm<
       Form,
       GetValueFormType,
       AbstractSchema<Form, GetValueFormType>,
-      DeepPartial<Form>
+      DeepPartial<DefaultValuesShape<Form>>
     >),
     schema: abstractSchema,
-    defaultValues: configuration.defaultValues as DeepPartial<Form>,
+    defaultValues: configuration.defaultValues as DeepPartial<DefaultValuesShape<Form>>,
   })
 }

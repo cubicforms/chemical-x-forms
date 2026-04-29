@@ -30,7 +30,7 @@ import { selectNodeTransform } from './runtime/lib/core/transforms/select-transf
 import { vRegisterHintTransform } from './runtime/lib/core/transforms/v-register-hint-transform'
 import { vRegisterPreambleTransform } from './runtime/lib/core/transforms/v-register-preamble-transform'
 
-/** Reserved for future options. Empty at the moment. */
+/** Options for `chemicalXForms()`. Reserved for future use; pass `{}` or omit. */
 export type ChemicalXVitePluginOptions = Record<string, never>
 
 interface VitePluginVueApi {
@@ -43,6 +43,24 @@ interface VitePluginVueApi {
   }
 }
 
+/**
+ * Vite plugin that wires the form library's compile-time template
+ * transforms into `@vitejs/plugin-vue`. Required for SSR and for
+ * hydration accuracy under bare Vue 3.
+ *
+ * ```ts
+ * // vite.config.ts
+ * import vue from '@vitejs/plugin-vue'
+ * import { chemicalXForms } from '@chemical-x/forms/vite'
+ *
+ * export default defineConfig({
+ *   plugins: [vue(), chemicalXForms()],
+ * })
+ * ```
+ *
+ * Place the call after `vue()` in the plugins array. Nuxt projects
+ * don't need this — `@chemical-x/forms/nuxt` handles it.
+ */
 export function chemicalXForms(_options: ChemicalXVitePluginOptions = {}): Plugin {
   // Unused-var suppression until options exist.
   void _options
@@ -51,16 +69,36 @@ export function chemicalXForms(_options: ChemicalXVitePluginOptions = {}): Plugi
     enforce: 'pre',
     configResolved(resolved) {
       const vuePlugin = resolved.plugins.find((p) => p.name === 'vite:vue')
-      const api = (vuePlugin as unknown as { api?: VitePluginVueApi } | undefined)?.api
+      // Two distinct failure modes — separate error messages so the
+      // consumer's fix is unambiguous:
+      //   1. plugin not in the plugins array → install + register vue()
+      //   2. plugin found but version-incompatible (no `api.options`) →
+      //      version mismatch with @vitejs/plugin-vue
+      if (vuePlugin === undefined) {
+        throw new Error(
+          '[@chemical-x/forms/vite] @vitejs/plugin-vue is not installed (or not registered before chemicalXForms()). ' +
+            'Install @vitejs/plugin-vue and place `chemicalXForms()` after `vue()` in your plugins array.'
+        )
+      }
+      const api = (vuePlugin as unknown as { api?: VitePluginVueApi }).api
       if (api?.options === undefined) {
         throw new Error(
-          '[@chemical-x/forms/vite] Could not find @vitejs/plugin-vue. ' +
-            'Install @vitejs/plugin-vue and place `chemicalXForms()` after `vue()` in your plugins array.'
+          '[@chemical-x/forms/vite] Found @vitejs/plugin-vue but it does not expose `api.options`. ' +
+            'This usually means a version-incompatible @vitejs/plugin-vue (or a wrapper plugin re-exporting it). ' +
+            'Pin @vitejs/plugin-vue to a version compatible with the documented `api.options.template.compilerOptions.nodeTransforms` surface.'
         )
       }
       api.options.template ??= {}
       api.options.template.compilerOptions ??= {}
       const existing = api.options.template.compilerOptions.nodeTransforms ?? []
+      // Idempotent install: if a previous chemicalXForms() invocation
+      // (vite + nuxt module + manual `plugins: [chemicalXForms()]`) has
+      // already pushed our transforms, skip — re-pushing would double
+      // every binding the AST emits, breaking the IIFE-wrapping
+      // invariants downstream transforms depend on. We detect the
+      // sentinel via reference equality; user-supplied transforms with
+      // the same name don't collide.
+      if (existing.includes(vRegisterPreambleTransform as unknown)) return
       // vRegisterPreambleTransform MUST come before vRegisterHintTransform
       // — the preamble's pre-order captures each `v-register` expression
       // in its raw (un-wrapped) form, and the hint then mutates the same

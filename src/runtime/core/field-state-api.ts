@@ -28,6 +28,12 @@ export type FieldStateView = {
   readonly updatedAt: string | null
   readonly errors: ValidationError[]
   readonly path: Path
+  /**
+   * `true` when this path is in the form's transient-empty set —
+   * storage holds the slim default but the UI displays empty.
+   * See `MetaTrackerValue.pendingEmpty` for the full contract.
+   */
+  readonly pendingEmpty: boolean
 }
 
 export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<F>) {
@@ -65,6 +71,7 @@ export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<
         updatedAt: record?.updatedAt ?? null,
         errors,
         path: segments,
+        pendingEmpty: state.transientEmptyPaths.has(key),
       }
     })
   }

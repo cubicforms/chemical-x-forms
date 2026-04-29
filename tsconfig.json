@@ -31,6 +31,7 @@
       "@chemical-x/forms/zod-v3": ["./src/zod-v3.ts"]
     },
     "removeComments": false,
+    "stripInternal": true,
     "strictBuiltinIteratorReturn": true,
     "esModuleInterop": true,
     "emitDeclarationOnly": false,

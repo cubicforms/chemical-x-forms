@@ -82,7 +82,9 @@ describe('useForm — reset()', () => {
   it('clears errors pre-populated via setFieldErrors', () => {
     const { app, form } = harness()
     apps.push(app)
-    form.setFieldErrors([{ path: ['email'], message: 'taken', formKey: form.key }])
+    form.setFieldErrors([
+      { path: ['email'], message: 'taken', formKey: form.key, code: 'api:validation' },
+    ])
     expect(form.state.isValid).toBe(false)
 
     form.reset()
@@ -151,8 +153,8 @@ describe('useForm — resetField(path)', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setFieldErrors([
-      { path: ['email'], message: 'email error', formKey: form.key },
-      { path: ['password'], message: 'password error', formKey: form.key },
+      { path: ['email'], message: 'email error', formKey: form.key, code: 'api:validation' },
+      { path: ['password'], message: 'password error', formKey: form.key, code: 'api:validation' },
     ])
 
     form.resetField('email')

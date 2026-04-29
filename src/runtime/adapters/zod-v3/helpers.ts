@@ -25,11 +25,31 @@ type ZodTypeMap = {
   ZodNumber: z.ZodNumber
   ZodBigInt: z.ZodBigInt
   ZodDate: z.ZodDate
+  // Newer wrappers (v3.23+ for Pipeline/Readonly; Branded/Catch
+  // pre-existed). Use proper class generics so the predicate's
+  // narrowing target is structurally distinct from the existing
+  // entries — falling back to `z.ZodTypeAny` collapses TS's flow
+  // analysis through later branches into `never`.
+  ZodPipeline: z.ZodPipeline<z.ZodTypeAny, z.ZodTypeAny>
+  ZodReadonly: z.ZodReadonly<z.ZodTypeAny>
+  ZodBranded: z.ZodBranded<z.ZodTypeAny, string | number | symbol>
+  ZodCatch: z.ZodCatch<z.ZodTypeAny>
+  ZodIntersection: z.ZodIntersection<z.ZodTypeAny, z.ZodTypeAny>
 }
 
 /**
- * Checks if `schema` is a Zod schema of the given `expectedType`.
- * Returns true if it matches, with a type predicate to narrow the schema type.
+ * Type guard for a Zod v3 schema kind. Returns `true` when `schema`
+ * is a Zod v3 instance of the named kind (`ZodString`, `ZodObject`,
+ * etc.) and narrows the type accordingly.
+ *
+ * ```ts
+ * if (isZodSchemaType(schema, 'ZodObject')) {
+ *   // schema is now typed as z.AnyZodObject
+ * }
+ * ```
+ *
+ * Useful when building adapters or introspection helpers that branch
+ * on schema shape. Most consumers don't need this.
  */
 export function isZodSchemaType<K extends keyof ZodTypeMap>(
   schema: unknown,

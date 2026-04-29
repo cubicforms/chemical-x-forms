@@ -10,7 +10,11 @@
  */
 import type { z } from 'zod'
 
-/** Our stable discriminant. Decouples adapter code from Zod's internal type strings. */
+/**
+ * Stable kind discriminant for a Zod v4 schema. Returned by
+ * `kindOf(schema)`. Use when building a custom integration that
+ * needs to branch on schema shape — most consumers don't need this.
+ */
 export type ZodKind =
   | 'object'
   | 'array'
@@ -79,7 +83,13 @@ function readDef(schema: unknown): ZodInternalShape['def'] | undefined {
   return (schema as ZodInternalShape).def
 }
 
-/** Returns our stable ZodKind, or 'unknown' if the schema shape doesn't match a known form. */
+/**
+ * Inspect a Zod v4 schema and return its `ZodKind`. Returns
+ * `'unknown'` for non-Zod inputs and unrecognised shapes.
+ *
+ * Useful when writing introspection helpers that branch on schema
+ * structure (e.g. custom error formatters or doc generators).
+ */
 export function kindOf(schema: unknown): ZodKind {
   const def = readDef(schema)
   const rawType = def?.type
@@ -292,9 +302,12 @@ export function getDiscriminatedOptions(schema: z.ZodType): readonly z.ZodObject
 }
 
 /**
- * Runtime-side assertion: confirms the given schema exposes v4 internals.
- * Every adapter entry point calls this on first use so a v3-installed
- * consumer importing `/zod` gets a clear error instead of a mystery.
+ * Verify a schema is Zod v4. Throws a clear error if it's a v3
+ * schema mistakenly imported through `@chemical-x/forms/zod`.
+ *
+ * Most consumers never call this directly — the v4 adapter calls it
+ * internally on every schema. Reach for it only when wiring a custom
+ * adapter that needs the same guard.
  */
 export function assertZodVersion(schema: unknown): void {
   const def = readDef(schema)

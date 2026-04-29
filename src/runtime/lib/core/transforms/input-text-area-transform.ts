@@ -1,16 +1,13 @@
 import type {
   AttributeNode,
-  ComponentNode,
   CompoundExpressionNode,
   DirectiveNode,
   ExpressionNode,
   NodeTransform,
   PlainElementNode,
   RootNode,
-  SlotOutletNode,
   SourceLocation,
   TemplateChildNode,
-  TemplateNode,
 } from '@vue/compiler-core'
 import { createCompoundExpression, NodeTypes } from '@vue/compiler-core'
 
@@ -149,6 +146,15 @@ function couldResolveToFileType(value: SummarizedProp['value']): boolean {
   return inner.toLowerCase() === 'file'
 }
 
+/**
+ * Vue compiler node transform for `<input v-register>` and
+ * `<textarea v-register>`. Injects the `:value` / `:checked`
+ * bindings required for SSR-correct initial render.
+ *
+ * Wired automatically by `@chemical-x/forms/vite` and
+ * `@chemical-x/forms/nuxt`. Use directly only when integrating with
+ * a custom bundler.
+ */
 export const inputTextAreaNodeTransform: NodeTransform = (node) => {
   try {
     if (node.type !== NodeTypes.ELEMENT) return
@@ -206,26 +212,38 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
       ") ? 'checked' : 'value'",
     ])
 
+    // Narrowed from `PlainElementNode | ComponentNode | SlotOutletNode |
+    // TemplateNode` — `<input>` / `<textarea>` are always PlainElementNode
+    // in Vue's AST. The previous wide union let a TemplateNode slip
+    // through and crash on `_node.props`.
     function computeProps(
-      _node: PlainElementNode | ComponentNode | SlotOutletNode | TemplateNode,
+      _node: PlainElementNode,
       registerSummarizedProp: SummarizedProp,
       elementValueSummarizedProp: SummarizedProp
     ): void {
-      const dummyLoc: SourceLocation = {
-        start: { column: 0, line: 0, offset: 0 },
-        end: { column: 0, line: 0, offset: 0 },
-        source: '',
-      }
+      // Reuse the originating element's source location for the
+      // injected directive — runtime errors in the synthesized expression
+      // get reported at the v-register binding site rather than line 0.
+      const injectedLoc: SourceLocation = _node.loc
 
       const props = _node.props
       removePropsByName(props, ['checked', 'value']) // (re)create the `value` prop further down
       const registerValueArr = Array.isArray(registerSummarizedProp.value)
         ? registerSummarizedProp.value
         : [registerSummarizedProp.value]
+      // Read `displayValue.value` rather than `innerRef.value` so the
+      // `:value` binding renders the transient-empty `''` when the
+      // user clears a numeric field. `displayValue` returns
+      // `String(storage)` for non-empty storage and `''` for both
+      // null/undefined storage and paths in the form's
+      // `transientEmptyPaths` set — a single read surface for the
+      // injected expression. For checkbox / radio (the ternary's
+      // truthy branch above), this leg is unreached, so behaviour
+      // there is unchanged.
       const valueExpression = createCompoundExpression([
         '(',
         ...registerValueArr,
-        ')?.innerRef?.value',
+        ')?.displayValue?.value',
       ])
       const valueOrCheckedProp: DirectiveNode = {
         // reconstruct the `value` attribute based on the provided v-registerer, now that the computation is complete
@@ -247,13 +265,16 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
         name: 'bind',
         modifiers: [],
         type: NodeTypes.DIRECTIVE,
-        loc: dummyLoc,
+        loc: injectedLoc,
       }
 
       props.push(valueOrCheckedProp)
     }
 
-    computeProps(node, registerSummarizedProp, elementValueSummarizedProp)
+    // The outer guards (`node.type === NodeTypes.ELEMENT` + `node.tag
+    // === 'input' | 'textarea'`) narrow `node` to a PlainElementNode
+    // at runtime; the cast records that for the type system.
+    computeProps(node as PlainElementNode, registerSummarizedProp, elementValueSummarizedProp)
   } catch (err) {
     // AST shapes can shift with minor Vue compiler updates. If we hit
     // anything unexpected, skip this transform — the runtime directive

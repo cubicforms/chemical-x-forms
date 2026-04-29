@@ -197,6 +197,9 @@ describe('zod v3 adapter — validator error paths (refine / superRefine / trans
     expect(result.errors).toHaveLength(1)
     expect(result.errors?.[0]?.path).toEqual(['username'])
     expect(result.errors?.[0]?.message).toBe('too short')
+    // .refine emits Zod's `custom` issue code; the adapter forwards it
+    // verbatim under the `zod:` prefix.
+    expect(result.errors?.[0]?.code).toBe('zod:custom')
   })
 
   it('.refine with explicit path redirects the error', async () => {

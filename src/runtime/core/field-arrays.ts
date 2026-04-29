@@ -24,13 +24,13 @@ import { canonicalizePath } from './paths'
  */
 
 export type FieldArrayApi = {
-  append(path: string, value: unknown): void
-  prepend(path: string, value: unknown): void
-  insert(path: string, index: number, value: unknown): void
-  remove(path: string, index: number): void
-  swap(path: string, a: number, b: number): void
-  move(path: string, from: number, to: number): void
-  replace(path: string, index: number, value: unknown): void
+  append(path: string, value: unknown): boolean
+  prepend(path: string, value: unknown): boolean
+  insert(path: string, index: number, value: unknown): boolean
+  remove(path: string, index: number): boolean
+  swap(path: string, a: number, b: number): boolean
+  move(path: string, from: number, to: number): boolean
+  replace(path: string, index: number, value: unknown): boolean
 }
 
 export function buildFieldArrayApi<F extends GenericForm>(state: FormStore<F>): FieldArrayApi {
@@ -45,14 +45,14 @@ export function buildFieldArrayApi<F extends GenericForm>(state: FormStore<F>): 
     return Array.isArray(current) ? current.slice() : []
   }
 
-  function writeArray(path: string, next: unknown[]): void {
+  function writeArray(path: string, next: unknown[]): boolean {
     const { segments, key } = canonicalizePath(path)
     // Persist iff some element has opted into this exact array path. If
     // the consumer opted into specific leaves (e.g. 'contacts.0.name')
     // an `append('contacts', row)` falls through — the array root has
     // no opt-in, so it doesn't persist. Coherent: "you opted to persist
     // a leaf, not the array structure."
-    state.setValueAtPath(segments, next, {
+    return state.setValueAtPath(segments, next, {
       persist: state.persistOptIns.hasAnyOptInForPath(key),
     })
   }
@@ -61,12 +61,12 @@ export function buildFieldArrayApi<F extends GenericForm>(state: FormStore<F>): 
     append(path, value) {
       const next = readArray(path)
       next.push(value)
-      writeArray(path, next)
+      return writeArray(path, next)
     },
     prepend(path, value) {
       const next = readArray(path)
       next.unshift(value)
-      writeArray(path, next)
+      return writeArray(path, next)
     },
     insert(path, index, value) {
       const next = readArray(path)
@@ -74,37 +74,37 @@ export function buildFieldArrayApi<F extends GenericForm>(state: FormStore<F>): 
       // the end. We pass through untouched — Array semantics are the
       // consumer's expected behaviour here.
       next.splice(index, 0, value)
-      writeArray(path, next)
+      return writeArray(path, next)
     },
     remove(path, index) {
       const next = readArray(path)
-      if (index < 0 || index >= next.length) return
+      if (index < 0 || index >= next.length) return false
       next.splice(index, 1)
-      writeArray(path, next)
+      return writeArray(path, next)
     },
     swap(path, a, b) {
       const next = readArray(path)
-      if (a < 0 || a >= next.length) return
-      if (b < 0 || b >= next.length) return
-      if (a === b) return
+      if (a < 0 || a >= next.length) return false
+      if (b < 0 || b >= next.length) return false
+      if (a === b) return false
       const tmp = next[a]
-      next[a] = next[b] as unknown
+      next[a] = next[b]
       next[b] = tmp
-      writeArray(path, next)
+      return writeArray(path, next)
     },
     move(path, from, to) {
       const next = readArray(path)
-      if (from < 0 || from >= next.length) return
+      if (from < 0 || from >= next.length) return false
       const [item] = next.splice(from, 1)
       const clampedTo = Math.max(0, Math.min(to, next.length))
       next.splice(clampedTo, 0, item)
-      writeArray(path, next)
+      return writeArray(path, next)
     },
     replace(path, index, value) {
       const next = readArray(path)
-      if (index < 0 || index >= next.length) return
+      if (index < 0 || index >= next.length) return false
       next[index] = value
-      writeArray(path, next)
+      return writeArray(path, next)
     },
   }
 }

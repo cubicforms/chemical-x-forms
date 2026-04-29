@@ -107,6 +107,15 @@ function generateEqualityExpression(
 
     // capture the current expression for the next round
     _previousOptionExpressions.push(['(', ...selectValueArr, ') === (', ...optionValueArr, ')'])
+    // Single-select branch String-coerces both sides to mirror the
+    // runtime directive's `looseEqual`-style match — a typed-numeric
+    // model (`z.number()`) matches `<option value="1">` at SSR time.
+    // The `typeof !== 'object'` guard preserves the pre-existing
+    // "array model on a single-select doesn't match" behaviour: an
+    // array stringifies to its joined elements, which would otherwise
+    // false-positive against a single-element option.
+    // The multi-select branch keeps `innerRef.value` because Array
+    // / Set models need findIndex / membership iteration.
     if (!noMultipleOptExpressions.length) {
       return [
         '(',
@@ -115,11 +124,13 @@ function generateEqualityExpression(
         ...selectValueArr,
         `)?.innerRef?.value?.findIndex?.(el => el === (`,
         ...optionValueArr,
-        `)) > -1) : ((`,
+        `)) > -1) : (typeof (`,
         ...selectValueArr,
-        `)?.innerRef?.value === (`,
+        `)?.innerRef?.value !== 'object' && String((`,
+        ...selectValueArr,
+        `)?.innerRef?.value) === String((`,
         ...optionValueArr,
-        `))`,
+        `)))`,
       ]
     }
 
@@ -132,11 +143,13 @@ function generateEqualityExpression(
       ...optionValueArr,
       `)) > -1) : ((`,
       ...noMultipleOptExpressions, // if true, we already found the relevant option
-      `) ? false : ((`,
+      `) ? false : (typeof (`,
       ...selectValueArr,
-      `)?.innerRef?.value === (`,
+      `)?.innerRef?.value !== 'object' && String((`,
+      ...selectValueArr,
+      `)?.innerRef?.value) === String((`,
       ...optionValueArr,
-      `)))`,
+      `))))`,
     ]
   }
 
@@ -217,6 +230,71 @@ const RECURSABLE_NODE_TYPES: ReadonlySet<number> = new Set<number>([
   NodeTypes.IF_BRANCH,
 ])
 
+// Native form-shell tags excluded from the kebab-case extension. The
+// hyphen check on `node.tag` already excludes most native HTML tags
+// (which have no hyphen), but listing the form-shell ones explicitly
+// documents the conservative stance: even if a future native tag like
+// `<my-form-something>` lands, it won't accidentally collide with a
+// custom-element transform branch. `<input>`, `<select>`, `<textarea>`
+// already have dedicated branches via inputTextAreaNodeTransform and
+// the isSelect path above; the others (form, fieldset, label, button,
+// option) carry no meaningful v-register binding and shouldn't be
+// rewritten with component-style props.
+const NATIVE_FORM_TAGS: ReadonlySet<string> = new Set<string>([
+  'input',
+  'textarea',
+  'select',
+  'option',
+  'form',
+  'fieldset',
+  'label',
+  'button',
+])
+
+/**
+ * Synthesise a static value for `<option>foo</option>` (no `value=`
+ * attr). Returns the text content as a single-quoted JS string literal
+ * so the equality check rendered into the AST treats it as a string.
+ *
+ * Returns:
+ *   - quoted-string `"'apple'"` for a single static text child,
+ *   - `null` for mixed / dynamic / empty children — caller skips the
+ *     binding rather than synthesise a guess.
+ *
+ * The HTML spec says an option's value defaults to its descendant
+ * text. We restrict to "single static text node" to keep the
+ * code-path safe: handling interpolation correctly would need a
+ * wrapped runtime expression, which we can't emit at compile time
+ * without leaking runtime references that may not exist in the
+ * template's binding scope.
+ */
+function inferOptionValueFromChildren(node: TemplateChildNode | RootNode): string | null {
+  if (!('children' in node)) return null
+  const children = node.children
+  if (children.length !== 1) return null
+  const only = children[0]
+  if (only === undefined) return null
+  if (typeof only === 'string' || typeof only === 'symbol') return null
+  if (only.type !== NodeTypes.TEXT) return null
+  // Mirror Vue's option-value semantic: trim leading/trailing whitespace
+  // so `<option> apple </option>` matches a model value of `'apple'`.
+  const text = only.content.trim()
+  // Emit a fully escaped JS string literal — `JSON.stringify` covers
+  // backslashes, quotes, and line terminators (`\n`, `\r`, U+2028,
+  // U+2029) so the synthesized literal stays single-line and valid.
+  return JSON.stringify(text)
+}
+
+/**
+ * Vue compiler node transform for `<select v-register>` and any
+ * component that wraps a select. Injects the `:value` /
+ * `:registerValue` bridge bindings the runtime directive needs to
+ * pre-mark selected options at SSR time.
+ *
+ * Wired automatically by `@chemical-x/forms/vite` and
+ * `@chemical-x/forms/nuxt`. Use directly only when integrating with
+ * a custom bundler.
+ */
 export const selectNodeTransform: NodeTransform = (node, context) => {
   // Snapshot every prop array we're about to mutate so a throw
   // mid-traversal rewinds to the pre-transform state. Without this,
@@ -236,8 +314,29 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
     const isSelect = node.type === NodeTypes.ELEMENT && node.tag === 'select'
     const isCustomComponent =
       node.type === NodeTypes.ELEMENT && node.tagType === ElementTypes.COMPONENT
+    // Kebab-case tags (those with a hyphen, like `<my-input>`) compile
+    // as `tagType === ElementTypes.ELEMENT` — Vue's compiler can't tell
+    // statically whether the tag will resolve to an `app.component`
+    // registration or to a user-supplied `compilerOptions.isCustomElement`
+    // predicate, so it emits an element creation that the runtime
+    // disambiguates. The transform fires the bridge prop injection on
+    // these tags too: a kebab-case Vue component sees `useRegister`
+    // work in its setup; a real Web Component sees `:value` /
+    // `:registerValue` as DOM attributes (the documented `assignKey`
+    // escape hatch handles that interop).
+    //
+    // NATIVE_FORM_TAGS keeps the conservative stance: only inject on
+    // tags Vue would NEVER treat as a component. The hyphen check
+    // already excludes most native HTML tags (which have no hyphen);
+    // the explicit list documents the contract and guards against
+    // hypothetical future native form tags with hyphens.
+    const isKebabCustomElement =
+      node.type === NodeTypes.ELEMENT &&
+      node.tagType === ElementTypes.ELEMENT &&
+      node.tag.includes('-') &&
+      !NATIVE_FORM_TAGS.has(node.tag)
 
-    if (!(isSelect || isCustomComponent)) return
+    if (!(isSelect || isCustomComponent || isKebabCustomElement)) return
 
     const selectSummarizedProps = getSummarizedProps(node)
 
@@ -251,11 +350,10 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
 
     const registerSummarizedProp = selectSummarizedProps[registerIndex]
 
-    const dummyLoc: SourceLocation = {
-      start: { column: 0, line: 0, offset: 0 },
-      end: { column: 0, line: 0, offset: 0 },
-      source: '',
-    }
+    // Inject location matches the originating element so source maps
+    // for runtime errors in the synthesized expressions point at the
+    // user's <select v-register=...> rather than line 0.
+    const selectLoc: SourceLocation = node.loc
 
     function traverseSelectNode(
       _node: RootNode | TemplateChildNode,
@@ -280,9 +378,32 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
 
       const optionProps = getSummarizedProps(_node)
       const valueIndex = optionProps.findIndex((p) => isExactKey(p.key, 'value'))
-      if (optionProps.length === 0 || valueIndex < 0 || valueIndex >= optionProps.length) return
 
-      const optionValueSummarizedProp = optionProps[valueIndex]
+      // D3: HTML lets `<option>apple</option>` use text content as the
+      // value. The original transform required an explicit `value=`
+      // attr and silently dropped value-less options — they'd render
+      // unselectable through `register('fruit')` because the AST
+      // emitted no `:selected` binding.
+      //
+      // Fallback: if no `value=`, look at the option's children. A
+      // single static TextNode → use it as the static value. Anything
+      // else (interpolation, mixed children, no children) → skip with
+      // a dev-warn rather than guess.
+      let optionValueSummarizedProp: SummarizedProp | undefined
+      if (valueIndex >= 0 && valueIndex < optionProps.length) {
+        optionValueSummarizedProp = optionProps[valueIndex]
+      } else {
+        const fallback = inferOptionValueFromChildren(_node)
+        if (fallback === null) {
+          // Dynamic / mixed children — can't synthesize a static
+          // equality expression. Bail without binding so the option
+          // simply isn't reactive (matches pre-D3 behaviour for the
+          // genuinely-dynamic cases). Producing a wrong binding would
+          // be worse than no binding.
+          return
+        }
+        optionValueSummarizedProp = { key: 'value', value: fallback }
+      }
 
       const props = _node.props
       snapshotProps(props)
@@ -300,7 +421,7 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
         name: 'bind',
         modifiers: [],
         type: NodeTypes.DIRECTIVE,
-        loc: dummyLoc,
+        loc: _node.loc,
       }
       props.push(newProp)
     }
@@ -318,17 +439,41 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
     const valuePropExpArray = Array.isArray(registerSummarizedProp?.value)
       ? registerSummarizedProp.value
       : [registerSummarizedProp?.value ?? 'undefined']
+    // Read `displayValue.value` rather than `innerRef.value` so
+    // selects share the same single read surface as text inputs.
+    // The directive never marks select paths transient-empty (no
+    // DOM "empty" state), so in normal flow `displayValue` is just
+    // `String(storage)` — identical to today. The edge case where a
+    // consumer programmatically calls `setValue(numericPath, unset)`
+    // bound to a `<select>` is documented in the docs (browser falls
+    // back to first option; meta.pendingEmpty surfaces the intent).
     const initExpression = createCompoundExpression([
       '(',
       ...valuePropExpArray,
-      ')?.innerRef.value',
+      ')?.displayValue.value',
     ])
 
     const simpleExpression = createSimpleExpression(
       flattenCompoundExpression(initExpression),
       false
     )
-    const outputExp = processExpression(simpleExpression, { ...context, prefixIdentifiers: false })
+    // `processExpression` can throw on malformed identifiers or
+    // exotic expression shapes. Pre-fix, the throw bubbled to the
+    // outer try/catch, which then ran the snapshot-restore path AND
+    // skipped both the select's `:value` injection AND every option's
+    // `:selected` binding — turning a single-expression problem into
+    // a whole-template fallback. Isolate here so a parser failure on
+    // this one expression keeps the other injections.
+    let outputExp: ExpressionNode
+    try {
+      outputExp = processExpression(simpleExpression, { ...context, prefixIdentifiers: false })
+    } catch (err) {
+      console.error(
+        '[@chemical-x/forms] select transform: processExpression failed; falling back to the unprocessed expression.',
+        err
+      )
+      outputExp = simpleExpression
+    }
 
     const valueProp: DirectiveNode = {
       rawName: ':value',
@@ -337,7 +482,7 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
       name: 'bind',
       modifiers: [],
       type: NodeTypes.DIRECTIVE,
-      loc: dummyLoc,
+      loc: selectLoc,
     }
 
     node.props.push(valueProp)
@@ -356,13 +501,31 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
 
     if (!registerProp) return
 
+    // Idempotency marker. The hint and preamble transforms record
+    // their own per-node markers; this one detects an already-injected
+    // `:registerValue` directive on the props array and skips
+    // re-pushing. Without the check, a doubly-registered transform
+    // pipeline (rare in production, common in test combinatorics)
+    // would emit two `registerValue:` keys in the generated render —
+    // the last wins for prop resolution, but the output is bloated and
+    // confusing under codegen inspection.
+    const alreadyInjected = node.props.some(
+      (p) =>
+        p.type === NodeTypes.DIRECTIVE &&
+        p.name === 'bind' &&
+        p.arg !== undefined &&
+        'content' in p.arg &&
+        p.arg.content === 'registerValue'
+    )
+    if (alreadyInjected) return
+
     const customElementProp: DirectiveNode = {
       arg: createSimpleExpression('registerValue', true),
       exp: 'exp' in registerProp ? registerProp.exp : createSimpleExpression('undefined', false),
       name: 'bind',
       modifiers: [],
       type: NodeTypes.DIRECTIVE,
-      loc: dummyLoc,
+      loc: selectLoc,
     }
 
     node.props.push(customElementProp)

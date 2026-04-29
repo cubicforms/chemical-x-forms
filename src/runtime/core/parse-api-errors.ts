@@ -1,5 +1,6 @@
 import type {
   ApiErrorDetails,
+  ApiErrorEntry,
   ApiErrorEnvelope,
   FormKey,
   ValidationError,
@@ -8,90 +9,109 @@ import { InvalidPathError } from './errors'
 import { canonicalizePath } from './paths'
 
 /**
- * Structured result of `parseApiErrors`. The discriminated `ok` flag
- * separates "empty but valid payload" (`{ ok: true, errors: [] }`)
- * from "malformed payload we couldn't parse" (`{ ok: false, rejected }`).
- * Earlier versions of this surface conflated the two by returning a
- * bare `ValidationError[]`, making server-integration bugs invisible.
+ * Result of `parseApiErrors`. Branch on `ok` to handle the two cases:
+ *
+ * ```ts
+ * const result = parseApiErrors(payload, { formKey: form.key })
+ * if (result.ok) {
+ *   form.setFieldErrors(result.errors)
+ * } else {
+ *   console.warn('Bad error payload:', result.rejected)
+ * }
+ * ```
+ *
+ * `ok: true` means the payload was recognised — `errors` may still be
+ * empty if the payload was valid but had no actual errors.
+ * `ok: false` means the payload didn't match a known shape; `rejected`
+ * carries a one-line description of why.
  */
 export type ParseApiErrorsResult = {
+  /** `true` when the payload was recognised; `false` when the shape was unfamiliar. */
   readonly ok: boolean
+  /** Errors extracted from the payload. May be empty even when `ok: true`. */
   readonly errors: ValidationError[]
+  /** When `ok: false`, a one-line description of why the payload was rejected. */
   readonly rejected?: string
 }
 
 /**
- * Guardrails for untrusted API error payloads. A misbehaving (or
- * hostile) server can emit large or deeply-nested detail maps; applying
- * them to form state is O(entries × depth) in the worst case. Hitting
- * either ceiling causes the parser to reject the payload wholesale —
- * partial application would silently apply some errors and drop others,
- * which is worse for debugging than a clean rejection.
+ * Options for `parseApiErrors`. The size caps protect against
+ * misbehaving or hostile servers — exceeding any cap causes the
+ * parser to reject the payload wholesale rather than partially apply.
  */
 export type ParseApiErrorsOptions = {
   /**
-   * The form's `key` (or `form.key`). Stamped on every produced
-   * `ValidationError` so the form knows which form the errors belong
-   * to. Required because `ValidationError.formKey` is required on the
-   * type, and stamping is the parser's job — not the consumer's.
+   * The form's identifier — pass `form.key`. Stamped on every
+   * produced `ValidationError` so errors route to the right form.
    */
   readonly formKey: FormKey
   /**
-   * Maximum number of distinct keys accepted in the details record.
-   * Defaults to 1 000. Raise for trusted-backend integrations that
-   * legitimately need more; lower for gateway-passthrough code where
-   * the payload might be attacker-shaped.
+   * Maximum number of distinct keys to accept. Default `1000`.
+   * Raise for trusted backends that legitimately produce more.
    */
   readonly maxEntries?: number
   /**
-   * Maximum number of path segments per key. Defaults to 32 — deeper
-   * than any realistic form schema. Keys that exceed it are dropped
-   * with the rest of the payload so the failure is visible (vs. a
-   * silent partial apply).
+   * Maximum number of path segments per key. Default `32`. Keys
+   * deeper than this are dropped (the rest of the payload still
+   * applies if it stays under the other caps).
    */
   readonly maxPathDepth?: number
+  /**
+   * Maximum total path segments summed across every accepted key.
+   * Default `10000`. Bounds the worst-case traversal cost.
+   */
+  readonly maxTotalSegments?: number
 }
 
 /**
- * Default caps. Conservative; consumers who deliberately ship larger
- * payloads can override on a per-call basis.
+ * Default size caps used by `parseApiErrors`. Conservative; pass
+ * larger values via the options bag for trusted-backend integrations.
  */
 export const PARSE_API_ERRORS_DEFAULTS = {
   maxEntries: 1000,
   maxPathDepth: 32,
+  maxTotalSegments: 10000,
 } as const
 
 /**
- * Normalise an API validation-error payload into `ValidationError[]`.
- *
- * Accepts:
- * - the wrapped envelope: `{ error: { details: { "email": ["taken"] } } }`
- * - the unwrapped envelope: `{ details: { "email": ["taken"] } }`
- * - a raw details record: `{ "email": ["taken"], "message": "too short" }`
- * - `null` / `undefined` — returns `{ ok: true, errors: [] }`
- *
- * Each detail entry may be either a single string or an array of strings;
- * both forms are expanded into individual `ValidationError` records, so the
- * UI can show multiple messages per field.
- *
- * Dotted paths (`"address.line1"`) are canonicalised via `canonicalizePath`
- * so integer-looking segments normalise to numbers. Path segments with
- * dots in the key itself can only be represented by consumers that pass
- * an already-structured path — this function accepts only string keys from
- * the API, matching RFC-style JSON error responses.
- *
- * Return semantics:
- * - `{ ok: true, errors }` — payload recognised (possibly empty)
- * - `{ ok: false, errors: [], rejected: '…' }` — payload shape not
- *   recognised (malformed object-of-objects, primitive, etc.).
- *
- * Pure transformation: no side effects, no form coupling. Pair with
- * `form.setFieldErrors` (or `addFieldErrors`) to apply the result:
+ * Normalise a server-side validation error payload into
+ * `ValidationError[]`. Pair with `form.setFieldErrors` /
+ * `form.addFieldErrors` to surface server errors on the form:
  *
  * ```ts
- * const result = parseApiErrors(response, { formKey: form.key })
- * if (result.ok) form.setFieldErrors(result.errors)
+ * const response = await fetch('/api/signup', { … })
+ * if (!response.ok) {
+ *   const payload = await response.json()
+ *   const result = parseApiErrors(payload, { formKey: form.key })
+ *   if (result.ok) form.setFieldErrors(result.errors)
+ * }
  * ```
+ *
+ * Recognised payload shapes:
+ *
+ * - Wrapped envelope:
+ *   `{ error: { details: { email: { message: 'taken', code: 'api:duplicate-email' } } } }`
+ * - Unwrapped envelope:
+ *   `{ details: { email: { message: 'taken', code: 'api:duplicate-email' } } }`
+ * - Raw details record:
+ *   `{ email: { message: 'taken', code: 'api:duplicate-email' } }`
+ * - `null` / `undefined` — returns `{ ok: true, errors: [] }`
+ *
+ * Every entry must be `{ message: string, code: string }` (both
+ * required). The `code` is forwarded verbatim onto the produced
+ * `ValidationError`. Pick a prefix on the server (`api:`, `auth:`,
+ * etc.) and stay consistent so error renderers can branch on it.
+ *
+ * Each detail key's value can be a single entry or an array; arrays
+ * expand into one `ValidationError` per entry, so a single field can
+ * carry multiple distinct failures (e.g. `password` is too short
+ * *and* missing a digit, each with its own code).
+ *
+ * Dotted keys (`"address.line1"`) are split into structured paths
+ * automatically. Use a custom server response shape outside these
+ * patterns? Build the `ValidationError[]` array yourself and pass
+ * it to `setFieldErrors` directly — `parseApiErrors` is just a
+ * convenience for the common shapes.
  */
 export function parseApiErrors(
   payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined | unknown,
@@ -99,6 +119,7 @@ export function parseApiErrors(
 ): ParseApiErrorsResult {
   const maxEntries = options.maxEntries ?? PARSE_API_ERRORS_DEFAULTS.maxEntries
   const maxPathDepth = options.maxPathDepth ?? PARSE_API_ERRORS_DEFAULTS.maxPathDepth
+  const maxTotalSegments = options.maxTotalSegments ?? PARSE_API_ERRORS_DEFAULTS.maxTotalSegments
 
   if (payload === null || payload === undefined) {
     return { ok: true, errors: [] }
@@ -126,8 +147,9 @@ export function parseApiErrors(
   }
 
   const errors: ValidationError[] = []
-  for (const [key, messages] of Object.entries(details)) {
-    const messageList = Array.isArray(messages) ? messages : [messages]
+  let totalSegments = 0
+  for (const [key, value] of Object.entries(details)) {
+    const entryList = Array.isArray(value) ? value : [value]
     // `canonicalizePath` throws `InvalidPathError` for dotted strings with
     // empty segments (e.g. `'. '`, `'a..b'`). A misbehaving server can
     // genuinely emit such a key; the hydrator is a normaliser, not a
@@ -146,12 +168,27 @@ export function parseApiErrors(
     // the rest. Consumers who want strict rejection can post-filter
     // on `result.errors.length < details entryCount`.
     if (segments.length > maxPathDepth) continue
-    for (const message of messageList) {
-      if (typeof message !== 'string' || message.length === 0) continue
+    // Total-segment cap. Enforced wholesale (not per-key) so a payload
+    // that passes the per-key gate but stacks into a pathological
+    // total still fails visibly. Mirrors `maxEntries` strictness.
+    totalSegments += segments.length
+    if (totalSegments > maxTotalSegments) {
+      return {
+        ok: false,
+        errors: [],
+        rejected: `payload total path segments exceeds maxTotalSegments=${maxTotalSegments}`,
+      }
+    }
+    for (const entry of entryList) {
+      // Empty messages are dropped silently (a server emitting
+      // `{ message: '' }` is malformed but recoverable — we skip the
+      // entry rather than fail the whole payload).
+      if (entry.message.length === 0) continue
       errors.push({
-        message,
+        message: entry.message,
         path: Array.from(segments),
         formKey: options.formKey,
+        code: entry.code,
       })
     }
   }
@@ -169,7 +206,7 @@ function extractDetails(payload: Record<string, unknown>): ExtractResult {
       return { ok: true, details: {} }
     }
     if (isDetailsRecord(inner)) return { ok: true, details: inner }
-    return { ok: false, reason: 'error.details was not a record of string | string[]' }
+    return { ok: false, reason: 'error.details entries must be { message, code } objects' }
   }
 
   // `{ error: 'oops' }` / `{ error: 42 }` is a malformed wrapped envelope —
@@ -188,7 +225,7 @@ function extractDetails(payload: Record<string, unknown>): ExtractResult {
     const inner = payload['details']
     if (inner === undefined) return { ok: true, details: {} }
     if (isDetailsRecord(inner)) return { ok: true, details: inner }
-    return { ok: false, reason: 'details was not a record of string | string[]' }
+    return { ok: false, reason: 'details entries must be { message, code } objects' }
   }
 
   if (isDetailsRecord(payload)) return { ok: true, details: payload }
@@ -199,6 +236,12 @@ function extractDetails(payload: Record<string, unknown>): ExtractResult {
   return { ok: false, reason: 'unrecognised payload shape' }
 }
 
+function isApiErrorEntry(value: unknown): value is ApiErrorEntry {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const obj = value as { message?: unknown; code?: unknown }
+  return typeof obj.message === 'string' && typeof obj.code === 'string'
+}
+
 function isDetailsRecord(value: unknown): value is ApiErrorDetails {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
   // Reject prototype-polluted keys — we don't use them here, but downstream
@@ -206,8 +249,8 @@ function isDetailsRecord(value: unknown): value is ApiErrorDetails {
   const record = value as Record<string, unknown>
   for (const k of Object.keys(record)) {
     const v = record[k]
-    if (typeof v === 'string') continue
-    if (Array.isArray(v) && v.every((s) => typeof s === 'string')) continue
+    if (isApiErrorEntry(v)) continue
+    if (Array.isArray(v) && v.every((entry) => isApiErrorEntry(entry))) continue
     return false
   }
   return true

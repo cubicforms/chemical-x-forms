@@ -1,12 +1,29 @@
 import type { z } from 'zod'
-import type { AbstractSchema, FormKey, ValidationError } from '../../types/types-api'
+import type {
+  AbstractSchema,
+  FormKey,
+  SlimPrimitiveKind,
+  ValidationError,
+} from '../../types/types-api'
+import { CxErrorCode } from '../../core/error-codes'
 import type { DeepPartial, GenericForm } from '../../types/types-core'
 import { assertSupportedKinds } from './assert-supported'
 import { zodIssuesToValidationErrors } from './errors'
 import { fingerprintZodSchema } from './fingerprint'
 import { deriveDefault, getDefaultValuesFromZodSchema } from './default-values'
-import { assertZodVersion, kindOf, unwrapInner } from './introspect'
+import {
+  assertZodVersion,
+  getDiscriminatedOptions,
+  getIntersectionLeft,
+  getIntersectionRight,
+  getUnionOptions,
+  kindOf,
+  unwrapInner,
+  unwrapLazy,
+  unwrapPipe,
+} from './introspect'
 import { getNestedZodSchemasAtPath } from './path-walker'
+import { PERMISSIVE, slimPrimitivesOf } from './slim-primitives'
 
 /**
  * Zod v4 adapter — implements `AbstractSchema` against Zod v4's public
@@ -92,6 +109,82 @@ function isStructuralKind(kind: ReturnType<typeof kindOf>): boolean {
   return STRUCTURAL_KINDS.has(kind)
 }
 
+const MAX_REQUIRED_DEPTH = 64
+
+/**
+ * `true` if the leaf is required — `false` if any wrapper layer admits
+ * "empty" via `.optional()`, `.nullable()`, `.default(N)`, or
+ * `.catch(N)`. See `AbstractSchema.isRequiredAtPath` for the full
+ * semantic specification (union → permissive, intersection → strict,
+ * readonly/pipe/lazy → transparent peel).
+ */
+function isLeafRequired(schema: z.ZodType, depth = 0): boolean {
+  if (depth > MAX_REQUIRED_DEPTH) return true
+  const kind = kindOf(schema)
+  // Direct "schema accepts empty" wrappers and bare empty-marker leaves —
+  // short-circuit. `z.undefined()` / `z.null()` / `z.void()` inside a
+  // union (`z.union([z.number(), z.undefined()])`) are how schema authors
+  // express "this field can be absent" without a wrapper, so they count
+  // as not-required here.
+  if (
+    kind === 'optional' ||
+    kind === 'nullable' ||
+    kind === 'default' ||
+    kind === 'catch' ||
+    kind === 'undefined' ||
+    kind === 'null' ||
+    kind === 'void'
+  ) {
+    return false
+  }
+  // Transparent wrappers — peel and re-check.
+  if (kind === 'readonly') {
+    const inner = unwrapInner(schema)
+    return inner === undefined ? true : isLeafRequired(inner, depth + 1)
+  }
+  if (kind === 'pipe') {
+    // Use the input side: transient-empty is a write-time concern.
+    const inner = unwrapPipe(schema)
+    return inner === undefined ? true : isLeafRequired(inner, depth + 1)
+  }
+  if (kind === 'lazy') {
+    const inner = unwrapLazy(schema)
+    return inner === undefined ? true : isLeafRequired(inner, depth + 1)
+  }
+  // Union — required only if EVERY branch is required (any permissive
+  // branch makes the union permissive at parse time).
+  if (kind === 'union' || kind === 'discriminated-union') {
+    const options =
+      kind === 'discriminated-union' ? getDiscriminatedOptions(schema) : getUnionOptions(schema)
+    if (options.length === 0) return true
+    return options.every((opt) => isLeafRequired(opt as z.ZodType, depth + 1))
+  }
+  // Intersection — required if EITHER side is required (a parse must
+  // satisfy both; the strict side governs).
+  if (kind === 'intersection') {
+    const left = getIntersectionLeft(schema)
+    const right = getIntersectionRight(schema)
+    const leftReq = left === undefined ? true : isLeafRequired(left, depth + 1)
+    const rightReq = right === undefined ? true : isLeafRequired(right, depth + 1)
+    return leftReq || rightReq
+  }
+  // Direct primitive leaf or unsupported kind — required by default.
+  return true
+}
+
+/**
+ * Wrap a Zod v4 `ZodObject` schema in an `AbstractSchema` factory.
+ *
+ * Most consumers never call this directly — `useForm` from
+ * `@chemical-x/forms/zod` does the wrapping automatically. Reach for
+ * it when you need an adapter outside of `useForm` (e.g. validating
+ * data with the same library used elsewhere in the form runtime, or
+ * exposing the adapter to a custom integration).
+ *
+ * Throws if the schema isn't Zod v4, or contains kinds the adapter
+ * cannot represent (`z.promise`, `z.custom`, `z.templateLiteral`,
+ * recursive `z.lazy(...)`).
+ */
 export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infer<FormSchema>>(
   rootSchema: FormSchema
 ): (formKey: FormKey) => AbstractSchema<Form, Form> {
@@ -202,6 +295,34 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         )
       },
 
+      getSlimPrimitiveTypesAtPath(path): Set<SlimPrimitiveKind> {
+        // Resolve every leaf candidate at the path (unions return
+        // multiple) and union their slim-primitive sets. Empty path
+        // is the root form: always an object.
+        if (path.length === 0) return new Set(['object'])
+        const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+        if (resolved.length === 0) return new Set(PERMISSIVE)
+        const out = new Set<SlimPrimitiveKind>()
+        for (const candidate of resolved) {
+          for (const k of slimPrimitivesOf(candidate)) out.add(k)
+        }
+        return out
+      },
+
+      isRequiredAtPath(path): boolean {
+        // Root form is always "required" in the structural sense — it's
+        // the object we're parsing. Submit/validate's required-empty
+        // check never sees the root path in `transientEmptyPaths`
+        // (the set tracks primitive leaves), so the value is academic.
+        if (path.length === 0) return true
+        const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+        if (resolved.length === 0) return false
+        // Every candidate must be required for the path overall to be
+        // required — matches the union "any-branch-permissive" rule
+        // when the path traverses a union.
+        return resolved.every((candidate) => isLeafRequired(candidate))
+      },
+
       async validateAtPath(data, path): ReturnType<AbstractSchema<Form, Form>['validateAtPath']> {
         if (path === undefined) {
           const result = (await rootSchema.safeParseAsync(data)) as z.ZodSafeParseResult<Form>
@@ -224,6 +345,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
                 message: `Path '${path.join(PATH_SEPARATOR)}' did not resolve to any schema`,
                 path: [...path],
                 formKey,
+                code: CxErrorCode.PathNotFound,
               },
             ],
             success: false,

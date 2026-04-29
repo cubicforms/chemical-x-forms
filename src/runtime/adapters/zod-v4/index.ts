@@ -11,7 +11,7 @@ import type {
   UseAbstractFormReturnType,
   UseFormConfiguration,
 } from '../../types/types-api'
-import type { DeepPartial, GenericForm } from '../../types/types-core'
+import type { DeepPartial, DefaultValuesShape, GenericForm } from '../../types/types-core'
 import { zodV4Adapter } from './adapter'
 
 export { zodV4Adapter as zodAdapter } from './adapter'
@@ -20,8 +20,26 @@ export { assertZodVersion, kindOf } from './introspect'
 export type { ZodKind } from './introspect'
 
 /**
- * Zod-typed useForm. Accepts a `z.ZodObject<...>` schema and wires it
- * through the v4 adapter + the abstract form.
+ * Create a form bound to a Zod v4 schema.
+ *
+ * ```ts
+ * import { useForm } from '@chemical-x/forms/zod'
+ * import { z } from 'zod'
+ *
+ * const form = useForm({
+ *   schema: z.object({
+ *     email: z.email(),
+ *     password: z.string().min(8),
+ *   }),
+ *   defaultValues: { email: '' },
+ * })
+ * ```
+ *
+ * Returns a form API exposing `register`, `getValue`, `setValue`,
+ * `handleSubmit`, `state`, field-array helpers, and more. See
+ * `UseAbstractFormReturnType` for the full surface.
+ *
+ * For Zod v3, import from `@chemical-x/forms/zod-v3` instead.
  */
 export function useForm<Schema extends z.ZodObject>(
   configuration: Omit<
@@ -32,7 +50,9 @@ export function useForm<Schema extends z.ZodObject>(
         z.output<Schema> extends GenericForm ? z.output<Schema> : never,
         z.output<Schema> extends GenericForm ? z.output<Schema> : never
       >,
-      DeepPartial<z.output<Schema> extends GenericForm ? z.output<Schema> : never>
+      DeepPartial<
+        DefaultValuesShape<z.output<Schema> extends GenericForm ? z.output<Schema> : never>
+      >
     >,
     'schema'
   > & { schema: Schema }

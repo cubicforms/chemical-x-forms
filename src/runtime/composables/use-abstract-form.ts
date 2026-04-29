@@ -32,6 +32,7 @@ import {
 import { canonicalizePath, type Path, type PathKey } from '../core/paths'
 import { deleteAtPath, getAtPath, setAtPath, isPlainRecord } from '../core/path-walker'
 import { kFormContext, useRegistry } from '../core/registry'
+import { walkUnsetSentinels } from '../core/unset-walker'
 import type {
   AbstractSchema,
   ChemicalXFormsDefaults,
@@ -41,25 +42,28 @@ import type {
   UseFormConfiguration,
   ValidationError,
 } from '../types/types-api'
-import type { DeepPartial, GenericForm } from '../types/types-core'
+import type { DeepPartial, DefaultValuesShape, GenericForm, WriteShape } from '../types/types-core'
 
 /**
- * useForm's abstract entry point. The Zod-typed `useForm` sitting at
- * ../composables/use-form.ts delegates here after wrapping its Zod schema
- * with `zodAdapter` — the result is an `AbstractSchema<Form, GetValueFormType>`
- * instance indistinguishable from a hand-rolled adapter.
+ * Schema-agnostic `useForm`. Accepts any object that implements
+ * `AbstractSchema` — useful when integrating a custom schema
+ * adapter, a Valibot adapter, or any non-Zod validation library.
  *
- * Wiring:
- * - Fetches the current Vue app's ChemicalXRegistry via useRegistry().
- * - Looks up (or creates) the FormStore<F> for the configured key. If the
- *   registry has a pending hydration entry for the key, threads it into
- *   createFormStore so the client side starts from the server's snapshot.
- * - Builds register / getFieldState / validate / handleSubmit from that
- *   FormStore via the Phase 1b factories.
+ * ```ts
+ * import { useForm } from '@chemical-x/forms'
  *
- * The old pre-rewrite implementation stitched together five separate Nuxt
- * useState composables and a cache in register.ts. This file collapses all
- * of that into one registry-backed closure.
+ * const form = useForm({
+ *   schema: myCustomAdapter,
+ *   defaultValues: { name: '' },
+ * })
+ * ```
+ *
+ * For Zod, prefer the typed entry points at
+ * `@chemical-x/forms/zod` (v4) or `@chemical-x/forms/zod-v3` —
+ * they wrap the schema with the adapter automatically.
+ *
+ * Returns the same form API as the Zod-typed entry points; see
+ * `UseAbstractFormReturnType` for the full surface.
  */
 
 export function useAbstractForm<
@@ -70,7 +74,7 @@ export function useAbstractForm<
     Form,
     GetValueFormType,
     AbstractSchema<Form, GetValueFormType>,
-    DeepPartial<Form>
+    DeepPartial<DefaultValuesShape<Form>>
   >
 ): UseAbstractFormReturnType<Form, GetValueFormType> {
   const key = resolveFormKey(configuration.key)
@@ -83,8 +87,8 @@ export function useAbstractForm<
   const resolvedSchema = getComputedSchema(key, configuration.schema)
 
   // One FormStore per (app, formKey). Multiple useForm calls with the same
-  // key resolve to the same instance — matches the pre-rewrite "shared
-  // store" semantic that forms with the same key were intended to share.
+  // key resolve to the same instance — that's the shared-store semantic
+  // for forms that explicitly opt in to a stable key.
   const registry = useRegistry()
 
   // Merge app-level defaults from the registry over per-form options.
@@ -146,6 +150,11 @@ export function useAbstractForm<
       void sweepNonConfiguredStandardStoresForOrphans(resolvedPersist.storage, persistenceBase)
       const persistenceModule = wirePersistence(state, resolvedPersist)
       state.modules.set(PERSISTENCE_MODULE_KEY, persistenceModule)
+      // Drain BEFORE the synchronous teardown: the registry will await
+      // `awaitPendingWrites` before calling `dispose`, so the last
+      // debounced keystroke gets to disk before the FormStore is
+      // evicted from the registry's `forms` map.
+      state.registerDrain(() => persistenceModule.awaitPendingWrites())
       state.registerCleanup(() => persistenceModule.dispose())
     } else {
       // No `persist:` configured. The form might have HAD persistence
@@ -214,7 +223,7 @@ function mergeWithDefaults<
   Form extends GenericForm,
   GetValueFormType extends GenericForm,
   Schema extends AbstractSchema<Form, GetValueFormType>,
-  Defaults extends DeepPartial<Form>,
+  Defaults extends DeepPartial<DefaultValuesShape<Form>>,
 >(
   defaults: ChemicalXFormsDefaults,
   configuration: UseFormConfiguration<Form, GetValueFormType, Schema, Defaults>
@@ -247,20 +256,49 @@ const HISTORY_MODULE_KEY = 'history'
 function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
   key: FormKey,
   schema: AbstractSchema<F, G>,
-  configuration: UseFormConfiguration<F, G, AbstractSchema<F, G>, DeepPartial<F>>,
+  configuration: UseFormConfiguration<
+    F,
+    G,
+    AbstractSchema<F, G>,
+    DeepPartial<DefaultValuesShape<F>>
+  >,
   registry: ReturnType<typeof useRegistry>
 ): FormStore<F, G> {
   const pending = registry.pendingHydration.get(key)
   if (pending !== undefined) registry.pendingHydration.delete(key)
-  const state = createFormStore<F, G>({
+  // Pre-pass: replace every `unset` sentinel in defaultValues with the
+  // schema's slim default and collect the corresponding path keys.
+  // Also auto-marks every primitive leaf the consumer did NOT cover —
+  // a freshly opened form has no user input yet, so unspecified leaves
+  // are logically blank. Devs opt a leaf out by supplying a non-`unset`
+  // value for it. The walker mirrors `DefaultValuesShape<T>`'s
+  // recursion; runtime landing of `unset` at a non-primitive leaf
+  // produces a dev-warn (TS catches this at compile time but plain-JS
+  // consumers bypass).
+  const walked = walkUnsetSentinels(
+    configuration.defaultValues,
+    schema as unknown as AbstractSchema<GenericForm, GenericForm>
+  )
+  // Hydration precedence: when a hydration payload is present its
+  // `transientEmptyPaths` field is the authoritative truth. We still
+  // run the walker to scrub `unset` symbols out of `defaultValues` (so
+  // they never reach storage), but discard the discovered paths in
+  // favour of the hydrated set. Without this, a server-rendered form
+  // with no transient-empty paths would gain ones the client's
+  // construction-time defaults invented.
+  const initialTransientEmpty: ReadonlyArray<string> | undefined =
+    pending === undefined ? walked.paths : undefined
+  const createOptions: Parameters<typeof createFormStore<F, G>>[0] = {
     formKey: key,
     schema,
-    defaultValues: configuration.defaultValues,
+    defaultValues: walked.cleanedValues as DeepPartial<WriteShape<F>> | undefined,
     validationMode: configuration.validationMode,
     hydration: pending,
     fieldValidation: configuration.fieldValidation,
     isSSR: registry.isSSR,
-  })
+    ...(initialTransientEmpty !== undefined ? { initialTransientEmpty } : {}),
+  }
+  const state = createFormStore<F, G>(createOptions)
   // Storage type is FormStore<GenericForm>; the lookup above narrows
   // back to the caller's (F, G) via the `existing as FormStore<Form,
   // GetValueFormType>` cast. The registry Map is intentionally
@@ -434,8 +472,7 @@ function wirePersistence<F extends GenericForm>(
   // structural schema change (added/removed/renamed field, type swap)
   // produces a different fingerprint, so the new mount looks up a fresh
   // key — the old draft becomes an orphan, cleaned up in the same mount
-  // by `cleanupOrphanKeys` below. Replaces the manual `version: number`
-  // protocol that was previously the consumer's responsibility.
+  // by `cleanupOrphanKeys` below. No manual version protocol required.
   const fingerprint = state.schema.fingerprint()
   const base = resolveStorageKeyBase(config, state.formKey)
   const key = `${base}:${fingerprint}`
@@ -449,9 +486,33 @@ function wirePersistence<F extends GenericForm>(
   // because the dynamic-import hadn't resolved yet.
   const adapterPromise = getStorageAdapter(config.storage)
   let disposed = false
+  // Tracks the in-flight final flush kicked off by `dispose()`. Returned
+  // by `awaitPendingWrites` so the registry can drain pending storage
+  // writes before evicting the FormStore — without this, the last
+  // debounced keystroke is silently dropped on unmount.
+  let inFlightFinalFlush: Promise<void> | null = null
+  // Snapshot of opt-in paths captured at SCHEDULE time. Vue's unmount
+  // lifecycle runs directive `beforeUnmount` (which clears per-element
+  // opt-ins) BEFORE the effect-scope dispose that triggers our drain.
+  // Without a snapshot, a write flushed during the drain sees zero
+  // opt-ins and wipes the storage entry. The snapshot lets the eventual
+  // write reflect the moment-in-time opt-ins as the user typed.
+  let pendingOptedInPaths: Set<PathKey> | null = null
 
   const writer = createDebouncedWriter(async () => {
-    if (disposed) return
+    // No bail at entry: this closure runs from two paths — the
+    // debounce timer firing (which already gated on `disposed` via the
+    // schedule call) and the final flush from `dispose()`. The final
+    // flush's invocation order (flush BEFORE disposed flips) lets this
+    // write complete; the post-await guards below catch the rare case
+    // where adapter resolution is slow enough to overlap with the
+    // disposed flip.
+    //
+    // Use the schedule-time snapshot if present (handles the unmount
+    // race where beforeUnmount has cleared the live registry). Falls
+    // back to the live registry for any non-listener-triggered path.
+    const optedInPaths = pendingOptedInPaths ?? new Set<PathKey>(state.persistOptIns.optedInPaths())
+    pendingOptedInPaths = null
     const adapter = await adapterPromise
     if (disposed) return
     // Sparse-payload reshape: the persisted form contains only paths
@@ -459,7 +520,6 @@ function wirePersistence<F extends GenericForm>(
     // every opt-in has been torn down, wipe the entry rather than
     // write a hollow envelope (matches the per-element security model
     // — no opt-ins → nothing to persist).
-    const optedInPaths = new Set<PathKey>(state.persistOptIns.optedInPaths())
     if (optedInPaths.size === 0) {
       await adapter.removeItem(key)
       return
@@ -476,23 +536,37 @@ function wirePersistence<F extends GenericForm>(
     // the fingerprint suffix.
     const filteredSchemaErrors = filterErrorsByPaths(state.schemaErrors, optedInPaths)
     const filteredUserErrors = filterErrorsByPaths(state.userErrors, optedInPaths)
+    // Transient-empty paths are part of the restorable UI state, so
+    // they ride the same opt-in gate as form values: only persist
+    // the entries whose paths are also opted in for persistence.
+    const filteredTransientEmpty = new Set<string>()
+    for (const tk of state.transientEmptyPaths) {
+      if (optedInPaths.has(tk as PathKey)) filteredTransientEmpty.add(tk)
+    }
     const payload = buildPersistedPayload<F>(
       filteredForm,
       include,
       filteredSchemaErrors,
-      filteredUserErrors
+      filteredUserErrors,
+      filteredTransientEmpty
     )
     await adapter.setItem(key, payload)
   }, debounceMs)
 
   const unsubscribeChange = state.onFormChange((_next, meta) => {
-    if (disposed) return
+    if (disposed || inFlightFinalFlush !== null) return
     // Per-element opt-in: only writes whose source declared `persist: true`
     // reach the storage adapter. Programmatic `form.setValue`, history
     // undo without opt-ins, devtools edits to non-opted paths, and
     // `reset()` all bypass this gate by passing no meta (or `persist:
     // false`).
     if (meta?.persist !== true) return
+    // Snapshot opt-in paths NOW — Vue's unmount fires directive
+    // beforeUnmount (which calls persistOptIns.removeAllFor) BEFORE
+    // the scope-dispose that drives our drain. Capturing at schedule
+    // time means the eventual write sees the opt-ins as they were
+    // when the user typed, not as they were stripped.
+    pendingOptedInPaths = new Set<PathKey>(state.persistOptIns.optedInPaths())
     writer.schedule()
   })
 
@@ -546,6 +620,21 @@ function wirePersistence<F extends GenericForm>(
       // keep their schema defaults.
       const merged = mergeSparseHydration(toRaw(state.form.value) as F, payload.data.form)
       state.applyFormReplacement(merged)
+      // Restore the transient-empty UI state from the persisted
+      // payload. This rebaselines BOTH the live set AND the originals
+      // snapshot — the persisted UI state is the new "construction-
+      // time" reference for `reset()` semantics, so a subsequent
+      // reset() restores the empty fields the user had on the
+      // previous mount, not the freshly-constructed empty set. Form
+      // values rebaseline implicitly through `originals` (which the
+      // existing applyFormReplacement updates via diff-apply), so
+      // mirroring that behaviour here keeps the two domains aligned.
+      state.transientEmptyPaths.clear()
+      state.originalsTransientEmpty.clear()
+      for (const k of payload.data.transientEmptyPaths ?? []) {
+        state.transientEmptyPaths.add(k as PathKey)
+        state.originalsTransientEmpty.add(k as PathKey)
+      }
       if (include === 'form+errors') {
         // Each store rebuilds independently from its persisted entries.
         // Consumers who bumped `version` already had their payload
@@ -612,13 +701,32 @@ function wirePersistence<F extends GenericForm>(
     const baseForm = existing?.data.form ?? ({} as F)
     const value = getAtPath(toRaw(state.form.value), path)
     const nextForm = setAtPath(baseForm, path, value) as F
+    // Refresh this path's transient-empty entry — and any descendants
+    // — while preserving entries for OTHER paths the previous mount
+    // persisted. Non-leaf writes (`writePathImmediately('user')`)
+    // overwrite the entire subtree, so any disk entries below the
+    // write path are dropped first; the live in-memory set then
+    // contributes whatever marks are still active under that subtree.
+    const { key: pathKey } = canonicalizePath(path)
+    const transientSet = new Set<string>(
+      (existing?.data.transientEmptyPaths ?? []).filter(
+        (k) => k !== pathKey && !isDescendantPathKey(k, pathKey)
+      )
+    )
+    for (const liveKey of state.transientEmptyPaths) {
+      if (liveKey === pathKey || isDescendantPathKey(liveKey, pathKey)) {
+        transientSet.add(liveKey)
+      }
+    }
     if (include === 'form') {
-      await adapter.setItem(key, buildPersistedPayload<F>(nextForm, 'form', new Map(), new Map()))
+      await adapter.setItem(
+        key,
+        buildPersistedPayload<F>(nextForm, 'form', new Map(), new Map(), transientSet)
+      )
       return
     }
     // include === 'form+errors': preserve the rest of the persisted
     // error map and refresh the entry for this path's canonical key.
-    const { key: pathKey } = canonicalizePath(path)
     const schemaMap = new Map<string, ValidationError[]>(existing?.data.schemaErrors ?? [])
     const userMap = new Map<string, ValidationError[]>(existing?.data.userErrors ?? [])
     const currentSchema = state.schemaErrors.get(pathKey)
@@ -635,7 +743,7 @@ function wirePersistence<F extends GenericForm>(
     }
     await adapter.setItem(
       key,
-      buildPersistedPayload<F>(nextForm, 'form+errors', schemaMap, userMap)
+      buildPersistedPayload<F>(nextForm, 'form+errors', schemaMap, userMap, transientSet)
     )
   }
 
@@ -663,34 +771,70 @@ function wirePersistence<F extends GenericForm>(
       await adapter.removeItem(key)
       return
     }
+    const { key: pathKey } = canonicalizePath(path)
+    // Drop the cleared path AND every descendant from the persisted
+    // transient-empty list so a later mount doesn't restore an
+    // "empty" UI state for a path that no longer has any value
+    // behind it. Non-leaf clears (`clearPersistedDraft('user')`)
+    // wipe the whole user.* subtree.
+    const transientSet = new Set(
+      (existing.data.transientEmptyPaths ?? []).filter(
+        (k) => k !== pathKey && !isDescendantPathKey(k, pathKey)
+      )
+    )
     if (include === 'form') {
-      await adapter.setItem(key, buildPersistedPayload<F>(nextForm, 'form', new Map(), new Map()))
+      await adapter.setItem(
+        key,
+        buildPersistedPayload<F>(nextForm, 'form', new Map(), new Map(), transientSet)
+      )
       return
     }
-    const { key: pathKey } = canonicalizePath(path)
     const schemaErrors = (existing.data.schemaErrors ?? []).filter(([k]) => k !== pathKey)
     const userErrors = (existing.data.userErrors ?? []).filter(([k]) => k !== pathKey)
     const schemaMap = new Map<string, ValidationError[]>(schemaErrors.map(([k, v]) => [k, [...v]]))
     const userMap = new Map<string, ValidationError[]>(userErrors.map(([k, v]) => [k, [...v]]))
     await adapter.setItem(
       key,
-      buildPersistedPayload<F>(nextForm, 'form+errors', schemaMap, userMap)
+      buildPersistedPayload<F>(nextForm, 'form+errors', schemaMap, userMap, transientSet)
     )
   }
 
+  function awaitPendingWrites(): Promise<void> {
+    // If dispose() already kicked off the final flush, return THAT
+    // promise so the registry awaits the same drain instead of
+    // scheduling a parallel one.
+    if (inFlightFinalFlush !== null) return inFlightFinalFlush
+    if (disposed) return Promise.resolve()
+    return writer.flush().catch(() => undefined)
+  }
+
   function dispose(): void {
-    disposed = true
+    if (disposed || inFlightFinalFlush !== null) return
     unsubscribeChange()
     unsubscribeSuccess()
-    // Flush pending write so the last-typed state makes it to disk
-    // before unmount. Caller shouldn't await here, but the flush
-    // works as a fire-and-forget.
-    void writer.flush().catch(() => undefined)
+    // CRITICAL: flush BEFORE flipping `disposed`. The previous order
+    // (set disposed=true, then call writer.flush()) caused the writer
+    // closure to bail immediately, silently dropping the last
+    // keystroke whenever a component unmounted within the debounce
+    // window. Now we kick off the flush, then flip `disposed` only
+    // after the in-flight write finishes.
+    inFlightFinalFlush = writer
+      .flush()
+      .catch(() => undefined)
+      .finally(() => {
+        disposed = true
+        inFlightFinalFlush = null
+      })
+    // Fire-and-forget — `awaitPendingWrites` exposes the promise for
+    // callers that need to drain (the registry on consumer-eviction;
+    // SSR shutdown).
+    void inFlightFinalFlush
   }
 
   return {
     writePathImmediately,
     clearPersistedDraft,
+    awaitPendingWrites,
     dispose,
   }
 }
@@ -705,6 +849,24 @@ function isEmptyContainer(value: unknown): boolean {
   if (Array.isArray(value)) return value.length === 0
   if (isPlainRecord(value)) return Object.keys(value).length === 0
   return false
+}
+
+/**
+ * `true` when `candidate` names a strict descendant of `ancestor` in
+ * canonical PathKey form (`JSON.stringify(segments)`).
+ *
+ * `'["user"]'` is the ancestor; `'["user","age"]'` and
+ * `'["user","address","line1"]'` are descendants. A pure prefix match
+ * isn't enough — `'["userId"]'` shares the `'["user'` prefix with
+ * `'["user"]'` but is not a descendant. The check anchors on the
+ * comma that separates the parent's last segment from its first
+ * child segment.
+ */
+function isDescendantPathKey(candidate: string, ancestor: string): boolean {
+  if (candidate.length <= ancestor.length) return false
+  if (!ancestor.endsWith(']')) return false
+  const childPrefix = `${ancestor.slice(0, -1)},`
+  return candidate.startsWith(childPrefix)
 }
 
 export type { FieldStateView }

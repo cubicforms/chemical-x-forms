@@ -4,7 +4,6 @@ import {
   type CompoundExpressionNode,
   type ExpressionNode,
   type NodeTransform,
-  type SourceLocation,
 } from '@vue/compiler-core'
 
 /**
@@ -47,16 +46,19 @@ import {
  * and skips re-wrapping.
  */
 
-const dummyLoc: SourceLocation = {
-  start: { column: 0, line: 0, offset: 0 },
-  end: { column: 0, line: 0, offset: 0 },
-  source: '',
-}
-
 const HINT_MARKER = '__cxRv'
 const HINT_PREFIX = `((${HINT_MARKER}) => (${HINT_MARKER}?.markConnectedOptimistically?.(), ${HINT_MARKER}))(`
 const HINT_SUFFIX = `)`
 
+/**
+ * Vue compiler node transform that wraps every `v-register`
+ * expression in a small IIFE so the directive can flag a field as
+ * connected during SSR. Eliminates the `false → true` flicker on
+ * `getFieldState(path).isConnected` after hydration.
+ *
+ * Must run after `vRegisterPreambleTransform`. Wired automatically
+ * by `@chemical-x/forms/vite` and `@chemical-x/forms/nuxt`.
+ */
 export const vRegisterHintTransform: NodeTransform = (node) => {
   try {
     if (node.type !== NodeTypes.ELEMENT) return
@@ -99,5 +101,8 @@ function wrapWithOptimisticHint(exp: ExpressionNode): CompoundExpressionNode {
   // expect.
   const innerChildren: CompoundExpressionNode['children'] =
     exp.type === NodeTypes.SIMPLE_EXPRESSION ? [exp] : [...exp.children]
-  return createCompoundExpression([HINT_PREFIX, ...innerChildren, HINT_SUFFIX], dummyLoc)
+  // Reuse the wrapped expression's source location — runtime errors
+  // in the wrapped IIFE point at the v-register binding site rather
+  // than line 0.
+  return createCompoundExpression([HINT_PREFIX, ...innerChildren, HINT_SUFFIX], exp.loc)
 }

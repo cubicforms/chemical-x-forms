@@ -128,3 +128,35 @@ describe('persistence: debounced writer overhead', () => {
     writer.cancel()
   })
 })
+
+import { isSensitivePath } from '../src/runtime/core/persistence/sensitive-names'
+
+describe('persistence: sensitive-name heuristic hot path', () => {
+  // `isSensitivePath` runs for every `register()` call site and every
+  // `form.persist()` invocation. The pattern set grew in B4 (~25 → ~50
+  // entries); this bench protects against accidental regressions in
+  // the per-segment match cost.
+  bench(
+    'isSensitivePath — innocuous segment (no match, scans full pattern set)',
+    () => {
+      isSensitivePath(['displayName'])
+    },
+    { time: 500 }
+  )
+
+  bench(
+    'isSensitivePath — sensitive segment (early hit on a common pattern)',
+    () => {
+      isSensitivePath(['password'])
+    },
+    { time: 500 }
+  )
+
+  bench(
+    'isSensitivePath — 5-segment path with no matches',
+    () => {
+      isSensitivePath(['profile', 'meta', 'preferences', 'theme', 'mode'])
+    },
+    { time: 500 }
+  )
+})

@@ -9,11 +9,12 @@ import type {
   ValidationMode,
   WriteMeta,
 } from '../types/types-api'
-import type { DeepPartial, GenericForm } from '../types/types-core'
+import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
 import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS } from './defaults'
 import { diffAndApply } from './diff-apply'
 import { canonicalizePath, type Path, type PathKey, type Segment } from './paths'
 import { getAtPath, mergeStructural, setAtPath, setAtPathWithSchemaFill } from './path-walker'
+import { isSlimPrimitiveValid } from './slim-primitive-gate'
 import {
   createPersistOptInRegistry,
   type PersistOptInRegistry,
@@ -21,14 +22,13 @@ import {
 
 /**
  * Per-form closure state — the single store owned by each `useForm` call.
- * Replaces five separate `useState`-backed composables from the pre-rewrite
- * code (form, summary, element, field-state, meta-tracker, error), and in
- * doing so fixes the cross-form DOM state collision that stemmed from those
- * stores being keyed only by `path` instead of `(formKey, path)`.
+ * Bundles the form value, the summary record, element references, field
+ * state, the meta tracker, and the error stores under one keyed-by-
+ * `(formKey, path)` instance so cross-form DOM state cannot collide.
  *
  * This is NOT a singleton. Each call to `useForm` creates its own FormStore
- * instance and holds onto it via closure. The registry (Phase 2) provides
- * SSR hydration; otherwise the state is per-component-per-form.
+ * instance and holds onto it via closure. The registry provides SSR
+ * hydration; otherwise the state is per-component-per-form.
  */
 
 /** Per-path field status. Replaced wholesale (not mutated in place) on every change. */
@@ -78,6 +78,31 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    */
   readonly userErrors: Map<PathKey, ValidationError[]>
   readonly originals: Map<PathKey, OriginalsRecord>
+  /**
+   * Reactive set of paths whose displayed state should be EMPTY even
+   * though storage holds a real, schema-conformant value (the slim
+   * default). The directive's input listener marks numeric clears
+   * here; the declarative `unset` symbol routes through the same set.
+   *
+   * Reads (`displayValue` computed, `getFieldState(...).meta.pendingEmpty`)
+   * track via Vue 3.5's reactive Set handlers. Writes happen inside
+   * `setValueAtPath` (gate-hook bookkeeping: `transientEmpty: true`
+   * meta adds the path; any other write removes it) and `reset`.
+   *
+   * Storage NEVER reflects this set — calculations and reads against
+   * `form.value` see the slim default. The set is purely a UI/intent
+   * channel that submit/validate consult to raise "No value supplied" errors
+   * for required schemas.
+   */
+  readonly transientEmptyPaths: Set<PathKey>
+  /**
+   * Snapshot of `transientEmptyPaths` captured at construction (and
+   * re-captured on `reset(args)`). Used by dirty calculation: a path
+   * whose membership differs from the snapshot is dirty even if
+   * storage matches the original. Eagerly populated to avoid a "dirty
+   * on first read" race after construction.
+   */
+  readonly originalsTransientEmpty: Set<PathKey>
   readonly schema: AbstractSchema<F, G>
 
   /**
@@ -135,12 +160,16 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    * computes `meta.persist` from the per-element opt-in registry; other
    * internal call sites pass `meta.persist = hasAnyOptInForPath(path)`.
    * Public `form.setValue` passes no meta.
+   *
+   * Returns `false` when the slim-primitive gate rejects the write
+   * (the value's primitive shape doesn't match the schema's slim
+   * shape at the path). The store is unchanged in that case.
    */
-  setValueAtPath(path: Path, value: unknown, meta?: WriteMeta): void
+  setValueAtPath(path: Path, value: unknown, meta?: WriteMeta): boolean
   getValueAtPath(path: Path): unknown
 
   // --- reset ---
-  reset(nextDefaultValues?: DeepPartial<F>): void
+  reset(nextDefaultValues?: DeepPartial<WriteShape<F>>): void
   resetField(path: Path): void
 
   // --- errors ---
@@ -259,6 +288,22 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   registerCleanup(fn: () => void): void
 
   /**
+   * Register an async drain function. Called by the registry before
+   * `dispose()` so async background work — chiefly the persistence
+   * layer's debounced storage writes — has a chance to settle without
+   * losing the last keystroke. Each registered function is awaited in
+   * parallel; failures are swallowed to keep eviction reliable.
+   */
+  registerDrain(fn: () => Promise<void>): void
+
+  /**
+   * Drain async work registered via `registerDrain`. Resolves once
+   * every registered drain has settled (in parallel). Safe to call
+   * repeatedly — registered drains decide their own idempotency.
+   */
+  awaitPendingWrites(): Promise<void>
+
+  /**
    * Cache for per-state modules (history, persistence) that must
    * outlive any single consumer. Subsequent `useForm` / `useFormContext`
    * calls for the same key read from this map so the public API shape
@@ -307,16 +352,33 @@ export type FormStoreHydration = {
    */
   readonly userErrors: ReadonlyArray<readonly [string, unknown]>
   readonly fields: ReadonlyArray<readonly [string, unknown]>
+  /**
+   * Path keys that were in the form's `transientEmptyPaths` set at
+   * SSR time. Replayed into the reactive Set on the client so the
+   * "displayed empty" state survives the round-trip. Optional —
+   * pre-v3 envelopes don't carry it; missing means "no transient-
+   * empty paths".
+   */
+  readonly transientEmptyPaths?: ReadonlyArray<string>
 }
 
 export type CreateFormStoreOptions<F extends GenericForm, G extends GenericForm = F> = {
   readonly formKey: FormKey
   readonly schema: AbstractSchema<F, G>
-  readonly defaultValues?: DeepPartial<F> | undefined
+  readonly defaultValues?: DeepPartial<WriteShape<F>> | undefined
   readonly validationMode?: ValidationMode | undefined
   readonly hydration?: FormStoreHydration | undefined
   readonly fieldValidation?: FieldValidationConfig | undefined
   readonly isSSR?: boolean | undefined
+  /**
+   * Path keys to seed the `transientEmptyPaths` set with at construction.
+   * Only consulted when `hydration` is undefined — hydration data is
+   * authoritative when present (its own `transientEmptyPaths` field
+   * takes precedence). Used by `useAbstractForm`'s `unset`-symbol pre-
+   * pass (commit 7 wires the producer); commit 2 plumbs the channel
+   * through with no callers yet.
+   */
+  readonly initialTransientEmpty?: ReadonlyArray<string> | undefined
 }
 
 export function createFormStore<F extends GenericForm, G extends GenericForm = F>(
@@ -365,7 +427,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   const completedConstraints =
     defaultValues === undefined
       ? undefined
-      : (mergeStructural(schema, [], defaultValues) as DeepPartial<F>)
+      : (mergeStructural(schema, [], defaultValues) as DeepPartial<WriteShape<F>>)
   const schemaResponse: DefaultValuesResponse<F> = schema.getDefaultValues({
     useDefaultSchemaValues: true,
     constraints: completedConstraints,
@@ -401,6 +463,22 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // (isDirty, resetField's container loop) don't need to `JSON.parse(key)`
   // to recover the canonical Path.
   const originals = new Map<PathKey, OriginalsRecord>()
+
+  // Transient-empty bookkeeping. The reactive Set tracks paths whose
+  // displayed state should be EMPTY even though storage holds a real
+  // slim default; the originals snapshot mirrors construction-time
+  // membership so dirty calculation can detect the user's clear /
+  // un-clear actions. Hydration takes precedence over `initialTransientEmpty`
+  // (the SSR snapshot wins when present), matching how the hydrated
+  // `form` value overrides the schema's getDefaultValues result.
+  const initialTransientList: ReadonlyArray<string> =
+    hydration?.transientEmptyPaths ?? options.initialTransientEmpty ?? []
+  const transientEmptyPaths = reactive(new Set<PathKey>()) as Set<PathKey>
+  const originalsTransientEmpty = new Set<PathKey>()
+  for (const raw of initialTransientList) {
+    transientEmptyPaths.add(raw as PathKey)
+    originalsTransientEmpty.add(raw as PathKey)
+  }
 
   // Submission lifecycle refs. Initial values encode "no submission has
   // happened yet": not in flight, zero attempts, no captured error.
@@ -517,7 +595,29 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     }
   }
 
-  function setValueAtPath(path: Path, value: unknown, meta?: WriteMeta): void {
+  function setValueAtPath(path: Path, value: unknown, meta?: WriteMeta): boolean {
+    // Slim-primitive write gate: every leaf in the value must match
+    // the schema's slim primitive set at its sub-path. Refinement-level
+    // constraints (.email/.min/enum membership/etc.) are NOT enforced
+    // here — they're a validation concern. See ./slim-primitive-gate.ts.
+    if (!isSlimPrimitiveValid(schema, form, path, value)) {
+      return false
+    }
+
+    // Transient-empty bookkeeping. `transientEmpty: true` adds the path
+    // to the set (the call site declares "this write represents an
+    // empty intent"); any other write removes it (the user typed a
+    // real value or programmatically reassigned). The mark/unmark sit
+    // BEFORE the identity short-circuit so transitions that don't
+    // change storage value (e.g. typing 0 over slim-default 0) still
+    // update the visual / pendingEmpty state correctly.
+    const pathKey = canonicalizePath(path).key
+    if (meta?.transientEmpty === true) {
+      transientEmptyPaths.add(pathKey)
+    } else if (transientEmptyPaths.has(pathKey)) {
+      transientEmptyPaths.delete(pathKey)
+    }
+
     // Structural-completeness invariant: every write must leave the
     // form satisfying the slim schema. Two ingress points to fill:
     //   1. The target value (consumer may have passed a partial; the
@@ -531,11 +631,26 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // ref-equal sub-trees, and the fill walker only queries the
     // schema at gap sites.
     const completedValue = mergeStructural(schema, path, value)
+    // Identity short-circuit: if the path's current value already
+    // matches what we'd write, skip the replacement. Without this,
+    // every keystroke that produces an unchanged trimmed/cast value
+    // (e.g. typing a trailing space into a `.trim` input — trim → ""
+    // → form already at "") would still replace `form.value` with a
+    // new object identity, triggering Vue to re-render the input and
+    // patch the `:value` binding (which compares against the live
+    // DOM `el.value`, not the previous vnode prop). The patch
+    // overwrites the user's transient whitespace and the spacebar
+    // appears broken.
+    const currentValue = getAtPath(form.value, path)
+    if (Object.is(currentValue, completedValue)) {
+      return true
+    }
     const nextForm = setAtPathWithSchemaFill(form.value, schema, path, completedValue) as F
     applyFormReplacement(nextForm, meta)
     if (fieldValidationMode === 'change') {
       scheduleFieldValidation(path, false /* debounced */)
     }
+    return true
   }
 
   /**
@@ -644,6 +759,19 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     cleanupHooks.push(fn)
   }
 
+  const drainHooks: (() => Promise<void>)[] = []
+
+  function registerDrain(fn: () => Promise<void>): void {
+    drainHooks.push(fn)
+  }
+
+  async function awaitPendingWrites(): Promise<void> {
+    if (drainHooks.length === 0) return
+    // Run drains in parallel — each owns its own retry / failure
+    // semantics; we just need to know when all have settled.
+    await Promise.allSettled(drainHooks.map((fn) => fn()))
+  }
+
   function dispose(): void {
     // Run state-scoped teardowns BEFORE clearing listener sets, so a
     // module that wants to flush something by emitting one last event
@@ -658,6 +786,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       }
     }
     cleanupHooks.length = 0
+    drainHooks.length = 0
     modules.clear()
     cancelFieldValidation()
     formChangeListeners.clear()
@@ -814,7 +943,8 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     touchFieldRecord(key, path, {
       focused,
       blurred: !focused,
-      // `touched` becomes true on blur (matches the pre-rewrite contract).
+      // `touched` flips to true on blur and stays true thereafter; while
+      // a field is currently focused we keep whatever value it held.
       touched: focused ? (fields.get(key)?.touched ?? null) : true,
     })
     // On blur (focused → false), `fieldValidation: { on: 'blur' }` fires
@@ -832,7 +962,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
 
   // --- Reset ---
 
-  function reset(nextDefaultValues?: DeepPartial<F>): void {
+  function reset(nextDefaultValues?: DeepPartial<WriteShape<F>>): void {
     // Fall back to construction-time `defaultValues` when the caller
     // doesn't provide a fresh override. Otherwise `reset()` produces
     // schema-only defaults — losing the consumer's initial state from
@@ -856,6 +986,23 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       const { key } = canonicalizePath(patch.path)
       originals.set(key, { segments: patch.path, value: patch.newValue })
     })
+    // Transient-empty: with `nextDefaultValues` provided, both sets
+    // adopt the new baseline (commit 7 plugs the `unset`-symbol walker
+    // into this branch — for now the new defaults can't carry unset
+    // symbols at the type level, so the post-reset baseline is empty).
+    // With no args, restore `transientEmptyPaths` from the snapshot so
+    // construction-time membership returns; originalsTransientEmpty is
+    // preserved (the snapshot encodes the consumer's last declared
+    // baseline, which `reset()` should honour).
+    if (nextDefaultValues !== undefined) {
+      transientEmptyPaths.clear()
+      originalsTransientEmpty.clear()
+    } else {
+      transientEmptyPaths.clear()
+      for (const key of originalsTransientEmpty) {
+        transientEmptyPaths.add(key)
+      }
+    }
     // Drop every recorded error — the form is a fresh surface again.
     // Both stores clear: reset is "fresh start" semantics, so user-injected
     // errors are not preserved across a reset (different from submit-success,
@@ -911,7 +1058,17 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // Leaf shortcut: direct originals hit means one setValueAtPath does it.
     const leafEntry = originals.get(targetKey)
     if (leafEntry !== undefined) {
-      setValueAtPath(targetSegments, leafEntry.value)
+      const wrote = setValueAtPath(targetSegments, leafEntry.value)
+      if (!wrote) {
+        // Originals come from the construction-time pipeline, which
+        // guarantees primitive-correctness. A rejected reset write
+        // signals an invariant violation upstream.
+        console.error(
+          `[@chemical-x/forms] resetField: leaf write rejected for path '${targetKey}' — ` +
+            `originals contain a value that doesn't satisfy the slim primitive shape. ` +
+            `This is a bug in the construction pipeline.`
+        )
+      }
       schemaErrors.delete(targetKey)
       userErrors.delete(targetKey)
       clearFieldRecordFlags(targetKey)
@@ -944,7 +1101,14 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     }
     if (!anyMatch) return // nothing tracked under this prefix; no-op
 
-    setValueAtPath(targetSegments, subtree)
+    const wroteSubtree = setValueAtPath(targetSegments, subtree)
+    if (!wroteSubtree) {
+      console.error(
+        `[@chemical-x/forms] resetField: subtree write rejected at path '${targetKey}' — ` +
+          `originals contain values that don't satisfy the slim primitive shape. ` +
+          `This is a bug in the construction pipeline.`
+      )
+    }
 
     // Clear errors and reset field-record flags for the target + every
     // descendant. Segments come from the stored records (each ValidationError
@@ -1004,6 +1168,13 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
 
   function isPristineAtPath(path: Path): boolean {
     const { key, segments } = canonicalizePath(path)
+    // Storage match is necessary but not sufficient: a primitive leaf
+    // toggled between "displayed empty" (transient-empty + slim default)
+    // and "explicitly the slim default" carries the same storage value
+    // but differs visually. Compare both surfaces against the originals
+    // snapshot so the transient-empty contract dirties when membership
+    // diverges.
+    if (transientEmptyPaths.has(key) !== originalsTransientEmpty.has(key)) return false
     const entry = originals.get(key)
     if (entry === undefined) return true
     return Object.is(getAtPath(form.value, segments), entry.value)
@@ -1100,8 +1271,12 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     onReset,
     emitSubmitSuccess,
     registerCleanup,
+    registerDrain,
+    awaitPendingWrites,
     modules,
     persistOptIns,
+    transientEmptyPaths,
+    originalsTransientEmpty,
     dispose,
   }
 }

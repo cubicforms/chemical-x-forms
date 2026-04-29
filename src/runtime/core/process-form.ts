@@ -6,13 +6,28 @@ import type {
   OnSubmit,
   ReactiveValidationStatus,
   SubmitHandler,
+  ValidationError,
   ValidationResponse,
   ValidationResponseWithoutValue,
 } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
+import { __DEV__ } from './dev'
+import { CxErrorCode } from './error-codes'
 import { SubmitErrorHandlerError } from './errors'
-import { canonicalizePath, type Path } from './paths'
+import { canonicalizePath, type Path, type Segment } from './paths'
+
+/**
+ * Tracks FormStores for which we've already emitted the
+ * "validate() called outside an effect scope" warning. One warn per
+ * store keeps the diagnostic loud the first time and silent for the
+ * rest of the run — important for hot-loop callers that would
+ * otherwise spam the console (a tight test loop calling validate()
+ * 1000 times shouldn't produce 1000 warnings).
+ */
+const warnedNoScopeStores: WeakSet<FormStore<GenericForm>> | null = __DEV__
+  ? new WeakSet<FormStore<GenericForm>>()
+  : null
 
 /**
  * validate + handleSubmit, both built against a FormStore<F>. Replaces
@@ -80,7 +95,14 @@ export function buildProcessForm<F extends GenericForm>(
         // adapter-level error so the form surfaces something.
         result.value = {
           pending: false,
-          errors: [{ message: adapterThrowMessage(err), path: [], formKey: state.formKey }],
+          errors: [
+            {
+              message: adapterThrowMessage(err),
+              path: [],
+              formKey: state.formKey,
+              code: CxErrorCode.AdapterThrew,
+            },
+          ],
           success: false,
           formKey: state.formKey,
         }
@@ -107,7 +129,21 @@ export function buildProcessForm<F extends GenericForm>(
     // unmount. Tests calling validate() in a raw context simply leak
     // the watcher for the test's duration — acceptable given tests
     // tear down the module context per run.
-    if (getCurrentScope() !== undefined) onScopeDispose(stop)
+    if (getCurrentScope() !== undefined) {
+      onScopeDispose(stop)
+    } else if (
+      __DEV__ &&
+      warnedNoScopeStores !== null &&
+      !warnedNoScopeStores.has(state as FormStore<GenericForm>)
+    ) {
+      warnedNoScopeStores.add(state as FormStore<GenericForm>)
+      console.warn(
+        '[@chemical-x/forms] validate() called outside a Vue effect scope. ' +
+          'The reactive watcher will not be released until the JS engine garbage-collects the form ' +
+          '— move the call into setup() / a child component, or wrap in `effectScope().run(...)`. ' +
+          'Tests can suppress this warning by mocking console.warn for the run.'
+      )
+    }
     return result as Readonly<Ref<ReactiveValidationStatus<F>>>
   }
 
@@ -138,7 +174,28 @@ export function buildProcessForm<F extends GenericForm>(
     // AbstractSchema.validateAtPath takes a canonical structured path
     // — Segment[] — so literal-dot field keys can't collide with the
     // sibling-pair form at the adapter boundary.
-    return (await state.schema.validateAtPath(data, path)) as ValidationResponse<F>
+    const baseResult = (await state.schema.validateAtPath(data, path)) as ValidationResponse<F>
+    // Required-empty augmentation. The schema can't tell the difference
+    // between "user typed 0" and "user didn't answer" because storage
+    // holds the slim default (`0` for `z.number()`) in both cases. We
+    // close the gap by consulting the form's `transientEmptyPaths` set:
+    // every path in there + a required leaf in the schema becomes a
+    // synthesised "No value supplied" error. Empty set or no required leaves →
+    // no-op, return the base result unchanged.
+    const requiredErrors = collectRequiredEmptyErrors(state, path)
+    if (requiredErrors.length === 0) return baseResult
+    if (baseResult.success) {
+      return {
+        data: undefined,
+        errors: requiredErrors,
+        success: false,
+        formKey: state.formKey,
+      }
+    }
+    return {
+      ...baseResult,
+      errors: [...baseResult.errors, ...requiredErrors],
+    }
   }
 
   /**
@@ -195,18 +252,31 @@ export function buildProcessForm<F extends GenericForm>(
         const result = await runValidation(state.form.value, undefined)
         state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
         validationSettled = true
+        // Generation guard: if `reset()` fired while we were awaiting
+        // validation, the consumer just zeroed the submission surface
+        // — the validation result is for state that's been replaced.
+        // Skip the schema-error write so reset's empty store stays
+        // empty; still run the user's onError so they get the result
+        // (it's their data, not ours, to discard).
+        const generationStillValid = state.submissionGeneration.value === genAtEntry
         if (!result.success) {
           const errors = result.errors
           // Schema-only writer: user-injected errors (from
           // setFieldErrors / addFieldErrors / parseApiErrors-fed
           // entries) live in a separate store and are NOT clobbered by
           // the submit-time validation result.
-          state.setAllSchemaErrors(errors)
+          if (generationStillValid) {
+            state.setAllSchemaErrors(errors)
+          }
           // Apply the invalid-submit focus/scroll policy AFTER populating
           // the error store (so getFirstErrorElement walks the fresh
           // entries) and BEFORE the user's onError callback (so consumer
           // logic can override by calling .focus on something else).
-          applyInvalidSubmitPolicy(state, invalidPolicy)
+          // Skip the policy too on a stale generation — the post-reset
+          // form has no errors to focus.
+          if (generationStillValid) {
+            applyInvalidSubmitPolicy(state, invalidPolicy)
+          }
           if (onError !== undefined) {
             try {
               await onError(errors)
@@ -220,7 +290,12 @@ export function buildProcessForm<F extends GenericForm>(
         // passed, so the schema-error store goes empty. User-injected
         // errors persist — consumers managing their own warning/info
         // state via setFieldErrors keep ownership of that lifecycle.
-        state.clearSchemaErrors()
+        // Skip the clear when reset already cleared (and bumped gen) —
+        // any errors injected by post-reset user mutations would be
+        // wrongly wiped otherwise.
+        if (generationStillValid) {
+          state.clearSchemaErrors()
+        }
         await onSubmit(result.data)
         // Notify subscribers (persistence's clear-on-success handler,
         // future hooks). Fires only when the user callback resolved —
@@ -287,6 +362,64 @@ function stripData<F extends GenericForm>(
 function adapterThrowMessage(err: unknown): string {
   if (err instanceof Error) return `Adapter validateAtPath threw: ${err.message}`
   return 'Adapter validateAtPath threw a non-Error value'
+}
+
+/**
+ * Synthesise a "No value supplied" `ValidationError` for every path in the
+ * form's `transientEmptyPaths` whose schema requires the leaf — i.e.
+ * the schema is NOT `.optional()` / `.nullable()` / `.default(N)` /
+ * `.catch(N)` at that leaf. When a `scope` is provided (per-path
+ * `validate(path)` / `validateAsync(path)`), only paths inside the
+ * scope contribute; full-form validation passes `undefined` and
+ * checks every entry.
+ *
+ * Returns an empty array when nothing applies, so callers can
+ * fast-path without inspecting the result.
+ */
+function collectRequiredEmptyErrors<F extends GenericForm>(
+  state: FormStore<F>,
+  scope: Path | undefined
+): ValidationError[] {
+  if (state.transientEmptyPaths.size === 0) return []
+  const errors: ValidationError[] = []
+  for (const pathKey of state.transientEmptyPaths) {
+    // PathKey is `JSON.stringify(segments)` per `canonicalizePath`, so
+    // recovering the structured segments is `JSON.parse(...)`. Don't
+    // round-trip through `canonicalizePath(pathKey)` — that would treat
+    // the JSON-encoded string as a NEW dotted path and produce a single
+    // segment containing the literal JSON.
+    const segments = JSON.parse(pathKey) as Segment[]
+    if (scope !== undefined && !pathStartsWith(segments, scope)) continue
+    if (!state.schema.isRequiredAtPath(segments)) continue
+    errors.push({
+      // The path is in `transientEmptyPaths` — the user hasn't
+      // committed a value yet (or explicitly cleared via `unset` /
+      // a numeric DOM clear). The schema requires a value here.
+      // Message wording differentiates from a generic schema failure
+      // ("Expected number, received string") so consumers showing
+      // raw errors don't surface a vague "No value supplied" — devs see at
+      // a glance that the user just hasn't supplied this field.
+      message: 'No value supplied',
+      path: [...segments],
+      formKey: state.formKey,
+      code: CxErrorCode.NoValueSupplied,
+    })
+  }
+  return errors
+}
+
+/**
+ * `true` if `target`'s segments start with `prefix`. Used by
+ * `collectRequiredEmptyErrors` to honour the per-path scope of
+ * `validate(path)` — only transient-empty paths inside the validated
+ * subtree raise required errors. An empty prefix matches every path.
+ */
+function pathStartsWith(target: Path, prefix: Path): boolean {
+  if (prefix.length > target.length) return false
+  for (let i = 0; i < prefix.length; i++) {
+    if (!Object.is(target[i], prefix[i])) return false
+  }
+  return true
 }
 
 function applyInvalidSubmitPolicy<F extends GenericForm>(

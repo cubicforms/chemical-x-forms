@@ -119,6 +119,59 @@ not a Promise. Bind the returned value:
 
 See [0.6 → 0.7 migration](./migration/0.6-to-0.7.md).
 
+## "v-register on my component does nothing (typing doesn't update the form)"
+
+`<MyComponent v-register="...">` works only when the component's
+rendered root element is one Vue's directive can bind: `<input>`,
+`<textarea>`, or `<select>`. For components whose root is a `<div>`
+/ `<label>` / styled wrapper, the directive can't read `el.value`
+off the wrapper and skips listener attachment to avoid the bubbled-
+write bug — typing into a descendant input goes nowhere.
+
+The fix: call `useRegister()` in the child's setup and re-bind
+v-register onto an inner native element:
+
+```vue
+<!-- StyledInput.vue -->
+<script setup lang="ts">
+  import { useRegister } from '@chemical-x/forms'
+  const register = useRegister()
+</script>
+
+<template>
+  <div class="wrapper">
+    <input v-register="register" />
+  </div>
+</template>
+```
+
+The dev-mode console warning `v-register on <div> is a no-op …`
+points here. See the [components recipe](./recipes/persistence.md#component-support)
+for the four supported patterns (native root, useRegister,
+useFormContext for compound components, and the `assignKey`
+escape hatch).
+
+## "Submit fails with 'No value supplied' on a field the user can leave blank"
+
+The path is in the form's transient-empty set and bound to a
+required schema. Three resolutions, depending on intent:
+
+- **The field is genuinely optional.** Wrap the schema:
+  `z.string().optional()`, `z.number().nullable()`, or
+  `z.string().default('')`. Optional / nullable / has-default
+  schemas accept the empty case and don't raise.
+- **The field is required but the consumer wants `''` to count as
+  "filled".** Supply an explicit default at construction:
+  `defaultValues: { email: '' }`. The library reads this as "empty
+  string is intentional" and skips the auto-mark for that leaf.
+- **The library should treat a blank field as "user didn't fill
+  it."** Working as intended — the synthesized error
+  (`code: 'cx:no-value-supplied'`) prevents silently submitting
+  `0` / `''` / `false` for an unfilled required field.
+
+See [app-defaults recipe](./recipes/app-defaults.md) for the
+auto-mark rules and the `unset` sentinel.
+
 ## "Persisted state is gone after a schema change"
 
 Working as intended. As of 0.12, storage keys carry the schema's
@@ -191,6 +244,50 @@ of the app's usually stem from:
 - Paths relative to a sub-schema leaking through when the caller
   asked for an absolute path — re-stamp error paths with the
   field prefix before returning.
+
+## "My custom adapter is missing `code` on its ValidationErrors"
+
+Every `ValidationError` carries a required `code: string`. Pick a
+stable scope prefix for your adapter (e.g. `'mylib:'`) and forward
+the underlying issue's code under it:
+
+```ts
+return {
+  errors: result.issues.map((issue) => ({
+    path: issue.path,
+    message: issue.message,
+    formKey: '',
+    code: `mylib:${issue.code ?? 'unknown'}`,
+  })),
+  // ...
+}
+```
+
+See the [custom-adapter recipe](./recipes/custom-adapter.md) for
+the full contract including `isRequiredAtPath` (used by the
+transient-empty validation augmentation) and
+`getSlimPrimitiveTypesAtPath` (used by the slim-primitive write
+gate).
+
+## "Dev warnings don't fire — am I in production?"
+
+The library uses a `__DEV__` flag that resolves from
+`process.env.NODE_ENV !== 'production'` at module load. Standard
+bundlers (Vite, Webpack, Rollup with `@rollup/plugin-replace`)
+inline `process.env.NODE_ENV` at build time so the flag becomes
+a constant the compiler can dead-code-eliminate.
+
+**If you're importing the library directly from a browser-native
+ESM CDN (esm.sh, Skypack, unpkg) without a bundler,** `process`
+is undefined and `__DEV__` is permanently `false` — every dev-mode
+warning is silenced even though you're clearly in development.
+The library works correctly; only the diagnostic surface degrades.
+
+The fix is to put a bundler in your pipeline (or use a CDN that
+serves a bundled distribution). For production apps, this is
+already the case; for prototype-style CDN imports, it's a
+deliberate trade-off: no `process.env.NODE_ENV` replacement, no
+dev warnings.
 
 ## Still stuck?
 

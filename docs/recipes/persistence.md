@@ -237,14 +237,21 @@ The persisted payload contains only opted-in paths:
 
 // Persisted payload, written under key chemical-x-forms:signup:${fingerprint}
 {
-  v: 2,                                          // cx-internal envelope version
+  v: 4,                                          // cx-internal envelope version
   data: { form: { email: '…', phone: '…' } }     // no `cvv`
 }
 ```
 
-The `v: 2` field on the envelope is internal to cx — it tracks the
+The `v` field on the envelope is internal to cx — it tracks the
 on-disk format and is bumped only when cx itself changes the
-serialised shape. Consumers don't (and now can't) set it.
+serialised shape. Consumers don't (and now can't) set it. Drafts
+saved against a stale envelope version are dropped with a one-time
+dev-warn on read.
+
+The envelope also round-trips the form's transient-empty set when
+populated, so a numeric field cleared by the user stays visually
+empty after reload (storage holds the slim default; the displayed-
+empty state survives).
 
 On hydration, opted-in fields restore from storage; non-opted fields
 come from schema defaults. The opt-in set can change between mounts
@@ -465,6 +472,163 @@ without grepping.
   helper — schemas are the contract; renames are a write-once
   transformation the consumer owns.
 
+## Cross-tab semantics
+
+`localStorage` is shared across same-origin tabs; two tabs of the
+same app reading and writing the same persisted key will race.
+The library does NOT implement cross-tab coordination — it's
+**last-write-wins**. Two scenarios in particular:
+
+- Tab A is mid-debounce on a write; Tab B writes the same key
+  first; Tab A's debounce fires and overwrites Tab B's data.
+- The library does not subscribe to the `storage` event, so a
+  fresh write from another tab does NOT replay into the live form
+  on the first tab.
+
+**If multi-tab consistency matters,** use `'session'` (tab-scoped),
+or build a custom `FormStorage` adapter that coordinates writes
+(e.g., via a `BroadcastChannel`). For most form drafts, last-write-
+wins is acceptable; the user typing in two tabs of the same draft
+is a vanishingly rare case.
+
+## Storage degradation: what surfaces, what stays silent
+
+Each backend can fail on the consumer's device for reasons outside
+the library's control:
+
+- **localStorage / sessionStorage.** Quota exceeded (~5 MB), or
+  Safari private mode rejecting `setItem` with a `SecurityError`.
+  In dev mode, the adapter logs a one-shot `console.warn` on the
+  FIRST failure for a given form (subsequent failures stay silent
+  to avoid spamming the console with one warn per keystroke). In
+  production, failures are silently swallowed — by design, since
+  there's no user-visible recovery path the form can offer.
+- **IndexedDB.** The DB-open phase can fail (`onerror`) or be
+  blocked (`onblocked`, another tab holds an older version). One-
+  shot dev warning, same pattern as above. Per-write failures
+  surface as `transaction.onabort` (most often quota exceeded);
+  again, one-shot dev warning.
+
+Check `console` in dev mode if persistence appears to silently
+drop writes.
+
+## Component support
+
+`<MyComponent v-register="register('name')" />` is supported through
+four patterns, each appropriate for different component shapes. The
+recommended pattern (for most cases) is `useRegister()`.
+
+### 1. Native form-element root
+
+When `MyComponent`'s root is `<input>` / `<select>` / `<textarea>`,
+the directive lands on the rendered DOM root and persistence /
+focus / blur tracking apply directly with no extra wiring.
+
+```vue
+<!-- MyInput.vue -->
+<script setup lang="ts">
+  defineOptions({ inheritAttrs: false })
+</script>
+
+<template>
+  <input v-bind="$attrs" />
+</template>
+```
+
+```vue
+<!-- consumer -->
+<MyInput v-register="register('name')" />
+```
+
+### 2. Non-form root → `useRegister()` (recommended)
+
+When the component wraps a native input in styling (a `<div>`
+container, a `<label>` wrapper, etc.), call `useRegister()` in the
+child's setup and re-bind v-register onto an inner native element:
+
+```vue
+<!-- StyledInput.vue -->
+<script setup lang="ts">
+  import { useRegister } from '@chemical-x/forms'
+  const register = useRegister()
+</script>
+
+<template>
+  <div class="wrapper">
+    <input v-register="register" />
+  </div>
+</template>
+```
+
+```vue
+<!-- consumer -->
+<StyledInput v-register="register('email', { persist: true })" />
+```
+
+The directive on the parent's `<StyledInput>` detects the
+`useRegister` sentinel and skips listener attachment on the
+component's root. The inner `<input v-register="register">` gets
+the full directive lifecycle — listener attachment, FormStore
+element registration, focus / blur / touched tracking, persistence
+opt-in. The form-state contract aligns with where DOM events
+originate.
+
+`useRegister()` returns `ComputedRef<RegisterValue | undefined>`.
+The `| undefined` is intentional: a child rendered standalone (no
+parent passing `v-register`) gets a no-op binding plus a dev-warn,
+not a crash.
+
+### 3. Compound components → `useFormContext`
+
+For components that touch multiple fields (e.g. an `AddressBlock`
+with its own `street`, `city`, `zip` inputs), use the existing
+`useFormContext` API and call `ctx.register('a.b.c')` directly:
+
+```vue
+<!-- AddressBlock.vue -->
+<script setup lang="ts">
+  import { useFormContext } from '@chemical-x/forms'
+  type SignupForm = { address: { street: string; city: string; zip: string } }
+  const ctx = useFormContext<SignupForm>('signup')
+</script>
+
+<template>
+  <div v-if="ctx">
+    <input v-register="ctx.register('address.street')" />
+    <input v-register="ctx.register('address.city')" />
+    <input v-register="ctx.register('address.zip')" />
+  </div>
+</template>
+```
+
+`useRegister` is a single-purpose ambient hook — it never accepts a
+key or path. Compound use-cases belong on `useFormContext`, which
+already handles typed sub-paths, structured paths, `getFieldState`,
+and the rest.
+
+### 4. `assignKey` low-level escape hatch
+
+For Web Components (real custom elements that aren't Vue
+components) or unusual binding targets, install the assigner
+directly on the element:
+
+```ts
+import { assignKey } from '@chemical-x/forms'
+elRef.value[assignKey] = (newValue) => emit('update:modelValue', newValue)
+```
+
+A companion directive ordered first in `withDirectives` lets the
+assigner land before `vRegister.created` runs, suppressing the
+unsupported-element warn. The directive also respects a pre-
+installed `assignKey` and won't clobber it. Use this only when
+`useRegister` doesn't fit (typically Web Components).
+
+### Dev-warn
+
+The first time the directive sees a non-input / select / textarea
+root WITHOUT a `useRegister` sentinel and WITHOUT an `assignKey`
+override, it logs a one-shot warning pointing at this recipe.
+
 ## Gotchas
 
 - **`localStorage` blocks the main thread** on large writes. If
@@ -472,9 +636,18 @@ without grepping.
   `'indexeddb'`.
 - **Safari private mode** can throw `SecurityError` on
   `localStorage.setItem`. The adapter swallows it — the form stays
-  usable; writes just don't land.
+  usable; writes just don't land. See the dev-warning section
+  above.
 - **Re-mounting an opted-in input** with a fresh DOM element issues
   a new element ID; the prior opt-in (tied to the old element's ID)
   was already removed at unmount. Rapid mount/unmount cycles are
   fine — the registry tracks elements via WeakMap, which auto-GCs
   when the DOM node is dropped.
+- **`acknowledgeSensitive: true` is a code-review trigger, not a
+  soundness boundary.** It silences the throw for paths that match
+  the sensitive-name heuristic, but the heuristic doesn't catch
+  alias-typed paths (`register('pswd' as 'password')`), abbreviated
+  variants not in the list, or schemas with deliberately innocuous
+  keys for sensitive data. Treat the override as an explicit
+  decision worth a second pair of eyes; don't treat its absence
+  as a security guarantee.

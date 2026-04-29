@@ -27,11 +27,17 @@ const defaults: SignupForm = { email: '', password: '' }
 
 function harness(initial?: Partial<SignupForm>) {
   let captured!: UseAbstractFormReturnType<SignupForm>
+  const merged: SignupForm = { ...defaults, ...initial }
   const Probe = defineComponent({
     setup() {
       captured = useForm<SignupForm>({
-        schema: fakeSchema<SignupForm>({ ...defaults, ...initial }),
+        schema: fakeSchema<SignupForm>(merged),
         key: `agg-${Math.random().toString(36).slice(2)}`,
+        // Explicit defaultValues opt out of construction-time auto-mark
+        // (every primitive leaf would otherwise be `pendingEmpty`); this
+        // suite pins the dirty/valid round-trip semantics independent of
+        // the transient-empty layer.
+        defaultValues: merged,
       })
       return () => h('div')
     },
@@ -74,14 +80,18 @@ describe('useForm — isDirty / isValid form-level aggregates', () => {
   it('recording errors via setFieldErrors flips isValid false', () => {
     const { app, form } = harness()
     apps.push(app)
-    form.setFieldErrors([{ path: ['email'], message: 'required', formKey: form.key }])
+    form.setFieldErrors([
+      { path: ['email'], message: 'required', formKey: form.key, code: 'api:validation' },
+    ])
     expect(form.state.isValid).toBe(false)
   })
 
   it('clearing errors flips isValid back to true', () => {
     const { app, form } = harness()
     apps.push(app)
-    form.setFieldErrors([{ path: ['email'], message: 'required', formKey: form.key }])
+    form.setFieldErrors([
+      { path: ['email'], message: 'required', formKey: form.key, code: 'api:validation' },
+    ])
     expect(form.state.isValid).toBe(false)
     form.clearFieldErrors()
     expect(form.state.isValid).toBe(true)

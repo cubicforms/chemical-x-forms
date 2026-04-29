@@ -71,9 +71,24 @@ describe('@chemical-x/forms/vite — plugin registration', () => {
   })
 
   it('throws a helpful install-hint error when @vitejs/plugin-vue is missing', async () => {
+    // The error message changed in E2 to differentiate "not installed"
+    // from "found but version-incompatible". Match the new wording.
     await expect(resolveWith([chemicalXForms()])).rejects.toThrow(
-      /Could not find @vitejs\/plugin-vue/
+      /@vitejs\/plugin-vue is not installed/
     )
+  })
+
+  // E2 — second registration of chemicalXForms() must NOT double-push
+  // transforms. Pre-fix, two registrations stacked the transforms array
+  // twice, double-injecting every binding the AST emits.
+  it('is idempotent on duplicate registration', async () => {
+    const config = await resolveWith([vue(), chemicalXForms(), chemicalXForms()])
+    const api = getVueApi(config)
+    const nodeTransforms = api?.options?.template?.compilerOptions?.nodeTransforms ?? []
+    const selectCount = nodeTransforms.filter((t) => t === selectNodeTransform).length
+    const inputCount = nodeTransforms.filter((t) => t === inputTextAreaNodeTransform).length
+    expect(selectCount).toBe(1)
+    expect(inputCount).toBe(1)
   })
 })
 

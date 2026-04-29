@@ -1,23 +1,23 @@
 # Performance
 
-Chemical X is built to stay out of the way on the hot paths — keystrokes,
-submits, validation, reset. This page covers what you should expect
-and what to do if you hit a wall.
+Notes on the hot paths — keystrokes, submits, validation, reset —
+and what to look at if a form starts feeling slow. CI runs the
+benchmark suite under `bench/` on every PR with thresholds tracked
+in [`bench/`](../bench).
 
-## What's fast by default
+## Hot-path characteristics
 
-- **Keystrokes** — the register → form-state path has a CI gate
-  requiring ≥3× the pre-rewrite baseline. Typical benches run
-  6–12× faster.
-- **`state.isDirty`** — iterates only the tracked leaves, with no
-  per-leaf parse cost. Sub-millisecond on a 100-leaf form.
+- **Keystrokes** — the `register` → form-state path runs against a
+  per-PR threshold; see [`bench/keystroke.bench.ts`](../bench/keystroke.bench.ts)
+  for the measured scenarios (100-leaf and 500-leaf forms,
+  single-leaf mutation).
+- **`state.isDirty`** — iterates the tracked leaves with no
+  per-leaf parse cost.
 - **Path resolution** — dotted-string paths are LRU-cached (128
-  entries). A typical form re-canonicalises a small set of paths
-  thousands of times per session; the cache turns the repeat cost
-  into an O(1) map hit.
+  entries), so repeat canonicalisation reduces to a map lookup.
 
-You don't have to think about any of this for forms with hundreds
-of leaves.
+For forms below a few hundred leaves, the hot paths typically
+don't surface in profiling.
 
 ## Sizing guidance
 

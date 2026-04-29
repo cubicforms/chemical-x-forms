@@ -701,7 +701,7 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
   },
 }
 
-function setChecked(el: HTMLInputElement, { value, oldValue }: DirectiveBinding, vnode: VNode) {
+function setChecked(el: HTMLInputElement, { value, oldValue }: DirectiveBinding, _vnode: VNode) {
   // store the v-registerer value on the element so it can be accessed by the
   // change listener.
   if (!isRegisterValue(value)) return
@@ -709,10 +709,19 @@ function setChecked(el: HTMLInputElement, { value, oldValue }: DirectiveBinding,
   const originalValue = value.innerRef.value
   let checked: boolean
 
+  // Read the option-value via `getValue(el)` rather than
+  // `vnode.props?.['value']`. On SSR + hydration, Vue skips
+  // `patchProp` for hoisted static `value="..."` attributes — vnode
+  // props don't carry the value AND `el._value` is never set, so the
+  // old code returned undefined and unchecked the box even when the
+  // DOM `value` attribute matched the model. `getValue` (post the
+  // static-attr fix) checks `_value` first, then the DOM property,
+  // so all three paths (Vue dynamic, Vue hydrated static, manual
+  // setAttribute) resolve identically.
   if (isArray(originalValue)) {
-    checked = looseIndexOf(originalValue, vnode.props?.['value']) > -1
+    checked = looseIndexOf(originalValue, getValue(el)) > -1
   } else if (isSet(originalValue)) {
-    checked = originalValue.has(vnode.props?.['value'])
+    checked = originalValue.has(getValue(el))
   } else {
     if (originalValue === oldValue) {
       return
@@ -733,8 +742,12 @@ const vRegisterRadio: RegisterRadioCustomDirective = {
     if (!isRegisterValue(value)) return
 
     value.registerElement(el)
-    // setAssignFunction(el, vnode, value)
-    el.checked = looseEqual(value.innerRef.value, vnode.props?.['value'])
+    // Read the option-value via `getValue(el)` rather than
+    // `vnode.props?.['value']` for the same reason as setChecked:
+    // hydrated static `value="..."` attributes don't surface in
+    // vnode.props (Vue's static-attr fast path), so the prop-only
+    // read returned undefined and the radio mounted unchecked.
+    el.checked = looseEqual(value.innerRef.value, getValue(el))
     setAssignFunction(el, vnode, value)
     addEventListener(el, 'change', () => {
       if (shouldBailListener(el)) return
@@ -746,7 +759,7 @@ const vRegisterRadio: RegisterRadioCustomDirective = {
 
     setAssignFunction(el, vnode, value)
     if (value.innerRef.value !== oldValue) {
-      el.checked = looseEqual(value.innerRef.value, vnode.props?.['value'])
+      el.checked = looseEqual(value.innerRef.value, getValue(el))
     }
   },
 }

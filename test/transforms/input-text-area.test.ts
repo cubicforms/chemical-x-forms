@@ -108,4 +108,51 @@ describe('inputTextAreaNodeTransform', () => {
       expect(() => compileWithTransform(`<input v-register />`)).not.toThrow()
     })
   })
+
+  /**
+   * Repro for the playground bug: `<input type="checkbox" value="apple"
+   * v-register="...">` lost its static `value` attribute in the
+   * generated render code, so SSR HTML had no `value` attribute. Post-
+   * hydration the directive's change handler couldn't determine the
+   * option-value of the checkbox in an array group.
+   *
+   * The static `value=` on a checkbox / radio is the OPTION-value (a
+   * discriminator within the group), not display state — it must
+   * survive the transform. The synthesized binding the transform
+   * injects resolves to `:checked` for checkbox / radio at runtime,
+   * which is a different attribute key from `value`, so keeping the
+   * static `value` attribute alongside it is conflict-free.
+   */
+  describe('preserves static value attribute on checkbox / radio', () => {
+    // The assertions look for the literal in the form `value: "apple"`
+    // — that's how Vue's compiler emits an object-property entry for a
+    // static attribute. The literal `"apple"` ALSO appears inside the
+    // synthesized equality expression (`...?.includes("apple")`), so
+    // `toContain('"apple"')` would false-pass even pre-fix; the
+    // key-value-pair regex is what specifically catches "did the
+    // static attribute survive as an own prop on the props object".
+    it('keeps value="apple" on a static-type checkbox', () => {
+      const code = compileWithTransform(
+        `<input type="checkbox" value="apple" v-register="fruits" />`
+      )
+      expect(code).toMatch(/\bvalue:\s*"apple"/)
+    })
+
+    it('keeps value="apple" on a static-type radio', () => {
+      const code = compileWithTransform(`<input type="radio" value="apple" v-register="fruit" />`)
+      expect(code).toMatch(/\bvalue:\s*"apple"/)
+    })
+
+    it('still strips a colliding value attr on a text-type input', () => {
+      // Negative case — for text inputs, the synthesized binding
+      // resolves to `:value` and would clash with a static `value`.
+      // The transform's removal still applies there.
+      const code = compileWithTransform(`<input type="text" value="ignored" v-register="email" />`)
+      // The static `value: "ignored"` key-value pair must NOT appear
+      // in the props object. (The literal `"ignored"` itself does
+      // appear inside the synthesized conditional's equality leg —
+      // that's expected and unrelated.)
+      expect(code).not.toMatch(/\bvalue:\s*"ignored"/)
+    })
+  })
 })

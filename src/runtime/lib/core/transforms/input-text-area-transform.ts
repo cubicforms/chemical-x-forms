@@ -115,6 +115,27 @@ function isExactKey(summarizedKey: string, name: string): boolean {
 }
 
 /**
+ * Returns true iff the type prop's value is the static-attribute literal
+ * matching one of `names` (case-insensitive). Used to detect static
+ * `type="checkbox"` / `type="radio"` shapes where the `value` attribute
+ * is the option-value (a discriminator within the group), not display
+ * state — so the transform must NOT strip it.
+ *
+ * Conservative on dynamic shapes — `:type="x"` returns false, falling
+ * through to the text-input branch which strips `value`. Authors using
+ * dynamic types between checkbox/radio and text are rare; if they hit
+ * this they can add a static `type=` to lock the shape.
+ */
+function isStaticTypeOneOf(value: SummarizedProp['value'], names: readonly string[]): boolean {
+  if (Array.isArray(value)) return false
+  const trimmed = value.trim()
+  const literalMatch = /^(["'`])(.*)\1$/.exec(trimmed)
+  if (literalMatch === null) return false
+  const inner = (literalMatch[2] as string).toLowerCase()
+  return names.includes(inner)
+}
+
+/**
  * Returns true if the type prop's value MIGHT resolve to "file" at runtime.
  * Conservative — anything not provably non-"file" returns true so the caller
  * skips the transform.
@@ -227,7 +248,19 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
       const injectedLoc: SourceLocation = _node.loc
 
       const props = _node.props
-      removePropsByName(props, ['checked', 'value']) // (re)create the `value` prop further down
+      // For statically-typed checkbox / radio inputs, the `value=`
+      // attribute is the OPTION-value (the discriminator the directive
+      // matches against the model), not display state. The synthesized
+      // binding below resolves to `:checked="..."` for those types, a
+      // different attribute key — so the static `value` survives
+      // alongside it without conflict. Stripping it (as we still do
+      // for text/textarea, where the synthesized binding resolves to
+      // `:value`) leaves the SSR HTML without the attribute, and on
+      // hydration the directive can't tell which option this checkbox
+      // represents.
+      const keepStaticValue =
+        typeProp !== undefined && isStaticTypeOneOf(typeProp.value, ['checkbox', 'radio'])
+      removePropsByName(props, keepStaticValue ? ['checked'] : ['checked', 'value'])
       const registerValueArr = Array.isArray(registerSummarizedProp.value)
         ? registerSummarizedProp.value
         : [registerSummarizedProp.value]

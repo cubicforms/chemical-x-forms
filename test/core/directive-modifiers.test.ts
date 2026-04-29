@@ -1062,3 +1062,105 @@ describe('regression: vRegisterText × type="number" × backspace-to-empty', () 
     expect(markTransientEmpty).toHaveBeenCalledTimes(1)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────
+// `<input type="checkbox">` setChecked: hydration-with-static-attribute case
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Repro for the playground bug where SSR rendered `<input type="checkbox"
+ * value="banana">` with a static `value` attribute. On client hydration
+ * Vue's static-attr fast path skips `patchProp`, so `el._value` is
+ * never set AND `vnode.props['value']` is undefined for hoisted attrs.
+ * The directive's `setChecked` was reading `vnode.props?.['value']`
+ * exclusively — got undefined — and unchecked the box even though state
+ * contained 'banana' and the DOM attribute was set.
+ *
+ * The fix routes setChecked's option-value lookup through the same
+ * `getValue(el)` helper the change handler uses (post the prior
+ * static-attr fix), which falls back to the DOM `value` property
+ * when neither `_value` nor a vnode prop is present.
+ */
+describe('vRegisterCheckbox.setChecked — hydration with static value attribute', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('mounts with el.checked=true when array model contains the static-attribute value (no vnode.props.value, no _value)', () => {
+    const input = document.createElement('input')
+    input.type = 'checkbox'
+    // Static attribute path — sets the attribute AND el.value, but
+    // crucially does NOT set el._value (Vue's renderer would).
+    input.setAttribute('value', 'banana')
+    document.body.appendChild(input)
+
+    const { value } = makeRegisterValue<string[]>(['banana'])
+
+    // Both vnode.props.value AND el._value are absent — the exact
+    // shape the directive sees on a hydrated static-attr checkbox.
+    hooks.created?.(input, makeBinding(value), makeVNode({ type: 'checkbox' }), null)
+    hooks.mounted?.(input, makeBinding(value), makeVNode({ type: 'checkbox' }), null)
+
+    expect(input.checked).toBe(true)
+  })
+
+  it('mounts with el.checked=false when array model does NOT contain the static-attribute value', () => {
+    const input = document.createElement('input')
+    input.type = 'checkbox'
+    input.setAttribute('value', 'apple')
+    document.body.appendChild(input)
+
+    const { value } = makeRegisterValue<string[]>(['banana'])
+    hooks.created?.(input, makeBinding(value), makeVNode({ type: 'checkbox' }), null)
+    hooks.mounted?.(input, makeBinding(value), makeVNode({ type: 'checkbox' }), null)
+
+    expect(input.checked).toBe(false)
+  })
+
+  it('Set model: mounts with el.checked=true when the Set contains the static-attribute value', () => {
+    const input = document.createElement('input')
+    input.type = 'checkbox'
+    input.setAttribute('value', 'banana')
+    document.body.appendChild(input)
+
+    const { value } = makeRegisterValue<Set<string>>(new Set(['banana']))
+    hooks.created?.(input, makeBinding(value), makeVNode({ type: 'checkbox' }), null)
+    hooks.mounted?.(input, makeBinding(value), makeVNode({ type: 'checkbox' }), null)
+
+    expect(input.checked).toBe(true)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────
+// `<input type="radio">` created/beforeUpdate: same hydration shape
+// ─────────────────────────────────────────────────────────────────
+
+describe('vRegisterRadio — hydration with static value attribute', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('mounts with el.checked=true when state matches the static-attribute value (no vnode.props.value, no _value)', () => {
+    const input = document.createElement('input')
+    input.type = 'radio'
+    input.setAttribute('value', 'banana')
+    document.body.appendChild(input)
+
+    const { value } = makeRegisterValue<string>('banana')
+    hooks.created?.(input, makeBinding(value), makeVNode({ type: 'radio' }), null)
+
+    expect(input.checked).toBe(true)
+  })
+
+  it('mounts with el.checked=false when state does NOT match the static-attribute value', () => {
+    const input = document.createElement('input')
+    input.type = 'radio'
+    input.setAttribute('value', 'apple')
+    document.body.appendChild(input)
+
+    const { value } = makeRegisterValue<string>('banana')
+    hooks.created?.(input, makeBinding(value), makeVNode({ type: 'radio' }), null)
+
+    expect(input.checked).toBe(false)
+  })
+})

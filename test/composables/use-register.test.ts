@@ -70,7 +70,14 @@ describe('useRegister — inside child setup', () => {
     document.body.innerHTML = ''
   })
 
-  it('with NO parent registerValue → returns ComputedRef<undefined> + one-shot warn', async () => {
+  it('with NO parent registerValue → returns ComputedRef<undefined> + one-shot warn at onMounted', async () => {
+    // Diagnostic shape: the warn fires once per instance in the
+    // `onMounted` hook, after the parent has had its full mount
+    // lifecycle to bind v-register. Reading `.value` does NOT fire the
+    // warn — the computed factory is pure, so consumers that handle
+    // the undefined branch (storybook, preview pages, conditional
+    // bindings) read freely. Re-reads on the same instance never
+    // re-warn.
     const captured: { register?: ReturnType<typeof useRegister> } = {}
     const warnings: string[] = []
 
@@ -99,9 +106,6 @@ describe('useRegister — inside child setup', () => {
     app.mount(root)
     await flush()
 
-    // Computed is lazy — `.value` triggers evaluation, which is what
-    // fires the no-parent-RV warn. Read it BEFORE restoring the spy
-    // so the warn lands in the captured `warnings` array.
     expect(captured.register).toBeDefined()
     if (captured.register === undefined) throw new Error('unreachable')
     expect(captured.register.value).toBeUndefined()
@@ -109,7 +113,45 @@ describe('useRegister — inside child setup', () => {
     warnSpy.mockRestore()
 
     const matched = warnings.filter((w) => w.includes('useRegister'))
-    expect(matched.length).toBeGreaterThanOrEqual(1)
+    expect(matched.length).toBe(1)
+  })
+
+  it('with NO parent registerValue → re-reading the computed many times produces exactly one warn', async () => {
+    // The computed factory is pure — only the `onMounted` hook emits
+    // the diagnostic. A consumer that reads `register.value` in a
+    // conditional, a watcher, and a render must not see the warn
+    // multiplied per read.
+    const captured: { register?: ReturnType<typeof useRegister> } = {}
+    const warnings: string[] = []
+
+    const Child = defineComponent({
+      name: 'Child',
+      inheritAttrs: false,
+      setup() {
+        captured.register = useRegister()
+        return () => h('input', { type: 'text' })
+      },
+    })
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+      warnings.push(args.map((a) => String(a)).join(' '))
+    })
+
+    app = createApp(defineComponent({ render: () => h(Child) })).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+
+    if (captured.register === undefined) throw new Error('unreachable')
+    // Hammer the computed.
+    for (let i = 0; i < 10; i++) {
+      void captured.register.value
+    }
+
+    warnSpy.mockRestore()
+    const matched = warnings.filter((w) => w.includes('useRegister: no parent registerValue prop'))
+    expect(matched.length).toBe(1)
   })
 
   it('with parent registerValue → does NOT emit the no-parent-RV warn during initial render (regression: pre-onBeforeMount capture race)', async () => {

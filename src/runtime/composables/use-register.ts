@@ -66,17 +66,6 @@ export function useRegister(): ComputedRef<RegisterValue | undefined> {
     return computed(() => undefined)
   }
 
-  // Mark the rendered root DOM element after mount. `instance.vnode.el`
-  // is set during the patch of the child's subtree; reading it here
-  // (post-mount) gets the actual rendered element. The marker is what
-  // the parent's directive's deferred warn check reads.
-  onMounted(() => {
-    const el = instance.vnode.el
-    if (el !== null && el !== undefined && typeof el === 'object') {
-      ;(el as unknown as { [k: symbol]: unknown })[REGISTER_OWNER_MARKER] = true
-    }
-  })
-
   // Capture the bridge `registerValue` from instance.attrs into a
   // local ref, then STRIP the bridge keys (`registerValue` + `value`)
   // from the attrs object. This prevents fallthrough to the rendered
@@ -127,27 +116,45 @@ export function useRegister(): ComputedRef<RegisterValue | undefined> {
   // load-bearing for SSR — Vue skips lifecycle hooks during
   // `renderToString`, so an `onBeforeMount`-only capture leaves
   // `capturedRegisterValue` at `undefined` and the directive's first
-  // server-side template read fires the no-parent-RV warn even when the
-  // parent passed v-register correctly. Vue's `setupComponent` runs
-  // `initProps` (which populates `instance.attrs.registerValue` from the
-  // parent's `:registerValue` binding injected by `selectNodeTransform`)
-  // before `setup()` runs, so the sync read sees the correct value on
-  // both server and client. The `onBeforeMount` hook stays as a defence
-  // in depth against any re-population that could happen after setup
-  // (e.g. from a parent's directive re-running) — idempotent, safe to
-  // duplicate. The `onBeforeUpdate` hook handles parent re-renders,
-  // where Vue's `setFullProps` runs again and re-puts the bridge keys.
+  // server-side template read would otherwise misrender. Vue's
+  // `setupComponent` runs `initProps` (which populates
+  // `instance.attrs.registerValue` from the parent's `:registerValue`
+  // binding injected by `selectNodeTransform`) before `setup()` runs,
+  // so the sync read sees the correct value on both server and client.
+  // The `onBeforeMount` hook stays as defence in depth against any
+  // re-population that could happen after setup (e.g. from a parent's
+  // directive re-running) — idempotent, safe to duplicate. The
+  // `onBeforeUpdate` hook handles parent re-renders, where Vue's
+  // `setFullProps` runs again and re-puts the bridge keys.
   refreshAndStripBridgeAttrs()
   onBeforeMount(refreshAndStripBridgeAttrs)
   onBeforeUpdate(refreshAndStripBridgeAttrs)
 
-  return computed(() => {
-    const rv = capturedRegisterValue.value
-    if (rv === undefined) {
+  // Single post-mount hook does two jobs: (1) marks the rendered root
+  // DOM element with `REGISTER_OWNER_MARKER` so the parent directive's
+  // deferred warn check skips the "is a no-op" warn for components that
+  // handle binding via an inner v-register, and (2) emits the
+  // no-parent-RV diagnostic exactly once per instance if the captured
+  // value is still `undefined` by mount time — by then the parent has
+  // had its full lifecycle to bind, so still-undefined is conclusive
+  // misuse. The computed factory below stays pure: reads don't trigger
+  // diagnostics, so a consumer that conditionally consumes the value
+  // (or reads it many times) gets exactly the right behaviour. SSR is
+  // intentionally silent — `onMounted` doesn't fire on the server, and
+  // the CSR hydration pass surfaces the diagnostic on the only surface
+  // a developer can act on without double-counting through the Nuxt
+  // `dev:ssr-logs` channel.
+  onMounted(() => {
+    const el = instance.vnode.el
+    if (el !== null && el !== undefined && typeof el === 'object') {
+      ;(el as unknown as { [k: symbol]: unknown })[REGISTER_OWNER_MARKER] = true
+    }
+    if (capturedRegisterValue.value === undefined) {
       warnNoParentRV(instance as unknown as object)
     }
-    return rv
   })
+
+  return computed(() => capturedRegisterValue.value)
 }
 
 function warnOutsideSetup(): void {

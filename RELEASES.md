@@ -1,5 +1,30 @@
 # Releases
 
+## v0.12.0 — 2026-04-29
+
+## What's Changed
+* Claude/optimistic isconnected ssr by @ozzyfromcubic in https://github.com/cubicforms/chemical-x-forms/pull/133
+* feat!: validation refactor — errors as data, live by default by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/134
+* docs: trim README + close the lint/format-check gap by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/135
+* docs: lower the first-touch barrier in the README by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/136
+* docs: hoist npm install above the framework split by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/137
+* feat!: validationMode defaults to 'strict' by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/138
+* feat: snappier default field-validation debounce (200 → 125 ms) by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/139
+* feat: app-level defaults on createChemicalXForms + Nuxt module by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/140
+* feat!: reserve __cx: form-key namespace; rename anon prefix by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/141
+* test: silence Vue setup-error warns on the reserved-key reject tests by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/142
+* feat!: per-element persistence opt-in via register({ persist: true }) by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/143
+* fix: honor setValue callback form at runtime by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/148
+* feat!: useFormContext returns null + dev-warn on miss by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/149
+* feat: split useRegistry throws into OutsideSetupError vs RegistryNotInstalledError by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/150
+* feat!: structural-completeness invariant + fingerprint persistence + read/write type honesty by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/151
+* feat!: error codes + transient-empty/unset + slim-primitive write contract by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/153
+
+
+**Full Changelog**: https://github.com/cubicforms/chemical-x-forms/compare/v0.11.1...v0.12.0
+
+---
+
 ## v0.11.1 — 2026-04-25
 
 ## What's Changed

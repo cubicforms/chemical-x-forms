@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+_No unreleased changes yet._
+
+## v0.12.0
 **Validation refactor: errors as a pure function of `(value, schema) +
 injected user errors`.** The data layer (errors as state) is now fully
 separable from the rendering layer (when to show them). Schema-driven

@@ -10,6 +10,14 @@
       city: z.string(),
     }),
     salary: z.number(),
+    // Checkbox demos:
+    //   - boolean → single checkbox (true/false)
+    //   - array → checkbox group (membership add/remove)
+    //   - enum + :true-value/:false-value → single checkbox mapped
+    //     to one of two strings
+    agreedToTerms: z.boolean(),
+    favoriteFruits: z.array(z.string()),
+    newsletter: z.enum(['subscribe', 'unsubscribe']),
   })
 
   const { register, getFieldState, handleSubmit, getValue } = useForm({
@@ -54,8 +62,47 @@
 
       <div>
         <label for="salary">Salary</label>
-        <input id="salary" v-register="register('address.salary')" />
+        <input id="salary" v-register="register('salary')" />
       </div>
+
+      <hr />
+      <h3>Checkboxes</h3>
+
+      <div>
+        <label>
+          <input v-register="register('agreedToTerms')" type="checkbox" />
+          I agree to the terms (single boolean)
+        </label>
+      </div>
+
+      <fieldset>
+        <legend>Favorite fruits (array group — share one register binding)</legend>
+        <label>
+          <input v-register="register('favoriteFruits')" type="checkbox" value="apple" />
+          Apple
+        </label>
+        <label>
+          <input v-register="register('favoriteFruits')" type="checkbox" value="banana" />
+          Banana
+        </label>
+        <label>
+          <input v-register="register('favoriteFruits')" type="checkbox" value="cherry" />
+          Cherry
+        </label>
+      </fieldset>
+
+      <div>
+        <label>
+          <input
+            v-register="register('newsletter')"
+            type="checkbox"
+            :true-value="'subscribe'"
+            :false-value="'unsubscribe'"
+          />
+          Newsletter (single checkbox mapped to a string via :true-value / :false-value)
+        </label>
+      </div>
+
       <button>Log in</button>
     </form>
 

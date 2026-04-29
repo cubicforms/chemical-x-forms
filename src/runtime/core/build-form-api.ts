@@ -13,7 +13,13 @@ import type {
   ValidationError,
   ValidationResponseWithoutValue,
 } from '../types/types-api'
-import type { DeepPartial, DefaultValuesShape, GenericForm } from '../types/types-core'
+import type {
+  DeepPartial,
+  DefaultValuesShape,
+  GenericForm,
+  WithIndexedUndefined,
+  WriteShape,
+} from '../types/types-core'
 import { __DEV__ } from './dev'
 import type { FormStore } from './create-form-store'
 import { buildFieldArrayApi } from './field-arrays'
@@ -27,6 +33,7 @@ import { buildProcessForm } from './process-form'
 import { buildRegister } from './register-api'
 import { isUnset } from './unset'
 import { walkUnsetSentinels } from './unset-walker'
+import { buildValuesProxy } from './values-proxy'
 
 export type BuildFormApiOptions = {
   /** Forwarded to buildProcessForm. See `UseFormConfiguration.onInvalidSubmit`. */
@@ -419,6 +426,16 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     return readonlySetSnapshot(state.blankPaths)
   })
 
+  // --- Pinia-style reactive readonly proxy over the form's value ---
+  // `valuesProxyComputed.value` is a deeply-readonly Vue proxy. The
+  // computed wrapping ensures `state.form.value` reassignments (the
+  // `applyFormReplacement` path used by `reset()` and whole-form
+  // `setValue`) invalidate the cached proxy and produce a fresh one
+  // keyed to the new target. The public `values` getter on the return
+  // object reads `.value` so consumers get the proxy directly with no
+  // `.value` access from their side.
+  const valuesProxyComputed = buildValuesProxy(state.form)
+
   return {
     getFieldState: getFieldState as UseAbstractFormReturnType<
       Form,
@@ -426,6 +443,16 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     >['getFieldState'],
     handleSubmit,
     getValue: getValueImpl as UseAbstractFormReturnType<Form, GetValueFormType>['getValue'],
+    // `values` is a getter so reads route through the wrapping computed
+    // and pick up reactivity at the call site (every consumer template
+    // / effect that reads `form.values.<x>` subscribes to the underlying
+    // form ref). A plain property assignment (`values: valuesProxyComputed.value`)
+    // would snapshot once at buildFormApi time and never invalidate.
+    get values() {
+      return valuesProxyComputed.value as Readonly<
+        WithIndexedUndefined<WriteShape<GetValueFormType>>
+      >
+    },
     setValue: setValueImpl as UseAbstractFormReturnType<Form, GetValueFormType>['setValue'],
     validate: validate as UseAbstractFormReturnType<Form, GetValueFormType>['validate'],
     validateAsync: validateAsync as UseAbstractFormReturnType<

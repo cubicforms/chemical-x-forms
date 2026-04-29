@@ -1605,6 +1605,34 @@ export type UseAbstractFormReturnType<
       ? CurrentValueWithContext<NestedReadType<WriteShape<GetValueFormType>, Path>>
       : Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
   }
+
+  /**
+   * Reactive readonly proxy over the form's storage value. Read
+   * identically in script and template — no `.value`, no auto-unwrap
+   * rules. Pinia setup-store pattern.
+   *
+   * ```vue
+   * <script setup>
+   *   const form = useForm({ schema, key: 'login' })
+   * </script>
+   *
+   * <template>
+   *   <p>{{ form.values.email }}</p>
+   *   <p>{{ form.values.address.city }}</p>
+   * </template>
+   * ```
+   *
+   * Writes are blocked at the proxy boundary — go through `setValue`,
+   * `setValues`, the directive, or one of the field-array helpers. The
+   * slim-primitive write gate stays the only path into storage.
+   *
+   * Reads reflect what's storable: enum-typed slots widen to their
+   * primitive supertype (`string`), so refinement-invalid but
+   * structurally-valid values are visible. Use `handleSubmit` /
+   * `validateAsync()` when you need the post-validation strict type.
+   */
+  values: Readonly<WithIndexedUndefined<WriteShape<GetValueFormType>>>
+
   /**
    * Write to the form programmatically. Two forms:
    *

@@ -60,14 +60,14 @@ describe('useForm — field array helpers', () => {
       const { app, form } = harness({ tags: ['a', 'b'] })
       apps.push(app)
       form.append('tags', 'c')
-      expect(form.getValue('tags').value).toEqual(['a', 'b', 'c'])
+      expect(form.values.tags).toEqual(['a', 'b', 'c'])
     })
 
     it('adds an object item at the end of an array-of-object path', () => {
       const { app, form } = harness({ posts: [{ title: 'first', views: 1 }] })
       apps.push(app)
       form.append('posts', { title: 'second', views: 0 })
-      expect(form.getValue('posts').value).toEqual([
+      expect(form.values.posts).toEqual([
         { title: 'first', views: 1 },
         { title: 'second', views: 0 },
       ])
@@ -77,7 +77,7 @@ describe('useForm — field array helpers', () => {
       const { app, form } = harness()
       apps.push(app)
       form.append('tags', 'first')
-      expect(form.getValue('tags').value).toEqual(['first'])
+      expect(form.values.tags).toEqual(['first'])
     })
   })
 
@@ -86,7 +86,7 @@ describe('useForm — field array helpers', () => {
       const { app, form } = harness({ tags: ['b', 'c'] })
       apps.push(app)
       form.prepend('tags', 'a')
-      expect(form.getValue('tags').value).toEqual(['a', 'b', 'c'])
+      expect(form.values.tags).toEqual(['a', 'b', 'c'])
     })
   })
 
@@ -95,14 +95,14 @@ describe('useForm — field array helpers', () => {
       const { app, form } = harness({ tags: ['a', 'c'] })
       apps.push(app)
       form.insert('tags', 1, 'b')
-      expect(form.getValue('tags').value).toEqual(['a', 'b', 'c'])
+      expect(form.values.tags).toEqual(['a', 'b', 'c'])
     })
 
     it('inserting past `length` appends (Array.splice clamping)', () => {
       const { app, form } = harness({ tags: ['a'] })
       apps.push(app)
       form.insert('tags', 99, 'b')
-      expect(form.getValue('tags').value).toEqual(['a', 'b'])
+      expect(form.values.tags).toEqual(['a', 'b'])
     })
   })
 
@@ -111,16 +111,16 @@ describe('useForm — field array helpers', () => {
       const { app, form } = harness({ tags: ['a', 'b', 'c'] })
       apps.push(app)
       form.remove('tags', 1)
-      expect(form.getValue('tags').value).toEqual(['a', 'c'])
+      expect(form.values.tags).toEqual(['a', 'c'])
     })
 
     it('no-ops on an out-of-range index (never grows or shrinks incorrectly)', () => {
       const { app, form } = harness({ tags: ['a', 'b'] })
       apps.push(app)
       form.remove('tags', 5)
-      expect(form.getValue('tags').value).toEqual(['a', 'b'])
+      expect(form.values.tags).toEqual(['a', 'b'])
       form.remove('tags', -1)
-      expect(form.getValue('tags').value).toEqual(['a', 'b'])
+      expect(form.values.tags).toEqual(['a', 'b'])
     })
   })
 
@@ -129,22 +129,22 @@ describe('useForm — field array helpers', () => {
       const { app, form } = harness({ tags: ['a', 'b', 'c', 'd'] })
       apps.push(app)
       form.swap('tags', 1, 2)
-      expect(form.getValue('tags').value).toEqual(['a', 'c', 'b', 'd'])
+      expect(form.values.tags).toEqual(['a', 'c', 'b', 'd'])
     })
 
     it('no-ops on out-of-range indices', () => {
       const { app, form } = harness({ tags: ['a', 'b'] })
       apps.push(app)
       form.swap('tags', 0, 10)
-      expect(form.getValue('tags').value).toEqual(['a', 'b'])
+      expect(form.values.tags).toEqual(['a', 'b'])
     })
 
     it('no-ops when a === b', () => {
       const { app, form } = harness({ tags: ['a', 'b'] })
       apps.push(app)
-      const before = form.getValue('tags').value
+      const before = form.values.tags
       form.swap('tags', 1, 1)
-      expect(form.getValue('tags').value).toEqual(before)
+      expect(form.values.tags).toEqual(before)
     })
   })
 
@@ -153,21 +153,21 @@ describe('useForm — field array helpers', () => {
       const { app, form } = harness({ tags: ['a', 'b', 'c', 'd'] })
       apps.push(app)
       form.move('tags', 0, 2)
-      expect(form.getValue('tags').value).toEqual(['b', 'c', 'a', 'd'])
+      expect(form.values.tags).toEqual(['b', 'c', 'a', 'd'])
     })
 
     it('moves to 0 puts the item at the start', () => {
       const { app, form } = harness({ tags: ['a', 'b', 'c'] })
       apps.push(app)
       form.move('tags', 2, 0)
-      expect(form.getValue('tags').value).toEqual(['c', 'a', 'b'])
+      expect(form.values.tags).toEqual(['c', 'a', 'b'])
     })
 
     it('clamps `to` to length (moving to past-end appends)', () => {
       const { app, form } = harness({ tags: ['a', 'b', 'c'] })
       apps.push(app)
       form.move('tags', 0, 99)
-      expect(form.getValue('tags').value).toEqual(['b', 'c', 'a'])
+      expect(form.values.tags).toEqual(['b', 'c', 'a'])
     })
   })
 
@@ -176,32 +176,32 @@ describe('useForm — field array helpers', () => {
       const { app, form } = harness({ tags: ['a', 'b', 'c'] })
       apps.push(app)
       form.replace('tags', 1, 'B')
-      expect(form.getValue('tags').value).toEqual(['a', 'B', 'c'])
+      expect(form.values.tags).toEqual(['a', 'B', 'c'])
     })
 
     it('does NOT grow the array on out-of-range index', () => {
       const { app, form } = harness({ tags: ['a'] })
       apps.push(app)
       form.replace('tags', 3, 'BAD')
-      expect(form.getValue('tags').value).toEqual(['a'])
+      expect(form.values.tags).toEqual(['a'])
     })
 
     it('replaces an object item', () => {
       const { app, form } = harness({ posts: [{ title: 'first', views: 1 }] })
       apps.push(app)
       form.replace('posts', 0, { title: 'second', views: 2 })
-      expect(form.getValue('posts').value).toEqual([{ title: 'second', views: 2 }])
+      expect(form.values.posts).toEqual([{ title: 'second', views: 2 }])
     })
   })
 
-  it('mutations trigger reactivity (form-level getValue sees the update)', () => {
+  it('mutations trigger reactivity (form.values sees the update)', () => {
     const { app, form } = harness({ tags: ['a'] })
     apps.push(app)
-    const tags = form.getValue('tags')
-    expect(tags.value).toEqual(['a'])
+    expect(form.values.tags).toEqual(['a'])
     form.append('tags', 'b')
-    // Computed ref should now reflect the new array — reactivity round-trip.
-    expect(tags.value).toEqual(['a', 'b'])
+    // Reading through the proxy re-tracks the underlying form ref, so
+    // the second read reflects the post-mutation array.
+    expect(form.values.tags).toEqual(['a', 'b'])
   })
 
   it('append flips isDirty (newly-introduced leaves count as mutations)', () => {

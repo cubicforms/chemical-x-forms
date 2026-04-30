@@ -270,6 +270,6 @@ describe('persistence — blank round-trips across mount', () => {
 
     if (captured === undefined) throw new Error('form not captured')
     expect(captured.blankPaths.value.size).toBe(0)
-    expect(captured.getValue('income').value).toBe(100)
+    expect(captured.values.income).toBe(100)
   })
 })

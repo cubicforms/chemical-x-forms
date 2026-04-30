@@ -71,28 +71,28 @@ describe('slim-primitive defaults — refinement-invalid passes through', () => 
     const schema = z.object({ color: z.enum(['red', 'green', 'blue']) })
     const { api, app } = mountWith(schema, { color: 'teal' as 'red' })
     apps.push(app)
-    expect(api.getValue('color').value).toBe('teal')
+    expect(api.values.color).toBe('teal')
   })
 
   it("defaultValues: { email: 'luigi' } against z.string().email() lands as 'luigi'", async () => {
     const schema = z.object({ email: z.string().email() })
     const { api, app } = mountWith(schema, { email: 'luigi' })
     apps.push(app)
-    expect(api.getValue('email').value).toBe('luigi')
+    expect(api.values.email).toBe('luigi')
   })
 
   it('defaultValues with too-short string against z.string().min(8) lands as the short string', async () => {
     const schema = z.object({ password: z.string().min(8) })
     const { api, app } = mountWith(schema, { password: 'abc' })
     apps.push(app)
-    expect(api.getValue('password').value).toBe('abc')
+    expect(api.values.password).toBe('abc')
   })
 
   it("defaultValues against z.literal('on'): 'off' passes through", async () => {
     const schema = z.object({ mode: z.literal('on') })
     const { api, app } = mountWith(schema, { mode: 'off' as 'on' })
     apps.push(app)
-    expect(api.getValue('mode').value).toBe('off')
+    expect(api.values.mode).toBe('off')
   })
 })
 
@@ -107,14 +107,14 @@ describe('slim-primitive defaults — wrong-primitive fixed to schema default', 
     const schema = z.object({ color: z.enum(['red', 'green', 'blue']) })
     const { api, app } = mountWith(schema, { color: 1 as unknown as 'red' })
     apps.push(app)
-    expect(api.getValue('color').value).toBe('red')
+    expect(api.values.color).toBe('red')
   })
 
   it("defaultValues: { email: 1 } against z.string().email() lands as ''", async () => {
     const schema = z.object({ email: z.string().email() })
     const { api, app } = mountWith(schema, { email: 1 as unknown as string })
     apps.push(app)
-    expect(api.getValue('email').value).toBe('')
+    expect(api.values.email).toBe('')
   })
 
   it('defaultValues with wrong primitive nested in object: only the offending leaf is fixed', async () => {
@@ -129,8 +129,8 @@ describe('slim-primitive defaults — wrong-primitive fixed to schema default', 
     })
     apps.push(app)
     // name passes through ('Bob'); age gets primitive-fixed (0).
-    expect(api.getValue('user.name').value).toBe('Bob')
-    expect(api.getValue('user.age').value).toBe(0)
+    expect(api.values.user.name).toBe('Bob')
+    expect(api.values.user.age).toBe(0)
   })
 })
 
@@ -148,8 +148,8 @@ describe('slim-primitive defaults — strict-mode surfaces refinement errors at 
     // Strict-mode runs the FULL schema's safeParse at construction
     // and surfaces refinement errors. The form value is still 'teal'
     // (passes through), but fieldErrors/color is populated.
-    expect(api.getValue('color').value).toBe('teal')
-    const errs = api.fieldErrors.color
+    expect(api.values.color).toBe('teal')
+    const errs = api.errors.color
     expect(errs).toBeDefined()
     expect(errs?.length).toBeGreaterThan(0)
   })

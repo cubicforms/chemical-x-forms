@@ -62,14 +62,14 @@ describe('history — default (history: true)', () => {
     apps.push(app)
     api.setValue('email', 'first@example.com')
     api.setValue('email', 'second@example.com')
-    expect(api.getValue('email').value).toBe('second@example.com')
+    expect(api.values.email).toBe('second@example.com')
     expect(api.undo()).toBe(true)
-    expect(api.getValue('email').value).toBe('first@example.com')
+    expect(api.values.email).toBe('first@example.com')
     expect(api.undo()).toBe(true)
-    expect(api.getValue('email').value).toBe('')
+    expect(api.values.email).toBe('')
     // One more undo bottoms out at the initial snapshot.
     expect(api.undo()).toBe(false)
-    expect(api.getValue('email').value).toBe('')
+    expect(api.values.email).toBe('')
   })
 
   it('redo replays an undone mutation', () => {
@@ -80,7 +80,7 @@ describe('history — default (history: true)', () => {
     api.undo()
     expect(api.state.canRedo).toBe(true)
     expect(api.redo()).toBe(true)
-    expect(api.getValue('email').value).toBe('two@example.com')
+    expect(api.values.email).toBe('two@example.com')
   })
 
   it('new mutation after undo clears the redo stack', () => {
@@ -121,12 +121,12 @@ describe('history — default (history: true)', () => {
     // snapshot captures the cleared state.
     api.clearFieldErrors('email')
     api.setValue('email', 'c')
-    expect(api.fieldErrors.email).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
     // Undo once — snapshot taken at the 'b' mutation carried the
     // errors that were set just before it.
     api.undo()
-    expect(api.getValue('email').value).toBe('b')
-    expect(api.fieldErrors.email?.[0]?.message).toBe('bad')
+    expect(api.values.email).toBe('b')
+    expect(api.errors.email?.[0]?.message).toBe('bad')
   })
 })
 
@@ -150,7 +150,7 @@ describe('history — bounded stack', () => {
     // Stack had 3 entries; undo from the current settles us on the
     // oldest-retained — we can undo (max - 1) times.
     expect(depth).toBe(2)
-    expect(['value-2', 'value-3'].includes(api.getValue('email').value as string)).toBe(true)
+    expect(['value-2', 'value-3'].includes(api.values.email as string)).toBe(true)
   })
 
   it('historySize tracks both stacks', () => {
@@ -180,6 +180,6 @@ describe('history — disabled (no config)', () => {
     expect(api.state.canUndo).toBe(false)
     expect(api.state.canRedo).toBe(false)
     expect(api.state.historySize).toBe(0)
-    expect(api.getValue('email').value).toBe('mutated')
+    expect(api.values.email).toBe('mutated')
   })
 })

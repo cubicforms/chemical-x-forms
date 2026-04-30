@@ -5,6 +5,7 @@ import { createApp, defineComponent, h, nextTick, withDirectives, type App } fro
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
+import { AnonPersistError } from '../../src/runtime/core/errors'
 import { __resetIndexedDbForTests } from '../../src/runtime/core/persistence/indexeddb'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
@@ -230,9 +231,9 @@ describe('persistence — localStorage backend', () => {
     // Poll the getValue ref until the replacement lands rather than
     // wagering a fixed sleep — the adapter's dynamic import alone can
     // take a variable number of microtasks on a cold CI runner.
-    await waitUntil(() => (api.getValue('email').value === 'seed@example.com' ? true : null))
-    expect(api.getValue('email').value).toBe('seed@example.com')
-    expect(api.getValue('password').value).toBe('pw')
+    await waitUntil(() => (api.values.email === 'seed@example.com' ? true : null))
+    expect(api.values.email).toBe('seed@example.com')
+    expect(api.values.password).toBe('pw')
   })
 
   it('drops AND wipes a version-mismatched payload', async () => {
@@ -250,7 +251,7 @@ describe('persistence — localStorage backend', () => {
     // Hydration is async, so wait for the wipe to land before asserting.
     await waitUntil(() => (localStorage.getItem(fpKey('test-vmismatch')) === null ? true : null))
     expect(localStorage.getItem(fpKey('test-vmismatch'))).toBeNull()
-    expect(api.getValue('email').value).toBe('')
+    expect(api.values.email).toBe('')
   })
 
   it('wipes a malformed-shape payload on mount', async () => {
@@ -269,7 +270,7 @@ describe('persistence — localStorage backend', () => {
     apps.push(app)
     await waitUntil(() => (localStorage.getItem(fpKey('test-malformed')) === null ? true : null))
     expect(localStorage.getItem(fpKey('test-malformed'))).toBeNull()
-    expect(api.getValue('email').value).toBe('')
+    expect(api.values.email).toBe('')
   })
 
   it('clears the persisted entry on submit success', async () => {
@@ -283,7 +284,7 @@ describe('persistence — localStorage backend', () => {
     // and is async, so wait for the form to actually carry the seed
     // value before we submit. Otherwise a submit-during-hydration
     // races the clear-on-success path.
-    await waitUntil(() => (api.getValue('email').value === 'pre@x.com' ? true : null))
+    await waitUntil(() => (api.values.email === 'pre@x.com' ? true : null))
     const handler = api.handleSubmit(async () => {})
     await handler()
     // The onSubmitSuccess listener fires a fire-and-forget
@@ -398,13 +399,11 @@ describe('persistence — non-opted-in blank paths survive hydration', () => {
     // Wait for the persistence hydrate to land (it's async — dynamic
     // import + adapter.getItem + apply).
     if (captured.api === undefined) throw new Error('unreachable')
-    await waitUntil(() =>
-      captured.api?.getValue('email').value === 'seed@example.com' ? true : null
-    )
+    await waitUntil(() => (captured.api?.values.email === 'seed@example.com' ? true : null))
 
     // Sanity: email did hydrate (otherwise the test below isn't
     // exercising the post-hydrate state at all).
-    expect(captured.api.getValue('email').value).toBe('seed@example.com')
+    expect(captured.api.values.email).toBe('seed@example.com')
 
     // Critical assertion: the salary path is STILL in the
     // blank set after hydration. Pre-fix the persistence
@@ -424,7 +423,7 @@ describe('persistence — non-opted-in blank paths survive hydration', () => {
     // so the DOM-side check would only pass if we compiled the
     // template — overkill for this regression.)
     expect(captured.api.register('salary').displayValue.value).toBe('')
-    expect(captured.api.getValue('salary').value).toBe(0)
+    expect(captured.api.values.salary).toBe(0)
   })
 })
 
@@ -513,11 +512,11 @@ describe('persistence — anonymous useForm() rejects persist (dev throw)', () =
         .flat()
         .some(
           (arg) =>
-            (arg instanceof Error && /persist:.*requires an explicit key/.test(arg.message)) ||
-            (typeof arg === 'string' && /persist:.*requires an explicit key/.test(arg))
+            (arg instanceof Error && /persist.*requires.*\bkey\b/.test(arg.message)) ||
+            (typeof arg === 'string' && /persist.*requires.*\bkey\b/.test(arg))
         )
       const seenViaCatch =
-        caught instanceof Error && /persist:.*requires an explicit key/.test(caught.message)
+        caught instanceof Error && /persist.*requires.*\bkey\b/.test(caught.message)
       expect(seenViaErrSpy || seenViaCatch).toBe(true)
     } finally {
       errSpy.mockRestore()
@@ -599,8 +598,8 @@ describe('persistence — IndexedDB backend', () => {
     __resetIndexedDbForTests()
     const second = mountForm({ storage: 'indexeddb', key: 'test-idb-rt', debounceMs: 20 })
     apps.push(second.app)
-    await waitUntil(() => (second.api.getValue('email').value === 'idb@example.com' ? true : null))
-    expect(second.api.getValue('email').value).toBe('idb@example.com')
+    await waitUntil(() => (second.api.values.email === 'idb@example.com' ? true : null))
+    expect(second.api.values.email).toBe('idb@example.com')
   })
 })
 
@@ -742,7 +741,7 @@ describe('persistence — per-element opt-in', () => {
     expect(localStorage.getItem(fpKey('test-no-flag'))).toBeNull()
     // Sanity: the value still landed in the form ref (writes work, just
     // no persistence).
-    expect(handle.api?.getValue('email').value).toBe('no-opt-in@example.com')
+    expect(handle.api?.values.email).toBe('no-opt-in@example.com')
   })
 
   it('two inputs on the same path: only the opted-in one persists', async () => {
@@ -1005,7 +1004,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
     app.mount(root)
     apps.push(app)
     // Wait for hydration to land.
-    await waitUntil(() => (handle.api?.getValue('email').value === 'prev@x.com' ? true : null))
+    await waitUntil(() => (handle.api?.values.email === 'prev@x.com' ? true : null))
 
     handle.api?.setValue('email', 'updated@example.com')
     await handle.api?.persist('email')
@@ -1039,7 +1038,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
     document.body.appendChild(root)
     app.mount(root)
     apps.push(app)
-    await waitUntil(() => (handle.api?.getValue('email').value === 'a@x.com' ? true : null))
+    await waitUntil(() => (handle.api?.values.email === 'a@x.com' ? true : null))
 
     // Subpath wipe — email gone, password remains.
     await handle.api?.clearPersistedDraft('email')
@@ -1099,7 +1098,7 @@ describe('persistence — reset wipes the persisted draft', () => {
     // Storage wipe is fire-and-forget — poll for the entry to disappear.
     await waitUntil(() => (localStorage.getItem(fpKey('test-reset')) === null ? true : null))
     expect(localStorage.getItem(fpKey('test-reset'))).toBeNull()
-    expect(api.getValue('email').value).toBe('')
+    expect(api.values.email).toBe('')
   })
 
   it('sparse payload — only opted-in paths reach storage', async () => {
@@ -1162,7 +1161,7 @@ describe('persistence — reset wipes the persisted draft', () => {
     // password is in the form value (in memory) but NOT in the
     // persisted payload — sparse payload contract.
     expect('password' in payload.data.form).toBe(false)
-    expect(handle.api?.getValue('password').value).toBe('never-persisted')
+    expect(handle.api?.values.password).toBe('never-persisted')
   })
 
   it('sparse hydration — opted-in paths restore; non-opted paths come from schema defaults', async () => {
@@ -1178,23 +1177,26 @@ describe('persistence — reset wipes the persisted draft', () => {
       debounceMs: 20,
     })
     apps.push(app)
-    await waitUntil(() => (api.getValue('email').value === 'sparse-seed@x.com' ? true : null))
-    expect(api.getValue('email').value).toBe('sparse-seed@x.com')
+    await waitUntil(() => (api.values.email === 'sparse-seed@x.com' ? true : null))
+    expect(api.values.email).toBe('sparse-seed@x.com')
     // password wasn't in the persisted payload → schema default ('').
-    expect(api.getValue('password').value).toBe('')
+    expect(api.values.password).toBe('')
   })
 
-  it('dev warns when persist is configured but no field opted in', async () => {
-    // No <input v-register> at all → no opt-ins. The dev warning should
-    // fire one microtask after construction.
+  it('dormant config (key + persist + zero opt-ins) does NOT throw and does NOT warn', async () => {
+    // Configuring the persistence capability without spending it on a
+    // register() call is a valid scaffolding state — the library
+    // shouldn't lecture the consumer for not exercising every option.
+    // No throw on construct, no microtask warn, no console noise.
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
       const App = defineComponent({
         setup() {
           useForm({
             schema,
-            key: 'no-opt-ins-warn',
-            persist: { storage: 'local', key: 'test-no-opt-warn', debounceMs: 20 },
+            key: 'dormant-config',
+            persist: { storage: 'local', key: 'test-dormant', debounceMs: 20 },
           })
           return () => h('div')
         },
@@ -1202,123 +1204,97 @@ describe('persistence — reset wipes the persisted draft', () => {
       const app = createApp(App).use(createChemicalXForms())
       const root = document.createElement('div')
       document.body.appendChild(root)
+      // Construct-time should NOT throw.
+      expect(() => app.mount(root)).not.toThrow()
+      apps.push(app)
+      await drain()
+      const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
+      const errorCalls = errorSpy.mock.calls.map((args) => args.join(' '))
+      const cxNoise = [...warnCalls, ...errorCalls].filter((m) => m.includes('[@chemical-x/forms]'))
+      expect(cxNoise).toEqual([])
+    } finally {
+      warnSpy.mockRestore()
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('throws AnonPersistError(no-key) when useForm({ persist }) is called without key:', () => {
+    // Anonymous keys (`__cx:anon:*`) drift across mounts; persistence
+    // wired against one is unsafe and forecloses on future encrypted
+    // backends. Throw at construct time with schemaFields + callSite
+    // baked into the error so the offender is identifiable from the
+    // message body alone.
+    const App = defineComponent({
+      setup() {
+        useForm({
+          schema,
+          // intentionally no key:
+          persist: { storage: 'local', key: 'whatever' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+
+    let thrown: unknown
+    try {
       app.mount(root)
-      apps.push(app)
-      // Drain the microtasks so the deferred warning fires.
-      await drain()
-      const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
-      const matched = warnCalls.find((msg) => /persist:.*configured.*no fields opted in/.test(msg))
-      expect(matched).toBeDefined()
-    } finally {
-      warnSpy.mockRestore()
+    } catch (e) {
+      thrown = e
     }
+    expect(thrown).toBeInstanceOf(AnonPersistError)
+    const err = thrown as AnonPersistError
+    expect(err.cause).toBe('no-key')
+    expect(err.schemaFields).toEqual(['email', 'password'])
+    expect(err.message).toContain('useForm({ persist: ... })')
+    expect(err.message).toContain('{ email, password }')
   })
 
-  it('does NOT warn when at least one field opted in', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    try {
-      const { app } = mountForm({ storage: 'local', key: 'test-warn-skip', debounceMs: 20 })
-      apps.push(app)
-      await drain()
-      const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
-      const matched = warnCalls.find((msg) => /persist:.*configured.*no fields opted in/.test(msg))
-      expect(matched).toBeUndefined()
-    } finally {
-      warnSpy.mockRestore()
-    }
-  })
+  it('throws AnonPersistError(register-without-config) when register({ persist: true }) runs on form without persist:', () => {
+    // The opt-in records silently today and nothing ever lands in
+    // storage — eager throw makes the misuse impossible to ignore.
+    const App = defineComponent({
+      setup() {
+        const api = useForm({ schema, key: 'opt-in-without-persist-config' })
+        return () =>
+          h(
+            'div',
+            withDirectives(h('input', { type: 'text' }), [
+              [vRegister, api.register('email', { persist: true })],
+            ])
+          )
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
 
-  it('dev warns when register({ persist: true }) is used on a form with no persist: configured', async () => {
-    // Symmetric to the "persist configured but no opt-ins" warning:
-    // user opted into persistence at the register() call site but
-    // forgot the `persist:` option on useForm(). Without this warning,
-    // the opt-in records silently and nothing ever lands in storage.
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    let thrown: unknown
     try {
-      const App = defineComponent({
-        setup() {
-          const api = useForm({ schema, key: 'opt-in-without-persist-config' })
-          // No persist option on useForm() — but the binding asks for it.
-          return () =>
-            h(
-              'div',
-              withDirectives(h('input', { type: 'text' }), [
-                [vRegister, api.register('email', { persist: true })],
-              ])
-            )
-        },
-      })
-      const app = createApp(App).use(createChemicalXForms())
-      const root = document.createElement('div')
-      document.body.appendChild(root)
       app.mount(root)
-      apps.push(app)
-      await drain()
-      const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
-      const matched = warnCalls.find((msg) =>
-        /register\('email', \{ persist: true \}\).*no `persist` option configured/.test(msg)
-      )
-      expect(matched).toBeDefined()
-    } finally {
-      warnSpy.mockRestore()
+    } catch (e) {
+      thrown = e
     }
+    expect(thrown).toBeInstanceOf(AnonPersistError)
+    const err = thrown as AnonPersistError
+    expect(err.cause).toBe('register-without-config')
+    expect(err.schemaFields).toEqual(['email', 'password'])
+    expect(err.message).toContain('register(_, { persist: true })')
   })
 
-  it('does NOT fire the symmetric warning when persist: IS configured', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    try {
-      // mountForm wires `persist: { storage: 'local', ... }` AND opts in
-      // both fields — so neither warning should fire.
+  it('does NOT throw when register({ persist: true }) runs on a form with persist: configured', () => {
+    // mountForm wires `persist: { storage: 'local', ... }` AND opts in
+    // both fields — no throw, no diagnostic.
+    expect(() => {
       const { app } = mountForm({
         storage: 'local',
-        key: 'test-no-symmetric-warn',
+        key: 'test-no-symmetric-throw',
         debounceMs: 20,
       })
       apps.push(app)
-      await drain()
-      const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
-      const matched = warnCalls.find((msg) => /no `persist` option configured/.test(msg))
-      expect(matched).toBeUndefined()
-    } finally {
-      warnSpy.mockRestore()
-    }
-  })
-
-  it('warns once per form even when multiple paths opt in', async () => {
-    // Dedupe: a template with N opted-in paths should produce ONE warning,
-    // not N. Keyed by FormStore.
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    try {
-      const App = defineComponent({
-        setup() {
-          const api = useForm({ schema, key: 'opt-in-dedupe' })
-          return () =>
-            h('div', [
-              withDirectives(h('input', { type: 'text' }), [
-                [vRegister, api.register('email', { persist: true })],
-              ]),
-              withDirectives(h('input', { type: 'text' }), [
-                [
-                  vRegister,
-                  api.register('password', { persist: true, acknowledgeSensitive: true }),
-                ],
-              ]),
-            ])
-        },
-      })
-      const app = createApp(App).use(createChemicalXForms())
-      const root = document.createElement('div')
-      document.body.appendChild(root)
-      app.mount(root)
-      apps.push(app)
-      await drain()
-      const matchCount = warnSpy.mock.calls
-        .map((args) => args.join(' '))
-        .filter((msg) => /no `persist` option configured/.test(msg)).length
-      expect(matchCount).toBe(1)
-    } finally {
-      warnSpy.mockRestore()
-    }
+    }).not.toThrow()
   })
 
   it('form.resetField(path) wipes only the matching subpath from storage', async () => {
@@ -1334,7 +1310,7 @@ describe('persistence — reset wipes the persisted draft', () => {
       debounceMs: 20,
     })
     apps.push(app)
-    await waitUntil(() => (api.getValue('email').value === 'seed@x.com' ? true : null))
+    await waitUntil(() => (api.values.email === 'seed@x.com' ? true : null))
 
     api.resetField('email')
     // Wait for the fire-and-forget clearPersistedDraft to land.
@@ -1684,7 +1660,7 @@ describe('persistence — fingerprint-keyed storage + orphan cleanup', () => {
     const { app, api } = mountForm({ storage: 'local', key: 'fp-mismatch', debounceMs: 20 })
     apps.push(app)
     await drain()
-    expect(api.getValue('email').value).toBe('')
+    expect(api.values.email).toBe('')
   })
 
   it('orphan cleanup: stale-fingerprint entries wiped on mount of the same form', async () => {
@@ -1700,7 +1676,7 @@ describe('persistence — fingerprint-keyed storage + orphan cleanup', () => {
     )
     const { app, api } = mountForm({ storage: 'local', key: 'fp-orphan', debounceMs: 20 })
     apps.push(app)
-    await waitUntil(() => (api.getValue('email').value === 'live@x.com' ? true : null))
+    await waitUntil(() => (api.values.email === 'live@x.com' ? true : null))
     await waitUntil(() =>
       localStorage.getItem('fp-orphan:OLD-FP-1') === null &&
       localStorage.getItem('fp-orphan:OLD-FP-2') === null

@@ -14,7 +14,7 @@
   // -- Error API SSR fixtures --
   // Destructured at setup level so the refs become top-level template
   // bindings (Vue auto-unwraps top-level refs but not refs nested in plain
-  // objects, so `directErrorForm.fieldErrors.value` would not unwrap reliably).
+  // objects, so `directErrorForm.errors.value` would not unwrap reliably).
 
   // Direct setFieldErrors on the server, rendered into HTML so the SSR test
   // can prove the reactive error store survives serialisation/hydration.
@@ -22,20 +22,16 @@
     email: z.string().email(),
     password: z.string().min(8),
   })
-  const {
-    fieldErrors: directErrors,
-    setFieldErrors: setDirectErrors,
-    getFieldState: getDirectFieldState,
-  } = useForm({
+  const directForm = useForm({
     schema: directErrorSchema,
     key: 'errors-direct',
     // Pin lax: this fixture proves user-injected errors render across
     // the SSR boundary. Strict-mode default would also seed schema
     // errors from the empty defaults, displacing the user-injected
-    // entries at fieldErrors[0] (schema-first ordering).
+    // entries at errors[0] (schema-first ordering).
     validationMode: 'lax',
   })
-  setDirectErrors([
+  directForm.setFieldErrors([
     { message: 'Email already in use', path: ['email'], formKey: 'errors-direct' },
     {
       message: 'Password must be at least 8 characters',
@@ -43,7 +39,6 @@
       formKey: 'errors-direct',
     },
   ])
-  const directEmailState = getDirectFieldState('email')
 
   // Parsed-from-API helper applied during setup, simulating a 422 from
   // the server being mapped onto fields before the page renders.
@@ -51,7 +46,6 @@
     schema: z.object({ username: z.string() }),
     key: 'errors-from-api',
   })
-  const { fieldErrors: apiErrors, setFieldErrors: setApiErrors } = apiErrorForm
   const parsedApi = parseApiErrors(
     {
       error: {
@@ -67,7 +61,7 @@
     },
     { formKey: apiErrorForm.key }
   )
-  if (parsedApi.ok) setApiErrors(parsedApi.errors)
+  if (parsedApi.ok) apiErrorForm.setFieldErrors(parsedApi.errors)
 
   // -- handleSubmit return-shape fixture --
   // Proves handleSubmit(cb) returns a function (not a Promise) so it can be
@@ -88,7 +82,6 @@
     key: 'hydration-check',
   })
   hydrationForm.setValue('hydratedField', 'server-written-value')
-  const hydratedFieldValue = hydrationForm.getValue('hydratedField')
 </script>
 
 <template>
@@ -158,22 +151,26 @@
       <!-- Direct setFieldErrors -->
       <div id="errors-direct">
         <span id="errors-direct-fielderrors-email">{{
-          directErrors.email?.[0]?.message ?? ''
+          directForm.errors.email?.[0]?.message ?? ''
         }}</span>
         <span id="errors-direct-fielderrors-password">{{
-          directErrors.password?.[0]?.message ?? ''
+          directForm.errors.password?.[0]?.message ?? ''
         }}</span>
         <span id="errors-direct-fieldstate-email">{{
-          directEmailState.errors[0]?.message ?? ''
+          directForm.fieldState.email.errors[0]?.message ?? ''
         }}</span>
-        <span id="errors-direct-count">{{ Object.keys(directErrors).length }}</span>
+        <span id="errors-direct-count">{{ Object.keys(directForm.errors).length }}</span>
       </div>
 
       <!-- parseApiErrors → setFieldErrors -->
       <div id="errors-from-api">
-        <span id="errors-from-api-first">{{ apiErrors.username?.[0]?.message ?? '' }}</span>
-        <span id="errors-from-api-second">{{ apiErrors.username?.[1]?.message ?? '' }}</span>
-        <span id="errors-from-api-count">{{ apiErrors.username?.length ?? 0 }}</span>
+        <span id="errors-from-api-first">{{
+          apiErrorForm.errors.username?.[0]?.message ?? ''
+        }}</span>
+        <span id="errors-from-api-second">{{
+          apiErrorForm.errors.username?.[1]?.message ?? ''
+        }}</span>
+        <span id="errors-from-api-count">{{ apiErrorForm.errors.username?.length ?? 0 }}</span>
       </div>
 
       <!-- handleSubmit return shape -->
@@ -183,9 +180,7 @@
 
       <!-- Hydration round-trip -->
       <div id="hydration-check">
-        <!-- Vue templates auto-unwrap top-level refs; the `.value` goes on
-             the <script setup> side, not here. -->
-        <span id="hydration-check-value">{{ hydratedFieldValue }}</span>
+        <span id="hydration-check-value">{{ hydrationForm.values.hydratedField }}</span>
       </div>
     </section>
   </div>

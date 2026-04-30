@@ -13,7 +13,7 @@ import { createChemicalXForms } from '../../src/runtime/core/plugin'
  * behavior:
  *
  *   1. Form construction: `useForm({ schema })` with `.default('user')`
- *      on a field produces `'user'` at `form.getValue('role').value`.
+ *      on a field produces `'user'` at `form.values.role`.
  *   2. Path-form callback prev auto-default: when the slot is missing,
  *      `setValue('field', cb)` hands the consumer the `.default(x)`
  *      value (not the natural falsy primitive default).
@@ -60,21 +60,21 @@ describe('custom .default() values flow through the consumer surface', () => {
       const schema = z.object({ role: z.string().default('user') })
       const { app, form } = harness(schema)
       apps.push(app)
-      expect(form.getValue('role').value).toBe('user')
+      expect(form.values.role).toBe('user')
     })
 
     it('number with .default(5) produces 5 — not 0', () => {
       const schema = z.object({ count: z.number().default(5) })
       const { app, form } = harness(schema)
       apps.push(app)
-      expect(form.getValue('count').value).toBe(5)
+      expect(form.values.count).toBe(5)
     })
 
     it('boolean with .default(true) produces true — not false', () => {
       const schema = z.object({ active: z.boolean().default(true) })
       const { app, form } = harness(schema)
       apps.push(app)
-      expect(form.getValue('active').value).toBe(true)
+      expect(form.values.active).toBe(true)
     })
 
     it('object .default({...}) produces the literal default', () => {
@@ -86,7 +86,7 @@ describe('custom .default() values flow through the consumer surface', () => {
       })
       const { app, form } = harness(schema)
       apps.push(app)
-      expect(form.getValue('prefs').value).toEqual({
+      expect(form.values.prefs).toEqual({
         theme: 'dark',
         density: 'comfortable',
       })
@@ -102,7 +102,7 @@ describe('custom .default() values flow through the consumer surface', () => {
       })
       const { app, form } = harness(schema)
       apps.push(app)
-      expect(form.getValue('prefs').value).toEqual({
+      expect(form.values.prefs).toEqual({
         theme: 'dark',
         locale: '',
       })
@@ -126,7 +126,7 @@ describe('custom .default() values flow through the consumer surface', () => {
       // length should pad with the element default — `.default('untitled')`
       // for title.
       form.setValue('posts.2', { title: 'real', views: 100 })
-      expect(form.getValue('posts').value).toEqual([
+      expect(form.values.posts).toEqual([
         { title: 'untitled', views: 0 },
         { title: 'untitled', views: 0 },
         { title: 'real', views: 100 },
@@ -160,7 +160,7 @@ describe('custom .default() values flow through the consumer surface', () => {
       // `.default('comfortable')` values rather than `''`.
       expect(receivedPrev).toEqual({ theme: 'dark', density: 'comfortable' })
       // Final value carries the consumer's override, defaults survive.
-      expect(form.getValue('prefs').value).toEqual({
+      expect(form.values.prefs).toEqual({
         theme: 'light',
         density: 'comfortable',
       })
@@ -208,7 +208,7 @@ describe('custom .default() values flow through the consumer surface', () => {
 
       // Indices 0..2: element default with both .default() values
       // present. Index 3: the consumer's value.
-      expect(form.getValue('posts').value).toEqual([
+      expect(form.values.posts).toEqual([
         { title: 'untitled', views: 10 },
         { title: 'untitled', views: 10 },
         { title: 'untitled', views: 10 },
@@ -225,12 +225,12 @@ describe('custom .default() values flow through the consumer surface', () => {
 
       // Form construction already produces [7, 13, 99] from positional
       // defaults. Verify it directly first.
-      expect(form.getValue('coords').value).toEqual([7, 13, 99])
+      expect(form.values.coords).toEqual([7, 13, 99])
 
       // Now mutate: setValue at position 2 should leave 0,1 as their
       // existing defaults (no fill needed — they're already populated).
       form.setValue('coords.2', 42)
-      expect(form.getValue('coords').value).toEqual([7, 13, 42])
+      expect(form.values.coords).toEqual([7, 13, 42])
     })
   })
 })

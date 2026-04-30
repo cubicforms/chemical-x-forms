@@ -90,7 +90,7 @@ describe('initial validation seed — strict mode', () => {
     expect(typeof handle.api?.register).toBe('function')
     // No construction-time errors for async refines — they need
     // validateAsync() or a user mutation to fire.
-    expect(handle.api?.fieldErrors.email).toBeUndefined()
+    expect(handle.api?.errors.email).toBeUndefined()
   })
 
   it('strict is the default — omitting validationMode populates schemaErrors', () => {
@@ -100,8 +100,8 @@ describe('initial validation seed — strict mode', () => {
     // function of (value, schema) at all times."
     const { app, api } = mountWithZod({})
     apps.push(app)
-    expect(api.fieldErrors.email?.[0]?.message).toBe('bad email')
-    expect(api.fieldErrors.password?.[0]?.message).toBe('min 8 chars')
+    expect(api.errors.email?.[0]?.message).toBe('bad email')
+    expect(api.errors.password?.[0]?.message).toBe('min 8 chars')
     expect(api.state.isValid).toBe(false)
   })
 
@@ -110,8 +110,8 @@ describe('initial validation seed — strict mode', () => {
     apps.push(app)
     // Empty defaults: '' fails .email(), '' fails .min(8). Both errors
     // surface in fieldErrors before any user interaction.
-    expect(api.fieldErrors.email?.[0]?.message).toBe('bad email')
-    expect(api.fieldErrors.password?.[0]?.message).toBe('min 8 chars')
+    expect(api.errors.email?.[0]?.message).toBe('bad email')
+    expect(api.errors.password?.[0]?.message).toBe('min 8 chars')
     expect(api.state.isValid).toBe(false)
   })
 
@@ -121,8 +121,8 @@ describe('initial validation seed — strict mode', () => {
       defaultValues: { email: 'a@a.com', password: 'longenough' },
     })
     apps.push(app)
-    expect(api.fieldErrors.email).toBeUndefined()
-    expect(api.fieldErrors.password).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
+    expect(api.errors.password).toBeUndefined()
     expect(api.state.isValid).toBe(true)
   })
 })
@@ -139,8 +139,8 @@ describe('initial validation seed — lax mode', () => {
     // be surprised to see errors before they've touched anything.
     const { app, api } = mountWithZod({ validationMode: 'lax' })
     apps.push(app)
-    expect(api.fieldErrors.email).toBeUndefined()
-    expect(api.fieldErrors.password).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
+    expect(api.errors.password).toBeUndefined()
     expect(api.state.isValid).toBe(true)
   })
 })

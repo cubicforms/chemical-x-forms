@@ -2,7 +2,9 @@ import { computed, ref, type Ref } from 'vue'
 import type { RegisterOptions, RegisterValue, WriteMeta } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
-import { __DEV__ } from './dev'
+import { captureUserCallSite } from './dev-stack-trace'
+import { AnonPersistError } from './errors'
+import { extractSchemaFields } from './extract-schema-fields'
 import { canonicalizePath, type Path, type PathKey } from './paths'
 import { PERSISTENCE_MODULE_KEY } from './persistence'
 
@@ -55,20 +57,6 @@ function detachFocusListeners(element: HTMLElement): void {
   element.removeEventListener('blur', listeners.handleBlur)
   delete target[cxListenersSymbol]
 }
-
-/**
- * Dedupes the dev-mode "register({ persist: true }) without `persist:`
- * configured" warning. Keyed by FormStore so each form warns at most
- * once across all of its `register()` call sites — multiple paths
- * opting in produce one warning, not N. WeakSet auto-clears when the
- * FormStore is GC'd, so a remount with a different config gets a
- * fresh check.
- *
- * `null` in production so the WeakSet allocation tree-shakes out.
- */
-const warnedMissingPersistConfig: WeakSet<FormStore<GenericForm>> | null = __DEV__
-  ? new WeakSet<FormStore<GenericForm>>()
-  : null
 
 export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
   // Path-keyed cache of typed-form refs. Lifted out of the per-call
@@ -142,49 +130,29 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
     const persist = options?.persist === true
     const acknowledgeSensitive = options?.acknowledgeSensitive === true
 
-    // Dev-only: opt-in declared but the form has no persistence wired.
-    // Without this warning the directive silently records the opt-in,
-    // no writes ever land, and the dev concludes "persistence is broken"
-    // when the actual issue is a missing `persist:` option on `useForm()`.
-    // Symmetric to wirePersistence's "configured but no opt-ins" warning;
-    // together they cover both halves of the misuse space. Deduped per
-    // FormStore so a template with N opted-in paths produces one warning,
-    // not N.
+    // Eager throw: opt-in declared but the form has no persistence wired.
+    // Without the throw the directive silently records the opt-in, no
+    // writes ever land, and the dev concludes "persistence is broken"
+    // when the actual issue is a missing `persist:` option on useForm().
+    // Throws in dev and prod — contradictions are bugs, not rate-limited
+    // drift. The error body carries the schema's top-level fields and a
+    // captured call-site frame so the offending form is identifiable
+    // from the message alone (script-setup stacks collapse misleadingly).
     //
     // Skipped during SSR: `wirePersistence` is intentionally not run on
     // the server (persistence is a client-only concern), so
     // `state.modules.has(PERSISTENCE_MODULE_KEY)` is always false during
     // SSR — even for forms that DID configure `persist:`. Without this
-    // gate the warning would falsely fire on every server-rendered
+    // gate the throw would falsely fire on every server-rendered
     // `register({ persist: true })`. The client-side hydration pass
-    // re-runs the check against a freshly-wired module and warns
-    // correctly if the misuse is real.
-    if (__DEV__ && persist && !state.isSSR && warnedMissingPersistConfig !== null) {
-      const formStore = state as FormStore<GenericForm>
-      if (
-        !state.modules.has(PERSISTENCE_MODULE_KEY) &&
-        !warnedMissingPersistConfig.has(formStore)
-      ) {
-        warnedMissingPersistConfig.add(formStore)
-        const display = segments.map((s) => String(s)).join('.')
-        // No inline source frame here. `register()` is overwhelmingly
-        // called from compiled `<template>` render functions, where
-        // Vite's sourcemap for attribute-value expressions
-        // (`v-register="register(...)"`) maps back to the surrounding
-        // element / closing-tag region, not the actual `register(`
-        // token — adding a frame would be actively misleading. The
-        // path name in the message (`'${display}'`) is the reliable
-        // anchor: `grep "register('${display}'"` finds the call site.
-        // The console auto-renders its own clickable stack below the
-        // message anyway.
-        console.warn(
-          `[@chemical-x/forms] register('${display}', { persist: true }) is set on form ` +
-            `"${state.formKey}", but useForm() has no \`persist\` option configured — ` +
-            `nothing will be saved to storage. ` +
-            `Fix: add \`persist: 'local'\` (or 'session' / 'indexeddb') to your useForm() options. ` +
-            `See ./docs/recipes/persistence.md.`
-        )
-      }
+    // re-checks against a freshly-wired module and throws correctly if
+    // the misuse is real.
+    if (persist && !state.isSSR && !state.modules.has(PERSISTENCE_MODULE_KEY)) {
+      throw new AnonPersistError({
+        cause: 'register-without-config',
+        schemaFields: extractSchemaFields(state.schema),
+        callSite: captureUserCallSite(),
+      })
     }
 
     return {

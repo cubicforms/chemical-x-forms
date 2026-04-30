@@ -73,14 +73,14 @@ describe('fieldValidation: { on: "change", debounceMs }', () => {
     api.setValue('email', 'no')
     api.setValue('email', 'notanemail')
     // Nothing written yet — debounce hasn't elapsed.
-    expect(api.fieldErrors.email).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
 
     // Advance past the debounce and flush microtasks to let the async
     // safeParseAsync settle.
     await vi.advanceTimersByTimeAsync(250)
     await drainMicrotasks()
 
-    const err = api.fieldErrors.email?.[0]
+    const err = api.errors.email?.[0]
     expect(err?.message).toBe('bad email')
   })
 
@@ -92,12 +92,12 @@ describe('fieldValidation: { on: "change", debounceMs }', () => {
     api.setValue('email', 'not-email')
     await vi.advanceTimersByTimeAsync(100)
     await drainMicrotasks()
-    expect(api.fieldErrors.email?.[0]?.message).toBe('bad email')
+    expect(api.errors.email?.[0]?.message).toBe('bad email')
 
     api.setValue('email', 'fixed@example.com')
     await vi.advanceTimersByTimeAsync(100)
     await drainMicrotasks()
-    expect(api.fieldErrors.email).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
   })
 
   it('submit entry aborts pending field runs — submit result wins', async () => {
@@ -119,8 +119,8 @@ describe('fieldValidation: { on: "change", debounceMs }', () => {
     // Submit's full-form validation has populated errors for every
     // failing field — including email ('bad email') and password
     // ('min 8 chars').
-    expect(api.fieldErrors.email?.[0]?.message).toBe('bad email')
-    expect(api.fieldErrors.password?.[0]?.message).toBe('min 8 chars')
+    expect(api.errors.email?.[0]?.message).toBe('bad email')
+    expect(api.errors.password?.[0]?.message).toBe('min 8 chars')
   })
 
   it('on="change" is the default: writes schedule a debounced field run', async () => {
@@ -132,7 +132,7 @@ describe('fieldValidation: { on: "change", debounceMs }', () => {
     // Default debounceMs is 125; advance past it.
     await vi.advanceTimersByTimeAsync(175)
     await drainMicrotasks()
-    expect(api.fieldErrors.email?.[0]?.message).toBe('bad email')
+    expect(api.errors.email?.[0]?.message).toBe('bad email')
   })
 
   it('explicit on="none" opts out: writes never schedule a field run', async () => {
@@ -143,7 +143,7 @@ describe('fieldValidation: { on: "change", debounceMs }', () => {
     api.setValue('email', 'not-an-email')
     await vi.advanceTimersByTimeAsync(1000)
     await drainMicrotasks()
-    expect(api.fieldErrors.email).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
   })
 })
 
@@ -160,7 +160,7 @@ describe('fieldValidation: { on: "blur" }', () => {
     api.setValue('email', 'invalid')
     await drainMicrotasks()
     // No write-path validation in blur mode.
-    expect(api.fieldErrors.email).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
   })
 })
 
@@ -181,6 +181,6 @@ describe('fieldValidation: reset cancels pending runs', () => {
     await vi.advanceTimersByTimeAsync(500)
     await drainMicrotasks()
     // Reset cleared the timer — no field-run wrote anything to errors.
-    expect(api.fieldErrors.email).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
   })
 })

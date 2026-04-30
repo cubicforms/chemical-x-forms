@@ -79,7 +79,7 @@ describe('<select v-register> with out-of-enum option', () => {
 
     if (captured.api === undefined) throw new Error('unreachable')
 
-    const before = captured.api.getValue('color').value
+    const before = captured.api.values.color
     expect(['red', 'green', 'blue']).toContain(before)
 
     const select = root.querySelector('select.colors') as HTMLSelectElement | null
@@ -90,7 +90,7 @@ describe('<select v-register> with out-of-enum option', () => {
     await flush()
 
     // Slim-type contract: 'magenta' is a string → accepted.
-    expect(captured.api.getValue('color').value).toBe('magenta')
+    expect(captured.api.values.color).toBe('magenta')
   })
 
   it('programmatic setValue with a wrong-primitive-type value is REJECTED + dev-warned', async () => {
@@ -117,7 +117,7 @@ describe('<select v-register> with out-of-enum option', () => {
 
     if (captured.api === undefined) throw new Error('unreachable')
 
-    const before = captured.api.getValue('color').value
+    const before = captured.api.values.color
     expect(['red', 'green', 'blue']).toContain(before)
 
     // `1` is a number — slim primitive at `color` is `string`. Cast
@@ -129,7 +129,7 @@ describe('<select v-register> with out-of-enum option', () => {
     // Rejection contract: returns false, value at path unchanged,
     // dev-warn fires once with the path + value.
     expect(ok).toBe(false)
-    expect(captured.api.getValue('color').value).toBe(before)
+    expect(captured.api.values.color).toBe(before)
     expect(warnSpy).toHaveBeenCalled()
     const message = warnSpy.mock.calls.flat().join(' ')
     expect(message).toMatch(/color/)
@@ -166,6 +166,6 @@ describe('<select v-register> with out-of-enum option', () => {
     await flush()
 
     expect(ok).toBe(true)
-    expect(captured.api.getValue('color').value).toBe('magenta')
+    expect(captured.api.values.color).toBe('magenta')
   })
 })

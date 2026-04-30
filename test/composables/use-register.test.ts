@@ -70,7 +70,14 @@ describe('useRegister — inside child setup', () => {
     document.body.innerHTML = ''
   })
 
-  it('with NO parent registerValue → returns ComputedRef<undefined> + one-shot warn', async () => {
+  it('with NO parent registerValue → returns ComputedRef<undefined> + one-shot warn at onMounted', async () => {
+    // Diagnostic shape: the warn fires once per instance in the
+    // `onMounted` hook, after the parent has had its full mount
+    // lifecycle to bind v-register. Reading `.value` does NOT fire the
+    // warn — the computed factory is pure, so consumers that handle
+    // the undefined branch (storybook, preview pages, conditional
+    // bindings) read freely. Re-reads on the same instance never
+    // re-warn.
     const captured: { register?: ReturnType<typeof useRegister> } = {}
     const warnings: string[] = []
 
@@ -99,9 +106,6 @@ describe('useRegister — inside child setup', () => {
     app.mount(root)
     await flush()
 
-    // Computed is lazy — `.value` triggers evaluation, which is what
-    // fires the no-parent-RV warn. Read it BEFORE restoring the spy
-    // so the warn lands in the captured `warnings` array.
     expect(captured.register).toBeDefined()
     if (captured.register === undefined) throw new Error('unreachable')
     expect(captured.register.value).toBeUndefined()
@@ -109,7 +113,107 @@ describe('useRegister — inside child setup', () => {
     warnSpy.mockRestore()
 
     const matched = warnings.filter((w) => w.includes('useRegister'))
-    expect(matched.length).toBeGreaterThanOrEqual(1)
+    expect(matched.length).toBe(1)
+  })
+
+  it('with NO parent registerValue → re-reading the computed many times produces exactly one warn', async () => {
+    // The computed factory is pure — only the `onMounted` hook emits
+    // the diagnostic. A consumer that reads `register.value` in a
+    // conditional, a watcher, and a render must not see the warn
+    // multiplied per read.
+    const captured: { register?: ReturnType<typeof useRegister> } = {}
+    const warnings: string[] = []
+
+    const Child = defineComponent({
+      name: 'Child',
+      inheritAttrs: false,
+      setup() {
+        captured.register = useRegister()
+        return () => h('input', { type: 'text' })
+      },
+    })
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+      warnings.push(args.map((a) => String(a)).join(' '))
+    })
+
+    app = createApp(defineComponent({ render: () => h(Child) })).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+
+    if (captured.register === undefined) throw new Error('unreachable')
+    // Hammer the computed.
+    for (let i = 0; i < 10; i++) {
+      void captured.register.value
+    }
+
+    warnSpy.mockRestore()
+    const matched = warnings.filter((w) => w.includes('useRegister: no parent registerValue prop'))
+    expect(matched.length).toBe(1)
+  })
+
+  it('with parent registerValue → does NOT emit the no-parent-RV warn during initial render (regression: pre-onBeforeMount capture race)', async () => {
+    // Setup-time reads of `instance.attrs.registerValue` race Vue's
+    // prop-patch lifecycle. Before this test was added, useRegister
+    // captured the binding synchronously in setup — under SSR (and
+    // some CSR patterns) the binding wasn't on attrs yet, so the
+    // captured value was `undefined` and the computed warned on the
+    // first read despite the parent passing v-register correctly.
+    // The capture is now deferred to onBeforeMount; this test asserts
+    // that the deferred capture lands the binding before the child's
+    // render function reads the computed for the first time.
+    const captured: { childRegister?: ReturnType<typeof useRegister> } = {}
+
+    const Child = defineComponent({
+      name: 'Child',
+      inheritAttrs: false,
+      setup() {
+        captured.childRegister = useRegister()
+        // Read the computed inside the render function — same pattern
+        // a real consumer's template uses.
+        return () => {
+          const rv = captured.childRegister?.value
+          return h('input', { type: 'text', 'data-rv-bound': rv !== undefined ? '1' : '0' })
+        }
+      },
+    })
+
+    const Parent = defineComponent({
+      setup() {
+        const form = useForm({ schema, key: 'no-warn-on-mount-test' })
+        const rv = form.register('email')
+        return () =>
+          withDirectives(h(Child, { registerValue: rv, value: rv.innerRef.value }), [
+            [vRegister, rv],
+          ])
+      },
+    })
+
+    const warnings: string[] = []
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+      warnings.push(args.map((a) => String(a)).join(' '))
+    })
+
+    app = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+    warnSpy.mockRestore()
+
+    // The render-time read of `captured.childRegister.value` should
+    // have produced a non-undefined RV — no warn fired.
+    const noParentRvWarn = warnings.filter((w) =>
+      w.includes('useRegister: no parent registerValue prop')
+    )
+    expect(noParentRvWarn).toEqual([])
+
+    // Sanity: the data attribute reflects the RV being bound at first
+    // render (i.e. the child saw the binding before its template ran).
+    const inputEl = root.querySelector('input')
+    expect(inputEl?.getAttribute('data-rv-bound')).toBe('1')
   })
 
   it("with parent registerValue → returns ComputedRef whose .value === parent's RV (referential)", async () => {
@@ -309,7 +413,7 @@ describe('useRegister — sentinel suppresses parent-directive warn', () => {
 
     if (formApi === undefined) throw new Error('unreachable')
     formApi.setValue('email', 'seed@example.com')
-    expect(formApi.getValue('email').value).toBe('seed@example.com')
+    expect(formApi.values.email).toBe('seed@example.com')
 
     // Type into the inner input. Without the bail, the wrapper's
     // bubbled `input` listener would read `el.value` off the div and
@@ -320,7 +424,7 @@ describe('useRegister — sentinel suppresses parent-directive warn', () => {
     innerInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flush()
 
-    expect(formApi.getValue('email').value).toBe('seed@example.com')
+    expect(formApi.values.email).toBe('seed@example.com')
   })
 })
 
@@ -382,7 +486,7 @@ describe('useRegister — inner v-register receives full directive lifecycle', (
     innerInput.focus()
     innerInput.dispatchEvent(new Event('focus', { bubbles: true }))
     await flush()
-    expect(captured.api.getFieldState('email').value.focused).toBe(true)
+    expect(captured.api.fieldState.email.focused).toBe(true)
   })
 })
 

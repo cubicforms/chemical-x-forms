@@ -61,7 +61,14 @@ async function mountWithChild(
 
   const Parent = defineComponent({
     setup() {
-      const api = useForm({ schema, key: `comp-${Math.random().toString(36).slice(2)}` })
+      // When the test opts into per-element `persist: true`, the form
+      // must also configure `persist:` — opting a field into a feature
+      // the form doesn't have is now a contradiction throw.
+      const api = useForm({
+        schema,
+        key: `comp-${Math.random().toString(36).slice(2)}`,
+        ...(options?.persist ? { persist: { storage: 'local' as const, debounceMs: 1000 } } : {}),
+      })
       handle.api = api
       const rv = api.register('email', {
         ...(options?.persist ? { persist: true } : {}),
@@ -137,7 +144,7 @@ describe('pattern 1: v-register on a component whose root is <input>', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await flush()
 
-    expect(mounted.api.getValue('email').value).toBe('alice@example.com')
+    expect(mounted.api.values.email).toBe('alice@example.com')
   })
 
   it('does NOT fire the unsupported-element dev-warn (input is in SUPPORTED_TAGS)', async () => {
@@ -194,7 +201,7 @@ describe('pattern 2: v-register on a non-form root WITH useRegister (recommended
     innerInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flush()
 
-    expect(mounted.api.getValue('email').value).toBe('typed')
+    expect(mounted.api.values.email).toBe('typed')
   })
 
   it('does NOT fire the unsupported-element dev-warn (sentinel suppresses)', async () => {
@@ -215,7 +222,7 @@ describe('pattern 2: v-register on a non-form root WITH useRegister (recommended
     innerInput.focus()
     innerInput.dispatchEvent(new Event('focus', { bubbles: true }))
     await flush()
-    expect(mounted.api.getFieldState('email').value.focused).toBe(true)
+    expect(mounted.api.fieldState.email.focused).toBe(true)
   })
 })
 
@@ -246,7 +253,7 @@ describe('non-pattern: v-register on a non-form root WITHOUT useRegister/assignK
   it('does NOT clobber the seeded form value — no listeners attached to the div root', async () => {
     mounted = await mountWithChild(PlainDivChild)
     mounted.api.setValue('email', 'seed@example.com')
-    expect(mounted.api.getValue('email').value).toBe('seed@example.com')
+    expect(mounted.api.values.email).toBe('seed@example.com')
 
     const innerInput = mounted.rootEl.querySelector('input.inner') as HTMLInputElement
     innerInput.value = 'typed'
@@ -257,12 +264,12 @@ describe('non-pattern: v-register on a non-form root WITHOUT useRegister/assignK
     // doesn't reach a directive listener, doesn't read `el.value` off
     // the div, and doesn't write the empty/undefined string to the
     // form. The seeded value survives.
-    expect(mounted.api.getValue('email').value).toBe('seed@example.com')
+    expect(mounted.api.values.email).toBe('seed@example.com')
   })
 
   it('FormStore element registry SKIPS non-INTERACTIVE roots (silent no-op)', async () => {
     mounted = await mountWithChild(PlainDivChild)
-    const fs = mounted.api.getFieldState('email').value
+    const fs = mounted.api.fieldState.email
     expect(fs.focused).toBeNull()
     expect(fs.blurred).toBeNull()
     expect(fs.touched).toBeNull()
@@ -394,7 +401,7 @@ describe('pattern 3: @update:registerValue prop on a component', () => {
     expect(received).toContain('typed')
     // Default assigner was bypassed — the FormStore did NOT receive
     // the write because the listener didn't forward.
-    expect(mounted.api.getValue('email').value).toBe('')
+    expect(mounted.api.values.email).toBe('')
   })
 })
 

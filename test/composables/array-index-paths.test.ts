@@ -72,8 +72,8 @@ describe('z.array(z.string()) — integer-keyed paths', () => {
       tags: ['x', 'y'],
     })
     apps.push(app)
-    expect(form.getValue('tags.0').value).toBe('x')
-    expect(form.getValue('tags.1').value).toBe('y')
+    expect(form.values.tags[0]).toBe('x')
+    expect(form.values.tags[1]).toBe('y')
   })
 
   it('setValue(`tags.1`, …) updates only that index — siblings preserved', () => {
@@ -83,7 +83,7 @@ describe('z.array(z.string()) — integer-keyed paths', () => {
     apps.push(app)
     const ok = form.setValue('tags.1', 'BANG')
     expect(ok).toBe(true)
-    expect(form.getValue('tags').value).toEqual(['a', 'BANG', 'c'])
+    expect(form.values.tags).toEqual(['a', 'BANG', 'c'])
   })
 
   it('setValue with array-form path writes equivalently (runtime cast)', () => {
@@ -95,7 +95,7 @@ describe('z.array(z.string()) — integer-keyed paths', () => {
     const setValue = form.setValue as unknown as AnySetValue
     const ok = setValue(['tags', 2], 'POW')
     expect(ok).toBe(true)
-    expect(form.getValue('tags').value).toEqual(['a', 'b', 'POW'])
+    expect(form.values.tags).toEqual(['a', 'b', 'POW'])
   })
 
   it('per-index write of the wrong primitive type is rejected by the gate', () => {
@@ -108,7 +108,7 @@ describe('z.array(z.string()) — integer-keyed paths', () => {
     apps.push(app)
     const ok = form.setValue('tags.0', 99 as unknown as string)
     expect(ok).toBe(false)
-    expect(form.getValue('tags').value).toEqual(['a', 'b'])
+    expect(form.values.tags).toEqual(['a', 'b'])
   })
 
   it('register binding for an index reflects subsequent setValue at that index', () => {
@@ -129,9 +129,9 @@ describe('z.array(z.string()) — integer-keyed paths', () => {
     })
     apps.push(app)
     form.setValue('tags.1', 'changed')
-    expect(form.getValue('tags').value).toEqual(['a', 'changed', 'c'])
+    expect(form.values.tags).toEqual(['a', 'changed', 'c'])
     form.reset()
-    expect(form.getValue('tags').value).toEqual(['a', 'b', 'c'])
+    expect(form.values.tags).toEqual(['a', 'b', 'c'])
   })
 
   it('nested object inside array — `posts.0.title` resolves a deep leaf', () => {
@@ -148,7 +148,7 @@ describe('z.array(z.string()) — integer-keyed paths', () => {
     expect(form.register('posts.0.title').innerRef.value).toBe('first')
     expect(form.register('posts.1.views').innerRef.value).toBe(20)
     form.setValue('posts.0.title', 'edited')
-    expect(form.getValue('posts').value).toEqual([
+    expect(form.values.posts).toEqual([
       { title: 'edited', views: 10 },
       { title: 'second', views: 20 },
     ])

@@ -1,8 +1,5 @@
 import { computed, reactive, readonly, type ComputedRef, type Ref } from 'vue'
 import type {
-  CurrentValueContext,
-  CurrentValueWithContext,
-  FieldState,
   FormErrorRecord,
   FormFieldErrors,
   FormState,
@@ -13,11 +10,17 @@ import type {
   ValidationError,
   ValidationResponseWithoutValue,
 } from '../types/types-api'
-import type { DeepPartial, DefaultValuesShape, GenericForm } from '../types/types-core'
+import type {
+  DeepPartial,
+  DefaultValuesShape,
+  GenericForm,
+  WithIndexedUndefined,
+  WriteShape,
+} from '../types/types-core'
 import { __DEV__ } from './dev'
 import type { FormStore } from './create-form-store'
 import { buildFieldArrayApi } from './field-arrays'
-import { buildFieldStateAccessor } from './field-state-api'
+import { buildFieldStateProxy } from './field-state-proxy'
 import type { HistoryModule } from './history'
 import { getAtPath } from './path-walker'
 import { canonicalizePath, type Path, type PathKey, type Segment } from './paths'
@@ -27,6 +30,7 @@ import { buildProcessForm } from './process-form'
 import { buildRegister } from './register-api'
 import { isUnset } from './unset'
 import { walkUnsetSentinels } from './unset-walker'
+import { buildValuesProxy } from './values-proxy'
 
 export type BuildFormApiOptions = {
   /** Forwarded to buildProcessForm. See `UseFormConfiguration.onInvalidSubmit`. */
@@ -81,7 +85,6 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   options: BuildFormApiOptions = {}
 ): UseAbstractFormReturnType<Form, GetValueFormType> {
   const register = buildRegister(state) as (path: string | Path) => RegisterValue<unknown>
-  const getFieldStateBuilt = buildFieldStateAccessor(state)
   // Don't set `onInvalidSubmit: undefined` — exactOptionalPropertyTypes
   // treats an explicit-undefined value differently from an omitted
   // property. Only pass the key when the consumer opted in.
@@ -93,30 +96,18 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     handleSubmit,
   } = buildProcessForm(state, processOptions)
 
-  const getFieldState = (pathInput: string) =>
-    getFieldStateBuilt(pathInput) as unknown as Ref<FieldState>
-
   const validate = (pathInput?: string) =>
     validateBuilt(pathInput) as Ref<ReactiveValidationStatus<Form>>
 
   const validateAsync = (pathInput?: string) =>
     validateAsyncBuilt(pathInput) as Promise<ValidationResponseWithoutValue<Form>>
 
-  // --- getValue / setValue (overloaded) ---
-  function getValueImpl(
-    pathOrContext?: string | CurrentValueContext<boolean>,
-    maybeContext?: CurrentValueContext<boolean>
-  ): unknown {
-    if (pathOrContext === undefined) {
-      return state.form as unknown as Readonly<Ref<GetValueFormType>>
-    }
-    if (typeof pathOrContext === 'object') {
-      return contextualiseValue(state, [], pathOrContext)
-    }
-    const segments = canonicalizePath(pathOrContext).segments
-    if (maybeContext !== undefined) {
-      return contextualiseValue(state, segments, maybeContext)
-    }
+  // --- toRef escape hatch — Readonly<Ref<...>> for the rare case
+  // a consumer needs ref-shaped interop (external composables that
+  // expect a Vue ref, watchers reading a single path). Writes still
+  // funnel through `setValue`, never via the ref.
+  function pathToRef(pathInput: string): Readonly<Ref<unknown>> {
+    const segments = canonicalizePath(pathInput).segments
     return computed(() => getAtPath(state.form.value, segments)) as Readonly<Ref<unknown>>
   }
 
@@ -419,13 +410,40 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     return readonlySetSnapshot(state.blankPaths)
   })
 
+  // --- Pinia-style reactive readonly proxy over the form's value ---
+  // `valuesProxyComputed.value` is a deeply-readonly Vue proxy. The
+  // computed wrapping ensures `state.form.value` reassignments (the
+  // `applyFormReplacement` path used by `reset()` and whole-form
+  // `setValue`) invalidate the cached proxy and produce a fresh one
+  // keyed to the new target. The public `values` getter on the return
+  // object reads `.value` so consumers get the proxy directly with no
+  // `.value` access from their side.
+  const valuesProxyComputed = buildValuesProxy(state.form)
+
+  // --- Pinia-style reactive per-field state proxy ---
+  // Allocated once per buildFormApi call (one per consumer). Each Proxy
+  // node memoizes its descendants and the per-path FieldStateView
+  // computed it reads through, so repeated access to the same path
+  // (`form.fieldState.email` twice) returns the same object — useful
+  // for downstream `===` checks and Vue's render diff.
+  const fieldStateProxy = buildFieldStateProxy(state)
+
   return {
-    getFieldState: getFieldState as UseAbstractFormReturnType<
+    handleSubmit,
+    // `values` is a getter so reads route through the wrapping computed
+    // and pick up reactivity at the call site (every consumer template
+    // / effect that reads `form.values.<x>` subscribes to the underlying
+    // form ref). A plain property assignment (`values: valuesProxyComputed.value`)
+    // would snapshot once at buildFormApi time and never invalidate.
+    get values() {
+      return valuesProxyComputed.value as Readonly<
+        WithIndexedUndefined<WriteShape<GetValueFormType>>
+      >
+    },
+    fieldState: fieldStateProxy as unknown as UseAbstractFormReturnType<
       Form,
       GetValueFormType
-    >['getFieldState'],
-    handleSubmit,
-    getValue: getValueImpl as UseAbstractFormReturnType<Form, GetValueFormType>['getValue'],
+    >['fieldState'],
     setValue: setValueImpl as UseAbstractFormReturnType<Form, GetValueFormType>['setValue'],
     validate: validate as UseAbstractFormReturnType<Form, GetValueFormType>['validate'],
     validateAsync: validateAsync as UseAbstractFormReturnType<
@@ -434,7 +452,8 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     >['validateAsync'],
     register: register as UseAbstractFormReturnType<Form, GetValueFormType>['register'],
     key: state.formKey,
-    fieldErrors: fieldErrors as unknown as Readonly<FormFieldErrors<Form>>,
+    errors: fieldErrors as unknown as Readonly<FormFieldErrors<Form>>,
+    toRef: pathToRef as UseAbstractFormReturnType<Form, GetValueFormType>['toRef'],
     setFieldErrors,
     addFieldErrors,
     clearFieldErrors,
@@ -482,21 +501,6 @@ function appendStoreToRecord(
       else existingForKey.push(err)
     }
   }
-}
-
-function contextualiseValue<F extends GenericForm>(
-  state: FormStore<F>,
-  segments: Path,
-  context: CurrentValueContext<boolean>
-): unknown {
-  const currentValue = computed(() => getAtPath(state.form.value, segments))
-  if (context.withMeta === true) {
-    return {
-      currentValue: currentValue as Readonly<Ref<unknown>>,
-      meta: computed(() => ({})) as Readonly<Ref<unknown>>,
-    } as unknown as CurrentValueWithContext<unknown>
-  }
-  return currentValue as Readonly<Ref<unknown>>
 }
 
 /**

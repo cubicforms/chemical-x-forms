@@ -94,17 +94,9 @@ export class ReservedFormKeyError extends Error {
  * `console.warn` so a deployed third-party app shipping the
  * anti-pattern doesn't hard-crash.
  */
-export class AnonPersistError extends Error {
-  override readonly name = 'AnonPersistError'
-  constructor() {
-    super(
-      '[@chemical-x/forms] persist: requires an explicit key on useForm().\n' +
-        '  Why: anonymous keys drift on remount AND can collide between forms — your data could leak across unrelated forms.\n' +
-        "  Fix: useForm({ schema, key: 'login', persist: '...' })\n" +
-        '  In prod: no throw — persistence is silently disabled and a one-time warn is logged.'
-    )
-  }
-}
+// (AnonPersistError class declaration is below; this docblock is the
+// historical preamble — kept here so blame/PR review can trace the
+// original intent. The richer class supersedes the earlier basic version.)
 
 /**
  * Thrown when `register(path, { persist: true })` or `form.persist(path)`
@@ -131,4 +123,62 @@ export class SensitivePersistFieldError extends Error {
         `(or form.persist()) if the client-side persistence is intentional.`
     )
   }
+}
+
+/**
+ * Thrown when persistence is misconfigured in a way that would either
+ * (a) silently drop writes, or (b) namespace storage under a
+ * non-deterministic synthetic key — both of which become security bugs
+ * the moment encrypted persistence backends are added (the same key
+ * may be derived for two unrelated forms).
+ *
+ * Two `cause` values, one error shape:
+ *
+ *   - `'no-key'` — `useForm({ persist: ... })` called without `key:`.
+ *     Anonymous keys (`__cx:anon:*`) drift across mounts; persisting
+ *     to a non-deterministic location is refused outright.
+ *
+ *   - `'register-without-config'` — `register(_, { persist: true })`
+ *     declared on a form whose `useForm()` options omit `persist:`.
+ *     The opt-in is recorded but nothing would ever land in storage.
+ *
+ * Fix: align the two layers — set `persist:` + `key:` on `useForm()`,
+ * or remove `{ persist: true }` from the offending `register()` call.
+ */
+export class AnonPersistError extends Error {
+  override readonly name = 'AnonPersistError'
+  readonly schemaFields: readonly string[] | undefined
+  readonly callSite: string | undefined
+  override readonly cause: 'no-key' | 'register-without-config'
+  constructor(opts: {
+    schemaFields?: readonly string[] | undefined
+    callSite?: string | undefined
+    cause: 'no-key' | 'register-without-config'
+  }) {
+    super(formatAnonPersistMessage(opts))
+    this.schemaFields = opts.schemaFields
+    this.callSite = opts.callSite
+    this.cause = opts.cause
+  }
+}
+
+function formatAnonPersistMessage(opts: {
+  schemaFields?: readonly string[] | undefined
+  callSite?: string | undefined
+  cause: 'no-key' | 'register-without-config'
+}): string {
+  const head =
+    opts.cause === 'no-key'
+      ? `useForm({ persist: ... }) requires an explicit \`key:\`. Anonymous synthetic keys (\`__cx:anon:*\`) drift across mounts and can collide between unrelated forms — refusing to persist to a non-deterministic location.`
+      : `register(_, { persist: true }) declared on a form whose useForm() options have no \`persist:\` configured. The opt-in is recorded but nothing would ever land in storage.`
+  const fields =
+    opts.schemaFields !== undefined && opts.schemaFields.length > 0
+      ? ` Form fields: { ${opts.schemaFields.join(', ')} }.`
+      : ''
+  const fix =
+    opts.cause === 'no-key'
+      ? ` Fix: add \`key: '<stable-id>'\` to useForm().`
+      : ` Fix: add \`persist: 'session'\` (or 'local') and \`key:\` to useForm(), or remove \`{ persist: true }\` from this register() call.`
+  const where = opts.callSite !== undefined ? ` ${opts.callSite}` : ''
+  return `[@chemical-x/forms] ${head}${fields}${fix}${where}`
 }

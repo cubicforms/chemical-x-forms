@@ -838,42 +838,6 @@ export type MetaTrackerValue = {
 export type MetaTracker = Record<string, MetaTrackerValue>
 export type MetaTrackerStore = Map<FormKey, MetaTracker>
 
-/**
- * Options for the `getValue(...)` overloads that opt into metadata.
- *
- * ```ts
- * const view = form.getValue({ withMeta: true })
- * view.currentValue.value // the form value
- * view.meta.value         // per-leaf metadata
- * ```
- */
-export type CurrentValueContext<WithMeta extends boolean = false> = {
-  /** Set to `true` to receive both the value ref and a per-leaf metadata ref. */
-  withMeta?: WithMeta
-}
-
-type RemapLeafNodes<T, V, Q = NonNullable<T>> =
-  Q extends Record<string, unknown>
-    ? { [K in keyof Q]: RemapLeafNodes<Q[K], V> }
-    : Q extends Array<infer U>
-      ? Array<RemapLeafNodes<U, V>>
-      : V
-
-/**
- * Return value of `getValue({ withMeta: true })` and
- * `getValue(path, { withMeta: true })`.
- *
- * `currentValue` carries the live reactive value at the requested
- * scope; `meta` carries a parallel tree where each leaf is the
- * `MetaTrackerValue` for the corresponding field.
- */
-export type CurrentValueWithContext<Value, FormSubtree = Value> = {
-  /** Live reactive value at the requested scope. */
-  currentValue: Readonly<Ref<Value>>
-  /** Parallel metadata tree — leaves are `MetaTrackerValue` records. */
-  meta: Readonly<Ref<DeepPartial<RemapLeafNodes<FormSubtree, MetaTrackerValue>>>>
-}
-
 // This generic generates full paths and paths that point to string arrays
 // This staisfies ts edge case for multi-select and multi-checkbox elements
 export type RegisterFlatPath<Form, Key extends keyof Form = keyof Form> =
@@ -1314,6 +1278,53 @@ export type FieldState<Value = unknown> = DeepFlatten<
     blank: boolean
   }
 >
+
+/**
+ * Runtime shape of a single FieldStateView entry surfaced through
+ * `form.fieldState.<path>`. Matches what `buildFieldStateAccessor`
+ * actually produces (slim shape, readonly across the board), as
+ * opposed to `FieldState<Value>` which is the typed public contract
+ * via `getFieldState(path)`. The runtime accessor's structural keys
+ * are what the proxy disambiguates against on each property read.
+ */
+export type FieldStateLeaf<Value = unknown> = {
+  readonly value: Value
+  readonly original: Value
+  readonly pristine: boolean
+  readonly dirty: boolean
+  readonly focused: boolean | null
+  readonly blurred: boolean | null
+  readonly touched: boolean | null
+  readonly isConnected: boolean
+  readonly updatedAt: string | null
+  readonly errors: readonly ValidationError[]
+  readonly path: ReadonlyArray<string | number>
+  readonly blank: boolean
+}
+
+/**
+ * Recursive type behind `form.fieldState`. At every depth ≥ 1 the
+ * proxy exposes both the FieldStateLeaf at the current path AND
+ * descent into named children. FieldStateLeaf keys SHADOW any schema
+ * fields with conflicting names at depth 2+ (a documented edge case;
+ * top-level fields are unshadowed because the root proxy treats every
+ * access as descent — see `buildFieldStateProxy`).
+ */
+export type FieldStateMapEntry<T> = T extends object
+  ? FieldStateLeaf<T> & {
+      readonly [K in Exclude<keyof T, keyof FieldStateLeaf<T>>]: FieldStateMapEntry<T[K]>
+    }
+  : FieldStateLeaf<T>
+
+/**
+ * Type of `form.fieldState`. Object-shape mirroring the form's top
+ * level; descent into nested fields produces FieldStateLeaf-bearing
+ * entries via `FieldStateMapEntry`.
+ */
+export type FieldStateMap<Form extends GenericForm> = {
+  readonly [K in keyof Form]: FieldStateMapEntry<Form[K]>
+}
+
 export type DOMFieldStateStore = Map<string, DOMFieldState | undefined>
 
 /**
@@ -1495,19 +1506,6 @@ export type UseAbstractFormReturnType<
   GetValueFormType extends GenericForm = Form,
 > = {
   /**
-   * Reactive per-field state at `path`: `currentValue`, focus/blur
-   * flags, dirty/pristine, errors, etc. See `FieldState` for the
-   * full shape.
-   *
-   * ```ts
-   * const state = form.getFieldState('email')
-   * // <p v-if="state.touched && state.errors.length">…</p>
-   * ```
-   */
-  getFieldState: <Path extends FlatPath<Form, keyof Form, true>>(
-    path: Path
-  ) => Ref<FieldState<NestedReadType<WriteShape<GetValueFormType>, Path>>>
-  /**
    * Wraps your submit logic with validation and error routing.
    *
    * ```ts
@@ -1521,90 +1519,64 @@ export type UseAbstractFormReturnType<
    * fired, so `data.email` is guaranteed to satisfy `.email()`.
    */
   handleSubmit: HandleSubmit<Form>
+
   /**
-   * Read the form's current value as a reactive ref.
+   * Reactive readonly proxy over the form's storage value. Read
+   * identically in script and template — no `.value`, no auto-unwrap
+   * rules. Pinia setup-store pattern.
    *
-   * - `getValue()` — whole form.
-   * - `getValue(path)` — value at `path`.
-   * - `getValue({ withMeta: true })` — whole form + a sibling
-   *   `meta` ref carrying per-leaf metadata.
-   * - `getValue(path, { withMeta: true })` — same, scoped to `path`.
+   * ```vue
+   * <script setup>
+   *   const form = useForm({ schema, key: 'login' })
+   * </script>
    *
-   * ```ts
-   * const email = form.getValue('email')      // Readonly<Ref<string>>
-   * const all = form.getValue()               // Readonly<Ref<Form>>
+   * <template>
+   *   <p>{{ form.values.email }}</p>
+   *   <p>{{ form.values.address.city }}</p>
+   * </template>
    * ```
    *
+   * Writes are blocked at the proxy boundary — go through `setValue`,
+   * `setValues`, the directive, or one of the field-array helpers. The
+   * slim-primitive write gate stays the only path into storage.
+   *
    * Reads reflect what's storable: enum-typed slots widen to their
-   * primitive supertype (e.g. `string`) so refinement-invalid but
+   * primitive supertype (`string`), so refinement-invalid but
    * structurally-valid values are visible. Use `handleSubmit` /
-   * `validate*()` when you need the post-validation strict type.
+   * `validateAsync()` when you need the post-validation strict type.
    */
-  getValue: {
-    /**
-     * Read the whole form as a reactive ref.
-     *
-     * ```ts
-     * const all = form.getValue() // Readonly<Ref<Form>>
-     * ```
-     *
-     * Reads reflect what's storable: enum-typed slots widen to their
-     * primitive supertype (e.g. `string`) so refinement-invalid but
-     * structurally-valid values are visible. Use `handleSubmit` /
-     * `validate*()` when you need the post-validation strict type.
-     */
-    (): Readonly<Ref<WithIndexedUndefined<WriteShape<GetValueFormType>>>>
-    /**
-     * Read the value at `path` as a reactive ref.
-     *
-     * ```ts
-     * const email = form.getValue('email') // Readonly<Ref<string>>
-     * ```
-     *
-     * Reads reflect what's storable: enum-typed slots widen to their
-     * primitive supertype (e.g. `string`) so refinement-invalid but
-     * structurally-valid values are visible. Use `handleSubmit` /
-     * `validate*()` when you need the post-validation strict type.
-     */
-    <Path extends FlatPath<Form>>(
-      path: Path
-    ): Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
-    /**
-     * Read the whole form along with per-leaf metadata.
-     *
-     * ```ts
-     * const view = form.getValue({ withMeta: true })
-     * view.currentValue.value // the form value
-     * view.meta.value         // per-leaf MetaTrackerValue tree
-     * ```
-     *
-     * Pass `{ withMeta: false }` (or omit `withMeta`) for the same
-     * shape as `getValue()`.
-     */
-    <WithMeta extends boolean>(
-      context: CurrentValueContext<WithMeta>
-    ): WithMeta extends true
-      ? CurrentValueWithContext<WithIndexedUndefined<WriteShape<GetValueFormType>>>
-      : Readonly<Ref<WithIndexedUndefined<WriteShape<GetValueFormType>>>>
-    /**
-     * Read the value at `path` along with per-leaf metadata.
-     *
-     * ```ts
-     * const view = form.getValue('email', { withMeta: true })
-     * view.currentValue.value // the email value
-     * view.meta.value         // metadata for that leaf
-     * ```
-     *
-     * Pass `{ withMeta: false }` (or omit `withMeta`) for the same
-     * shape as `getValue(path)`.
-     */
-    <Path extends FlatPath<Form>, WithMeta extends boolean>(
-      path: Path,
-      context: CurrentValueContext<WithMeta>
-    ): WithMeta extends true
-      ? CurrentValueWithContext<NestedReadType<WriteShape<GetValueFormType>, Path>>
-      : Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
-  }
+  values: Readonly<WithIndexedUndefined<WriteShape<GetValueFormType>>>
+
+  /**
+   * Reactive per-field state proxy. Pinia-style nested object — read
+   * leaf properties (`dirty`, `touched`, `errors`, `blurred`,
+   * `focused`, `pendingEmpty`, `currentValue`, …) directly off the
+   * field's path:
+   *
+   * ```vue
+   * <p v-if="form.fieldState.email.touched && form.fieldState.email.errors.length">
+   *   {{ form.fieldState.email.errors[0].message }}
+   * </p>
+   * <p>City dirty? {{ form.fieldState.address.city.dirty }}</p>
+   * ```
+   *
+   * The same proxy supports descent at every level — `address` reads
+   * the FieldStateLeaf for the address object, and `address.city`
+   * descends into the nested leaf.
+   *
+   * Leaf values follow the slim WriteShape contract: enum-typed leaves
+   * widen to their primitive supertype. The errors array, dirty flag,
+   * focus state, etc. are unaffected.
+   *
+   * Shadowing: at depth 2+, FieldStateLeaf keys (`dirty`, `touched`,
+   * `errors`, `pendingEmpty`, `focused`, `blurred`, `value`,
+   * `original`, `pristine`, `isConnected`, `updatedAt`, `path`) win
+   * over schema field names. Top-level fields are NOT shadowed.
+   * Document edge case; rename the offending schema field if the
+   * collision matters.
+   */
+  fieldState: FieldStateMap<WriteShape<GetValueFormType>>
+
   /**
    * Write to the form programmatically. Two forms:
    *
@@ -1767,11 +1739,50 @@ export type UseAbstractFormReturnType<
    * (`form.fieldErrors['user.profile.email']`) — JS dot notation
    * splits on literal dots.
    *
+   * Reactive map of field errors, keyed by dotted path. Populated
+   * automatically by `handleSubmit` and per-field validation; cleared
+   * on validation success.
+   *
+   * Read in templates with no `.value`:
+   *
+   * ```vue
+   * <p v-if="form.errors.email">{{ form.errors.email[0].message }}</p>
+   * ```
+   *
+   * Watch from script via the getter form:
+   *
+   * ```ts
+   * watch(() => form.errors.email, (errors) => …)
+   * ```
+   *
+   * Use bracket access for nested dotted keys
+   * (`form.errors['user.profile.email']`) — JS dot notation splits
+   * on literal dots.
+   *
    * Read-only — populate via `setFieldErrors`, `addFieldErrors`, and
    * `clearFieldErrors`. Server-side errors flow through
    * `parseApiErrors` first.
    */
-  fieldErrors: Readonly<FormFieldErrors<Form>>
+  errors: Readonly<FormFieldErrors<Form>>
+
+  /**
+   * Escape hatch for the rare case a consumer needs a `Ref<T>` —
+   * e.g. handing the value to an external composable that expects a
+   * Vue ref, or watching a single path with `watch(formRef, ...)`.
+   *
+   * ```ts
+   * const emailRef = form.toRef('email')         // Readonly<Ref<string>>
+   * watch(emailRef, (next) => console.log(next))
+   * ```
+   *
+   * Returns `Readonly<Ref<...>>` — writes go through `setValue`,
+   * `register()`, or the field-array helpers, never via the ref.
+   * Prefer `form.values.email` for direct reads in templates +
+   * scripts; `toRef` is for ref-shaped interop only.
+   */
+  toRef: <Path extends FlatPath<Form>>(
+    path: Path
+  ) => Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
 
   /**
    * Replace every field error for this form with the provided list.

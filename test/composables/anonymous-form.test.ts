@@ -63,8 +63,8 @@ describe('anonymous useForm — independent state per setup call', () => {
 
     // Writing to one form must not leak into the other.
     captured.a?.setValue('name', 'Alice')
-    expect(captured.a?.getValue('name').value).toBe('Alice')
-    expect(captured.b?.getValue('name').value).toBe('')
+    expect(captured.a?.values.name).toBe('Alice')
+    expect(captured.b?.values.name).toBe('')
 
     app.unmount()
   })
@@ -99,7 +99,7 @@ describe('anonymous useForm — ambient useFormContext access', () => {
 
     // Writes land on the same form.
     captured.owner?.setValue('name', 'Bob')
-    expect(captured.consumer?.getValue('name').value).toBe('Bob')
+    expect(captured.consumer?.values.name).toBe('Bob')
 
     app.unmount()
   })

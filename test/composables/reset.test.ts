@@ -66,17 +66,17 @@ describe('useForm — reset()', () => {
     form.setValue('profile.name', 'alice')
 
     form.reset()
-    expect(form.getValue().value).toEqual(defaults)
+    expect(form.values).toEqual(defaults)
   })
 
   it('applies new constraints over schema defaults when given a partial', () => {
     const { app, form } = harness()
     apps.push(app)
     form.reset({ profile: { name: 'seeded' } })
-    expect(form.getValue('profile.name').value).toBe('seeded')
+    expect(form.values.profile.name).toBe('seeded')
     // Unconstrained siblings fall back to schema defaults.
-    expect(form.getValue('email').value).toBe('')
-    expect(form.getValue('profile.age').value).toBe(0)
+    expect(form.values.email).toBe('')
+    expect(form.values.profile.age).toBe(0)
   })
 
   it('clears errors pre-populated via setFieldErrors', () => {
@@ -89,7 +89,7 @@ describe('useForm — reset()', () => {
 
     form.reset()
     expect(form.state.isValid).toBe(true)
-    expect(form.fieldErrors).toEqual({})
+    expect(form.errors).toEqual({})
   })
 
   it('flips isDirty back to false after a mutation + reset', () => {
@@ -145,8 +145,8 @@ describe('useForm — resetField(path)', () => {
     form.setValue('password', 'still-dirty')
 
     form.resetField('email')
-    expect(form.getValue('email').value).toBe('')
-    expect(form.getValue('password').value).toBe('still-dirty')
+    expect(form.values.email).toBe('')
+    expect(form.values.password).toBe('still-dirty')
   })
 
   it('clears errors on the reset path but preserves sibling errors', () => {
@@ -158,8 +158,8 @@ describe('useForm — resetField(path)', () => {
     ])
 
     form.resetField('email')
-    expect(form.fieldErrors).not.toHaveProperty('email')
-    expect(form.fieldErrors.password).toHaveLength(1)
+    expect(form.errors).not.toHaveProperty('email')
+    expect(form.errors.password).toHaveLength(1)
   })
 
   it('restores an entire sub-tree when path names a container', () => {
@@ -170,18 +170,18 @@ describe('useForm — resetField(path)', () => {
     form.setValue('email', 'touched@example.com')
 
     form.resetField('profile')
-    expect(form.getValue('profile.name').value).toBe('')
-    expect(form.getValue('profile.age').value).toBe(0)
+    expect(form.values.profile.name).toBe('')
+    expect(form.values.profile.age).toBe(0)
     // Leaf outside the sub-tree still dirty.
-    expect(form.getValue('email').value).toBe('touched@example.com')
+    expect(form.values.email).toBe('touched@example.com')
   })
 
   it('no-ops on an unknown path', () => {
     const { app, form } = harness()
     apps.push(app)
-    const before = form.getValue().value
+    const before = form.values
     // @ts-expect-error - 'nope' is not a FlatPath of the form
     form.resetField('nope')
-    expect(form.getValue().value).toEqual(before)
+    expect(form.values).toEqual(before)
   })
 })

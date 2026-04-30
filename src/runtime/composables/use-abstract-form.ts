@@ -10,6 +10,7 @@ import {
 import { __DEV__ } from '../core/dev'
 import { captureUserCallSite } from '../core/dev-stack-trace'
 import { AnonPersistError, ReservedFormKeyError } from '../core/errors'
+import { extractSchemaFields } from '../core/extract-schema-fields'
 import type { FieldStateView } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
 import { createHistoryModule, type HistoryModule } from '../core/history'
@@ -86,6 +87,22 @@ export function useAbstractForm<
   // for consumers whose schema intentionally produces a different runtime
   // shape (e.g. zod's `.transform(...)` narrowing).
   const resolvedSchema = getComputedSchema(key, configuration.schema)
+
+  // Eager throw: persistence configured without an explicit `key:`. An
+  // anonymous synthetic key (`__cx:anon:*`) drifts across mounts (HMR /
+  // route changes / SSR↔CSR) and can collide between unrelated forms —
+  // refusing here keeps the namespace stable and forecloses on the
+  // future encrypted-backend case where collision becomes a key-derivation
+  // overlap. Throws in dev and prod alike. The error body carries the
+  // schema's top-level fields and a captured call-site so the offender
+  // is identifiable from the message alone.
+  if (configuration.persist !== undefined && configuration.key === undefined) {
+    throw new AnonPersistError({
+      cause: 'no-key',
+      schemaFields: extractSchemaFields(resolvedSchema),
+      callSite: captureUserCallSite(),
+    })
+  }
 
   // One FormStore per (app, formKey). Multiple useForm calls with the same
   // key resolve to the same instance — that's the shared-store semantic
@@ -681,34 +698,13 @@ function wirePersistence<F extends GenericForm>(
     }
   })()
 
-  // Dev-mode warning: persistence is configured but no field opted in.
-  // Common confusion mode — `persist: { storage: 'local' }` is set on
-  // the form but every `register()` call omits `{ persist: true }`, so
-  // drafts mysteriously never save. Wait one microtask AFTER the
-  // initial mount task settles so the directive's `created` hooks have
-  // had a chance to populate opt-ins; then check once. One-shot —
-  // re-mounts within the same FormStore lifetime don't re-warn.
-  if (__DEV__) {
-    void Promise.resolve().then(() => {
-      if (disposed) return
-      // Two microtask hops: the first lets the current setup() return
-      // and Vue mount the directive subtree; the second runs after
-      // Vue's own queued effects so any `register({ persist: true })`
-      // has landed in the registry.
-      void Promise.resolve().then(() => {
-        if (disposed) return
-        if (state.persistOptIns.isEmpty()) {
-          console.warn(
-            `[@chemical-x/forms] useForm({ persist: ... }) is configured on form ` +
-              `"${state.formKey}" but no fields opted in — nothing will be saved. ` +
-              `Fix: add \`{ persist: true }\` to register() calls, ` +
-              `e.g. register('email', { persist: true }). ` +
-              `See ./docs/recipes/persistence.md.`
-          )
-        }
-      })
-    })
-  }
+  // Note: a "configured but no fields opted in" check used to live here
+  // (microtask-deferred warn). Removed — having the persist capability
+  // configured without spending it on a register() call is a valid
+  // dormant state (scaffolding, A/B'd opt-ins, future-flagged fields).
+  // The library shouldn't lecture the consumer for not exercising every
+  // configured option. Eager throws only fire on actual contradictions
+  // (no-key + persist; register-with-persist + no useForm-persist).
 
   /**
    * Imperative one-shot write. Read-merge-write strategy: flush any
@@ -908,7 +904,11 @@ const warnedAnonPersistKeys: Set<string> = new Set<string>()
  */
 function enforceAnonPersistRule(formKey: string, isSSR: boolean): boolean {
   if (!formKey.startsWith(ANONYMOUS_FORM_KEY_PREFIX)) return false
-  if (__DEV__) throw new AnonPersistError()
+  if (__DEV__)
+    throw new AnonPersistError({
+      cause: 'no-key',
+      callSite: captureUserCallSite(),
+    })
   // Production: warn + tell the caller to skip wiring. Client-only
   // warn (skip server logs to avoid spamming SSR per-request output).
   // Persist is still skipped on the SSR pass — same disabling

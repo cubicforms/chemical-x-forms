@@ -71,7 +71,7 @@ describe('setValue — value form (existing behaviour)', () => {
     }
     const result = form.setValue(next)
     expect(result).toBe(true)
-    expect(form.getValue().value).toEqual(next)
+    expect(form.values).toEqual(next)
   })
 
   it('writes a leaf when called with (path, value)', () => {
@@ -79,21 +79,23 @@ describe('setValue — value form (existing behaviour)', () => {
     apps.push(app)
     const result = form.setValue('email', 'bob@example.com')
     expect(result).toBe(true)
-    expect(form.getValue('email').value).toBe('bob@example.com')
+    expect(form.values.email).toBe('bob@example.com')
   })
 
   it('writes a nested leaf', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setValue('profile.name', 'carol')
-    expect(form.getValue('profile.name').value).toBe('carol')
+    expect(form.values.profile.name).toBe('carol')
   })
 
   it('writes an array-index nested leaf', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setValue('posts.0.views', 99)
-    expect(form.getValue('posts.0.views').value).toBe(99)
+    // posts[0] is `T | undefined` (array index honesty); the harness
+    // seeds posts so `[0]` exists at this point.
+    expect(form.values.posts[0]?.views).toBe(99)
   })
 })
 
@@ -116,9 +118,9 @@ describe('setValue — callback form', () => {
 
     expect(result).toBe(true)
     expect(received?.email).toBe('alice@example.com')
-    expect(form.getValue('email').value).toBe('changed@example.com')
+    expect(form.values.email).toBe('changed@example.com')
     // Other paths preserved by the spread.
-    expect(form.getValue('counter').value).toBe(0)
+    expect(form.values.counter).toBe(0)
   })
 
   it('path callback receives the leaf value and applies the return', () => {
@@ -134,7 +136,7 @@ describe('setValue — callback form', () => {
 
     expect(result).toBe(true)
     expect(received).toBe('alice@example.com')
-    expect(form.getValue('email').value).toBe('alice@example.com!')
+    expect(form.values.email).toBe('alice@example.com!')
   })
 
   it('nested-path callback receives the nested leaf', () => {
@@ -143,7 +145,7 @@ describe('setValue — callback form', () => {
     form.setValue('profile.name', 'carol')
 
     form.setValue('profile.name', (prev) => prev.toUpperCase())
-    expect(form.getValue('profile.name').value).toBe('CAROL')
+    expect(form.values.profile.name).toBe('CAROL')
   })
 
   it('array-index nested callback receives the indexed leaf', () => {
@@ -151,7 +153,7 @@ describe('setValue — callback form', () => {
     apps.push(app)
 
     form.setValue('posts.0.views', (prev) => prev + 7)
-    expect(form.getValue('posts.0.views').value).toBe(7)
+    expect(form.values.posts[0]?.views).toBe(7)
   })
 
   it('sequential callback invocations each see the latest committed value', () => {
@@ -163,16 +165,15 @@ describe('setValue — callback form', () => {
     form.setValue('counter', (n) => n + 1)
 
     // Each call read the prior committed value, not a stale snapshot.
-    expect(form.getValue('counter').value).toBe(3)
+    expect(form.values.counter).toBe(3)
   })
 
-  it('callback return value flows through reactivity (getValue ref updates)', () => {
+  it('callback return value flows through reactivity (form.values updates)', () => {
     const { app, form } = harness()
     apps.push(app)
-    const ref = form.getValue('counter')
-    expect(ref.value).toBe(0)
+    expect(form.values.counter).toBe(0)
     form.setValue('counter', (n) => n + 41)
-    expect(ref.value).toBe(41)
+    expect(form.values.counter).toBe(41)
   })
 
   it('does not store the function itself in form state', () => {
@@ -180,7 +181,7 @@ describe('setValue — callback form', () => {
     apps.push(app)
 
     form.setValue('email', (prev) => prev + 'x')
-    const stored = form.getValue('email').value
+    const stored = form.values.email
     expect(typeof stored).toBe('string')
     expect(stored).toBe('x')
   })

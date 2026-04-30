@@ -1,5 +1,18 @@
 # Releases
 
+## v0.13.0 — 2026-04-30
+
+## What's Changed
+* chore: gitignore .claude workspace state by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/155
+* feat!: Pinia-style read API + persist throws + SSR fixes by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/156
+* refactor: rename transient-empty test files to blank.* by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/157
+* docs: polish pass — proxy API everywhere, action-first JSDoc, 0.12→0.13 migration by @ozzyfromspace in https://github.com/cubicforms/chemical-x-forms/pull/158
+
+
+**Full Changelog**: https://github.com/cubicforms/chemical-x-forms/compare/v0.12.1...v0.13.0
+
+---
+
 ## v0.12.1 — 2026-04-29
 
 ## What's Changed

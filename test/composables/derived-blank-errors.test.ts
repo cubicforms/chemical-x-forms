@@ -13,7 +13,7 @@ import { createChemicalXForms } from '../../src/runtime/core/plugin'
  * The blank-required class is purely derivable from
  * `(blankPaths, schema.isRequiredAtPath)`, so it lives on the
  * FormStore as a reactive computed. The `errors` proxy,
- * `fieldState.<path>.errors`, and `getErrorsForPath` all merge it in
+ * `fields.<path>.errors`, and `getErrorsForPath` all merge it in
  * alongside `schemaErrors` (refinement, written by validation) and
  * `userErrors` (server / manual). The error appears the moment a
  * required path becomes blank, vanishes the moment it's filled — no
@@ -27,7 +27,7 @@ import { createChemicalXForms } from '../../src/runtime/core/plugin'
  * conceptual model.
  *
  * The library is not responsible for rendering. The UI layer decides
- * when to show errors (e.g. gate on `fieldState.touched`); this file
+ * when to show errors (e.g. gate on `fields.touched`); this file
  * only proves the data flows reactively from state.
  */
 
@@ -77,12 +77,12 @@ describe('derivedBlankErrors — auto-mark fires for numeric primitives', () => 
     expect(api.state.isValid).toBe(false)
   })
 
-  it('exposes the same errors via fieldState.<path>.errors', () => {
+  it('exposes the same errors via fields.<path>.errors', () => {
     const { app, api } = mountNumeric()
     apps.push(app)
 
-    expect(api.fieldState.income.errors[0]?.code).toBe(CxErrorCode.NoValueSupplied)
-    expect(api.fieldState.income.blank).toBe(true)
+    expect(api.fields.income.errors[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(api.fields.income.blank).toBe(true)
   })
 
   it('writing a value removes the derived error reactively', async () => {
@@ -145,7 +145,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
     apps.push(app)
 
     expect(handle.api?.errors.name).toBeUndefined()
-    expect(handle.api?.fieldState.name.blank).toBe(false)
+    expect(handle.api?.fields.name.blank).toBe(false)
     expect(handle.api?.state.isValid).toBe(true)
   })
 
@@ -164,7 +164,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
     apps.push(app)
 
     expect(handle.api?.errors.agreed).toBeUndefined()
-    expect(handle.api?.fieldState.agreed.blank).toBe(false)
+    expect(handle.api?.fields.agreed.blank).toBe(false)
     expect(handle.api?.state.isValid).toBe(true)
   })
 
@@ -195,7 +195,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
     handle.api?.setValue('name', '')
     await nextTick()
     expect(handle.api?.errors.name).toBeUndefined()
-    expect(handle.api?.fieldState.name.blank).toBe(false)
+    expect(handle.api?.fields.name.blank).toBe(false)
     expect(handle.api?.state.isValid).toBe(true)
   })
 
@@ -218,7 +218,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
     apps.push(app)
 
     expect(handle.api?.errors.note?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
-    expect(handle.api?.fieldState.note.blank).toBe(true)
+    expect(handle.api?.fields.note.blank).toBe(true)
   })
 
   it('explicit `unset` opts a boolean into blank (universal opt-in)', () => {
@@ -240,7 +240,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
     apps.push(app)
 
     expect(handle.api?.errors.agreed?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
-    expect(handle.api?.fieldState.agreed.blank).toBe(true)
+    expect(handle.api?.fields.agreed.blank).toBe(true)
   })
 
   it('schema-level non-empty rule (`.min(1)`) fires through schemaErrors, not blank', async () => {
@@ -262,7 +262,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
     // authority on what "non-empty required" means.
     expect(handle.api?.errors.name?.[0]?.message).toBe('name required')
     expect(handle.api?.errors.name?.[0]?.code).not.toBe(CxErrorCode.NoValueSupplied)
-    expect(handle.api?.fieldState.name.blank).toBe(false)
+    expect(handle.api?.fields.name.blank).toBe(false)
   })
 })
 

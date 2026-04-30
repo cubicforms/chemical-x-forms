@@ -161,7 +161,7 @@ describe('getFieldState meta.blank + flat blank', () => {
   it('reports blank for a path marked via defaultValues', () => {
     const { app, form } = setupForm(z.object({ count: z.number() }), { count: unset })
     apps.push(app)
-    const fs = form.fieldState.count
+    const fs = form.fields.count
     expect((fs as unknown as { blank: boolean }).blank).toBe(true)
   })
 
@@ -169,7 +169,7 @@ describe('getFieldState meta.blank + flat blank', () => {
     const { app, form } = setupForm(z.object({ count: z.number() }), { count: unset })
     apps.push(app)
     form.setValue('count', 5)
-    const fs = form.fieldState.count
+    const fs = form.fields.count
     expect((fs as unknown as { blank: boolean }).blank).toBe(false)
   })
 })

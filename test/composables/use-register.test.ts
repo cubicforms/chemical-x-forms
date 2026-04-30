@@ -486,7 +486,7 @@ describe('useRegister — inner v-register receives full directive lifecycle', (
     innerInput.focus()
     innerInput.dispatchEvent(new Event('focus', { bubbles: true }))
     await flush()
-    expect(captured.api.fieldState.email.focused).toBe(true)
+    expect(captured.api.fields.email.focused).toBe(true)
   })
 })
 

@@ -11,13 +11,13 @@ import type { Segment } from './paths'
  *
  * Shadowing trade-off: a schema field with one of these names at depth
  * 2 or deeper is unreachable by dotted access through the proxy
- * (`form.fieldState.user.dirty` reads the `dirty` boolean of `user`,
+ * (`form.fields.user.dirty` reads the `dirty` boolean of `user`,
  * not the FieldStateView for a `user.dirty` field). Documented edge
  * case; rename the schema field or read via the legacy
  * `getFieldState('user.dirty')` until C2 deletes that surface.
  *
  * Top-level fields are NOT shadowed — the root proxy treats every
- * access as descent, so `form.fieldState.dirty` resolves to the
+ * access as descent, so `form.fields.dirty` resolves to the
  * FieldStateView for a top-level `dirty` field (if your schema has
  * one). Form-level boolean aggregates live on `form.state.isDirty`.
  */
@@ -37,7 +37,7 @@ const FIELD_STATE_KEYS: ReadonlySet<string> = new Set<keyof FieldStateView>([
 ])
 
 /**
- * Build the `form.fieldState` reactive proxy. At every level the trap
+ * Build the `form.fields` reactive proxy. At every level the trap
  * disambiguates:
  *
  *   - Known FieldStateView prop names → read the reactive prop value
@@ -45,7 +45,7 @@ const FIELD_STATE_KEYS: ReadonlySet<string> = new Set<keyof FieldStateView>([
  *
  *   - Other keys → return a deeper proxy at \`segments + key\`.
  *
- * Memoizes per-path proxies so repeated reads (`form.fieldState.email`
+ * Memoizes per-path proxies so repeated reads (`form.fields.email`
  * twice) return the same object — referential equality matters for
  * downstream effect tracking and Vue's render diff. Memoizes
  * per-path FieldStateView computeds via `buildFieldStateAccessor` so
@@ -54,7 +54,7 @@ const FIELD_STATE_KEYS: ReadonlySet<string> = new Set<keyof FieldStateView>([
  * The root proxy (segments === []) treats EVERY key as descent — no
  * FieldStateView exists at the form root, so a top-level field whose
  * name happens to be in the FieldState prop set (e.g. a schema field
- * named `dirty`) is reachable as `form.fieldState.dirty`. Shadowing
+ * named `dirty`) is reachable as `form.fields.dirty`. Shadowing
  * only kicks in at depth 2+.
  */
 export function buildFieldStateProxy<F extends GenericForm>(
@@ -115,7 +115,7 @@ export function buildFieldStateProxy<F extends GenericForm>(
           return true
         },
         // Iteration support: at non-root paths, expose the FieldStateLeaf
-        // keys so `JSON.stringify(form.fieldState.email)` produces the
+        // keys so `JSON.stringify(form.fields.email)` produces the
         // expected leaf snapshot (matching the legacy
         // `JSON.stringify(form.getFieldState('email').value)` shape).
         // At the root, return `[]` — the root has no FieldStateView and

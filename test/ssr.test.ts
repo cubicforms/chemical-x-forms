@@ -190,7 +190,7 @@ describe('SSR behavior of useForm', async () => {
     Focus: Errors set on the server (via setFieldErrors, including ones
     parsed from API responses via parseApiErrors) must serialise into
     the rendered HTML and survive hydration. Also covers that
-    form.fieldState.<path>.errors mirrors the underlying store.
+    form.fields.<path>.errors mirrors the underlying store.
   */
   describe('SSR behavior of error API >>', () => {
     it('renders direct setFieldErrors output for each path', async () => {
@@ -208,7 +208,7 @@ describe('SSR behavior of useForm', async () => {
       expect(countEl?.textContent?.trim()).toBe('2')
     })
 
-    it('exposes the same errors via form.fieldState.<path>.errors', async () => {
+    it('exposes the same errors via form.fields.<path>.errors', async () => {
       const html = await $fetch('/')
       assertHTML(html)
       const window = new JSDOM(html).window

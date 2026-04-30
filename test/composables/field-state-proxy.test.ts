@@ -6,7 +6,7 @@ import { useForm } from '../../src/zod'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 
 /**
- * `form.fieldState` — Pinia-style nested reactive proxy. Each path
+ * `form.fields` — Pinia-style nested reactive proxy. Each path
  * exposes the FieldStateLeaf at that path AND descent into named
  * children. FieldStateLeaf keys (`dirty`, `touched`, `errors`,
  * `blank`, `currentValue`, `focused`, `blurred`, `pristine`,
@@ -57,7 +57,7 @@ function mountForm(): {
   return { api: captured, app }
 }
 
-describe('form.fieldState — top-level leaf reads', () => {
+describe('form.fields — top-level leaf reads', () => {
   let app: App | undefined
   afterEach(() => {
     app?.unmount()
@@ -68,7 +68,7 @@ describe('form.fieldState — top-level leaf reads', () => {
   it('exposes leaf props directly without .value', () => {
     const mounted = mountForm()
     app = mounted.app
-    const fs = mounted.api.fieldState.email
+    const fs = mounted.api.fields.email
     expect(fs.value).toBe('a@b.com')
     expect(fs.dirty).toBe(false)
     expect(fs.pristine).toBe(true)
@@ -79,10 +79,10 @@ describe('form.fieldState — top-level leaf reads', () => {
   it('reflects setValue mutations on subsequent reads', () => {
     const mounted = mountForm()
     app = mounted.app
-    expect(mounted.api.fieldState.email.value).toBe('a@b.com')
+    expect(mounted.api.fields.email.value).toBe('a@b.com')
     mounted.api.setValue('email', 'changed@x.com')
-    expect(mounted.api.fieldState.email.value).toBe('changed@x.com')
-    expect(mounted.api.fieldState.email.dirty).toBe(true)
+    expect(mounted.api.fields.email.value).toBe('changed@x.com')
+    expect(mounted.api.fields.email.dirty).toBe(true)
   })
 
   it('triggers a watch effect when an underlying field changes', async () => {
@@ -90,7 +90,7 @@ describe('form.fieldState — top-level leaf reads', () => {
     app = mounted.app
     const seen: boolean[] = []
     const stop = watch(
-      () => mounted.api.fieldState.email.dirty,
+      () => mounted.api.fields.email.dirty,
       (next) => {
         seen.push(next)
       }
@@ -104,7 +104,7 @@ describe('form.fieldState — top-level leaf reads', () => {
   })
 })
 
-describe('form.fieldState — nested descent', () => {
+describe('form.fields — nested descent', () => {
   let app: App | undefined
   afterEach(() => {
     app?.unmount()
@@ -115,33 +115,33 @@ describe('form.fieldState — nested descent', () => {
   it('descends into nested object paths', () => {
     const mounted = mountForm()
     app = mounted.app
-    expect(mounted.api.fieldState.address.city.value).toBe('NYC')
-    expect(mounted.api.fieldState.address.zip.value).toBe('10001')
-    expect(mounted.api.fieldState.address.city.dirty).toBe(false)
+    expect(mounted.api.fields.address.city.value).toBe('NYC')
+    expect(mounted.api.fields.address.zip.value).toBe('10001')
+    expect(mounted.api.fields.address.city.dirty).toBe(false)
   })
 
   it('reflects nested mutations', () => {
     const mounted = mountForm()
     app = mounted.app
     mounted.api.setValue('address.city', 'Boston')
-    expect(mounted.api.fieldState.address.city.value).toBe('Boston')
-    expect(mounted.api.fieldState.address.city.dirty).toBe(true)
+    expect(mounted.api.fields.address.city.value).toBe('Boston')
+    expect(mounted.api.fields.address.city.dirty).toBe(true)
   })
 
   it('returns the same proxy reference on repeated path access', () => {
     const mounted = mountForm()
     app = mounted.app
-    const a = mounted.api.fieldState.email
-    const b = mounted.api.fieldState.email
+    const a = mounted.api.fields.email
+    const b = mounted.api.fields.email
     expect(a).toBe(b)
 
-    const ac = mounted.api.fieldState.address.city
-    const bc = mounted.api.fieldState.address.city
+    const ac = mounted.api.fields.address.city
+    const bc = mounted.api.fields.address.city
     expect(ac).toBe(bc)
   })
 })
 
-describe('form.fieldState — errors propagation', () => {
+describe('form.fields — errors propagation', () => {
   let app: App | undefined
   afterEach(() => {
     app?.unmount()
@@ -160,8 +160,8 @@ describe('form.fieldState — errors propagation', () => {
         formKey: mounted.api.key,
       },
     ])
-    expect(mounted.api.fieldState.email.errors).toHaveLength(1)
-    expect(mounted.api.fieldState.email.errors[0]?.message).toBe('taken')
+    expect(mounted.api.fields.email.errors).toHaveLength(1)
+    expect(mounted.api.fields.email.errors[0]?.message).toBe('taken')
   })
 
   it('errors at one path do not leak to another', () => {
@@ -175,7 +175,7 @@ describe('form.fieldState — errors propagation', () => {
         formKey: mounted.api.key,
       },
     ])
-    expect(mounted.api.fieldState.email.errors).toHaveLength(1)
-    expect(mounted.api.fieldState.password.errors).toEqual([])
+    expect(mounted.api.fields.email.errors).toHaveLength(1)
+    expect(mounted.api.fields.password.errors).toEqual([])
   })
 })

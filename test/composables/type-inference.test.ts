@@ -306,9 +306,9 @@ describe('useForm type inference — handleSubmit', () => {
   })
 })
 
-describe('useForm type inference — fieldState + errors', () => {
-  it('form.fieldState exposes a typed errors array on each path', () => {
-    expectTypeOf(form.fieldState.email.errors).toMatchTypeOf<ReadonlyArray<{ message: string }>>()
+describe('useForm type inference — fields + errors', () => {
+  it('form.fields exposes a typed errors array on each path', () => {
+    expectTypeOf(form.fields.email.errors).toMatchTypeOf<ReadonlyArray<{ message: string }>>()
   })
 
   it('form.errors is a Readonly<FormFieldErrors<Form>> (Proxy view, no .value)', () => {

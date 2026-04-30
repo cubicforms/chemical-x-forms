@@ -178,7 +178,7 @@ describe('SSR isConnected — read-before-input (preamble) via both transforms',
     // exactly the state that gets serialised into the hydration
     // payload.
     const template = `<div>
-      <span class="readout">{{ JSON.stringify(form.fieldState.password) }}</span>
+      <span class="readout">{{ JSON.stringify(form.fields.password) }}</span>
       <input v-register="form.register('password')" />
     </div>`
     const app = makeAppWithTemplate(template, 'preamble+hint')
@@ -200,7 +200,7 @@ describe('SSR isConnected — read-before-input (preamble) via both transforms',
     // an expression that reads the field state earlier in the
     // top-to-bottom render pass captures the still-false value.
     const template = `<div>
-      <span class="readout">{{ JSON.stringify(form.fieldState.password) }}</span>
+      <span class="readout">{{ JSON.stringify(form.fields.password) }}</span>
       <input v-register="form.register('password')" />
     </div>`
     const app = makeAppWithTemplate(template, 'hint-only')
@@ -292,7 +292,7 @@ describe('SSR isConnected — cross-component sync via shared form key', () => {
     })
 
     const readerRender = compileTemplate(
-      `<div class="reader">{{ JSON.stringify(form.fieldState.email) }}</div>`,
+      `<div class="reader">{{ JSON.stringify(form.fields.email) }}</div>`,
       'preamble+hint'
     )
     const Reader = defineComponent({
@@ -396,7 +396,7 @@ describe('SSR isConnected — cross-component sync via shared form key', () => {
         return { form }
       },
       render: compileTemplate(
-        `<div class="setup-only-reader">{{ JSON.stringify(form.fieldState.email) }}</div>`,
+        `<div class="setup-only-reader">{{ JSON.stringify(form.fields.email) }}</div>`,
         'preamble+hint'
       ),
     })
@@ -477,7 +477,7 @@ describe('SSR isConnected — cross-component sync via shared form key', () => {
         return { form }
       },
       render: compileTemplate(
-        `<div class="case-b-reader">{{ JSON.stringify(form.fieldState.email) }}</div>`,
+        `<div class="case-b-reader">{{ JSON.stringify(form.fields.email) }}</div>`,
         'preamble+hint'
       ),
     })

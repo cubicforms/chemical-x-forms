@@ -176,7 +176,7 @@ const _readForm = makeFormProxy<ReturnType<typeof useForm<typeof _readSchema>>>(
 /**
  * Read-side widening: storage holds slim-primitive-correct values
  * under the write contract, so reads must reflect that. `form.values`,
- * `form.fieldState(path)`, and `register(path).innerRef` all widen
+ * `form.fields(path)`, and `register(path).innerRef` all widen
  * leaves to the slim primitive type. Strict post-validation shapes
  * only appear on `handleSubmit` / `validate*()`.
  */
@@ -206,16 +206,16 @@ describe('WriteShape — applied to form.values', () => {
   })
 })
 
-describe('WriteShape — applied to form.fieldState', () => {
-  it('fieldState at an enum-typed path narrows value/original to string', () => {
-    expectTypeOf(_readForm.fieldState.color.value).toEqualTypeOf<string>()
-    expectTypeOf(_readForm.fieldState.color.original).toEqualTypeOf<string>()
+describe('WriteShape — applied to form.fields', () => {
+  it('fields at an enum-typed path narrows value/original to string', () => {
+    expectTypeOf(_readForm.fields.color.value).toEqualTypeOf<string>()
+    expectTypeOf(_readForm.fields.color.original).toEqualTypeOf<string>()
   })
 
-  it('fieldState metadata stays untouched (errors / dirty / pristine / focused)', () => {
-    expectTypeOf(_readForm.fieldState.color.dirty).toEqualTypeOf<boolean>()
-    expectTypeOf(_readForm.fieldState.color.pristine).toEqualTypeOf<boolean>()
-    expectTypeOf(_readForm.fieldState.color.focused).toEqualTypeOf<boolean | null>()
+  it('fields metadata stays untouched (errors / dirty / pristine / focused)', () => {
+    expectTypeOf(_readForm.fields.color.dirty).toEqualTypeOf<boolean>()
+    expectTypeOf(_readForm.fields.color.pristine).toEqualTypeOf<boolean>()
+    expectTypeOf(_readForm.fields.color.focused).toEqualTypeOf<boolean | null>()
   })
 })
 

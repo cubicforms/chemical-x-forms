@@ -454,7 +454,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // Allocated once per buildFormApi call (one per consumer). Each Proxy
   // node memoizes its descendants and the per-path FieldStateView
   // computed it reads through, so repeated access to the same path
-  // (`form.fieldState.email` twice) returns the same object — useful
+  // (`form.fields.email` twice) returns the same object — useful
   // for downstream `===` checks and Vue's render diff.
   const fieldStateProxy = buildFieldStateProxy(state)
 
@@ -470,10 +470,10 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
         WithIndexedUndefined<WriteShape<GetValueFormType>>
       >
     },
-    fieldState: fieldStateProxy as unknown as UseAbstractFormReturnType<
+    fields: fieldStateProxy as unknown as UseAbstractFormReturnType<
       Form,
       GetValueFormType
-    >['fieldState'],
+    >['fields'],
     setValue: setValueImpl as UseAbstractFormReturnType<Form, GetValueFormType>['setValue'],
     validate: validate as UseAbstractFormReturnType<Form, GetValueFormType>['validate'],
     validateAsync: validateAsync as UseAbstractFormReturnType<

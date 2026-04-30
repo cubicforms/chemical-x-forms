@@ -222,7 +222,7 @@ describe('pattern 2: v-register on a non-form root WITH useRegister (recommended
     innerInput.focus()
     innerInput.dispatchEvent(new Event('focus', { bubbles: true }))
     await flush()
-    expect(mounted.api.fieldState.email.focused).toBe(true)
+    expect(mounted.api.fields.email.focused).toBe(true)
   })
 })
 
@@ -269,7 +269,7 @@ describe('non-pattern: v-register on a non-form root WITHOUT useRegister/assignK
 
   it('FormStore element registry SKIPS non-INTERACTIVE roots (silent no-op)', async () => {
     mounted = await mountWithChild(PlainDivChild)
-    const fs = mounted.api.fieldState.email
+    const fs = mounted.api.fields.email
     expect(fs.focused).toBeNull()
     expect(fs.blurred).toBeNull()
     expect(fs.touched).toBeNull()

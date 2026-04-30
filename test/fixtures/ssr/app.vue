@@ -160,7 +160,7 @@
           directForm.errors.password?.[0]?.message ?? ''
         }}</span>
         <span id="errors-direct-fieldstate-email">{{
-          directForm.fieldState.email.errors[0]?.message ?? ''
+          directForm.fields.email.errors[0]?.message ?? ''
         }}</span>
         <span id="errors-direct-count">{{ Object.keys(directForm.errors).length }}</span>
       </div>

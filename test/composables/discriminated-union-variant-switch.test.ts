@@ -1349,12 +1349,12 @@ describe('variant memory — history (undo/redo) interaction', () => {
 /**
  * Inactive-variant errors are filtered from the aggregate `form.errors`
  * surface but preserved in the underlying schemaErrors store, so per-
- * field accessors (`fieldState[path].errors`) still expose them. The
+ * field accessors (`fields[path].errors`) still expose them. The
  * split:
  *
  *   - `form.errors` answers "what's currently wrong with this form?" —
  *     active schema only.
- *   - `fieldState.<path>.errors` answers "what does the runtime know
+ *   - `fields.<path>.errors` answers "what does the runtime know
  *     about this specific path?" — independent of which variant is
  *     active. Programmatic consumers reading per-field state can see
  *     the error even when its path is in the inactive variant.
@@ -1407,7 +1407,7 @@ describe('inactive-variant errors — filtered from form.errors, preserved per-f
     expect(api.errors['notify.address']).toBeDefined()
   })
 
-  it('per-field fieldState still exposes errors for paths in the inactive variant', async () => {
+  it('per-field fields still exposes errors for paths in the inactive variant', async () => {
     const { app, api } = mountProfile()
     apps.push(app)
     await nextTick()
@@ -1421,12 +1421,12 @@ describe('inactive-variant errors — filtered from form.errors, preserved per-f
     // But the per-field state surface keeps the error available for
     // programmatic consumers — useful when the consumer reads errors
     // off a path without first checking which variant is active.
-    const fieldState = (
+    const fields = (
       api as unknown as {
-        fieldState: { notify: { address: { errors: ValidationError[] } } }
+        fields: { notify: { address: { errors: ValidationError[] } } }
       }
-    ).fieldState.notify.address
-    expect(fieldState.errors.length).toBeGreaterThan(0)
+    ).fields.notify.address
+    expect(fields.errors.length).toBeGreaterThan(0)
   })
 
   it('handleSubmit-populated errors at the active variant flow through the filter cleanly', async () => {

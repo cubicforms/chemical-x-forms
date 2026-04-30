@@ -124,7 +124,7 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    * a documented signal of consumer intent rather than runtime
    * inference.
    *
-   * Reads (`displayValue` computed, `fieldState.<path>.blank`,
+   * Reads (`displayValue` computed, `fields.<path>.blank`,
    * `derivedBlankErrors` computed) track via Vue 3.5's reactive Set
    * handlers. Writes happen inside `setValueAtPath` (gate-hook
    * bookkeeping: `blank: true` meta adds the path; any other write

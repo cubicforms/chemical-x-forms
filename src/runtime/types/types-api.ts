@@ -1034,7 +1034,7 @@ export type RegisterValue<Value = unknown> = {
   setValueWithInternalPath: (value: unknown, meta?: WriteMeta) => boolean
   /**
    * Mark this field as DOM-connected during SSR so a server-rendered
-   * template that reads `form.fieldState.<path>.isConnected` doesn't
+   * template that reads `form.fields.<path>.isConnected` doesn't
    * flicker on hydration. The `v-register` directive calls this for
    * you; no-op on the client.
    * @internal
@@ -1337,7 +1337,7 @@ export type DOMFieldState = {
  * the same flag set as `FieldStateLeaf`, plus `meta`
  * (`MetaTrackerValue`).
  *
- * `form.fieldState.<path>` returns the slim `FieldStateLeaf` shape;
+ * `form.fields.<path>` returns the slim `FieldStateLeaf` shape;
  * pick `FieldState<Value>` for code that needs `meta` or the historical
  * `previousValue` slot.
  */
@@ -1375,7 +1375,7 @@ export type FieldState<Value = unknown> = DeepFlatten<
 >
 
 /**
- * Per-field reactive shape returned by `form.fieldState.<path>`.
+ * Per-field reactive shape returned by `form.fields.<path>`.
  * Slim, readonly across the board. Schema fields with names matching
  * a `FieldStateLeaf` key (`value`, `dirty`, `errors`, …) at depth ≥ 2
  * are shadowed by the leaf — bracket-access via `toRef(path)` is the
@@ -1397,7 +1397,7 @@ export type FieldStateLeaf<Value = unknown> = {
 }
 
 /**
- * Recursive type behind `form.fieldState`. At every depth ≥ 1 each
+ * Recursive type behind `form.fields`. At every depth ≥ 1 each
  * node carries both the `FieldStateLeaf` for the current path AND
  * descent into named children. Leaf keys (`value`, `dirty`, `errors`,
  * …) shadow schema fields with conflicting names at depth ≥ 2;
@@ -1410,7 +1410,7 @@ export type FieldStateMapEntry<T> = T extends object
   : FieldStateLeaf<T>
 
 /**
- * Type of `form.fieldState` — root object that mirrors the form's
+ * Type of `form.fields` — root object that mirrors the form's
  * top level; nested descent produces `FieldStateLeaf`-bearing nodes
  * via `FieldStateMapEntry`.
  */
@@ -1511,7 +1511,7 @@ export type ApiErrorEnvelope = {
  * ```
  *
  * Per-field state (touched, dirty, errors) lives behind
- * `form.fieldState.<path>`; this is the aggregate view across the
+ * `form.fields.<path>`; this is the aggregate view across the
  * whole form.
  *
  * Read-only at runtime — assignments throw. Destructuring snapshots
@@ -1589,7 +1589,7 @@ export interface FormState {
  * const form = useForm({ schema })
  * form.register('email')        // bind to <input v-register>
  * form.values.email             // current value (proxy, no .value)
- * form.fieldState.email.dirty   // per-field flags
+ * form.fields.email.dirty   // per-field flags
  * form.errors.email             // ValidationError[] | undefined
  * form.setValue('email', 'a@b.c')
  * form.handleSubmit(onSubmit)   // returns a submit handler
@@ -1648,10 +1648,10 @@ export type UseAbstractFormReturnType<
    * `focused`, `blank`, …) directly off the field's path:
    *
    * ```vue
-   * <p v-if="form.fieldState.email.touched && form.fieldState.email.errors.length">
-   *   {{ form.fieldState.email.errors[0].message }}
+   * <p v-if="form.fields.email.touched && form.fields.email.errors.length">
+   *   {{ form.fields.email.errors[0].message }}
    * </p>
-   * <p>City dirty? {{ form.fieldState.address.city.dirty }}</p>
+   * <p>City dirty? {{ form.fields.address.city.dirty }}</p>
    * ```
    *
    * The same proxy supports descent at every level — `address` reads
@@ -1669,7 +1669,7 @@ export type UseAbstractFormReturnType<
    * Document edge case; rename the offending schema field if the
    * collision matters.
    */
-  fieldState: FieldStateMap<WriteShape<GetValueFormType>>
+  fields: FieldStateMap<WriteShape<GetValueFormType>>
 
   /**
    * Write to the form programmatically. Two forms:
@@ -1896,7 +1896,7 @@ export type UseAbstractFormReturnType<
    * shape. Read leaves directly with no `.value`.
    *
    * For per-field state (touched, focused, blurred, errors at one
-   * path), use `form.fieldState.<path>` instead.
+   * path), use `form.fields.<path>` instead.
    */
   state: FormState
 
@@ -2054,7 +2054,7 @@ export type UseAbstractFormReturnType<
    * })
    * ```
    *
-   * For per-path access, use `form.fieldState.<path>.blank`.
+   * For per-path access, use `form.fields.<path>.blank`.
    * Writes happen through `setValue(path, unset)`,
    * `markBlank()` on a register binding, and the directive's
    * input listener on numeric clear. Mutating the snapshot returned

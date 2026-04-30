@@ -122,34 +122,42 @@ import { unset } from '@chemical-x/forms/zod'
 //    is not blank for those leaves.
 useForm({ schema, defaultValues: { email: 'me@example.com', count: 10 } })
 
-// 2. Omit defaultValues entirely — every primitive leaf (string,
-//    number, boolean, bigint) is auto-marked blank at construction.
-//    Storage holds the schema's slim defaults; the form displays
-//    empty; submit raises 'No value supplied' for required schemas.
+// 2. Omit defaultValues entirely — every NUMERIC primitive leaf
+//    (number, bigint) is auto-marked blank at construction. Storage
+//    holds the schema's slim defaults; the form displays empty;
+//    `form.errors.<path>` reactively carries 'No value supplied' for
+//    required schemas. Strings and booleans are NOT auto-marked
+//    because their slim defaults match what the DOM shows natively
+//    — the schema is the authority on whether `''` / `false` is
+//    acceptable. See `docs/blank.md` for the full rationale.
 useForm({ schema })
 
-// 3. Mark specific leaves as `unset` — those leaves are blank;
-//    siblings without an explicit value are auto-marked too.
+// 3. Mark specific leaves as `unset` — those leaves are blank
+//    explicitly, regardless of type. Numeric siblings without an
+//    explicit value still auto-mark; string / boolean siblings
+//    without an explicit value are NOT auto-marked.
 useForm({ schema, defaultValues: { email: unset, count: 10 } })
-//                                  ^^^^^^^^^^^^^ blank
+//                                  ^^^^^^^^^^^^^ blank (explicit unset)
 //                                                  ^^^^^^^^^ explicit value
 ```
 
 `unset` works in `setValue('email', unset)` and `reset({ email: unset })`
 identically — same semantic everywhere.
 
-The auto-mark and the explicit `unset` paths converge on the same
-state: the path lives in the form's `blankPaths` set, surfaced via
-`form.fieldState.<path>.blank` and `form.blankPaths.value` for
-bulk introspection. Submit / validate / validateAsync raise `'No
-value supplied'` (`code: 'cx:no-value-supplied'`) for required
+Auto-mark and explicit `unset` converge on the same state: the path
+lives in the form's `blankPaths` set, surfaced via
+`form.fieldState.<path>.blank` and `form.blankPaths.value` for bulk
+introspection. The merged `form.errors.<path>` reactively carries
+`'No value supplied'` (`code: 'cx:no-value-supplied'`) for required
 schemas; `.optional()` / `.nullable()` / `.default(N)` / `.catch(N)`
 schemas accept the empty case.
 
-To opt a leaf OUT of auto-mark, supply a non-`unset` value for it
-(`defaultValues: { email: '' }` is the explicit "empty string is
-intentional" signal — storage holds `''` and the path is NOT
-blank).
+To opt a numeric leaf OUT of auto-mark, supply a non-`unset` value
+(`defaultValues: { count: 0 }` is the explicit "0 is intentional"
+signal). For strings and booleans you don't need an opt-out — they're
+not auto-marked in the first place. See `docs/blank.md` for why the
+asymmetry is principled (storage / display divergence is real for
+numerics and absent for strings / booleans).
 
 ## Alternative: userland wrapper
 

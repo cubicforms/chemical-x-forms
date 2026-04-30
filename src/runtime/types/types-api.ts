@@ -816,22 +816,30 @@ export type MetaTrackerValue = {
   /** Dotted-string path to this leaf. */
   path: string | null
   /**
-   * `true` when this field is **blank** — the user hasn't supplied
-   * a value yet, even though storage holds a slim default. Answers:
-   * "Is this field empty because the user left it blank, or because
-   * the slim default happens to be `0` / `''`?"
+   * `true` when this field is **blank** — the runtime has recorded
+   * that storage and the visible display diverge here. Reserved for
+   * the case the schema can't see on its own: storage forces a
+   * value (`0` for `z.number()`, `0n` for `z.bigint()`) while the
+   * DOM input shows `''`, and the runtime needs a side-channel to
+   * tell "user typed 0" from "user supplied nothing."
    *
-   * Set by the directive on numeric clear, by `setValue(path, unset)`,
-   * by `register({ persist: true })` calls reading hydrated state,
-   * and at construction for any leaf the consumer didn't explicitly
-   * supply. Cleared on the first non-`unset` write.
+   * Set automatically for numeric leaves (the directive's input
+   * listener on clear; the construction-time pass when the consumer
+   * didn't supply a value). Set explicitly for any primitive leaf
+   * via `setValue(path, unset)` / `defaultValues: { x: unset }` /
+   * `reset({ x: unset })` — that's the documented opt-in signal for
+   * strings, booleans, and other types that don't otherwise diverge.
+   * Cleared on the first non-`unset` write.
    *
-   * Submit-time validation raises "No value supplied" for required
-   * paths (no `.optional()` / `.nullable()` / `.default()`) that are
-   * still `blank`, so most consumers can ignore this flag — it's the
-   * safety net's input. Read it directly when you want to drive
-   * conditional UI ("undecided checkbox" indicator, "review
-   * unanswered fields" hint, etc.) BEFORE submission triggers.
+   * `errors = f(schema, state)` is reactive end-to-end: any required
+   * path with `blank: true` produces a "No value supplied" entry in
+   * `form.errors` immediately, no `validate()` / `handleSubmit` call
+   * required. Most consumers don't need this flag directly — gate UI
+   * on `errors[path]` and `touched`. Read `blank` itself when you
+   * want pre-error introspection ("the user hasn't decided yet"
+   * indicator, "review unanswered fields" hint).
+   *
+   * See `docs/blank.md` for the full conceptual model.
    */
   blank: boolean
 }
@@ -1269,12 +1277,12 @@ export type FieldState<Value = unknown> = DeepFlatten<
     /** `true` when `currentValue` differs from `originalValue`. */
     dirty: boolean
     /**
-     * `true` when this field is blank — no user value supplied yet,
-     * even though storage holds a slim default. Answers: "Was this
-     * field blank originally, or was `0` / `''` already there?"
-     * Surfaces both as a top-level field here AND via `meta.blank`
-     * (the meta projection mirrors the same value). Read whichever
-     * matches your access pattern.
+     * `true` when this field is **blank** — the side-channel for
+     * storage / display divergence (numeric leaves where storage
+     * holds `0` / `0n` but the DOM shows `''`, plus any primitive
+     * leaf the consumer explicitly opted in via `unset`). Surfaces
+     * both as a top-level field here AND via `meta.blank` (the meta
+     * projection mirrors the same value). See `docs/blank.md`.
      */
     blank: boolean
   }

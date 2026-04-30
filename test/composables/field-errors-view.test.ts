@@ -41,17 +41,10 @@ function mount(): { app: App; api: Api } {
       // Pin lax: this file tests the fieldErrors Proxy view, not the
       // construction-time strict-mode seed. Lax keeps the form mount-
       // clean so each test can assert the user-error round-trip
-      // without the schema seed pre-populating entries.
-      // Explicit empty defaults opt out of auto-blank: the slim-string
-      // primitive defaults stay in storage and `blankPaths` stays empty,
-      // so `derivedBlankErrors` is empty too and the view starts with
-      // exactly zero errors regardless of mode.
-      handle.api = useForm({
-        schema,
-        key: 'fielderrs-view',
-        validationMode: 'lax',
-        defaultValues: { email: '', password: '' },
-      })
+      // without the schema seed pre-populating entries. The schema
+      // here is two strings — neither auto-marks blank (only numeric
+      // primitives do), so `derivedBlankErrors` is empty by default.
+      handle.api = useForm({ schema, key: 'fielderrs-view', validationMode: 'lax' })
       return () => h('div')
     },
   })
@@ -201,12 +194,7 @@ describe('fieldErrors — reactivity in render scope', () => {
     let renderedMessage = ''
     const Reader = defineComponent({
       setup() {
-        api = useForm({
-          schema,
-          key: 'fielderrs-reactive',
-          validationMode: 'lax',
-          defaultValues: { email: '', password: '' },
-        })
+        api = useForm({ schema, key: 'fielderrs-reactive', validationMode: 'lax' })
         return () => {
           renderedMessage = api.errors.email?.[0]?.message ?? ''
           return h('div', renderedMessage)

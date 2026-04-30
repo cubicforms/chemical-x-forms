@@ -81,32 +81,54 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   /**
    * Reactively-derived "No value supplied" errors. Pure function of
    * `(blankPaths, schema.isRequiredAtPath)` — no writers, no clears.
-   * Membership tracks `blankPaths` automatically: typing into a blank
-   * required field removes the path from `blankPaths` and the derived
-   * error vanishes; clearing a numeric field re-adds it and the error
-   * reappears. The `errors` proxy and `getErrorsForPath` merge this map
-   * in alongside `schemaErrors` and `userErrors`, so consumers see the
-   * "this required field is empty" error the moment it's true — no
-   * `validate()` / `handleSubmit` call required. Honors the founding
-   * principle that `errors = f(schema, state)`.
+   * Membership tracks `blankPaths` automatically: typing a value into
+   * a blank required numeric field removes the path from `blankPaths`
+   * and the derived error vanishes; clearing the numeric input re-adds
+   * the path and the error reappears. The `errors` proxy and
+   * `getErrorsForPath` merge this map in alongside `schemaErrors` and
+   * `userErrors`, so consumers see the "this required field is empty"
+   * error the moment it's true — no `validate()` / `handleSubmit`
+   * call required. Honors the founding principle that
+   * `errors = f(schema, state)`.
+   *
+   * Most entries flow through this map for `number` / `bigint` leaves
+   * (where the side-channel is needed to distinguish "user typed 0"
+   * from "user supplied nothing"). String / boolean leaves only land
+   * here when the consumer explicitly opted in via the `unset`
+   * sentinel — see `docs/blank.md`.
    */
   readonly derivedBlankErrors: ComputedRef<ReadonlyMap<PathKey, ValidationError[]>>
   readonly originals: Map<PathKey, OriginalsRecord>
   /**
    * Reactive set of paths whose displayed state should be EMPTY even
    * though storage holds a real, schema-conformant value (the slim
-   * default). The directive's input listener marks numeric clears
-   * here; the declarative `unset` symbol routes through the same set.
+   * default). It exists exclusively to record **storage / display
+   * divergence** — the case where the runtime can't tell "user typed
+   * 0" from "user supplied nothing" by looking at storage alone.
    *
-   * Reads (`displayValue` computed, `getFieldState(...).meta.blank`)
-   * track via Vue 3.5's reactive Set handlers. Writes happen inside
-   * `setValueAtPath` (gate-hook bookkeeping: `blank: true`
-   * meta adds the path; any other write removes it) and `reset`.
+   * The mechanism shines for `number` / `bigint`: storage holds the
+   * slim default (`0` / `0n`) but the DOM input shows `''`, so the
+   * directive's input listener marks the path here on clear. Strings
+   * and booleans don't need it — `''` storage equals `''` display,
+   * `false` storage equals unchecked display — so they're never
+   * auto-marked. Consumers can still mark any primitive leaf
+   * explicitly via the `unset` sentinel (`defaultValues: { x: unset }`,
+   * `setValue('x', unset)`, `reset({ x: unset })`); the mark is then
+   * a documented signal of consumer intent rather than runtime
+   * inference.
+   *
+   * Reads (`displayValue` computed, `fieldState.<path>.blank`,
+   * `derivedBlankErrors` computed) track via Vue 3.5's reactive Set
+   * handlers. Writes happen inside `setValueAtPath` (gate-hook
+   * bookkeeping: `blank: true` meta adds the path; any other write
+   * removes it) and `reset`.
    *
    * Storage NEVER reflects this set — calculations and reads against
    * `form.value` see the slim default. The set is purely a UI/intent
-   * channel that submit/validate consult to raise "No value supplied" errors
-   * for required schemas.
+   * channel that `derivedBlankErrors` consults to surface
+   * "No value supplied" errors for required schemas.
+   *
+   * See `docs/blank.md` for the conceptual model.
    */
   readonly blankPaths: Set<PathKey>
   /**

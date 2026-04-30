@@ -136,17 +136,13 @@ describe('initial validation seed — lax mode', () => {
   it('does NOT populate schemaErrors at construction even when defaults fail', () => {
     // Lax mode is the explicit opt-out for the construction-time
     // schemaErrors seed: "best-effort defaults, no refinement
-    // enforcement at mount." Note this test isolates the seed channel
-    // by passing explicit empty defaults — without them, auto-blank
-    // would surface `derivedBlankErrors` for both required strings
-    // regardless of mode (the blank-required class is reactive from
-    // state, not gated by validationMode). A separate test in
-    // derived-blank-errors.test.ts covers the reactive class
-    // explicitly.
-    const { app, api } = mountWithZod({
-      validationMode: 'lax',
-      defaultValues: { email: '', password: '' },
-    })
+    // enforcement at mount." The schema here is two strings — neither
+    // auto-marks blank (only numeric primitives do), so
+    // `derivedBlankErrors` stays empty and the test reads the
+    // schemaErrors-seed channel cleanly. A separate test in
+    // derived-blank-errors.test.ts covers the reactive blank class
+    // for numeric leaves.
+    const { app, api } = mountWithZod({ validationMode: 'lax' })
     apps.push(app)
     expect(api.errors.email).toBeUndefined()
     expect(api.errors.password).toBeUndefined()

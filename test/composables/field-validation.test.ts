@@ -33,14 +33,11 @@ function mountWith(options: {
         schema: baseSchema,
         key: 'field-validation',
         // Pin lax: tests here exercise debounced field validation, not
-        // the construction-time strict-mode seed. Keeping the form
-        // mount-clean lets each test set the invalid value itself and
-        // assert the debounced run lands. Explicit empty defaults opt
-        // out of auto-blank so `derivedBlankErrors` stays empty —
-        // otherwise the required+blank class would surface "No value
-        // supplied" and confound the debounced-run assertions.
+        // the construction-time strict-mode seed. The schema is two
+        // strings — neither auto-marks blank (only numeric primitives
+        // do), so `derivedBlankErrors` stays empty and each test can
+        // observe the debounced run without confounding entries.
         validationMode: 'lax',
-        defaultValues: { email: '', password: '' },
         ...(options.fieldValidation ? { fieldValidation: options.fieldValidation } : {}),
       })
       return () => h('div')

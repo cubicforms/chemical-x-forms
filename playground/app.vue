@@ -1,4 +1,5 @@
 <script setup lang="ts">
+  import { parseApiErrors } from '@chemical-x/forms'
   import { useForm } from '@chemical-x/forms/zod'
   import z from 'zod'
   import Child from './components/Child.vue'

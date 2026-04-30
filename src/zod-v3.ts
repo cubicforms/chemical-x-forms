@@ -23,7 +23,7 @@
  */
 
 export { useForm } from './runtime/composables/use-form'
-export { useFormContext } from './runtime/composables/use-form-context'
+export { injectForm } from './runtime/composables/use-form-context'
 export { useRegister } from './runtime/composables/use-register'
 export { zodAdapter } from './runtime/adapters/zod-v3'
 export { isZodSchemaType } from './runtime/adapters/zod-v3/helpers'

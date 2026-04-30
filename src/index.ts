@@ -41,13 +41,13 @@ export { useAbstractForm as useForm } from './runtime/composables/use-abstract-f
 // ancestor form (or an arbitrary form by key) without prop-threading.
 // The consumer supplies the `Form` generic — see the composable's
 // docblock for the type-erasure reasoning.
-export { useFormContext } from './runtime/composables/use-form-context'
+export { injectForm } from './runtime/composables/use-form-context'
 
 // Ambient bridge for components that wrap a single field and want to
 // re-bind v-register onto an inner native element. See the
 // `useRegister` section in `docs/api.md` for the wrapper-component
 // pattern; for compound components reaching multiple fields, prefer
-// `useFormContext`.
+// `injectForm`.
 export { useRegister } from './runtime/composables/use-register'
 
 // The v-register directive (registered automatically by createChemicalXForms,
@@ -85,7 +85,7 @@ export type {
   FormErrorRecord,
   FormFieldErrors,
   FormKey,
-  FormState,
+  FormMeta,
   FormStorage,
   FormStorageKind,
   HandleSubmit,

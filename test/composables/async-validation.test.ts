@@ -107,9 +107,9 @@ describe('async validation — handleSubmit awaits async refinements', () => {
     const pending = handler()
     // At least one microtask in: validate has started.
     await Promise.resolve()
-    expect(api.state.isValidating).toBe(true)
+    expect(api.meta.isValidating).toBe(true)
     await pending
-    expect(api.state.isValidating).toBe(false)
+    expect(api.meta.isValidating).toBe(false)
   })
 })
 

@@ -71,7 +71,7 @@ describe('setValue — value form (existing behaviour)', () => {
     }
     const result = form.setValue(next)
     expect(result).toBe(true)
-    expect(form.values).toEqual(next)
+    expect(form.values()).toEqual(next)
   })
 
   it('writes a leaf when called with (path, value)', () => {

@@ -40,7 +40,7 @@ Options:
 | Field             | Type                                                                                                | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ----------------- | --------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `schema`          | `z.ZodType`                                                                                         | yes      | The Zod schema describing the form shape.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `key`             | `string`                                                                                            | no       | Form identity. Omit for one-off forms (runtime allocates a synthetic `__cx:anon:<id>` via `useId()`). Pass a string when you need cross-component lookup via `useFormContext(key)`, shared state across call-sites, a stable `persist` storage-key default, or a recognisable DevTools label. Keys starting with `__cx:` are reserved for the library's internal synthetic-key namespace; passing one throws `ReservedFormKeyError`.                                                                                                                                                                                                                                                                                                       |
+| `key`             | `string`                                                                                            | no       | Form identity. Omit for one-off forms (runtime allocates a synthetic `__cx:anon:<id>` via `useId()`). Pass a string when you need cross-component lookup via `injectForm(key)`, shared state across call-sites, a stable `persist` storage-key default, or a recognisable DevTools label. Keys starting with `__cx:` are reserved for the library's internal synthetic-key namespace; passing one throws `ReservedFormKeyError`.                                                                                                                                                                                                                                                                                                           |
 | `defaultValues`   | `DeepPartial<DefaultValuesShape<Form>>`                                                             | no       | Constraints applied over schema defaults. Refinement-invalid leaves that satisfy the slim primitive type at their path (e.g. `'teal'` against `z.enum(['red','green','blue'])`, a 4-character string against `z.string().min(8)`) pass through unchanged so SSR / autosave rehydration can land partial-but-saved state as-is. Wrong-primitive leaves (a number where a string is expected) are still replaced by the schema default. Each primitive leaf may be the `unset` sentinel to mark the path displayed-empty at construction.                                                                                                                                                                                                    |
 | `validationMode`  | `'lax'` \| `'strict'`                                                                               | no       | Defaults to `'strict'` — defaults that fail the schema seed `schemaErrors` at construction. Pass `'lax'` to opt out (multi-step wizards, placeholder rows). See [Types](#types).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `onInvalidSubmit` | `'none'` \| `'focus-first-error'` \| `'scroll-to-first-error'` \| `'both'`                          | no       | What to do when submit fails validation. See [recipe](./recipes/focus-on-error.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
@@ -94,7 +94,7 @@ schema library or wiring SSR by hand.
 import {
   createChemicalXForms,
   useForm, // re-export of useAbstractForm
-  useFormContext,
+  injectForm,
   useRegistry,
   renderChemicalXState,
   hydrateChemicalXState,
@@ -128,7 +128,7 @@ Valibot schema, ArkType schema, or a hand-rolled validator with
 [a custom adapter](./recipes/custom-adapter.md). The Zod subpaths
 are pre-made wrappers over this.
 
-### `useFormContext<Form>(key?)`
+### `injectForm<Form>(key?)`
 
 Reach the nearest ancestor's form (no key) or reach any form by its
 key. Type-identical return to `useForm`. See
@@ -471,12 +471,20 @@ fire after refinements are checked.
 Reads are Pinia-style proxies — dot-access leaves directly with no
 `.value`, in templates and scripts identically.
 
-| Member        | Type                                                           | What it does                                                                                                                                                                                                                                                                                                                                                                              |
-| ------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `values`      | `Readonly<WithIndexedUndefined<WriteShape<Form>>>` (proxy)     | Whole-form reactive read. `form.values.email`, `form.values.address.city`, `form.values.posts[0]?.title`. Auto-unwraps in templates and scripts. Primitive-literal leaves widened; array elements tainted `Item \| undefined`.                                                                                                                                                            |
-| `fields`  | `FieldStateMap<Form>` (proxy)                                  | Reactive per-field state map. Dot-descend any path: `form.fields.email.dirty`, `form.fields.address.city.errors`. Leaf props: `value`, `original`, `dirty`, `pristine`, `focused`, `blurred`, `touched`, `errors`, `blank`, `isConnected`, `updatedAt`, `path`. A schema field named for one of those leaf props at depth ≥ 2 is shadowed (rename the field or read via `toRef`). |
-| `errors`      | `Readonly<FormFieldErrors<Form>>` (proxy)                      | Per-field errors keyed by dotted path: `form.errors.email?.[0]?.message`. Schema entries first, user entries second. See the [error store](#error-store) section for setter helpers.                                                                                                                                                                                                      |
-| `toRef(path)` | `(path: FlatPath<Form>) => Readonly<Ref<NestedReadType<...>>>` | Escape hatch — get a `Readonly<Ref>` at `path` for `watch()` or external composables that expect ref-shaped inputs. Read type matches `form.values.<path>` (slim-widened, array-tainted).                                                                                                                                                                                                 |
+All three drillable surfaces (`values`, `errors`, `fields`) are
+**leaf-aware callable Proxies**. Drill via dot/bracket OR call
+dynamically — `form.fields.email.dirty` ≡ `form.fields('email').dirty`
+≡ `form.fields(['email']).dirty`. Single-bracket dotted access
+(`form.errors['user.email']`) is intentionally NOT supported (JS
+treats the dotted string as a single key). Use chained dot/bracket
+or the callable form.
+
+| Member        | Type                                                           | What it does                                                                                                                                                                                                                                                                                                                                         |
+| ------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `values`      | `ValuesSurface<WithIndexedUndefined<WriteShape<Form>>>`        | Whole-form reactive read. `form.values.email`, `form.values.address.city`, `form.values.posts[0]?.title`. Containers ARE useful — `form.values.address` returns the subtree object AND keeps drilling. Auto-unwraps in templates and scripts. `form.values('a.b.c')` and `form.values()` available for dynamic / programmatic access.                |
+| `fields`      | `FieldStateMap<Form>`                                          | Reactive per-field state map. Drill any path; reserved leaf props (`value`, `dirty`, `errors`, `blank`, `isConnected`, …) inject ONLY at LEAF paths — a schema field named for one of those props at depth 2+ is reachable as a descent target (no shadowing). `form.fields('email').errors`, `form.fields(['users', 0, 'name'])` for dynamic paths. |
+| `errors`      | `FormFieldErrors<Form>`                                        | Drillable per-leaf error proxy: `form.errors.email?.[0]?.message`. Container reads descend; leaf reads return `ValidationError[] \| undefined`. Schema entries first, user entries second. Inactive-variant (DU) errors filtered. `form.errors('a.b.c')` for dynamic paths. See [error store](#error-store).                                         |
+| `toRef(path)` | `(path: FlatPath<Form>) => Readonly<Ref<NestedReadType<...>>>` | Escape hatch — get a `Readonly<Ref>` at `path` for `watch()` or external composables that expect ref-shaped inputs. Read type matches `form.values.<path>` (slim-widened, array-tainted).                                                                                                                                                            |
 
 ### Writing values
 
@@ -551,35 +559,40 @@ the rationale.
 
 | Member                    | Type                                                                                                                                                                                                                                   |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `errors`                  | `Readonly<FormFieldErrors<Form>>` — proxy view; dot-access leaves directly, no `.value`. Merges schema + user; schema entries first. Mirrored on `form.fields.<path>.errors`.                                                      |
+| `errors`                  | `FormFieldErrors<Form>` — leaf-aware drillable callable Proxy. Per-leaf `ValidationError[] \| undefined`; container reads descend. Schema entries first, user entries second. Inactive-variant (DU) errors filtered.                   |
 | `setFieldErrors(errors)`  | `(ValidationError[]) => void` — replaces the user-error store. For server / API responses, parse the payload via `parseApiErrors` (top-level helper) and feed the result here. See [server-errors recipe](./recipes/server-errors.md). |
 | `addFieldErrors(errors)`  | `(ValidationError[]) => void` — appends to the user-error store.                                                                                                                                                                       |
 | `clearFieldErrors(path?)` | `(path?) => void` — clears BOTH stores at the given path (or all paths if omitted). With live validation, the schema half re-populates on the next mutation if the value is still invalid.                                             |
 
-### Form-level state
+For a "show all errors" UI (path-keyed, form-level, unmapped server,
+cross-field-refine), use `form.meta.errors` — a flat
+`ValidationError[]` covering EVERY error in the form (unfiltered).
 
-The 9 form-level flags and counters live on a single `state` object
-(`reactive()` + `readonly()`). Vue's reactive auto-unwraps refs at
-property access, so `form.state.isSubmitting` is a primitive in
-both templates and scripts — no `.value`. The full type is the
-exported `FormState` interface.
+### Form-level meta
 
-| Member               | Type      | What it does                                                                        |
-| -------------------- | --------- | ----------------------------------------------------------------------------------- |
-| `state.isDirty`      | `boolean` | `true` iff any leaf's current value differs from its original.                      |
-| `state.isValid`      | `boolean` | `true` iff both the schema-error and user-error stores are empty.                   |
-| `state.isSubmitting` | `boolean` | `true` while the submit handler is running.                                         |
-| `state.isValidating` | `boolean` | `true` while any validation run is in flight (reactive, imperative, or pre-submit). |
-| `state.submitCount`  | `number`  | Incremented once per call, regardless of outcome.                                   |
-| `state.submitError`  | `unknown` | Whatever the callback threw; `null` on success. Cleared on every new submission.    |
-| `state.canUndo`      | `boolean` | Gate an "Undo" button on this. Always present; `false` when `history` is off.       |
-| `state.canRedo`      | `boolean` | Gate a "Redo" button on this. Always present; `false` when `history` is off.        |
-| `state.historySize`  | `number`  | Total snapshots across both stacks. `0` when `history` is off.                      |
+The form-level flags, counters, and aggregates live on a single
+`meta` object (`reactive()` + `readonly()`). Vue's reactive
+auto-unwraps refs at property access, so `form.meta.isSubmitting`
+is a primitive in both templates and scripts — no `.value`. The
+full type is the exported `FormMeta` interface.
 
-`state` is read-only — `state.x = y` writes are rejected at runtime
+| Member              | Type                         | What it does                                                                                                                                                                                      |
+| ------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `meta.isDirty`      | `boolean`                    | `true` iff any leaf's current value differs from its original.                                                                                                                                    |
+| `meta.isValid`      | `boolean`                    | `true` iff both the schema-error and user-error stores are empty.                                                                                                                                 |
+| `meta.isSubmitting` | `boolean`                    | `true` while the submit handler is running.                                                                                                                                                       |
+| `meta.isValidating` | `boolean`                    | `true` while any validation run is in flight (reactive, imperative, or pre-submit).                                                                                                               |
+| `meta.submitCount`  | `number`                     | Incremented once per call, regardless of outcome.                                                                                                                                                 |
+| `meta.submitError`  | `unknown`                    | Whatever the callback threw; `null` on success. Cleared on every new submission.                                                                                                                  |
+| `meta.canUndo`      | `boolean`                    | Gate an "Undo" button on this. Always present; `false` when `history` is off.                                                                                                                     |
+| `meta.canRedo`      | `boolean`                    | Gate a "Redo" button on this. Always present; `false` when `history` is off.                                                                                                                      |
+| `meta.historySize`  | `number`                     | Total snapshots across both stacks. `0` when `history` is off.                                                                                                                                    |
+| `meta.errors`       | `readonly ValidationError[]` | Flat aggregate of EVERY error in the form (path-keyed + form-level + unmapped + cross-field refines). UNFILTERED — inactive-variant errors stay in. Filter the array yourself for narrower views. |
+
+`meta` is read-only — `meta.x = y` writes are rejected at runtime
 with a dev-mode warning (use `setValue` / `handleSubmit` /
 `reset` to mutate the form). Watchers use the getter form:
-`watch(() => form.state.isSubmitting, …)`.
+`watch(() => form.meta.isSubmitting, …)`.
 
 ### Focus + scroll
 
@@ -640,9 +653,9 @@ for the `v-for` pattern.
 
 ### Blank introspection
 
-| Member                    | Type                  | What it does                                                                                                                                                                                                                                                                                                                   |
-| ------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `blankPaths.value`        | `ReadonlySet<string>` | Frozen snapshot of every path-key currently in the form's `blankPaths` set. Reactive — Vue tracks `.has()` / `.size` / iteration. Mutating the snapshot is a no-op (writes go through `setValue(_, unset)`, the directive's input listener, or `markBlank()` on a register binding). See `unset` exported from the core entry. |
+| Member                | Type                  | What it does                                                                                                                                                                                                                                                                                                                   |
+| --------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `blankPaths.value`    | `ReadonlySet<string>` | Frozen snapshot of every path-key currently in the form's `blankPaths` set. Reactive — Vue tracks `.has()` / `.size` / iteration. Mutating the snapshot is a no-op (writes go through `setValue(_, unset)`, the directive's input listener, or `markBlank()` on a register binding). See `unset` exported from the core entry. |
 | `fields.<path>.blank` | `boolean`             | Per-path equivalent: `true` while `path` is in the form's `blankPaths` set.                                                                                                                                                                                                                                                    |
 
 ### Identity

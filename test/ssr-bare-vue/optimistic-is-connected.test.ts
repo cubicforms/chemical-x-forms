@@ -262,7 +262,7 @@ describe('SSR isConnected — cross-component sync via shared form key', () => {
    * This is the proof that cx's by-key sharing semantics actually
    * round-trip the optimistic mark correctly: the FormStore
    * registered under `key: 'shared'` is one object across every
-   * `useForm` / `useFormContext` consumer in the app, so any mark
+   * `useForm` / `injectForm` consumer in the app, so any mark
    * fired by one consumer is visible to every other.
    *
    * Render-order caveat: Vue's SSR is single-pass top-to-bottom, so

@@ -85,6 +85,37 @@ export function fakeSchema<F extends GenericForm>(
       // override this method on the returned object.
       return new Set(['string', 'number', 'boolean', 'object', 'array', 'null', 'undefined'])
     },
+    isLeafAtPath(path) {
+      // fakeSchema is data-keyed — derive leaf-ness from the defaults
+      // shape. A path resolves to a leaf iff the value at that path
+      // exists and is a primitive (string, number, boolean, bigint,
+      // null, undefined, Date, function). Objects and arrays descend.
+      // Empty path (root) is always a container.
+      if (path.length === 0) return false
+      let current: unknown = defaults
+      for (const seg of path) {
+        if (current === null || current === undefined) return false
+        if (typeof current !== 'object') return false
+        const key = typeof seg === 'number' ? String(seg) : seg
+        // Treat array index out of range as non-existent — descend
+        // permissively (most callers extending arrays haven't filled
+        // the slot yet, and we don't want to terminate prematurely).
+        if (Array.isArray(current)) {
+          if (typeof seg !== 'number' || seg < 0 || seg >= current.length) return false
+          current = current[seg]
+        } else {
+          if (!(key in current)) return false
+          current = (current as Record<string, unknown>)[key]
+        }
+      }
+      // The value is a leaf iff it's a primitive at this point.
+      if (current === null || current === undefined) return true
+      const t = typeof current
+      if (t === 'string' || t === 'number' || t === 'boolean' || t === 'bigint') return true
+      if (current instanceof Date) return true
+      // Arrays / plain objects → container.
+      return false
+    },
     isRequiredAtPath(path) {
       void path
       // Permissive default: fake-schema doesn't model required-ness.

@@ -162,7 +162,7 @@
         <span id="errors-direct-fieldstate-email">{{
           directForm.fields.email.errors[0]?.message ?? ''
         }}</span>
-        <span id="errors-direct-count">{{ Object.keys(directForm.errors).length }}</span>
+        <span id="errors-direct-count">{{ directForm.meta.errors.length }}</span>
       </div>
 
       <!-- parseApiErrors → setFieldErrors -->

@@ -148,7 +148,7 @@ v-register onto an inner native element:
 The dev-mode console warning `v-register on <div> is a no-op …`
 points here. See the [components recipe](./recipes/persistence.md#component-support)
 for the four supported patterns (native root, useRegister,
-useFormContext for compound components, and the `assignKey`
+injectForm for compound components, and the `assignKey`
 escape hatch).
 
 ## "Submit fails with 'No value supplied' on a field the user can leave blank"

@@ -12,6 +12,7 @@ import type {
   ValidationError,
 } from '../../types/types-api'
 import { getAtPath } from '../../core/path-walker'
+import { canonicalizePath, type PathKey } from '../../core/paths'
 import { slimKindOf } from '../../core/slim-primitive-gate'
 
 // The adapter exchanges dotted-string paths with core at the
@@ -93,6 +94,10 @@ export function zodAdapter<
         throw new Error(`ZodAdapter: expected ZodObject, got ${name}`)
       }
     }
+    // Per-adapter `isLeafAtPath` cache. Lifetime = one adapter instance
+    // (one per `useForm()` call). Memoises the slim-primitive walk so
+    // the leaf-aware proxy traps don't re-walk the schema on every read.
+    const leafCache = new Map<PathKey, boolean>()
     const abstractSchema: AbstractSchema<Form, GetValueFormType> = {
       fingerprint: () => fingerprintZodSchema(_zodSchema),
       getDefaultValues(config) {
@@ -423,6 +428,24 @@ export function zodAdapter<
           for (const k of slimPrimitivesV3(candidate as z.ZodTypeAny)) out.add(k)
         }
         return out
+      },
+      isLeafAtPath(path) {
+        const cacheKey = canonicalizePath(path).key
+        const cached = leafCache.get(cacheKey)
+        if (cached !== undefined) return cached
+        const prim = abstractSchema.getSlimPrimitiveTypesAtPath(path)
+        // Empty set → path doesn't exist in schema → descend permissively
+        // (treat as container so schema-named reserved keys at depth 2+
+        // don't shadow). Any container kind in the set → descend.
+        // Otherwise every kind is a primitive → leaf.
+        const isLeaf =
+          prim.size > 0 &&
+          !prim.has('object') &&
+          !prim.has('array') &&
+          !prim.has('map') &&
+          !prim.has('set')
+        leafCache.set(cacheKey, isLeaf)
+        return isLeaf
       },
       async validateAtPath(data, path) {
         if (path === undefined) {
@@ -760,7 +783,11 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
     const key = String(segments[index] ?? '')
     if (isZodSchemaType(currentSchema, 'ZodObject')) {
       const shape = currentSchema._def.shape() as z.ZodRawShape
-      currentSchema = shape[key]
+      // Own-property check: a bare `shape[key]` returns
+      // `Object.prototype.toString` etc. for any user lookup of those
+      // keys, which then walks as an "unknown schema" and reports a
+      // permissive slim-primitive set. Filter to OWN keys.
+      currentSchema = Object.hasOwn(shape, key) ? shape[key] : undefined
     } else if (isZodSchemaType(currentSchema, 'ZodArray')) {
       currentSchema = currentSchema._def.type
     } else if (isZodSchemaType(currentSchema, 'ZodRecord')) {
@@ -949,7 +976,7 @@ function walkV3ToLeafSchema(
 
     if (isZodSchemaType(current, 'ZodObject')) {
       const shape = current._def.shape() as z.ZodRawShape
-      current = shape[key]
+      current = Object.hasOwn(shape, key) ? shape[key] : undefined
       i++
       continue
     }

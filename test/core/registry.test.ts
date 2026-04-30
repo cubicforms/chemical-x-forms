@@ -38,7 +38,7 @@ describe('createRegistry', () => {
 describe('useRegistry', () => {
   it('throws OutsideSetupError when called outside a Vue setup context', () => {
     // No `getCurrentInstance()` on the active call stack — typical when
-    // a consumer (mistakenly) calls useForm / useFormContext from a
+    // a consumer (mistakenly) calls useForm / injectForm from a
     // click handler, watcher, or async callback after mount.
     expect(() => useRegistry()).toThrow(OutsideSetupError)
   })

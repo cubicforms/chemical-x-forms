@@ -196,13 +196,18 @@ describe('WriteShape — applied to form.values', () => {
   })
 
   it('form.values (whole-form) widens every leaf', () => {
-    expectTypeOf(_readForm.values).toEqualTypeOf<
+    // The callable surface adds function signatures on top of the
+    // Readonly<...> structural shape; assert the structural shape via
+    // toMatchTypeOf (subset assertion) plus the callable signature
+    // via toBeCallableWith.
+    expectTypeOf(_readForm.values).toMatchTypeOf<
       Readonly<{
         color: string
         age: number
         email: string
       }>
     >()
+    expectTypeOf(_readForm.values).toBeCallableWith('email')
   })
 })
 

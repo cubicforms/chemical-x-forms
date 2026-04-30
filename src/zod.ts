@@ -23,10 +23,10 @@ export {
   zodAdapter,
 } from './runtime/adapters/zod-v4'
 export type { ZodKind } from './runtime/adapters/zod-v4'
-// useFormContext is schema-agnostic — the consumer supplies the Form
+// injectForm is schema-agnostic — the consumer supplies the Form
 // generic — so re-exporting from the /zod subpath is purely for
 // discoverability alongside useForm.
-export { useFormContext } from './runtime/composables/use-form-context'
+export { injectForm } from './runtime/composables/use-form-context'
 export { useRegister } from './runtime/composables/use-register'
 export { CxErrorCode } from './runtime/core/error-codes'
 export { unset, isUnset } from './runtime/core/unset'

@@ -578,18 +578,18 @@ The `| undefined` is intentional: a child rendered standalone (no
 parent passing `v-register`) gets a no-op binding plus a dev-warn,
 not a crash.
 
-### 3. Compound components → `useFormContext`
+### 3. Compound components → `injectForm`
 
 For components that touch multiple fields (e.g. an `AddressBlock`
 with its own `street`, `city`, `zip` inputs), use the existing
-`useFormContext` API and call `ctx.register('a.b.c')` directly:
+`injectForm` API and call `ctx.register('a.b.c')` directly:
 
 ```vue
 <!-- AddressBlock.vue -->
 <script setup lang="ts">
-  import { useFormContext } from '@chemical-x/forms'
+  import { injectForm } from '@chemical-x/forms'
   type SignupForm = { address: { street: string; city: string; zip: string } }
-  const ctx = useFormContext<SignupForm>('signup')
+  const ctx = injectForm<SignupForm>('signup')
 </script>
 
 <template>
@@ -602,7 +602,7 @@ with its own `street`, `city`, `zip` inputs), use the existing
 ```
 
 `useRegister` is a single-purpose ambient hook — it never accepts a
-key or path. Compound use-cases belong on `useFormContext`, which
+key or path. Compound use-cases belong on `injectForm`, which
 already handles typed sub-paths, structured paths, `fields`,
 and the rest.
 

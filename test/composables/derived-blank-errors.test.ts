@@ -74,7 +74,7 @@ describe('derivedBlankErrors — auto-mark fires for numeric primitives', () => 
   it('isValid is false when derived blank errors exist', () => {
     const { app, api } = mountNumeric()
     apps.push(app)
-    expect(api.state.isValid).toBe(false)
+    expect(api.meta.isValid).toBe(false)
   })
 
   it('exposes the same errors via fields.<path>.errors', () => {
@@ -112,15 +112,15 @@ describe('derivedBlankErrors — auto-mark fires for numeric primitives', () => 
     const { app, api } = mountNumeric()
     apps.push(app)
 
-    expect(api.state.isValid).toBe(false)
+    expect(api.meta.isValid).toBe(false)
     api.setValue('income', 0)
     api.setValue('netWorth', 0n)
     await nextTick()
-    expect(api.state.isValid).toBe(true)
+    expect(api.meta.isValid).toBe(true)
 
     api.setValue('income', unset)
     await nextTick()
-    expect(api.state.isValid).toBe(false)
+    expect(api.meta.isValid).toBe(false)
   })
 })
 
@@ -146,7 +146,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
 
     expect(handle.api?.errors.name).toBeUndefined()
     expect(handle.api?.fields.name.blank).toBe(false)
-    expect(handle.api?.state.isValid).toBe(true)
+    expect(handle.api?.meta.isValid).toBe(true)
   })
 
   it('required boolean leaf is blank-free at mount (storage `false` matches unchecked)', () => {
@@ -165,7 +165,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
 
     expect(handle.api?.errors.agreed).toBeUndefined()
     expect(handle.api?.fields.agreed.blank).toBe(false)
-    expect(handle.api?.state.isValid).toBe(true)
+    expect(handle.api?.meta.isValid).toBe(true)
   })
 
   it('user typing then deleting a string does NOT re-blank (schema is authority)', async () => {
@@ -196,7 +196,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
     await nextTick()
     expect(handle.api?.errors.name).toBeUndefined()
     expect(handle.api?.fields.name.blank).toBe(false)
-    expect(handle.api?.state.isValid).toBe(true)
+    expect(handle.api?.meta.isValid).toBe(true)
   })
 
   it('explicit `unset` opts a string into blank (universal opt-in)', () => {
@@ -287,7 +287,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
     apps.push(app)
 
     expect(handle.api?.errors.income).toBeUndefined()
-    expect(handle.api?.state.isValid).toBe(true)
+    expect(handle.api?.meta.isValid).toBe(true)
   })
 
   it('does NOT synthesise for `.nullable()` numeric leaves', () => {
@@ -305,7 +305,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
     apps.push(app)
 
     expect(handle.api?.errors.income).toBeUndefined()
-    expect(handle.api?.state.isValid).toBe(true)
+    expect(handle.api?.meta.isValid).toBe(true)
   })
 
   it('does NOT synthesise for `.default(N)` numeric leaves', () => {
@@ -323,7 +323,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
     apps.push(app)
 
     expect(handle.api?.errors.income).toBeUndefined()
-    expect(handle.api?.state.isValid).toBe(true)
+    expect(handle.api?.meta.isValid).toBe(true)
   })
 
   it('does NOT synthesise when the consumer provides an explicit value', () => {
@@ -347,7 +347,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
 
     expect(handle.api?.errors.income).toBeUndefined()
     expect(handle.api?.errors.netWorth).toBeUndefined()
-    expect(handle.api?.state.isValid).toBe(true)
+    expect(handle.api?.meta.isValid).toBe(true)
   })
 })
 

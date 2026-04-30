@@ -204,7 +204,7 @@ describe('discriminated-union variant switch — error reactivity', () => {
 
     // schemaErrors gets populated with the refinement issue against
     // the new variant's required string.
-    expect(api.errors['notify.number']).toBeDefined()
+    expect(api.errors('notify.number')).toBeDefined()
   })
 
   it('validateAsync reflects the new variant in the returned response', async () => {
@@ -266,7 +266,7 @@ describe('discriminated-union variant switch — numeric variant blank auto-mark
     const api = mountNumeric()
 
     // Initially flat / amount — string leaf, no auto-mark.
-    expect(api.errors['payout.threshold']).toBeUndefined()
+    expect(api.errors('payout.threshold')).toBeUndefined()
 
     api.setValue('payout.kind', 'tiered')
     await nextTick()
@@ -275,7 +275,7 @@ describe('discriminated-union variant switch — numeric variant blank auto-mark
     // and storage / display diverge — auto-mark fires, derived error
     // appears reactively.
     expect((api.values.payout as Record<string, unknown>)['threshold']).toBe(0)
-    expect(api.errors['payout.threshold']?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(api.errors('payout.threshold')?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
   })
 })
 
@@ -1376,7 +1376,7 @@ describe('inactive-variant errors — filtered from form.errors, preserved per-f
 
     // Construction-time strict validation seeds schemaErrors with the
     // email variant's failure (address='' fails `.min(3)`).
-    expect(api.errors['notify.address']).toBeDefined()
+    expect(api.errors('notify.address')).toBeDefined()
 
     // Switch to sms — the address path leaves form.value entirely.
     api.setValue('notify.channel', 'sms')
@@ -1387,24 +1387,24 @@ describe('inactive-variant errors — filtered from form.errors, preserved per-f
     // is the bug fix — pre-fix, form.errors leaked the email variant's
     // address error after switching to sms because schemaErrors had a
     // dotted-path entry that nothing cleaned up.
-    expect(api.errors['notify.address']).toBeUndefined()
+    expect(api.errors('notify.address')).toBeUndefined()
   })
 
   it('round-trip with variant memory restores form.errors visibility', async () => {
     const { app, api } = mountProfile()
     apps.push(app)
     await nextTick()
-    expect(api.errors['notify.address']).toBeDefined()
+    expect(api.errors('notify.address')).toBeDefined()
 
     api.setValue('notify.channel', 'sms')
     await nextTick()
-    expect(api.errors['notify.address']).toBeUndefined()
+    expect(api.errors('notify.address')).toBeUndefined()
 
     // Switch back. Variant memory restores the value at notify.address,
     // so hasAtPath returns true again and the filter unmasks the error.
     api.setValue('notify.channel', 'email')
     await nextTick()
-    expect(api.errors['notify.address']).toBeDefined()
+    expect(api.errors('notify.address')).toBeDefined()
   })
 
   it('per-field fields still exposes errors for paths in the inactive variant', async () => {
@@ -1416,7 +1416,7 @@ describe('inactive-variant errors — filtered from form.errors, preserved per-f
     await nextTick()
 
     // form.errors hides it.
-    expect(api.errors['notify.address']).toBeUndefined()
+    expect(api.errors('notify.address')).toBeUndefined()
 
     // But the per-field state surface keeps the error available for
     // programmatic consumers — useful when the consumer reads errors
@@ -1449,9 +1449,9 @@ describe('inactive-variant errors — filtered from form.errors, preserved per-f
 
     // sms variant's own validation surfaces; filter does not hide
     // active-path entries.
-    expect(api.errors['notify.number']).toBeDefined()
+    expect(api.errors('notify.number')).toBeDefined()
     // The email variant's construction-seeded error is still in the
     // store but stays filtered out.
-    expect(api.errors['notify.address']).toBeUndefined()
+    expect(api.errors('notify.address')).toBeUndefined()
   })
 })

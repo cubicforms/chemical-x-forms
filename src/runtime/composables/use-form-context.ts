@@ -10,17 +10,18 @@ import type { GenericForm } from '../types/types-core'
 import { ambientProvideHistory } from './use-abstract-form'
 
 /**
- * Access an existing form from a descendant component without
- * passing it through props.
+ * Access an existing form from a descendant component without passing
+ * it through props. Counterpart to `useForm` — `useForm` creates and
+ * provides; `injectForm` looks up via Vue's inject mechanism.
  *
  * Two ways to call it:
  *
  * ```ts
  * // Reach the nearest ancestor's anonymous useForm() call.
- * const form = useFormContext<SignupShape>()
+ * const form = injectForm<SignupShape>()
  *
  * // Reach a specific form by its key — works from anywhere in the app.
- * const cart = useFormContext<CartShape>('cart')
+ * const cart = injectForm<CartShape>('cart')
  * ```
  *
  * Returns `null` when no matching form exists (no ambient ancestor, or
@@ -28,7 +29,7 @@ import { ambientProvideHistory } from './use-abstract-form'
  * call site to help diagnose typos. Always narrow before using:
  *
  * ```ts
- * const form = useFormContext<Shape>('signup')
+ * const form = injectForm<Shape>('signup')
  * if (!form) return
  * form.register('email')
  * ```
@@ -39,10 +40,9 @@ import { ambientProvideHistory } from './use-abstract-form'
  * The form is kept alive for this component's lifetime; once every
  * consumer unmounts, the form is cleaned up automatically.
  */
-export function useFormContext<
-  Form extends GenericForm,
-  GetValueFormType extends GenericForm = Form,
->(key?: FormKey): UseAbstractFormReturnType<Form, GetValueFormType> | null {
+export function injectForm<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
+  key?: FormKey
+): UseAbstractFormReturnType<Form, GetValueFormType> | null {
   const registry = useRegistry()
 
   const state = resolveState<Form>(key, registry)
@@ -75,7 +75,7 @@ export function useFormContext<
  * that null straight out to the consumer.
  *
  * Both miss modes log a dev-mode warning carrying the user's call-site
- * frame — a typo'd key reads as "[cx] useFormContext: no form registered
+ * frame — a typo'd key reads as "[cx] injectForm: no form registered
  * for key 'userz'. Returning null. (pages/profile.vue:42)" rather than
  * as a stack trace from inside cx internals.
  */
@@ -112,7 +112,7 @@ function warnMiss(detail: string, isSSR: boolean): void {
   if (!__DEV__ || isSSR) return
   const frame = captureUserCallSite()
   console.warn(
-    `[@chemical-x/forms] useFormContext: ${detail}. Returning null.` +
+    `[@chemical-x/forms] injectForm: ${detail}. Returning null.` +
       (frame !== undefined ? ` ${frame}` : '')
   )
 }
@@ -129,11 +129,11 @@ function warnMiss(detail: string, isSSR: boolean): void {
  * and fired once per extra form regardless of whether any descendant
  * actually used the ambient slot. That made spike / test pages wall-
  * warn for a non-problem; this version fires at most once per
- * `useFormContext()` consumer that genuinely collides.
+ * `injectForm()` consumer that genuinely collides.
  *
  * Keyed `useForm()` calls don't appear here — they don't fill the
  * ambient slot at all (they're addressable explicitly via
- * `useFormContext<F>(key)`), so they can't collide with each other
+ * `injectForm<F>(key)`), so they can't collide with each other
  * or with anonymous siblings on this axis.
  */
 function warnIfAmbientProviderHadDuplicates(): void {
@@ -145,12 +145,12 @@ function warnIfAmbientProviderHadDuplicates(): void {
       if (history.length > 1) {
         const lines = history.map((entry) => `  - ${entry.source ?? '<unknown location>'}`)
         console.warn(
-          '[@chemical-x/forms] useFormContext<F>() (no key) resolved against ' +
+          '[@chemical-x/forms] injectForm<F>() (no key) resolved against ' +
             'an ancestor with multiple anonymous useForm() calls; descendants ' +
             'only see the last-provided form. Anonymous useForm() calls were:\n' +
             lines.join('\n') +
             '\nFix: pass a key to each call (e.g. useForm({ schema, key: "x" })) ' +
-            'and reach them via useFormContext<F>("x"), or split the forms ' +
+            'and reach them via injectForm<F>("x"), or split the forms ' +
             'across separate components.'
         )
       }

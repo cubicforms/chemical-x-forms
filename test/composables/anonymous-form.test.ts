@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, createSSRApp, defineComponent, h } from 'vue'
 import { renderToString } from '@vue/server-renderer'
-import { useForm, useFormContext } from '../../src'
+import { useForm, injectForm } from '../../src'
 import { ANONYMOUS_FORM_KEY_PREFIX, RESERVED_KEY_PREFIX } from '../../src/runtime/core/defaults'
 import { ReservedFormKeyError } from '../../src/runtime/core/errors'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
@@ -19,7 +19,7 @@ import { fakeSchema } from '../utils/fake-schema'
  *      state. Each call resolves to its own `__cx:anon:` id and
  *      therefore its own FormStore.
  *   2. Descendant-only access still works via ambient
- *      `useFormContext<F>()`, which resolves through `provide`/
+ *      `injectForm<F>()`, which resolves through `provide`/
  *      `inject` and doesn't touch the registry's key space.
  *   3. SSR/hydration remains deterministic because `useId()` is
  *      positional — the server and client trees allocate matching
@@ -70,7 +70,7 @@ describe('anonymous useForm — independent state per setup call', () => {
   })
 })
 
-describe('anonymous useForm — ambient useFormContext access', () => {
+describe('anonymous useForm — ambient injectForm access', () => {
   it('descendant composable reads the same FormStore via provide/inject', async () => {
     type Api = ReturnType<typeof useForm<Form>>
     const captured: { owner?: Api; consumer?: Api | null } = {}
@@ -78,7 +78,7 @@ describe('anonymous useForm — ambient useFormContext access', () => {
     const Child = defineComponent({
       setup() {
         // Ambient mode — no key passed, resolves via `inject(kFormContext)`.
-        captured.consumer = useFormContext<Form>()
+        captured.consumer = injectForm<Form>()
         return () => h('span', 'child')
       },
     })
@@ -112,7 +112,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
   // (two anonymous forms in one parent) hits this footgun, so the
   // runtime emits a dev-mode warning.
   //
-  // The warning fires LAZILY from useFormContext<F>() (no key) — not
+  // The warning fires LAZILY from injectForm<F>() (no key) — not
   // eagerly from useForm() — so components with multiple forms but no
   // keyless consumer stay quiet. The eager version spammed on dev /
   // spike pages that piled forms into one component intentionally.
@@ -125,7 +125,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
   })
 
   it('stays quiet when a component calls useForm twice but no descendant consumes ambient', () => {
-    // Two useForm calls + NO keyless useFormContext consumer = no warn.
+    // Two useForm calls + NO keyless injectForm consumer = no warn.
     // This is the spike-page case: author knows what they're doing,
     // lib should not spam.
     const App = defineComponent({
@@ -148,7 +148,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
   it('warns when a descendant reaches for ambient context against a duplicate-provide parent', () => {
     const Child = defineComponent({
       setup() {
-        useFormContext<Form>()
+        injectForm<Form>()
         return () => h('span', 'child')
       },
     })
@@ -166,7 +166,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
 
     expect(warnSpy).toHaveBeenCalledTimes(1)
     const message = String(warnSpy.mock.calls[0]?.[0] ?? '')
-    expect(message).toContain('useFormContext<F>() (no key)')
+    expect(message).toContain('injectForm<F>() (no key)')
     expect(message).toContain('multiple anonymous useForm() calls')
 
     app.unmount()
@@ -178,7 +178,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     // through in DevTools) and stay silent about the anon-key space.
     const Child = defineComponent({
       setup() {
-        useFormContext<Form>()
+        injectForm<Form>()
         return () => h('span', 'child')
       },
     })
@@ -215,12 +215,12 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
 
   it('keyed siblings do NOT appear in the warning (they bypass the ambient slot)', () => {
     // Keyed useForm() calls don't fill the ambient slot — they're
-    // addressable explicitly via useFormContext('key'). They must not
+    // addressable explicitly via injectForm('key'). They must not
     // appear in this warning, which is specifically about anonymous
     // ambient collisions.
     const Child = defineComponent({
       setup() {
-        useFormContext<Form>()
+        injectForm<Form>()
         return () => h('span', 'child')
       },
     })
@@ -255,7 +255,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     // a single anonymous form unambiguously. No warning.
     const Child = defineComponent({
       setup() {
-        useFormContext<Form>()
+        injectForm<Form>()
         return () => h('span', 'child')
       },
     })
@@ -283,7 +283,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     // usage; no warn.
     const Child = defineComponent({
       setup() {
-        useFormContext<Form>()
+        injectForm<Form>()
         return () => h('span', 'child')
       },
     })
@@ -338,7 +338,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     // only the client warn reaches devtools.
     const Child = defineComponent({
       setup() {
-        useFormContext<Form>()
+        injectForm<Form>()
         return () => h('span', 'child')
       },
     })

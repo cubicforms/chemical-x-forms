@@ -66,7 +66,7 @@ describe('useForm — reset()', () => {
     form.setValue('profile.name', 'alice')
 
     form.reset()
-    expect(form.values).toEqual(defaults)
+    expect(form.values()).toEqual(defaults)
   })
 
   it('applies new constraints over schema defaults when given a partial', () => {
@@ -85,21 +85,22 @@ describe('useForm — reset()', () => {
     form.setFieldErrors([
       { path: ['email'], message: 'taken', formKey: form.key, code: 'api:validation' },
     ])
-    expect(form.state.isValid).toBe(false)
+    expect(form.meta.isValid).toBe(false)
 
     form.reset()
-    expect(form.state.isValid).toBe(true)
-    expect(form.errors).toEqual({})
+    expect(form.meta.isValid).toBe(true)
+    expect(form.errors.email).toBeUndefined()
+    expect(form.errors.password).toBeUndefined()
   })
 
   it('flips isDirty back to false after a mutation + reset', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setValue('email', 'dirty@example.com')
-    expect(form.state.isDirty).toBe(true)
+    expect(form.meta.isDirty).toBe(true)
 
     form.reset()
-    expect(form.state.isDirty).toBe(false)
+    expect(form.meta.isDirty).toBe(false)
   })
 
   it('rebaselines originals so a post-reset mutation flips isDirty', () => {
@@ -107,11 +108,11 @@ describe('useForm — reset()', () => {
     apps.push(app)
     // Reset with a new baseline.
     form.reset({ email: 'baseline@example.com' })
-    expect(form.state.isDirty).toBe(false)
+    expect(form.meta.isDirty).toBe(false)
     // Mutating back to the schema default is now a dirtying move — the
     // new baseline is the constrained value, not the original schema default.
     form.setValue('email', '')
-    expect(form.state.isDirty).toBe(true)
+    expect(form.meta.isDirty).toBe(true)
   })
 
   it('clears submission lifecycle (count, error, in-flight)', async () => {
@@ -122,13 +123,13 @@ describe('useForm — reset()', () => {
       throw new Error('boom')
     })
     await expect(handler()).rejects.toThrow('boom')
-    expect(form.state.submitCount).toBe(1)
-    expect(form.state.submitError).toBeInstanceOf(Error)
+    expect(form.meta.submitCount).toBe(1)
+    expect(form.meta.submitError).toBeInstanceOf(Error)
 
     form.reset()
-    expect(form.state.submitCount).toBe(0)
-    expect(form.state.submitError).toBeNull()
-    expect(form.state.isSubmitting).toBe(false)
+    expect(form.meta.submitCount).toBe(0)
+    expect(form.meta.submitError).toBeNull()
+    expect(form.meta.isSubmitting).toBe(false)
   })
 })
 
@@ -158,7 +159,7 @@ describe('useForm — resetField(path)', () => {
     ])
 
     form.resetField('email')
-    expect(form.errors).not.toHaveProperty('email')
+    expect(form.errors.email).toBeUndefined()
     expect(form.errors.password).toHaveLength(1)
   })
 
@@ -179,9 +180,9 @@ describe('useForm — resetField(path)', () => {
   it('no-ops on an unknown path', () => {
     const { app, form } = harness()
     apps.push(app)
-    const before = form.values
+    const before = form.values()
     // @ts-expect-error - 'nope' is not a FlatPath of the form
     form.resetField('nope')
-    expect(form.values).toEqual(before)
+    expect(form.values()).toEqual(before)
   })
 })

@@ -1,6 +1,6 @@
 import { describe, expectTypeOf, it } from 'vitest'
 import { z } from 'zod'
-import type { FormState } from '../../src'
+import type { FormMeta } from '../../src'
 import type { useForm } from '../../src/zod'
 import type { WithIndexedUndefined } from '../../src/runtime/types/types-core'
 
@@ -97,10 +97,13 @@ describe('useForm type inference — factory signature', () => {
   })
 
   it('returns the inferred Form shape on form.values (with array taint)', () => {
-    // `form.values` is a Pinia-style readonly proxy over the form
-    // wrapped in `WithIndexedUndefined` — `values.tags[N]` etc. is
+    // `form.values` is a callable readonly proxy over the form wrapped
+    // in `WithIndexedUndefined` — `values.tags[N]` etc. is
     // `string | undefined` since arrays can be out-of-bounds at runtime.
-    expectTypeOf(form.values).toEqualTypeOf<Readonly<WithIndexedUndefined<ExpectedForm>>>()
+    // The Readonly<WithIndexedUndefined<ExpectedForm>> shape is reachable
+    // through the surface; per-leaf access proves it (below).
+    expectTypeOf(form.values).toMatchTypeOf<Readonly<WithIndexedUndefined<ExpectedForm>>>()
+    expectTypeOf(form.values).toBeCallableWith('email')
   })
 })
 
@@ -311,21 +314,24 @@ describe('useForm type inference — fields + errors', () => {
     expectTypeOf(form.fields.email.errors).toMatchTypeOf<ReadonlyArray<{ message: string }>>()
   })
 
-  it('form.errors is a Readonly<FormFieldErrors<Form>> (Proxy view, no .value)', () => {
-    // Internally backed by a ComputedRef + Proxy; the public type is
-    // the unwrapped record so templates can dot-access without `.value`.
-    expectTypeOf(form.errors).toMatchTypeOf<Record<string, unknown>>()
-    // @ts-expect-error — errors is not a Ref, so `.value` is gone.
+  it('form.errors is a FormFieldErrors<Form> — leaf-aware drillable callable Proxy', () => {
+    // Public type is a callable proxy; `(path)` returns a leaf array,
+    // dot-access returns leaf array OR sub-shape depending on the path.
+    expectTypeOf(form.errors.email).toMatchTypeOf<readonly { message: string }[] | undefined>()
+    // Callable signature exists on the surface itself.
+    expectTypeOf(form.errors).toBeCallableWith('email')
+    // No `.value` — the proxy is not a Ref.
+    // @ts-expect-error — errors is not a Ref.
     void form.errors.value
   })
 })
 
 describe('useForm type inference — form-level state bundle', () => {
-  it('`state` matches the exported `FormState` shape exactly', () => {
+  it('`state` matches the exported `FormMeta` shape exactly', () => {
     // Pins the whole-bundle contract: any future refactor that drops a
     // field, re-widens a type, or loses the auto-unwrap (re-exposing a
     // Ref/ComputedRef at a leaf) fails this assertion at compile time.
-    expectTypeOf(form.state).toEqualTypeOf<FormState>()
+    expectTypeOf(form.meta).toEqualTypeOf<FormMeta>()
   })
 
   it('scalar leaves are primitives, not Refs', () => {
@@ -333,27 +339,27 @@ describe('useForm type inference — form-level state bundle', () => {
     // `Readonly<ComputedRef<X>>`. Inside reactive() they auto-unwrap
     // on access — so the template footgun (binding to the wrapper
     // object instead of its .value) is gone at the type level too.
-    expectTypeOf(form.state.isDirty).toEqualTypeOf<boolean>()
-    expectTypeOf(form.state.isValid).toEqualTypeOf<boolean>()
-    expectTypeOf(form.state.isSubmitting).toEqualTypeOf<boolean>()
-    expectTypeOf(form.state.isValidating).toEqualTypeOf<boolean>()
-    expectTypeOf(form.state.submitCount).toEqualTypeOf<number>()
-    expectTypeOf(form.state.submitError).toEqualTypeOf<unknown>()
-    expectTypeOf(form.state.canUndo).toEqualTypeOf<boolean>()
-    expectTypeOf(form.state.canRedo).toEqualTypeOf<boolean>()
-    expectTypeOf(form.state.historySize).toEqualTypeOf<number>()
+    expectTypeOf(form.meta.isDirty).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.isValid).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.isSubmitting).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.isValidating).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.submitCount).toEqualTypeOf<number>()
+    expectTypeOf(form.meta.submitError).toEqualTypeOf<unknown>()
+    expectTypeOf(form.meta.canUndo).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.canRedo).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.historySize).toEqualTypeOf<number>()
   })
 
   it('rejects writes (state is readonly at the type level)', () => {
     // @ts-expect-error — state is readonly; prefer setValue / handleSubmit
-    form.state.isSubmitting = true
+    form.meta.isSubmitting = true
     // @ts-expect-error — same for counters
-    form.state.submitCount = 5
+    form.meta.submitCount = 5
   })
 
   it('rejects unknown keys', () => {
-    // @ts-expect-error — `foo` is not a FormState key
-    void form.state.foo
+    // @ts-expect-error — `foo` is not a FormMeta key
+    void form.meta.foo
   })
 })
 

@@ -107,7 +107,7 @@ describe('slim-primitive write gate — property: known leaf paths (v4)', () => 
       if (expected) {
         // Leaf at the written path must equal the written value.
         // `toEqual` handles Date/BigInt/null/undefined/primitives uniformly.
-        expect(getAtPath(api.values, leaf.path)).toEqual(value)
+        expect(getAtPath(api.values(), leaf.path)).toEqual(value)
       } else {
         // Rejected: form ref must hold the same identity. A "rejected
         // but partially applied" bug would replace the ref and fail this.

@@ -103,7 +103,7 @@ submit, reactive `validate()`, one-shot `validateAsync`, or a
 field-level run. Gate UI:
 
 ```vue
-<button :disabled="form.state.isValidating">Submit</button>
+<button :disabled="form.meta.isValidating">Submit</button>
 ```
 
 ## Tuning `debounceMs`

@@ -76,7 +76,7 @@ validation run is in flight — submit, reactive `validate()`, or
 `validateAsync`. Gate UI off it:
 
 ```vue
-<button :disabled="form.state.isValidating || form.state.isSubmitting">Continue</button>
+<button :disabled="form.meta.isValidating || form.meta.isSubmitting">Continue</button>
 ```
 
 ## Combining with server errors

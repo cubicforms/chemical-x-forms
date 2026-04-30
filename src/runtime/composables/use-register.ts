@@ -38,7 +38,7 @@
  * When the wrapper's root IS the input itself, Vue's attribute
  * fallthrough handles the binding and `useRegister` is unnecessary.
  * For wrappers that bind multiple fields (compound forms), use
- * `useFormContext<Form>(key?)` and call `ctx.register(...)` directly.
+ * `injectForm<Form>(key?)` and call `ctx.register(...)` directly.
  */
 import {
   computed,

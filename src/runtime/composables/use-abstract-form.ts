@@ -199,7 +199,7 @@ export function useAbstractForm<
   // Wire history (opt-in). Fresh-state-only — the module subscribes
   // to FormStore events, so subscribing twice would double-push
   // snapshots. Cache the module on the FormStore so subsequent
-  // `useForm` / `useFormContext` calls for the same key retrieve the
+  // `useForm` / `injectForm` calls for the same key retrieve the
   // SAME instance, keeping `canUndo` / `canRedo` / `historySize` /
   // `undo` / `redo` consistent across mount order.
   if (existing === undefined && merged.history !== undefined) {
@@ -209,20 +209,20 @@ export function useAbstractForm<
   }
 
   // Provide the FormStore to descendants via `kFormContext` so
-  // `useFormContext()` can resolve it without prop-threading.
+  // `injectForm()` can resolve it without prop-threading.
   //
   // ONLY anonymous `useForm()` calls fill the ambient slot. Keyed forms
-  // are explicitly addressable via `useFormContext<F>(key)` and don't
+  // are explicitly addressable via `injectForm<F>(key)` and don't
   // pollute the ambient context — keeping the two resolution modes
   // semantically distinct. A descendant of a keyed-only parent that
-  // calls `useFormContext<F>()` (no key) gets the "no ambient form"
+  // calls `injectForm<F>()` (no key) gets the "no ambient form"
   // throw, which is the right error: the form has a name; address it.
   //
   // Ambient mode is still "last-provide wins" among siblings: if two
   // anonymous `useForm()` calls run in the same component, the second
   // overwrites the first and descendants only see the second. We record
   // the per-instance history of ANONYMOUS provides here (silently) so
-  // that a descendant's `useFormContext<F>()` call can walk up, detect
+  // that a descendant's `injectForm<F>()` call can walk up, detect
   // the collision, and warn lazily. Recording is skipped on SSR so the
   // client-side warn fires once, not once-per-render-pass.
   if (configuration.key === undefined) {
@@ -281,7 +281,7 @@ function mergeWithDefaults<
 
 /**
  * Shared key for the per-state history module cache. Exported would be
- * over-sharing — the only callers are this file and `useFormContext`.
+ * over-sharing — the only callers are this file and `injectForm`.
  */
 const HISTORY_MODULE_KEY = 'history'
 
@@ -379,7 +379,7 @@ export type AmbientProvideEntry = {
  * component's entry when it unmounts without us tracking
  * lifecycle.
  *
- * Exported so `useFormContext<F>()` (no key) can walk the parent
+ * Exported so `injectForm<F>()` (no key) can walk the parent
  * chain and emit a collision warning only when a descendant
  * actually consumes the ambient slot — eager warning in
  * `useForm()` misfired on components that call useForm multiple
@@ -420,7 +420,7 @@ function recordAmbientProvide(isSSR: boolean): void {
  *
  * Anonymous semantics: each `useForm({ schema })` call without a key
  * resolves to a distinct FormStore. Descendant components reach it via
- * ambient `useFormContext<F>()`; cross-component lookup by key is not
+ * ambient `injectForm<F>()`; cross-component lookup by key is not
  * possible (and not meaningful — the key is synthetic). Callers that
  * need shared state, distant lookup, persistence defaults, or a
  * recognisable DevTools label should pass an explicit `key`.

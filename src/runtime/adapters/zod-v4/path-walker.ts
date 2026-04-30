@@ -49,6 +49,12 @@ function walkSegments(schema: z.ZodType, segments: readonly string[]): z.ZodType
   switch (kind) {
     case 'object': {
       const shape = getObjectShape(schema as z.ZodObject)
+      // Own-property check: `shape` is a plain object whose prototype
+      // is `Object.prototype`, so a bare `shape[head]` for `head ===
+      // 'toString'` / `'valueOf'` / `'hasOwnProperty'` etc. returns the
+      // inherited Function and the walker treats it as a schema. Filter
+      // to OWN keys so unknown segments resolve to "doesn't exist."
+      if (!Object.hasOwn(shape, head)) return []
       const next = shape[head]
       return next === undefined ? [] : walkSegments(next, rest)
     }
@@ -68,10 +74,11 @@ function walkSegments(schema: z.ZodType, segments: readonly string[]): z.ZodType
     case 'discriminated-union': {
       // Filter options whose shape contains this segment. Fallback: if no
       // option matches (e.g. the discriminator key itself), try every option.
+      // `Object.hasOwn` (not `in`) so `Object.prototype` keys don't leak.
       const options = getDiscriminatedOptions(schema)
       const matching = options.filter((opt) => {
         const shape = getObjectShape(opt)
-        return head in shape
+        return Object.hasOwn(shape, head)
       })
       const candidates = matching.length > 0 ? matching : options
       return candidates.flatMap((opt) => walkSegments(opt, segments))

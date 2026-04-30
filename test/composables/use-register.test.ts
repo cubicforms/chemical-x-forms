@@ -18,7 +18,7 @@ import { createChemicalXForms } from '../../src/runtime/core/plugin'
  *   3. Called outside any setup scope → returns ComputedRef<undefined>
  *      + one-shot dev-warn. NEVER throws.
  *
- * Rationale for the "always degrade" stance: the recent useFormContext
+ * Rationale for the "always degrade" stance: the recent injectForm
  * shift (PR #149) traded a throw for warn-and-null so a typo'd key in
  * a deeply nested component doesn't take the whole page down. The
  * same reasoning applies here — a parent that forgot to pass v-register

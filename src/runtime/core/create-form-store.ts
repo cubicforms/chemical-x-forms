@@ -348,7 +348,7 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
 
   /**
    * Cache for per-state modules (history, persistence) that must
-   * outlive any single consumer. Subsequent `useForm` / `useFormContext`
+   * outlive any single consumer. Subsequent `useForm` / `injectForm`
    * calls for the same key read from this map so the public API shape
    * is identical regardless of mount order. Keyed by a string identifier
    * owned by the caller (e.g. `'history'`).

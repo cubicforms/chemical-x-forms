@@ -104,7 +104,7 @@ describe('app-level defaults — validationMode', () => {
     apps.push(app)
     expect(api.errors.email).toBeUndefined()
     expect(api.errors.password).toBeUndefined()
-    expect(api.state.isValid).toBe(true)
+    expect(api.meta.isValid).toBe(true)
   })
 
   it('per-form validationMode wins over the registry default', () => {
@@ -114,7 +114,7 @@ describe('app-level defaults — validationMode', () => {
     apps.push(app)
     expect(api.errors.email?.[0]?.message).toBe('bad email')
     expect(api.errors.password?.[0]?.message).toBe('min 8 chars')
-    expect(api.state.isValid).toBe(false)
+    expect(api.meta.isValid).toBe(false)
   })
 
   it('falls back to library default (strict) when neither registry nor per-form sets it', () => {
@@ -123,7 +123,7 @@ describe('app-level defaults — validationMode', () => {
     const { app, api } = mountWithDefaults({}, {})
     apps.push(app)
     expect(api.errors.email?.[0]?.message).toBe('bad email')
-    expect(api.state.isValid).toBe(false)
+    expect(api.meta.isValid).toBe(false)
   })
 })
 

@@ -61,7 +61,7 @@ export type PendingHydration = Map<FormKey, SerializedFormData>
  * created per `app.use(createChemicalXForms())` call.
  *
  * Most consumers never touch this directly — `useForm` and
- * `useFormContext` reach the registry on your behalf. Access it
+ * `injectForm` reach the registry on your behalf. Access it
  * explicitly only when wiring SSR or a custom plugin integration.
  */
 export type ChemicalXRegistry = {
@@ -99,7 +99,7 @@ export type ChemicalXRegistry = {
 /**
  * The Vue `InjectionKey` under which the registry is provided on the
  * app. Most consumers never need this — `useForm` and
- * `useFormContext` resolve the registry automatically.
+ * `injectForm` resolve the registry automatically.
  */
 export const kChemicalXRegistry: InjectionKey<ChemicalXRegistry> = Symbol(
   'chemical-x-forms:registry'
@@ -108,7 +108,7 @@ export const kChemicalXRegistry: InjectionKey<ChemicalXRegistry> = Symbol(
 /**
  * Provides the current form's FormStore to descendants. Installed by
  * `useAbstractForm` after it resolves the state, so any nested component
- * can call `useFormContext()` without prop-threading the form API.
+ * can call `injectForm()` without prop-threading the form API.
  *
  * Typed as `FormStore<GenericForm>` — the descendant that re-emerges the
  * shape must supply its own `Form` generic, because Vue's InjectionKey
@@ -219,7 +219,7 @@ export function createRegistry(options: CreateRegistryOptions = {}): ChemicalXRe
  * Look up the current app's registry from inside a component's
  * `setup()` (or any synchronous code on the setup call stack).
  *
- * Most consumers don't need this — `useForm` and `useFormContext`
+ * Most consumers don't need this — `useForm` and `injectForm`
  * call it on your behalf. Reach for it directly when building
  * custom integrations that need the raw registry.
  *

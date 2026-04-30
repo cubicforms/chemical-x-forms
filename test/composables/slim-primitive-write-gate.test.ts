@@ -357,7 +357,7 @@ describe('slim-primitive write gate — unknown schema paths', () => {
     await flush()
     expect(ok).toBe(false)
     // Form value unchanged — no `address.salary` slot created.
-    expect(api.values).toEqual(before)
+    expect(api.values()).toEqual(before)
   })
 
   it('rejects writes to an unknown root-level path', async () => {
@@ -368,7 +368,7 @@ describe('slim-primitive write gate — unknown schema paths', () => {
     const ok = (api.setValue as (path: string, value: unknown) => boolean)('phantom', 'x')
     await flush()
     expect(ok).toBe(false)
-    expect(api.values).toEqual(before)
+    expect(api.values()).toEqual(before)
   })
 
   it('rejects writes that would create a deeply-nested unknown path', async () => {
@@ -386,7 +386,7 @@ describe('slim-primitive write gate — unknown schema paths', () => {
     )
     await flush()
     expect(ok).toBe(false)
-    expect(api.values).toEqual(before)
+    expect(api.values()).toEqual(before)
   })
 
   it('rejection emits a dev-warn naming the unknown path', async () => {

@@ -46,7 +46,7 @@ as `errors` via a two-step pattern: parse the payload with
       {{ form.errors.password[0].message }}
     </small>
 
-    <button :disabled="form.state.isSubmitting">Sign up</button>
+    <button :disabled="form.meta.isSubmitting">Sign up</button>
   </form>
 </template>
 ```
@@ -231,8 +231,8 @@ const onSubmit = form.handleSubmit(async (values) => {
 
 ```vue
 <template>
-  <p v-if="form.state.submitError" role="alert">
-    {{ (form.state.submitError as Error).message }}
+  <p v-if="form.meta.submitError" role="alert">
+    {{ (form.meta.submitError as Error).message }}
   </p>
 </template>
 ```

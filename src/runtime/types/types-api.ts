@@ -257,6 +257,50 @@ export type AbstractSchema<Form, GetValueFormType> = {
    */
   getSlimPrimitiveTypesAtPath(path: Path): Set<SlimPrimitiveKind>
   /**
+   * Return `true` iff `path` resolves to a **leaf** in the schema — a
+   * path whose slim primitive set contains only primitive kinds (no
+   * `object`, `array`, `map`, `set`). The runtime proxies (`form.values`,
+   * `form.errors`, `form.fields`) query this at every step to decide
+   * between **descend into a sub-proxy** (container) and **terminate
+   * with a leaf value** (leaf).
+   *
+   * The leaf-aware branching is what kills the FIELD_STATE_KEYS
+   * shadowing problem: reserved leaf-prop names (`dirty`, `errors`,
+   * `isValid`, …) inject only at the FieldStateView terminal, not at
+   * every depth. A schema field literally named `dirty` at depth ≥ 2
+   * stays reachable as a sub-proxy or leaf in its own right.
+   *
+   * Semantics:
+   * - **Object / Array / Map / Set** at any wrapper layer → `false`
+   *   (container; descend further).
+   * - **Primitive** (string/number/boolean/bigint/symbol/null/undefined/
+   *   date/function) → `true`. `'date'` counts as a leaf (don't drill
+   *   into `Date`). `'function'` is a leaf for the same reason — opaque
+   *   value.
+   * - **Optional / Nullable / Default / Catch** wrappers transparent —
+   *   adds `'null'` / `'undefined'` to the inner kind set without
+   *   changing the leaf classification.
+   * - **Discriminated union root** → `false` (variants are objects;
+   *   the kind set contains `'object'`).
+   * - **DU discriminator key** → `true` (the literal type resolves to
+   *   `{'string'}` / `{'number'}`).
+   * - **DU variant-only key** → `true` if it resolves to a primitive
+   *   in any variant; schema-static (does NOT query live storage to
+   *   decide which variant is active).
+   * - **Empty path (root)** → `false` (root is the form-as-object).
+   * - **Path doesn't exist in schema** → `false`. The proxy descends
+   *   permissively; reads of leaf props at the unknown path return
+   *   `undefined` from the underlying store. Treating unknown paths
+   *   as containers preserves the schema's authority and avoids
+   *   re-introducing shadowing on typos.
+   *
+   * Adapters MAY cache results per-path — `isLeafAtPath` will be
+   * called on every proxy `get` trap hit. The reference implementation
+   * memoises a `Map<PathKey, boolean>` keyed by `canonicalizePath(path).key`,
+   * lifetime tied to the adapter (one per `useForm()` call).
+   */
+  isLeafAtPath(path: Path): boolean
+  /**
    * Return `true` if the leaf at `path` is required — i.e. the schema
    * does NOT admit "empty" via `.optional()`, `.nullable()`,
    * `.default(N)`, or `.catch(N)` at the leaf or any wrapper.
@@ -644,7 +688,7 @@ export type UseFormConfiguration<
    * across server→client hydration).
    *
    * Pass a string key when the form needs identity:
-   * - to look it up from a distant component via `useFormContext(key)`;
+   * - to look it up from a distant component via `injectForm(key)`;
    * - to share state across components (multiple `useForm({ key })`
    *   calls with the same key resolve to the same form);
    * - to give DevTools and validation errors a recognisable label;
@@ -1375,11 +1419,12 @@ export type FieldState<Value = unknown> = DeepFlatten<
 >
 
 /**
- * Per-field reactive shape returned by `form.fields.<path>`.
- * Slim, readonly across the board. Schema fields with names matching
- * a `FieldStateLeaf` key (`value`, `dirty`, `errors`, …) at depth ≥ 2
- * are shadowed by the leaf — bracket-access via `toRef(path)` is the
- * workaround.
+ * Per-field reactive shape returned by `form.fields.<leaf-path>`.
+ * Slim, readonly across the board. Leaf-aware: this shape only
+ * appears at LEAF paths (primitives, dates). At container paths
+ * the proxy descends without injecting these keys, so a schema
+ * field literally named `dirty` at depth 2+ stays reachable as a
+ * descent target — no shadowing.
  */
 export type FieldStateLeaf<Value = unknown> = {
   readonly value: Value
@@ -1397,25 +1442,67 @@ export type FieldStateLeaf<Value = unknown> = {
 }
 
 /**
- * Recursive type behind `form.fields`. At every depth ≥ 1 each
- * node carries both the `FieldStateLeaf` for the current path AND
- * descent into named children. Leaf keys (`value`, `dirty`, `errors`,
- * …) shadow schema fields with conflicting names at depth ≥ 2;
- * top-level fields are not shadowed.
+ * Recursive type behind `form.fields`. Leaf-aware branching: at
+ * primitive paths (string, number, boolean, bigint, Date, …) the
+ * proxy returns a `FieldStateLeaf`; at container paths (object,
+ * array, …) the proxy descends without injecting leaf-keys.
+ *
+ * Field-name collisions at depth 2+ resolve unambiguously: a schema
+ * field literally named `dirty` at depth 2 is reachable as a
+ * descent target (`form.fields.address.dirty` returns the
+ * FieldStateView for `address.dirty`). Reading `dirty` AT the
+ * leaf-view (`form.fields.address.dirty.dirty`) reads the leaf's
+ * own dirty boolean — path-segment and leaf-prop occupy different
+ * proxy depths.
+ *
+ * The runtime implementation queries `schema.isLeafAtPath(segments)`
+ * at every step; this type approximates that decision using
+ * "T extends primitive". The two stay in sync for typical schemas;
+ * exotic adapter-defined leaf kinds (custom `Date`-like) may need
+ * a runtime check (the runtime is authoritative).
  */
-export type FieldStateMapEntry<T> = T extends object
-  ? FieldStateLeaf<T> & {
-      readonly [K in Exclude<keyof T, keyof FieldStateLeaf<T>>]: FieldStateMapEntry<T[K]>
-    }
-  : FieldStateLeaf<T>
+export type FieldStateMapEntry<T> = T extends
+  | string
+  | number
+  | boolean
+  | bigint
+  | symbol
+  | null
+  | undefined
+  | Date
+  ? FieldStateLeaf<T>
+  : T extends ReadonlyArray<infer U>
+    ? { readonly [K: number]: FieldStateMapEntry<U> }
+    : T extends object
+      ? { readonly [K in keyof T]: FieldStateMapEntry<T[K]> }
+      : FieldStateLeaf<T>
 
 /**
- * Type of `form.fields` — root object that mirrors the form's
- * top level; nested descent produces `FieldStateLeaf`-bearing nodes
- * via `FieldStateMapEntry`.
+ * Type of `form.fields` — leaf-aware drillable callable Proxy. At
+ * a leaf path the proxy resolves to a `FieldStateLeaf<Value>`; at
+ * a container path it returns a sub-proxy you can keep drilling.
+ *
+ * Augmented with the callable signatures so dot-access and function-
+ * call coexist on the same identifier:
+ *
+ * ```ts
+ * form.fields.email.value           // string (leaf-prop on FieldStateView)
+ * form.fields('email').value        // function-call (dynamic / programmatic)
+ * form.fields(['users', 0, 'name']) // path-array form
+ * form.fields()                     // root proxy
+ * ```
+ *
+ * Single-bracket dotted access (`form.fields['address.city']`) is
+ * intentionally NOT supported — JS object semantics treat the dotted
+ * string as a single key. Use chained dot/bracket or the callable
+ * form.
  */
 export type FieldStateMap<Form extends GenericForm> = {
   readonly [K in keyof Form]: FieldStateMapEntry<Form[K]>
+} & {
+  (path: string): unknown
+  (path: ReadonlyArray<string | number>): unknown
+  (): FieldStateMap<Form>
 }
 
 export type DOMFieldStateStore = Map<string, DOMFieldState | undefined>
@@ -1430,25 +1517,91 @@ export type FormErrorRecord = Record<string, ValidationError[]>
 export type FormErrorStore = Map<FormKey, FormErrorRecord>
 
 /**
- * Type of `form.errors`. Each known path in the form's schema
- * appears as an optional key whose value is the path's error list.
+ * Type of `form.errors`. Leaf-aware drillable callable Proxy. At a
+ * leaf path the proxy resolves to `ValidationError[] | undefined`;
+ * at a container path it returns a sub-proxy you can keep drilling.
  *
- * Dot access works for top-level paths:
- *
- * ```ts
- * form.errors.email // ValidationError[] | undefined
- * ```
- *
- * Use bracket access for nested dotted keys (JS dot syntax splits on
- * literal dots):
+ * Dot/bracket access mirrors the schema shape:
  *
  * ```ts
- * form.errors['user.profile.email']
+ * form.errors.email                  // ValidationError[] | undefined (leaf)
+ * form.errors.user.profile.email     // ValidationError[] | undefined (chained leaves)
+ * form.errors.address                // sub-proxy (container — descend further)
  * ```
+ *
+ * Callable form for dynamic / programmatic paths:
+ *
+ * ```ts
+ * form.errors('user.profile.email')              // dotted-string
+ * form.errors(['user', 'profile', 'email'])      // path-array
+ * form.errors()                                  // root proxy
+ * ```
+ *
+ * Single-bracket dotted access (`form.errors['user.profile.email']`)
+ * is intentionally NOT supported — JS object semantics treat the
+ * dotted string as a single key, which would land on a non-existent
+ * path. Use chained dot/bracket access or the callable form.
  */
-export type FormFieldErrors<Form extends GenericForm> = Partial<
-  Record<FlatPath<Form>, ValidationError[]>
->
+export type FormFieldErrors<Form extends GenericForm> = FormErrorsSurface<Form>
+
+/**
+ * Recursive shape of the `form.errors` proxy. Mirrors the schema:
+ * primitive leaves expose `ValidationError[] | undefined` directly;
+ * containers expose a sub-shape you can keep drilling. Arrays expose
+ * numeric-indexed sub-shapes.
+ *
+ * Augmented with the callable signatures so dot-access and function-
+ * call coexist on the same identifier.
+ */
+export type FormErrorsSurface<Form> = ErrorsProxyShape<Form> & {
+  (path: string): readonly ValidationError[] | undefined
+  (path: ReadonlyArray<string | number>): readonly ValidationError[] | undefined
+  (): FormErrorsSurface<Form>
+}
+
+type ErrorsProxyShape<T> = T extends
+  | string
+  | number
+  | boolean
+  | bigint
+  | symbol
+  | null
+  | undefined
+  | Date
+  ? readonly ValidationError[] | undefined
+  : T extends ReadonlyArray<infer U>
+    ? { readonly [K: number]: ErrorsProxyShape<U> }
+    : T extends object
+      ? { readonly [K in keyof T]: ErrorsProxyShape<T[K]> }
+      : readonly ValidationError[] | undefined
+
+/**
+ * Type of `form.values`. Drillable readonly callable proxy. Unlike
+ * `form.errors` and `form.fields`, containers are USEFUL terminals:
+ * `form.values.address` returns the actual `{ city, … }` subtree
+ * (and keeps drilling). Asymmetry justified by density — every
+ * container in `values` carries meaningful data; in errors / fields
+ * containers are derivations.
+ *
+ * ```ts
+ * form.values.email                  // string (the value)
+ * form.values.address                // { city, … } — object (drillable)
+ * form.values.address.city           // string (chained descent)
+ * form.values('address.city')        // function-call (dynamic / programmatic)
+ * form.values(['address', 'city'])   // path-array form
+ * form.values()                      // the whole form value (root)
+ * ```
+ *
+ * Single-bracket dotted access (`form.values['address.city']`) is
+ * intentionally NOT supported — JS object semantics treat the dotted
+ * string as a single key. Use chained dot/bracket or the callable
+ * form.
+ */
+export type ValuesSurface<F> = Readonly<F> & {
+  (path: string): unknown
+  (path: ReadonlyArray<string | number>): unknown
+  (): Readonly<F>
+}
 
 /**
  * A single server-side error entry. Carries both the human-readable
@@ -1495,19 +1648,22 @@ export type ApiErrorEnvelope = {
 }
 
 /**
- * Reactive form-level flags and counters returned as `form.state`.
+ * Reactive form-level flags, counters, and aggregates returned as
+ * `form.meta`. "Meta" because every other surface (`form.values`,
+ * `form.errors`, `form.fields`) is data-shaped — `form.meta` holds
+ * facts derived ABOUT the form.
  *
  * Read fields directly with no `.value` — they auto-unwrap inside
  * the reactive object:
  *
  * ```vue
- * <button :disabled="form.state.isSubmitting">Save</button>
+ * <button :disabled="form.meta.isSubmitting">Save</button>
  * ```
  *
  * Watch a single field via the getter form:
  *
  * ```ts
- * watch(() => form.state.isSubmitting, (value) => …)
+ * watch(() => form.meta.isSubmitting, (value) => …)
  * ```
  *
  * Per-field state (touched, dirty, errors) lives behind
@@ -1518,7 +1674,7 @@ export type ApiErrorEnvelope = {
  * the current values; use `toRefs()` if you need reactive handles
  * to individual fields.
  */
-export interface FormState {
+export interface FormMeta {
   /**
    * `true` when any field's current value differs from its initial
    * value. `false` for a pristine form and for one where every change
@@ -1579,6 +1735,34 @@ export interface FormState {
    * `canUndo` / `canRedo` instead.
    */
   readonly historySize: number
+
+  /**
+   * Flat aggregate of EVERY validation error in the form — schema-
+   * keyed entries, form-level errors (path: []), unmapped server
+   * errors (paths not in `FlatPath`), and cross-field-refine errors
+   * (paths at containers). Reads as English: "the form's errors."
+   *
+   * Unlike `form.errors.<path>` (per-leaf, active-path-filtered),
+   * `form.meta.errors` is unfiltered — inactive-variant errors stay
+   * in the array. Consumers who want only addressable errors filter
+   * the array themselves (`form.meta.errors.filter(e => …)`).
+   *
+   * Common patterns:
+   *
+   * ```vue
+   * <p v-if="form.meta.errors.length">{{ form.meta.errors.length }} issue(s)</p>
+   * <ul>
+   *   <li v-for="err in form.meta.errors" :key="err.path.join('.')">
+   *     {{ err.path.join('.') || 'form' }}: {{ err.message }}
+   *   </li>
+   * </ul>
+   * ```
+   *
+   * The array re-allocates on any underlying store change (schema /
+   * derived-blank / user); reactivity propagates through the standard
+   * Vue computed graph.
+   */
+  readonly errors: readonly ValidationError[]
 }
 
 /**
@@ -1593,7 +1777,7 @@ export interface FormState {
  * form.errors.email             // ValidationError[] | undefined
  * form.setValue('email', 'a@b.c')
  * form.handleSubmit(onSubmit)   // returns a submit handler
- * form.state.isSubmitting       // form-level reactive flag
+ * form.meta.isSubmitting        // form-level reactive flag
  * ```
  */
 export type UseAbstractFormReturnType<
@@ -1640,7 +1824,7 @@ export type UseAbstractFormReturnType<
    * structurally-valid values are visible. Use `handleSubmit` /
    * `validateAsync()` when you need the post-validation strict type.
    */
-  values: Readonly<WithIndexedUndefined<WriteShape<GetValueFormType>>>
+  values: ValuesSurface<WithIndexedUndefined<WriteShape<GetValueFormType>>>
 
   /**
    * Reactive per-field state proxy. Pinia-style nested object — read
@@ -1837,7 +2021,7 @@ export type UseAbstractFormReturnType<
    * `clearFieldErrors`. Server-side errors flow through
    * `parseApiErrors` first.
    */
-  errors: Readonly<FormFieldErrors<Form>>
+  errors: FormFieldErrors<Form>
 
   /**
    * Escape hatch for the rare case a consumer needs a `Ref<T>` —
@@ -1888,17 +2072,18 @@ export type UseAbstractFormReturnType<
    */
   clearFieldErrors: (path?: string | (string | number)[]) => void
 
-  // --- Form-level state ---
+  // --- Form-level meta ---
 
   /**
-   * Form-level reactive flags (`isDirty`, `isValid`, `isSubmitting`,
-   * `submitCount`, `canUndo`, etc.). See `FormState` for the full
-   * shape. Read leaves directly with no `.value`.
+   * Form-level reactive flags, counters, and aggregates (`isDirty`,
+   * `isValid`, `isSubmitting`, `submitCount`, `canUndo`,
+   * `historySize`, and the flat `errors` array). See `FormMeta` for
+   * the full shape. Read leaves directly with no `.value`.
    *
    * For per-field state (touched, focused, blurred, errors at one
    * path), use `form.fields.<path>` instead.
    */
-  state: FormState
+  meta: FormMeta
 
   // --- Reset ---
 

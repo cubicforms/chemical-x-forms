@@ -102,7 +102,7 @@ describe('initial validation seed — strict mode', () => {
     apps.push(app)
     expect(api.errors.email?.[0]?.message).toBe('bad email')
     expect(api.errors.password?.[0]?.message).toBe('min 8 chars')
-    expect(api.state.isValid).toBe(false)
+    expect(api.meta.isValid).toBe(false)
   })
 
   it('populates schemaErrors at construction when defaults fail validation', () => {
@@ -112,7 +112,7 @@ describe('initial validation seed — strict mode', () => {
     // surface in fieldErrors before any user interaction.
     expect(api.errors.email?.[0]?.message).toBe('bad email')
     expect(api.errors.password?.[0]?.message).toBe('min 8 chars')
-    expect(api.state.isValid).toBe(false)
+    expect(api.meta.isValid).toBe(false)
   })
 
   it('does NOT seed when defaults validate cleanly', () => {
@@ -123,7 +123,7 @@ describe('initial validation seed — strict mode', () => {
     apps.push(app)
     expect(api.errors.email).toBeUndefined()
     expect(api.errors.password).toBeUndefined()
-    expect(api.state.isValid).toBe(true)
+    expect(api.meta.isValid).toBe(true)
   })
 })
 
@@ -146,7 +146,7 @@ describe('initial validation seed — lax mode', () => {
     apps.push(app)
     expect(api.errors.email).toBeUndefined()
     expect(api.errors.password).toBeUndefined()
-    expect(api.state.isValid).toBe(true)
+    expect(api.meta.isValid).toBe(true)
   })
 })
 

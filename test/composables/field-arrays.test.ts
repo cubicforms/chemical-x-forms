@@ -210,16 +210,16 @@ describe('useForm — field array helpers', () => {
     // first-seen value was recorded as its own baseline.
     const { app, form } = harness({ tags: [] })
     apps.push(app)
-    expect(form.state.isDirty).toBe(false)
+    expect(form.meta.isDirty).toBe(false)
     form.append('tags', 'first')
-    expect(form.state.isDirty).toBe(true)
+    expect(form.meta.isDirty).toBe(true)
   })
 
   it('remove flips isDirty (removing an originals-tracked leaf is a mutation)', () => {
     const { app, form } = harness({ tags: ['a', 'b'] })
     apps.push(app)
-    expect(form.state.isDirty).toBe(false)
+    expect(form.meta.isDirty).toBe(false)
     form.remove('tags', 0)
-    expect(form.state.isDirty).toBe(true)
+    expect(form.meta.isDirty).toBe(true)
   })
 })

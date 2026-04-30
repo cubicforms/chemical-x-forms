@@ -29,7 +29,7 @@ export class SubmitErrorHandlerError extends Error {
 }
 
 /**
- * Thrown by `useForm` / `useFormContext` when the form library's
+ * Thrown by `useForm` / `injectForm` when the form library's
  * plugin hasn't been installed on the current Vue app.
  *
  * Fix: add `app.use(createChemicalXForms())` to your app entry
@@ -45,7 +45,7 @@ export class RegistryNotInstalledError extends Error {
 }
 
 /**
- * Thrown when `useForm` / `useFormContext` is called outside of a
+ * Thrown when `useForm` / `injectForm` is called outside of a
  * Vue `setup()` function — typically from an event handler, watcher,
  * or async callback that runs after mount.
  *
@@ -56,7 +56,7 @@ export class OutsideSetupError extends Error {
   override readonly name = 'OutsideSetupError'
   constructor() {
     super(
-      '[@chemical-x/forms] useForm / useFormContext called outside Vue setup(). ' +
+      '[@chemical-x/forms] useForm / injectForm called outside Vue setup(). ' +
         'Move into setup or mount a child component to trigger from an event.'
     )
   }

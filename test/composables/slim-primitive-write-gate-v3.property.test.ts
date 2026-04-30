@@ -83,7 +83,7 @@ describe('slim-primitive write gate — property: known leaf paths (v3)', () => 
       expect(ok).toBe(expected)
 
       if (expected) {
-        expect(getAtPath(api.values, leaf.path)).toEqual(value)
+        expect(getAtPath(api.values(), leaf.path)).toEqual(value)
       } else {
         expect(api.values).toBe(beforeForm)
       }

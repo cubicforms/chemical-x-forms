@@ -28,8 +28,13 @@
     // Pin lax: this fixture proves user-injected errors render across
     // the SSR boundary. Strict-mode default would also seed schema
     // errors from the empty defaults, displacing the user-injected
-    // entries at errors[0] (schema-first ordering).
+    // entries at errors[0] (schema-first ordering). Explicit empty
+    // defaults opt the strings out of auto-blank too, so the reactive
+    // `derivedBlankErrors` class stays empty — without this opt-out
+    // the "No value supplied" entries would land at errors[0] ahead of
+    // the user-injected payload this test is asserting on.
     validationMode: 'lax',
+    defaultValues: { email: '', password: '' },
   })
   directForm.setFieldErrors([
     { message: 'Email already in use', path: ['email'], formKey: 'errors-direct' },
@@ -45,6 +50,10 @@
   const apiErrorForm = useForm({
     schema: z.object({ username: z.string() }),
     key: 'errors-from-api',
+    // Explicit empty default opts username out of auto-blank so the
+    // reactive `derivedBlankErrors` class stays empty — the test
+    // asserts on user-injected (parseApiErrors-fed) entries at index 0.
+    defaultValues: { username: '' },
   })
   const parsedApi = parseApiErrors(
     {

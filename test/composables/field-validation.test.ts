@@ -35,8 +35,12 @@ function mountWith(options: {
         // Pin lax: tests here exercise debounced field validation, not
         // the construction-time strict-mode seed. Keeping the form
         // mount-clean lets each test set the invalid value itself and
-        // assert the debounced run lands.
+        // assert the debounced run lands. Explicit empty defaults opt
+        // out of auto-blank so `derivedBlankErrors` stays empty —
+        // otherwise the required+blank class would surface "No value
+        // supplied" and confound the debounced-run assertions.
         validationMode: 'lax',
+        defaultValues: { email: '', password: '' },
         ...(options.fieldValidation ? { fieldValidation: options.fieldValidation } : {}),
       })
       return () => h('div')

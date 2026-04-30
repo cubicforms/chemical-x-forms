@@ -96,8 +96,13 @@ describe('app-level defaults — validationMode', () => {
     // seed schemaErrors at construction (lax behavior), even though
     // empty defaults fail .email() / .min(8). Without app-level
     // defaults the library would have applied 'strict' and seeded the
-    // errors.
-    const { app, api } = mountWithDefaults({ validationMode: 'lax' }, {})
+    // errors. Explicit empty defaults opt the strings out of auto-blank
+    // so `derivedBlankErrors` stays empty — the test reads only the
+    // schemaErrors-seed channel that lax mode disables.
+    const { app, api } = mountWithDefaults(
+      { validationMode: 'lax' },
+      { defaultValues: { email: '', password: '' } }
+    )
     apps.push(app)
     expect(api.errors.email).toBeUndefined()
     expect(api.errors.password).toBeUndefined()
@@ -191,8 +196,13 @@ describe('app-level defaults — anonymous + multi-form', () => {
 
   it('anonymous useForm() (no key) picks up app-level defaults', () => {
     // No `key` passed → synthetic `__cx:anon:` key allocated; defaults
-    // should still apply.
-    const { app, api } = mountWithDefaults({ validationMode: 'lax' }, {})
+    // should still apply. Explicit empty defaults opt out of auto-blank
+    // so `derivedBlankErrors` stays empty (this test reads the
+    // schemaErrors-seed channel only).
+    const { app, api } = mountWithDefaults(
+      { validationMode: 'lax' },
+      { defaultValues: { email: '', password: '' } }
+    )
     apps.push(app)
     expect(api.errors.email).toBeUndefined()
     // Sanity: this anonymous form's key starts with the reserved prefix.
@@ -202,7 +212,8 @@ describe('app-level defaults — anonymous + multi-form', () => {
   it('multiple useForm calls in the same app share the same defaults', () => {
     // Two forms in one component, no per-form validationMode override
     // — both should pick up the registry's 'lax' and BOTH should mount
-    // clean (no seeded errors).
+    // clean (no seeded errors). Explicit empty defaults opt out of
+    // auto-blank so this test isolates the schemaErrors-seed channel.
     type FormA = typeof tightSchema
     type FormB = typeof tightSchema
     const handles: {
@@ -211,8 +222,16 @@ describe('app-level defaults — anonymous + multi-form', () => {
     } = {}
     const App = defineComponent({
       setup() {
-        handles.a = useForm({ schema: tightSchema, key: 'shared-defaults-a' })
-        handles.b = useForm({ schema: tightSchema, key: 'shared-defaults-b' })
+        handles.a = useForm({
+          schema: tightSchema,
+          key: 'shared-defaults-a',
+          defaultValues: { email: '', password: '' },
+        })
+        handles.b = useForm({
+          schema: tightSchema,
+          key: 'shared-defaults-b',
+          defaultValues: { email: '', password: '' },
+        })
         return () => h('div')
       },
     })
@@ -252,6 +271,7 @@ describe('app-level defaults — v3 wrapper regression', () => {
         handle.api = useFormV3({
           schema: v3Schema,
           key: 'v3-defaults',
+          defaultValues: { email: '', password: '' },
         } as never) as V3API
         return () => h('div')
       },

@@ -179,12 +179,22 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   }
 
   // --- Error store API — dotted-key record for back-compat ---
-  // The view merges `schemaErrors` (validation-owned) and `userErrors`
-  // (API-injected) into a single dotted-key record per path. Iteration
-  // order is schema-first then user — matching the "structural validation
-  // before business logic" UX expectation. Consumers reading
-  // `fieldErrors.email` see schema issues at index 0 and any user-injected
-  // entries appended after.
+  // The view merges three sources into a single dotted-key record per
+  // path:
+  //   1. `schemaErrors` — refinement-class errors written by the
+  //      validation pipeline (`scheduleFieldValidation`, `handleSubmit`,
+  //      construction-time seed, hydration).
+  //   2. `derivedBlankErrors` — the reactively-derived "No value supplied"
+  //      class. Pure function of `(blankPaths, schema.isRequiredAtPath)`,
+  //      no writers — appears the moment a path becomes blank-and-required,
+  //      vanishes on the same tick when the user provides a value.
+  //   3. `userErrors` — API-injected errors written by `setFieldErrors*`
+  //      / `parseApiErrors`-fed entries.
+  //
+  // Iteration order is schema → derived-blank → user, so consumers
+  // reading `errors.email` see the structural / synthesised errors first
+  // and any user-injected entries appended after. The same ordering is
+  // mirrored in `state.getErrorsForPath` and the per-field accessor.
   //
   // The dotted-key derivation is best-effort: paths with a literal `.`
   // inside a single segment (`['user.name']`) produce the same record key
@@ -202,6 +212,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   const fieldErrorsComputed = computed<FormErrorRecord>(() => {
     const record: FormErrorRecord = {}
     appendStoreToRecord(record, state.schemaErrors)
+    appendStoreToRecord(record, state.derivedBlankErrors.value)
     appendStoreToRecord(record, state.userErrors)
     return record
   })
@@ -253,7 +264,10 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   })
 
   const isValid = computed<boolean>(
-    () => state.schemaErrors.size === 0 && state.userErrors.size === 0
+    () =>
+      state.schemaErrors.size === 0 &&
+      state.userErrors.size === 0 &&
+      state.derivedBlankErrors.value.size === 0
   )
 
   // --- Submission lifecycle ---
@@ -491,7 +505,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
  */
 function appendStoreToRecord(
   record: FormErrorRecord,
-  store: Map<unknown, ValidationError[]>
+  store: ReadonlyMap<unknown, ValidationError[]>
 ): void {
   for (const [, entries] of store) {
     for (const err of entries) {

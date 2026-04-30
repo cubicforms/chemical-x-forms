@@ -84,9 +84,9 @@ export function buildProcessForm<F extends GenericForm>(
         formKey: state.formKey,
       }
       try {
-        const response = await runValidation(data, path)
+        const refinement = await runRefinementValidation(data, path)
         if (captured !== gen) return
-        result.value = settled(response)
+        result.value = settled(composeWithDerivedBlank(refinement, path))
       } catch (err) {
         if (captured !== gen) return
         // Adapters are contractually "return errors, don't throw"; if
@@ -160,42 +160,50 @@ export function buildProcessForm<F extends GenericForm>(
     const dataAtPath = segments === undefined ? state.form.value : state.getValueAtPath(segments)
     state.activeValidations.value += 1
     try {
-      const response = await runValidation(dataAtPath, segments)
-      return stripData(response)
+      const refinement = await runRefinementValidation(dataAtPath, segments)
+      return stripData(composeWithDerivedBlank(refinement, segments))
     } finally {
       state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
     }
   }
 
-  async function runValidation(
+  /**
+   * Refinement-only adapter pass-through. Returns the schema's
+   * refinement-class result without touching the blank-required class
+   * — that lives reactively on `state.derivedBlankErrors`. Callers
+   * compose the consumer-facing response via `composeWithDerivedBlank`
+   * so `setAllSchemaErrors` only ever sees refinement errors and the
+   * blank class never gets double-counted (once in `schemaErrors`, once
+   * in `derivedBlankErrors`).
+   */
+  async function runRefinementValidation(
     data: unknown,
     path: Path | undefined
   ): Promise<ValidationResponse<F>> {
-    // AbstractSchema.validateAtPath takes a canonical structured path
-    // — Segment[] — so literal-dot field keys can't collide with the
-    // sibling-pair form at the adapter boundary.
-    const baseResult = (await state.schema.validateAtPath(data, path)) as ValidationResponse<F>
-    // Required-empty augmentation. The schema can't tell the difference
-    // between "user typed 0" and "user didn't answer" because storage
-    // holds the slim default (`0` for `z.number()`) in both cases. We
-    // close the gap by consulting the form's `blankPaths` set:
-    // every path in there + a required leaf in the schema becomes a
-    // synthesised "No value supplied" error. Empty set or no required leaves →
-    // no-op, return the base result unchanged.
-    const requiredErrors = collectRequiredEmptyErrors(state, path)
-    if (requiredErrors.length === 0) return baseResult
-    if (baseResult.success) {
+    return (await state.schema.validateAtPath(data, path)) as ValidationResponse<F>
+  }
+
+  /**
+   * Fold the reactively-derived blank-required errors into a refinement
+   * response. The derived class always reflects current state, so this
+   * snapshot at call time matches what `form.errors` shows in the same
+   * tick.
+   */
+  function composeWithDerivedBlank(
+    refinement: ValidationResponse<F>,
+    scope: Path | undefined
+  ): ValidationResponse<F> {
+    const blankErrors = collectScopedBlankErrors(state, scope)
+    if (blankErrors.length === 0) return refinement
+    if (refinement.success) {
       return {
         data: undefined,
-        errors: requiredErrors,
+        errors: blankErrors,
         success: false,
         formKey: state.formKey,
       }
     }
-    return {
-      ...baseResult,
-      errors: [...baseResult.errors, ...requiredErrors],
-    }
+    return { ...refinement, errors: [...refinement.errors, ...blankErrors] }
   }
 
   /**
@@ -249,7 +257,8 @@ export function buildProcessForm<F extends GenericForm>(
       state.activeValidations.value += 1
       let validationSettled = false
       try {
-        const result = await runValidation(state.form.value, undefined)
+        const refinement = await runRefinementValidation(state.form.value, undefined)
+        const merged = composeWithDerivedBlank(refinement, undefined)
         state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
         validationSettled = true
         // Generation guard: if `reset()` fired while we were awaiting
@@ -259,14 +268,18 @@ export function buildProcessForm<F extends GenericForm>(
         // empty; still run the user's onError so they get the result
         // (it's their data, not ours, to discard).
         const generationStillValid = state.submissionGeneration.value === genAtEntry
-        if (!result.success) {
-          const errors = result.errors
-          // Schema-only writer: user-injected errors (from
-          // setFieldErrors / addFieldErrors / parseApiErrors-fed
-          // entries) live in a separate store and are NOT clobbered by
-          // the submit-time validation result.
+        if (!merged.success) {
+          // Source-segregated writer: only refinement-class errors land
+          // in `schemaErrors`. The blank-required class is already in
+          // `derivedBlankErrors` (reactively derived from `blankPaths`),
+          // so writing it here would double-count. User-injected errors
+          // live in their own store and are NOT clobbered by validation.
           if (generationStillValid) {
-            state.setAllSchemaErrors(errors)
+            if (refinement.success) {
+              state.clearSchemaErrors()
+            } else {
+              state.setAllSchemaErrors(refinement.errors)
+            }
           }
           // Apply the invalid-submit focus/scroll policy AFTER populating
           // the error store (so getFirstErrorElement walks the fresh
@@ -279,24 +292,25 @@ export function buildProcessForm<F extends GenericForm>(
           }
           if (onError !== undefined) {
             try {
-              await onError(errors)
+              await onError(merged.errors)
             } catch (cause) {
               throw new SubmitErrorHandlerError('User-provided onError threw', { cause })
             }
           }
           return
         }
-        // Schema-only clear: a successful submit means schema validation
-        // passed, so the schema-error store goes empty. User-injected
-        // errors persist — consumers managing their own warning/info
-        // state via setFieldErrors keep ownership of that lifecycle.
-        // Skip the clear when reset already cleared (and bumped gen) —
-        // any errors injected by post-reset user mutations would be
-        // wrongly wiped otherwise.
+        // Schema-only clear: a successful submit means refinement
+        // validation passed AND no required-blank errors exist, so the
+        // schema-error store goes empty. User-injected errors persist —
+        // consumers managing their own warning/info state via
+        // setFieldErrors keep ownership of that lifecycle. Skip the
+        // clear when reset already cleared (and bumped gen) — any
+        // errors injected by post-reset user mutations would be wrongly
+        // wiped otherwise.
         if (generationStillValid) {
           state.clearSchemaErrors()
         }
-        await onSubmit(result.data)
+        await onSubmit(merged.data)
         // Notify subscribers (persistence's clear-on-success handler,
         // future hooks). Fires only when the user callback resolved —
         // validation-failure and callback-throw skip it.
@@ -365,54 +379,40 @@ function adapterThrowMessage(err: unknown): string {
 }
 
 /**
- * Synthesise a "No value supplied" `ValidationError` for every path in the
- * form's `blankPaths` whose schema requires the leaf — i.e.
- * the schema is NOT `.optional()` / `.nullable()` / `.default(N)` /
- * `.catch(N)` at that leaf. When a `scope` is provided (per-path
- * `validate(path)` / `validateAsync(path)`), only paths inside the
- * scope contribute; full-form validation passes `undefined` and
- * checks every entry.
- *
- * Returns an empty array when nothing applies, so callers can
- * fast-path without inspecting the result.
+ * Read the reactively-derived blank-required errors out of the store,
+ * filtered to paths inside `scope` (or all paths when `scope` is
+ * `undefined`). The errors themselves are computed on the FormStore via
+ * `derivedBlankErrors` — this helper just snapshots a scoped slice for
+ * the validation/submit response. Mutating the returned array is safe;
+ * the store's computed builds a fresh map per recompute.
  */
-function collectRequiredEmptyErrors<F extends GenericForm>(
+function collectScopedBlankErrors<F extends GenericForm>(
   state: FormStore<F>,
   scope: Path | undefined
 ): ValidationError[] {
-  if (state.blankPaths.size === 0) return []
+  const derived = state.derivedBlankErrors.value
+  if (derived.size === 0) return []
   const errors: ValidationError[] = []
-  for (const pathKey of state.blankPaths) {
-    // PathKey is `JSON.stringify(segments)` per `canonicalizePath`, so
-    // recovering the structured segments is `JSON.parse(...)`. Don't
-    // round-trip through `canonicalizePath(pathKey)` — that would treat
-    // the JSON-encoded string as a NEW dotted path and produce a single
-    // segment containing the literal JSON.
-    const segments = JSON.parse(pathKey) as Segment[]
-    if (scope !== undefined && !pathStartsWith(segments, scope)) continue
-    if (!state.schema.isRequiredAtPath(segments)) continue
-    errors.push({
-      // The path is in `blankPaths` — the user hasn't
-      // committed a value yet (or explicitly cleared via `unset` /
-      // a numeric DOM clear). The schema requires a value here.
-      // Message wording differentiates from a generic schema failure
-      // ("Expected number, received string") so consumers showing
-      // raw errors don't surface a vague "No value supplied" — devs see at
-      // a glance that the user just hasn't supplied this field.
-      message: 'No value supplied',
-      path: [...segments],
-      formKey: state.formKey,
-      code: CxErrorCode.NoValueSupplied,
-    })
+  for (const [pathKey, entries] of derived) {
+    if (scope !== undefined) {
+      // PathKey is `JSON.stringify(segments)` per `canonicalizePath`, so
+      // recovering the structured segments is `JSON.parse(...)`. Don't
+      // round-trip through `canonicalizePath(pathKey)` — that would treat
+      // the JSON-encoded string as a NEW dotted path and produce a single
+      // segment containing the literal JSON.
+      const segments = JSON.parse(pathKey) as Segment[]
+      if (!pathStartsWith(segments, scope)) continue
+    }
+    errors.push(...entries)
   }
   return errors
 }
 
 /**
- * `true` if `target`'s segments start with `prefix`. Used by
- * `collectRequiredEmptyErrors` to honour the per-path scope of
- * `validate(path)` — only blank paths inside the validated
- * subtree raise required errors. An empty prefix matches every path.
+ * `true` if `target`'s segments start with `prefix`. Used to honour the
+ * per-path scope of `validate(path)` / `validateAsync(path)` — only
+ * blank paths inside the validated subtree contribute. An empty prefix
+ * matches every path.
  */
 function pathStartsWith(target: Path, prefix: Path): boolean {
   if (prefix.length > target.length) return false

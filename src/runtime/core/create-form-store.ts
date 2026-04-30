@@ -1,4 +1,4 @@
-import { reactive, ref, type Ref } from 'vue'
+import { computed, reactive, ref, type ComputedRef, type Ref } from 'vue'
 import type {
   AbstractSchema,
   FieldValidationConfig,
@@ -12,6 +12,7 @@ import type {
 import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
 import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS } from './defaults'
 import { diffAndApply } from './diff-apply'
+import { CxErrorCode } from './error-codes'
 import { canonicalizePath, type Path, type PathKey, type Segment } from './paths'
 import { getAtPath, mergeStructural, setAtPath, setAtPathWithSchemaFill } from './path-walker'
 import { isSlimPrimitiveValid } from './slim-primitive-gate'
@@ -77,6 +78,19 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    * successful submits — the consumer owns its lifetime explicitly.
    */
   readonly userErrors: Map<PathKey, ValidationError[]>
+  /**
+   * Reactively-derived "No value supplied" errors. Pure function of
+   * `(blankPaths, schema.isRequiredAtPath)` — no writers, no clears.
+   * Membership tracks `blankPaths` automatically: typing into a blank
+   * required field removes the path from `blankPaths` and the derived
+   * error vanishes; clearing a numeric field re-adds it and the error
+   * reappears. The `errors` proxy and `getErrorsForPath` merge this map
+   * in alongside `schemaErrors` and `userErrors`, so consumers see the
+   * "this required field is empty" error the moment it's true — no
+   * `validate()` / `handleSubmit` call required. Honors the founding
+   * principle that `errors = f(schema, state)`.
+   */
+  readonly derivedBlankErrors: ComputedRef<ReadonlyMap<PathKey, ValidationError[]>>
   readonly originals: Map<PathKey, OriginalsRecord>
   /**
    * Reactive set of paths whose displayed state should be EMPTY even
@@ -479,6 +493,29 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     blankPaths.add(raw as PathKey)
     originalBlankPaths.add(raw as PathKey)
   }
+
+  // Reactively-derived blank-required errors. Recomputes whenever
+  // `blankPaths` mutates (Vue 3.5 reactive Set handlers track size + has).
+  // The schema's `isRequiredAtPath` is referentially stable for a given
+  // form (schema is fixed at construction), so it doesn't need to be a
+  // dep — only the membership of `blankPaths` drives invalidation.
+  const derivedBlankErrors = computed<ReadonlyMap<PathKey, ValidationError[]>>(() => {
+    const result = new Map<PathKey, ValidationError[]>()
+    if (blankPaths.size === 0) return result
+    for (const pathKey of blankPaths) {
+      const segments = JSON.parse(pathKey) as Segment[]
+      if (!schema.isRequiredAtPath(segments)) continue
+      result.set(pathKey, [
+        {
+          message: 'No value supplied',
+          path: [...segments],
+          formKey,
+          code: CxErrorCode.NoValueSupplied,
+        },
+      ])
+    }
+    return result
+  })
 
   // Submission lifecycle refs. Initial values encode "no submission has
   // happened yet": not in flight, zero attempts, no captured error.
@@ -891,11 +928,17 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
 
   function getErrorsForPath(path: Path): ValidationError[] {
     const { key } = canonicalizePath(path)
-    const schema = schemaErrors.get(key)
-    const user = userErrors.get(key)
-    if (schema === undefined) return user === undefined ? [] : [...user]
-    if (user === undefined) return [...schema]
-    return [...schema, ...user]
+    const schemaForKey = schemaErrors.get(key)
+    const userForKey = userErrors.get(key)
+    const blankForKey = derivedBlankErrors.value.get(key)
+    if (schemaForKey === undefined && userForKey === undefined && blankForKey === undefined) {
+      return []
+    }
+    const result: ValidationError[] = []
+    if (schemaForKey !== undefined) result.push(...schemaForKey)
+    if (blankForKey !== undefined) result.push(...blankForKey)
+    if (userForKey !== undefined) result.push(...userForKey)
+    return result
   }
 
   // --- DOM ---
@@ -1230,6 +1273,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     elements,
     schemaErrors,
     userErrors,
+    derivedBlankErrors,
     originals,
     schema,
     isSSR,

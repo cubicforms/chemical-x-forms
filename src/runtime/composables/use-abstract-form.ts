@@ -657,7 +657,6 @@ function wirePersistence<F extends GenericForm>(
       // keep their schema defaults.
       const merged = mergeSparseHydration(toRaw(state.form.value) as F, payload.data.form)
       state.applyFormReplacement(merged)
-      // Restore the blank UI state from the persisted
       // payload. Persistence is per-element opt-in, so the persisted
       // payload only covers paths within the opt-in scope (the leaf
       // paths populated in `payload.data.form`). Construction-time

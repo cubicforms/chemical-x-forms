@@ -9,7 +9,7 @@ import { createChemicalXForms } from '../../src/runtime/core/plugin'
  * `form.fieldState` — Pinia-style nested reactive proxy. Each path
  * exposes the FieldStateLeaf at that path AND descent into named
  * children. FieldStateLeaf keys (`dirty`, `touched`, `errors`,
- * `pendingEmpty`, `currentValue`, `focused`, `blurred`, `pristine`,
+ * `blank`, `currentValue`, `focused`, `blurred`, `pristine`,
  * `value`, `original`, `isConnected`, `updatedAt`, `path`) shadow
  * schema fields with conflicting names at depth 2+.
  */

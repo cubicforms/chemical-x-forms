@@ -86,7 +86,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
     expect(free.checked).toBe(false)
     expect(pro.checked).toBe(true)
     expect(ent.checked).toBe(false)
-    expect(captured.api.getValue('tier').value).toBe('pro')
+    expect(captured.api.values.tier).toBe('pro')
 
     // User selects `enterprise` — fire the change handler. (Setting
     // .checked = true on a radio doesn't auto-uncheck siblings in
@@ -96,7 +96,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
     ent.checked = true
     dispatchChange(ent)
     await flush()
-    expect(captured.api.getValue('tier').value).toBe('enterprise')
+    expect(captured.api.values.tier).toBe('enterprise')
 
     // User selects `free`.
     free.checked = true
@@ -104,7 +104,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
     ent.checked = false
     dispatchChange(free)
     await flush()
-    expect(captured.api.getValue('tier').value).toBe('free')
+    expect(captured.api.values.tier).toBe('free')
   })
 
   it('mounts with el.checked synced to the model', async () => {
@@ -166,7 +166,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
           validationMode: 'lax',
         })
         captured.api = form
-        const tierRef = form.getValue('tier')
+        const tierRef = form.toRef('tier')
         return () =>
           h('div', [
             // Read tierRef so the parent re-renders on form-state
@@ -275,7 +275,7 @@ describe('<input type="radio" v-register> — hydration with static value attrib
         // state and the directive's beforeUpdate never fires.
         // (The compile-time input-text-area transform's synthesized
         // `:checked` binding makes this implicit in real templates.)
-        const tierRef = form.getValue('tier')
+        const tierRef = form.toRef('tier')
         return () =>
           h('div', [
             h('span', { class: 'tier-label' }, String(tierRef.value)),
@@ -353,7 +353,7 @@ describe('<input type="radio" v-register> — slim-gate interactions', () => {
     // by the slim-primitive gate (kind mismatch).
     const setVal = captured.api.setValue as (path: 'tier', value: unknown) => boolean
     expect(setVal('tier', 1)).toBe(false)
-    expect(captured.api.getValue('tier').value).toBe('free')
+    expect(captured.api.values.tier).toBe('free')
   })
 
   it('accepts an out-of-enum string (refinement check, not a write-time gate)', async () => {
@@ -384,6 +384,6 @@ describe('<input type="radio" v-register> — slim-gate interactions', () => {
     // field-level validation, not the slim-gate.
     const setVal = captured.api.setValue as (path: 'tier', value: unknown) => boolean
     expect(setVal('tier', 'unknown-tier')).toBe(true)
-    expect(captured.api.getValue('tier').value).toBe('unknown-tier')
+    expect(captured.api.values.tier).toBe('unknown-tier')
   })
 })

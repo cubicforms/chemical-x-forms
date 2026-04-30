@@ -904,7 +904,11 @@ const warnedAnonPersistKeys: Set<string> = new Set<string>()
  */
 function enforceAnonPersistRule(formKey: string, isSSR: boolean): boolean {
   if (!formKey.startsWith(ANONYMOUS_FORM_KEY_PREFIX)) return false
-  if (__DEV__) throw new AnonPersistError()
+  if (__DEV__)
+    throw new AnonPersistError({
+      cause: 'no-key',
+      callSite: captureUserCallSite(),
+    })
   // Production: warn + tell the caller to skip wiring. Client-only
   // warn (skip server logs to avoid spamming SSR per-request output).
   // Persist is still skipped on the SSR pass — same disabling

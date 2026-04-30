@@ -70,17 +70,17 @@ describe('<input type="checkbox" v-register> — single boolean', () => {
     if (captured.api === undefined) throw new Error('unreachable')
     const cb = root.querySelector('input.agreed') as HTMLInputElement
     expect(cb.checked).toBe(false)
-    expect(captured.api.getValue('agreed').value).toBe(false)
+    expect(captured.api.values.agreed).toBe(false)
 
     cb.checked = true
     dispatchChange(cb)
     await flush()
-    expect(captured.api.getValue('agreed').value).toBe(true)
+    expect(captured.api.values.agreed).toBe(true)
 
     cb.checked = false
     dispatchChange(cb)
     await flush()
-    expect(captured.api.getValue('agreed').value).toBe(false)
+    expect(captured.api.values.agreed).toBe(false)
   })
 
   it('mounts with el.checked synced to the form value', async () => {
@@ -153,7 +153,7 @@ describe('<input type="checkbox" v-register> — array group', () => {
     await flush()
 
     if (captured.api === undefined) throw new Error('unreachable')
-    expect(captured.api.getValue('fruits').value).toEqual([])
+    expect(captured.api.values.fruits).toEqual([])
 
     const apple = root.querySelector('input.apple') as HTMLInputElement
     const banana = root.querySelector('input.banana') as HTMLInputElement
@@ -162,22 +162,22 @@ describe('<input type="checkbox" v-register> — array group', () => {
     apple.checked = true
     dispatchChange(apple)
     await flush()
-    expect(captured.api.getValue('fruits').value).toEqual(['apple'])
+    expect(captured.api.values.fruits).toEqual(['apple'])
 
     banana.checked = true
     dispatchChange(banana)
     await flush()
-    expect(captured.api.getValue('fruits').value).toEqual(['apple', 'banana'])
+    expect(captured.api.values.fruits).toEqual(['apple', 'banana'])
 
     apple.checked = false
     dispatchChange(apple)
     await flush()
-    expect(captured.api.getValue('fruits').value).toEqual(['banana'])
+    expect(captured.api.values.fruits).toEqual(['banana'])
 
     cherry.checked = true
     dispatchChange(cherry)
     await flush()
-    expect(captured.api.getValue('fruits').value).toEqual(['banana', 'cherry'])
+    expect(captured.api.values.fruits).toEqual(['banana', 'cherry'])
   })
 
   it('mounts with each checkbox checked iff its value is in the array', async () => {
@@ -261,7 +261,7 @@ describe('<input type="checkbox" v-register> — array group', () => {
     dispatchChange(apple)
     await flush()
 
-    expect(captured.api.getValue('fruits').value).toEqual(['apple'])
+    expect(captured.api.values.fruits).toEqual(['apple'])
   })
 
   it('warns once when an array-bound checkbox is missing a value attribute', async () => {
@@ -295,7 +295,7 @@ describe('<input type="checkbox" v-register> — array group', () => {
 
       if (captured.api === undefined) throw new Error('unreachable')
       // No state change — directive bailed at the missing-value check.
-      expect(captured.api.getValue('fruits').value).toEqual([])
+      expect(captured.api.values.fruits).toEqual([])
 
       const matched = warnSpy.mock.calls
         .map((args) => args.join(' '))
@@ -348,7 +348,7 @@ describe('<input type="checkbox" v-register> — Set group', () => {
     await flush()
 
     if (captured.api === undefined) throw new Error('unreachable')
-    expect((captured.api.getValue('tags').value as Set<string>).size).toBe(0)
+    expect((captured.api.values.tags as Set<string>).size).toBe(0)
 
     const red = root.querySelector('input.red') as HTMLInputElement
     const green = root.querySelector('input.green') as HTMLInputElement
@@ -356,20 +356,17 @@ describe('<input type="checkbox" v-register> — Set group', () => {
     red.checked = true
     dispatchChange(red)
     await flush()
-    expect([...(captured.api.getValue('tags').value as Set<string>)]).toEqual(['red'])
+    expect([...(captured.api.values.tags as Set<string>)]).toEqual(['red'])
 
     green.checked = true
     dispatchChange(green)
     await flush()
-    expect([...(captured.api.getValue('tags').value as Set<string>)].sort()).toEqual([
-      'green',
-      'red',
-    ])
+    expect([...(captured.api.values.tags as Set<string>)].sort()).toEqual(['green', 'red'])
 
     red.checked = false
     dispatchChange(red)
     await flush()
-    expect([...(captured.api.getValue('tags').value as Set<string>)]).toEqual(['green'])
+    expect([...(captured.api.values.tags as Set<string>)]).toEqual(['green'])
   })
 })
 
@@ -422,17 +419,17 @@ describe('<input type="checkbox" v-register> — :true-value / :false-value', ()
     if (captured.api === undefined) throw new Error('unreachable')
     const cb = root.querySelector('input.newsletter') as HTMLInputElement
     expect(cb.checked).toBe(false)
-    expect(captured.api.getValue('newsletter').value).toBe('unsubscribe')
+    expect(captured.api.values.newsletter).toBe('unsubscribe')
 
     cb.checked = true
     dispatchChange(cb)
     await flush()
-    expect(captured.api.getValue('newsletter').value).toBe('subscribe')
+    expect(captured.api.values.newsletter).toBe('subscribe')
 
     cb.checked = false
     dispatchChange(cb)
     await flush()
-    expect(captured.api.getValue('newsletter').value).toBe('unsubscribe')
+    expect(captured.api.values.newsletter).toBe('unsubscribe')
   })
 })
 
@@ -470,7 +467,7 @@ describe('checkbox slim-primitive gate interactions', () => {
     if (captured.api === undefined) throw new Error('unreachable')
     const setVal = captured.api.setValue as (path: 'agreed', value: unknown) => boolean
     expect(setVal('agreed', 'yes')).toBe(false)
-    expect(captured.api.getValue('agreed').value).toBe(false)
+    expect(captured.api.values.agreed).toBe(false)
   })
 
   it('rejects a string write to an array checkbox path', async () => {
@@ -494,6 +491,6 @@ describe('checkbox slim-primitive gate interactions', () => {
     const setVal = captured.api.setValue as (path: 'fruits', value: unknown) => boolean
     // Wrong slim primitive: 'apple' is a string, but the path expects 'array'.
     expect(setVal('fruits', 'apple')).toBe(false)
-    expect(captured.api.getValue('fruits').value).toEqual([])
+    expect(captured.api.values.fruits).toEqual([])
   })
 })

@@ -399,13 +399,11 @@ describe('persistence — non-opted-in blank paths survive hydration', () => {
     // Wait for the persistence hydrate to land (it's async — dynamic
     // import + adapter.getItem + apply).
     if (captured.api === undefined) throw new Error('unreachable')
-    await waitUntil(() =>
-      captured.api?.getValue('email').value === 'seed@example.com' ? true : null
-    )
+    await waitUntil(() => (captured.api?.values.email === 'seed@example.com' ? true : null))
 
     // Sanity: email did hydrate (otherwise the test below isn't
     // exercising the post-hydrate state at all).
-    expect(captured.api.getValue('email').value).toBe('seed@example.com')
+    expect(captured.api.values.email).toBe('seed@example.com')
 
     // Critical assertion: the salary path is STILL in the
     // blank set after hydration. Pre-fix the persistence
@@ -425,7 +423,7 @@ describe('persistence — non-opted-in blank paths survive hydration', () => {
     // so the DOM-side check would only pass if we compiled the
     // template — overkill for this regression.)
     expect(captured.api.register('salary').displayValue.value).toBe('')
-    expect(captured.api.getValue('salary').value).toBe(0)
+    expect(captured.api.values.salary).toBe(0)
   })
 })
 
@@ -514,11 +512,11 @@ describe('persistence — anonymous useForm() rejects persist (dev throw)', () =
         .flat()
         .some(
           (arg) =>
-            (arg instanceof Error && /persist:.*requires an explicit key/.test(arg.message)) ||
-            (typeof arg === 'string' && /persist:.*requires an explicit key/.test(arg))
+            (arg instanceof Error && /persist.*requires.*\bkey\b/.test(arg.message)) ||
+            (typeof arg === 'string' && /persist.*requires.*\bkey\b/.test(arg))
         )
       const seenViaCatch =
-        caught instanceof Error && /persist:.*requires an explicit key/.test(caught.message)
+        caught instanceof Error && /persist.*requires.*\bkey\b/.test(caught.message)
       expect(seenViaErrSpy || seenViaCatch).toBe(true)
     } finally {
       errSpy.mockRestore()

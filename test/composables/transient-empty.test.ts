@@ -46,21 +46,21 @@ describe('defaultValues with `unset`', () => {
     const { app, form } = setupForm(z.object({ count: z.number() }), { count: unset })
     apps.push(app)
     expect(form.values.count).toBe(0)
-    expect(form.transientEmptyPaths.value.has(canonicalizePath('count').key)).toBe(true)
+    expect(form.blankPaths.value.has(canonicalizePath('count').key)).toBe(true)
   })
 
   it('string leaf: storage is "", set is populated', () => {
     const { app, form } = setupForm(z.object({ name: z.string() }), { name: unset })
     apps.push(app)
     expect(form.values.name).toBe('')
-    expect(form.transientEmptyPaths.value.has(canonicalizePath('name').key)).toBe(true)
+    expect(form.blankPaths.value.has(canonicalizePath('name').key)).toBe(true)
   })
 
   it('boolean leaf: storage is false, set is populated', () => {
     const { app, form } = setupForm(z.object({ agreed: z.boolean() }), { agreed: unset })
     apps.push(app)
     expect(form.values.agreed).toBe(false)
-    expect(form.transientEmptyPaths.value.has(canonicalizePath('agreed').key)).toBe(true)
+    expect(form.blankPaths.value.has(canonicalizePath('agreed').key)).toBe(true)
   })
 
   it('multiple leaves can be marked', () => {
@@ -88,8 +88,8 @@ describe('defaultValues with `unset`', () => {
       name: 'alice',
     })
     apps.push(app)
-    expect(form.transientEmptyPaths.value.has(canonicalizePath('income').key)).toBe(true)
-    expect(form.transientEmptyPaths.value.has(canonicalizePath('name').key)).toBe(false)
+    expect(form.blankPaths.value.has(canonicalizePath('income').key)).toBe(true)
+    expect(form.blankPaths.value.has(canonicalizePath('name').key)).toBe(false)
     expect(form.values.name).toBe('alice')
   })
 })
@@ -108,7 +108,7 @@ describe('setValue(path, unset)', () => {
 
     form.setValue('count', unset)
     expect(form.values.count).toBe(0)
-    expect(form.transientEmptyPaths.value.has(canonicalizePath('count').key)).toBe(true)
+    expect(form.blankPaths.value.has(canonicalizePath('count').key)).toBe(true)
   })
 
   it('subsequent regular write removes the path', () => {
@@ -118,7 +118,7 @@ describe('setValue(path, unset)', () => {
     expect(form.blankPaths.value.size).toBe(1)
 
     form.setValue('count', 42)
-    expect(form.transientEmptyPaths.value.size).toBe(0)
+    expect(form.blankPaths.value.size).toBe(0)
     expect(form.values.count).toBe(42)
   })
 
@@ -128,7 +128,7 @@ describe('setValue(path, unset)', () => {
     form.setValue('count', 5)
     form.setValue('count', () => unset)
     expect(form.values.count).toBe(0)
-    expect(form.transientEmptyPaths.value.size).toBe(1)
+    expect(form.blankPaths.value.size).toBe(1)
   })
 })
 
@@ -146,7 +146,7 @@ describe('reset(args) with unset', () => {
 
     form.reset({ count: unset })
     expect(form.values.count).toBe(0)
-    expect(form.transientEmptyPaths.value.has(canonicalizePath('count').key)).toBe(true)
+    expect(form.blankPaths.value.has(canonicalizePath('count').key)).toBe(true)
     // Dirty resets to false: the new baseline is "transient-empty for this path".
     expect(form.state.isDirty).toBe(false)
   })
@@ -162,7 +162,7 @@ describe('getFieldState meta.blank + flat blank', () => {
     const { app, form } = setupForm(z.object({ count: z.number() }), { count: unset })
     apps.push(app)
     const fs = form.fieldState.count
-    expect((fs as unknown as { pendingEmpty: boolean }).pendingEmpty).toBe(true)
+    expect((fs as unknown as { blank: boolean }).blank).toBe(true)
   })
 
   it('flips back to false after a real write', () => {
@@ -170,7 +170,7 @@ describe('getFieldState meta.blank + flat blank', () => {
     apps.push(app)
     form.setValue('count', 5)
     const fs = form.fieldState.count
-    expect((fs as unknown as { pendingEmpty: boolean }).pendingEmpty).toBe(false)
+    expect((fs as unknown as { blank: boolean }).blank).toBe(false)
   })
 })
 
@@ -266,8 +266,8 @@ describe('auto-mark: unspecified primitive leaves are blank on construction', ()
       name: 'alice',
     })
     apps.push(app)
-    expect(form.transientEmptyPaths.value.has(canonicalizePath('name').key)).toBe(false)
-    expect(form.transientEmptyPaths.value.has(canonicalizePath('age').key)).toBe(true)
+    expect(form.blankPaths.value.has(canonicalizePath('name').key)).toBe(false)
+    expect(form.blankPaths.value.has(canonicalizePath('age').key)).toBe(true)
     expect(form.values.name).toBe('alice')
     expect(form.values.age).toBe(0)
   })
@@ -316,14 +316,14 @@ describe('auto-mark: unspecified primitive leaves are blank on construction', ()
   it('nullable leaf: marks the path even though slim default is null', () => {
     const { app, form } = setupForm(z.object({ note: z.string().nullable() }))
     apps.push(app)
-    expect(form.transientEmptyPaths.value.has(canonicalizePath('note').key)).toBe(true)
+    expect(form.blankPaths.value.has(canonicalizePath('note').key)).toBe(true)
     expect(form.values.note).toBeNull()
   })
 
   it('.default(N): marks the path; storage holds N (the default-author intent)', () => {
     const { app, form } = setupForm(z.object({ count: z.number().default(7) }))
     apps.push(app)
-    expect(form.transientEmptyPaths.value.has(canonicalizePath('count').key)).toBe(true)
+    expect(form.blankPaths.value.has(canonicalizePath('count').key)).toBe(true)
     expect(form.values.count).toBe(7)
   })
 
@@ -381,8 +381,8 @@ describe('auto-mark: unspecified primitive leaves are blank on construction', ()
     expect(form.blankPaths.value.size).toBe(0)
     // Reset with a partial — `age` is omitted, so it gets auto-marked.
     form.reset({ name: 'bob' })
-    expect(form.transientEmptyPaths.value.has(canonicalizePath('name').key)).toBe(false)
-    expect(form.transientEmptyPaths.value.has(canonicalizePath('age').key)).toBe(true)
+    expect(form.blankPaths.value.has(canonicalizePath('name').key)).toBe(false)
+    expect(form.blankPaths.value.has(canonicalizePath('age').key)).toBe(true)
     expect(form.values.name).toBe('bob')
     expect(form.values.age).toBe(0)
   })

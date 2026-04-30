@@ -1299,7 +1299,7 @@ export type FieldStateLeaf<Value = unknown> = {
   readonly updatedAt: string | null
   readonly errors: readonly ValidationError[]
   readonly path: ReadonlyArray<string | number>
-  readonly pendingEmpty: boolean
+  readonly blank: boolean
 }
 
 /**

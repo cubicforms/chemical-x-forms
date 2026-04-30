@@ -76,16 +76,16 @@ describe('slim-primitive write gate — property: known leaf paths (v3)', () => 
       const { api, app } = makeMounter(useForm, sm.schema)()
       apps.push(app)
 
-      const beforeForm = api.getValue().value
+      const beforeForm = api.values
       const ok = (api.setValue as SetValueFn)(leaf.path.join('.'), value)
       await flush()
 
       expect(ok).toBe(expected)
 
       if (expected) {
-        expect(getAtPath(api.getValue().value, leaf.path)).toEqual(value)
+        expect(getAtPath(api.values, leaf.path)).toEqual(value)
       } else {
-        expect(api.getValue().value).toBe(beforeForm)
+        expect(api.values).toBe(beforeForm)
       }
     }
   )
@@ -126,12 +126,12 @@ describe('slim-primitive write gate — property: unknown paths (v3)', () => {
       const { api, app } = makeMounter(useForm, sm.schema)()
       apps.push(app)
 
-      const beforeForm = api.getValue().value
+      const beforeForm = api.values
       const ok = (api.setValue as SetValueFn)(unknownPath, value)
       await flush()
 
       expect(ok).toBe(false)
-      expect(api.getValue().value).toBe(beforeForm)
+      expect(api.values).toBe(beforeForm)
     }
   )
 })

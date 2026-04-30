@@ -352,23 +352,23 @@ describe('slim-primitive write gate — unknown schema paths', () => {
     })
     const { api, app } = makeMounter(schema)()
     apps.push(app)
-    const before = JSON.parse(JSON.stringify(api.getValue().value))
+    const before = JSON.parse(JSON.stringify(api.values))
     const ok = (api.setValue as (path: string, value: unknown) => boolean)('address.salary', 'abc')
     await flush()
     expect(ok).toBe(false)
     // Form value unchanged — no `address.salary` slot created.
-    expect(api.getValue().value).toEqual(before)
+    expect(api.values).toEqual(before)
   })
 
   it('rejects writes to an unknown root-level path', async () => {
     const schema = z.object({ name: z.string() })
     const { api, app } = makeMounter(schema)()
     apps.push(app)
-    const before = JSON.parse(JSON.stringify(api.getValue().value))
+    const before = JSON.parse(JSON.stringify(api.values))
     const ok = (api.setValue as (path: string, value: unknown) => boolean)('phantom', 'x')
     await flush()
     expect(ok).toBe(false)
-    expect(api.getValue().value).toEqual(before)
+    expect(api.values).toEqual(before)
   })
 
   it('rejects writes that would create a deeply-nested unknown path', async () => {
@@ -379,14 +379,14 @@ describe('slim-primitive write gate — unknown schema paths', () => {
     })
     const { api, app } = makeMounter(schema)()
     apps.push(app)
-    const before = JSON.parse(JSON.stringify(api.getValue().value))
+    const before = JSON.parse(JSON.stringify(api.values))
     const ok = (api.setValue as (path: string, value: unknown) => boolean)(
       'profile.details.unknown',
       'x'
     )
     await flush()
     expect(ok).toBe(false)
-    expect(api.getValue().value).toEqual(before)
+    expect(api.values).toEqual(before)
   })
 
   it('rejection emits a dev-warn naming the unknown path', async () => {

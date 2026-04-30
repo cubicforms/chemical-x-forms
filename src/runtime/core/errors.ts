@@ -94,17 +94,9 @@ export class ReservedFormKeyError extends Error {
  * `console.warn` so a deployed third-party app shipping the
  * anti-pattern doesn't hard-crash.
  */
-export class AnonPersistError extends Error {
-  override readonly name = 'AnonPersistError'
-  constructor() {
-    super(
-      '[@chemical-x/forms] persist: requires an explicit key on useForm().\n' +
-        '  Why: anonymous keys drift on remount AND can collide between forms — your data could leak across unrelated forms.\n' +
-        "  Fix: useForm({ schema, key: 'login', persist: '...' })\n" +
-        '  In prod: no throw — persistence is silently disabled and a one-time warn is logged.'
-    )
-  }
-}
+// (AnonPersistError class declaration is below; this docblock is the
+// historical preamble — kept here so blame/PR review can trace the
+// original intent. The richer class supersedes the earlier basic version.)
 
 /**
  * Thrown when `register(path, { persist: true })` or `form.persist(path)`

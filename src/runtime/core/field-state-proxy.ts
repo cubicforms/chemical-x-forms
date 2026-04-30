@@ -33,7 +33,7 @@ const FIELD_STATE_KEYS: ReadonlySet<string> = new Set<keyof FieldStateView>([
   'updatedAt',
   'errors',
   'path',
-  'pendingEmpty',
+  'blank',
 ])
 
 /**

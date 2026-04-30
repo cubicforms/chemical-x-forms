@@ -97,7 +97,7 @@ describe('slim-primitive write gate — property: known leaf paths (v4)', () => 
       // touch the ref. Identity equality is therefore a tight
       // "no mutation happened" check that sidesteps cloning Vue's
       // reactive proxy (structuredClone refuses it).
-      const beforeForm = api.getValue().value
+      const beforeForm = api.values
 
       const ok = (api.setValue as SetValueFn)(leaf.path.join('.'), value)
       await flush()
@@ -107,11 +107,11 @@ describe('slim-primitive write gate — property: known leaf paths (v4)', () => 
       if (expected) {
         // Leaf at the written path must equal the written value.
         // `toEqual` handles Date/BigInt/null/undefined/primitives uniformly.
-        expect(getAtPath(api.getValue().value, leaf.path)).toEqual(value)
+        expect(getAtPath(api.values, leaf.path)).toEqual(value)
       } else {
         // Rejected: form ref must hold the same identity. A "rejected
         // but partially applied" bug would replace the ref and fail this.
-        expect(api.getValue().value).toBe(beforeForm)
+        expect(api.values).toBe(beforeForm)
       }
     }
   )
@@ -159,12 +159,12 @@ describe('slim-primitive write gate — property: unknown paths (v4)', () => {
       const { api, app } = makeMounter(useForm, sm.schema)()
       apps.push(app)
 
-      const beforeForm = api.getValue().value
+      const beforeForm = api.values
       const ok = (api.setValue as SetValueFn)(unknownPath, value)
       await flush()
 
       expect(ok).toBe(false)
-      expect(api.getValue().value).toBe(beforeForm)
+      expect(api.values).toBe(beforeForm)
     }
   )
 })

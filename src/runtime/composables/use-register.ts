@@ -1,39 +1,44 @@
 /**
- * `useRegister()` — for component authors wrapping a single form
- * field. Read the parent's `v-register` binding inside the component
- * and re-bind it onto an inner native element so the wrapper still
- * participates in the form lifecycle.
- *
- * Usage in the parent:
+ * Re-bind a parent's `v-register` onto an inner native element. Use
+ * inside a component that wraps a single form field whose root is
+ * NOT the input itself (e.g. a labelled-row that renders `<label>`
+ * around the input).
  *
  * ```vue
+ * <!-- Parent -->
  * <MyInput v-register="form.register('email')" />
- * ```
  *
- * Inside the wrapper component:
- *
- * ```vue
+ * <!-- MyInput.vue -->
  * <script setup lang="ts">
- * import { useRegister } from '@chemical-x/forms'
- * const register = useRegister()
+ *   import { useRegister } from '@chemical-x/forms'
+ *   const register = useRegister()
  * </script>
  *
  * <template>
- *   <div class="wrapper">
+ *   <label class="field">
+ *     <span>Email</span>
  *     <input v-register="register" />
- *   </div>
+ *   </label>
  * </template>
  * ```
  *
- * Returns a `ComputedRef<RegisterValue | undefined>`. The value is
- * `undefined` when the component is rendered without a parent
- * `v-register` (a dev-mode warning surfaces). Always pass the result
- * to `v-register` directly; the directive handles the undefined case
- * gracefully.
+ * Returns a `ComputedRef<RegisterValue | undefined>`. The directive
+ * handles `undefined` gracefully (silent no-op assigner, no listener
+ * attachment), so always pass the result to `v-register` directly.
  *
- * For wrappers that need to bind multiple fields (compound forms),
- * use `useFormContext<Form>(key?)` instead and call `ctx.register(...)`
- * directly.
+ * Diagnostic: in dev mode, a single `console.warn` fires per instance
+ * at `onMounted` if the captured value is still `undefined` — by then
+ * the parent has had its full mount lifecycle to bind, so a missing
+ * binding is conclusive misuse. The warn does NOT fire on every read
+ * of the computed, and is intentionally silent under SSR
+ * (`renderToString` skips `onMounted`); the CSR hydration pass
+ * surfaces the same diagnostic without double-counting through Nuxt's
+ * `dev:ssr-logs` channel.
+ *
+ * When the wrapper's root IS the input itself, Vue's attribute
+ * fallthrough handles the binding and `useRegister` is unnecessary.
+ * For wrappers that bind multiple fields (compound forms), use
+ * `useFormContext<Form>(key?)` and call `ctx.register(...)` directly.
  */
 import {
   computed,

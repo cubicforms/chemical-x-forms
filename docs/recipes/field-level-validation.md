@@ -6,7 +6,7 @@ debounceMs: 125 }` is implicit. Errors at any path reflect the live
 without reaching for a separate "is this field valid?" query.
 
 The data layer (errors as a function of value) and the rendering layer
-(when to **show** errors) are separate concerns: the merged `fieldErrors`
+(when to **show** errors) are separate concerns: the merged `errors`
 store is always current; gating display on `state.touched` /
 `state.submitCount` / etc. is your call.
 
@@ -19,7 +19,7 @@ useForm({ schema, key: 'signup' })
 ```
 
 Type into an `<input v-register="register('email')" />`, see
-`fieldErrors.email` populate (or clear) within 200 ms of stopping.
+`errors.email` populate (or clear) within 200 ms of stopping.
 
 ## Tune or opt out
 
@@ -62,13 +62,13 @@ are untouched — a user typing into `email` won't clear the existing
 ```vue
 <template>
   <input v-register="register('email')" />
-  <small v-if="fieldErrors.email?.[0]">
-    {{ fieldErrors.email[0].message }}
+  <small v-if="errors.email?.[0]">
+    {{ errors.email[0].message }}
   </small>
 </template>
 ```
 
-The same `fieldErrors` store handles submit validation and live
+The same `errors` store handles submit validation and live
 field validation — no new reactive surface to wire up.
 
 ## Rapid typing
@@ -121,7 +121,7 @@ next microtask after each mutation.
 ## Nested paths
 
 `setValue('user.profile.email', …)` validates exactly that path,
-not the containing objects. Your `fieldErrors['user.profile.email']`
+not the containing objects. Your `errors['user.profile.email']`
 lookup gets the error.
 
 ## Caveat: blur doesn't re-validate on typing

@@ -1,18 +1,19 @@
 /**
- * The v-register directive. Provides `v-model`-like binding semantics but
- * writes through the form's `RegisterValue` rather than mutating a ref
- * directly — so form state tracking (dirty/pristine, touched, errors)
- * stays coherent.
+ * The `v-register` directive. Two-way binding with `v-model`-like
+ * semantics, but writes go through the form's `RegisterValue` so
+ * dirty / pristine / touched / errors stay coherent across the form.
  *
- * Lives in core (not under plugins/) because this is framework-agnostic:
- * `createChemicalXForms()` installs it via `app.directive('register', …)`
- * and the directive works identically under Nuxt, bare Vue CSR, and bare
- * Vue + @vue/server-renderer (where Vue's SSR skips directive lifecycle
- * hooks, making the directive a safe no-op server-side).
+ * Bind to a native input, select, textarea, checkbox, or radio:
  *
- * Phase 3 hardens the AST-adjacent parts (dynamic-type normalisation,
- * type="file" refusal, listener cleanup on unmount, reactive-type dev
- * warning). This commit is a structural move only — no behavior change.
+ * ```vue
+ * <input v-register="form.register('email')" />
+ * ```
+ *
+ * Installed automatically by `createChemicalXForms()`; the export is
+ * for advanced consumers who install directives manually. Works
+ * identically under Nuxt, bare Vue CSR, and bare Vue +
+ * `@vue/server-renderer` — Vue skips directive lifecycle hooks during
+ * SSR, so the directive is a safe no-op server-side.
  */
 import {
   invokeArrayFns,

@@ -6,7 +6,7 @@
 [![Node.js Test Suite](https://github.com/cubicforms/chemical-x-forms/actions/workflows/matrix.yml/badge.svg)](https://github.com/cubicforms/chemical-x-forms/actions/workflows/matrix.yml)
 [![Nuxt][nuxt-src]][nuxt-href]
 
-A schema-driven form library for Vue 3 and Nuxt. Bring a Zod schema (or your own validator); `useForm` returns typed reads and writes, per-field errors, a submit handler, and a reactive state bundle. The public surface is `any`-free: every path, value, and error is inferred from the schema.
+A schema-driven form library for Vue 3 and Nuxt. Bring a Zod schema (or your own validator); `useForm` returns typed reads, writes, errors, and a submit handler. Every path, value, and error is inferred from the schema — no `any`, no string keys.
 
 ## Installation
 
@@ -14,7 +14,7 @@ A schema-driven form library for Vue 3 and Nuxt. Bring a Zod schema (or your own
 npm install @chemical-x/forms zod
 ```
 
-**Nuxt 3 / 4**
+**Nuxt 3 / 4** — install the module:
 
 ```ts
 // nuxt.config.ts
@@ -23,7 +23,7 @@ export default defineNuxtConfig({
 })
 ```
 
-**Bare Vue 3**
+**Bare Vue 3** — install the plugin and the Vite plugin:
 
 ```ts
 // main.ts
@@ -55,45 +55,46 @@ export default defineConfig({
     password: z.string().min(8),
   })
 
-  const { register, handleSubmit, fieldErrors, state } = useForm({ schema })
+  const form = useForm({ schema, key: 'signup' })
 
-  const onSubmit = handleSubmit(async (values) => {
+  const onSubmit = form.handleSubmit(async (values) => {
     await $fetch('/api/signup', { method: 'POST', body: JSON.stringify(values) })
   })
 </script>
 
 <template>
   <form @submit.prevent="onSubmit">
-    <input v-register="register('email')" placeholder="Email" />
-    <small v-if="fieldErrors.email?.[0]">{{ fieldErrors.email[0].message }}</small>
+    <input v-register="form.register('email')" placeholder="Email" />
+    <small v-if="form.errors.email?.[0]">{{ form.errors.email[0].message }}</small>
 
-    <input v-register="register('password')" type="password" placeholder="Password" />
-    <small v-if="fieldErrors.password?.[0]">{{ fieldErrors.password[0].message }}</small>
+    <input v-register="form.register('password')" type="password" placeholder="Password" />
+    <small v-if="form.errors.password?.[0]">{{ form.errors.password[0].message }}</small>
 
-    <button :disabled="state.isSubmitting">Sign up</button>
+    <button :disabled="form.state.isSubmitting">Sign up</button>
   </form>
 </template>
 ```
 
-`useForm({ schema })` returns:
+`useForm({ schema, key })` returns a Pinia-style reactive object — read leaves directly, no `.value`:
 
-- `register(path)` — typed two-way binding for any field path; pair with the `v-register` directive on `<input>` / `<textarea>` / `<select>`.
-- `fieldErrors` — per-field errors keyed by dotted path. Updates live as `(value, schema)` changes; pass `fieldValidation: { on: 'none' }` to validate only on submit.
-- `handleSubmit(callback, onError?)` — runs validation, dispatches to the success or error callback. The callback receives the strict zod-inferred type.
-- `state` — reactive form-wide flags (`isSubmitting`, `isValid`, `isDirty`, `submitCount`, `submitError`, `canUndo`, `canRedo`, `historySize`).
-
-See the [API reference](./docs/api.md) for the complete surface.
+- **`form.values`** — current values. `form.values.email`, `form.values.address.city`.
+- **`form.errors`** — per-field errors, keyed by dotted path. `form.errors.email?.[0]?.message`.
+- **`form.fieldState`** — per-field flags (`dirty`, `touched`, `errors`, `blank`, …). `form.fieldState.email.dirty`.
+- **`form.state`** — form-level flags (`isSubmitting`, `isValid`, `canUndo`, …).
+- **`form.register(path)`** — typed two-way binding; pair with `v-register` on `<input>` / `<textarea>` / `<select>`.
+- **`form.handleSubmit(onValid, onInvalid?)`** — runs validation, dispatches. The valid callback receives the strict zod-inferred type.
+- **`form.setValue(path, value)`**, **`form.reset()`**, field-array helpers, undo / redo, persistence — see the [API reference](./docs/api.md).
 
 ## Features
 
-- **Schema-driven types** — every path, value, and error is inferred from the schema. `setValue` / `defaultValues` / `getValue` / `register` widen primitive-literal leaves to their primitive supertype (the slim-write contract); `handleSubmit` and `validate*()` payloads stay on the strict zod-inferred shape.
-- **Live validation** — debounced `'change'` mode by default; `'blur'` and `'none'` available; async refinements run from `handleSubmit`, the reactive `validate()` ref, and `validateAsync(path?)`.
-- **Field arrays** — `append` / `prepend` / `insert` / `remove` / `swap` / `move` / `replace`. Path and element type narrow at the call site.
-- **Drafts + undo / redo** — persistence to `localStorage`, `sessionStorage`, IndexedDB, or a custom [`FormStorage`](./docs/recipes/persistence.md#custom-backend); bounded snapshot stack with imperative `undo()` / `redo()` and `state.canUndo` / `state.canRedo` flags.
-- **Server errors** — `parseApiErrors(payload)` accepts a strict `{ message, code }` per-entry wire format, normalises into `ValidationError[]`, and pairs with `setFieldErrors`. User-injected errors are stored separately from schema errors and survive schema revalidation and successful submits.
-- **Stable error codes** — every `ValidationError` carries a required `code: string` for branching. `cx:` (library), `zod:` (adapter), and consumer-chosen prefixes coexist; `CxErrorCode` is exported for typed comparisons.
-- **Clearable required fields** — the `unset` sentinel (`defaultValues`, `setValue`, `reset`) marks a primitive leaf displayed-empty while storage stays well-typed. Submit fails with `'No value supplied'` for required schemas; `.optional()` / `.nullable()` / `.default(N)` opt out. Construction-time auto-mark applies to every primitive leaf the consumer didn't supply.
-- **SSR** — supported under Nuxt and bare Vue + `@vue/server-renderer`. Nuxt handles the payload round-trip automatically; bare Vue uses `renderChemicalXState` / `hydrateChemicalXState` (see [SSR recipe](./docs/recipes/ssr-hydration.md)).
+- **Schema-driven types** — every path, value, and error is inferred from the schema; no `any`.
+- **Live validation** — debounced `'change'` by default; `'blur'` and `'none'` available; async refinements await before submit dispatches.
+- **Field arrays** — `append` / `prepend` / `insert` / `remove` / `swap` / `move` / `replace`, fully typed at the call site.
+- **Drafts + undo / redo** — per-field opt-in persistence (`localStorage` / `sessionStorage` / IndexedDB / [custom backend](./docs/recipes/persistence.md#picking-a-backend)) and a bounded undo stack.
+- **Server errors** — `parseApiErrors(payload)` normalises a `{ message, code }[]` wire format; pair with `form.setFieldErrors(...)`. User errors survive schema revalidation.
+- **Stable error codes** — every `ValidationError` carries `code: string`. Library codes (`cx:`) live on the exported `CxErrorCode` enum; adapter codes use a `zod:` prefix; consumers pick their own (`api:`, `auth:`, …).
+- **Clearable required fields** — the `unset` sentinel marks a field displayed-empty while storage holds the schema's slim default. Submit fails with `'No value supplied'` for required schemas; `.optional()` / `.nullable()` / `.default(N)` opt out.
+- **SSR** — Nuxt handles the payload round-trip automatically; bare Vue uses `renderChemicalXState` / `hydrateChemicalXState` ([recipe](./docs/recipes/ssr-hydration.md)).
 
 ## Documentation
 

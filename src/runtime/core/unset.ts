@@ -1,43 +1,49 @@
 /**
- * The `unset` sentinel — a brand-typed symbol consumers pass to indicate
- * that a primitive leaf should be *displayed empty* even though storage
- * holds a real, schema-conformant value (the slim default).
+ * The `unset` sentinel — pass it as a primitive leaf's value to mark
+ * the field displayed-empty while storage holds the schema's slim
+ * default (`0` / `''` / `false` / `0n`).
  *
- * Use it in `defaultValues`, `setValue(path, unset)`, and
- * `form.reset({ ... })` for any string / number / boolean / bigint leaf
- * the user hasn't answered yet:
+ * Accepted in `defaultValues`, `setValue(path, unset)`, and
+ * `form.reset({ … })` for any `string` / `number` / `boolean` /
+ * `bigint` leaf:
  *
  * ```ts
- * import { useForm } from '@chemical-x/forms/zod'
- * import { unset } from '@chemical-x/forms'
- * import { z } from 'zod'
- *
  * const form = useForm({
  *   schema: z.object({ income: z.number() }),
  *   defaultValues: { income: unset }, // UI starts blank, storage holds 0
  *   key: 'housing',
  * })
- *
- * // Submitting before the user types raises a "No value supplied" error,
- * // because z.number() is strict (no .optional()/.nullable()/.default()).
  * ```
  *
- * Why `Symbol.for` and a phantom `unique symbol` brand: the runtime symbol
- * is registry-keyed so two bundles or two SSR realms produce the same
- * value (shared registry). The phantom unique-symbol brand gives
- * TypeScript a precise leaf type so `DefaultValuesShape<T>` can widen
- * primitive leaves to `T | Unset` while non-primitive leaves stay strict.
+ * Required schemas (no `.optional()` / `.nullable()` / `.default(N)`)
+ * raise `"No value supplied"` on submit while the path stays in the
+ * form's `blankPaths` set; optional / nullable / has-default schemas
+ * accept the empty case.
  *
- * Storage NEVER holds the symbol; the runtime translates it to the slim
- * default at `useAbstractForm` construction, `setValue`, and `reset`
- * boundaries.
+ * Storage never holds the symbol — the runtime translates it at the
+ * API boundary. Cross-bundle / SSR-safe: the runtime symbol uses
+ * `Symbol.for(...)` so every realm gets the same sentinel.
  */
 declare const _unsetBrand: unique symbol
 
+/**
+ * Brand-typed sentinel admitted at every primitive leaf of
+ * `DefaultValuesShape<T>`, `setValue`, and `reset`. The runtime
+ * symbol is exported alongside under the same name.
+ */
 export type Unset = typeof _unsetBrand
 
 export const unset: Unset = Symbol.for('@chemical-x/forms/unset') as Unset
 
+/**
+ * Type guard — `true` when `value` is the `unset` sentinel.
+ *
+ * ```ts
+ * if (isUnset(payload.income)) {
+ *   // payload.income is the sentinel; the field will display empty
+ * }
+ * ```
+ */
 export function isUnset(value: unknown): value is Unset {
   return value === unset
 }

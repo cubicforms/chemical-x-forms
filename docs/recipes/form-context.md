@@ -1,7 +1,7 @@
 # Form context in nested components
 
 Splitting a form across components? Don't prop-drill `register` /
-`fieldErrors` / `handleSubmit` through every layer. Call
+`errors` / `handleSubmit` through every layer. Call
 `useFormContext()` in any descendant and get the same handle back.
 
 ## The common case — ambient resolution
@@ -53,14 +53,14 @@ Any descendant grabs the same form:
     profile: { name: string; age: number }
   }
 
-  const { register, fieldErrors } = useFormContext<Form>()
+  const { register, errors } = useFormContext<Form>()
 </script>
 
 <template>
   <label>Email</label>
   <input v-register="register('email')" type="email" />
-  <small v-if="fieldErrors.email?.[0]">
-    {{ fieldErrors.email[0].message }}
+  <small v-if="errors.email?.[0]">
+    {{ errors.email[0].message }}
   </small>
 </template>
 ```
@@ -184,4 +184,4 @@ need when there's nothing to share.
 
 Reach for it when field components are reusable across forms, or
 when a distant component needs read-only status (`state.isDirty`,
-`state.isSubmitting`, `fieldErrors`) of a form it doesn't own.
+`state.isSubmitting`, `errors`) of a form it doesn't own.

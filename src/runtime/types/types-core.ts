@@ -79,12 +79,12 @@ export type CompleteFlatPath<Form, Key extends keyof Form = keyof Form> =
  *
  *   `'user' | 'user.email' | 'items' | 'items.0' | 'items.1' | …`
  *
- * Used by every path-addressed API (`getValue(path)`,
- * `setValue(path, value)`, `register(path)`, etc.) so paths
- * autocomplete in the IDE and typos compile-error.
+ * Used by every path-addressed API (`setValue(path, value)`,
+ * `register(path)`, `toRef(path)`, etc.) so paths autocomplete in
+ * the IDE and typos compile-error.
  *
  * Set `ForceFullPath` to `true` to restrict to leaf paths only
- * (no intermediate container paths) — used by `getFieldState`.
+ * (no intermediate container paths).
  */
 export type FlatPath<
   Form,
@@ -171,7 +171,7 @@ export type IsTuple<T extends readonly unknown[]> = number extends T['length'] ?
  * mirrors the runtime reality that out-of-bounds reads return
  * `undefined`.
  *
- * Used by `getValue()` and the whole-form `setValue((prev) => …)`
+ * Used by `form.values` and the whole-form `setValue((prev) => …)`
  * callback's `prev` argument so accessors are honest about
  * possibly-missing array positions. Tuple positions are preserved
  * unchanged — they're guaranteed by their position in the type.
@@ -200,9 +200,9 @@ export type WithIndexedUndefined<T> = T extends
  * tagged `| undefined` (the runtime can return undefined for
  * out-of-bounds reads).
  *
- * Used by `getValue(path)` and `register(path).innerRef` so the
- * compile-time type honours the runtime possibility of a missing
- * array position.
+ * Used by `form.values.<path>` reads, `form.toRef(path)`, and
+ * `register(path).innerRef` so the compile-time type honours the
+ * runtime possibility of a missing array position.
  */
 export type NestedReadType<
   RootValue,

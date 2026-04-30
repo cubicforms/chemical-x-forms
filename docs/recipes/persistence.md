@@ -248,10 +248,10 @@ serialised shape. Consumers don't (and now can't) set it. Drafts
 saved against a stale envelope version are dropped with a one-time
 dev-warn on read.
 
-The envelope also round-trips the form's blank set when
+The envelope also round-trips the form's `blankPaths` set when
 populated, so a numeric field cleared by the user stays visually
-empty after reload (storage holds the slim default; the displayed-
-empty state survives).
+empty after reload (storage holds the slim default; the
+displayed-empty state survives).
 
 On hydration, opted-in fields restore from storage; non-opted fields
 come from schema defaults. The opt-in set can change between mounts
@@ -265,7 +265,7 @@ Default `include: 'form'` persists just the values. Server-side
 validation errors on reload are usually stale and confusing.
 
 For multi-step wizards where reconstructing errors is expensive,
-`include: 'form+errors'` persists and re-hydrates `fieldErrors`.
+`include: 'form+errors'` persists and re-hydrates `errors`.
 
 Errors on non-opted-in paths are dropped from the persisted envelope
 — a persisted error without a persisted value would dangle on
@@ -603,7 +603,7 @@ with its own `street`, `city`, `zip` inputs), use the existing
 
 `useRegister` is a single-purpose ambient hook — it never accepts a
 key or path. Compound use-cases belong on `useFormContext`, which
-already handles typed sub-paths, structured paths, `getFieldState`,
+already handles typed sub-paths, structured paths, `fieldState`,
 and the rest.
 
 ### 4. `assignKey` low-level escape hatch

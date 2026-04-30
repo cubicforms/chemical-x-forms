@@ -23,7 +23,7 @@ Four policies:
 | `'scroll-to-first-error'` | Calls `.scrollIntoView()` on it. No focus change.                                                                      |
 | `'both'`                  | Scrolls first, then focuses with `{ preventScroll: true }` so the browser doesn't re-scroll and undo the explicit one. |
 
-The policy fires after `fieldErrors` is populated and before your
+The policy fires after `errors` is populated and before your
 `onError` callback — `onError` can override it by calling `.focus()`
 on something else.
 
@@ -73,7 +73,7 @@ acts on the first field that's:
 
 Fields hidden via `visibility: hidden`, `opacity: 0`, or `aria-hidden`
 count as "visible" — they occupy layout. If that's wrong for your
-UI, inspect `fieldErrors` yourself and focus the right element.
+UI, inspect `errors` yourself and focus the right element.
 
 ## Edge cases
 

@@ -838,16 +838,19 @@ export type MetaTrackerValue = {
 export type MetaTracker = Record<string, MetaTrackerValue>
 export type MetaTrackerStore = Map<FormKey, MetaTracker>
 
-// This generic generates full paths and paths that point to string arrays
-// This staisfies ts edge case for multi-select and multi-checkbox elements
+// Generates every registrable path inside `Form`. Arrays of primitive
+// items (string / number / boolean / bigint) expose BOTH the array root
+// AND `${Key}.${number}` so multi-select and multi-checkbox bindings
+// can register at the array root; arrays of objects expose only the
+// indexed-and-deeper paths.
 export type RegisterFlatPath<Form, Key extends keyof Form = keyof Form> =
   IsObjectOrArray<Form> extends true
     ? Key extends string
       ? Form[Key] extends infer Value
         ? Value extends Array<infer ArrayItem>
-          ? ArrayItem extends string
-            ? `${Key}` | `${Key}.${number}`
-            : `${Key}.${number}.${RegisterFlatPath<ArrayItem>}`
+          ? IsObjectOrArray<ArrayItem> extends true
+            ? `${Key}.${number}.${RegisterFlatPath<ArrayItem>}`
+            : `${Key}` | `${Key}.${number}`
           : Value extends GenericForm
             ? `${Key}.${RegisterFlatPath<Value>}`
             : `${Key}`
@@ -860,9 +863,7 @@ export type RegisterFlatPath<Form, Key extends keyof Form = keyof Form> =
                 : Form[Key] extends Array<infer ArrayItem>
                   ? IsObjectOrArray<ArrayItem> extends true
                     ? `${Key}.${number}.${RegisterFlatPath<ArrayItem>}`
-                    : ArrayItem extends string
-                      ? `${Key}` | `${Key}.${number}`
-                      : `${Key}.${number}`
+                    : `${Key}` | `${Key}.${number}`
                   : never)
         : never
     : never

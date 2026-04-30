@@ -246,6 +246,46 @@ describe('Phase 4: WithIndexedUndefined + strict SetValuePayload', () => {
   })
 })
 
+describe('useForm type inference — primitive-array register paths', () => {
+  // Multi-select / multi-checkbox bindings register at the array root.
+  // The directive accepts arrays of any slim primitive (string, number,
+  // boolean, bigint), so the type must allow root registration on each.
+  const _multiSchema = z.object({
+    multiStrings: z.array(z.string()),
+    multiNumbers: z.array(z.number()),
+    multiBooleans: z.array(z.boolean()),
+    multiBigints: z.array(z.bigint()),
+  })
+  type MultiForm = ReturnType<typeof useForm<typeof _multiSchema>>
+  const multiForm = (() => {
+    const handler: ProxyHandler<() => unknown> = { get: () => proxy, apply: () => proxy }
+    const proxy: unknown = new Proxy(() => undefined, handler)
+    return proxy as MultiForm
+  })()
+
+  it('register accepts the array root for every primitive item type', () => {
+    expectTypeOf(multiForm.register('multiStrings').innerRef.value).toEqualTypeOf<string[]>()
+    expectTypeOf(multiForm.register('multiNumbers').innerRef.value).toEqualTypeOf<number[]>()
+    expectTypeOf(multiForm.register('multiBooleans').innerRef.value).toEqualTypeOf<boolean[]>()
+    expectTypeOf(multiForm.register('multiBigints').innerRef.value).toEqualTypeOf<bigint[]>()
+  })
+
+  it('register accepts indexed positions on every primitive array', () => {
+    expectTypeOf(multiForm.register('multiStrings.0').innerRef.value).toEqualTypeOf<
+      string | undefined
+    >()
+    expectTypeOf(multiForm.register('multiNumbers.0').innerRef.value).toEqualTypeOf<
+      number | undefined
+    >()
+    expectTypeOf(multiForm.register('multiBooleans.0').innerRef.value).toEqualTypeOf<
+      boolean | undefined
+    >()
+    expectTypeOf(multiForm.register('multiBigints.0').innerRef.value).toEqualTypeOf<
+      bigint | undefined
+    >()
+  })
+})
+
 describe('useForm type inference — handleSubmit', () => {
   it('callback `values` parameter is the fully inferred Form', () => {
     form.handleSubmit((values) => {

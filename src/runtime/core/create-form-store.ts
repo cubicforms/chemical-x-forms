@@ -995,15 +995,25 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
           if (controller.signal.aborted) return
           // The adapter emits issue paths relative to the sub-schema it
           // parsed (e.g. `[]` for a leaf string). Re-stamp each error
-          // with the absolute field path so `fieldErrors[<dotted path>]`
-          // lookups match the key the consumer is watching for.
-          const nextErrors = response.success
+          // with the absolute field path so the schemaErrors store and
+          // `form.errors.<dotted path>` reads agree on the canonical
+          // key.
+          const reStamped = response.success
             ? []
             : response.errors.map((err) => ({
                 ...err,
                 path: [...path, ...(err.path as Segment[])],
               }))
-          setSchemaErrorsForPath(path, nextErrors)
+          // Apply at the LEAF level: when the scheduled path is a
+          // container (e.g. `['notify']` after a DU reshape), the
+          // adapter returns multiple issues at distinct leaf paths.
+          // Storing them all under the scheduled key would (a) hide
+          // them from the canonical-key lookup `form.errors.notify.X`
+          // and (b) survive across variant switches as ghost entries
+          // because `setSchemaErrorsForPath(parent, [])` only clears
+          // the parent's own key, not the descendants written by a
+          // previous run.
+          applySchemaErrorsForSubtree(path, reStamped)
         })
         .catch(() => {
           // Adapter contract forbids throws — swallow here so a misbehaving
@@ -1170,6 +1180,48 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       return
     }
     schemaErrors.set(key, [...entries])
+  }
+
+  /**
+   * Replace the schemaErrors subtree rooted at `path` with `entries`,
+   * keying each entry by its OWN absolute path rather than `path`.
+   * Used by `scheduleFieldValidation` so a re-validation of a
+   * container (e.g. a DU parent after reshape) lands every leaf-keyed
+   * issue at its canonical store key — `form.errors.<path>` reads
+   * hit, and stale entries from a previous variant don't survive.
+   *
+   * The clear sweep removes the scheduled path itself AND every
+   * strict descendant currently in the store. Without the sweep, an
+   * email-variant `notify.address` entry would persist after switching
+   * to sms (the new run only writes `notify.number`), letting a
+   * ghost error leak through `form.meta.errors`.
+   *
+   * Skipped optimisation: re-using existing arrays when the leaf-key
+   * group is identical to the current entry. We always write a fresh
+   * array so Vue's reactive Map.set fires every consumer; profile
+   * before adding equality short-circuits — most validations land at
+   * leaves where the array is one-deep, so the savings are marginal.
+   */
+  function applySchemaErrorsForSubtree(path: Path, entries: ValidationError[]): void {
+    const { key: parentKey } = canonicalizePath(path)
+    schemaErrors.delete(parentKey)
+    for (const existingKey of [...schemaErrors.keys()]) {
+      if (isPathKeyUnder(existingKey, path)) schemaErrors.delete(existingKey)
+    }
+    if (entries.length === 0) return
+    // Group by each error's own canonical leaf path. Multiple issues
+    // at the same path (e.g. two refinements failing the same leaf)
+    // merge into one array — preserves adapter ordering.
+    const grouped = new Map<PathKey, ValidationError[]>()
+    for (const err of entries) {
+      const { key } = canonicalizePath(err.path as Path)
+      const list = grouped.get(key)
+      if (list === undefined) grouped.set(key, [err])
+      else list.push(err)
+    }
+    for (const [leafKey, group] of grouped) {
+      schemaErrors.set(leafKey, group)
+    }
   }
 
   function setAllSchemaErrors(entries: readonly ValidationError[]): void {

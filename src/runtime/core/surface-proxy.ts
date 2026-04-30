@@ -79,6 +79,28 @@ export type SurfaceOptions<TLeaf> = {
    * run, so dependency tracking propagates from `resolveLeaf`'s return.
    */
   readonly readLeafKey?: (leaf: TLeaf, key: string) => unknown
+  /**
+   * Materialise the container at `segments` into a plain JSON-friendly
+   * object. Called by the container proxy's `toJSON` / `toString` /
+   * `Symbol.toPrimitive('default')` traps every time a consumer
+   * stringifies the proxy. Reads inside this callback happen at call
+   * time inside the consumer's active effect, so Vue's dependency
+   * tracking captures every reactive read (error stores, the form
+   * Ref, computed maps) — `JSON.stringify(form.errors)` in a render
+   * function or `{{ form.errors }}` in a template re-runs whenever
+   * the underlying state changes.
+   *
+   * If undefined: containers serialise to `{}` (the pre-0.14.x
+   * behaviour). Provided so each surface controls its own
+   * materialisation strategy:
+   * - `errors`: sparse — only paths that actually have errors,
+   *   active-path-filtered.
+   * - `fields`: dense — every schema-leaf descendant snapshotted as
+   *   a `FieldStateView`.
+   * - `values`: not built on this generic; its own proxy serialises
+   *   the inner readonly proxy directly.
+   */
+  readonly materializeContainer?: (segments: readonly Segment[]) => unknown
 }
 
 /**
@@ -130,27 +152,35 @@ export function buildSurfaceProxy<TLeaf>(opts: SurfaceOptions<TLeaf>): SurfacePr
     return descendOrTerminate(segments)
   }
 
-  // Container-shaped primitive coercion: every container path serialises
-  // to `{}` regardless of segments, so the helpers are stateless and can
-  // be hoisted out of the per-container construction loop.
-  // - `valueOf` follows `Object.prototype.valueOf` semantics: return the
-  //   receiver (the proxy itself, via dynamic `this`). Non-primitive, so
-  //   OrdinaryToPrimitive's `valueOf` → `toString` fallback proceeds to
-  //   `toString` if anyone bypasses our `Symbol.toPrimitive` shortcut.
-  // - `toString` and `Symbol.toPrimitive` agree on the output (`'{}'`)
-  //   so direct method calls and operator coercion produce the same
-  //   string.
-  const containerToJSON = (): Record<string, never> => ({})
-  const containerToString = (): string => '{}'
-  function containerValueOf(this: unknown): unknown {
-    return this
-  }
-  const containerToPrimitive = (hint: string): string | number => (hint === 'number' ? NaN : '{}')
-
   function containerProxyAt(segments: readonly Segment[]): SurfaceProxy {
     const cacheKey = JSON.stringify(segments)
     const existing = containerCache.get(cacheKey)
     if (existing !== undefined) return existing
+
+    // Container-shaped primitive coercion. The materialiser (when set)
+    // is invoked on every call so reactive reads (error stores, the
+    // form Ref) are tracked inside the consumer's active effect — the
+    // proxy itself is cached per-path, but its serialised form is
+    // computed fresh on every stringify, so there is no staleness.
+    //
+    // - `valueOf` follows `Object.prototype.valueOf` semantics: return
+    //   the receiver (the proxy itself, via dynamic `this`). Returning
+    //   a non-primitive keeps OrdinaryToPrimitive's `valueOf` →
+    //   `toString` fallback well-formed for any code path that
+    //   bypasses our `Symbol.toPrimitive` shortcut.
+    // - `toString` returns `JSON.stringify(materialised)` so direct
+    //   method calls produce the same string as operator coercion.
+    // - `Symbol.toPrimitive('number')` always returns `NaN` — a
+    //   container has no meaningful number coercion.
+    const snapshotContainer = (): unknown =>
+      opts.materializeContainer === undefined ? {} : opts.materializeContainer(segments)
+    const containerToJSON = (): unknown => snapshotContainer()
+    const containerToString = (): string => JSON.stringify(snapshotContainer())
+    function containerValueOf(this: unknown): unknown {
+      return this
+    }
+    const containerToPrimitive = (hint: string): string | number =>
+      hint === 'number' ? NaN : containerToString()
 
     // Arrow-function target (so `typeof proxy === 'function'` and `apply`
     // fires). Arrow functions have no `prototype` property, which avoids

@@ -1,6 +1,8 @@
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { buildFieldStateAccessor, type FieldStateView } from './field-state-api'
+import { getAtPath } from './path-walker'
+import type { Path, Segment } from './paths'
 import { buildSurfaceProxy, type SurfaceProxy } from './surface-proxy'
 
 /**
@@ -58,10 +60,77 @@ const FIELD_STATE_KEYS: ReadonlySet<string> = new Set<keyof FieldStateView>([
  */
 export function buildFieldStateProxy<F extends GenericForm>(state: FormStore<F>): SurfaceProxy {
   const getFieldStateAt = buildFieldStateAccessor(state)
+  const snapshotFieldStateAt = (path: Path): Record<string, unknown> => {
+    const view = getFieldStateAt(path as Parameters<typeof getFieldStateAt>[0]).value
+    const snapshot: Record<string, unknown> = {}
+    for (const k of FIELD_STATE_KEYS) snapshot[k] = (view as Record<string, unknown>)[k]
+    return snapshot
+  }
   return buildSurfaceProxy<ReturnType<typeof getFieldStateAt>>({
     schema: state.schema as unknown as Parameters<typeof buildSurfaceProxy>[0]['schema'],
     resolveLeaf: (path) => getFieldStateAt(path as Parameters<typeof getFieldStateAt>[0]),
     leafKeys: FIELD_STATE_KEYS,
     readLeafKey: (computed, key) => (computed.value as Record<string, unknown>)[key],
+    materializeContainer: (segments) => materializeFields(state, segments, snapshotFieldStateAt),
   })
+}
+
+/**
+ * Build a dense, nested `FieldStateView`-snapshot tree at
+ * `containerSegments` for `JSON.stringify(form.fields.<container>)`.
+ * Walks the live form value at the container path and snapshots the
+ * `FieldStateView` for every schema-leaf descendant. Containers
+ * recurse; leaves terminate with the snapshot. Arrays produce arrays;
+ * records / objects produce objects whose key set matches the live
+ * data (so a discriminated union exposes only the active variant's
+ * keys, and a record exposes the keys actually present).
+ *
+ * Reactivity contract identical to `materializeErrors`: every read in
+ * this function happens at call time inside the consumer's active
+ * effect, so dependency tracking captures `state.form.value` and the
+ * field-state computeds — `JSON.stringify(form.fields)` re-runs
+ * whenever the form data or any per-leaf field state changes.
+ */
+function materializeFields<F extends GenericForm>(
+  state: FormStore<F>,
+  containerSegments: readonly Segment[],
+  snapshotFieldStateAt: (path: Path) => Record<string, unknown>
+): unknown {
+  const liveValue = getAtPath(state.form.value, containerSegments)
+  return walk(liveValue, containerSegments, state.schema, snapshotFieldStateAt)
+}
+
+function walk(
+  value: unknown,
+  basePath: readonly Segment[],
+  schema: { isLeafAtPath(path: Path): boolean },
+  snapshotFieldStateAt: (path: Path) => Record<string, unknown>
+): unknown {
+  // Schema-leaf takes precedence over data shape: a leaf path with
+  // `null` or a primitive in storage still surfaces the FieldStateView
+  // (which is the field-state authority — `value` lives inside the view).
+  if (schema.isLeafAtPath(basePath)) return snapshotFieldStateAt(basePath)
+  // Container with no live value (e.g. an absent record key, or a
+  // missing optional object): expose null so consumers can distinguish
+  // "schema container that hasn't been populated" from "container with
+  // empty state" (`{}` / `[]`).
+  if (value === null || value === undefined) return value
+  if (typeof value !== 'object') {
+    // Defensive: schema reports container but data is a primitive. Surface
+    // the primitive so the JSON shape reflects reality without throwing.
+    return value
+  }
+  if (Array.isArray(value)) {
+    return value.map((_, i) => walk(value[i], [...basePath, i], schema, snapshotFieldStateAt))
+  }
+  const result: Record<string, unknown> = {}
+  for (const key of Object.keys(value as Record<string, unknown>)) {
+    result[key] = walk(
+      (value as Record<string, unknown>)[key],
+      [...basePath, key],
+      schema,
+      snapshotFieldStateAt
+    )
+  }
+  return result
 }

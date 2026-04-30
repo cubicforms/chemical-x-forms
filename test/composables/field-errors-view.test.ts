@@ -81,7 +81,7 @@ describe('form.errors — leaf-aware drillable proxy', () => {
     expect(api.errors.email).toBeUndefined()
   })
 
-  it('container paths are descend-only (JSON.stringify returns {})', () => {
+  it('container paths materialise the underlying error tree (not opaque {})', () => {
     const { app, api } = mount()
     apps.push(app)
 
@@ -89,9 +89,14 @@ describe('form.errors — leaf-aware drillable proxy', () => {
       { path: ['email'], message: 'bad email', formKey: api.key, code: 'api:validation' },
     ])
 
-    // The root proxy is a container — toJSON returns {}.
-    expect(JSON.parse(JSON.stringify(api.errors))).toEqual({})
-    // The per-field aggregate ('every error in the form') lives on form.meta.errors.
+    // Model shape: the root container emits a nested map keyed by leaf path.
+    const root = JSON.parse(JSON.stringify(api.errors))
+    expect(root).toMatchObject({
+      email: [{ message: 'bad email', path: ['email'] }],
+    })
+    // Sanity: the same data also surfaces flat through `form.meta.errors`.
+    expect(api.meta.errors).toHaveLength(1)
+    expect(api.meta.errors[0]?.message).toBe('bad email')
   })
 })
 

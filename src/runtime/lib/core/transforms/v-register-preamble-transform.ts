@@ -19,7 +19,7 @@ import {
  * the input in render order. But Vue's SSR is single-pass top-to-bottom,
  * so a template like:
  *
- *   <pre>{{ form.getFieldState('password').value }}</pre>
+ *   <pre>{{ form.fieldState.password.isConnected }}</pre>
  *   <input v-register="form.register('password')" />
  *
  * evaluates the `<pre>` first, BEFORE the v-register wrapper has had a

@@ -22,7 +22,7 @@ import type { FormStore } from './create-form-store'
 import { buildFieldArrayApi } from './field-arrays'
 import { buildFieldStateProxy } from './field-state-proxy'
 import type { HistoryModule } from './history'
-import { getAtPath } from './path-walker'
+import { getAtPath, hasAtPath } from './path-walker'
 import { canonicalizePath, type Path, type PathKey, type Segment } from './paths'
 import { PERSISTENCE_MODULE_KEY, type PersistenceModule } from './persistence'
 import { enforceSensitiveCheck } from './persistence/sensitive-names'
@@ -209,11 +209,27 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // useful. The public surface wraps it in a Proxy (see fieldErrorsView
   // below) so templates can dot-access directly without `.value`, and
   // the readonly contract is enforced at runtime via set/delete traps.
+  // Active-path filter: errors whose `err.path` is no longer reachable
+  // through the live form value (e.g. the inactive variant of a
+  // discriminated union after a switch) are hidden from the aggregate.
+  // The store-side entries STAY — per-field accessors (`getFieldState`,
+  // `state.getErrorsForPath`) still expose them, so a programmatic
+  // consumer reading errors at a specific path can see what's known
+  // about it even when the path isn't currently in the active schema.
+  // This is the "form state is about the active schema, individual
+  // fields stay accurate" split — top-level reflects what the user
+  // sees, per-field reflects what the runtime knows.
+  //
+  // Filter via `hasAtPath` (exists-as-key check, not exists-as-defined)
+  // so paths whose value is legitimately `undefined` still surface.
+  // Reshape removes inactive variant keys from `form.value` outright,
+  // so `hasAtPath` returns false for them — no schema walk needed.
   const fieldErrorsComputed = computed<FormErrorRecord>(() => {
     const record: FormErrorRecord = {}
-    appendStoreToRecord(record, state.schemaErrors)
-    appendStoreToRecord(record, state.derivedBlankErrors.value)
-    appendStoreToRecord(record, state.userErrors)
+    const formValue = state.form.value
+    appendStoreToRecord(record, state.schemaErrors, formValue)
+    appendStoreToRecord(record, state.derivedBlankErrors.value, formValue)
+    appendStoreToRecord(record, state.userErrors, formValue)
     return record
   })
 
@@ -505,10 +521,12 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
  */
 function appendStoreToRecord(
   record: FormErrorRecord,
-  store: ReadonlyMap<unknown, ValidationError[]>
+  store: ReadonlyMap<unknown, ValidationError[]>,
+  formValue: unknown
 ): void {
   for (const [, entries] of store) {
     for (const err of entries) {
+      if (!hasAtPath(formValue, err.path as ReadonlyArray<Segment>)) continue
       const dottedKey = (err.path as ReadonlyArray<Segment>).map(String).join('.')
       const existingForKey = record[dottedKey]
       if (existingForKey === undefined) record[dottedKey] = [err]

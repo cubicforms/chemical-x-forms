@@ -7,7 +7,7 @@ import { useForm } from '../../src/zod'
 import { useForm as useFormV3 } from '../../src/zod-v3'
 import { CxErrorCode } from '../../src/runtime/core/error-codes'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
-import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
+import type { UseAbstractFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
 
 /**
  * Discriminated-union variant switch — when the discriminator value
@@ -1343,5 +1343,115 @@ describe('variant memory — history (undo/redo) interaction', () => {
     api.setValue('notify.channel', 'sms')
     await nextTick()
     expect(api.values.notify).toEqual({ channel: 'sms', number: '' })
+  })
+})
+
+/**
+ * Inactive-variant errors are filtered from the aggregate `form.errors`
+ * surface but preserved in the underlying schemaErrors store, so per-
+ * field accessors (`fieldState[path].errors`) still expose them. The
+ * split:
+ *
+ *   - `form.errors` answers "what's currently wrong with this form?" —
+ *     active schema only.
+ *   - `fieldState.<path>.errors` answers "what does the runtime know
+ *     about this specific path?" — independent of which variant is
+ *     active. Programmatic consumers reading per-field state can see
+ *     the error even when its path is in the inactive variant.
+ *
+ * Filter mechanism: `hasAtPath(form.value, err.path)`. Reshape removes
+ * inactive variant keys from `form.value` outright, so the predicate
+ * resolves cheaply (descend chain, no schema introspection).
+ */
+describe('inactive-variant errors — filtered from form.errors, preserved per-field', () => {
+  const apps: App[] = []
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+  })
+
+  it("hides the OLD variant's construction-seeded error on a discriminator switch", async () => {
+    const { app, api } = mountProfile()
+    apps.push(app)
+    await nextTick()
+
+    // Construction-time strict validation seeds schemaErrors with the
+    // email variant's failure (address='' fails `.min(3)`).
+    expect(api.errors['notify.address']).toBeDefined()
+
+    // Switch to sms — the address path leaves form.value entirely.
+    api.setValue('notify.channel', 'sms')
+    await nextTick()
+
+    // Aggregate filter: notify.address path is no longer reachable
+    // through form.value, so the (still-stored) error is hidden. This
+    // is the bug fix — pre-fix, form.errors leaked the email variant's
+    // address error after switching to sms because schemaErrors had a
+    // dotted-path entry that nothing cleaned up.
+    expect(api.errors['notify.address']).toBeUndefined()
+  })
+
+  it('round-trip with variant memory restores form.errors visibility', async () => {
+    const { app, api } = mountProfile()
+    apps.push(app)
+    await nextTick()
+    expect(api.errors['notify.address']).toBeDefined()
+
+    api.setValue('notify.channel', 'sms')
+    await nextTick()
+    expect(api.errors['notify.address']).toBeUndefined()
+
+    // Switch back. Variant memory restores the value at notify.address,
+    // so hasAtPath returns true again and the filter unmasks the error.
+    api.setValue('notify.channel', 'email')
+    await nextTick()
+    expect(api.errors['notify.address']).toBeDefined()
+  })
+
+  it('per-field fieldState still exposes errors for paths in the inactive variant', async () => {
+    const { app, api } = mountProfile()
+    apps.push(app)
+    await nextTick()
+
+    api.setValue('notify.channel', 'sms')
+    await nextTick()
+
+    // form.errors hides it.
+    expect(api.errors['notify.address']).toBeUndefined()
+
+    // But the per-field state surface keeps the error available for
+    // programmatic consumers — useful when the consumer reads errors
+    // off a path without first checking which variant is active.
+    const fieldState = (
+      api as unknown as {
+        fieldState: { notify: { address: { errors: ValidationError[] } } }
+      }
+    ).fieldState.notify.address
+    expect(fieldState.errors.length).toBeGreaterThan(0)
+  })
+
+  it('handleSubmit-populated errors at the active variant flow through the filter cleanly', async () => {
+    // Verifies the filter doesn't accidentally hide errors at active
+    // paths. Drives errors via handleSubmit (synchronous w.r.t. its
+    // promise) so timing is deterministic — no debounce dependency.
+    const { app, api } = mountProfile()
+    apps.push(app)
+    await nextTick()
+
+    api.setValue('notify.channel', 'sms')
+    await nextTick()
+
+    const submit = api.handleSubmit(
+      () => {},
+      () => {}
+    )
+    await submit()
+    await nextTick()
+
+    // sms variant's own validation surfaces; filter does not hide
+    // active-path entries.
+    expect(api.errors['notify.number']).toBeDefined()
+    // The email variant's construction-seeded error is still in the
+    // store but stays filtered out.
+    expect(api.errors['notify.address']).toBeUndefined()
   })
 })

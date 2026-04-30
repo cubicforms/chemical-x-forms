@@ -79,7 +79,7 @@ export default defineConfig({
 
 - **`form.values`** — current values. `form.values.email`, `form.values.address.city`.
 - **`form.errors`** — per-field errors, keyed by dotted path. `form.errors.email?.[0]?.message`.
-- **`form.fieldState`** — per-field flags (`dirty`, `touched`, `errors`, `blank`, …). `form.fieldState.email.dirty`.
+- **`form.fields`** — per-field flags (`dirty`, `touched`, `errors`, `blank`, …). `form.fields.email.dirty`.
 - **`form.state`** — form-level flags (`isSubmitting`, `isValid`, `canUndo`, …).
 - **`form.register(path)`** — typed two-way binding; pair with `v-register` on `<input>` / `<textarea>` / `<select>`.
 - **`form.handleSubmit(onValid, onInvalid?)`** — runs validation, dispatches. The valid callback receives the strict zod-inferred type.

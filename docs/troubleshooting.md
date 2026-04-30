@@ -220,7 +220,7 @@ chaining:
 form.values.posts[0]?.title?.toUpperCase() ?? ''
 ```
 
-Or read from `form.fieldState.posts[0].title.value` if you also want
+Or read from `form.fields.posts[0].title.value` if you also want
 the per-field flags (`dirty`, `errors`, `touched`) alongside the
 value. The same `| undefined` taint applies; narrow the same way.
 

@@ -52,18 +52,18 @@ second-guess the schema's accepted-empty verdict.
 form mounts (no defaults)
   → blankPaths.add('income')
   → form.errors.income = [{ code: 'cx:no-value-supplied', … }]
-  → form.fieldState.income.blank === true
+  → form.fields.income.blank === true
 
 user types "5"
   → blankPaths.delete('income')
   → form.errors.income = undefined
-  → form.fieldState.income.blank === false
+  → form.fields.income.blank === false
 
 user clears the input (backspace)
   → directive sees el.value === ''
   → blankPaths.add('income')
   → form.errors.income re-appears reactively
-  → form.fieldState.income.blank === true
+  → form.fields.income.blank === true
 
 user types "0"
   → blankPaths stays empty (the value is intentional)
@@ -80,12 +80,12 @@ either changes.
 form mounts (no defaults)
   → blankPaths empty (strings don't auto-mark)
   → form.errors.email = undefined          (z.string() accepts '')
-  → form.fieldState.email.blank === false
+  → form.fields.email.blank === false
 
 user types "hi" then deletes
   → blankPaths still empty
   → form.errors.email still undefined      (z.string() still accepts '')
-  → form.fieldState.email.blank === false
+  → form.fields.email.blank === false
 ```
 
 If the schema is `z.string().min(1)` instead, the lifecycle is the
@@ -132,17 +132,17 @@ decides what to do.
   <input v-register="form.register('income')" />
 
   <!-- show errors only after the user has touched the field -->
-  <p v-if="form.errors.income && form.fieldState.income.touched" class="error">
+  <p v-if="form.errors.income && form.fields.income.touched" class="error">
     {{ form.errors.income[0].message }}
   </p>
 
   <!-- separately, an "unanswered" hint that distinguishes from errors -->
-  <span v-if="form.fieldState.income.blank" class="hint"> Required — please enter a number </span>
+  <span v-if="form.fields.income.blank" class="hint"> Required — please enter a number </span>
 </template>
 ```
 
 Reading `form.errors.income` directly gives you whatever the schema
-and the blank channel produced. Reading `form.fieldState.income.blank`
+and the blank channel produced. Reading `form.fields.income.blank`
 gives you the raw "did the user supply something?" bit, useful for
 pre-error indicators or progress meters.
 

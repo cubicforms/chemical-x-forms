@@ -603,7 +603,7 @@ with its own `street`, `city`, `zip` inputs), use the existing
 
 `useRegister` is a single-purpose ambient hook — it never accepts a
 key or path. Compound use-cases belong on `useFormContext`, which
-already handles typed sub-paths, structured paths, `fieldState`,
+already handles typed sub-paths, structured paths, `fields`,
 and the rest.
 
 ### 4. `assignKey` low-level escape hatch

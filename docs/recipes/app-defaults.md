@@ -146,7 +146,7 @@ identically — same semantic everywhere.
 
 Auto-mark and explicit `unset` converge on the same state: the path
 lives in the form's `blankPaths` set, surfaced via
-`form.fieldState.<path>.blank` and `form.blankPaths.value` for bulk
+`form.fields.<path>.blank` and `form.blankPaths.value` for bulk
 introspection. The merged `form.errors.<path>` reactively carries
 `'No value supplied'` (`code: 'cx:no-value-supplied'`) for required
 schemas; `.optional()` / `.nullable()` / `.default(N)` / `.catch(N)`

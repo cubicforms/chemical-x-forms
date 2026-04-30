@@ -92,6 +92,13 @@ export function fakeSchema<F extends GenericForm>(
       // augmentation override this method on the returned object.
       return false
     },
+    getUnionDiscriminatorAtPath(path) {
+      void path
+      // fake-schema doesn't model discriminated unions. Tests that
+      // need to exercise the variant-switch reshape override this
+      // method on the returned object.
+      return undefined
+    },
     async validateAtPath(data, path): Promise<ValidationResponse<F>> {
       if (validator) return await validator(data, path)
       return {

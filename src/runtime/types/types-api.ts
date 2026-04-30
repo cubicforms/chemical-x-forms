@@ -293,6 +293,54 @@ export type AbstractSchema<Form, GetValueFormType> = {
    * required?" question; the refinements layer on top.
    */
   isRequiredAtPath(path: Path): boolean
+  /**
+   * If the schema at `path` is (or wraps) a discriminated union,
+   * return its discriminator key plus a `getVariantDefault(value)`
+   * lookup — otherwise `undefined`. Wrappers (`.optional()`,
+   * `.default(...)`, `.nullable()`, `.readonly()`, `.pipe()`,
+   * `.lazy()`, `.catch()`) are peeled transparently.
+   *
+   * The runtime uses this for two related reshapes that share the
+   * same lookup:
+   *
+   *   1. **Discriminator-key write** — the runtime calls this with
+   *      the parent path. If the returned `discriminatorKey` matches
+   *      the path's last segment, the write changes which variant is
+   *      active; the parent storage is replaced with the matching
+   *      variant's slim default so the OLD variant's keys (e.g.
+   *      `address` after switching to `sms`) don't leak.
+   *
+   *   2. **Whole-union write** — the runtime calls this with the
+   *      path itself. If the returned info exists and the consumer's
+   *      value carries the discriminator key, the merge uses the
+   *      matching variant's default instead of the first-variant
+   *      fallback that `getDefaultAtPath` returns for unions.
+   *
+   * Adapters that don't model discriminated unions can return
+   * `undefined` unconditionally; the runtime reshape is a no-op
+   * without this hook.
+   */
+  getUnionDiscriminatorAtPath(path: Path): UnionDiscriminatorContext | undefined
+}
+
+/**
+ * Adapter-returned info for a discriminated union — its discriminator
+ * key plus a function that maps a discriminator literal to the slim
+ * default of the matching variant. Returned by
+ * `AbstractSchema.getUnionDiscriminatorAtPath`.
+ */
+export type UnionDiscriminatorContext = {
+  /**
+   * The union's discriminator key (e.g. `'channel'` for
+   * `z.discriminatedUnion('channel', [...])`).
+   */
+  readonly discriminatorKey: string
+  /**
+   * Slim default for the variant whose discriminator literal equals
+   * `value`. Returns `undefined` if no variant matches — the runtime
+   * skips the reshape and falls back to a plain write.
+   */
+  getVariantDefault(value: unknown): unknown
 }
 
 /**
@@ -468,6 +516,14 @@ export type WriteMeta = {
    * `useAbstractForm` construction. Don't set from consumer code.
    */
   readonly blank?: boolean
+  /**
+   * When `true`, the discriminator-aware variant reshape inside
+   * `setValueAtPath` is skipped for this write. Internal — set by
+   * the reshape itself when re-entering with the new variant default
+   * so the literal discriminator inside the default doesn't trigger
+   * an infinite loop. Don't set from consumer code.
+   */
+  readonly skipDiscriminatorReshape?: boolean
 }
 
 /**
@@ -695,6 +751,34 @@ export type UseFormConfiguration<
    * the current stack.
    */
   history?: HistoryConfig
+
+  /**
+   * Whether to remember the typed state of each discriminated-union
+   * variant across switches. Default `true`.
+   *
+   * When `true`, switching `notify.channel` from `email` (with
+   * `address: 'foo@bar.com'`) to `sms` and back lands on
+   * `address: 'foo@bar.com'` again — the runtime snapshots the
+   * outgoing variant's subtree on switch-out and restores the
+   * incoming variant's prior subtree on switch-in. Each
+   * discriminated union at every nesting depth is independently
+   * memorized.
+   *
+   * Set to `false` to drop the outgoing variant's typed state on
+   * every switch (the data is gone). The new variant initializes
+   * from its slim default.
+   *
+   * Memory is in-memory only and does not survive reload. Persisted
+   * state restores values into form storage on hydration, but
+   * variant memory starts empty — the first discriminator switch
+   * after reload loses any persisted typing in the outgoing variant.
+   * Consumers needing cross-session continuity must persist beyond
+   * the variant boundary themselves.
+   *
+   * `reset()` clears variant memory. `resetField(path)` clears any
+   * memory entry whose union path equals or sits under `path`.
+   */
+  rememberVariants?: boolean
 }
 
 /**
@@ -730,6 +814,8 @@ export type ChemicalXFormsDefaults = {
   fieldValidation?: FieldValidationConfig
   /** Default for `useForm({ history })`. */
   history?: HistoryConfig
+  /** Default for `useForm({ rememberVariants })`. */
+  rememberVariants?: boolean
 }
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>

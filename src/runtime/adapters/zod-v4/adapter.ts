@@ -3,19 +3,24 @@ import type {
   AbstractSchema,
   FormKey,
   SlimPrimitiveKind,
+  UnionDiscriminatorContext,
   ValidationError,
 } from '../../types/types-api'
 import { CxErrorCode } from '../../core/error-codes'
 import type { DeepPartial, GenericForm } from '../../types/types-core'
 import { assertSupportedKinds } from './assert-supported'
+import { unwrapToDiscriminatedUnion } from './discriminator'
 import { zodIssuesToValidationErrors } from './errors'
 import { fingerprintZodSchema } from './fingerprint'
 import { deriveDefault, getDefaultValuesFromZodSchema } from './default-values'
 import {
   assertZodVersion,
   getDiscriminatedOptions,
+  getDiscriminator,
   getIntersectionLeft,
   getIntersectionRight,
+  getLiteralValues,
+  getObjectShape,
   getUnionOptions,
   kindOf,
   unwrapInner,
@@ -324,6 +329,44 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         // required — matches the union "any-branch-permissive" rule
         // when the path traverses a union.
         return resolved.every((candidate) => isLeafRequired(candidate))
+      },
+
+      getUnionDiscriminatorAtPath(path): UnionDiscriminatorContext | undefined {
+        // Resolve every candidate at `path`; pick the unique one that
+        // is (or wraps) a discriminated union. Wrappers
+        // (`.optional()` / `.default(...)` / etc.) are peeled by
+        // `unwrapToDiscriminatedUnion`. Ambiguous resolutions (two
+        // distinct DUs both reachable) bail — the runtime then falls
+        // back to a plain write.
+        const candidates =
+          path.length === 0
+            ? [rootSchema as z.ZodType]
+            : getNestedZodSchemasAtPath(rootSchema, path)
+        let matchedUnion: z.ZodType | undefined
+        for (const candidate of candidates) {
+          const du = unwrapToDiscriminatedUnion(candidate)
+          if (du === undefined) continue
+          if (matchedUnion !== undefined && matchedUnion !== du) return undefined
+          matchedUnion = du
+        }
+        if (matchedUnion === undefined) return undefined
+        const discKey = getDiscriminator(matchedUnion)
+        if (discKey === undefined) return undefined
+        const options = getDiscriminatedOptions(matchedUnion)
+        return {
+          discriminatorKey: discKey,
+          getVariantDefault(value: unknown): unknown {
+            for (const opt of options) {
+              const shape = getObjectShape(opt)
+              const litSchema = shape[discKey]
+              if (litSchema === undefined) continue
+              if (kindOf(litSchema) !== 'literal') continue
+              const literalValues = getLiteralValues(litSchema)
+              if (literalValues.includes(value)) return deriveDefault(opt, true)
+            }
+            return undefined
+          },
+        }
       },
 
       async validateAtPath(data, path): ReturnType<AbstractSchema<Form, Form>['validateAtPath']> {

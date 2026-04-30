@@ -148,8 +148,12 @@ function walk(
  * library only auto-marks where storage and display diverge, which
  * for slim primitives is exclusively `number` and `bigint`. See the
  * docblock on `walkUnsetSentinels` for the full rationale.
+ *
+ * Exported so the discriminated-union variant-switch reshape in
+ * `create-form-store.ts` can re-mark numeric leaves of the newly
+ * activated variant after replacing the union's parent storage.
  */
-function walkUnspecified(slim: unknown, segments: Segment[], paths: PathKey[]): unknown {
+export function walkUnspecified(slim: unknown, segments: Segment[], paths: PathKey[]): unknown {
   if (isPrimitiveOrEmpty(slim)) {
     if (isNumericPrimitive(slim)) {
       paths.push(canonicalizePath(segments).key)

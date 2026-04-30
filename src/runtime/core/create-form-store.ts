@@ -14,8 +14,15 @@ import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS } from './defaults'
 import { diffAndApply } from './diff-apply'
 import { CxErrorCode } from './error-codes'
 import { canonicalizePath, type Path, type PathKey, type Segment } from './paths'
-import { getAtPath, mergeStructural, setAtPath, setAtPathWithSchemaFill } from './path-walker'
+import {
+  getAtPath,
+  isPlainRecord,
+  mergeStructural,
+  setAtPath,
+  setAtPathWithSchemaFill,
+} from './path-walker'
 import { isSlimPrimitiveValid } from './slim-primitive-gate'
+import { walkUnspecified } from './unset-walker'
 import {
   createPersistOptInRegistry,
   type PersistOptInRegistry,
@@ -415,6 +422,33 @@ export type CreateFormStoreOptions<F extends GenericForm, G extends GenericForm 
    * through with no callers yet.
    */
   readonly initialBlankPaths?: ReadonlyArray<string> | undefined
+  /**
+   * Whether to remember per-variant typed state across discriminated-
+   * union switches. Default `true`. See `UseFormConfiguration.rememberVariants`
+   * for full semantics.
+   */
+  readonly rememberVariants?: boolean | undefined
+}
+
+/**
+ * `true` when the JSON-encoded PathKey identifies a path strictly
+ * nested under `parentPath` — i.e. shares every parent segment and
+ * has at least one more. Used by the union-variant reshape to clear
+ * blank-bookkeeping for paths that no longer exist in the new
+ * variant's effective shape.
+ */
+function isPathKeyUnder(existingKey: PathKey, parentPath: Path): boolean {
+  let parsed: Segment[]
+  try {
+    parsed = JSON.parse(existingKey) as Segment[]
+  } catch {
+    return false
+  }
+  if (parsed.length <= parentPath.length) return false
+  for (let i = 0; i < parentPath.length; i++) {
+    if (parsed[i] !== parentPath[i]) return false
+  }
+  return true
 }
 
 export function createFormStore<F extends GenericForm, G extends GenericForm = F>(
@@ -422,6 +456,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
 ): FormStore<F, G> {
   const { formKey, schema, defaultValues, validationMode = 'strict', hydration } = options
   const isSSR = options.isSSR === true
+  const rememberVariants: boolean = options.rememberVariants !== false
   const fieldValidationMode: FieldValidationMode = options.fieldValidation?.on ?? 'change'
   const fieldValidationDebounceMs: number =
     options.fieldValidation?.debounceMs ?? DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS
@@ -515,6 +550,20 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     blankPaths.add(raw as PathKey)
     originalBlankPaths.add(raw as PathKey)
   }
+
+  // Per-form variant memory. On a discriminated-union switch the
+  // outgoing variant's subtree (deep-cloned) and its blank-path
+  // bookkeeping are stashed here keyed by `(unionPath, oldDiscValue)`;
+  // on switch-in the entry for the incoming discriminator is
+  // restored. Memory is in-memory only (never persisted, never on
+  // form.value), and is cleared on `reset()` / whole-form replace /
+  // `resetField` of an ancestor of the union path. Disabled when
+  // `rememberVariants === false`.
+  type VariantSnapshot = {
+    readonly value: unknown
+    readonly blankPaths: ReadonlyArray<PathKey>
+  }
+  const variantMemory = new Map<PathKey, Map<unknown, VariantSnapshot>>()
 
   // Reactively-derived blank-required errors. Recomputes whenever
   // `blankPaths` mutates (Vue 3.5 reactive Set handlers track size + has).
@@ -663,6 +712,77 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       return false
     }
 
+    // Discriminated-union variant transitions. Writing a discriminator
+    // — whether as a leaf write to the discriminator key or as a
+    // wholesale write of the union value carrying a different
+    // discriminator — changes the schema's effective shape at the
+    // union's location. Old-variant keys (e.g. `address` on the email
+    // branch) become foreign once `channel: 'sms'` lands; new-variant
+    // required keys need their slim defaults populated so the
+    // errors-as-state pipeline sees the new shape. Two flavours, both
+    // routed through `reshapeUnionVariant`:
+    //
+    //   Case A — leaf write to the discriminator key
+    //   (`setValue('notify.channel', 'sms')`). Parent path is the
+    //   union; the new value names a variant directly.
+    //
+    //   Case B — wholesale write of the union itself
+    //   (`setValue('notify', { channel: 'sms', number: '...' })`).
+    //   Path is the union; the consumer's value carries the
+    //   discriminator. Layer the consumer's value on top of the
+    //   matched variant default so consumer-supplied keys win.
+    if (meta?.skipDiscriminatorReshape !== true) {
+      // Case A: discriminator-key write.
+      if (path.length > 0) {
+        const last = path[path.length - 1]
+        if (typeof last === 'string') {
+          const parentPath = path.slice(0, -1)
+          const parentDU = schema.getUnionDiscriminatorAtPath(parentPath)
+          if (parentDU?.discriminatorKey === last) {
+            const oldValue = getAtPath(form.value, path)
+            if (!Object.is(oldValue, value)) {
+              const variantDefault = parentDU.getVariantDefault(value)
+              if (variantDefault !== undefined) {
+                return reshapeUnionVariant(
+                  parentPath,
+                  oldValue,
+                  value,
+                  variantDefault,
+                  undefined,
+                  meta
+                )
+              }
+            }
+          }
+        }
+      }
+      // Case B: whole-union write.
+      if (isPlainRecord(value)) {
+        const selfDU = schema.getUnionDiscriminatorAtPath(path)
+        if (selfDU !== undefined) {
+          const valueRecord = value as Record<string, unknown>
+          const discValue = valueRecord[selfDU.discriminatorKey]
+          if (discValue !== undefined) {
+            const variantDefault = selfDU.getVariantDefault(discValue)
+            if (variantDefault !== undefined && isPlainRecord(variantDefault)) {
+              const currentUnionValue = getAtPath(form.value, path)
+              const oldDiscValue = isPlainRecord(currentUnionValue)
+                ? (currentUnionValue as Record<string, unknown>)[selfDU.discriminatorKey]
+                : undefined
+              return reshapeUnionVariant(
+                path,
+                oldDiscValue,
+                discValue,
+                variantDefault,
+                valueRecord,
+                meta
+              )
+            }
+          }
+        }
+      }
+    }
+
     // Blank bookkeeping. `blank: true` adds the path
     // to the set (the call site declares "this write represents an
     // empty intent"); any other write removes it (the user typed a
@@ -708,6 +828,134 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     applyFormReplacement(nextForm, meta)
     if (fieldValidationMode === 'change') {
       scheduleFieldValidation(path, false /* debounced */)
+    }
+    return true
+  }
+
+  /**
+   * Replace the union's parent storage with the activated variant's
+   * value, atomically. Two flavours fold into one machine:
+   *
+   *   - `oldDiscValue !== newDiscValue` is a TRUE switch. The
+   *     outgoing variant's subtree (deep-cloned) and its blank-path
+   *     bookkeeping under `parentPath` snapshot into `variantMemory`
+   *     keyed by the union's PathKey. Then memory is consulted for
+   *     `newDiscValue`: a hit restores the prior typed state; a miss
+   *     falls back to `variantDefault` (the adapter's slim default
+   *     for the matching `z.object`).
+   *   - `oldDiscValue === newDiscValue` is NOT a switch — the
+   *     reshape was entered via Case B with a partial whole-union
+   *     write. Skip memory I/O entirely (memory is for switches),
+   *     just merge `consumerOverrides` on top of `variantDefault`.
+   *
+   * `consumerOverrides` carries Case B's whole-union value (e.g.
+   * `setValue('notify', { channel: 'email', address: 'x' })`).
+   * Merge order: memory baseline (or `variantDefault`) first,
+   * consumer overrides on top — so a memory-restored `address`
+   * survives a partial write that doesn't override it. Case A
+   * passes `undefined` for `consumerOverrides`.
+   *
+   * Direct write — the resolved value IS structurally complete
+   * (from the adapter's `deriveDefault` or a matching prior
+   * snapshot). Routing through `mergeStructural` would re-add
+   * foreign keys from the FIRST variant (the union's
+   * `getDefaultAtPath` falls back to the first option), which is
+   * exactly what the reshape is meant to clear.
+   */
+  function reshapeUnionVariant(
+    parentPath: Path,
+    oldDiscValue: unknown,
+    newDiscValue: unknown,
+    variantDefault: unknown,
+    consumerOverrides: Record<string, unknown> | undefined,
+    meta?: WriteMeta
+  ): boolean {
+    const sameDisc = Object.is(oldDiscValue, newDiscValue)
+    const parentKey = canonicalizePath(parentPath).key
+
+    // Snapshot OUTGOING. Deep-clone the value: `getAtPath(form.value,
+    // parentPath)` returns a Vue reactive proxy into the live tree
+    // (form is `ref(initialData)`); after the upcoming `form.value =
+    // nextForm` overwrites the union path, the proxy still points to
+    // the orphaned raw target. JSON-cycle through the proxy reads to
+    // produce a plain-object copy detached from reactivity — form
+    // values are JSON-serializable by construction (slim primitive
+    // write gate enforces this). `structuredClone` does NOT work
+    // here: it rejects Vue's Proxy with `DataCloneError`. Skip when
+    // `oldDiscValue` is undefined (initial state had no
+    // discriminator) — nothing meaningful to remember.
+    let baseline: unknown = variantDefault
+    let restoredBlanks: PathKey[] | undefined
+    if (rememberVariants && !sameDisc) {
+      if (oldDiscValue !== undefined) {
+        const currentValue: unknown = JSON.parse(JSON.stringify(getAtPath(form.value, parentPath)))
+        const outgoingBlanks: PathKey[] = []
+        for (const k of blankPaths) {
+          if (isPathKeyUnder(k, parentPath)) outgoingBlanks.push(k)
+        }
+        let memoryForUnion = variantMemory.get(parentKey)
+        if (memoryForUnion === undefined) {
+          memoryForUnion = new Map<unknown, VariantSnapshot>()
+          variantMemory.set(parentKey, memoryForUnion)
+        }
+        memoryForUnion.set(oldDiscValue, {
+          value: currentValue,
+          blankPaths: outgoingBlanks,
+        })
+      }
+      // Look up INCOMING. Stored value is already a deep clone — safe
+      // to use directly without re-cloning.
+      const memoryForUnion = variantMemory.get(parentKey)
+      const restored = memoryForUnion?.get(newDiscValue)
+      if (restored !== undefined) {
+        baseline = restored.value
+        restoredBlanks = [...restored.blankPaths]
+      }
+    }
+
+    // Layer consumer overrides on top of the baseline (Case B).
+    // For Case A (`consumerOverrides === undefined`), the baseline
+    // is the final value.
+    const finalValue: unknown =
+      consumerOverrides !== undefined
+        ? { ...(baseline as Record<string, unknown>), ...consumerOverrides }
+        : baseline
+
+    // Drop blank-path bookkeeping under `parentPath` — those paths
+    // belong to the OLD variant's leaves and don't exist in the new
+    // effective shape.
+    for (const existingKey of [...blankPaths]) {
+      if (isPathKeyUnder(existingKey, parentPath)) {
+        blankPaths.delete(existingKey)
+      }
+    }
+    // New blanks: restored from memory (preserves the user's prior
+    // explicit blanks + numeric auto-marks together) or recomputed
+    // from the resolved `finalValue` (mount-time rule: storage /
+    // display divergence for `number` / `bigint` numeric leaves).
+    let newBlankPaths: PathKey[]
+    if (restoredBlanks !== undefined) {
+      newBlankPaths = restoredBlanks
+    } else {
+      newBlankPaths = []
+      walkUnspecified(finalValue, [...parentPath], newBlankPaths)
+    }
+
+    const currentValue = getAtPath(form.value, parentPath)
+    if (Object.is(currentValue, finalValue)) {
+      // Apply the auto-marks even on no-op (the bookkeeping must
+      // catch up even when storage identity matches by coincidence).
+      for (const k of newBlankPaths) blankPaths.add(k)
+      return true
+    }
+    const nextForm =
+      parentPath.length === 0
+        ? (finalValue as F)
+        : (setAtPath(form.value, parentPath, finalValue) as F)
+    applyFormReplacement(nextForm, meta)
+    for (const k of newBlankPaths) blankPaths.add(k)
+    if (fieldValidationMode === 'change') {
+      scheduleFieldValidation(parentPath, false /* debounced */)
     }
     return true
   }
@@ -1105,6 +1353,10 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // that reached the controller-aborted branch resolve to a no-op, so
     // the error store stays clean after the reset clears it above.
     cancelFieldValidation()
+    // Variant memory is UX state — a fresh start drops the per-variant
+    // typed-data cache too. Without this, a post-reset switch would
+    // surface stale variant values from before the reset.
+    variantMemory.clear()
     // Notify subscribers (history module clears its stack, persistence
     // sees the reset via onFormChange already). Listener throws are
     // isolated so one bad subscriber can't block the others.
@@ -1119,6 +1371,26 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
 
   function resetField(path: Path): void {
     const { key: targetKey, segments: targetSegments } = canonicalizePath(path)
+
+    // Variant memory: drop any union memory whose path equals or sits
+    // under `targetSegments`. Memory under the reset subtree is
+    // semantically "user's prior typed state at a discriminator that
+    // no longer corresponds to anything live"; preserving it would
+    // surface stale variants on a future switch. Memory ABOVE the
+    // reset subtree (e.g. union at ['notify'] for resetField('notify.address'))
+    // is intentionally preserved — the snapshot self-corrects on the
+    // next switch-out.
+    for (const memKey of [...variantMemory.keys()]) {
+      let memSegments: Segment[]
+      try {
+        memSegments = JSON.parse(memKey) as Segment[]
+      } catch {
+        continue
+      }
+      if (isPathPrefix(targetSegments, memSegments)) {
+        variantMemory.delete(memKey)
+      }
+    }
 
     // Leaf shortcut: direct originals hit means one setValueAtPath does it.
     const leafEntry = originals.get(targetKey)

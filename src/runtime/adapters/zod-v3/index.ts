@@ -8,6 +8,7 @@ import type {
   AbstractSchema,
   FormKey,
   SlimPrimitiveKind,
+  UnionDiscriminatorContext,
   ValidationError,
 } from '../../types/types-api'
 import { getAtPath } from '../../core/path-walker'
@@ -361,6 +362,44 @@ export function zodAdapter<
         const leaf = walkV3ToLeafSchema(_zodSchema, path)
         if (!leaf) return false
         return isLeafRequiredV3(leaf)
+      },
+      getUnionDiscriminatorAtPath(path): UnionDiscriminatorContext | undefined {
+        // Resolve every candidate at `path`; pick the unique one that
+        // is (or wraps) a discriminated union. `peelV3Wrappers` peels
+        // optional / nullable / default / effects / pipeline / readonly
+        // / branded.
+        const candidates =
+          path.length === 0
+            ? [_zodSchema as z.ZodTypeAny]
+            : (getNestedZodSchemasAtPath(_zodSchema, path) as z.ZodTypeAny[])
+        let matchedUnion: z.ZodTypeAny | undefined
+        for (const candidate of candidates) {
+          const peeled = peelV3Wrappers(candidate)
+          if (!isZodSchemaType(peeled, 'ZodDiscriminatedUnion')) continue
+          if (matchedUnion !== undefined && matchedUnion !== peeled) return undefined
+          matchedUnion = peeled
+        }
+        if (matchedUnion === undefined) return undefined
+        const discKey = (
+          matchedUnion as z.ZodDiscriminatedUnion<string, z.ZodDiscriminatedUnionOption<string>[]>
+        )._def.discriminator
+        const options = (
+          matchedUnion as z.ZodDiscriminatedUnion<string, z.ZodDiscriminatedUnionOption<string>[]>
+        )._def.options
+        return {
+          discriminatorKey: discKey,
+          getVariantDefault(value: unknown): unknown {
+            for (const opt of options) {
+              const litSchema = opt.shape[discKey] as z.ZodTypeAny | undefined
+              if (!litSchema) continue
+              if (!isZodSchemaType(litSchema, 'ZodLiteral')) continue
+              if (litSchema._def.value === value) {
+                return getDefaultValuesFromZodSchema(opt as unknown as z.ZodSchema, true, _formKey)
+              }
+            }
+            return undefined
+          },
+        }
       },
       getSlimPrimitiveTypesAtPath(path) {
         if (path.length === 0) return new Set(['object'])

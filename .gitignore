@@ -1,6 +1,9 @@
 # Dependencies
 node_modules
 
+# Claude Code workspace state (auto-memory, scheduled-task locks, etc.)
+.claude
+
 # pnpm content-addressed store (can leak through the dev bind mount)
 .pnpm-store
 

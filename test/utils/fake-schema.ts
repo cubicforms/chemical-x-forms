@@ -130,14 +130,21 @@ export function fakeSchema<F extends GenericForm>(
       // method on the returned object.
       return undefined
     },
-    async validateAtPath(data, path): Promise<ValidationResponse<F>> {
-      if (validator) return await validator(data, path)
-      return {
+    validateAtPath(data, path, options) {
+      // No consumer validator → trivial success. Sync arm when the
+      // caller asked (`options.sync === true`); async arm otherwise,
+      // matching the production adapters' default. With a custom
+      // validator, always go async (we'd need the consumer to supply
+      // a sync overload separately, which they don't, so opt-in sync
+      // simply isn't supported here).
+      if (validator) return validator(data, path)
+      const response: ValidationResponse<F> = {
         data: data as F,
         errors: undefined,
         success: true,
         formKey: '',
       }
+      return options?.sync === true ? response : Promise.resolve(response)
     },
   }
   return schema

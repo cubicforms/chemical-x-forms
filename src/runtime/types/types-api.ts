@@ -126,6 +126,36 @@ export type ValidationResponseWithoutValue<Form> = Omit<ValidationResponse<Form>
  */
 export type ValidationMode = 'strict' | 'lax'
 
+/**
+ * Sync-or-async return shape for `AbstractSchema.validateAtPath`. The
+ * adapter returns the response inline when the schema and the
+ * caller's options permit synchronous validation; otherwise a
+ * `Promise<T>`. Callers that don't care simply `await` (works for
+ * both); callers that DO care (the reshape pre-pass — flicker
+ * prevention) branch on `instanceof Promise`.
+ */
+export type MaybePromise<T> = T | Promise<T>
+
+/**
+ * Options accepted by `AbstractSchema.validateAtPath`. Currently a
+ * single field; kept as an object for forward-compat with future
+ * knobs (e.g. cancellation signals, abort tokens) without breaking
+ * the call signature.
+ *
+ * - `sync`: when `true`, the adapter SHOULD return the response
+ *   inline if the schema permits synchronous validation. When the
+ *   schema is structurally async (zod async refinements, async
+ *   transforms / pipes), the adapter falls back to a `Promise<T>` —
+ *   the flag is a preference, not a guarantee.
+ *
+ *   When omitted or `false`, the adapter is free to use its async
+ *   path (matches the historical Promise-returning contract; every
+ *   non-reshape callsite uses this default).
+ */
+export type ValidateOptions = {
+  sync?: boolean
+}
+
 type GetDefaultValuesConfig<Form> = {
   useDefaultSchemaValues: boolean
   validationMode?: ValidationMode
@@ -218,13 +248,32 @@ export type AbstractSchema<Form, GetValueFormType> = {
    * (`['user.name']` vs `['user', 'name']`) stay distinct at the
    * adapter boundary.
    *
-   * Returns a `Promise` so adapters can back validation onto async
-   * parsers (`zod.safeParseAsync`) and consumers can express async
-   * refinements (`z.string().refine(async ...)`). Adapters MUST NOT
-   * throw — errors are returned as a `success: false` response with a
-   * populated `errors` array.
+   * Return type is `MaybePromise<ValidationResponse>`:
+   * - With `options.sync === true` AND a sync-capable schema, the
+   *   adapter SHOULD return the response inline (`T`). This lets the
+   *   runtime batch error writes with a coincident form-value
+   *   mutation in a single Vue reactive flush — preventing the `{}`
+   *   flicker observable during DU variant reshape.
+   * - With `options.sync === true` AND an async-only schema (async
+   *   refines / pipes / transforms), the adapter MUST fall back to
+   *   `Promise<T>`. The flag is a preference, not a guarantee; sync
+   *   isn't always achievable.
+   * - With `options.sync` omitted or `false`, the adapter SHOULD
+   *   return `Promise<T>` (matches the historical contract — every
+   *   non-reshape callsite uses this default and immediately
+   *   `await`s the result).
+   *
+   * Callers that don't care simply `await` (works for both arms);
+   * callers that need to detect sync-vs-async branch on
+   * `instanceof Promise`. Adapters MUST NOT throw — errors are
+   * returned as a `success: false` response with a populated
+   * `errors` array.
    */
-  validateAtPath(data: unknown, path: Path | undefined): Promise<ValidationResponse<Form>>
+  validateAtPath(
+    data: unknown,
+    path: Path | undefined,
+    options?: ValidateOptions
+  ): MaybePromise<ValidationResponse<Form>>
   /**
    * Sync sister to `getSchemasAtPath` / `validateAtPath`. Returns the
    * set of primitive `typeof`-style kinds the path's leaf schema

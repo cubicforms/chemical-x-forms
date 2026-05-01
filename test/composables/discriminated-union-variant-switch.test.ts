@@ -1348,22 +1348,28 @@ describe('variant memory — history (undo/redo) interaction', () => {
 
 /**
  * Inactive-variant errors are filtered from the aggregate `form.errors`
- * surface but preserved in the underlying schemaErrors store, so per-
- * field accessors (`fields[path].errors`) still expose them. The
- * split:
+ * surface (the live-data active-path filter); the underlying
+ * `schemaErrors` store gets re-validated against the new variant on
+ * every reshape, so stale leaf entries from the previous variant
+ * don't accumulate. Per-field accessors (`fields[path].errors`)
+ * therefore reflect *current schema state* — they show errors only
+ * for paths the active variant actually validates.
  *
- *   - `form.errors` answers "what's currently wrong with this form?" —
- *     active schema only.
- *   - `fields.<path>.errors` answers "what does the runtime know
- *     about this specific path?" — independent of which variant is
- *     active. Programmatic consumers reading per-field state can see
- *     the error even when its path is in the inactive variant.
+ *   - `form.errors` answers "what's currently wrong with this form?"
+ *     — active schema, active-path-filtered.
+ *   - `fields.<path>.errors` answers "what does the schema runtime
+ *     currently say about this path?" — empty for inactive-variant
+ *     leaves (their entries clear on reshape).
+ *   - User-injected errors (`setFieldErrors`) DO persist across
+ *     variant switches: they live in a separate store the schema
+ *     validation pipeline never touches.
  *
  * Filter mechanism: `hasAtPath(form.value, err.path)`. Reshape removes
- * inactive variant keys from `form.value` outright, so the predicate
- * resolves cheaply (descend chain, no schema introspection).
+ * inactive-variant keys from `form.value` outright; schema
+ * re-validation under the new shape clears stale schemaErrors
+ * entries; user errors stay put.
  */
-describe('inactive-variant errors — filtered from form.errors, preserved per-field', () => {
+describe('inactive-variant errors — filtered from form.errors, schemaErrors re-validated', () => {
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
@@ -1407,7 +1413,13 @@ describe('inactive-variant errors — filtered from form.errors, preserved per-f
     expect(api.errors('notify.address')).toBeDefined()
   })
 
-  it('per-field fields still exposes errors for paths in the inactive variant', async () => {
+  it('per-field fields clears schema errors at inactive-variant paths after reshape', async () => {
+    // Reshape's sync re-validation against the new variant shape
+    // clears every schemaErrors entry under the union's parent path
+    // (the leaf-keyed clear-then-write in
+    // `applySchemaErrorsForSubtree`). Inactive-variant leaves don't
+    // exist in the new shape, so they get no new entries — schemaErrors
+    // ends up reflecting current schema truth.
     const { app, api } = mountProfile()
     apps.push(app)
     await nextTick()
@@ -1415,18 +1427,52 @@ describe('inactive-variant errors — filtered from form.errors, preserved per-f
     api.setValue('notify.channel', 'sms')
     await nextTick()
 
-    // form.errors hides it.
+    expect(api.errors('notify.address')).toBeUndefined()
+    const fields = (
+      api as unknown as {
+        fields: { notify: { address: { errors: ValidationError[] } } }
+      }
+    ).fields.notify.address
+    expect(fields.errors).toEqual([])
+  })
+
+  it('per-field fields preserves USER-injected errors across variant switches', async () => {
+    // userErrors live in a separate store the schema validation
+    // pipeline never touches, so consumer-injected errors at an
+    // inactive-variant path stay visible through the per-field surface
+    // even when `form.errors` filters them out via the active-path
+    // mask. This is the actual "preserved across variant switches"
+    // contract — it's about consumer intent, not about the schema's
+    // historical validation results.
+    const { app, api } = mountProfile()
+    apps.push(app)
+    await nextTick()
+
+    api.setFieldErrors([
+      {
+        path: ['notify', 'address'],
+        message: 'server says address is taken',
+        formKey: api.key,
+        code: 'api:validation',
+      },
+    ])
+
+    api.setValue('notify.channel', 'sms')
+    await nextTick()
+
+    // form.errors hides it (active-path filter — notify.address isn't
+    // in the live shape).
     expect(api.errors('notify.address')).toBeUndefined()
 
-    // But the per-field state surface keeps the error available for
-    // programmatic consumers — useful when the consumer reads errors
-    // off a path without first checking which variant is active.
+    // Per-field surface retains it (userErrors store, untouched by
+    // schema re-validation).
     const fields = (
       api as unknown as {
         fields: { notify: { address: { errors: ValidationError[] } } }
       }
     ).fields.notify.address
     expect(fields.errors.length).toBeGreaterThan(0)
+    expect(fields.errors[0]?.message).toBe('server says address is taken')
   })
 
   it('handleSubmit-populated errors at the active variant flow through the filter cleanly', async () => {

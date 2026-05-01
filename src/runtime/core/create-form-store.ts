@@ -952,9 +952,47 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       parentPath.length === 0
         ? (finalValue as F)
         : (setAtPath(form.value, parentPath, finalValue) as F)
+    // Sync-validate AHEAD of the form mutation when the schema
+    // permits it. Both writes (schemaErrors + form.value) then land
+    // in the same Vue reactive batch, so a single render emits the
+    // fully-consistent post-reshape state. Without this, the render
+    // queued by `applyFormReplacement` runs BEFORE the async
+    // validation lands — the active-path filter hides the OLD
+    // variant's schemaErrors (their leaves vanished from form.value)
+    // and the NEW variant's haven't been written yet, producing a
+    // visible `{}` flicker between the two meaningful states.
+    //
+    // We pass `{ sync: true }` to opt into the adapter's sync arm.
+    // The adapter MAY still return a Promise (async refinements,
+    // async transforms / pipes — schemas where sync isn't possible);
+    // we detect that with `instanceof Promise` and fall through to
+    // the existing debounced async pipeline in that case.
+    let appliedSync = false
+    if (fieldValidationMode === 'change') {
+      const syncOrPromise = schema.validateAtPath(finalValue, parentPath, { sync: true })
+      if (!(syncOrPromise instanceof Promise)) {
+        const reStamped = syncOrPromise.success
+          ? []
+          : syncOrPromise.errors.map((err) => ({
+              ...err,
+              path: [...parentPath, ...(err.path as Segment[])],
+            }))
+        applySchemaErrorsForSubtree(parentPath, reStamped)
+        // Cancel any in-flight async validation at this path so a
+        // late-arriving result can't clobber the sync write.
+        const { key: parentKey } = canonicalizePath(parentPath)
+        const prevValidation = fieldValidationState.get(parentKey)
+        if (prevValidation !== undefined) {
+          if (prevValidation.timer !== null) clearTimeout(prevValidation.timer)
+          prevValidation.controller.abort()
+          fieldValidationState.delete(parentKey)
+        }
+        appliedSync = true
+      }
+    }
     applyFormReplacement(nextForm, meta)
     for (const k of newBlankPaths) blankPaths.add(k)
-    if (fieldValidationMode === 'change') {
+    if (fieldValidationMode === 'change' && !appliedSync) {
       scheduleFieldValidation(parentPath, false /* debounced */)
     }
     return true

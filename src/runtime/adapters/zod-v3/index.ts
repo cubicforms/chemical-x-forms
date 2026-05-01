@@ -10,9 +10,10 @@ import type {
   SlimPrimitiveKind,
   UnionDiscriminatorContext,
   ValidationError,
+  ValidationResponse,
 } from '../../types/types-api'
 import { getAtPath } from '../../core/path-walker'
-import { canonicalizePath, type PathKey } from '../../core/paths'
+import { canonicalizePath, type Path, type PathKey } from '../../core/paths'
 import { slimKindOf } from '../../core/slim-primitive-gate'
 
 // The adapter exchanges dotted-string paths with core at the
@@ -447,83 +448,106 @@ export function zodAdapter<
         leafCache.set(cacheKey, isLeaf)
         return isLeaf
       },
-      async validateAtPath(data, path) {
-        if (path === undefined) {
-          // safeParseAsync accepts both sync and async refinements —
-          // matches the v4 adapter's contract so .refine(async ...) is a
-          // first-class schema feature for both adapters.
-          const { success, data: successData, error } = await _zodSchema.safeParseAsync(data)
-          if (success) {
-            return {
-              data: successData,
-              success,
-              errors: undefined,
-              formKey: _formKey,
-            }
-          }
-
-          return {
-            success,
-            data: undefined,
-            errors: zodIssuesToValidationErrors(error.issues, _formKey),
-            formKey: _formKey,
+      validateAtPath(data, path, options) {
+        // Sync attempt: when `options.sync === true`, try `safeParse`
+        // (synchronous). It throws on async refines / pipes /
+        // transforms; we catch and fall through to `safeParseAsync`.
+        // Without the flag the adapter goes straight to async — the
+        // historical contract every non-reshape callsite expects.
+        const trySync = options?.sync === true
+        if (trySync) {
+          try {
+            return runSync()
+          } catch {
+            // Async-only schema. Fall through to the async path.
           }
         }
+        return runAsync()
 
-        const [strippedSchema] = stripRootSchema(_zodSchema, {
-          stripDefaultValues: true,
-          stripNullable: true,
-          stripOptional: true,
-        })
-        const slimSchema = getSlimSchema({
-          schema: strippedSchema,
-          stripConfig: {
+        function runSync(): ValidationResponse<Form> {
+          if (path === undefined) {
+            const { success, data: successData, error } = _zodSchema.safeParse(data)
+            return success
+              ? { data: successData, success, errors: undefined, formKey: _formKey }
+              : {
+                  success,
+                  data: undefined,
+                  errors: zodIssuesToValidationErrors(error.issues, _formKey),
+                  formKey: _formKey,
+                }
+          }
+          const nestedZodSchemas = nestedSchemasAtPath(path)
+          if (!nestedZodSchemas.length) return pathNotFound(path)
+          const accumulatedErrors: z.ZodError<unknown>[] = []
+          for (const nestedSchema of nestedZodSchemas) {
+            const { data: successData, success, error } = nestedSchema.safeParse(data)
+            if (!success) {
+              accumulatedErrors.push(error)
+              continue
+            }
+            return { data: successData, errors: undefined, success: true, formKey: _formKey }
+          }
+          return aggregatedFailure(accumulatedErrors)
+        }
+
+        async function runAsync(): Promise<ValidationResponse<Form>> {
+          if (path === undefined) {
+            const { success, data: successData, error } = await _zodSchema.safeParseAsync(data)
+            return success
+              ? { data: successData, success, errors: undefined, formKey: _formKey }
+              : {
+                  success,
+                  data: undefined,
+                  errors: zodIssuesToValidationErrors(error.issues, _formKey),
+                  formKey: _formKey,
+                }
+          }
+          const nestedZodSchemas = nestedSchemasAtPath(path)
+          if (!nestedZodSchemas.length) return pathNotFound(path)
+          // Sequential await — parallelising would run every branch's
+          // async side effects on a value only one branch should see.
+          const accumulatedErrors: z.ZodError<unknown>[] = []
+          for (const nestedSchema of nestedZodSchemas) {
+            const { data: successData, success, error } = await nestedSchema.safeParseAsync(data)
+            if (!success) {
+              accumulatedErrors.push(error)
+              continue
+            }
+            return { data: successData, errors: undefined, success: true, formKey: _formKey }
+          }
+          return aggregatedFailure(accumulatedErrors)
+        }
+
+        function nestedSchemasAtPath(p: Path): z.ZodTypeAny[] {
+          const [strippedSchema] = stripRootSchema(_zodSchema, {
             stripDefaultValues: true,
-          },
-        })
-        const nestedZodSchemas = getNestedZodSchemasAtPath(slimSchema, path)
+            stripNullable: true,
+            stripOptional: true,
+          })
+          const slimSchema = getSlimSchema({
+            schema: strippedSchema,
+            stripConfig: { stripDefaultValues: true },
+          })
+          return getNestedZodSchemasAtPath(slimSchema, p)
+        }
 
-        // The structured ValidationError in the return already tells
-        // the caller the path didn't resolve — no extra console noise.
-        if (!nestedZodSchemas.length) {
+        function pathNotFound(p: Path): ValidationResponse<Form> {
           return {
             data: undefined,
-            errors: NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA([...path], _formKey),
+            errors: NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA([...p], _formKey),
             success: false,
             formKey: _formKey,
           }
         }
 
-        // Branch-by-branch sequential await — parallelising would run
-        // every branch's async side effects on a value only one branch
-        // should see. See the v4 adapter's matching comment.
-        const accumulatedErrors: z.ZodError<unknown>[] = []
-        for (const nestedSchema of nestedZodSchemas) {
-          const { data: successData, success, error } = await nestedSchema.safeParseAsync(data)
-
-          if (!success) {
-            accumulatedErrors.push(error)
-            continue // try with remaining nested schemas
-          }
-
+        function aggregatedFailure(errors: z.ZodError<unknown>[]): ValidationResponse<Form> {
+          const allIssues = errors.reduce<z.ZodIssue[]>((acc, e) => [...acc, ...e.issues], [])
           return {
-            data: successData,
-            errors: undefined,
-            success: true,
+            data: undefined,
+            errors: zodIssuesToValidationErrors(allIssues, _formKey),
+            success: false,
             formKey: _formKey,
           }
-        }
-
-        // no nested schemas matched, this is a failure mode
-        const allIssues = accumulatedErrors.reduce<z.ZodIssue[]>(
-          (accumulator, _error) => [...accumulator, ..._error.issues],
-          []
-        )
-        return {
-          data: undefined,
-          errors: zodIssuesToValidationErrors(allIssues, _formKey),
-          success: false,
-          formKey: _formKey,
         }
       },
     }

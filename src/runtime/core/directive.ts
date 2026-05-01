@@ -901,14 +901,25 @@ const vRegisterRadio: RegisterRadioCustomDirective = {
     // attributes (which don't surface in vnode.props because Vue's
     // static-attr fast path skips patchProp) still resolve correctly.
     el.checked = looseEqual(value.innerRef.value, getValue(el))
+    el._lastAppliedModel = value.innerRef.value
   },
-  beforeUpdate(el, { value, oldValue }, vnode) {
+  // Skip the DOM sync when the model is identity-unchanged from the
+  // last application. Pre-fix the guard read `value.innerRef.value
+  // !== oldValue`, comparing a primitive scalar against the previous
+  // binding's wrapper RegisterValue object — always !==, so the
+  // guard was a silent no-op and `el.checked = …` re-applied on
+  // every parent re-render. Same shape as the just-fixed
+  // `vRegisterSelect` and `setChecked` bugs: a sibling's reactive
+  // write triggers `beforeUpdate` mid-click and writes back the
+  // prior model state, clobbering the in-flight selection.
+  beforeUpdate(el, { value }, vnode) {
     if (!isRegisterValue(value)) return
 
     setAssignFunction(el, vnode, value)
-    if (value.innerRef.value !== oldValue) {
-      el.checked = looseEqual(value.innerRef.value, getValue(el))
-    }
+    const currentModel = value.innerRef.value
+    if (el._lastAppliedModel === currentModel) return
+    el.checked = looseEqual(currentModel, getValue(el))
+    el._lastAppliedModel = currentModel
   },
 }
 

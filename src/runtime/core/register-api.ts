@@ -1,5 +1,10 @@
 import { computed, ref, type Ref } from 'vue'
-import type { RegisterOptions, RegisterValue, WriteMeta } from '../types/types-api'
+import type {
+  RegisterOptions,
+  RegisterTransform,
+  RegisterValue,
+  WriteMeta,
+} from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { captureUserCallSite } from './dev-stack-trace'
@@ -7,6 +12,13 @@ import { AnonPersistError } from './errors'
 import { extractSchemaFields } from './extract-schema-fields'
 import { canonicalizePath, type Path, type PathKey } from './paths'
 import { PERSISTENCE_MODULE_KEY } from './persistence'
+
+// Module-level frozen empty array — re-used as the transforms default
+// across every register() call that doesn't opt in. Avoids a per-call
+// allocation on the 99% of fields that don't declare normalization,
+// while keeping the directive's `for (const t of rv.transforms)`
+// iteration uniform (no null-check needed).
+const EMPTY_TRANSFORMS: ReadonlyArray<RegisterTransform> = Object.freeze([])
 
 /**
  * Register API factory. Given a FormStore, returns a `register(path)` that
@@ -132,6 +144,7 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
 
     const persist = options?.persist === true
     const acknowledgeSensitive = options?.acknowledgeSensitive === true
+    const transforms = options?.transforms ?? EMPTY_TRANSFORMS
 
     // Eager throw: opt-in declared but the form has no persistence wired.
     // Without the throw the directive silently records the opt-in, no
@@ -212,6 +225,7 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
       persist,
       acknowledgeSensitive,
       persistOptIns: state.persistOptIns,
+      transforms,
     }
   }
 }

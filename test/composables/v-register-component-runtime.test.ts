@@ -50,6 +50,7 @@ async function mountWithChild(
   options?: {
     persist?: boolean
     acknowledgeSensitive?: boolean
+    transforms?: ReadonlyArray<(value: unknown) => unknown>
     onUpdateRegisterValue?: (...args: unknown[]) => void
     installAssigner?: (el: HTMLElement) => void
   }
@@ -74,6 +75,7 @@ async function mountWithChild(
       const rv = api.register('email', {
         ...(options?.persist ? { persist: true } : {}),
         ...(options?.acknowledgeSensitive ? { acknowledgeSensitive: true } : {}),
+        ...(options?.transforms ? { transforms: options.transforms } : {}),
       })
       return () =>
         withDirectives(
@@ -486,6 +488,202 @@ describe('pattern 3: @update:registerValue prop on a component', () => {
     if (handle.api === undefined) throw new Error('api never set')
     expect(receivedRv).toBeDefined()
     expect(handle.api.values.email).toBe('HELLO')
+  })
+})
+
+describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
+  let mounted: MountReturn | undefined
+
+  afterEach(() => {
+    mounted?.app.unmount()
+    mounted = undefined
+    document.body.innerHTML = ''
+  })
+
+  const ChildInput = defineComponent({
+    name: 'ChildInput',
+    inheritAttrs: false,
+    setup(_, { attrs }) {
+      return () => h('input', { type: 'text', ...attrs })
+    },
+  })
+
+  const upper = (v: unknown): unknown => (typeof v === 'string' ? v.toUpperCase() : v)
+  const trim = (v: unknown): unknown => (typeof v === 'string' ? v.trim() : v)
+  const lower = (v: unknown): unknown => (typeof v === 'string' ? v.toLowerCase() : v)
+
+  it('1. single transform applies in default assigner', async () => {
+    mounted = await mountWithChild(ChildInput, { transforms: [upper] })
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = 'abc'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(mounted.api.values.email).toBe('ABC')
+  })
+
+  it('2. multi-transform composition (left-to-right)', async () => {
+    mounted = await mountWithChild(ChildInput, { transforms: [trim, lower] })
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = '  HELLO  '
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(mounted.api.values.email).toBe('hello')
+  })
+
+  it('3. transforms compose with @update:registerValue override (override sees post-transform value)', async () => {
+    let received: unknown
+    mounted = await mountWithChild(ChildInput, {
+      transforms: [upper],
+      onUpdateRegisterValue: (v: unknown) => {
+        received = v
+      },
+    })
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = 'abc'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(received).toBe('ABC')
+  })
+
+  it('4. programmatic writes bypass transforms', async () => {
+    mounted = await mountWithChild(ChildInput, { transforms: [upper] })
+    mounted.api.setValue('email', 'lowercase')
+    await flush()
+    expect(mounted.api.values.email).toBe('lowercase')
+  })
+
+  it('5. empty / absent transforms is a no-op', async () => {
+    mounted = await mountWithChild(ChildInput, { transforms: [] })
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = 'untouched'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(mounted.api.values.email).toBe('untouched')
+  })
+
+  it('6. transform throws — caught, logged, write aborted, listener still works', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const throwTransform = (_: unknown): unknown => {
+      throw new Error('boom')
+    }
+    mounted = await mountWithChild(ChildInput, { transforms: [throwTransform] })
+
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = 'abc'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    expect(errSpy).toHaveBeenCalled()
+    const msg = errSpy.mock.calls[0]?.[0] as string
+    expect(msg).toContain('transform threw')
+    expect(msg).toContain('email')
+    expect(msg).toContain('index 0')
+    expect(mounted.api.values.email).toBe('') // write aborted; default preserved
+
+    // Subsequent typing still flows — failure didn't poison the listener.
+    errSpy.mockClear()
+    mounted = await mountWithChild(ChildInput, { transforms: [upper] })
+    const input2 = mounted.rootEl as HTMLInputElement
+    input2.value = 'def'
+    input2.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(mounted.api.values.email).toBe('DEF')
+
+    errSpy.mockRestore()
+  })
+
+  it('7. throw mid-pipeline — subsequent transforms do not run', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const calls: string[] = []
+    const t1 = (v: unknown): unknown => {
+      calls.push('t1')
+      return v
+    }
+    const t2 = (_: unknown): unknown => {
+      calls.push('t2')
+      throw new Error('mid')
+    }
+    const t3 = (v: unknown): unknown => {
+      calls.push('t3')
+      return v
+    }
+    mounted = await mountWithChild(ChildInput, { transforms: [t1, t2, t3] })
+
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = 'abc'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    expect(calls).toEqual(['t1', 't2'])
+    expect(calls).not.toContain('t3')
+    expect(mounted.api.values.email).toBe('')
+    errSpy.mockRestore()
+  })
+
+  it('9. Promise return — write aborted with async-specific dev message', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const asyncTransform = (v: unknown): unknown => Promise.resolve(v)
+    mounted = await mountWithChild(ChildInput, { transforms: [asyncTransform] })
+
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = 'abc'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    expect(errSpy).toHaveBeenCalled()
+    const msg = errSpy.mock.calls[0]?.[0] as string
+    expect(msg).toContain('returned a Promise')
+    expect(msg).toContain('email')
+    expect(msg).toContain('Use async field validation')
+    expect(mounted.api.values.email).toBe('')
+    errSpy.mockRestore()
+  })
+
+  it('11. failure isolation — one path throwing does not affect others', async () => {
+    // Mount a parent with two RegisterValue bindings; one throws, one normalizes.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const Parent = defineComponent({
+      setup() {
+        const api = useForm({ schema, key: `iso-${Math.random().toString(36).slice(2)}` })
+        handle.api = api
+        const rvA = api.register('email', {
+          transforms: [
+            (_: unknown) => {
+              throw new Error('A throws')
+            },
+          ],
+        })
+        const rvB = api.register('name', { transforms: [upper] })
+        return () =>
+          h('div', null, [
+            withDirectives(h('input', { type: 'text', 'data-field': 'A' }), [[vRegister, rvA]]),
+            withDirectives(h('input', { type: 'text', 'data-field': 'B' }), [[vRegister, rvB]]),
+          ])
+      },
+    })
+    const localApp = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    localApp.mount(root)
+    await flush()
+
+    const inputA = root.querySelector('[data-field="A"]') as HTMLInputElement
+    const inputB = root.querySelector('[data-field="B"]') as HTMLInputElement
+
+    inputA.value = 'abc'
+    inputA.dispatchEvent(new Event('input', { bubbles: true }))
+    inputB.value = 'def'
+    inputB.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    if (handle.api === undefined) throw new Error('api never set')
+    expect(handle.api.values.email).toBe('') // A's write aborted
+    expect(handle.api.values.name).toBe('DEF') // B's normalization applied
+
+    localApp.unmount()
+    document.body.innerHTML = ''
+    errSpy.mockRestore()
   })
 })
 

@@ -298,6 +298,107 @@ on the same element all receive `(value, rv)` in registration
 order; none of them is the "default" — the default assigner is
 replaced wholesale once any consumer attaches.
 
+#### Transforms — `register(path, { transforms: [...] })`
+
+For **normalizing user input through a pipeline of pure functions**,
+prefer `transforms` over `@update:registerValue`. The transforms
+array is composed left-to-right, runs entirely inside the
+directive's assigner, and applies uniformly across every
+`v-register` element variant (`<input>`, `<select>`, `<textarea>`,
+`<input type="checkbox">`, `<input type="radio">`).
+
+```ts
+import type { RegisterTransform } from '@chemical-x/forms'
+
+const trim: RegisterTransform = (v) =>
+  typeof v === 'string' ? v.trim() : v
+
+const lowercase: RegisterTransform = (v) =>
+  typeof v === 'string' ? v.toLowerCase() : v
+
+// In setup
+const rv = form.register('email', { transforms: [trim, lowercase] })
+```
+
+```vue
+<input v-register="rv" />
+<!-- type "  Foo@BAR.com  ", form receives "foo@bar.com" -->
+```
+
+`RegisterTransform` is `(value: unknown) => unknown`. The shape is
+intentionally generic-erased so a personal library of transforms
+plugs into any `register()` slot regardless of the path's value
+type — write defensive bodies that no-op on type mismatch and the
+same `trim` works for every string path. Type-safety at the call
+site is delegated to cx's slim-primitive gate at write time.
+
+**Pipeline ordering.** Transforms run AFTER directive modifier
+extraction (`.lazy` switches the listener from `input` to `change`;
+`.trim` and `.number` cast the DOM-extracted value), BEFORE the
+field's assigner writes to form state:
+
+```
+DOM event → modifier cast → transforms[0] → … → transforms[n] → assigner
+```
+
+Combine freely: `<input v-register.lazy.number="register('age', { transforms: [clamp(0, 99)] })">`
+casts to a number on blur, clamps, then writes.
+
+**What transforms DON'T apply to.** This is deliberately narrow —
+transforms are user-input normalization, not storage middleware:
+
+- `form.setValue(...)` and `rv.setValueWithInternalPath(...)` —
+  programmatic writes. Compose transforms yourself at the call
+  site if you want the same normalization:
+  `form.setValue('email', lowercase(trim(rawValue)))`.
+- `form.reset()` / hydration / SSR replay — those write canonical
+  state that's already been validated; running normalization over
+  it would be redundant or destructive.
+- `markBlank()` — already writes the slim default.
+
+**`@update:registerValue` override compose with transforms.** The
+override receives the **post-transform** value as its first arg.
+A consumer who declared transforms intended "always normalize"; a
+silent bypass when an override is attached would be the surprise.
+If you want the raw extracted value, don't register transforms.
+
+**Failure mode.** Transforms must be sync. cx wraps each transform
+call in try/catch; on throw OR Promise return:
+
+- The pipeline aborts (subsequent transforms don't run).
+- Form state is NOT updated; the assigner returns `false`.
+- The DOM's `:value` reactive binding round-trips form state back,
+  snapping the input to the prior value (same UX as the
+  documented "rejection" pattern).
+- A `console.error` is logged. In dev (`process.env.NODE_ENV !==
+  'production'`) the message includes the path, transform index,
+  transform `.name` (when set), the original error, and a
+  remediation hint. In prod the message is a single fixed string
+  with NONE of those — transform bodies can construct error
+  messages from user-typed values, throw with sensitive stack
+  frames, or originate inside deeply-nested call chains we don't
+  control. Set `NODE_ENV=development` to surface details when
+  debugging.
+
+A throw on one keystroke doesn't poison subsequent keystrokes (the
+next event runs the pipeline fresh) and doesn't affect other
+fields' assigners (each field has its own `RegisterValue` and
+its own pipeline).
+
+**When to reach for `@update:registerValue` instead.** Three patterns
+where the override pulls weight that `transforms` doesn't:
+
+- **Rejection with side effect.** The override receives the
+  `RegisterValue`; you can inspect it, log to telemetry, then
+  conditionally call `rv.setValueWithInternalPath` or skip.
+- **Redirection.** Write to a different field, multiple fields, or
+  an external store using the form API.
+- **Custom DOM mutation.** The override has access to the event
+  flow; you can synchronously rewrite `event.target.value` if your
+  use case can't rely on the `:value` round-trip.
+
+Transforms cover normalization. The override covers control.
+
 ### `canonicalizePath(input) → { segments, key }`
 
 Normalise a dotted-string or array path into a structured `Path`
@@ -473,6 +574,7 @@ brand-typed `unique symbol` flavor for type-level usage.
 - `parseDottedPath(s)` — string → `Segment[]`
 - `assignKey` — `unique symbol` used to install a custom assigner on a v-register-bound element. For most cases prefer the `@update:registerValue` listener (see [Custom assigners](#custom-assigners--updateregistervalue)); reach for `assignKey` only when you need pre-mount installation (typically Web Components).
 - `isRegisterValue(x)` — type guard for the object `register` returns
+- `RegisterTransform` — `(value: unknown) => unknown` — type alias for entries in `register(path, { transforms: [...] })`. Generic-erased so a personal library of transforms works across any path type; see [Transforms](#transforms--registerpath--transforms-).
 - `ROOT_PATH` / `ROOT_PATH_KEY` — the empty path and its key
 - `PARSE_API_ERRORS_DEFAULTS` — `{ maxEntries: 1000, maxPathDepth: 32, maxTotalSegments: 10000 }` constant
 - `AnonPersistError` / `InvalidPathError` / `OutsideSetupError` / `RegistryNotInstalledError` / `ReservedFormKeyError` / `SensitivePersistFieldError` / `SubmitErrorHandlerError` — error classes
@@ -618,7 +720,7 @@ without optional-chaining.
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `setValue(value)`          | `<V extends SetValuePayload<WriteShape<Form>, WriteShape<Form>>>(value: V) => boolean`                                                                               | Replace the whole form. Callback form's `prev` widens via `WriteShape<Form>` (matching what's actually storable). Array `prev.posts[N]` reads get `\| undefined` from the consumer's `noUncheckedIndexedAccess: true`; iteration over `prev.posts` stays strict. Returns `false` if the slim-primitive gate rejects. Programmatic — does NOT trigger persistence.                                                                            |
 | `setValue(path, value)`    | `<P extends FlatPath<Form>, V extends SetValuePayload<WriteShape<NestedType<Form, P>>, NonNullable<WriteShape<NestedType<Form, P>>>>>(path: P, value: V) => boolean` | Replace a single leaf or sub-tree. Callback form's `prev` is `NonNullable<WriteShape<NestedType<Form, P>>>` — runtime auto-defaults missing slots before the callback fires. Returns `false` on slim-primitive rejection. Programmatic — does NOT trigger persistence.                                                                                                                                                                       |
-| `register(path, options?)` | `(path: P, options?: RegisterOptions) => RegisterValue<NestedReadType<WriteShape<Form>, P>>`                                                                         | Produces the binding the `v-register` directive consumes. `innerRef`'s read type widens via `WriteShape<Form>` (matches what's storable) and carries `\| undefined` at array-crossing paths; the directive renders `undefined` as empty correctly. `options.persist: true` opts the field into persistence; `options.acknowledgeSensitive: true` overrides the sensitive-name heuristic. See [persistence recipe](./recipes/persistence.md). |
+| `register(path, options?)` | `(path: P, options?: RegisterOptions) => RegisterValue<NestedReadType<WriteShape<Form>, P>>`                                                                         | Produces the binding the `v-register` directive consumes. `innerRef`'s read type widens via `WriteShape<Form>` (matches what's storable) and carries `\| undefined` at array-crossing paths; the directive renders `undefined` as empty correctly. `options.persist: true` opts the field into persistence; `options.acknowledgeSensitive: true` overrides the sensitive-name heuristic; `options.transforms: [...]` runs a sync pipeline on user input before it lands in form state (see [Transforms](#transforms--registerpath--transforms-)). See [persistence recipe](./recipes/persistence.md). |
 
 ### Validation + submission
 

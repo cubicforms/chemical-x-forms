@@ -35,9 +35,11 @@ import type {
   RegisterRadioCustomDirective,
   RegisterSelectCustomDirective,
   RegisterTextCustomDirective,
+  RegisterTransform,
   RegisterValue,
   WriteMeta,
 } from '../types/types-api'
+import type { PathKey } from './paths'
 import { getOrAssignElementId } from './persistence/opt-in-registry'
 import { enforceSensitiveCheck } from './persistence/sensitive-names'
 
@@ -196,6 +198,97 @@ function shouldBailListener(el: HTMLElement): boolean {
   return isDefaultAssigner((el as unknown as { [k: symbol]: unknown })[assignKey])
 }
 
+/**
+ * Result of running a field's `transforms: [...]` pipeline. Discriminated
+ * so each assigner branch can short-circuit on failure without re-checking
+ * a sentinel. `ok: false` means the write should be aborted (the helper
+ * already logged via `console.error`); the caller returns `false` from
+ * the assigner so the existing rejected-write contract carries through.
+ */
+type TransformResult = { ok: true; value: unknown } | { ok: false }
+
+/**
+ * Apply the field's transform pipeline to a value. Each transform runs
+ * inside a per-call try/catch so a buggy or defensive-throw transform
+ * doesn't crash the host app. On throw the pipeline aborts (subsequent
+ * transforms don't run), nothing is written to form state, and the
+ * caller returns `false`. A `Promise` return is treated identically —
+ * transforms must be sync; canonicalize-before-write patterns belong
+ * in async field validation, not the assigner pipeline.
+ *
+ * `transforms` on `RegisterValue` is optional (test fixtures and
+ * custom integrations can omit it); a missing array short-circuits to
+ * the original value with no allocation.
+ */
+function runTransforms(initial: unknown, registerValue: RegisterValue): TransformResult {
+  const transforms = registerValue.transforms
+  if (transforms === undefined || transforms.length === 0) {
+    return { ok: true, value: initial }
+  }
+  let v = initial
+  for (let i = 0; i < transforms.length; i++) {
+    const fn = transforms[i] as RegisterTransform
+    try {
+      v = fn(v)
+    } catch (err) {
+      logTransformFailure(registerValue.path, i, fn, err)
+      return { ok: false }
+    }
+  }
+  if (v instanceof Promise) {
+    logTransformAsync(registerValue.path)
+    return { ok: false }
+  }
+  return { ok: true, value: v }
+}
+
+/**
+ * Log a transform throw. Dev message includes path, index, transform name,
+ * remediation hint, and the original error (with message + stack). Prod
+ * message is a fixed string with NONE of those — transform bodies are
+ * consumer code we don't control, so error messages and stack frames are
+ * an information-leak surface (consumer-typed values, file paths, internal
+ * function names). Set `NODE_ENV=development` to surface details.
+ */
+function logTransformFailure(
+  path: PathKey,
+  index: number,
+  fn: RegisterTransform,
+  err: unknown
+): void {
+  if (__DEV__) {
+    const namePart = fn.name !== '' ? `, '${fn.name}'` : ''
+    console.error(
+      `[@chemical-x/forms] transform threw for path '${path}' (index ${index}${namePart}) — ` +
+        `write aborted. Transforms must not throw; wrap your own try/catch if the throw is recoverable. ` +
+        `Original error:`,
+      err
+    )
+  } else {
+    console.error(
+      `[@chemical-x/forms] transform error — write aborted (set NODE_ENV=development for details).`
+    )
+  }
+}
+
+/**
+ * Log a Promise-returning transform. Same dev/prod posture as
+ * `logTransformFailure` — informative in dev, opaque in prod.
+ */
+function logTransformAsync(path: PathKey): void {
+  if (__DEV__) {
+    console.error(
+      `[@chemical-x/forms] transform pipeline for path '${path}' returned a Promise — ` +
+        `transforms must be sync. Use async field validation for canonicalize-before-write patterns. ` +
+        `Write aborted.`
+    )
+  } else {
+    console.error(
+      `[@chemical-x/forms] transform error — write aborted (set NODE_ENV=development for details).`
+    )
+  }
+}
+
 const getModelAssigner = (
   el: HTMLElement,
   vnode: VNode,
@@ -225,12 +318,15 @@ const getModelAssigner = (
   const fn: unknown =
     vnode.props?.['onUpdate:registerValue'] ?? vnode.props?.['on:update:registerValue']
   if (isArray(fn)) {
+    const fnArr = fn.filter((x) => isFunction(x)) as ((...args: unknown[]) => unknown)[]
     return (value) => {
-      invokeArrayFns(
-        fn.filter((x) => isFunction(x)) as ((...args: unknown[]) => unknown)[],
-        value,
-        registerValue
-      )
+      // Transforms run BEFORE the override sees the value. A consumer
+      // who declared `transforms: [...]` intended "always normalize"; a
+      // silent bypass on override would be the surprise. If they want
+      // raw, they don't register transforms.
+      const r = runTransforms(value, registerValue)
+      if (!r.ok) return false
+      invokeArrayFns(fnArr, r.value, registerValue)
       // Multi-listener case: no single boolean to surface. Return
       // undefined so the listener treats this as "succeeded" — matches
       // the back-compat contract for consumer-installed assigners.
@@ -239,7 +335,11 @@ const getModelAssigner = (
   }
   if (isFunction(fn)) {
     const handler = fn as CustomDirectiveRegisterAssignerFn
-    return (value) => handler(value, registerValue)
+    return (value) => {
+      const r = runTransforms(value, registerValue)
+      if (!r.ok) return false
+      return handler(r.value, registerValue)
+    }
   }
   // Default-installed assigner. Tagged so the listener-body bail
   // (`shouldBailListener`) can distinguish it from consumer overrides
@@ -249,7 +349,9 @@ const getModelAssigner = (
   // vRegisterSelect's change handler) can detect rejection and gate
   // post-write side effects like the `_assigning` flag.
   const defaultAssigner: CustomDirectiveRegisterAssignerFn = (value) => {
-    return registerValue.setValueWithInternalPath(value, computePersistMeta(el, registerValue))
+    const r = runTransforms(value, registerValue)
+    if (!r.ok) return false
+    return registerValue.setValueWithInternalPath(r.value, computePersistMeta(el, registerValue))
   }
   ;(defaultAssigner as unknown as DefaultAssignerCarrier)[DEFAULT_ASSIGNER_TAG] = true
   return defaultAssigner

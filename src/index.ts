@@ -104,6 +104,7 @@ export type {
   RegisterOptions,
   RegisterSelectModifier,
   RegisterTextModifier,
+  RegisterTransform,
   RegisterValue,
   SetValueCallback,
   SetValuePayload,

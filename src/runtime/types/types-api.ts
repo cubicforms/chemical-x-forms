@@ -1077,6 +1077,41 @@ export type RegisterFlatPath<Form, Key extends keyof Form = keyof Form> =
     : never
 
 /**
+ * Sync transformation applied to a field's value as user input flows
+ * from DOM through the directive's assigner. Composes left-to-right
+ * via the `transforms: [...]` array on `register()`.
+ *
+ * The shape is intentionally generic-erased (`(unknown) => unknown`)
+ * rather than per-path-typed: a personal library of transforms
+ * (`trim`, `lowercase`, `slugify`, `clamp`, …) should plug into any
+ * `register()` slot regardless of the path's value type. Library
+ * authors write defensive bodies that no-op on type mismatch:
+ *
+ * ```ts
+ * export const trim: RegisterTransform = (v) =>
+ *   typeof v === 'string' ? v.trim() : v
+ * ```
+ *
+ * Type-safety at the call site is delegated to cx's slim-primitive
+ * gate — a transform that produces a value the path's storage
+ * doesn't accept gets rejected at write time with a standard
+ * diagnostic.
+ *
+ * Transforms must be sync. A `Promise` return is treated as a
+ * pipeline failure: the write is aborted and a console.error is
+ * logged. Use async field validation for canonicalize-before-write
+ * patterns; use sync transforms for fire-and-forget side effects
+ * (`void doIt(value); return value`).
+ *
+ * Throws are caught and aborted: cx wraps each transform call in
+ * try/catch so a buggy or defensive-throw transform doesn't crash
+ * the host app. On throw the pipeline aborts (subsequent transforms
+ * don't run), nothing is written to form state, and the assigner
+ * returns `false`.
+ */
+export type RegisterTransform = (value: unknown) => unknown
+
+/**
  * Options for `register(path, options)`. Per-field rather than
  * per-form so each persisted path is opted in at its own call site —
  * adding a new field can't accidentally leak into the persistence
@@ -1106,6 +1141,36 @@ export type RegisterOptions = {
    * client-side storage for this user's session.
    */
   acknowledgeSensitive?: boolean
+  /**
+   * Sync transformation pipeline applied to user-typed values before
+   * they reach form state. Composes left-to-right: each transform
+   * receives the previous transform's output (or the directive-
+   * extracted DOM value for the first transform).
+   *
+   * Pipeline order:
+   * `DOM event → modifier cast (.lazy/.trim/.number) → transforms[0] → … → transforms[n] → assigner`
+   *
+   * Applies to user input only. Programmatic writes
+   * (`form.setValue(...)`, `rv.setValueWithInternalPath(...)`),
+   * `form.reset()`, hydration, SSR replay, and `markBlank()` all
+   * bypass transforms — those write canonical state, not normalized
+   * user input. If you want the same normalization on a programmatic
+   * write, compose the transforms yourself at the call site:
+   *
+   * ```ts
+   * form.setValue('email', slugify(lowercase(rawValue)))
+   * ```
+   *
+   * Transforms must be sync. Throws and Promise returns abort the
+   * write and log to `console.error` (see `RegisterTransform` for
+   * the failure-mode contract).
+   *
+   * For patterns that need to inspect the `RegisterValue` itself
+   * (rejection-with-side-effect, redirection to other fields, custom
+   * DOM mutation), use `@update:registerValue` on the bound element
+   * instead — see the "Custom assigners" section in the API docs.
+   */
+  transforms?: ReadonlyArray<RegisterTransform>
 }
 
 /**
@@ -1174,6 +1239,17 @@ export type RegisterValue<Value = unknown> = {
    * @internal
    */
   persistOptIns: PersistOptInRegistry
+  /**
+   * Sync transform pipeline applied by the directive's assigner to
+   * user-typed values before they reach form state. See
+   * `RegisterOptions.transforms` for the public contract; this is
+   * the readonly internal handle the directive iterates. Optional
+   * so hand-rolled `RegisterValue` mocks (test fixtures, custom
+   * integrations) don't have to declare an empty array — the
+   * directive falls back to a no-op pipeline.
+   * @internal
+   */
+  transforms?: ReadonlyArray<RegisterTransform>
   /**
    * Read-only, string-form view of the field's current value — what
    * the compile-time `:value` injection reads on every input /

@@ -104,7 +104,8 @@ The two resolution modes are cleanly split:
 
 - **Anonymous (no `key`) → ambient access.** `useForm({ schema })`
   fills the parent's ambient slot. Any descendant's
-  `injectForm<Form>()` (no key) resolves to it.
+  `injectForm<Form>()` (no key) resolves to it; closest ancestor
+  wins when nested.
 - **Keyed (`key: 'x'`) → explicit access only.** `useForm({ schema,
 key: 'x' })` registers the form under `'x'` but does NOT fill the
   ambient slot. Descendants reach it via `injectForm<Form>('x')`,

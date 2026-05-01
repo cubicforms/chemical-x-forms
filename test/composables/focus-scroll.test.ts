@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 import { useForm } from '../../src'
+import { injectForm } from '../../src/runtime/composables/use-form-context'
 import type { Path } from '../../src/runtime/core/paths'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { fakeSchema } from '../utils/fake-schema'
@@ -541,6 +542,184 @@ describe('focusFirstError — sort cache invalidation', () => {
     expect(handle.api!.focusFirstError()).toBe(true)
     focused = focusSpy.mock.instances.at(-1) as HTMLInputElement | undefined
     expect(focused?.getAttribute('data-field')).toBe('email')
+
+    app.unmount()
+  })
+})
+
+describe('focusFirstError — instanceId inheritance through injectForm', () => {
+  let focusSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    if (typeof HTMLElement.prototype.scrollIntoView !== 'function') {
+      HTMLElement.prototype.scrollIntoView = function scrollIntoView() {
+        return undefined
+      }
+    }
+    focusSpy = vi.spyOn(HTMLElement.prototype, 'focus')
+    Object.defineProperty(HTMLElement.prototype, 'offsetParent', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.style.display === 'none' ? null : this.parentNode
+      },
+    })
+  })
+
+  afterEach(() => {
+    focusSpy.mockRestore()
+  })
+
+  // The contract: a child reaching the form via injectForm() inherits
+  // the closest ancestor useForm()'s `formInstanceId` (provided through
+  // `kFormInstanceId`), so inputs the child registers locally are
+  // tagged with the ancestor's instance — keeping parent-submit-focus
+  // working for inputs registered by deep descendants. If injectForm
+  // ever allocates its own fresh ID instead of inheriting, the
+  // ancestor's focusFirstError would skip the descendant's inputs and
+  // this test would fail.
+  it('parent.focusFirstError() targets an input registered by a child that reached the form via injectForm', async () => {
+    type ApiT = ReturnType<typeof useForm<Form>>
+    const handles: { parent?: ApiT; child?: ReturnType<typeof injectForm<Form>> } = {}
+
+    const validator = (_data: unknown, _path: Path | undefined) => ({
+      data: undefined,
+      errors: [
+        { message: 'email is bad', path: ['email'], formKey: 'inject-inherit', code: 'cx:t' },
+      ],
+      success: false as const,
+      formKey: 'inject-inherit',
+    })
+
+    const ChildLeaf = defineComponent({
+      setup() {
+        handles.child = injectForm<Form>('inject-inherit')
+        return () => {
+          const reg = handles.child?.register('email')
+          return h('input', {
+            'data-mount': 'child',
+            ref: (el: unknown) => {
+              if (el instanceof HTMLInputElement && reg) reg.registerElement(el)
+            },
+          })
+        }
+      },
+    })
+
+    const Parent = defineComponent({
+      setup() {
+        handles.parent = useForm<Form>({
+          schema: fakeSchema<Form>(defaults, validator),
+          key: 'inject-inherit',
+        })
+        return () => h(ChildLeaf)
+      },
+    })
+
+    const app = createApp(Parent).use(createChemicalXForms({ override: true }))
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+
+    // Submit through parent → schemaErrors populates → parent's
+    // focusFirstError walks the sort cache, filtered by parent's
+    // instanceId. Without inject inheritance, the child's input would
+    // be tagged under a fresh instanceId and parent's filter would
+    // skip it → focusFirstError returns false. With inheritance, the
+    // child's input matches and gets focused.
+    await handles.parent!.handleSubmit(async () => {})()
+    focusSpy.mockClear()
+    expect(handles.parent!.focusFirstError()).toBe(true)
+    const focused = focusSpy.mock.instances.at(-1) as HTMLInputElement | undefined
+    expect(focused?.getAttribute('data-mount')).toBe('child')
+
+    // form.meta.instanceId equality is the proof: the API the child
+    // got back from injectForm carries the same instanceId as the
+    // parent's useForm callsite.
+    expect(handles.child?.meta.instanceId).toBe(handles.parent!.meta.instanceId)
+
+    app.unmount()
+  })
+
+  // Three-level closest-wins for instanceId: Grandparent and Parent
+  // both useForm() anonymously; Grandchild uses injectForm() and
+  // registers an input. The grandchild's input must be tagged with
+  // PARENT's instanceId (closest ancestor wins via Vue's inject
+  // semantics), not Grandparent's. Parent's focusFirstError finds it;
+  // Grandparent's doesn't.
+  it("nested ancestors: grandchild's input is scoped to the closest ancestor's instance, not the further one", async () => {
+    type ApiT = ReturnType<typeof useForm<Form>>
+    const handles: {
+      grandparent?: ApiT
+      parent?: ApiT
+      child?: ReturnType<typeof injectForm<Form>>
+    } = {}
+
+    // Both ancestors fail validation on the same path so each has an
+    // errored field at submit time. The closest-wins rule decides
+    // which form the grandchild's input belongs to.
+    const validatorFor = (kind: 'gp' | 'p') => (_data: unknown, _path: Path | undefined) => ({
+      data: undefined,
+      errors: [{ message: 'bad', path: ['email'], formKey: kind, code: 'cx:t' }],
+      success: false as const,
+      formKey: kind,
+    })
+
+    const Grandchild = defineComponent({
+      setup() {
+        handles.child = injectForm<Form>()
+        return () => {
+          const reg = handles.child?.register('email')
+          return h('input', {
+            'data-mount': 'grandchild',
+            ref: (el: unknown) => {
+              if (el instanceof HTMLInputElement && reg) reg.registerElement(el)
+            },
+          })
+        }
+      },
+    })
+    const Parent = defineComponent({
+      setup() {
+        handles.parent = useForm<Form>({ schema: fakeSchema<Form>(defaults, validatorFor('p')) })
+        return () => h(Grandchild)
+      },
+    })
+    const Grandparent = defineComponent({
+      setup() {
+        handles.grandparent = useForm<Form>({
+          schema: fakeSchema<Form>(defaults, validatorFor('gp')),
+        })
+        return () => h(Parent)
+      },
+    })
+
+    const app = createApp(Grandparent).use(createChemicalXForms({ override: true }))
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+
+    // Trigger errors on both forms so each has a candidate to focus.
+    await handles.grandparent!.handleSubmit(async () => {})()
+    await handles.parent!.handleSubmit(async () => {})()
+
+    // Grandchild's API.meta.instanceId matches PARENT's, not grandparent's.
+    expect(handles.child?.meta.instanceId).toBe(handles.parent!.meta.instanceId)
+    expect(handles.child?.meta.instanceId).not.toBe(handles.grandparent!.meta.instanceId)
+
+    // Parent's focusFirstError targets grandchild's input.
+    focusSpy.mockClear()
+    expect(handles.parent!.focusFirstError()).toBe(true)
+    const focused = focusSpy.mock.instances.at(-1) as HTMLInputElement | undefined
+    expect(focused?.getAttribute('data-mount')).toBe('grandchild')
+
+    // Grandparent's focusFirstError finds NOTHING — its FormStore has
+    // an error at `email`, but no element registered with its
+    // instanceId is in the DOM (the only `<input email>` in the tree
+    // was registered through the injectForm chain that resolved to
+    // parent, not grandparent).
+    focusSpy.mockClear()
+    expect(handles.grandparent!.focusFirstError()).toBe(false)
+    expect(focusSpy).not.toHaveBeenCalled()
 
     app.unmount()
   })

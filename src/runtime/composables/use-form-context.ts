@@ -37,6 +37,15 @@ let injectedInstanceCounter = 0
  * const cart = injectForm<CartShape>('cart')
  * ```
  *
+ * Resolution rules (no-key form):
+ * - Closest ambient ancestor wins.
+ * - Only anonymous `useForm()` (no `key`) fills the ambient slot;
+ *   keyed forms are reachable only via `injectForm(key)`.
+ * - Inherits the resolved ancestor's `formInstanceId`.
+ *
+ * Resolution rules (keyed form): registry lookup by string key,
+ * independent of component-tree position.
+ *
  * Returns `null` when no matching form exists (no ambient ancestor, or
  * the named key isn't registered). A dev-mode warning points at the
  * call site to help diagnose typos. Always narrow before using:

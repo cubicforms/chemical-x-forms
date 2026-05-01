@@ -134,6 +134,17 @@ Reach the nearest ancestor's form (no key) or reach any form by its
 key. Type-identical return to `useForm`. See
 [recipe](./recipes/form-context.md).
 
+**Resolution rules** (no-key form):
+
+- Closest ambient ancestor wins.
+- Only anonymous `useForm()` (no `key`) fills the ambient slot;
+  keyed forms are reachable only via `injectForm(key)`.
+- No ambient ancestor → returns `null` (dev-mode warn).
+- Inherits the resolved ancestor's `formInstanceId`.
+
+**Resolution rules** (keyed form): registry lookup by string key,
+independent of component-tree position.
+
 ### `useRegistry()`
 
 Returns the current app's `ChemicalXRegistry`. Must be called inside

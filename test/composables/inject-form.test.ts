@@ -203,6 +203,170 @@ describe('injectForm — ambient provide/inject', () => {
     expect(shared.childKey?.startsWith(ANONYMOUS_FORM_KEY_PREFIX)).toBe(true)
     app.unmount()
   })
+
+  // Three-level nesting where two ancestors each register an anonymous
+  // useForm(). Vue's `inject` walks up from the calling component and
+  // returns the FIRST match — so a grandchild's `injectForm()` resolves
+  // to the parent (closer ancestor), shadowing the grandparent's
+  // anonymous form for descendants of the parent. Standard Vue
+  // provide/inject semantics; this test pins the behavior so a
+  // refactor to the `kFormContext` provide chain doesn't silently
+  // change which ancestor wins.
+  it('closest-ancestor wins through nested anonymous forms', () => {
+    const shared: {
+      grandparent?: ReturnType<typeof useForm<Form>>
+      parent?: ReturnType<typeof useForm<Form>>
+      grandchild?: ReturnType<typeof injectForm<Form>>
+    } = {}
+
+    const Grandchild = defineComponent({
+      setup() {
+        shared.grandchild = injectForm<Form>()
+        return () => h('div')
+      },
+    })
+    const Parent = defineComponent({
+      setup() {
+        shared.parent = useForm<Form>({ schema: fakeSchema(defaults) })
+        return () => h(Grandchild)
+      },
+    })
+    const Grandparent = defineComponent({
+      setup() {
+        shared.grandparent = useForm<Form>({ schema: fakeSchema(defaults) })
+        return () => h(Parent)
+      },
+    })
+
+    const app = createApp(Grandparent).use(createChemicalXForms({ override: true }))
+    app.mount(document.createElement('div'))
+
+    // Grandchild resolves to the PARENT (closer), not the grandparent.
+    // Both ancestors are anonymous and provide their own FormStore;
+    // standard inject semantics return the nearest provider.
+    expect(shared.grandparent).toBeDefined()
+    expect(shared.parent).toBeDefined()
+    expect(shared.grandchild).toBeDefined()
+    expect(shared.grandchild?.key).toBe(shared.parent?.key)
+    expect(shared.grandchild?.key).not.toBe(shared.grandparent?.key)
+
+    // State sharing confirms it's actually the parent's FormStore — a
+    // write through the parent surfaces in the grandchild's read, and
+    // does NOT leak into the grandparent.
+    shared.parent?.setValue('email', 'parent-write@x')
+    expect(shared.grandchild?.values.email).toBe('parent-write@x')
+    expect(shared.grandparent?.values.email).toBe('')
+
+    app.unmount()
+  })
+
+  // A keyed useForm() does NOT fill the ambient slot — its provide is
+  // skipped entirely (see useAbstractForm: `if (configuration.key ===
+  // undefined) provide(kFormContext, ...)`). So a chain
+  // Grandparent(anon) → Parent(keyed) → Grandchild(injectForm()) skips
+  // past Parent's keyed form and resolves to Grandparent's anonymous
+  // one. Pin the behavior so the keyed-ambient-skip rule doesn't
+  // regress to "keyed shadows ambient too."
+  it('mid-chain keyed form does not shadow ambient — grandchild resolves past it to the anonymous ancestor', () => {
+    const shared: {
+      grandparent?: ReturnType<typeof useForm<Form>>
+      grandchild?: ReturnType<typeof injectForm<Form>>
+    } = {}
+
+    const Grandchild = defineComponent({
+      setup() {
+        shared.grandchild = injectForm<Form>()
+        return () => h('div')
+      },
+    })
+    const Parent = defineComponent({
+      setup() {
+        // Keyed — does NOT fill the ambient slot. Grandchild's
+        // `injectForm()` (no key) walks past this provide.
+        useForm<Form>({ schema: fakeSchema(defaults), key: 'middle-keyed' })
+        return () => h(Grandchild)
+      },
+    })
+    const Grandparent = defineComponent({
+      setup() {
+        shared.grandparent = useForm<Form>({ schema: fakeSchema(defaults) })
+        return () => h(Parent)
+      },
+    })
+
+    const app = createApp(Grandparent).use(createChemicalXForms({ override: true }))
+    app.mount(document.createElement('div'))
+
+    expect(shared.grandparent).toBeDefined()
+    expect(shared.grandchild).toBeDefined()
+    expect(shared.grandchild?.key).toBe(shared.grandparent?.key)
+
+    // Confirm the resolved store is grandparent's — write surfaces
+    // through both, the keyed form in the middle stays untouched (it's
+    // addressable via injectForm('middle-keyed') only).
+    shared.grandparent?.setValue('email', 'grandparent@x')
+    expect(shared.grandchild?.values.email).toBe('grandparent@x')
+
+    app.unmount()
+  })
+
+  // Two siblings each call useForm() anonymously. Their subtrees see
+  // their own ancestor's form, NOT the other's. Standard tree-position
+  // semantics, but worth pinning so a refactor to a flat ambient
+  // registry (instead of provide/inject) doesn't silently leak state
+  // across siblings.
+  it('sibling anonymous forms do not leak into each other', () => {
+    const shared: {
+      leftParent?: ReturnType<typeof useForm<Form>>
+      rightParent?: ReturnType<typeof useForm<Form>>
+      leftChild?: ReturnType<typeof injectForm<Form>>
+      rightChild?: ReturnType<typeof injectForm<Form>>
+    } = {}
+
+    const LeftChild = defineComponent({
+      setup() {
+        shared.leftChild = injectForm<Form>()
+        return () => h('div')
+      },
+    })
+    const RightChild = defineComponent({
+      setup() {
+        shared.rightChild = injectForm<Form>()
+        return () => h('div')
+      },
+    })
+    const LeftBranch = defineComponent({
+      setup() {
+        shared.leftParent = useForm<Form>({ schema: fakeSchema(defaults) })
+        return () => h(LeftChild)
+      },
+    })
+    const RightBranch = defineComponent({
+      setup() {
+        shared.rightParent = useForm<Form>({ schema: fakeSchema(defaults) })
+        return () => h(RightChild)
+      },
+    })
+    const Root = defineComponent({
+      setup: () => () => h('div', [h(LeftBranch), h(RightBranch)]),
+    })
+
+    const app = createApp(Root).use(createChemicalXForms({ override: true }))
+    app.mount(document.createElement('div'))
+
+    expect(shared.leftParent?.key).not.toBe(shared.rightParent?.key)
+    expect(shared.leftChild?.key).toBe(shared.leftParent?.key)
+    expect(shared.rightChild?.key).toBe(shared.rightParent?.key)
+
+    // Cross-branch isolation: writes on the left don't surface on the
+    // right's children.
+    shared.leftParent?.setValue('email', 'left@x')
+    shared.rightParent?.setValue('email', 'right@x')
+    expect(shared.leftChild?.values.email).toBe('left@x')
+    expect(shared.rightChild?.values.email).toBe('right@x')
+
+    app.unmount()
+  })
 })
 
 describe('injectForm — explicit key resolution', () => {

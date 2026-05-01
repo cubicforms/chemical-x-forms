@@ -19,9 +19,17 @@
   `.refine(async (v) => …)`) previously didn't surface those errors
   at construction — sync `safeParse` throws on async pieces, the
   adapter caught and returned success. The runtime now asks the
-  schema's `needsAsyncValidation()` and queues an immediate full-form
-  async pass when true, so errors land on the next microtask without
+  schema's `needsAsyncValidation()` and queues a one-shot full-form
+  async pass when true, so errors land on a later microtask without
   waiting for a user mutation or a manual `validateAsync()` call.
+  Two timing gates protect SSR↔CSR hydration parity: (a) the
+  scheduling is skipped entirely on SSR (microtasks don't get
+  awaited before serialisation, so the validation can't complete
+  server-side; firing it would only stamp a misleading
+  `isValidating: true` into the SSR HTML); (b) the client-side
+  scheduling is wrapped in `queueMicrotask` so the
+  `activeValidations++` lands AFTER Vue's synchronous hydration /
+  first render, keeping SSR and CSR first-render output in sync.
   Sync schemas (the common case) still validate fully synchronously
   — detection skips the async pass so `meta.isValidating` doesn't
   flash true at mount for forms that have nothing async to validate.

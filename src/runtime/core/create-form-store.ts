@@ -715,20 +715,38 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     if (validationMode === 'strict' && !schemaResponse.success) {
       setAllSchemaErrors(schemaResponse.errors)
     }
-    // Async-only verdicts (e.g. zod's `.refine(async (v) => …)`) can't
-    // surface from `getDefaultValues` — that contract is sync, and the
-    // adapter degrades to success when the schema's sync parse can't
-    // resolve them. When the adapter signals via `needsAsyncValidation`
-    // that there's verdicts only an async pass would surface, queue a
-    // one-shot full-form validation so the construction-time errors
-    // land on the next microtask instead of waiting for a user
-    // mutation. Gated to strict mode AND to schemas that actually need
-    // async work — sync-only schemas would otherwise pay a redundant
-    // microtask + briefly flash `meta.isValidating: true` on mount,
-    // misrepresenting "validation is running" when nothing is.
-    if (validationMode === 'strict' && schema.needsAsyncValidation?.() === true) {
-      scheduleFieldValidation([], true /* immediate */)
-    }
+  }
+
+  // Async-only verdicts (e.g. zod's `.refine(async (v) => …)`) can't
+  // surface from `getDefaultValues` — that contract is sync, and the
+  // adapter degrades to success when the schema's sync parse can't
+  // resolve them. When the adapter signals via `needsAsyncValidation`
+  // that there's verdicts only an async pass would surface, queue a
+  // one-shot full-form validation so the errors land on a later
+  // microtask instead of waiting for a user mutation.
+  //
+  // Two gates:
+  //   - SKIP on SSR. Microtasks don't get awaited before
+  //     `renderToString` serialises, so the async chain never
+  //     completes server-side; firing the schedule would only
+  //     increment `activeValidations` synchronously and stamp a
+  //     misleading `isValidating: true` into the SSR HTML, which
+  //     the client's hydration pass (taking the hydration branch
+  //     above) wouldn't reproduce — surface as a hydration
+  //     mismatch on the `validating…` indicator.
+  //   - `queueMicrotask` so the increment lands AFTER Vue's
+  //     synchronous hydration / first render. SSR HTML and the
+  //     client's first render both observe `activeValidations: 0`;
+  //     the validation kicks off only on the next microtask, by
+  //     which point hydration is done and Vue handles the reactive
+  //     re-render normally.
+  //
+  // Gated to strict mode AND to schemas that actually need async
+  // work — sync-only schemas would otherwise pay a redundant
+  // microtask + briefly flash `meta.isValidating: true` post-mount,
+  // misrepresenting "validation is running" when nothing is.
+  if (!isSSR && validationMode === 'strict' && schema.needsAsyncValidation?.() === true) {
+    queueMicrotask(() => scheduleFieldValidation([], true /* immediate */))
   }
 
   function touchFieldRecord(

@@ -232,6 +232,88 @@ describe('initial validation seed — async-refine schema', () => {
     expect(api.meta.isValid).toBe(true)
   })
 
+  it('SSR pass does not schedule the async seed (isValidating stays false through microtasks)', async () => {
+    // Hydration mismatch regression: pre-fix the construction-time async
+    // seed fired synchronously on every createFormStore call, including
+    // SSR. SSR's `renderToString` doesn't await microtasks, so the async
+    // chain never completed server-side, but the synchronous
+    // `activeValidations += 1` inside `scheduleFieldValidation` was
+    // captured in the SSR HTML — `meta.isValidating` rendered as `true`,
+    // emitting whatever indicator the template gated on it. The client
+    // then took the hydration branch (which doesn't schedule the seed)
+    // and rendered `false` on first render — Vue logged a hydration
+    // mismatch on the indicator element.
+    const asyncSchema = z.object({
+      email: z.email().refine(async (v) => v !== 'taken@example.com', 'taken'),
+    })
+    type AsyncApi = ReturnType<typeof useForm<typeof asyncSchema>>
+    const handle: { api?: AsyncApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: asyncSchema,
+          key: 'init-seed-ssr',
+          defaultValues: { email: 'taken@example.com' },
+        })
+        return () => h('div')
+      },
+    })
+    // Override the registry to SSR mode — `createChemicalXForms({
+    // override: true })` flips `detectSSR` to true, matching what
+    // happens during a Nuxt server pass.
+    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    const api = handle.api
+    if (api === undefined) throw new Error('unreachable')
+    // Synchronously: no async seed scheduled, no indicator flash.
+    expect(api.meta.isValidating).toBe(false)
+    // After microtasks settle: still false. SSR never schedules the
+    // pass, so the validation never fires server-side.
+    await flushMicrotasks()
+    expect(api.meta.isValidating).toBe(false)
+    expect(api.errors.email).toBeUndefined()
+  })
+
+  it('CSR first render observes isValidating: false; async pass fires on next microtask', async () => {
+    // Parity contract: client-side, the seed defers via `queueMicrotask`
+    // so synchronous post-mount reads (matching what Vue's first-render
+    // sees during hydration) observe `activeValidations: 0`. Without the
+    // deferral, a CSR-only mount of an async-refine schema would flash
+    // `isValidating: true` synchronously — and any SSR→CSR pair would
+    // disagree on first-render output.
+    const asyncSchema = z.object({
+      email: z.email().refine(async (v) => v !== 'taken@example.com', 'taken'),
+    })
+    type AsyncApi = ReturnType<typeof useForm<typeof asyncSchema>>
+    const handle: { api?: AsyncApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: asyncSchema,
+          key: 'init-seed-csr-deferred',
+          defaultValues: { email: 'taken@example.com' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    const api = handle.api
+    if (api === undefined) throw new Error('unreachable')
+    // Synchronous post-mount: queueMicrotask hasn't fired.
+    expect(api.meta.isValidating).toBe(false)
+    // After microtasks settle: pass ran, errors landed, validation done.
+    await waitFor(() => api.errors.email?.[0]?.message ?? null)
+    expect(api.meta.isValidating).toBe(false)
+    expect(api.errors.email?.[0]?.message).toBe('taken')
+  })
+
   it('sync schema in strict mode lands errors synchronously and isValidating stays false', () => {
     // Detection's load-bearing invariant: sync schemas don't pay a
     // construction-time async pass. Errors don't flicker either way

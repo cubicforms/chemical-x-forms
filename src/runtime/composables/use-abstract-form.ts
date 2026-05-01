@@ -660,7 +660,11 @@ function wirePersistence<F extends GenericForm>(
       // schema defaults at this point — wirePersistence runs before
       // any user mutation could have happened) so non-persisted paths
       // keep their schema defaults.
-      const merged = mergeSparseHydration(toRaw(state.form.value) as F, payload.data.form)
+      const merged = mergeSparseHydration(
+        toRaw(state.form.value) as F,
+        payload.data.form,
+        state.schema as unknown as Parameters<typeof mergeSparseHydration>[2]
+      )
       state.applyFormReplacement(merged)
       // payload. Persistence is per-element opt-in, so the persisted
       // payload only covers paths within the opt-in scope (the leaf

@@ -234,6 +234,70 @@ directive's listener completes silently and the DOM keeps the user's
 input. The form state stays at its previous value. Field-level
 validation will surface a refinement error on the next render.
 
+#### Custom assigners — `@update:registerValue`
+
+The directive's default behavior is "DOM event → extract value →
+`rv.setValueWithInternalPath(value)`". `@update:registerValue`
+**replaces that bridge step**: your handler receives the
+already-extracted value plus the `RegisterValue`, and decides what
+(if anything) reaches form state.
+
+```vue
+<script setup lang="ts">
+  import type { RegisterValue } from '@chemical-x/forms'
+
+  const form = useForm({ schema, defaultValues: { username: '' } })
+
+  function uppercaseAssigner(value: unknown, rv: RegisterValue): void {
+    rv.setValueWithInternalPath(String(value ?? '').toUpperCase())
+  }
+</script>
+
+<template>
+  <input
+    v-register="form.register('username')"
+    @update:registerValue="uppercaseAssigner"
+  />
+</template>
+```
+
+The value you receive is **post-extraction** — `.number` modifier
+means you get a number, `.trim` means you get the trimmed string,
+`<input type="checkbox">` gives you the boolean. You're operating on
+the same value the default assigner would have written.
+
+Four common patterns:
+
+- **Transform** — call `rv.setValueWithInternalPath(transformed)`
+  with a normalised / masked / cast value (uppercase, slug,
+  currency-format, prefix-strip).
+- **Reject** — skip the call; the keystroke never reaches form
+  state. Distinct from validation errors (which accept the write
+  and flag it); this drops the write entirely.
+- **Side-effect + default** — log / analytics / undo-stack push,
+  then `rv.setValueWithInternalPath(value)` to keep normal flow.
+- **Redirect** — write to a different field, multiple fields, or
+  an external store; the form path itself stays unchanged.
+
+Use `@update:registerValue` on supported roots only (`<input>`,
+`<select>`, `<textarea>`). On a non-form root the directive's
+listener never fires — see `useRegister()` (recommended) or
+`assignKey` (Web Components) for those.
+
+The handler signature is
+`(value: unknown, registerValue: RegisterValue) => boolean | undefined`.
+Return `false` to flag a rejected write to the directive's listener
+(used internally by `<select>` / `.number` bindings to gate
+post-write side effects); `undefined` / `void` is treated as
+success.
+
+Because the second arg is provided by the directive, the handler
+can be a **top-level function** outside `setup()` — no need to
+capture `rv` via closure. Multiple `@update:registerValue` listeners
+on the same element all receive `(value, rv)` in registration
+order; none of them is the "default" — the default assigner is
+replaced wholesale once any consumer attaches.
+
 ### `canonicalizePath(input) → { segments, key }`
 
 Normalise a dotted-string or array path into a structured `Path`
@@ -407,7 +471,7 @@ brand-typed `unique symbol` flavor for type-level usage.
 ### Other exports
 
 - `parseDottedPath(s)` — string → `Segment[]`
-- `assignKey` — `unique symbol` used to install a custom assigner on a v-register-bound element
+- `assignKey` — `unique symbol` used to install a custom assigner on a v-register-bound element. For most cases prefer the `@update:registerValue` listener (see [Custom assigners](#custom-assigners--updateregistervalue)); reach for `assignKey` only when you need pre-mount installation (typically Web Components).
 - `isRegisterValue(x)` — type guard for the object `register` returns
 - `ROOT_PATH` / `ROOT_PATH_KEY` — the empty path and its key
 - `PARSE_API_ERRORS_DEFAULTS` — `{ maxEntries: 1000, maxPathDepth: 32, maxTotalSegments: 10000 }` constant

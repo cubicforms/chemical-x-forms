@@ -685,6 +685,62 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
     document.body.innerHTML = ''
     errSpy.mockRestore()
   })
+
+  it('12. per-binding isolation — same path, two register() call sites, only the typed-in binding runs its pipeline', async () => {
+    // Two inputs bound to the SAME path 'email'. One register() call passes
+    // transforms: [upper], the other passes no transforms. Each input must
+    // run its OWN pipeline when the user types into it — typing in A runs
+    // upper, typing in B writes raw. No cross-element leakage at the
+    // transform layer; form state at the path is still a single shared
+    // slot (last-write-wins), so we can read it back to verify.
+    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const Parent = defineComponent({
+      setup() {
+        const api = useForm({ schema, key: `per-bind-${Math.random().toString(36).slice(2)}` })
+        handle.api = api
+        const rvA = api.register('email', { transforms: [upper] })
+        const rvB = api.register('email')
+        return () =>
+          h('div', null, [
+            withDirectives(h('input', { type: 'text', 'data-bind': 'A' }), [[vRegister, rvA]]),
+            withDirectives(h('input', { type: 'text', 'data-bind': 'B' }), [[vRegister, rvB]]),
+          ])
+      },
+    })
+    const localApp = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    localApp.mount(root)
+    await flush()
+
+    if (handle.api === undefined) throw new Error('api never set')
+    const inputA = root.querySelector('[data-bind="A"]') as HTMLInputElement
+    const inputB = root.querySelector('[data-bind="B"]') as HTMLInputElement
+
+    // Type into A → A's transform runs → uppercase lands.
+    inputA.value = 'abc'
+    inputA.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(handle.api.values.email).toBe('ABC')
+
+    // Type into B → B has no transforms → raw value lands, overwriting A's
+    // earlier write. Proves B's bypass is independent of A's pipeline.
+    inputB.value = 'xyz'
+    inputB.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(handle.api.values.email).toBe('xyz')
+
+    // Type into A again → A's pipeline still works after B's untransformed
+    // write. Proves the closure capture per binding survives across other
+    // bindings' assigner runs on the same path.
+    inputA.value = 'def'
+    inputA.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(handle.api.values.email).toBe('DEF')
+
+    localApp.unmount()
+    document.body.innerHTML = ''
+  })
 })
 
 describe('v-register="undefined" is a graceful no-op (invariant 4)', () => {

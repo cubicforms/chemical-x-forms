@@ -11,6 +11,7 @@ import {
   getObjectShape,
   getRecordKeyType,
   getRecordValueType,
+  getSetValueType,
   getTupleItems,
   getUnionOptions,
   hasChecks,
@@ -75,6 +76,10 @@ export function stripRefinements(schema: z.ZodType): z.ZodType {
     case 'array': {
       const element = getArrayElement(schema as z.ZodArray)
       return z.array(stripRefinements(element))
+    }
+    case 'set': {
+      const valueType = getSetValueType(schema)
+      return z.set(stripRefinements(valueType))
     }
     case 'tuple': {
       const items = getTupleItems(schema).map(stripRefinements)
@@ -243,6 +248,10 @@ export function getSlimSchema(schema: z.ZodType, stripConfig: StripConfig): z.Zo
     case 'array': {
       const element = getArrayElement(schema as z.ZodArray)
       return carryChecks(z.array(getSlimSchema(element, stripConfig)), schema, stripConfig)
+    }
+    case 'set': {
+      const valueType = getSetValueType(schema)
+      return carryChecks(z.set(getSlimSchema(valueType, stripConfig)), schema, stripConfig)
     }
     case 'tuple': {
       const items = getTupleItems(schema).map((it) => getSlimSchema(it, stripConfig))

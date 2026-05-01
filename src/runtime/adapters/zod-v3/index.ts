@@ -668,6 +668,9 @@ function slimPrimitivesV3(schema: z.ZodTypeAny, depth = 0): Set<SlimPrimitiveKin
   if (isZodSchemaType(schema, 'ZodArray') || typeName === 'ZodTuple') {
     return new Set(['array'])
   }
+  if (isZodSchemaType(schema, 'ZodSet')) {
+    return new Set(['set'])
+  }
   if (isZodSchemaType(schema, 'ZodOptional')) {
     const inner = def?.innerType
     const innerSet =
@@ -814,6 +817,10 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
       currentSchema = Object.hasOwn(shape, key) ? shape[key] : undefined
     } else if (isZodSchemaType(currentSchema, 'ZodArray')) {
       currentSchema = currentSchema._def.type
+    } else if (isZodSchemaType(currentSchema, 'ZodSet')) {
+      // Sets aren't position-indexed; the segment is a synthetic
+      // indexer used to query the element type via `[...path, 0]`.
+      currentSchema = currentSchema._def.valueType
     } else if (isZodSchemaType(currentSchema, 'ZodRecord')) {
       currentSchema = currentSchema._def.valueType
     } else if (isZodSchemaType(currentSchema, 'ZodDiscriminatedUnion')) {

@@ -18,6 +18,7 @@ import type { z } from 'zod'
 export type ZodKind =
   | 'object'
   | 'array'
+  | 'set'
   | 'record'
   | 'tuple'
   | 'union'
@@ -99,6 +100,8 @@ export function kindOf(schema: unknown): ZodKind {
       return 'object'
     case 'array':
       return 'array'
+    case 'set':
+      return 'set'
     case 'record':
       return 'record'
     case 'tuple':
@@ -174,6 +177,15 @@ export function getObjectShape(schema: z.ZodObject): Record<string, z.ZodType> {
 export function getArrayElement(schema: z.ZodArray): z.ZodType {
   const def = readDef(schema)
   return def?.element as z.ZodType
+}
+
+/**
+ * Returns the element schema of a `z.set(...)`. Symmetric to
+ * `getArrayElement`; v4 stores the set's element type on `def.valueType`.
+ */
+export function getSetValueType(schema: z.ZodType): z.ZodType {
+  const def = readDef(schema)
+  return def?.valueType as z.ZodType
 }
 
 export function getRecordKeyType(schema: z.ZodType): z.ZodType {

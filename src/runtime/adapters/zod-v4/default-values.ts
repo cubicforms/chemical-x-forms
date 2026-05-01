@@ -64,6 +64,8 @@ function defaultForKind(kind: ZodKind, schema: z.ZodType, useDefault: boolean): 
     }
     case 'array':
       return []
+    case 'set':
+      return new Set()
     case 'record':
       return {}
     case 'tuple': {

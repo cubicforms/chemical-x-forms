@@ -6,6 +6,7 @@ import {
   getIntersectionRight,
   getObjectShape,
   getRecordValueType,
+  getSetValueType,
   getTupleItems,
   getUnionOptions,
   kindOf,
@@ -60,6 +61,11 @@ function walkSegments(schema: z.ZodType, segments: readonly string[]): z.ZodType
     }
     case 'array':
       return walkSegments(getArrayElement(schema as z.ZodArray), rest)
+    case 'set':
+      // Sets aren't position-indexed, so the `head` segment is just a
+      // synthetic indexer (`[...path, 0]`) used to query the element
+      // type. We descend into the value schema and consume the segment.
+      return walkSegments(getSetValueType(schema), rest)
     case 'record':
       return walkSegments(getRecordValueType(schema), rest)
     case 'tuple': {

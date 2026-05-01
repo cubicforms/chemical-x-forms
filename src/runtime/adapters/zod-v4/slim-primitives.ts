@@ -99,6 +99,8 @@ function walk(schema: z.ZodType, depth: number): Set<SlimPrimitiveKind> {
     case 'array':
     case 'tuple':
       return new Set(['array'])
+    case 'set':
+      return new Set(['set'])
     case 'optional': {
       const inner = unwrapInner(schema)
       const innerSet = inner === undefined ? new Set<SlimPrimitiveKind>() : walk(inner, depth + 1)

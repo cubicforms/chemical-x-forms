@@ -7,9 +7,9 @@
  * whose primitive shape can't possibly satisfy the slim schema —
  * regardless of refinement-level conformance.
  *
- * Refinement-level constraints (`.email()`, `.min(N)`, enum
- * membership, literal equality) are NOT enforced here; they're a
- * validation-time concern. This gate exists purely to keep the
+ * Refinement-level constraints (format checks, length / range bounds,
+ * enum membership, literal equality) are NOT enforced here; they're
+ * a validation-time concern. This gate exists purely to keep the
  * runtime store's primitive shape honest.
  */
 import type { AbstractSchema, SlimPrimitiveKind } from '../types/types-api'
@@ -93,14 +93,14 @@ function isLeafValue(value: unknown): boolean {
  * dev-warn naming the bad path + offending kind + accepted kinds).
  *
  * Conventions:
- * - Empty accept set → REJECT every kind. This covers `z.never()`
- *   (intentionally accepts nothing) AND unresolvable paths (typo
+ * - Empty accept set → REJECT every kind. This covers a `never`-typed
+ *   path (intentionally accepts nothing) AND unresolvable paths (typo
  *   in `register('addr.zipp')` against a schema that doesn't have
  *   that field — silently accepting the write would create a phantom
- *   slot in storage). `z.any()` / `z.unknown()` / `z.void()` and the
- *   lazy-peel-failure case return the FULL permissive set, so they
- *   accept anything via the membership check below — they don't go
- *   through this branch.
+ *   slot in storage). The "permissive" cases (`any` / `unknown` /
+ *   `void` and the lazy-peel-failure case) return the FULL accept set
+ *   instead, so they accept anything via the membership check below
+ *   — they don't go through this branch.
  * - The value AT the write path is also checked: writing `'oops'`
  *   to a path expecting `'object'` is rejected at the top-level.
  * - For wrappers like `.optional()` / `.nullable()`, the adapter's
@@ -129,10 +129,10 @@ function walk(
   //
   // An empty accept set means the schema rejects every kind at this
   // path: either the path doesn't resolve (typo / unknown leaf) or
-  // the path resolves to `z.never()`. Either way, the membership
-  // check below rejects, blocking the write. `z.any()` / `z.unknown()`
-  // / `z.void()` and the lazy-peel-failure case return the full
-  // permissive set — those still accept any kind.
+  // the path resolves to a `never`-typed schema. Either way, the
+  // membership check below rejects, blocking the write. `any` /
+  // `unknown` / `void` and the lazy-peel-failure case return the
+  // full permissive set — those still accept any kind.
   const accepted = schema.getSlimPrimitiveTypesAtPath(path)
   const kind = isLeafValue(value) ? slimKindOf(value) : Array.isArray(value) ? 'array' : 'object'
   if (!accepted.has(kind)) {
@@ -173,14 +173,14 @@ function reportRejection(
   // KISS rule: state the problem in one sentence, then list the fix.
   // Devs scan the first line; everything after is the recipe.
 
-  // Path doesn't resolve (or resolves to z.never). The headline names
-  // the actual cause; z.never is rare enough that it doesn't deserve
-  // top billing.
+  // Path doesn't resolve (or resolves to a `never`-typed schema). The
+  // headline names the actual cause; `never`-typed paths are rare
+  // enough that they don't deserve top billing.
   if (accepted.size === 0) {
     console.warn(
       `[@chemical-x/forms] Cannot write to '${dotted}' — this path is not in your schema.\n` +
         `  Fix: check for a typo in register('${dotted}'); it should match a leaf key in your schema.\n` +
-        `  (If the path resolves to z.never, the schema explicitly admits no values — relax the schema if intentional.)\n` +
+        `  (If the path resolves to a never-typed schema, it explicitly admits no values — relax the schema if intentional.)\n` +
         `  The write was a no-op.`
     )
     return
@@ -189,7 +189,7 @@ function reportRejection(
   const expected = formatExpectedKinds(accepted)
 
   // String-to-number is the most common gate rejection in real apps:
-  // a plain `<input v-register>` against a `z.number()` field reads
+  // a plain `<input v-register>` against a numeric leaf reads
   // `el.value` as a string. Show both v-register fix paths verbatim
   // so the dev can copy-paste rather than parse "slim primitive set".
   if (kind === 'string' && accepted.has('number')) {

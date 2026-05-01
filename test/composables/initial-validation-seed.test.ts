@@ -67,11 +67,12 @@ describe('initial validation seed — strict mode', () => {
     // Without this fallback, strict-default useForm calls would crash
     // setup for any form using `z.string().refine(async ...)`.
     //
-    // Async refines fire on the next microtask via the construction-time
-    // async-refine seed (the runtime asks the schema's `hasAsyncRefines()`
-    // and queues a full validation pass when true). The synchronous
-    // post-mount assertion below still sees `errors.email === undefined`
-    // — the microtask hasn't run yet at this point.
+    // Async refines fire on the next microtask via the construction-
+    // time async-validation seed (the runtime asks the schema's
+    // `needsAsyncValidation()` and queues a full validation pass when
+    // true). The synchronous post-mount assertion below still sees
+    // `errors.email === undefined` — the microtask hasn't run yet at
+    // this point.
     const asyncSchema = z.object({
       email: z.email().refine(async () => Promise.resolve(true), 'taken'),
     })
@@ -162,8 +163,9 @@ describe('initial validation seed — async-refine schema', () => {
     // `taken@example.com` — passes sync, fails refine. Pre-fix the
     // construction-time seed silently dropped the safeParse throw and
     // returned success, so the form looked valid until the user typed.
-    // With `hasAsyncRefines()` detection, the runtime queues a full
-    // async pass that lands the refine error on the next microtask.
+    // With `needsAsyncValidation()` detection, the runtime queues a
+    // full async pass that lands the refine error on the next
+    // microtask.
     const asyncSchema = z.object({
       email: z
         .email()
@@ -230,11 +232,18 @@ describe('initial validation seed — async-refine schema', () => {
     expect(api.meta.isValid).toBe(true)
   })
 
-  it('sync schema in strict mode lands errors synchronously (no async pass for non-async schemas)', () => {
-    // Detection MUST keep sync schemas on the fully-synchronous error
-    // path. Triggering an async pass for sync forms would briefly clear
-    // construction-time errors during the wipe-then-apply window in
-    // `applySchemaErrorsForSubtree([], …)`, surfacing as a flicker.
+  it('sync schema in strict mode lands errors synchronously and isValidating stays false', () => {
+    // Detection's load-bearing invariant: sync schemas don't pay a
+    // construction-time async pass. Errors don't flicker either way
+    // (`applySchemaErrorsForSubtree` runs sync and Vue batches per
+    // microtask, so the wipe-then-apply window is invisible to a
+    // render). The visible cost would be `meta.isValidating` flashing
+    // true at mount for every sync form — `scheduleFieldValidation`
+    // increments `activeValidations` synchronously when called, then
+    // decrements after the async safeParseAsync resolves. That'd
+    // misrepresent "validation is running" when nothing async is
+    // actually pending. Skipping the schedule for sync schemas keeps
+    // `isValidating` honestly false at construction.
     const syncSchema = z.object({ email: z.email('Invalid email') })
     type SyncApi = ReturnType<typeof useForm<typeof syncSchema>>
     const handle: { api?: SyncApi } = {}

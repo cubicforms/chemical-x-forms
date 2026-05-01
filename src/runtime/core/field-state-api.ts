@@ -42,7 +42,7 @@ export type FieldStateView = {
   /**
    * `true` when the user hasn't supplied a value yet — the input
    * renders as empty even though storage holds a slim default
-   * (e.g. `0` for `z.number()`, `''` for `z.string()`). Answers
+   * (e.g. `0` for a numeric leaf, `''` for a string leaf). Answers
    * the question: "Is this field empty because the user left it
    * blank, or because the slim default happens to be `0` / `''`?"
    *

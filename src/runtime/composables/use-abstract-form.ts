@@ -49,7 +49,7 @@ import type { DeepPartial, DefaultValuesShape, GenericForm, WriteShape } from '.
 /**
  * Schema-agnostic `useForm`. Accepts any object that implements
  * `AbstractSchema` — useful when integrating a custom schema
- * adapter, a Valibot adapter, or any non-Zod validation library.
+ * adapter or a third-party validation library.
  *
  * ```ts
  * import { useForm } from '@chemical-x/forms'
@@ -60,11 +60,12 @@ import type { DeepPartial, DefaultValuesShape, GenericForm, WriteShape } from '.
  * })
  * ```
  *
- * For Zod, prefer the typed entry points at
+ * Most consumers prefer a typed entry point — e.g.
  * `@chemical-x/forms/zod` (v4) or `@chemical-x/forms/zod-v3` —
- * they wrap the schema with the adapter automatically.
+ * which wrap the underlying library's schema with the matching
+ * adapter automatically.
  *
- * Returns the same form API as the Zod-typed entry points; see
+ * Returns the same form API as the typed entry points; see
  * `UseAbstractFormReturnType` for the full surface.
  */
 
@@ -85,7 +86,7 @@ export function useAbstractForm<
   // Preserve both generics — dropping `GetValueFormType` here would make
   // `state.schema.getSchemasAtPath(...)` return `AbstractSchema<_, Form>[]`
   // for consumers whose schema intentionally produces a different runtime
-  // shape (e.g. zod's `.transform(...)` narrowing).
+  // shape (e.g. an adapter that narrows via a transform).
   const resolvedSchema = getComputedSchema(key, configuration.schema)
 
   // Eager throw: persistence configured without an explicit `key:`. An
@@ -695,10 +696,10 @@ function wirePersistence<F extends GenericForm>(
       // payload. Persistence is per-element opt-in, so the persisted
       // payload only covers paths within the opt-in scope (the leaf
       // paths populated in `payload.data.form`). Construction-time
-      // auto-marks for paths OUTSIDE that scope must survive — without
-      // this, a non-opted-in `z.number()` field's slim default (0)
-      // would lose its blank mark on hydrate and surface
-      // as `'0'` in its <input> instead of empty.
+      // auto-marks for paths OUTSIDE that scope must survive —
+      // without this, a non-opted-in numeric field's slim default
+      // (`0`) would lose its blank mark on hydrate and surface as
+      // `'0'` in its <input> instead of empty.
       //
       // Within the opt-in scope, the persisted state IS the truth: a
       // persisted path that's no longer blank (the user
@@ -728,13 +729,14 @@ function wirePersistence<F extends GenericForm>(
       }
       // Post-hydration revalidation: the construction-time seed ran
       // against the empty default, so its errors describe a stale
-      // value. Async refines additionally never fire at construction
-      // (zod's safeParse throws for async-refine schemas; the adapter
-      // catches and returns success silently). A full async run at
-      // root path wipes `schemaErrors` and re-stamps with the
-      // authoritative result for the rehydrated value — sync errors
-      // get refreshed, async refines fire, the form lands in the
-      // state the persisted value actually deserves.
+      // value. Async-only verdicts additionally never fire at
+      // construction (the sync seed contract can't surface them;
+      // schemas with async refinements / transforms / pipes degrade
+      // to success there). A full async run at the root path wipes
+      // `schemaErrors` and re-stamps with the authoritative result
+      // for the rehydrated value — sync errors get refreshed, async
+      // verdicts fire, the form lands in the state the persisted
+      // value actually deserves.
       state.scheduleFieldValidation([], true /* immediate */)
     } catch {
       // Adapter IO errors shouldn't surface; storage adapters are

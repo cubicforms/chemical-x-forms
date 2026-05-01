@@ -247,12 +247,13 @@ export type ArrayItem<Form, Path extends ArrayPath<Form>> =
  *
  * The runtime gate accepts any value at a path whose primitive type
  * matches the schema's slim primitive set at that path. Refinement-
- * level constraints (enum membership, literal equality, .email,
- * .min(N), regex, custom refines) are NOT enforced at write time —
- * they surface via field-level validation. The type widening here
- * mirrors that runtime behaviour, so `setValue('color', 'magenta')`
- * and `defaultValues: { color: 'teal' }` are not TS errors despite
- * being out-of-enum at the validation layer.
+ * level constraints (enum membership, literal equality, format
+ * checks, length / range bounds, regex, custom predicates) are NOT
+ * enforced at write time — they surface via field-level validation.
+ * The type widening here mirrors that runtime behaviour, so
+ * `setValue('color', 'magenta')` and `defaultValues: { color: 'teal' }`
+ * are not TS errors despite being out-of-enum at the validation
+ * layer.
  *
  * Tuple positions preserve their literal types via the homomorphic
  * mapped form (`{ [K in keyof T]: ... }` over a readonly tuple
@@ -302,8 +303,8 @@ export type WriteShape<T> = T extends string | number | boolean | bigint | symbo
  * displayed-empty" in `defaultValues`, `setValue`, and `reset`.
  *
  * Non-primitive leaves (`Date`, `RegExp`, `Map`, `Set`, functions)
- * stay strict — `defaultValues: { joinedAt: unset }` against
- * `z.date()` is a type error.
+ * stay strict — `defaultValues: { joinedAt: unset }` against a
+ * `Date`-typed leaf is a type error.
  *
  * The recursion mirrors `WriteShape<T>` exactly so `defaultValues`
  * stays compatible at every nested position; the only divergence is

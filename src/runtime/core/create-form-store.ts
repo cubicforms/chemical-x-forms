@@ -715,16 +715,18 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     if (validationMode === 'strict' && !schemaResponse.success) {
       setAllSchemaErrors(schemaResponse.errors)
     }
-    // Async refines can't fire from `getDefaultValues` — that contract
-    // is sync (`safeParse` throws on async, the adapter degrades to
-    // success). When the schema actually carries an async refine, ask
-    // the adapter once and queue an immediate full-form async pass so
-    // the construction-time refine errors land on the next microtask
-    // instead of waiting for a user mutation. The check is gated to
-    // strict mode and to schemas that genuinely contain an async
-    // refine, so sync schemas (the common case) keep their fully-sync
-    // construction-time error pipeline.
-    if (validationMode === 'strict' && schema.hasAsyncRefines()) {
+    // Async-only verdicts (e.g. zod's `.refine(async (v) => …)`) can't
+    // surface from `getDefaultValues` — that contract is sync, and the
+    // adapter degrades to success when the schema's sync parse can't
+    // resolve them. When the adapter signals via `needsAsyncValidation`
+    // that there's verdicts only an async pass would surface, queue a
+    // one-shot full-form validation so the construction-time errors
+    // land on the next microtask instead of waiting for a user
+    // mutation. Gated to strict mode AND to schemas that actually need
+    // async work — sync-only schemas would otherwise pay a redundant
+    // microtask + briefly flash `meta.isValidating: true` on mount,
+    // misrepresenting "validation is running" when nothing is.
+    if (validationMode === 'strict' && schema.needsAsyncValidation?.() === true) {
       scheduleFieldValidation([], true /* immediate */)
     }
   }

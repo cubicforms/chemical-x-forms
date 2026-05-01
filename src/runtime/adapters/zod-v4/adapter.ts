@@ -207,17 +207,17 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
     // (one per `useForm()` call). Memoises the slim-primitive walk so the
     // leaf-aware proxy traps don't re-walk the schema on every read.
     const leafCache = new Map<PathKey, boolean>()
-    // Memoised one-shot walk; `hasAsyncRefines` is queried at construction
-    // and possibly again from devtools, so a single tree traversal earns
-    // its keep across the adapter's lifetime.
-    let asyncRefineFlag: boolean | null = null
+    // Memoised one-shot walk; `needsAsyncValidation` is queried at
+    // construction and possibly again from devtools, so a single tree
+    // traversal earns its keep across the adapter's lifetime.
+    let asyncValidationFlag: boolean | null = null
 
     return {
       fingerprint: () => fingerprintZodSchema(rootSchema),
 
-      hasAsyncRefines(): boolean {
-        asyncRefineFlag ??= containsAsyncRefine(rootSchema)
-        return asyncRefineFlag
+      needsAsyncValidation(): boolean {
+        asyncValidationFlag ??= containsAsyncRefine(rootSchema)
+        return asyncValidationFlag
       },
 
       getDefaultValues(config): ReturnType<AbstractSchema<Form, Form>['getDefaultValues']> {
@@ -291,7 +291,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
           (schema) =>
             ({
               fingerprint: () => fingerprintZodSchema(schema),
-              hasAsyncRefines: () => containsAsyncRefine(schema),
+              needsAsyncValidation: () => containsAsyncRefine(schema),
               getDefaultValues: () => ({
                 data: deriveDefault(schema, true),
                 errors: undefined,

@@ -14,18 +14,22 @@
   validation pass so sync + async results land against the actual
   rehydrated value. Affects every `persist:` configuration.
 
-- **New — construction-time async-refine seed in strict mode.**
-  Schemas carrying `.refine(async (v) => …)` previously didn't
-  surface refine errors at construction (zod's sync `safeParse`
-  throws, the adapter caught and returned success). The runtime now
-  asks the schema's `hasAsyncRefines()` and queues an immediate
-  full-form async pass when true, so refine errors land on the next
-  microtask without waiting for a user mutation or a manual
-  `validateAsync()` call. Sync schemas (the common case) still
-  validate fully synchronously — detection gates the async pass.
-  `AbstractSchema` gains a required `hasAsyncRefines(): boolean`
-  method (zod-v4 implements via a schema-tree walk; zod-v3 returns
-  `false` conservatively, matching the pre-detection behavior).
+- **New — construction-time async-validation seed in strict mode.**
+  Schemas carrying async-only verdicts (e.g. zod's
+  `.refine(async (v) => …)`) previously didn't surface those errors
+  at construction — sync `safeParse` throws on async pieces, the
+  adapter caught and returned success. The runtime now asks the
+  schema's `needsAsyncValidation()` and queues an immediate full-form
+  async pass when true, so errors land on the next microtask without
+  waiting for a user mutation or a manual `validateAsync()` call.
+  Sync schemas (the common case) still validate fully synchronously
+  — detection skips the async pass so `meta.isValidating` doesn't
+  flash true at mount for forms that have nothing async to validate.
+  `AbstractSchema` gains an OPTIONAL `needsAsyncValidation?(): boolean`
+  method — adapters that don't model async work can omit it, the
+  runtime treats absence as `false`. Zod v4 implements it via a
+  schema-tree walk; the v3 adapter omits it (consumers wanting
+  construction-time async errors should use `@chemical-x/forms/zod`).
 
 - **`parseApiErrors` now accepts the bare-string Rails / DRF / Laravel
   shape (`{ field: ["msg"] }`).** Pre-fix the parser required every

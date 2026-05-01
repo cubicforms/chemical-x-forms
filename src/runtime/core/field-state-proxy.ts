@@ -9,8 +9,8 @@ import { buildSurfaceProxy, type SurfaceProxy } from './surface-proxy'
  * The leaf-prop set of a `FieldStateView`. At a leaf path, reads of
  * any of these keys terminate against the FieldStateView's reactive
  * prop. Reads of OTHER keys descend (e.g. a schema field literally
- * named `dirty` AT the leaf — which can happen when a schema has
- * `{ outer: { dirty: z.boolean() } }`, making `outer.dirty` a leaf in
+ * named `dirty` AT the leaf — which can happen when the shape is
+ * `{ outer: { dirty: boolean } }`, making `outer.dirty` a leaf in
  * its own right; that case resolves via the leaf-aware proxy in
  * surface-proxy.ts where `outer.dirty` becomes a leaf-VIEW proxy and
  * `.dirty` on it reads the FieldStateView's `dirty` boolean).

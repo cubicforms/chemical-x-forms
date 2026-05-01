@@ -327,12 +327,12 @@ export function assertZodVersion(schema: unknown): void {
  * refinements are caught; sync functions that happen to return a
  * Promise (rare; we'd recommend marking them `async`) are NOT.
  *
- * Used by the adapter's `hasAsyncRefines()` to drive the runtime's
- * construction-time async-validation seed (see create-form-store's
- * strict-mode block). False negatives just delay async refines until
- * first mutation — matches the pre-detection behavior. False
- * positives are unlikely (the AsyncFunction check is precise) and
- * cost only one extra microtask of validation work.
+ * Used by the adapter's `needsAsyncValidation()` to drive the
+ * runtime's construction-time async-validation seed (see
+ * create-form-store's strict-mode block). False negatives just delay
+ * async refines until first mutation — matches the pre-detection
+ * behavior. False positives are unlikely (the AsyncFunction check is
+ * precise) and cost only one extra microtask of validation work.
  */
 export function containsAsyncRefine(schema: z.ZodType, seen?: WeakSet<object>): boolean {
   const visited = seen ?? new WeakSet<object>()

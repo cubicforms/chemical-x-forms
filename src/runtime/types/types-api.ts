@@ -45,7 +45,8 @@ export type ValidationError = {
    * Stable machine identifier for the failure, scoped by prefix:
    *
    * - `cx:` — library-internal codes (see `CxErrorCode`).
-   * - `zod:` — forwarded from a Zod issue's `code`.
+   * - adapter prefix (e.g. `zod:`) — forwarded from the underlying
+   *   schema library's own issue code, when one exists.
    * - consumer-defined — anything else (e.g. `api:duplicate-email`,
    *   `auth:expired-token`). Pick a prefix and stay consistent so
    *   error renderers and tests can branch on `code` instead of
@@ -143,9 +144,10 @@ export type MaybePromise<T> = T | Promise<T>
  *
  * - `sync`: when `true`, the adapter SHOULD return the response
  *   inline if the schema permits synchronous validation. When the
- *   schema is structurally async (zod async refinements, async
- *   transforms / pipes), the adapter falls back to a `Promise<T>` —
- *   the flag is a preference, not a guarantee.
+ *   schema is structurally async (any verdict that resolves only via
+ *   a Promise — async refinements, async transforms / pipes — in
+ *   whichever library the adapter wraps), the adapter falls back to
+ *   a `Promise<T>` — the flag is a preference, not a guarantee.
  *
  *   When omitted or `false`, the adapter is free to use its async
  *   path (matches the historical Promise-returning contract; every
@@ -166,9 +168,9 @@ type GetDefaultValuesConfig<Form> = {
  * read defaults, validate, and walk paths against any underlying
  * schema library.
  *
- * Most consumers never touch this type directly — pass a Zod schema
- * to `useForm` from `@chemical-x/forms/zod` (or `/zod-v3`) and the
- * adapter is wired automatically. Implement this interface only when
+ * Most consumers never touch this type directly — the typed entry
+ * points (e.g. `@chemical-x/forms/zod`, `@chemical-x/forms/zod-v3`)
+ * wire an adapter automatically. Implement this interface only when
  * adding support for a new schema library (Valibot, ArkType, custom).
  */
 export type AbstractSchema<Form, GetValueFormType> = {
@@ -197,11 +199,11 @@ export type AbstractSchema<Form, GetValueFormType> = {
    *   their source order).
    *
    * Compromises adapter authors may accept:
-   * - Function-valued metadata (`.refine(fn)`, `.transform(fn)`,
-   *   lazy defaults) is not stably hashable. Represent it as an
-   *   opaque sentinel; two schemas differing only in refinement
-   *   logic will look identical. The warning is a footgun catcher,
-   *   not a soundness guarantee.
+   * - Function-valued metadata (refinements, transforms, lazy
+   *   defaults) is not stably hashable. Represent it as an opaque
+   *   sentinel; two schemas differing only in refinement logic will
+   *   look identical. The warning is a footgun catcher, not a
+   *   soundness guarantee.
    */
   fingerprint(): string
 
@@ -210,7 +212,7 @@ export type AbstractSchema<Form, GetValueFormType> = {
    * Return the schema-prescribed default value at the given path. The
    * runtime uses this to fill structural gaps so every `setValue` write
    * leaves the form satisfying the slim schema (objects/arrays/primitives
-   * without refines).
+   * without refinement-level constraints).
    *
    * Semantics:
    * - **Object property path:** the property's schema default.
@@ -253,10 +255,10 @@ export type AbstractSchema<Form, GetValueFormType> = {
    *   runtime batch error writes with a coincident form-value
    *   mutation in a single Vue reactive flush — preventing the `{}`
    *   flicker observable during DU variant reshape.
-   * - With `options.sync === true` AND an async-only schema (async
-   *   refines / pipes / transforms), the adapter MUST fall back to
-   *   `Promise<T>`. The flag is a preference, not a guarantee; sync
-   *   isn't always achievable.
+   * - With `options.sync === true` AND an async-only schema (any
+   *   verdict that resolves only via a Promise), the adapter MUST
+   *   fall back to `Promise<T>`. The flag is a preference, not a
+   *   guarantee; sync isn't always achievable.
    * - With `options.sync` omitted or `false`, the adapter SHOULD
    *   return `Promise<T>` (matches the historical contract — every
    *   non-reshape callsite uses this default and immediately
@@ -276,10 +278,10 @@ export type AbstractSchema<Form, GetValueFormType> = {
   /**
    * Sync sister to `getSchemasAtPath` / `validateAtPath`. Returns the
    * set of primitive `typeof`-style kinds the path's leaf schema
-   * accepts at write time. Wrappers (`.optional`, `.nullable`,
-   * `.default`, `.refine`, `.transform`, `.pipe`, `.readonly`,
-   * `.catch`, `.lazy`) are peeled; refinement-level constraints
-   * (`.email()`, `.min(N)`, enum membership, literal equality, regex)
+   * accepts at write time. Wrappers (optional / nullable / default /
+   * refinement / transform / pipe / readonly / catch / lazy) are
+   * peeled; refinement-level constraints (format checks like email /
+   * uuid, min/max length, enum membership, literal equality, regex)
    * are IGNORED — they're a validation-time concern.
    *
    * Used by `setValueAtPath` to gate writes synchronously without
@@ -289,17 +291,17 @@ export type AbstractSchema<Form, GetValueFormType> = {
    *
    * Conventions:
    * - Empty set → no kind admitted. The runtime gate rejects every
-   *   write to the path. Surfaces for `z.never()` AND for paths that
-   *   don't resolve in the schema (typo / unknown leaf).
+   *   write to the path. Surfaces for `never`-typed schemas AND for
+   *   paths that don't resolve in the schema (typo / unknown leaf).
    * - Permissive set (every kind) → "unknown / unconstrained." The
-   *   gate accepts any value. Surfaces for `z.any()` / `z.unknown()`
-   *   / `z.void()` and the lazy-peel-failure case where the adapter
-   *   can't introspect the schema.
-   * - For `z.enum(['a','b'])` (string entries): returns `{'string'}`.
-   *   For numeric enums: `{'number'}`.
-   * - For `z.literal(x)`: returns `{primitiveKindOf(x)}`.
-   * - For `z.object(...)`: `{'object'}`. For `z.array(...)`: `{'array'}`.
-   *   The runtime walker recurses into entries / elements at write time.
+   *   gate accepts any value. Surfaces for `any` / `unknown` / `void`
+   *   and the lazy-peel-failure case where the adapter can't
+   *   introspect the schema.
+   * - For string-valued enums: returns `{'string'}`. For numeric
+   *   enums: `{'number'}`.
+   * - For literal types: returns `{primitiveKindOf(literalValue)}`.
+   * - For object / array containers: `{'object'}` / `{'array'}`. The
+   *   runtime walker recurses into entries / elements at write time.
    * - For nullable / optional wrappers: adds `'null'` / `'undefined'`
    *   to the inner's set.
    */
@@ -356,7 +358,7 @@ export type AbstractSchema<Form, GetValueFormType> = {
    * Used by the submit / validate path to surface a "No value supplied" error
    * when a field is in the form's `blankPaths` set (the user
    * cleared it or never answered) AND the schema treats the field as
-   * required. Without this, a strict `z.number()` would silently
+   * required. Without this, a strict numeric leaf would silently
    * accept the slim default (`0`) for an unanswered field — the
    * "public-housing" footgun where `$0 income` passes validation.
    *
@@ -378,9 +380,9 @@ export type AbstractSchema<Form, GetValueFormType> = {
    * - **Empty path (root)** → `true` (the root form is always
    *   required as an object).
    *
-   * Refinement-level constraints (`.min(1)`, `.refine(...)`,
-   * `.email()`) are NOT consulted here — those run at parse time
-   * inside `validateAtPath` and surface as schema errors regardless.
+   * Refinement-level constraints (length / format / custom predicates)
+   * are NOT consulted here — those run at parse time inside
+   * `validateAtPath` and surface as schema errors regardless.
    * `isRequiredAtPath` only answers the "is this leaf at all
    * required?" question; the refinements layer on top.
    */
@@ -388,9 +390,8 @@ export type AbstractSchema<Form, GetValueFormType> = {
   /**
    * If the schema at `path` is (or wraps) a discriminated union,
    * return its discriminator key plus a `getVariantDefault(value)`
-   * lookup — otherwise `undefined`. Wrappers (`.optional()`,
-   * `.default(...)`, `.nullable()`, `.readonly()`, `.pipe()`,
-   * `.lazy()`, `.catch()`) are peeled transparently.
+   * lookup — otherwise `undefined`. Wrappers (optional, default,
+   * nullable, readonly, pipe, lazy, catch) are peeled transparently.
    *
    * The runtime uses this for two related reshapes that share the
    * same lookup:
@@ -415,17 +416,23 @@ export type AbstractSchema<Form, GetValueFormType> = {
   getUnionDiscriminatorAtPath(path: Path): UnionDiscriminatorContext | undefined
 
   /**
-   * Return `true` if any node in the schema tree carries an async
-   * refinement (e.g. `z.email().refine(async (v) => …)`). The runtime
-   * uses this at construction to schedule a one-shot async validation
-   * pass — without it, async refines on invalid defaults stay silent
-   * until the user types into the field. Adapters that can't carry
-   * async refinements (or don't yet support detection) MAY return
-   * `false`; the only consequence is that async refines fall back to
-   * firing on first user mutation, matching the pre-detection
-   * behavior. Detection is best-effort.
+   * Return `true` if `validateAtPath` MAY have to run asynchronously
+   * to surface every error this schema can produce. The runtime uses
+   * this at construction to decide whether to schedule a one-shot
+   * full-form async validation: when `false` (or omitted), the
+   * construction-time sync seed is the authoritative result and no
+   * extra microtask is spent; when `true`, an async pass is queued
+   * so any async-only verdicts (refinements / transforms / pipes
+   * that resolve only via a Promise) surface without waiting for a
+   * user mutation.
+   *
+   * Optional. The runtime treats a missing implementation as
+   * `() => false`, so adapters that don't model async work — or
+   * don't yet support detection — can omit it; async-only errors
+   * then fall back to firing on first user mutation, matching the
+   * pre-detection behavior. Detection is best-effort.
    */
-  hasAsyncRefines(): boolean
+  needsAsyncValidation?(): boolean
 }
 
 /**
@@ -436,8 +443,9 @@ export type AbstractSchema<Form, GetValueFormType> = {
  */
 export type UnionDiscriminatorContext = {
   /**
-   * The union's discriminator key (e.g. `'channel'` for
-   * `z.discriminatedUnion('channel', [...])`).
+   * The union's discriminator key — the property name whose literal
+   * value selects the variant (e.g. `'channel'` for a union split on
+   * `{ channel: 'sms' | 'email' }`).
    */
   readonly discriminatorKey: string
   /**
@@ -720,7 +728,7 @@ export type PersistConfig = FormStorageKind | FormStorage | PersistConfigOptions
  *
  * ```ts
  * const form = useForm({
- *   schema: z.object({ email: z.string().email() }),
+ *   schema: signupSchema,
  *   defaultValues: { email: '' },
  *   fieldValidation: { on: 'change', debounceMs: 200 },
  *   persist: 'local',
@@ -735,9 +743,10 @@ export type UseFormConfiguration<
 > = {
   /**
    * The schema describing the form's shape and validation rules.
-   * Pass a Zod schema directly when using `@chemical-x/forms/zod` or
-   * `@chemical-x/forms/zod-v3`; the abstract entry point accepts any
-   * adapter that implements `AbstractSchema`.
+   * Typed entry points like `@chemical-x/forms/zod` accept the
+   * underlying library's schema directly and wrap an adapter; the
+   * abstract entry point accepts any object implementing
+   * `AbstractSchema`.
    *
    * For schemas that depend on the form's identity, pass a factory
    * `(key) => schema` instead — the library calls it once per form.
@@ -766,10 +775,10 @@ export type UseFormConfiguration<
    *
    * Values must satisfy the slim primitive type at each path
    * (string / number / boolean / Date / etc.) but do NOT have to
-   * satisfy refinements (`.email()`, enum membership, `.min(N)`).
-   * Refinement-invalid defaults pass through and surface as field
-   * errors — this lets you rehydrate stale saved data without losing
-   * the user's input.
+   * satisfy refinement-level constraints (format checks, enum
+   * membership, length / range bounds). Refinement-invalid defaults
+   * pass through and surface as field errors — this lets you
+   * rehydrate stale saved data without losing the user's input.
    */
   defaultValues?: DefaultValues
   /**
@@ -938,7 +947,7 @@ export type FormSummaryStore = Map<FormKey, FormSummaryValueRecord>
 /**
  * Callback invoked by `handleSubmit` after the form parses successfully.
  * Receives the strictly-typed parsed value — refinements have run, so
- * enum / literal / `.email()` constraints are honoured.
+ * enum / literal / format constraints are honoured.
  */
 export type OnSubmit<Form extends GenericForm> = (form: Form) => void | Promise<void>
 
@@ -1010,9 +1019,9 @@ export type MetaTrackerValue = {
    * `true` when this field is **blank** — the runtime has recorded
    * that storage and the visible display diverge here. Reserved for
    * the case the schema can't see on its own: storage forces a
-   * value (`0` for `z.number()`, `0n` for `z.bigint()`) while the
-   * DOM input shows `''`, and the runtime needs a side-channel to
-   * tell "user typed 0" from "user supplied nothing."
+   * value (e.g. `0` for a numeric leaf, `0n` for a bigint leaf)
+   * while the DOM input shows `''`, and the runtime needs a side-
+   * channel to tell "user typed 0" from "user supplied nothing."
    *
    * Set automatically for numeric leaves (the directive's input
    * listener on clear; the construction-time pass when the consumer
@@ -1897,7 +1906,8 @@ export type UseAbstractFormReturnType<
    * ```
    *
    * `data` is the strictly-typed parsed value — refinements have
-   * fired, so `data.email` is guaranteed to satisfy `.email()`.
+   * fired, so every leaf is guaranteed to satisfy its schema-level
+   * format / range / membership constraints.
    */
   handleSubmit: HandleSubmit<Form>
 
@@ -1975,7 +1985,7 @@ export type UseAbstractFormReturnType<
    * means the value didn't match the slot's expected type
    * (e.g. writing a number to a string field) — the form state
    * stays unchanged. Refinement-level mismatches (out-of-enum
-   * values, failing `.email()`, etc.) DO succeed and surface as
+   * values, failing format checks, etc.) DO succeed and surface as
    * field errors instead.
    */
   setValue: {
@@ -1991,7 +2001,7 @@ export type UseAbstractFormReturnType<
      * Returns `true` when the write was accepted, `false` when the
      * value didn't match the expected shape (e.g. wrong primitive
      * type at a leaf). Refinement-level mismatches (out-of-enum
-     * values, failing `.email()`, etc.) succeed and surface as
+     * values, failing format checks, etc.) succeed and surface as
      * field errors instead.
      */
     <Value extends SetValuePayload<DefaultValuesShape<Form>, WriteShape<Form>>>(

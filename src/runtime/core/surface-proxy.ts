@@ -340,7 +340,7 @@ export function buildSurfaceProxy<TLeaf>(opts: SurfaceOptions<TLeaf>): SurfacePr
         // Schema field at a leaf-prop name: descend further. The leaf-prop
         // and the schema field name occupy DIFFERENT proxy depths because
         // the schema's leaf-aware structure puts them on different paths.
-        // Example: schema `{ address: { isValid: z.boolean() } }`:
+        // Example: schema `{ address: { isValid: boolean } }`:
         //   form.fields.address          → container proxy
         //   form.fields.address.isValid  → leaf-view (here)
         //   form.fields.address.isValid.isValid → THIS read; 'isValid'

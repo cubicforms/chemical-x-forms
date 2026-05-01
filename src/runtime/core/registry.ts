@@ -101,7 +101,17 @@ export type ChemicalXRegistry = {
  * app. Most consumers never need this — `useForm` and
  * `injectForm` resolve the registry automatically.
  */
-export const kChemicalXRegistry: InjectionKey<ChemicalXRegistry> = Symbol(
+// `Symbol.for(...)` so the key survives module duplication. If Vite's
+// dep optimizer ends up serving chemical-x as two separate copies (one
+// live-ESM, one pre-bundled — the standard hazard for linked-source
+// installs that opt into `optimizeDeps.include`), each copy still
+// resolves the same global symbol from the well-known string. Plugin
+// install's `app.provide(kChemicalXRegistry, ...)` and the page's
+// `inject(kChemicalXRegistry, null)` agree on the key, so `useForm`
+// finds its registry regardless of which copy did the provide. The
+// `chemical-x-forms:` prefix namespaces the key safely. Same reasoning
+// for `kFormContext` and `kFormInstanceId` below.
+export const kChemicalXRegistry: InjectionKey<ChemicalXRegistry> = Symbol.for(
   'chemical-x-forms:registry'
 )
 
@@ -114,7 +124,7 @@ export const kChemicalXRegistry: InjectionKey<ChemicalXRegistry> = Symbol(
  * shape must supply its own `Form` generic, because Vue's InjectionKey
  * erases the generic at the provide/inject boundary.
  */
-export const kFormContext: InjectionKey<FormStore<GenericForm>> = Symbol(
+export const kFormContext: InjectionKey<FormStore<GenericForm>> = Symbol.for(
   'chemical-x-forms:form-context'
 )
 
@@ -130,7 +140,7 @@ export const kFormContext: InjectionKey<FormStore<GenericForm>> = Symbol(
  * ID; descendants of each branch inherit the branch's ID. Two ID spaces
  * stay isolated even when the underlying FormStore is shared.
  */
-export const kFormInstanceId: InjectionKey<string> = Symbol('chemical-x-forms:form-instance-id')
+export const kFormInstanceId: InjectionKey<string> = Symbol.for('chemical-x-forms:form-instance-id')
 
 declare module 'vue' {
   interface App {

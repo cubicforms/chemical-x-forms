@@ -54,7 +54,15 @@ import { enforceSensitiveCheck } from './persistence/sensitive-names'
  * Most consumers never need this — the built-in directives wire
  * default assigners for text inputs, checkboxes, radios, and selects.
  */
-export const assignKey: unique symbol = Symbol('_assign')
+// `Symbol.for(...)` so `el[assignKey] = ...` round-trips across
+// duplicate copies of chemical-x. The directive (which writes the
+// default assigner) and the consumer-side composables/utilities (which
+// may read or override it) must agree on the key, or the directive
+// stops recognising consumer-installed assigners after the page is
+// served from a Vite-optimised copy that's distinct from the one the
+// directive registration came from. Same reasoning for `listenersKey`
+// and `DEFAULT_ASSIGNER_TAG` below.
+export const assignKey: unique symbol = Symbol.for('chemical-x-forms:assign-key')
 
 /**
  * Per-element bag of listener tuples added by the active directive
@@ -62,7 +70,7 @@ export const assignKey: unique symbol = Symbol('_assign')
  * so reused elements (KeepAlive, v-show) don't accumulate orphaned
  * handlers across activation cycles.
  */
-const listenersKey: unique symbol = Symbol('cxListeners')
+const listenersKey: unique symbol = Symbol.for('chemical-x-forms:directive-listeners')
 
 type TrackedListener = {
   event: string
@@ -153,7 +161,7 @@ function computePersistMeta(el: HTMLElement, registerValue: RegisterValue): Writ
  * has explicitly opted into reading whatever the listener captures,
  * so the bail doesn't apply.
  */
-const DEFAULT_ASSIGNER_TAG: unique symbol = Symbol('cxDefaultAssigner')
+const DEFAULT_ASSIGNER_TAG: unique symbol = Symbol.for('chemical-x-forms:default-assigner-tag')
 
 type DefaultAssignerCarrier = { [DEFAULT_ASSIGNER_TAG]?: boolean }
 

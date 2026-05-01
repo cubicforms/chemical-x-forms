@@ -26,7 +26,10 @@ import { PERSISTENCE_MODULE_KEY } from './persistence'
 
 const INTERACTIVE_TAG_NAMES = new Set(['INPUT', 'SELECT', 'TEXTAREA'])
 
-const cxListenersSymbol: unique symbol = Symbol('chemical-x-forms:focus-listeners')
+// `Symbol.for(...)` so duplicate copies of chemical-x agree on the
+// element-property key for stashed focus/blur handlers — see
+// `assignKey` in core/directive.ts for the same reasoning.
+const cxListenersSymbol: unique symbol = Symbol.for('chemical-x-forms:focus-listeners')
 
 type ElementWithListeners = HTMLElement & {
   [cxListenersSymbol]?: {

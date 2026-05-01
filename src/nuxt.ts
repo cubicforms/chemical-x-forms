@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module'
+import { join } from 'node:path'
 import { addImports, addPlugin, addTypeTemplate, createResolver, defineNuxtModule } from '@nuxt/kit'
 import { inputTextAreaNodeTransform } from './runtime/lib/core/transforms/input-text-area-transform'
 import { selectNodeTransform } from './runtime/lib/core/transforms/select-transform'
@@ -37,6 +39,16 @@ export type CXRuntimeConfig = {
   defaults: ChemicalXFormsDefaults
 }
 
+function isResolvableFromConsumer(specifier: string, rootDir: string): boolean {
+  try {
+    const require = createRequire(join(rootDir, 'package.json'))
+    require.resolve(specifier)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export default defineNuxtModule<CXModuleOptions>({
   meta: {
     name: 'chemical-x-forms',
@@ -65,6 +77,39 @@ export default defineNuxtModule<CXModuleOptions>({
     runtimePublic['chemicalX'] = {
       defaults: _options.defaults ?? {},
     } satisfies CXRuntimeConfig
+
+    // Pre-declare `@vue/devtools-api` so Vite optimizes it at dev-server
+    // startup. The DevTools integration is reached through two nested
+    // dynamic imports (`createChemicalXForms` → internal devtools chunk
+    // → `@vue/devtools-api`); without this hint Vite would discover the
+    // dep mid-request and trigger its standard "new deps optimized →
+    // page reload" cycle.
+    //
+    // The peer dep is optional, so we skip the push if the consumer
+    // hasn't installed it — chemical-x's runtime already gracefully
+    // no-ops when the dep is absent (see the catch in
+    // setupChemicalXDevtools). Resolution is checked from the
+    // consumer's rootDir to match Vite's own resolver.
+    //
+    // We deliberately do NOT include `@chemical-x/forms` itself or its
+    // `/zod` sub-exports here. Doing so creates a duplicate-module
+    // hazard: the Nuxt plugin file imports `createChemicalXForms` via a
+    // relative path (`../core/plugin`) so Vite leaves it as live ESM,
+    // while page code imports `useForm` from `@chemical-x/forms/zod`
+    // which Vite WOULD pre-bundle into a separate optimized copy. Each
+    // copy then mints its own `Symbol('chemical-x-forms:registry')`
+    // (see `kChemicalXRegistry` in core/registry.ts), so the plugin's
+    // `app.provide` and the page's `inject` use different keys and
+    // `useForm` throws `RegistryNotInstalledError`. The published
+    // package's shared-chunk layout, served as live ESM, is what
+    // guarantees single-instance — pre-bundling defeats it.
+    if (isResolvableFromConsumer('@vue/devtools-api', nuxt.options.rootDir)) {
+      nuxt.options.vite.optimizeDeps ??= {}
+      nuxt.options.vite.optimizeDeps.include ??= []
+      if (!nuxt.options.vite.optimizeDeps.include.includes('@vue/devtools-api')) {
+        nuxt.options.vite.optimizeDeps.include.push('@vue/devtools-api')
+      }
+    }
 
     const resolver = createResolver(import.meta.url)
 

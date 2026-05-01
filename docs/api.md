@@ -576,18 +576,19 @@ auto-unwraps refs at property access, so `form.meta.isSubmitting`
 is a primitive in both templates and scripts — no `.value`. The
 full type is the exported `FormMeta` interface.
 
-| Member              | Type                         | What it does                                                                                                                                                                                      |
-| ------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `meta.isDirty`      | `boolean`                    | `true` iff any leaf's current value differs from its original.                                                                                                                                    |
-| `meta.isValid`      | `boolean`                    | `true` iff both the schema-error and user-error stores are empty.                                                                                                                                 |
-| `meta.isSubmitting` | `boolean`                    | `true` while the submit handler is running.                                                                                                                                                       |
-| `meta.isValidating` | `boolean`                    | `true` while any validation run is in flight (reactive, imperative, or pre-submit).                                                                                                               |
-| `meta.submitCount`  | `number`                     | Incremented once per call, regardless of outcome.                                                                                                                                                 |
-| `meta.submitError`  | `unknown`                    | Whatever the callback threw; `null` on success. Cleared on every new submission.                                                                                                                  |
-| `meta.canUndo`      | `boolean`                    | Gate an "Undo" button on this. Always present; `false` when `history` is off.                                                                                                                     |
-| `meta.canRedo`      | `boolean`                    | Gate a "Redo" button on this. Always present; `false` when `history` is off.                                                                                                                      |
-| `meta.historySize`  | `number`                     | Total snapshots across both stacks. `0` when `history` is off.                                                                                                                                    |
-| `meta.errors`       | `readonly ValidationError[]` | Flat aggregate of EVERY error in the form (path-keyed + form-level + unmapped + cross-field refines). UNFILTERED — inactive-variant errors stay in. Filter the array yourself for narrower views. |
+| Member              | Type                         | What it does                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `meta.isDirty`      | `boolean`                    | `true` iff any leaf's current value differs from its original.                                                                                                                                                                                                                                                                                                  |
+| `meta.isValid`      | `boolean`                    | `true` iff both the schema-error and user-error stores are empty.                                                                                                                                                                                                                                                                                               |
+| `meta.isSubmitting` | `boolean`                    | `true` while the submit handler is running.                                                                                                                                                                                                                                                                                                                     |
+| `meta.isValidating` | `boolean`                    | `true` while any validation run is in flight (reactive, imperative, or pre-submit).                                                                                                                                                                                                                                                                             |
+| `meta.submitCount`  | `number`                     | Incremented once per call, regardless of outcome.                                                                                                                                                                                                                                                                                                               |
+| `meta.submitError`  | `unknown`                    | Whatever the callback threw; `null` on success. Cleared on every new submission.                                                                                                                                                                                                                                                                                |
+| `meta.canUndo`      | `boolean`                    | Gate an "Undo" button on this. Always present; `false` when `history` is off.                                                                                                                                                                                                                                                                                   |
+| `meta.canRedo`      | `boolean`                    | Gate a "Redo" button on this. Always present; `false` when `history` is off.                                                                                                                                                                                                                                                                                    |
+| `meta.historySize`  | `number`                     | Total snapshots across both stacks. `0` when `history` is off.                                                                                                                                                                                                                                                                                                  |
+| `meta.errors`       | `readonly ValidationError[]` | Flat aggregate of EVERY error in the form (path-keyed + form-level + unmapped + cross-field refines). UNFILTERED — inactive-variant errors stay in. Filter the array yourself for narrower views.                                                                                                                                                               |
+| `meta.instanceId`   | `string`                     | Per-`useForm()`-call identity. Stable for one mount; new on remount; orthogonal to `form.key` (the user-supplied shared identifier). Useful for devtools panels disambiguating shared-key mounts, telemetry, E2E test selectors (`data-form-id={form.meta.instanceId}`), and Vue `:key` for keyed lists of forms. Opaque format — treat as identity, not state. |
 
 `meta` is read-only — `meta.x = y` writes are rejected at runtime
 with a dev-mode warning (use `setValue` / `handleSubmit` /
@@ -596,10 +597,25 @@ with a dev-mode warning (use `setValue` / `handleSubmit` /
 
 ### Focus + scroll
 
-| Member                         | Signature               | What it does                                                                                                  |
-| ------------------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `focusFirstError(options?)`    | `(options?) => boolean` | Focuses the first errored field's first connected, visible element. Returns `true` if an element was focused. |
-| `scrollToFirstError(options?)` | `(options?) => boolean` | Scrolls that element into view. Returns `true` on success.                                                    |
+| Member                         | Signature               | What it does                                                                                                                                                      |
+| ------------------------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `focusFirstError(options?)`    | `(options?) => boolean` | Focuses the **visually-first** errored field's connected, visible element registered through this `useForm()` callsite. Returns `true` if an element was focused. |
+| `scrollToFirstError(options?)` | `(options?) => boolean` | Scrolls that element into view. Returns `true` on success.                                                                                                        |
+
+"Visually-first" is DOM-tree order via `compareDocumentPosition` — the
+field rendered above another in the template wins, regardless of which
+the schema declared earlier. CSS `order:` flexbox/grid reordering is
+NOT respected (DOM-tree order wins) — visual-order via
+`getBoundingClientRect` would force layout per comparison and break
+under `display: none`. The 99% case (semantic source-order rendering)
+matches what users see.
+
+Scope is per `useForm()` callsite: when two `useForm({ key })` calls
+share a key (sidebar + main rendering the same form), each callsite's
+`focusFirstError` only targets elements registered through THAT
+callsite. Children using `injectForm()` inherit their ancestor's
+instance ID, so parent-submit-focus continues to work for inputs
+registered by deep children.
 
 ### Reset
 

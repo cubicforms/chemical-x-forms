@@ -12,7 +12,7 @@ function makeForm(opts: { isSSR: boolean }) {
     schema: fakeSchema<F>({ email: '', note: '' }),
     isSSR: opts.isSSR,
   })
-  return { state, register: buildRegister(state) }
+  return { state, register: buildRegister(state, 'test:inst') }
 }
 
 describe('optimistic isConnected — FormStore.markConnectedOptimistically', () => {

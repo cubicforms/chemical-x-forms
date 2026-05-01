@@ -58,7 +58,7 @@ function detachFocusListeners(element: HTMLElement): void {
   delete target[cxListenersSymbol]
 }
 
-export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
+export function buildRegister<F extends GenericForm>(state: FormStore<F>, formInstanceId: string) {
   // Path-keyed cache of typed-form refs. Lifted out of the per-call
   // closure so multiple `register(path)` invocations for the same
   // path — e.g. two `<input v-register>` bindings to `'numberText'`,
@@ -178,7 +178,7 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
         // component wrapper divs when fallthrough attributes carry the
         // directive past the intended `<input>` / `<select>` / `<textarea>`.
         if (!INTERACTIVE_TAG_NAMES.has(element.tagName)) return
-        const added = state.registerElement(segments, element)
+        const added = state.registerElement(segments, element, formInstanceId)
         if (added) attachFocusListeners(state, segments, element)
       },
 

@@ -33,7 +33,7 @@ import {
 import { hashStableString } from '../core/hash'
 import { canonicalizePath, type Path, type PathKey } from '../core/paths'
 import { deleteAtPath, getAtPath, setAtPath, isPlainRecord } from '../core/path-walker'
-import { kFormContext, useRegistry } from '../core/registry'
+import { kFormContext, kFormInstanceId, useRegistry } from '../core/registry'
 import { walkUnsetSentinels } from '../core/unset-walker'
 import type {
   AbstractSchema,
@@ -230,7 +230,26 @@ export function useAbstractForm<
     provide(kFormContext, state as FormStore<GenericForm>)
   }
 
-  const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[1] = {}
+  // Per-`useForm()`-call instance ID. Distinct from `state.formKey`:
+  // the key identifies a SHARED FormStore (so two `useForm({ key:
+  // 'signup' })` calls return the same store), while `formInstanceId`
+  // identifies THIS specific callsite — important for `focusFirstError`
+  // / `scrollToFirstError` to scope to the elements THIS caller's
+  // `v-register` directives bound to. SSR-safe via Vue 3.5+'s
+  // `useId()`. Outside Vue setup (tests, ad-hoc composable use) we
+  // fall back to a module-local counter — uniqueness is what matters,
+  // and tests don't share form-instance state across mounts anyway.
+  const formInstanceId =
+    getCurrentInstance() !== null ? useId() : `cx:form-instance:${formInstanceCounter++}`
+  // Provided so descendants reaching via `injectForm()` inherit this ID
+  // and their locally-registered elements tag against the same instance.
+  // Sibling `useForm()` calls (different tree positions) provide their
+  // own IDs and stay isolated.
+  if (getCurrentInstance() !== null) {
+    provide(kFormInstanceId, formInstanceId)
+  }
+
+  const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[2] = {}
   if (merged.onInvalidSubmit !== undefined) {
     apiOptions.onInvalidSubmit = merged.onInvalidSubmit
   }
@@ -238,7 +257,7 @@ export function useAbstractForm<
   if (history !== undefined) {
     apiOptions.history = history
   }
-  return buildFormApi<Form, GetValueFormType>(state, apiOptions)
+  return buildFormApi<Form, GetValueFormType>(state, formInstanceId, apiOptions)
 }
 
 /**
@@ -358,6 +377,13 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
  * works without user bookkeeping.
  */
 let anonCounter = 0
+
+/**
+ * Module-local counter for `formInstanceId` allocation outside Vue
+ * setup (tests, ad-hoc composable usage). The setup-context path uses
+ * `useId()` for SSR-stable IDs; this counter is the test-only fallback.
+ */
+let formInstanceCounter = 0
 
 /**
  * One entry per ANONYMOUS `useForm()` call that landed in a

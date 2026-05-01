@@ -1811,6 +1811,30 @@ export interface FormMeta {
    * Vue computed graph.
    */
   readonly errors: readonly ValidationError[]
+
+  /**
+   * Per-`useForm()`-call identity. Stable for the lifetime of one
+   * `useForm()` call; new on every fresh mount. Orthogonal to
+   * `form.key`: the key identifies a SHARED FormStore (so two
+   * `useForm({ key: 'signup' })` calls return the same store and the
+   * same key), while `instanceId` identifies THIS specific callsite —
+   * useful when two forms share a key (sidebar + main rendering the
+   * same form) and you need to disambiguate which caller is which.
+   *
+   * Format is opaque (Vue 3.5+ `useId()`-derived). Treat as identity,
+   * not state — don't parse, don't compare ordinally, don't persist.
+   *
+   * Common patterns:
+   *
+   * - **Devtools panels** disambiguating shared-key form mounts.
+   * - **Telemetry / logging hooks** tagging events with which mount
+   *   triggered them.
+   * - **E2E test selectors** stamping `data-form-id={form.meta.instanceId}`
+   *   onto a wrapper to assert which form was focused.
+   * - **Vue `:key`** for keyed lists of dynamically-rendered forms
+   *   (drag-reorder, etc.) — stable identity per useForm() call.
+   */
+  readonly instanceId: string
 }
 
 /**

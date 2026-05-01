@@ -118,6 +118,20 @@ export const kFormContext: InjectionKey<FormStore<GenericForm>> = Symbol(
   'chemical-x-forms:form-context'
 )
 
+/**
+ * Provide / inject key for the per-`useForm()`-call instance ID. Provided
+ * alongside `kFormContext` so descendants reaching via `injectForm()`
+ * inherit the ancestor's `formInstanceId` and their locally-registered
+ * elements tag against the SAME instance — keeps parent-submit-focus
+ * working for inputs registered by deep children.
+ *
+ * Sibling `useForm({ key })` calls (e.g. sidebar + main rendering the
+ * same form) sit at distinct tree positions, so each provides its own
+ * ID; descendants of each branch inherit the branch's ID. Two ID spaces
+ * stay isolated even when the underlying FormStore is shared.
+ */
+export const kFormInstanceId: InjectionKey<string> = Symbol('chemical-x-forms:form-instance-id')
+
 declare module 'vue' {
   interface App {
     /** @internal */

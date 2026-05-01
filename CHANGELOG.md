@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- **Behavior change — `focusFirstError` / `scrollToFirstError` /
+  `onInvalidSubmit: 'focus-first-error'` target the visually-first
+  errored field instead of the schema-declaration-first.** "First" is
+  now DOM-tree order via `compareDocumentPosition`; pre-fix it was
+  schema-declaration order (the order Zod emitted issues, which the
+  internal error Map preserved). Templates that rendered fields in a
+  different order than the schema declared them previously focused
+  the wrong field on submit failure. CSS `order:` flexbox/grid
+  reordering is NOT respected — DOM-tree order wins. See the
+  [troubleshooting entry](./docs/troubleshooting.md#focus-jumped-to-a-field-i-didnt-expect-on-submit)
+  for the caveat.
+
+- **Behavior change — focus is now scoped to the calling
+  `useForm()` instance.** When two `useForm({ key })` callsites share
+  a key (sidebar + main rendering the same form), each callsite's
+  `focusFirstError` only targets elements registered through THAT
+  callsite. Pre-fix, the sidebar's submit could focus the main
+  form's input or vice versa. Children reaching the form via
+  `injectForm()` inherit their ancestor's instance ID, so
+  parent-submit-focus continues to work for inputs registered by
+  deep children.
+
+- **New — `form.meta.instanceId: string`.** Per-`useForm()`-call
+  identity, opaque format, stable per mount. Useful for devtools
+  panels disambiguating shared-key mounts, telemetry hooks tagging
+  events, E2E test selectors (`data-form-id={form.meta.instanceId}`),
+  and Vue `:key` on keyed lists of dynamically-rendered forms.
+  Treat as identity, not state — don't parse, don't compare
+  ordinally, don't persist.
+
 - **Breaking — dropped `WithIndexedUndefined` from `form.values` and
   the whole-form `setValue((prev) => …)` callback.** The wrapper baked
   `| undefined` into every unbounded array's element type so

@@ -235,6 +235,28 @@ makes `arr[N]` reads return `T | undefined` so the type system
 catches stale indices. See
 [README → Recommended tsconfig](../README.md#recommended-tsconfig).
 
+## "Focus jumped to a field I didn't expect on submit"
+
+`focusFirstError` (and the `onInvalidSubmit: 'focus-first-error'`
+policy) targets the **visually-first** errored field — DOM-tree
+order via `compareDocumentPosition`. If your template renders
+fields in a different order than the schema declares them, the
+field rendered above another wins regardless of declaration order.
+
+Caveat: CSS `order:` flexbox/grid reordering is NOT respected.
+A child with `order: -1` appears visually first but stays in its
+DOM-tree position, and the focus algorithm uses DOM-tree position.
+The tradeoff is intentional — visual-order via
+`getBoundingClientRect` would force sync layout per comparison and
+break under `display: none`. If you genuinely need CSS-`order:`
+awareness, file an issue with a concrete repro.
+
+Scope is per `useForm()` callsite: two `useForm({ key })` calls
+sharing a key (sidebar + main) each focus only their own
+registered elements. Children reaching the form via `injectForm()`
+inherit their ancestor's instance ID, so parent-submit still
+focuses inputs registered by deep children.
+
 ## "Undo brought back stale field errors"
 
 By design. An undo snapshot captures the form value AND the errors

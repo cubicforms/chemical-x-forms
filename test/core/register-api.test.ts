@@ -13,7 +13,7 @@ function makeRegister(opts?: { isSSR?: boolean }) {
     schema: fakeSchema<F>({ email: '', note: '' }),
     ...(opts?.isSSR === true ? { isSSR: true } : {}),
   })
-  return { state, register: buildRegister(state) }
+  return { state, register: buildRegister(state, 'test:inst') }
 }
 
 describe('buildRegister', () => {
@@ -109,8 +109,8 @@ describe('buildRegister', () => {
         formKey: 'B',
         schema: fakeSchema<F>({ email: '', note: '' }),
       })
-      const registerA = buildRegister(stateA)
-      const registerB = buildRegister(stateB)
+      const registerA = buildRegister(stateA, 'test:inst')
+      const registerB = buildRegister(stateB, 'test:inst')
 
       const rvA = registerA(['email'])
       const rvB = registerB(['email'])

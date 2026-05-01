@@ -294,7 +294,7 @@ describe('createFormStore', () => {
     it('registerElement marks the field as connected', () => {
       const state = makeState()
       const el: HTMLElement = document.createElement('input')
-      const registered = state.registerElement(['email'], el)
+      const registered = state.registerElement(['email'], el, 'test:inst')
       expect(registered).toBe(true)
       expect(state.getFieldRecord(['email'])?.isConnected).toBe(true)
     })
@@ -302,16 +302,16 @@ describe('createFormStore', () => {
     it('registering the same element twice is a no-op', () => {
       const state = makeState()
       const el: HTMLElement = document.createElement('input')
-      expect(state.registerElement(['email'], el)).toBe(true)
-      expect(state.registerElement(['email'], el)).toBe(false)
+      expect(state.registerElement(['email'], el, 'test:inst')).toBe(true)
+      expect(state.registerElement(['email'], el, 'test:inst')).toBe(false)
     })
 
     it('deregister returns remaining count; marks disconnected when empty', () => {
       const state = makeState()
       const el1: HTMLElement = document.createElement('input')
       const el2: HTMLElement = document.createElement('input')
-      state.registerElement(['email'], el1)
-      state.registerElement(['email'], el2)
+      state.registerElement(['email'], el1, 'test:inst')
+      state.registerElement(['email'], el2, 'test:inst')
       expect(state.deregisterElement(['email'], el1)).toBe(1)
       expect(state.getFieldRecord(['email'])?.isConnected).toBe(true)
       expect(state.deregisterElement(['email'], el2)).toBe(0)

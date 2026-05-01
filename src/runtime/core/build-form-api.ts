@@ -76,9 +76,12 @@ function readonlySetSnapshot<T>(source: Iterable<T>): ReadonlySet<T> {
  */
 export function buildFormApi<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
   state: FormStore<Form>,
+  formInstanceId: string,
   options: BuildFormApiOptions = {}
 ): UseAbstractFormReturnType<Form, GetValueFormType> {
-  const register = buildRegister(state) as (path: string | Path) => RegisterValue<unknown>
+  const register = buildRegister(state, formInstanceId) as (
+    path: string | Path
+  ) => RegisterValue<unknown>
   // Don't set `onInvalidSubmit: undefined` — exactOptionalPropertyTypes
   // treats an explicit-undefined value differently from an omitted
   // property. Only pass the key when the consumer opted in.
@@ -88,7 +91,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     validate: validateBuilt,
     validateAsync: validateAsyncBuilt,
     handleSubmit,
-  } = buildProcessForm(state, processOptions)
+  } = buildProcessForm(state, formInstanceId, processOptions)
 
   const validate = (pathInput?: string) =>
     validateBuilt(pathInput) as Ref<ReactiveValidationStatus<Form>>
@@ -306,6 +309,12 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       canRedo,
       historySize,
       errors: metaErrors,
+      // Per-`useForm()`-call identity. Stable for one mount; new on
+      // re-mount; orthogonal to `form.key` (which is the user-supplied
+      // shared identifier). Useful for devtools panels disambiguating
+      // shared-key instances, telemetry hooks tagging events with
+      // "which mount", and E2E tests stamping `data-form-id`.
+      instanceId: formInstanceId,
     })
   ) as FormMeta
 
@@ -390,15 +399,18 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   }
 
   // --- Focus / scroll to first error ---
+  // Both helpers scope to `formInstanceId` so two `useForm()` callsites
+  // sharing a `key` (e.g. sidebar + main mounting the same form) only
+  // focus / scroll within their own registered elements.
   const focusFirstError = (options?: { preventScroll?: boolean }): boolean => {
-    const target = state.getFirstErrorElement()
+    const target = state.getFirstErrorElement(formInstanceId)
     if (target === null) return false
     target.element.focus(options)
     return true
   }
 
   const scrollToFirstError = (options?: ScrollIntoViewOptions): boolean => {
-    const target = state.getFirstErrorElement()
+    const target = state.getFirstErrorElement(formInstanceId)
     if (target === null) return false
     target.element.scrollIntoView(options)
     return true

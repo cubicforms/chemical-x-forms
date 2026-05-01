@@ -51,6 +51,12 @@ export type FieldRecord = {
 
 /** Per-path DOM element tracking. Client-only. */
 export type ElementRecord = {
+  /**
+   * Original Path captured at first registration. Stored alongside the
+   * elements Set so the DOM-order sort cache can recover the structured
+   * Path without round-tripping through `JSON.parse(pathKey)`.
+   */
+  readonly path: Path
   readonly elements: Set<HTMLElement>
 }
 
@@ -235,7 +241,15 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   getErrorsForPath(path: Path): ValidationError[]
 
   // --- DOM ---
-  registerElement(path: Path, element: HTMLElement): boolean
+  /**
+   * Register `element` as a binding for `path`, tagged with the calling
+   * `useForm()` instance's `formInstanceId`. The ID is the disambiguator
+   * used by `getFirstErrorElement` to scope focus / scroll to elements
+   * THIS form instance owns — important when two `useForm()` calls share
+   * a `key` (e.g. sidebar + main rendering the same form), since both
+   * write into one shared element store.
+   */
+  registerElement(path: Path, element: HTMLElement, formInstanceId: string): boolean
   deregisterElement(path: Path, element: HTMLElement): number
   markFocused(path: Path, focused: boolean): void
   markTouched(path: Path): void
@@ -265,17 +279,28 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   getOriginalAtPath(path: Path): unknown
   /**
    * Returns the first errored field's first connected, visible DOM
-   * element — the target that `focusFirstError` / `scrollToFirstError`
-   * act on. Iteration order matches `errors`' insertion order (Map
-   * preserves it), so the "first" error is whichever the schema reported
-   * first during validation.
+   * element scoped to `formInstanceId` — the target that
+   * `focusFirstError` / `scrollToFirstError` act on. "First" is
+   * VISUAL-first (DOM-tree order via `compareDocumentPosition`), not
+   * schema-declaration order, so a field rendered above another in the
+   * template focuses first regardless of which one the schema declared
+   * earlier. CSS `order:` flexbox/grid reordering is NOT respected
+   * (DOM-tree order wins) — documented as a tradeoff against forcing
+   * sync layout on every comparison.
+   *
+   * The `formInstanceId` filter scopes focus to elements registered
+   * through THIS form instance. When two `useForm({ key })` calls share
+   * a key, both register into the same element store; without the
+   * filter, the sidebar form's submit could focus the main form's
+   * input. With it, each `useForm()` callsite focuses only its own
+   * elements.
    *
    * Returns `null` when every errored path has no currently-attached
-   * element (fields behind `v-if="false"`, unmounted components, or a
-   * hidden `display:none` parent). Callers get the choice of no-op or a
-   * dev-only warning.
+   * element registered to this instance (fields behind `v-if="false"`,
+   * unmounted components, or a hidden `display:none` parent). Callers
+   * get the choice of no-op or a dev-only warning.
    */
-  getFirstErrorElement(): { path: Path; element: HTMLElement } | null
+  getFirstErrorElement(formInstanceId: string): { path: Path; element: HTMLElement } | null
 
   /**
    * Cancel every in-flight field-level validation run — clears timers
@@ -515,6 +540,34 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // doesn't invalidate computeds watching another.
   const fields = reactive(new Map<PathKey, FieldRecord>()) as Map<PathKey, FieldRecord>
   const elements = reactive(new Map<PathKey, ElementRecord>()) as Map<PathKey, ElementRecord>
+
+  // Per-element form-instance tag. WeakMap so detached elements GC
+  // freely — `deregisterElement` does an explicit `.delete()` defensively
+  // (in case the element is still strongly referenced elsewhere), but
+  // the WeakMap keeps cleanup correct even when the consumer drops the
+  // element without going through deregister.
+  //
+  // Read by `getFirstErrorElement` to scope focus/scroll targets to the
+  // calling `useForm()` instance — load-bearing when two forms share a
+  // `key` and both register into the same `elements` Map.
+  const elementToFormInstance = new WeakMap<HTMLElement, string>()
+
+  // Lazy DOM-order sort cache. Holds every registered element flattened
+  // across paths, sorted by `compareDocumentPosition` (DOM-tree order).
+  // Invalidated to `null` on any register/deregister; rebuilt on next
+  // `getFirstErrorElement` read. The cache amortises the sort across
+  // multiple submit failures between mutations — a 100-field form with
+  // 5 failed submits and no DOM changes pays one O(n log n) sort, not
+  // five.
+  //
+  // Note: `compareDocumentPosition` is DOM-tree order, NOT visual order.
+  // CSS `order:` flexbox/grid reorders visually but not in tree, so a
+  // child with `order: -1` will sort AFTER its tree-earlier siblings.
+  // Real visual order would need `getBoundingClientRect`, which forces
+  // sync layout per comparison and breaks under `display: none`. Tree-
+  // order is the right tradeoff for a hot path; the 99% case (semantic
+  // source-order rendering) works correctly.
+  let sortedRegistrationsCache: Array<{ path: Path; element: HTMLElement }> | null = null
   // Errors are split by source so each writer touches exactly one slot.
   // Schema validation owns `schemaErrors`; the `setFieldErrors*` APIs own
   // `userErrors`. The two stores merge on read via `getErrorsForPath` and
@@ -1303,15 +1356,17 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
 
   // --- DOM ---
 
-  function registerElement(path: Path, element: HTMLElement): boolean {
+  function registerElement(path: Path, element: HTMLElement, formInstanceId: string): boolean {
     const { key } = canonicalizePath(path)
     const record = elements.get(key)
     if (record === undefined) {
-      elements.set(key, { elements: new Set([element]) })
+      elements.set(key, { path, elements: new Set([element]) })
     } else {
       if (record.elements.has(element)) return false
       record.elements.add(element)
     }
+    elementToFormInstance.set(element, formInstanceId)
+    sortedRegistrationsCache = null
     touchFieldRecord(key, path, { isConnected: true })
     return true
   }
@@ -1320,7 +1375,11 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     const { key } = canonicalizePath(path)
     const record = elements.get(key)
     if (record === undefined) return 0
-    record.elements.delete(element)
+    const removed = record.elements.delete(element)
+    if (removed) {
+      elementToFormInstance.delete(element)
+      sortedRegistrationsCache = null
+    }
     const remaining = record.elements.size
     if (remaining === 0) {
       elements.delete(key)
@@ -1617,37 +1676,52 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     return originals.get(key)?.value
   }
 
-  function getFirstErrorElement(): { path: Path; element: HTMLElement } | null {
-    // Walk schema errors first, then user errors. Within each Map,
-    // insertion order matches the order the schema (or the consumer)
-    // reported issues. Schema-first matches the "structural validation
-    // first, business-logic second" UX expectation: a missing-required
-    // error should focus before a custom server warning at the same path.
-    const hit = firstAttachedErrorElement(schemaErrors) ?? firstAttachedErrorElement(userErrors)
-    return hit
-  }
-
-  function firstAttachedErrorElement(
-    map: Map<PathKey, ValidationError[]>
+  function getFirstErrorElement(
+    formInstanceId: string
   ): { path: Path; element: HTMLElement } | null {
-    for (const [, errs] of map) {
-      const first = errs[0]
-      if (first === undefined) continue // defensive — invariant says non-empty
-      const { key } = canonicalizePath(first.path as readonly Segment[])
-      const record = elements.get(key)
-      if (record === undefined || record.elements.size === 0) continue
-      for (const el of record.elements) {
-        // `el.isConnected` covers the "component was unmounted, element
-        // removed from DOM" case that the FieldRecord.isConnected flag
-        // can lag on. `el.offsetParent === null` catches `display:none`
-        // and its ancestor chain — the browser won't focus or scroll to
-        // a hidden element anyway, so we keep walking.
-        if (!el.isConnected) continue
-        if (el.offsetParent === null) continue
-        return { path: first.path as Path, element: el }
-      }
+    // Single-pass DOM-order walk over every registered element. The
+    // sort cache is rebuilt lazily on the first read after a register/
+    // deregister; subsequent calls amortise to O(n) until the next
+    // mutation.
+    sortedRegistrationsCache ??= rebuildSortedRegistrations()
+
+    for (const entry of sortedRegistrationsCache) {
+      // Scope to this form instance — when two `useForm()` calls share
+      // a key, both write into `elements`; this filter keeps each
+      // form's submit from focusing the other's input.
+      if (elementToFormInstance.get(entry.element) !== formInstanceId) continue
+
+      // `el.isConnected` covers "component was unmounted, element
+      // removed from DOM" cases that lag the FieldRecord.isConnected
+      // flag. `el.offsetParent === null` catches `display:none` and
+      // its ancestor chain — the browser won't focus or scroll to a
+      // hidden element anyway, so we keep walking.
+      if (!entry.element.isConnected) continue
+      if (entry.element.offsetParent === null) continue
+
+      const { key } = canonicalizePath(entry.path)
+      const hasSchemaErr = (schemaErrors.get(key)?.length ?? 0) > 0
+      const hasUserErr = (userErrors.get(key)?.length ?? 0) > 0
+      if (!hasSchemaErr && !hasUserErr) continue
+
+      return { path: entry.path, element: entry.element }
     }
     return null
+  }
+
+  function rebuildSortedRegistrations(): Array<{ path: Path; element: HTMLElement }> {
+    const flat: Array<{ path: Path; element: HTMLElement }> = []
+    for (const [, record] of elements) {
+      for (const el of record.elements) flat.push({ path: record.path, element: el })
+    }
+    // `compareDocumentPosition` returns a bitmask. The
+    // `DOCUMENT_POSITION_FOLLOWING` bit (0x04) is set when the argument
+    // node FOLLOWS the receiver in document order, which means the
+    // receiver comes first → return -1 to keep `a` before `b`.
+    flat.sort((a, b) =>
+      a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
+    )
+    return flat
   }
 
   return {

@@ -67,7 +67,7 @@ describe('buildFieldStateAccessor', () => {
     // structuredClone approach would need HTMLElement — simplest: cast a plain object.
     // We accept the cast here at the boundary between DOM and state test.
     const pretend = { nodeType: 1, tagName: 'INPUT' } as unknown as HTMLElement
-    state.registerElement(['email'], pretend)
+    state.registerElement(['email'], pretend, 'test:inst')
     expect(getFieldState(['email']).value.isConnected).toBe(true)
     state.deregisterElement(['email'], pretend)
     expect(getFieldState(['email']).value.isConnected).toBe(false)

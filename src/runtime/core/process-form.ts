@@ -52,6 +52,7 @@ export type BuildProcessFormOptions = {
 
 export function buildProcessForm<F extends GenericForm>(
   state: FormStore<F>,
+  formInstanceId: string,
   options: BuildProcessFormOptions = {}
 ) {
   const invalidPolicy: OnInvalidSubmitPolicy = options.onInvalidSubmit ?? 'none'
@@ -288,7 +289,7 @@ export function buildProcessForm<F extends GenericForm>(
           // Skip the policy too on a stale generation — the post-reset
           // form has no errors to focus.
           if (generationStillValid) {
-            applyInvalidSubmitPolicy(state, invalidPolicy)
+            applyInvalidSubmitPolicy(state, formInstanceId, invalidPolicy)
           }
           if (onError !== undefined) {
             try {
@@ -424,10 +425,11 @@ function pathStartsWith(target: Path, prefix: Path): boolean {
 
 function applyInvalidSubmitPolicy<F extends GenericForm>(
   state: FormStore<F>,
+  formInstanceId: string,
   policy: OnInvalidSubmitPolicy
 ): void {
   if (policy === 'none') return
-  const target = state.getFirstErrorElement()
+  const target = state.getFirstErrorElement(formInstanceId)
   if (target === null) return
   if (policy === 'scroll-to-first-error') {
     target.element.scrollIntoView()

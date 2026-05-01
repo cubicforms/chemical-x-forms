@@ -1,13 +1,26 @@
-import { getCurrentInstance, getCurrentScope, inject, onScopeDispose } from 'vue'
+import { getCurrentInstance, getCurrentScope, inject, onScopeDispose, useId } from 'vue'
 import { buildFormApi } from '../core/build-form-api'
 import type { FormStore } from '../core/create-form-store'
 import { __DEV__ } from '../core/dev'
 import { captureUserCallSite } from '../core/dev-stack-trace'
 import type { HistoryModule } from '../core/history'
-import { kFormContext, useRegistry, type ChemicalXRegistry } from '../core/registry'
+import {
+  kFormContext,
+  kFormInstanceId,
+  useRegistry,
+  type ChemicalXRegistry,
+} from '../core/registry'
 import type { FormKey, UseAbstractFormReturnType } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import { ambientProvideHistory } from './use-abstract-form'
+
+/**
+ * Module-local counter for the test/ad-hoc fallback when neither an
+ * ambient `kFormInstanceId` provide nor a Vue instance is available.
+ * Uniqueness is sufficient — these consumers don't share an
+ * `instanceId` with anything else in the tree by definition.
+ */
+let injectedInstanceCounter = 0
 
 /**
  * Access an existing form from a descendant component without passing
@@ -61,12 +74,30 @@ export function injectForm<Form extends GenericForm, GetValueFormType extends Ge
   // / `canRedo` / `historySize`. Without this, consumers reached via
   // the context would receive inert stubs even when history is enabled
   // on the form.
-  const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[1] = {}
+  const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[2] = {}
   const history = state.modules.get('history') as HistoryModule | undefined
   if (history !== undefined) {
     apiOptions.history = history
   }
-  return buildFormApi<Form, GetValueFormType>(state, apiOptions)
+  // Inherit the ancestor `useForm()`'s instanceId when one is provided.
+  // Keeps parent-submit-focus working for inputs registered by deep
+  // children using `injectForm()` + their own local `register()` calls
+  // — both sides tag against the SAME instance.
+  //
+  // Falls back to a fresh ID when:
+  //   - `injectForm('cart')` reaches a form by key from a tree branch
+  //     that has no ambient provide chain to it (cross-tree access);
+  //   - or no Vue instance is available (test / ad-hoc usage).
+  // In those cases the consumer's local registrations are isolated —
+  // the original `useForm()` callsite's `focusFirstError` won't see
+  // them, but the consumer's own focus calls work locally.
+  const ambientInstanceId = getCurrentInstance() !== null ? inject(kFormInstanceId, null) : null
+  const formInstanceId =
+    ambientInstanceId ??
+    (getCurrentInstance() !== null
+      ? useId()
+      : `cx:form-instance-injected:${injectedInstanceCounter++}`)
+  return buildFormApi<Form, GetValueFormType>(state, formInstanceId, apiOptions)
 }
 
 /**

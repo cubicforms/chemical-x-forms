@@ -211,7 +211,19 @@ const getModelAssigner = (
   // closure. Consumers wanting persistence-aware writes pass their own
   // `meta` to `setValueWithInternalPath`; the default assigner below
   // auto-attaches per-element meta.
-  const fn: unknown = vnode.props?.['onUpdate:registerValue']
+  //
+  // Vue 3.5's compiler emits TWO different prop keys for `@update:registerValue`
+  // depending on context. For native elements with an uppercase letter in the
+  // event name (e.g. the `V` in `registerValue`), the compiler preserves
+  // casing via the `on:` prefix form: `"on:update:registerValue"`. For
+  // components, vnode lifecycle events, or all-lowercase event names, it
+  // emits `"onUpdate:registerValue"`. Render-function authors using `h(...)`
+  // pick whichever key they like. We read both forms; for components the
+  // `onUpdate:` form normally wins, for plain `<input v-register>` the
+  // `on:update:` form is what survives the compiler.
+  // See @vue/compiler-core/transformOn (search for `[A-Z]/.test(rawName)`).
+  const fn: unknown =
+    vnode.props?.['onUpdate:registerValue'] ?? vnode.props?.['on:update:registerValue']
   if (isArray(fn)) {
     return (value) => {
       invokeArrayFns(

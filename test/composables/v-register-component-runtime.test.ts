@@ -436,6 +436,57 @@ describe('pattern 3: @update:registerValue prop on a component', () => {
     expect(receivedRv).toBeDefined()
     expect(mounted.api.values.email).toBe('HELLO')
   })
+
+  it('detects the listener under the `on:update:registerValue` key (compiler form for native elements with uppercase event names)', async () => {
+    // Vue 3.5's compiler-core/transformOn preserves case for plain
+    // elements when the rawName has uppercase letters (the V in
+    // `registerValue`), emitting `"on:update:registerValue"` instead
+    // of the camelCase `"onUpdate:registerValue"` form `h()` produces.
+    // The directive must read both keys or compiled-template usage
+    // (the entire SFC consumer surface) silently falls through to
+    // the default assigner.
+    let receivedRv: unknown
+    const upperCaseAssigner = (value: unknown, rv: RegisterValue): void => {
+      receivedRv = rv
+      rv.setValueWithInternalPath(String(value ?? '').toUpperCase())
+    }
+
+    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const Parent = defineComponent({
+      setup() {
+        const api = useForm({ schema, key: `compiler-${Math.random().toString(36).slice(2)}` })
+        handle.api = api
+        const rv = api.register('email')
+        return () =>
+          withDirectives(
+            h('input', {
+              type: 'text',
+              // Mirrors the compiler output for
+              // `<input v-register @update:registerValue="...">`.
+              'on:update:registerValue': upperCaseAssigner,
+            }),
+            [[vRegister, rv]]
+          )
+      },
+    })
+    const localApp = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    localApp.mount(root)
+    await flush()
+
+    const input = root.firstElementChild as HTMLInputElement
+    input.value = 'hello'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    localApp.unmount()
+    document.body.innerHTML = ''
+
+    if (handle.api === undefined) throw new Error('api never set')
+    expect(receivedRv).toBeDefined()
+    expect(handle.api.values.email).toBe('HELLO')
+  })
 })
 
 describe('v-register="undefined" is a graceful no-op (invariant 4)', () => {

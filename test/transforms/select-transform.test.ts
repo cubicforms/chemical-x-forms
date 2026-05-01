@@ -29,6 +29,47 @@ function countSelectedBindings(code: string): number {
   return (code.match(/\bselected:/g) ?? []).length
 }
 
+describe('selectNodeTransform — `:value` injection on the select element', () => {
+  // Patching `select.value` on a `<select multiple>` runs the spec's
+  // value-setter loop and DESELECTS every option whose value isn't
+  // case-equal to the new string. Our `displayValue.value` for an
+  // array model is `String(arr)` like "red,blue" — matches no option
+  // — so injecting `:value` on a multi-select clobbers the per-option
+  // `:selected` SSR state at hydration. The transform must skip
+  // `:value` on multi-selects; the per-option bindings carry the
+  // correct initial state on their own.
+  it('does NOT inject :value on a static <select multiple>', () => {
+    const code = compileWithTransform(
+      `<select v-register="colors" multiple><option value="red">Red</option></select>`
+    )
+    expect(code).not.toMatch(/\bvalue:\s*[^,}\n]*displayValue/)
+  })
+
+  it('does NOT inject :value on a dynamic :multiple select (conservative)', () => {
+    // Compile-time can't evaluate `cond`, so we have to assume it might
+    // resolve to true at runtime. Treat dynamic-multiple the same as
+    // static-multiple: skip the injection, keep the per-option bindings.
+    const code = compileWithTransform(
+      `<select v-register="colors" :multiple="cond"><option value="red">Red</option></select>`
+    )
+    expect(code).not.toMatch(/\bvalue:\s*[^,}\n]*displayValue/)
+  })
+
+  it('DOES inject :value on a regular (single) <select>', () => {
+    const code = compileWithTransform(
+      `<select v-register="fruit"><option value="apple">Apple</option></select>`
+    )
+    expect(code).toMatch(/\bvalue:\s*[^,}\n]*displayValue/)
+  })
+
+  it('DOES inject :value on an explicit non-multi <select multiple="false">', () => {
+    const code = compileWithTransform(
+      `<select v-register="fruit" multiple="false"><option value="apple">Apple</option></select>`
+    )
+    expect(code).toMatch(/\bvalue:\s*[^,}\n]*displayValue/)
+  })
+})
+
 describe('selectNodeTransform — option value fallback (D3)', () => {
   it('binds :selected on options that already have an explicit value=', () => {
     const code = compileWithTransform(

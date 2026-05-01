@@ -11,7 +11,6 @@ import type {
   IsObjectOrArray,
   NestedReadType,
   NestedType,
-  WithIndexedUndefined,
   WriteShape,
 } from './types-core'
 
@@ -1873,7 +1872,7 @@ export type UseAbstractFormReturnType<
    * structurally-valid values are visible. Use `handleSubmit` /
    * `validateAsync()` when you need the post-validation strict type.
    */
-  values: ValuesSurface<WithIndexedUndefined<WriteShape<GetValueFormType>>>
+  values: ValuesSurface<WriteShape<GetValueFormType>>
 
   /**
    * Reactive per-field state proxy. Pinia-style nested object — read
@@ -1941,12 +1940,7 @@ export type UseAbstractFormReturnType<
      * values, failing `.email()`, etc.) succeed and surface as
      * field errors instead.
      */
-    <
-      Value extends SetValuePayload<
-        DefaultValuesShape<Form>,
-        WithIndexedUndefined<WriteShape<Form>>
-      >,
-    >(
+    <Value extends SetValuePayload<DefaultValuesShape<Form>, WriteShape<Form>>>(
       value: Value
     ): boolean
     /**

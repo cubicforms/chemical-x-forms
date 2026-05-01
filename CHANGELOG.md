@@ -2,7 +2,24 @@
 
 ## Unreleased
 
-_No unreleased changes yet._
+- **Breaking — dropped `WithIndexedUndefined` from `form.values` and
+  the whole-form `setValue((prev) => …)` callback.** The wrapper baked
+  `| undefined` into every unbounded array's element type so
+  `arr[N]` reads were honest about out-of-bounds — but the same
+  widening also tainted iteration (`v-for`, `for-of`, `.map`, etc.)
+  where every element exists by definition, producing spurious
+  `T | undefined` on perfectly safe reads. The job is better done by
+  TypeScript's `noUncheckedIndexedAccess: true` tsconfig flag, which
+  scopes the taint to indexed access only and leaves iteration as
+  `T`. The lib-level wrap was both redundant for consumers who set
+  the flag, and worse than nothing for those who didn't (no
+  iteration ergonomics either way).
+
+  Migration: enable `noUncheckedIndexedAccess: true` in your
+  consumer tsconfig (Nuxt projects already get it via the generated
+  `.nuxt/tsconfig.*.json`). `arr[N]` and `prev.posts[N]` reads keep
+  the same `T | undefined` typing they had before; iteration cleans
+  up. The `WithIndexedUndefined<T>` type export is removed.
 
 ## v0.13.0
 _No unreleased changes yet._

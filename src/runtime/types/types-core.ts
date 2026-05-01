@@ -166,35 +166,6 @@ type Primitive = string | number | boolean | symbol | bigint | null | undefined
 export type IsTuple<T extends readonly unknown[]> = number extends T['length'] ? false : true
 
 /**
- * Tags every unbounded array's element type with `| undefined` so
- * code reading `arr[N]` has to narrow before using the result. This
- * mirrors the runtime reality that out-of-bounds reads return
- * `undefined`.
- *
- * Used by `form.values` and the whole-form `setValue((prev) => …)`
- * callback's `prev` argument so accessors are honest about
- * possibly-missing array positions. Tuple positions are preserved
- * unchanged — they're guaranteed by their position in the type.
- *
- * `Date`, `RegExp`, `Map`, `Set`, and function instances pass
- * through.
- */
-export type WithIndexedUndefined<T> = T extends
-  | Date
-  | RegExp
-  | Map<unknown, unknown>
-  | Set<unknown>
-  | ((...args: never) => unknown)
-  ? T
-  : T extends ReadonlyArray<infer Item>
-    ? IsTuple<T> extends true
-      ? { -readonly [K in keyof T]: WithIndexedUndefined<T[K]> }
-      : ReadonlyArray<WithIndexedUndefined<Item> | undefined>
-    : T extends object
-      ? { [K in keyof T]: WithIndexedUndefined<T[K]> }
-      : T
-
-/**
  * Path-resolved type for read-side APIs. Like `NestedType`, but once
  * the walk crosses an array index segment the resulting type is
  * tagged `| undefined` (the runtime can return undefined for

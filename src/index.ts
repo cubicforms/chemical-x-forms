@@ -127,7 +127,6 @@ export type {
   IsTuple,
   NestedReadType,
   NestedType,
-  WithIndexedUndefined,
 } from './runtime/types/types-core'
 
 // Path primitives — exposed for consumers writing custom adapters that

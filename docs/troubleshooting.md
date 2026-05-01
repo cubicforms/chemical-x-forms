@@ -204,10 +204,11 @@ receives a fully-defaulted `prev` — the runtime calls
 so consumer code can read `prev.first.toUpperCase()` directly. Drop
 the optional chain.
 
-Whole-form callback `prev` is `WithIndexedUndefined<Form>`, so
-array reads (`prev.posts[5]`) DO carry `| undefined` and need
-narrowing — that's the only case where defensive reads are still
-correct.
+Whole-form callback `prev` is `WriteShape<Form>`. Array reads
+(`prev.posts[5]`) carry `| undefined` from your tsconfig's
+`noUncheckedIndexedAccess: true` — narrow with `?.` or a guard.
+Iteration (`for (const p of prev.posts)`, `prev.posts.map(...)`)
+keeps the strict element type; that's the flag's intended scope.
 
 ## "`form.values.posts[0].title.toUpperCase()` started type-erroring"
 

@@ -2,7 +2,6 @@ import { describe, expectTypeOf, it } from 'vitest'
 import { z } from 'zod'
 import type { FormMeta } from '../../src'
 import type { useForm } from '../../src/zod'
-import type { WithIndexedUndefined } from '../../src/runtime/types/types-core'
 
 /**
  * Type-inference tests for `useForm` via the Zod v4 adapter.
@@ -96,13 +95,16 @@ describe('useForm type inference — factory signature', () => {
     void missingSchemaConfig
   })
 
-  it('returns the inferred Form shape on form.values (with array taint)', () => {
-    // `form.values` is a callable readonly proxy over the form wrapped
-    // in `WithIndexedUndefined` — `values.tags[N]` etc. is
-    // `string | undefined` since arrays can be out-of-bounds at runtime.
-    // The Readonly<WithIndexedUndefined<ExpectedForm>> shape is reachable
-    // through the surface; per-leaf access proves it (below).
-    expectTypeOf(form.values).toMatchTypeOf<Readonly<WithIndexedUndefined<ExpectedForm>>>()
+  it('returns the inferred Form shape on form.values', () => {
+    // `form.values` is a callable readonly proxy over the form. Array
+    // element types are strict (`tags: string[]`, not
+    // `(string | undefined)[]`) — the safety on `arr[N]` reads is
+    // delegated to the consumer's `noUncheckedIndexedAccess: true`
+    // tsconfig flag, which TypeScript already correctly suppresses on
+    // iteration (`for (const x of arr)` keeps `x: T`). Baking
+    // `| undefined` into the element would have broken legitimate
+    // iteration with no upside.
+    expectTypeOf(form.values).toMatchTypeOf<Readonly<ExpectedForm>>()
     expectTypeOf(form.values).toBeCallableWith('email')
   })
 })
@@ -123,8 +125,11 @@ describe('useForm type inference — form.values', () => {
   })
 
   it('array index is undefined-tainted (out-of-bounds is honest)', () => {
-    // Numeric index access through a Vue readonly array proxy returns
-    // `T | undefined` — same honesty pass.
+    // Numeric index access on an unbounded array returns `T | undefined`
+    // because this repo's tsconfig sets `noUncheckedIndexedAccess: true`.
+    // The lib doesn't bake `| undefined` into the element type itself
+    // — that would also taint iteration, which is wrong (every iterated
+    // element exists by definition).
     expectTypeOf(form.values.tags[0]).toEqualTypeOf<string | undefined>()
   })
 
@@ -201,11 +206,14 @@ describe('useForm type inference — register', () => {
   })
 })
 
-describe('Phase 4: WithIndexedUndefined + strict SetValuePayload', () => {
+describe('Phase 4: strict SetValuePayload', () => {
   it('whole-form callback prev sees array elements as `T | undefined`', () => {
     form.setValue((prev) => {
-      // Array index reads are honestly tainted. `prev.posts[5]` could
-      // be out-of-bounds at runtime, so the type must include undefined.
+      // Array index reads are honestly tainted via the consumer's
+      // `noUncheckedIndexedAccess: true` tsconfig flag. `prev.posts[5]`
+      // could be out-of-bounds at runtime, so the type includes undefined.
+      // (Iteration over `prev.posts` keeps the strict element type — the
+      // flag scopes to indexed access only.)
       expectTypeOf(prev.posts[5]).toEqualTypeOf<{ title: string; views: number } | undefined>()
       expectTypeOf(prev.tags[0]).toEqualTypeOf<string | undefined>()
       // Non-array properties remain strict.

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **`parseApiErrors` now accepts the bare-string Rails / DRF / Laravel
+  shape (`{ field: ["msg"] }`).** Pre-fix the parser required every
+  entry to be a structured `{ message, code }` object; payloads
+  emitting bare strings (the de facto JSON convention for many
+  backends) returned `result.ok === false` and the recommended
+  `if (result.ok) form.setFieldErrors(result.errors)` pattern silently
+  did nothing. Bare strings now synthesize a `{ message: <str>,
+  code: <defaultCode> }` ValidationError, with `defaultCode`
+  defaulting to `'api:unknown'` and configurable via the new
+  `defaultCode?: string` option. Structured `{ message, code }`
+  entries continue to forward `code` verbatim. Mixed arrays are
+  fine. Half-structured entries (`{ message }` missing `code`) are
+  still rejected — a server emitting that probably has a bug worth
+  surfacing.
+
 - **Behavior change — `focusFirstError` / `scrollToFirstError` /
   `onInvalidSubmit: 'focus-first-error'` target the visually-first
   errored field instead of the schema-declaration-first.** "First" is

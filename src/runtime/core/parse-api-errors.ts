@@ -46,6 +46,17 @@ export type ParseApiErrorsOptions = {
    */
   readonly formKey: FormKey
   /**
+   * Code stamped on `ValidationError`s synthesized from bare-string
+   * entries (the Rails / DRF / Laravel `{ field: ["msg"] }` shape).
+   * Default `'api:unknown'`. Pick something more specific
+   * (`'api:server-validation'`, `'myapp:legacy'`, …) when you know
+   * the source.
+   *
+   * Structured `{ message, code }` entries forward their `code`
+   * verbatim and ignore this option.
+   */
+  readonly defaultCode?: string
+  /**
    * Maximum number of distinct keys to accept. Default `1000`.
    * Raise for trusted backends that legitimately produce more.
    */
@@ -64,13 +75,15 @@ export type ParseApiErrorsOptions = {
 }
 
 /**
- * Default size caps used by `parseApiErrors`. Conservative; pass
- * larger values via the options bag for trusted-backend integrations.
+ * Default size caps + default fallback code used by `parseApiErrors`.
+ * Conservative; pass larger values (or a more specific code) via the
+ * options bag for trusted-backend integrations.
  */
 export const PARSE_API_ERRORS_DEFAULTS = {
   maxEntries: 1000,
   maxPathDepth: 32,
   maxTotalSegments: 10000,
+  defaultCode: 'api:unknown',
 } as const
 
 /**
@@ -95,17 +108,26 @@ export const PARSE_API_ERRORS_DEFAULTS = {
  *   `{ details: { email: { message: 'taken', code: 'api:duplicate-email' } } }`
  * - Raw details record:
  *   `{ email: { message: 'taken', code: 'api:duplicate-email' } }`
+ * - **Bare-string Rails / DRF / Laravel shape:**
+ *   `{ email: ['Email already taken.'], username: 'too short' }`
  * - `null` / `undefined` — returns `{ ok: true, errors: [] }`
  *
- * Every entry must be `{ message: string, code: string }` (both
- * required). The `code` is forwarded verbatim onto the produced
- * `ValidationError`. Pick a prefix on the server (`api:`, `auth:`,
- * etc.) and stay consistent so error renderers can branch on it.
+ * Two entry shapes are accepted:
  *
- * Each detail key's value can be a single entry or an array; arrays
- * expand into one `ValidationError` per entry, so a single field can
- * carry multiple distinct failures (e.g. `password` is too short
- * *and* missing a digit, each with its own code).
+ * 1. **Structured** — `{ message: string, code: string }`. The `code`
+ *    is forwarded verbatim onto the produced `ValidationError`.
+ * 2. **Bare-string** — a plain string. Synthesized into
+ *    `{ message: <string>, code: <defaultCode> }` where `defaultCode`
+ *    comes from `options.defaultCode` (default `'api:unknown'`).
+ *    Useful for the Rails / Django REST Framework / FastAPI / Laravel
+ *    JSON shape that doesn't carry a per-field code.
+ *
+ * Each detail key's value can be a single entry, an array, or a mix
+ * of structured and bare-string entries; arrays expand into one
+ * `ValidationError` per entry. Pick a prefix on the server (`api:`,
+ * `auth:`, etc.) and stay consistent so error renderers can branch
+ * on `code` — or rely on `defaultCode` when the wire shape is
+ * message-only.
  *
  * Dotted keys (`"address.line1"`) are split into structured paths
  * automatically. Use a custom server response shape outside these
@@ -120,6 +142,7 @@ export function parseApiErrors(
   const maxEntries = options.maxEntries ?? PARSE_API_ERRORS_DEFAULTS.maxEntries
   const maxPathDepth = options.maxPathDepth ?? PARSE_API_ERRORS_DEFAULTS.maxPathDepth
   const maxTotalSegments = options.maxTotalSegments ?? PARSE_API_ERRORS_DEFAULTS.maxTotalSegments
+  const defaultCode = options.defaultCode ?? PARSE_API_ERRORS_DEFAULTS.defaultCode
 
   if (payload === null || payload === undefined) {
     return { ok: true, errors: [] }
@@ -149,7 +172,7 @@ export function parseApiErrors(
   const errors: ValidationError[] = []
   let totalSegments = 0
   for (const [key, value] of Object.entries(details)) {
-    const entryList = Array.isArray(value) ? value : [value]
+    const entryList: ReadonlyArray<string | ApiErrorEntry> = Array.isArray(value) ? value : [value]
     // `canonicalizePath` throws `InvalidPathError` for dotted strings with
     // empty segments (e.g. `'. '`, `'a..b'`). A misbehaving server can
     // genuinely emit such a key; the hydrator is a normaliser, not a
@@ -180,15 +203,19 @@ export function parseApiErrors(
       }
     }
     for (const entry of entryList) {
-      // Empty messages are dropped silently (a server emitting
-      // `{ message: '' }` is malformed but recoverable — we skip the
-      // entry rather than fail the whole payload).
-      if (entry.message.length === 0) continue
+      // Bare-string entries (Rails / DRF / Laravel shape) synthesize a
+      // `code` from `options.defaultCode`; structured `{ message, code }`
+      // entries forward `code` verbatim. Empty messages drop silently
+      // (`{ message: '' }` or `''`) — same recoverable-malformed-server
+      // policy as before.
+      const message = typeof entry === 'string' ? entry : entry.message
+      const code = typeof entry === 'string' ? defaultCode : entry.code
+      if (message.length === 0) continue
       errors.push({
-        message: entry.message,
+        message,
         path: Array.from(segments),
         formKey: options.formKey,
-        code: entry.code,
+        code,
       })
     }
   }
@@ -206,7 +233,10 @@ function extractDetails(payload: Record<string, unknown>): ExtractResult {
       return { ok: true, details: {} }
     }
     if (isDetailsRecord(inner)) return { ok: true, details: inner }
-    return { ok: false, reason: 'error.details entries must be { message, code } objects' }
+    return {
+      ok: false,
+      reason: 'error.details entries must be strings or { message, code } objects',
+    }
   }
 
   // `{ error: 'oops' }` / `{ error: 42 }` is a malformed wrapped envelope —
@@ -225,7 +255,7 @@ function extractDetails(payload: Record<string, unknown>): ExtractResult {
     const inner = payload['details']
     if (inner === undefined) return { ok: true, details: {} }
     if (isDetailsRecord(inner)) return { ok: true, details: inner }
-    return { ok: false, reason: 'details entries must be { message, code } objects' }
+    return { ok: false, reason: 'details entries must be strings or { message, code } objects' }
   }
 
   if (isDetailsRecord(payload)) return { ok: true, details: payload }
@@ -236,12 +266,31 @@ function extractDetails(payload: Record<string, unknown>): ExtractResult {
   return { ok: false, reason: 'unrecognised payload shape' }
 }
 
-function isApiErrorEntry(value: unknown): value is ApiErrorEntry {
+function isStructuredEntry(value: unknown): value is ApiErrorEntry {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
   const obj = value as { message?: unknown; code?: unknown }
   return typeof obj.message === 'string' && typeof obj.code === 'string'
 }
 
+/**
+ * Accepts either a structured `{ message, code }` entry OR a bare
+ * string. Bare strings synthesize a `code` at parse time
+ * (`options.defaultCode`) and are useful for the Rails / Django REST
+ * Framework / Laravel JSON shape that doesn't carry a per-field code.
+ */
+function isAcceptedEntry(value: unknown): value is string | ApiErrorEntry {
+  return typeof value === 'string' || isStructuredEntry(value)
+}
+
+/**
+ * A record is a "details" record when every value is either an
+ * accepted entry or an array of accepted entries (mixing structured +
+ * bare-string in the same array is fine; the parser normalises per
+ * entry). Half-structured objects (e.g. `{ message: 'x' }` missing
+ * `code`) are still rejected so the bug surfaces — see the
+ * `'rejects entries that are objects but missing required fields'`
+ * test for the rationale.
+ */
 function isDetailsRecord(value: unknown): value is ApiErrorDetails {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
   // Reject prototype-polluted keys — we don't use them here, but downstream
@@ -249,8 +298,8 @@ function isDetailsRecord(value: unknown): value is ApiErrorDetails {
   const record = value as Record<string, unknown>
   for (const k of Object.keys(record)) {
     const v = record[k]
-    if (isApiErrorEntry(v)) continue
-    if (Array.isArray(v) && v.every((entry) => isApiErrorEntry(entry))) continue
+    if (isAcceptedEntry(v)) continue
+    if (Array.isArray(v) && v.every((entry) => isAcceptedEntry(entry))) continue
     return false
   }
   return true

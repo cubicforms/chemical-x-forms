@@ -238,21 +238,28 @@ surface deliberately doesn't include a `…FromApi` shortcut — keeping
 the parse step explicit makes the data flow obvious and the parser
 unit-testable in isolation.
 
-**Wire format.** Every entry must be `{ message, code }` (both
-required strings). The `code` is forwarded verbatim onto the produced
-`ValidationError` so error renderers can branch on it without
-matching on the message string. A field's value can be a single
-entry or an array (multiple distinct failures at the same path).
+**Wire format.** Two entry shapes are accepted:
+
+- **Structured** — `{ message: string, code: string }`. The `code`
+  forwards verbatim onto the produced `ValidationError` so error
+  renderers can branch on it without matching the message string.
+- **Bare string** — a plain string. The Rails / Django REST Framework
+  / FastAPI / Laravel default JSON shape (`{ field: ["msg"] }`).
+  Synthesized into `{ message: <string>, code: <defaultCode> }` at
+  parse time; `defaultCode` defaults to `'api:unknown'` and is
+  configurable via the options bag.
+
+A field's value can be a single entry, an array, or a mix of
+structured and bare-string entries (multiple distinct failures at the
+same path).
 
 ```jsonc
 {
   "error": {
     "details": {
       "email": { "message": "taken", "code": "api:duplicate-email" },
-      "password": [
-        { "message": "too short", "code": "api:min-length" },
-        { "message": "no digit", "code": "api:digit-required" },
-      ],
+      "password": [{ "message": "too short", "code": "api:min-length" }, "must include a number"],
+      "username": ["Username is reserved."],
       "items.0.name": { "message": "blank", "code": "api:blank" },
       "": { "message": "form-level failure", "code": "api:form" },
     },
@@ -263,6 +270,8 @@ entry or an array (multiple distinct failures at the same path).
 ```ts
 const result = parseApiErrors(response, {
   formKey: form.key,
+  // Stamp every bare-string entry with a custom code (default 'api:unknown'):
+  defaultCode: 'api:server-validation',
   // Optional caps for untrusted gateway-passthrough payloads:
   maxEntries: 200, // default 1000
   maxPathDepth: 8, // default 32
@@ -271,9 +280,10 @@ if (result.ok) form.setFieldErrors(result.errors)
 else console.warn('Bad payload:', result.rejected)
 ```
 
-Legacy string entries (`{ field: 'message string' }`) are rejected
-with `ok: false`. Pre-1.0; consumers needing per-call codes adapt
-their backend.
+Half-structured entries (`{ message }` with no `code`, or `{ code }`
+with no `message`) are still rejected — those signal a server bug
+(the wire shape was _trying_ to be structured) and shouldn't be
+silently coerced.
 
 See [server-errors recipe](./recipes/server-errors.md) for the full
 pattern.

@@ -171,15 +171,109 @@ describe('parseApiErrors (structured result)', () => {
     })
   })
 
-  describe('rejection of malformed payloads', () => {
-    it('rejects legacy string entries (now require { message, code })', () => {
-      const result = parseApiErrors({ details: { email: 'taken' } } as unknown, { formKey })
-      expect(result.ok).toBe(false)
-      expect(result.errors).toEqual([])
-      expect(result.rejected).toContain('{ message, code }')
+  // The Rails / Django REST Framework / FastAPI / Laravel default JSON
+  // shape is `{ field: ["msg1", "msg2"] }` — an array of bare strings,
+  // no `code` companion. The library's strict `{ message, code }` rule
+  // rejected these payloads wholesale, leaving consumers with a silent
+  // no-op (the recommended `if (result.ok) form.setFieldErrors(...)`
+  // pattern skips on rejection). We accept the bare-string shape with
+  // a synthesized `code` (`'api:unknown'` by default; override via
+  // `defaultCode` option) so the common case Just Works.
+  describe('bare-string entries (Rails / Django / Laravel JSON style)', () => {
+    it('accepts a single string entry at a path', () => {
+      const result = parseApiErrors({ details: { email: 'taken' } }, { formKey })
+      expect(result.ok).toBe(true)
+      expect(result.errors).toEqual([
+        { message: 'taken', path: ['email'], formKey, code: 'api:unknown' },
+      ])
     })
 
-    it('rejects entries missing the code field', () => {
+    it('accepts an array of string entries (the common Rails / DRF shape)', () => {
+      const result = parseApiErrors(
+        { username: ['Username is reserved.'], bio: ['Profanity filter rejected this bio.'] },
+        { formKey }
+      )
+      expect(result.ok).toBe(true)
+      expect(result.errors).toEqual([
+        { message: 'Username is reserved.', path: ['username'], formKey, code: 'api:unknown' },
+        {
+          message: 'Profanity filter rejected this bio.',
+          path: ['bio'],
+          formKey,
+          code: 'api:unknown',
+        },
+      ])
+    })
+
+    it('expands a multi-element string array into one ValidationError per entry', () => {
+      const result = parseApiErrors(
+        { details: { password: ['too short', 'must include a number'] } },
+        { formKey }
+      )
+      expect(result.ok).toBe(true)
+      expect(result.errors).toEqual([
+        { message: 'too short', path: ['password'], formKey, code: 'api:unknown' },
+        {
+          message: 'must include a number',
+          path: ['password'],
+          formKey,
+          code: 'api:unknown',
+        },
+      ])
+    })
+
+    it('mixes structured and bare-string entries in the same array', () => {
+      const result = parseApiErrors(
+        {
+          details: {
+            password: [{ message: 'too short', code: 'api:min-length' }, 'must include a number'],
+          },
+        },
+        { formKey }
+      )
+      expect(result.ok).toBe(true)
+      expect(result.errors).toEqual([
+        { message: 'too short', path: ['password'], formKey, code: 'api:min-length' },
+        {
+          message: 'must include a number',
+          path: ['password'],
+          formKey,
+          code: 'api:unknown',
+        },
+      ])
+    })
+
+    it('honors an explicit `defaultCode` option for the synthesized code', () => {
+      const result = parseApiErrors(
+        { username: 'taken', bio: ['too long', 'profanity'] },
+        { formKey, defaultCode: 'myapp:server-validation' }
+      )
+      expect(result.ok).toBe(true)
+      expect(result.errors.every((e) => e.code === 'myapp:server-validation')).toBe(true)
+    })
+
+    it('drops empty-string entries silently (matches the structured-shape behavior)', () => {
+      const result = parseApiErrors({ details: { email: ['', 'taken'] } }, { formKey })
+      expect(result.ok).toBe(true)
+      expect(result.errors).toEqual([
+        { message: 'taken', path: ['email'], formKey, code: 'api:unknown' },
+      ])
+    })
+
+    it('handles dotted paths in bare-string mode just like structured mode', () => {
+      const result = parseApiErrors({ 'address.line1': 'required' }, { formKey })
+      expect(result.errors).toEqual([
+        { message: 'required', path: ['address', 'line1'], formKey, code: 'api:unknown' },
+      ])
+    })
+  })
+
+  describe('rejection of malformed payloads', () => {
+    it('rejects entries that are objects but missing required fields', () => {
+      // `{ message }` with no `code` is a half-structured entry — the
+      // server "tried" to use the structured shape but dropped a field.
+      // Reject so the bug surfaces (not silently coerced to a default
+      // code, since the message is "you almost got it right").
       const result = parseApiErrors({ details: { email: { message: 'taken' } } } as unknown, {
         formKey,
       })

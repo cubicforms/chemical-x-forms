@@ -1672,12 +1672,29 @@ export type ApiErrorEntry = {
 
 /**
  * Shape of a server-side error details record. Keys are dotted field
- * paths; values are a single `{ message, code }` entry or a list of
- * them. Multiple entries at the same path produce multiple
+ * paths; values are either a single entry, an array of entries, or a
+ * mix of structured and bare-string entries. Each entry is one of:
+ *
+ * - **Structured** — `{ message: string, code: string }`. The `code`
+ *   forwards verbatim onto the produced `ValidationError`.
+ * - **Bare string** — a plain string. The Rails / Django REST
+ *   Framework / Laravel default JSON shape (`{ field: ["msg"] }`).
+ *   Synthesized into `{ message: <string>, code: <defaultCode> }` at
+ *   parse time, where `defaultCode` defaults to `'api:unknown'` and
+ *   is configurable via `parseApiErrors`'s options bag.
+ *
+ * Multiple entries at the same path produce multiple
  * `ValidationError`s — useful for a single field that fails multiple
  * checks (e.g. `password` is too short *and* missing a digit).
  */
-export type ApiErrorDetails = Record<string, ApiErrorEntry | ApiErrorEntry[]>
+export type ApiErrorDetails = Record<string, ApiErrorValue>
+
+/**
+ * One entry inside an {@link ApiErrorDetails} value — either the
+ * strict `{ message, code }` object, or a bare string (synthesised
+ * with the parser's `defaultCode`).
+ */
+export type ApiErrorValue = string | ApiErrorEntry | ReadonlyArray<string | ApiErrorEntry>
 
 /**
  * Outer envelope `parseApiErrors` accepts. Both the wrapped form

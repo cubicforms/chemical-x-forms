@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { useForm } from '../../src/zod'
 import { z } from 'zod'
+import { parseApiErrors } from '../../src/runtime/core/parse-api-errors'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 
 /**
@@ -219,6 +220,46 @@ describe('form.errors — reactivity in render scope', () => {
     api.clearFieldErrors('email')
     await nextTick()
     expect(renderedMessage).toBe('')
+  })
+
+  // End-to-end coverage for the spike's "Simulate API 400" flow:
+  // parseApiErrors → setFieldErrors → form.errors.<path> read. Pre-fix
+  // the bare-string Rails / DRF / Laravel shape (`{ field: ["msg"] }`)
+  // returned `result.ok === false`, the `if (result.ok) ...` guard
+  // skipped, and the form rendered no error messages even though the
+  // API response carried valid information. Now both shapes flow
+  // through end-to-end.
+  it('parseApiErrors → setFieldErrors → form.errors renders the messages (Rails-style payload)', () => {
+    const { app, api } = mount()
+    apps.push(app)
+
+    const result = parseApiErrors(
+      {
+        email: ['Email is reserved.'],
+        password: ['Profanity filter rejected this.'],
+      },
+      { formKey: api.key }
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) api.setFieldErrors(result.errors)
+
+    expect(api.errors.email?.[0]?.message).toBe('Email is reserved.')
+    expect(api.errors.email?.[0]?.code).toBe('api:unknown')
+    expect(api.errors.password?.[0]?.message).toBe('Profanity filter rejected this.')
+  })
+
+  it('parseApiErrors honors a custom defaultCode end-to-end', () => {
+    const { app, api } = mount()
+    apps.push(app)
+
+    const result = parseApiErrors(
+      { email: 'taken' },
+      { formKey: api.key, defaultCode: 'api:server-validation' }
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) api.setFieldErrors(result.errors)
+
+    expect(api.errors.email?.[0]?.code).toBe('api:server-validation')
   })
 
   it('getter-form `watch` fires on entry changes', async () => {

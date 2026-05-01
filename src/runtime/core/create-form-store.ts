@@ -311,6 +311,20 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   cancelFieldValidation(): void
 
   /**
+   * Kick off (or schedule) a field-level validation run for `path`. Pass
+   * `path = []` to cover the whole form; `applySchemaErrorsForSubtree`
+   * then wipes every `schemaErrors` entry and replaces them with the
+   * adapter's full async response. Used by persistence's post-hydration
+   * revalidation and by the construction-time async-refine seed.
+   *
+   * `immediate: true` skips the debounce window — the runtime kicks off
+   * the adapter call on the next microtask. Internal callsites use this
+   * for one-shot triggers; the per-keystroke writers pass `false` to
+   * coalesce rapid mutations under the configured debounceMs.
+   */
+  scheduleFieldValidation(path: Path, immediate: boolean): void
+
+  /**
    * Subscribe to every `applyFormReplacement`. Fires synchronously
    * after `form.value` has been swapped to `next` and all field /
    * originals bookkeeping has run. Used by persistence + undo/redo
@@ -698,14 +712,20 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // form was constructed in strict mode. Lax mode treats default
     // values as "best-effort," so populating errors there would
     // surprise consumers who explicitly opted out of strict checks.
-    //
-    // Async refines won't fire here — `getDefaultValues` is sync
-    // (`safeParse`, not `safeParseAsync`); they only fire on the
-    // first user mutation that re-triggers `scheduleFieldValidation`.
-    // Consumers needing async refines at construction can call
-    // `validateAsync()` once after mount.
     if (validationMode === 'strict' && !schemaResponse.success) {
       setAllSchemaErrors(schemaResponse.errors)
+    }
+    // Async refines can't fire from `getDefaultValues` — that contract
+    // is sync (`safeParse` throws on async, the adapter degrades to
+    // success). When the schema actually carries an async refine, ask
+    // the adapter once and queue an immediate full-form async pass so
+    // the construction-time refine errors land on the next microtask
+    // instead of waiting for a user mutation. The check is gated to
+    // strict mode and to schemas that genuinely contain an async
+    // refine, so sync schemas (the common case) keep their fully-sync
+    // construction-time error pipeline.
+    if (validationMode === 'strict' && schema.hasAsyncRefines()) {
+      scheduleFieldValidation([], true /* immediate */)
     }
   }
 
@@ -1768,6 +1788,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     getOriginalAtPath,
     getFirstErrorElement,
     cancelFieldValidation,
+    scheduleFieldValidation,
     onFormChange,
     onSubmitSuccess,
     onReset,

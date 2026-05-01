@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- **Persistence hydration now revalidates against the rehydrated
+  value.** Pre-fix `wirePersistence` swapped in the persisted form
+  via `applyFormReplacement` and stopped — sync errors stayed stale
+  (still describing the empty default), and async refines never
+  fired. A consumer who persisted `email: 'taken@example.com'`
+  (passes `z.email()` sync, fails an async uniqueness refine) would
+  refresh into a form the runtime considered VALID, surfacing
+  whatever success message the template gated on `errors.email`
+  being absent. Hydration now schedules an immediate full-form
+  validation pass so sync + async results land against the actual
+  rehydrated value. Affects every `persist:` configuration.
+
+- **New — construction-time async-refine seed in strict mode.**
+  Schemas carrying `.refine(async (v) => …)` previously didn't
+  surface refine errors at construction (zod's sync `safeParse`
+  throws, the adapter caught and returned success). The runtime now
+  asks the schema's `hasAsyncRefines()` and queues an immediate
+  full-form async pass when true, so refine errors land on the next
+  microtask without waiting for a user mutation or a manual
+  `validateAsync()` call. Sync schemas (the common case) still
+  validate fully synchronously — detection gates the async pass.
+  `AbstractSchema` gains a required `hasAsyncRefines(): boolean`
+  method (zod-v4 implements via a schema-tree walk; zod-v3 returns
+  `false` conservatively, matching the pre-detection behavior).
+
 - **`parseApiErrors` now accepts the bare-string Rails / DRF / Laravel
   shape (`{ field: ["msg"] }`).** Pre-fix the parser required every
   entry to be a structured `{ message, code }` object; payloads

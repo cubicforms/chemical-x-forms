@@ -101,6 +101,12 @@ export function zodAdapter<
     const leafCache = new Map<PathKey, boolean>()
     const abstractSchema: AbstractSchema<Form, GetValueFormType> = {
       fingerprint: () => fingerprintZodSchema(_zodSchema),
+      // v3 detection isn't implemented; the adapter conservatively
+      // returns false so async refines fall back to the pre-detection
+      // behavior (fire on first user mutation). Consumers wanting
+      // construction-time async-refine errors should use the v4
+      // adapter (`@chemical-x/forms/zod`).
+      hasAsyncRefines: () => false,
       getDefaultValues(config) {
         const defaultValuesWithoutConstraints = getDefaultValuesFromZodSchema(
           _zodSchema,

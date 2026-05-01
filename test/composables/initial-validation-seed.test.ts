@@ -63,10 +63,15 @@ describe('initial validation seed — strict mode', () => {
     // Regression: strict mode's seed pass calls `rootSchema.safeParse(data)`
     // synchronously, which throws when the schema contains an async refine
     // (zod's "Encountered Promise during synchronous parse"). The adapter
-    // catches the throw and returns success so the form still mounts;
-    // async refines fire on first mutation or via `validateAsync()`.
+    // catches the throw and returns success so the form still mounts.
     // Without this fallback, strict-default useForm calls would crash
     // setup for any form using `z.string().refine(async ...)`.
+    //
+    // Async refines fire on the next microtask via the construction-time
+    // async-refine seed (the runtime asks the schema's `hasAsyncRefines()`
+    // and queues a full validation pass when true). The synchronous
+    // post-mount assertion below still sees `errors.email === undefined`
+    // — the microtask hasn't run yet at this point.
     const asyncSchema = z.object({
       email: z.email().refine(async () => Promise.resolve(true), 'taken'),
     })
@@ -88,8 +93,6 @@ describe('initial validation seed — strict mode', () => {
     app.mount(root)
     apps.push(app)
     expect(typeof handle.api?.register).toBe('function')
-    // No construction-time errors for async refines — they need
-    // validateAsync() or a user mutation to fire.
     expect(handle.api?.errors.email).toBeUndefined()
   })
 
@@ -124,6 +127,137 @@ describe('initial validation seed — strict mode', () => {
     expect(api.errors.email).toBeUndefined()
     expect(api.errors.password).toBeUndefined()
     expect(api.meta.isValid).toBe(true)
+  })
+})
+
+describe('initial validation seed — async-refine schema', () => {
+  const apps: App[] = []
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+  })
+
+  async function flushMicrotasks(rounds = 8): Promise<void> {
+    for (let i = 0; i < rounds; i++) {
+      await Promise.resolve()
+    }
+  }
+
+  async function waitFor<T>(
+    fn: () => T | null | undefined,
+    timeoutMs = 1000,
+    intervalMs = 5
+  ): Promise<T | null> {
+    const deadline = Date.now() + timeoutMs
+    for (;;) {
+      const v = fn()
+      if (v !== null && v !== undefined) return v
+      if (Date.now() >= deadline) return null
+      await new Promise((r) => setTimeout(r, intervalMs))
+    }
+  }
+
+  it('strict mode fires async refines on the next microtask (no user input required)', async () => {
+    // Schema combines a sync constraint (`z.email()`) with an async
+    // refine that rejects "taken@example.com". Default value is
+    // `taken@example.com` — passes sync, fails refine. Pre-fix the
+    // construction-time seed silently dropped the safeParse throw and
+    // returned success, so the form looked valid until the user typed.
+    // With `hasAsyncRefines()` detection, the runtime queues a full
+    // async pass that lands the refine error on the next microtask.
+    const asyncSchema = z.object({
+      email: z
+        .email()
+        .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
+    })
+    type AsyncApi = ReturnType<typeof useForm<typeof asyncSchema>>
+    const handle: { api?: AsyncApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: asyncSchema,
+          key: 'init-seed-async-fires',
+          defaultValues: { email: 'taken@example.com' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    const api = handle.api
+    if (api === undefined) throw new Error('unreachable')
+    // Synchronously, the form looks valid — the async pass hasn't run.
+    expect(api.errors.email).toBeUndefined()
+    // After microtasks settle, the refine error lands.
+    const message = await waitFor(() => api.errors.email?.[0]?.message ?? null)
+    expect(message).toBe('That email is already registered.')
+    expect(api.meta.isValid).toBe(false)
+  })
+
+  it('lax mode does NOT fire the construction-time async seed', async () => {
+    // Lax mode opts out of construction-time validation (sync OR
+    // async). The async-refine seed is gated to strict mode so lax
+    // consumers continue to mount with a clean error state.
+    const asyncSchema = z.object({
+      email: z
+        .email()
+        .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
+    })
+    type AsyncApi = ReturnType<typeof useForm<typeof asyncSchema>>
+    const handle: { api?: AsyncApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: asyncSchema,
+          key: 'init-seed-async-lax',
+          validationMode: 'lax',
+          defaultValues: { email: 'taken@example.com' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    const api = handle.api
+    if (api === undefined) throw new Error('unreachable')
+    await flushMicrotasks()
+    expect(api.errors.email).toBeUndefined()
+    expect(api.meta.isValid).toBe(true)
+  })
+
+  it('sync schema in strict mode lands errors synchronously (no async pass for non-async schemas)', () => {
+    // Detection MUST keep sync schemas on the fully-synchronous error
+    // path. Triggering an async pass for sync forms would briefly clear
+    // construction-time errors during the wipe-then-apply window in
+    // `applySchemaErrorsForSubtree([], …)`, surfacing as a flicker.
+    const syncSchema = z.object({ email: z.email('Invalid email') })
+    type SyncApi = ReturnType<typeof useForm<typeof syncSchema>>
+    const handle: { api?: SyncApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: syncSchema,
+          key: 'init-seed-sync',
+          defaultValues: { email: '' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    const api = handle.api
+    if (api === undefined) throw new Error('unreachable')
+    expect(api.errors.email?.[0]?.message).toBe('Invalid email')
+    expect(api.meta.isValid).toBe(false)
+    expect(api.meta.isValidating).toBe(false)
   })
 })
 

@@ -413,6 +413,19 @@ export type AbstractSchema<Form, GetValueFormType> = {
    * without this hook.
    */
   getUnionDiscriminatorAtPath(path: Path): UnionDiscriminatorContext | undefined
+
+  /**
+   * Return `true` if any node in the schema tree carries an async
+   * refinement (e.g. `z.email().refine(async (v) => …)`). The runtime
+   * uses this at construction to schedule a one-shot async validation
+   * pass — without it, async refines on invalid defaults stay silent
+   * until the user types into the field. Adapters that can't carry
+   * async refinements (or don't yet support detection) MAY return
+   * `false`; the only consequence is that async refines fall back to
+   * firing on first user mutation, matching the pre-detection
+   * behavior. Detection is best-effort.
+   */
+  hasAsyncRefines(): boolean
 }
 
 /**

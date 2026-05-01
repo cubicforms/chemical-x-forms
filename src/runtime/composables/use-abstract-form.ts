@@ -726,6 +726,16 @@ function wirePersistence<F extends GenericForm>(
           state.setAllUserErrors(flat)
         }
       }
+      // Post-hydration revalidation: the construction-time seed ran
+      // against the empty default, so its errors describe a stale
+      // value. Async refines additionally never fire at construction
+      // (zod's safeParse throws for async-refine schemas; the adapter
+      // catches and returns success silently). A full async run at
+      // root path wipes `schemaErrors` and re-stamps with the
+      // authoritative result for the rehydrated value — sync errors
+      // get refreshed, async refines fire, the form lands in the
+      // state the persisted value actually deserves.
+      state.scheduleFieldValidation([], true /* immediate */)
     } catch {
       // Adapter IO errors shouldn't surface; storage adapters are
       // "best-effort" and already log their own warnings.

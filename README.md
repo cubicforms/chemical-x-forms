@@ -1,4 +1,4 @@
-# Chemical X Forms
+# 🧪 Chemical X Forms
 
 [![npm version][npm-version-src]][npm-version-href]
 [![npm downloads][npm-downloads-src]][npm-downloads-href]

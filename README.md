@@ -6,7 +6,7 @@
 [![Node.js Test Suite](https://github.com/cubicforms/chemical-x-forms/actions/workflows/matrix.yml/badge.svg)](https://github.com/cubicforms/chemical-x-forms/actions/workflows/matrix.yml)
 [![Nuxt][nuxt-src]][nuxt-href]
 
-A schema-driven form library for Vue 3 and Nuxt with first-class Zod support. `useForm` returns typed reads, writes, errors, and a submit handler. Every path, value, and error is inferred from the schema — no `any`, no string keys.
+A type-safe, schema-driven form library for Vue 3 and Nuxt with first-class Zod support.
 
 ## Installation
 

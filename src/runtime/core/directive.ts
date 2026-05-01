@@ -935,14 +935,34 @@ const vRegisterSelect: RegisterSelectCustomDirective = {
   // <option>s.
   mounted(el, { value }) {
     setSelected(el, value)
+    if (isRegisterValue(value)) el._lastAppliedSelectModel = value.innerRef.value
   },
   beforeUpdate(el, binding, vnode) {
     setAssignFunction(el, vnode, binding.value)
   },
+  // Skip the DOM sync when the model is identity-unchanged from the
+  // last application. Parent re-renders fire `updated` whether or not
+  // the bound model actually moved (a typed character in a sibling,
+  // an async-validation tick, any reactive read elsewhere on the
+  // page). Without this guard, every such render unconditionally re-
+  // applies `setSelected` against the prior model, which on a
+  // `<select multiple>` clobbers any in-progress user selection
+  // between mousedown and the browser's change-event decision — the
+  // browser then sees no net change, never fires `change`, and the
+  // model never updates. Identity comparison is sound: every form
+  // write produces a new array/Set reference at the path (the diff-
+  // apply replacement of `form.value` rolls forward fresh structures
+  // along the spine), so reference equality on `innerRef.value`
+  // tracks "did the model move" exactly. The `_assigning` gate stays
+  // — it short-circuits the immediate post-write render where the
+  // DOM is already in sync from the user's click.
   updated(el, { value }) {
-    if (el._assigning !== true) {
-      setSelected(el, value)
-    }
+    if (el._assigning === true) return
+    if (!isRegisterValue(value)) return
+    const currentModel = value.innerRef.value
+    if (el._lastAppliedSelectModel === currentModel) return
+    setSelected(el, value)
+    el._lastAppliedSelectModel = currentModel
   },
 }
 

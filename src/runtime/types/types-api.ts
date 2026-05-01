@@ -1345,6 +1345,16 @@ export type CustomDirectiveRegisterAssignerFn = (
 export type CustomRegisterDirective<T, Modifiers extends string = string> = ObjectDirective<
   T & {
     _assigning?: boolean
+    /**
+     * Snapshot of the last `value.innerRef.value` reference that
+     * `setSelected` was applied for. Used by `vRegisterSelect.updated`
+     * to skip the per-render DOM sync when the model is identity-
+     * unchanged — preventing parent re-renders (a typed character in
+     * a sibling, an async-validation tick, any reactive read) from
+     * clobbering an in-progress user click on a `<select multiple>`
+     * between mousedown and the browser's change-event decision.
+     */
+    _lastAppliedSelectModel?: unknown
     [S: symbol]: CustomDirectiveRegisterAssignerFn
   },
   RegisterValue | undefined,

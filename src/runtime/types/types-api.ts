@@ -1227,15 +1227,34 @@ export type RegisterValue<Value = unknown> = {
 
 /**
  * Custom assigner installed on an element via the directive's
- * `[assignKey]` slot. Called by the directive when a DOM event
- * (input / change / etc.) fires on the bound element.
+ * `[assignKey]` slot OR an `@update:registerValue` listener. Called
+ * by the directive when a DOM event (input / change / etc.) fires
+ * on the bound element.
+ *
+ * The directive passes the extracted value plus the `RegisterValue`
+ * the directive is currently bound to. The second arg lets a
+ * top-level handler write back to form state without having to
+ * capture the RV via closure:
+ *
+ * ```ts
+ * function upperCaseAssigner(value: unknown, rv: RegisterValue): void {
+ *   rv.setValueWithInternalPath(String(value ?? '').toUpperCase())
+ * }
+ * ```
+ *
+ * `registerValue` is omitted only for assigners installed directly
+ * via `el[assignKey] = fn` — those callers already have the RV in
+ * scope at install time.
  *
  * Return `true` when the write was accepted, `false` when it was
  * rejected (e.g. the value didn't match the path's expected type).
  * `undefined` is treated as "succeeded" so simple assigners can
  * just return `void`.
  */
-export type CustomDirectiveRegisterAssignerFn = (value: unknown) => boolean | undefined
+export type CustomDirectiveRegisterAssignerFn = (
+  value: unknown,
+  registerValue?: RegisterValue
+) => boolean | undefined
 /**
  * Generic shape of a v-register directive variant. Used by the
  * library's text / checkbox / radio / select directive types and

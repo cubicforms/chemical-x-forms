@@ -205,10 +205,12 @@ const getModelAssigner = (
   // single function or an array of functions depending on how many listeners
   // are bound. We narrow before dispatching.
   //
-  // User-supplied assigners receive `(value)` only; if they want their writes
-  // to participate in persistence they must call
-  // `registerValue.setValueWithInternalPath(value, customMeta)` themselves.
-  // The default assigner below auto-attaches per-element meta.
+  // Both shapes invoke the consumer's handler as `(value, registerValue)` so
+  // a top-level handler can call `rv.setValueWithInternalPath(value)` to
+  // forward the write into form state without having to capture `rv` via
+  // closure. Consumers wanting persistence-aware writes pass their own
+  // `meta` to `setValueWithInternalPath`; the default assigner below
+  // auto-attaches per-element meta.
   const fn: unknown = vnode.props?.['onUpdate:registerValue']
   if (isArray(fn)) {
     return (value) => {
@@ -224,7 +226,8 @@ const getModelAssigner = (
     }
   }
   if (isFunction(fn)) {
-    return fn as CustomDirectiveRegisterAssignerFn
+    const handler = fn as CustomDirectiveRegisterAssignerFn
+    return (value) => handler(value, registerValue)
   }
   // Default-installed assigner. Tagged so the listener-body bail
   // (`shouldBailListener`) can distinguish it from consumer overrides

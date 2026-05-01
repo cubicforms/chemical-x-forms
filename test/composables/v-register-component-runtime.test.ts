@@ -6,6 +6,7 @@ import { useForm } from '../../src/zod'
 import { assignKey, vRegister } from '../../src/runtime/core/directive'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { useRegister } from '../../src/runtime/composables/use-register'
+import type { RegisterValue } from '../../src/runtime/types/types-api'
 
 /**
  * Runtime contract for `<MyComponent v-register="register(...)" />`.
@@ -402,6 +403,38 @@ describe('pattern 3: @update:registerValue prop on a component', () => {
     // Default assigner was bypassed — the FormStore did NOT receive
     // the write because the listener didn't forward.
     expect(mounted.api.values.email).toBe('')
+  })
+
+  it('passes the RegisterValue as second arg so a top-level handler can re-call setValueWithInternalPath', async () => {
+    // Mirrors spike-cx 15o: a top-level handler outside setup() can't
+    // close over `rv` — the directive must hand it in as the second arg.
+    // Without this, `rv.setValueWithInternalPath(...)` throws because
+    // the second param is `undefined`.
+    const ChildInput = defineComponent({
+      name: 'ChildInput',
+      inheritAttrs: false,
+      setup(_, { attrs }) {
+        return () => h('input', { type: 'text', ...attrs })
+      },
+    })
+
+    let receivedRv: unknown
+    const upperCaseAssigner = (value: unknown, rv: RegisterValue): void => {
+      receivedRv = rv
+      rv.setValueWithInternalPath(String(value ?? '').toUpperCase())
+    }
+
+    mounted = await mountWithChild(ChildInput, {
+      onUpdateRegisterValue: upperCaseAssigner as (...args: unknown[]) => void,
+    })
+
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = 'hello'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    expect(receivedRv).toBeDefined()
+    expect(mounted.api.values.email).toBe('HELLO')
   })
 })
 

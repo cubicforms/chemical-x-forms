@@ -212,10 +212,11 @@ keeps the strict element type; that's the flag's intended scope.
 
 ## "`form.values.posts[0].title.toUpperCase()` started type-erroring"
 
-Working as intended. Once a read path crosses an array index, the
-result carries `| undefined` — the runtime can return undefined for
-out-of-bounds reads, so the type tracks that. Narrow with optional
-chaining:
+Working as intended, _provided_ you have `noUncheckedIndexedAccess: true`
+in your tsconfig (recommended — see [README → Recommended tsconfig](../README.md#recommended-tsconfig)).
+With the flag on, indexed reads on unbounded arrays carry `| undefined`,
+because the runtime can return undefined for out-of-bounds. Narrow with
+optional chaining:
 
 ```ts
 form.values.posts[0]?.title?.toUpperCase() ?? ''
@@ -227,6 +228,36 @@ value. The same `| undefined` taint applies; narrow the same way.
 
 Tuple positions stay strict — out-of-bounds is a type-system error
 on tuples, not a runtime case.
+
+Iteration is strict either way — `v-for`, `for-of`, `.map`, etc.
+yield the strict element type, since every iterated element exists
+by definition. The lib does not bake `| undefined` into the array
+element type itself; that would lie about iteration.
+
+## "TS was happy but `form.values.contacts[42].name` crashed at runtime"
+
+Your tsconfig is missing `noUncheckedIndexedAccess: true`. Without
+the flag, indexed reads on field-array surfaces type as the strict
+element shape (no `| undefined`), so a stale or out-of-bounds index
+compiles cleanly and crashes at runtime — the same hole you'd have
+on any other array in your codebase, surfaced here because field
+arrays are the most common indexed-read pattern in form code.
+
+Fix in your `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true
+  }
+}
+```
+
+Nuxt 3 / 4 sets this in the auto-generated `.nuxt/tsconfig.*.json`
+already. Bare Vue / Vite projects need to add it explicitly. See
+[README → Recommended tsconfig](../README.md#recommended-tsconfig)
+for the rationale.
 
 ## "Undo brought back stale field errors"
 

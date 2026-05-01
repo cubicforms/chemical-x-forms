@@ -43,6 +43,25 @@ export default defineConfig({
 })
 ```
 
+### Recommended tsconfig
+
+Set `noUncheckedIndexedAccess: true` in your `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true
+  }
+}
+```
+
+Without it, indexed reads on field-array surfaces (`form.values.contacts[42]`) type as the element shape with no `| undefined`, so a stale or out-of-bounds index can compile cleanly and crash at runtime. With the flag on, `arr[N]` types as `T | undefined` (narrow with `?.` or a guard), and iteration — `v-for`, `.map`, `for-of`, destructuring — keeps the strict element type, since every iterated element is guaranteed to exist.
+
+The lib intentionally does not bake `| undefined` into array element types itself: doing so would also taint iteration, where the `| undefined` is wrong. Indexed-access safety is the consumer's tsconfig responsibility, same as anywhere else in your TypeScript codebase.
+
+Nuxt 3 / 4 sets this flag in the auto-generated `.nuxt/tsconfig.*.json` already — no action needed.
+
 ## Quick start
 
 ```vue

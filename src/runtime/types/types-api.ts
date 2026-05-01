@@ -1346,15 +1346,23 @@ export type CustomRegisterDirective<T, Modifiers extends string = string> = Obje
   T & {
     _assigning?: boolean
     /**
-     * Snapshot of the last `value.innerRef.value` reference that
-     * `setSelected` was applied for. Used by `vRegisterSelect.updated`
-     * to skip the per-render DOM sync when the model is identity-
-     * unchanged — preventing parent re-renders (a typed character in
-     * a sibling, an async-validation tick, any reactive read) from
-     * clobbering an in-progress user click on a `<select multiple>`
-     * between mousedown and the browser's change-event decision.
+     * Snapshot of the last `value.innerRef.value` reference the
+     * directive's DOM-sync (setSelected / setChecked / radio
+     * `el.checked = …`) was applied for. Used by every input
+     * directive's `updated` / `beforeUpdate` to skip the per-render
+     * DOM sync when the model is identity-unchanged — preventing
+     * parent re-renders (a typed character in a sibling, an async-
+     * validation tick, any reactive read) from clobbering an in-
+     * progress user interaction. Identity comparison is sound:
+     * every form write produces a fresh value at the path (scalars
+     * are new primitives; arrays/Sets get fresh references along the
+     * spine via diff-apply), so reference equality on
+     * `innerRef.value` tracks "did the model move" exactly. The
+     * `_assigning` gate stays alongside — it short-circuits the
+     * immediate post-write render where the DOM is already in sync
+     * from the user's input.
      */
-    _lastAppliedSelectModel?: unknown
+    _lastAppliedModel?: unknown
     [S: symbol]: CustomDirectiveRegisterAssignerFn
   },
   RegisterValue | undefined,

@@ -820,16 +820,35 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
     })
   },
   // set initial checked on mount to wait for true-value/false-value
-  mounted: setChecked,
+  mounted(el, binding, vnode) {
+    setChecked(el, binding, vnode)
+    if (isRegisterValue(binding.value)) el._lastAppliedModel = binding.value.innerRef.value
+  },
+  // Skip the DOM sync when the model is identity-unchanged from the
+  // last application. Pre-fix the scalar branch in `setChecked`
+  // gated on `originalValue === oldValue`, comparing a primitive
+  // scalar against the wrapper RegisterValue object — always !==,
+  // so the guard was a silent no-op. Array / Set branches lacked
+  // any guard. The per-render re-apply mirrors the just-fixed
+  // `vRegisterSelect` shape: a sibling's reactive write triggers
+  // `beforeUpdate` mid-click, `setChecked` re-applies the prior
+  // model state, and the in-flight user toggle is clobbered before
+  // the browser fires `change`. Identity comparison on
+  // `innerRef.value` is sound for the same reason as multi-select —
+  // every form write produces a fresh value at the path (new
+  // primitives; new array/Set references along the spine), so
+  // reference equality tracks "did the model move" exactly.
   beforeUpdate(el, binding, vnode) {
     setAssignFunction(el, vnode, binding.value)
+    if (!isRegisterValue(binding.value)) return
+    const currentModel = binding.value.innerRef.value
+    if (el._lastAppliedModel === currentModel) return
     setChecked(el, binding, vnode)
+    el._lastAppliedModel = currentModel
   },
 }
 
-function setChecked(el: HTMLInputElement, { value, oldValue }: DirectiveBinding, _vnode: VNode) {
-  // store the v-registerer value on the element so it can be accessed by the
-  // change listener.
+function setChecked(el: HTMLInputElement, { value }: DirectiveBinding, _vnode: VNode) {
   if (!isRegisterValue(value)) return
 
   const originalValue = value.innerRef.value
@@ -849,16 +868,10 @@ function setChecked(el: HTMLInputElement, { value, oldValue }: DirectiveBinding,
   } else if (isSet(originalValue)) {
     checked = originalValue.has(getValue(el))
   } else {
-    if (originalValue === oldValue) {
-      return
-    }
     checked = looseEqual(originalValue, getCheckboxValue(el, true))
   }
 
-  // Only update if the checked state has changed
-  const elChecked = el.checked
-
-  if (elChecked !== checked) {
+  if (el.checked !== checked) {
     el.checked = checked
   }
 }
@@ -935,7 +948,7 @@ const vRegisterSelect: RegisterSelectCustomDirective = {
   // <option>s.
   mounted(el, { value }) {
     setSelected(el, value)
-    if (isRegisterValue(value)) el._lastAppliedSelectModel = value.innerRef.value
+    if (isRegisterValue(value)) el._lastAppliedModel = value.innerRef.value
   },
   beforeUpdate(el, binding, vnode) {
     setAssignFunction(el, vnode, binding.value)
@@ -960,9 +973,9 @@ const vRegisterSelect: RegisterSelectCustomDirective = {
     if (el._assigning === true) return
     if (!isRegisterValue(value)) return
     const currentModel = value.innerRef.value
-    if (el._lastAppliedSelectModel === currentModel) return
+    if (el._lastAppliedModel === currentModel) return
     setSelected(el, value)
-    el._lastAppliedSelectModel = currentModel
+    el._lastAppliedModel = currentModel
   },
 }
 

@@ -203,8 +203,9 @@ describe('discriminated-union variant switch — error reactivity', () => {
     await nextTick()
 
     // schemaErrors gets populated with the refinement issue against
-    // the new variant's required string.
-    expect(api.errors('notify.number')).toBeDefined()
+    // the new variant's required string. Tightened from `.toBeDefined()`
+    // — the empty-array case is the bug we're guarding against.
+    expect(api.errors('notify.number')).toHaveLength(1)
   })
 
   it('validateAsync reflects the new variant in the returned response', async () => {
@@ -1375,8 +1376,8 @@ describe('inactive-variant errors — filtered from form.errors, schemaErrors re
     await nextTick()
 
     // Construction-time strict validation seeds schemaErrors with the
-    // email variant's failure (address='' fails `.min(3)`).
-    expect(api.errors('notify.address')).toBeDefined()
+    // email variant's failure (address='' fails `.min(3)`). One error.
+    expect(api.errors('notify.address')).toHaveLength(1)
 
     // Switch to sms — the address path leaves form.value entirely.
     api.setValue('notify.channel', 'sms')
@@ -1394,7 +1395,7 @@ describe('inactive-variant errors — filtered from form.errors, schemaErrors re
     const { app, api } = mountProfile()
     apps.push(app)
     await nextTick()
-    expect(api.errors('notify.address')).toBeDefined()
+    expect(api.errors('notify.address')).toHaveLength(1)
 
     api.setValue('notify.channel', 'sms')
     await nextTick()
@@ -1404,7 +1405,7 @@ describe('inactive-variant errors — filtered from form.errors, schemaErrors re
     // so hasAtPath returns true again and the filter unmasks the error.
     api.setValue('notify.channel', 'email')
     await nextTick()
-    expect(api.errors('notify.address')).toBeDefined()
+    expect(api.errors('notify.address')).toHaveLength(1)
   })
 
   it('per-field fields clears schema errors at inactive-variant paths after reshape', async () => {
@@ -1489,7 +1490,7 @@ describe('inactive-variant errors — filtered from form.errors, schemaErrors re
 
     // sms variant's own validation surfaces; filter does not hide
     // active-path entries.
-    expect(api.errors('notify.number')).toBeDefined()
+    expect(api.errors('notify.number')).toHaveLength(1)
     // The email variant's construction-seeded error is still in the
     // store but stays filtered out.
     expect(api.errors('notify.address')).toBeUndefined()

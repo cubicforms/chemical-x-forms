@@ -136,7 +136,6 @@ describe('DU variant switch — error materialisation regressions', () => {
     const numberErrors = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
       'notify.number'
     )
-    expect(numberErrors).toBeDefined()
     expect(numberErrors).toHaveLength(1)
     expect(numberErrors?.[0]?.path).toEqual(['notify', 'number'])
 
@@ -162,7 +161,7 @@ describe('DU variant switch — error materialisation regressions', () => {
     // Dot-access path — same store lookup as the callable form.
     const drilled = (api.errors as unknown as { notify: { number?: ValidationError[] } }).notify
       .number
-    expect(drilled).toBeDefined()
+    expect(drilled).toHaveLength(1)
     expect(drilled?.[0]?.message).toMatch(/^Too small/i)
   })
 

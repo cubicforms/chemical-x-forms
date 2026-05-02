@@ -110,6 +110,17 @@ describe('numeric scalar coercion', () => {
     expect(fn('')).toBe('')
   })
 
+  it("'   ' (whitespace-only) → passthrough (NOT 0)", () => {
+    // Without the trim-then-empty guard, `Number('  ')` is 0 and
+    // would slip past the empty-string check. Trim normalises to
+    // '' which the rule rejects.
+    expect(fn('   ')).toBe('   ')
+  })
+
+  it("'  25  ' (padded) → 25 (whitespace tolerated)", () => {
+    expect(fn('  25  ')).toBe(25)
+  })
+
   it("'abc' → 'abc' (passthrough; gate decides)", () => {
     expect(fn('abc')).toBe('abc')
   })
@@ -140,6 +151,18 @@ describe('boolean scalar coercion', () => {
 
   it("'false' → false", () => {
     expect(fn('false')).toBe(false)
+  })
+
+  it("'True' / 'TRUE' / 'False' (case-insensitive)", () => {
+    expect(fn('True')).toBe(true)
+    expect(fn('TRUE')).toBe(true)
+    expect(fn('False')).toBe(false)
+    expect(fn('FALSE')).toBe(false)
+  })
+
+  it("'  true  ' (padded) → true (whitespace tolerated)", () => {
+    expect(fn('  true  ')).toBe(true)
+    expect(fn('  False  ')).toBe(false)
   })
 
   it("'yes' → 'yes' (passthrough)", () => {

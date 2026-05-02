@@ -75,11 +75,13 @@ export const defaultCoercionRules: CoercionRegistry = [
     input: 'string',
     output: 'number',
     transform: (s) => {
-      // Empty string is ambiguous (`Number('')` is 0); the existing
-      // blank-paths machinery owns that case. Pass through and let
-      // the gate decide / dev-warn surface.
-      if (s === '') return { coerced: false }
-      const n = Number(s)
+      // Trim first so whitespace-only inputs don't slip past the
+      // empty-string guard via `Number('  ') === 0`. The blank-paths
+      // machinery owns the empty-input shape; coerce only fires when
+      // there's a non-blank token to consider.
+      const trimmed = s.trim()
+      if (trimmed === '') return { coerced: false }
+      const n = Number(trimmed)
       if (!Number.isFinite(n)) return { coerced: false }
       return { coerced: true, value: n }
     },
@@ -88,8 +90,14 @@ export const defaultCoercionRules: CoercionRegistry = [
     input: 'string',
     output: 'boolean',
     transform: (s) => {
-      if (s === 'true') return { coerced: true, value: true }
-      if (s === 'false') return { coerced: true, value: false }
+      // Case-insensitive + whitespace-tolerant. Aligns with the
+      // aria-style boolean-token convention (`aria-checked` accepts
+      // "true"/"True"/"TRUE"). DOM `value=` attributes preserve
+      // whatever case the dev wrote, and `value="True"` is common
+      // enough that strict-lowercase-only would be a footgun.
+      const normalized = s.trim().toLowerCase()
+      if (normalized === 'true') return { coerced: true, value: true }
+      if (normalized === 'false') return { coerced: true, value: false }
       return { coerced: false }
     },
   }),

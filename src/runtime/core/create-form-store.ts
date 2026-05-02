@@ -1,6 +1,7 @@
 import { computed, reactive, ref, type ComputedRef, type Ref } from 'vue'
 import type {
   AbstractSchema,
+  CoercionRegistry,
   FieldValidationConfig,
   FieldValidationMode,
   FormKey,
@@ -21,6 +22,7 @@ import {
   setAtPath,
   setAtPathWithSchemaFill,
 } from './path-walker'
+import { resolveCoercionIndex, type CoercionIndex } from './schema-coerce'
 import { isSlimPrimitiveValid } from './slim-primitive-gate'
 import { walkUnspecified } from './unset-walker'
 import {
@@ -405,6 +407,16 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   readonly persistOptIns: PersistOptInRegistry
 
   /**
+   * Resolved schema-coercion index — the merged config from
+   * `createChemicalXForms({ defaults: { coerce } })` ∪ `useForm({ coerce })`,
+   * keyed by `${input}->${output}` for O(1) per-keystroke dispatch.
+   * Empty Map when coercion is disabled. Read at `register()` time
+   * by `buildCoerceFn` to bake the per-path coerce closure on
+   * `RegisterValue.coerce`.
+   */
+  readonly coerceIndex: CoercionIndex
+
+  /**
    * Tear down non-reactive resources owned by this FormStore. Invoked
    * by the registry when the last consumer unmounts. Cancels pending
    * field-validation timers, drops every subscriber, and fires each
@@ -467,6 +479,13 @@ export type CreateFormStoreOptions<F extends GenericForm, G extends GenericForm 
    * for full semantics.
    */
   readonly rememberVariants?: boolean | undefined
+  /**
+   * Schema-driven coercion config. See
+   * `UseFormConfiguration.coerce` for the full contract. Resolved
+   * once via `resolveCoercionIndex(options.coerce)` and cached on
+   * `FormStore.coerceIndex`.
+   */
+  readonly coerce?: boolean | CoercionRegistry | undefined
 }
 
 /**
@@ -517,6 +536,12 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // its subscription (mount order between the directive and
   // wirePersistence isn't guaranteed).
   const persistOptIns = createPersistOptInRegistry()
+
+  // Resolve the coercion config to a concrete index ONCE per form.
+  // The index is keyed by `${input}->${output}` for O(1) per-keystroke
+  // dispatch. `register()` reads it via `state.coerceIndex` to bake
+  // path-scoped coerce closures on each `RegisterValue`.
+  const coerceIndex: CoercionIndex = resolveCoercionIndex(options.coerce)
 
   // State-scoped teardown hooks. Persistence / history / any other
   // per-state module registers its disposer here so the cleanup is
@@ -1818,6 +1843,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     awaitPendingWrites,
     modules,
     persistOptIns,
+    coerceIndex,
     blankPaths,
     originalBlankPaths,
     dispose,

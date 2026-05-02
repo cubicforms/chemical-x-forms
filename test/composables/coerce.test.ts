@@ -1,0 +1,591 @@
+// @vitest-environment jsdom
+//
+// DOM-flow integration tests for schema-driven coercion. Pairs with
+// the unit-level coverage in `test/core/schema-coerce.test.ts` —
+// these tests exercise the full path from user-driven DOM events
+// through the directive's assigner → transforms → coerce → write.
+//
+// Per-variant matrix (text / select-single / select-multi /
+// checkbox-array / checkbox-Set / checkbox-scalar / radio) plus the
+// regression cases (NaN passthrough, programmatic-write bypass,
+// plugin/per-form config interactions, @update:registerValue override
+// receives coerced value, el[assignKey] direct-install bypass,
+// reference-equality, transform-abort short-circuit).
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { z } from 'zod'
+import { useForm } from '../../src/zod'
+import { vRegister, isRegisterValue, assignKey } from '../../src/runtime/core/directive'
+import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { defineCoercion, defaultCoercionRules } from '../../src/runtime/core/schema-coerce'
+
+async function flush(): Promise<void> {
+  for (let i = 0; i < 6; i++) {
+    await Promise.resolve()
+    await nextTick()
+  }
+}
+
+let app: App | undefined
+afterEach(() => {
+  app?.unmount()
+  app = undefined
+  document.body.innerHTML = ''
+  vi.restoreAllMocks()
+})
+
+function mount<S extends z.ZodObject>(
+  schema: S,
+  defaultValues: z.infer<S>,
+  body: (api: ReturnType<typeof useForm<S>>) => unknown,
+  pluginOpts?: Parameters<typeof createChemicalXForms>[0]
+): { api: ReturnType<typeof useForm<S>>; root: HTMLDivElement } {
+  const handle: { api?: ReturnType<typeof useForm<S>> } = {}
+  const Parent = defineComponent({
+    setup() {
+      const api = useForm({
+        schema,
+        defaultValues,
+        key: `coerce-${Math.random().toString(36).slice(2)}`,
+      } as Parameters<typeof useForm<S>>[0])
+      handle.api = api
+      return () => body(api)
+    },
+  })
+  app = createApp(Parent).use(createChemicalXForms(pluginOpts))
+  const root = document.createElement('div')
+  document.body.appendChild(root)
+  app.mount(root)
+  if (handle.api === undefined) throw new Error('api never set')
+  return { api: handle.api, root }
+}
+
+describe('text input — numeric path', () => {
+  const schema = z.object({ age: z.number(), note: z.string() })
+
+  it('typing "25" coerces to number 25 in storage', async () => {
+    const { api, root } = mount(schema, { age: 0, note: '' }, (api) => {
+      const rv = api.register('age')
+      return h('div', null, [
+        withDirectives(h('input', { type: 'text', 'data-field': 'age' }), [[vRegister, rv]]),
+      ])
+    })
+    await flush()
+    const input = root.querySelector('[data-field="age"]') as HTMLInputElement
+    input.value = '25'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(api.values.age).toBe(25)
+  })
+
+  it('empty string passes through; gate rejects (no silent zero)', async () => {
+    // Suppress the gate's dev-warn so test output stays clean.
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { api, root } = mount(schema, { age: 5, note: '' }, (api) => {
+      const rv = api.register('age')
+      return h('div', null, [
+        withDirectives(h('input', { type: 'text', 'data-field': 'age' }), [[vRegister, rv]]),
+      ])
+    })
+    await flush()
+    const input = root.querySelector('[data-field="age"]') as HTMLInputElement
+    input.value = ''
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    // Empty string is NOT coerced to 0; it passes through and the
+    // gate rejects → state preserves the original 5.
+    expect(api.values.age).toBe(5)
+  })
+})
+
+describe('text input — boolean path', () => {
+  it('typing "true" / "false" coerces to boolean', async () => {
+    const schema = z.object({ active: z.boolean() })
+    const { api, root } = mount(schema, { active: false }, (api) => {
+      const rv = api.register('active')
+      return h('div', null, [
+        withDirectives(h('input', { type: 'text', 'data-field': 'active' }), [[vRegister, rv]]),
+      ])
+    })
+    await flush()
+    const input = root.querySelector('[data-field="active"]') as HTMLInputElement
+    input.value = 'true'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(api.values.active).toBe(true)
+  })
+})
+
+describe('text input — `.number` modifier composes without double-coerce', () => {
+  it('modifier runs first; coerce sees a number and short-circuits', async () => {
+    const schema = z.object({ age: z.number() })
+    const { api, root } = mount(schema, { age: 0 }, (api) => {
+      const rv = api.register('age')
+      return h('div', null, [
+        withDirectives(h('input', { type: 'text', 'data-field': 'age' }), [
+          [vRegister, rv, 'number' as never, { number: true }],
+        ]),
+      ])
+    })
+    await flush()
+    const input = root.querySelector('[data-field="age"]') as HTMLInputElement
+    input.value = '42'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(api.values.age).toBe(42)
+  })
+})
+
+describe('select (single) — numeric path', () => {
+  it('selecting an option coerces to number', async () => {
+    const schema = z.object({ pick: z.number() })
+    const { api, root } = mount(schema, { pick: 1 }, (api) => {
+      const rv = api.register('pick')
+      return h('div', null, [
+        withDirectives(
+          h('select', { 'data-field': 'pick' }, [
+            h('option', { value: '1' }, '1'),
+            h('option', { value: '2' }, '2'),
+            h('option', { value: '3' }, '3'),
+          ]),
+          [[vRegister, rv]]
+        ),
+      ])
+    })
+    await flush()
+    const sel = root.querySelector('[data-field="pick"]') as HTMLSelectElement
+    sel.value = '2'
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.pick).toBe(2)
+  })
+})
+
+describe('select (multi) — number array', () => {
+  it('select two number options stores [1, 2]', async () => {
+    const schema = z.object({ ids: z.array(z.number()) })
+    const { api, root } = mount(schema, { ids: [] }, (api) => {
+      const rv = api.register('ids')
+      return h('div', null, [
+        withDirectives(
+          h('select', { multiple: true, 'data-field': 'ids' }, [
+            h('option', { value: '1' }, '1'),
+            h('option', { value: '2' }, '2'),
+            h('option', { value: '3' }, '3'),
+          ]),
+          [[vRegister, rv]]
+        ),
+      ])
+    })
+    await flush()
+    const sel = root.querySelector('[data-field="ids"]') as HTMLSelectElement
+    const [opt1, opt2] = Array.from(sel.options) as [HTMLOptionElement, HTMLOptionElement]
+    opt1.selected = true
+    opt2.selected = true
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.ids).toEqual([1, 2])
+  })
+})
+
+describe('select (multi) — number Set', () => {
+  it('select two number options stores Set { 1, 2 }', async () => {
+    const schema = z.object({ ids: z.set(z.number()) })
+    const { api, root } = mount(schema, { ids: new Set<number>() }, (api) => {
+      const rv = api.register('ids')
+      return h('div', null, [
+        withDirectives(
+          h('select', { multiple: true, 'data-field': 'ids' }, [
+            h('option', { value: '1' }, '1'),
+            h('option', { value: '2' }, '2'),
+          ]),
+          [[vRegister, rv]]
+        ),
+      ])
+    })
+    await flush()
+    const sel = root.querySelector('[data-field="ids"]') as HTMLSelectElement
+    const [opt1, opt2] = Array.from(sel.options) as [HTMLOptionElement, HTMLOptionElement]
+    opt1.selected = true
+    opt2.selected = true
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.ids).toEqual(new Set([1, 2]))
+  })
+})
+
+describe('checkbox array — numeric values', () => {
+  it('toggling a checkbox with value="3" pushes 3 (number) into the array', async () => {
+    const schema = z.object({ ids: z.array(z.number()) })
+    const { api, root } = mount(schema, { ids: [] }, (api) => {
+      const rv = api.register('ids')
+      return h('div', null, [
+        withDirectives(h('input', { type: 'checkbox', value: '3', 'data-field': 'cb3' }), [
+          [vRegister, rv],
+        ]),
+      ])
+    })
+    await flush()
+    const cb = root.querySelector('[data-field="cb3"]') as HTMLInputElement
+    cb.checked = true
+    cb.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.ids).toEqual([3])
+  })
+})
+
+describe('checkbox Set — boolean values', () => {
+  it('checkboxes with value="true"/"false" produce booleans in a Set', async () => {
+    const schema = z.object({ flags: z.set(z.boolean()) })
+    const { api, root } = mount(schema, { flags: new Set<boolean>() }, (api) => {
+      const rv = api.register('flags')
+      return h('div', null, [
+        withDirectives(h('input', { type: 'checkbox', value: 'true', 'data-field': 't' }), [
+          [vRegister, rv],
+        ]),
+        withDirectives(h('input', { type: 'checkbox', value: 'false', 'data-field': 'f' }), [
+          [vRegister, rv],
+        ]),
+      ])
+    })
+    await flush()
+    const t = root.querySelector('[data-field="t"]') as HTMLInputElement
+    t.checked = true
+    t.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.flags).toEqual(new Set([true]))
+
+    const f = root.querySelector('[data-field="f"]') as HTMLInputElement
+    f.checked = true
+    f.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.flags).toEqual(new Set([true, false]))
+  })
+})
+
+describe('checkbox scalar — boolean path (no-op)', () => {
+  it('a single boolean checkbox writes booleans (already-correct kind)', async () => {
+    const schema = z.object({ active: z.boolean() })
+    const { api, root } = mount(schema, { active: false }, (api) => {
+      const rv = api.register('active')
+      return h('div', null, [
+        withDirectives(h('input', { type: 'checkbox', 'data-field': 'cb' }), [[vRegister, rv]]),
+      ])
+    })
+    await flush()
+    const cb = root.querySelector('[data-field="cb"]') as HTMLInputElement
+    cb.checked = true
+    cb.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.active).toBe(true)
+  })
+})
+
+describe('radio — boolean path', () => {
+  it('selecting value="true"/"false" radios stores boolean', async () => {
+    const schema = z.object({ active: z.boolean() })
+    const { api, root } = mount(schema, { active: false }, (api) => {
+      const rv = api.register('active')
+      return h('div', null, [
+        withDirectives(h('input', { type: 'radio', name: 'a', value: 'true', 'data-field': 't' }), [
+          [vRegister, rv],
+        ]),
+        withDirectives(
+          h('input', { type: 'radio', name: 'a', value: 'false', 'data-field': 'f' }),
+          [[vRegister, rv]]
+        ),
+      ])
+    })
+    await flush()
+    const t = root.querySelector('[data-field="t"]') as HTMLInputElement
+    t.checked = true
+    t.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.active).toBe(true)
+  })
+})
+
+describe('NaN passthrough + gate rejection', () => {
+  it('typing "abc" into a numeric path leaves state unchanged', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const schema = z.object({ age: z.number() })
+    const { api, root } = mount(schema, { age: 5 }, (api) => {
+      const rv = api.register('age')
+      return h('div', null, [
+        withDirectives(h('input', { type: 'text', 'data-field': 'age' }), [[vRegister, rv]]),
+      ])
+    })
+    await flush()
+    const input = root.querySelector('[data-field="age"]') as HTMLInputElement
+    input.value = 'abc'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    // 'abc' is non-coercible; coerce passes through; gate rejects.
+    expect(api.values.age).toBe(5)
+  })
+})
+
+describe('programmatic write bypass', () => {
+  it("form.setValue('age', '25') is rejected (coerce never runs)", async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const schema = z.object({ age: z.number() })
+    const { api } = mount(schema, { age: 0 }, () => h('div'))
+    await flush()
+    api.setValue('age', '25' as unknown as number)
+    await flush()
+    // Coerce only fires on directive-driven writes. Programmatic
+    // writes go through the slim gate untouched, which rejects.
+    expect(api.values.age).toBe(0)
+  })
+})
+
+describe('plugin-default off', () => {
+  it('createChemicalXForms({ defaults: { coerce: false } }) disables coerce globally', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const schema = z.object({ age: z.number() })
+    const { api, root } = mount(
+      schema,
+      { age: 0 },
+      (api) => {
+        const rv = api.register('age')
+        return h('div', null, [
+          withDirectives(h('input', { type: 'text', 'data-field': 'age' }), [[vRegister, rv]]),
+        ])
+      },
+      { defaults: { coerce: false } }
+    )
+    await flush()
+    const input = root.querySelector('[data-field="age"]') as HTMLInputElement
+    input.value = '25'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    // Coerce off → string write rejected by gate; state unchanged.
+    expect(api.values.age).toBe(0)
+  })
+})
+
+describe('per-form override beats plugin default (both directions)', () => {
+  it('plugin off + useForm({ coerce: true }) → coerce runs', async () => {
+    const schema = z.object({ age: z.number() })
+    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const Parent = defineComponent({
+      setup() {
+        const api = useForm({
+          schema,
+          defaultValues: { age: 0 },
+          key: `coerce-on-${Math.random()}`,
+          coerce: true,
+        })
+        handle.api = api
+        const rv = api.register('age')
+        return () =>
+          h('div', null, [
+            withDirectives(h('input', { type: 'text', 'data-field': 'age' }), [[vRegister, rv]]),
+          ])
+      },
+    })
+    app = createApp(Parent).use(createChemicalXForms({ defaults: { coerce: false } }))
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+    if (handle.api === undefined) throw new Error('api never set')
+    const input = root.querySelector('[data-field="age"]') as HTMLInputElement
+    input.value = '25'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(handle.api.values.age).toBe(25)
+  })
+
+  it('plugin on + useForm({ coerce: false }) → coerce off', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const schema = z.object({ age: z.number() })
+    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const Parent = defineComponent({
+      setup() {
+        const api = useForm({
+          schema,
+          defaultValues: { age: 0 },
+          key: `coerce-off-${Math.random()}`,
+          coerce: false,
+        })
+        handle.api = api
+        const rv = api.register('age')
+        return () =>
+          h('div', null, [
+            withDirectives(h('input', { type: 'text', 'data-field': 'age' }), [[vRegister, rv]]),
+          ])
+      },
+    })
+    app = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+    if (handle.api === undefined) throw new Error('api never set')
+    const input = root.querySelector('[data-field="age"]') as HTMLInputElement
+    input.value = '25'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(handle.api.values.age).toBe(0)
+  })
+})
+
+describe('@update:registerValue override receives the coerced value', () => {
+  it('handler captures a number, not a string', async () => {
+    const schema = z.object({ age: z.number() })
+    let captured: unknown = undefined
+    const { root } = mount(schema, { age: 0 }, (api) => {
+      const rv = api.register('age')
+      return h('div', null, [
+        withDirectives(
+          h('input', {
+            type: 'text',
+            'data-field': 'age',
+            'onUpdate:registerValue': (value: unknown) => {
+              captured = value
+            },
+          }),
+          [[vRegister, rv]]
+        ),
+      ])
+    })
+    await flush()
+    const input = root.querySelector('[data-field="age"]') as HTMLInputElement
+    input.value = '42'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(captured).toBe(42)
+    expect(typeof captured).toBe('number')
+  })
+})
+
+describe('el[assignKey] direct-install bypasses coerce', () => {
+  it('a custom assigner installed before mount receives the raw string', async () => {
+    const schema = z.object({ age: z.number() })
+    let captured: unknown = undefined
+
+    // Pre-install the custom assigner BEFORE the directive's `created`
+    // hook can install the default. We do this by supplying a hook on
+    // the `Parent` component that inspects the rendered DOM and sets
+    // `el[assignKey]` on the input — Vue calls our directive's
+    // `created` hook before our own `mounted`, but the assignKey
+    // pre-install is observed by `setAssignFunction` via the
+    // pre-install respect path.
+    //
+    // To exercise this without a custom directive, we set the assigner
+    // imperatively in setup() via a template ref, then return an
+    // `onMounted` callback that installs the listener. This mirrors
+    // how a Web-Component / ShadowDOM consumer would integrate.
+    const { root } = mount(schema, { age: 0 }, (api) => {
+      const rv = api.register('age')
+      return h('div', null, [
+        withDirectives(
+          h('input', {
+            type: 'text',
+            'data-field': 'age',
+            ref: (el: unknown) => {
+              if (el === null || !(el instanceof HTMLInputElement)) return
+              const carrier = el as unknown as Record<symbol, (v: unknown) => void>
+              carrier[assignKey] = (value: unknown) => {
+                captured = value
+              }
+              // Wire the input event manually since the directive's
+              // default path is replaced.
+              el.addEventListener('input', () => {
+                carrier[assignKey]!(el.value)
+              })
+            },
+          }),
+          [[vRegister, rv]]
+        ),
+      ])
+    })
+    await flush()
+    const input = root.querySelector('[data-field="age"]') as HTMLInputElement
+    input.value = '42'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    // Custom assigner ran, received the raw string. The directive's
+    // pipeline (transforms + coerce) wasn't invoked.
+    expect(captured).toBe('42')
+    expect(typeof captured).toBe('string')
+  })
+})
+
+describe('reference-equality preservation', () => {
+  it('an already-numeric array returns the SAME reference after coerce', async () => {
+    const schema = z.object({ ids: z.array(z.number()), note: z.string() })
+    const { api, root } = mount(schema, { ids: [1, 2, 3], note: '' }, (api) => {
+      const rvNote = api.register('note')
+      return h('div', null, [
+        withDirectives(h('input', { type: 'text', 'data-field': 'note' }), [[vRegister, rvNote]]),
+      ])
+    })
+    await flush()
+    // Take a snapshot of the array reference.
+    const before = api.values.ids
+    // Trigger a re-render via an unrelated keystroke. Coerce isn't
+    // touched (the keystroke goes to `note`), but this test guards
+    // against future hot-paths that might re-allocate IDs.
+    const input = root.querySelector('[data-field="note"]') as HTMLInputElement
+    input.value = 'x'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(api.values.ids).toBe(before)
+  })
+})
+
+describe('consumer-extended registry — string->bigint', () => {
+  it('a custom bigint rule supplied via plugin coerces', async () => {
+    const schema = z.object({ amount: z.bigint() })
+    const customRules = [
+      ...defaultCoercionRules,
+      defineCoercion({
+        input: 'string',
+        output: 'bigint',
+        transform: (s) => {
+          try {
+            return { coerced: true, value: BigInt(s) }
+          } catch {
+            return { coerced: false }
+          }
+        },
+      }),
+    ]
+    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const Parent = defineComponent({
+      setup() {
+        const api = useForm({
+          schema,
+          defaultValues: { amount: 0n },
+          key: `bigint-coerce-${Math.random()}`,
+        })
+        handle.api = api
+        const rv = api.register('amount')
+        return () =>
+          h('div', null, [
+            withDirectives(h('input', { type: 'text', 'data-field': 'amount' }), [[vRegister, rv]]),
+          ])
+      },
+    })
+    app = createApp(Parent).use(createChemicalXForms({ defaults: { coerce: customRules } }))
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+    if (handle.api === undefined) throw new Error('api never set')
+    const input = root.querySelector('[data-field="amount"]') as HTMLInputElement
+    input.value = '12345'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(handle.api.values.amount).toBe(12345n)
+  })
+})
+
+describe('isRegisterValue / assignKey re-export sanity', () => {
+  it('re-exported public symbols are reachable', () => {
+    expect(typeof isRegisterValue).toBe('function')
+    expect(typeof assignKey).toBe('symbol')
+  })
+})

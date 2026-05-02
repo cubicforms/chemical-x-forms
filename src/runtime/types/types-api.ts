@@ -893,6 +893,22 @@ export type UseFormConfiguration<
    * memory entry whose union path equals or sits under `path`.
    */
   rememberVariants?: boolean
+  /**
+   * Schema-driven coercion of user-typed DOM values at the v-register
+   * directive layer. Per-form override of the plugin-level
+   * `ChemicalXFormsDefaults.coerce`.
+   *
+   * - `true` / `undefined` — runs the built-in `defaultCoercionRules`.
+   * - `false` — disables coercion; the slim gate rejects mismatches.
+   * - `CoercionRegistry` — a custom array of entries (REPLACES, not
+   *   merges, the plugin defaults). Spread `defaultCoercionRules` to
+   *   extend.
+   *
+   * Coercion applies ONLY to user-typed DOM values. Programmatic
+   * writes (`form.setValue`, `setValueWithInternalPath`) are NEVER
+   * coerced.
+   */
+  coerce?: boolean | CoercionRegistry
 }
 
 /**
@@ -930,6 +946,24 @@ export type ChemicalXFormsDefaults = {
   history?: HistoryConfig
   /** Default for `useForm({ rememberVariants })`. */
   rememberVariants?: boolean
+  /**
+   * Default for `useForm({ coerce })`. Schema-driven coercion of
+   * user-typed DOM values at the v-register directive layer.
+   *
+   * - `true` (default) — runs the built-in `defaultCoercionRules`
+   *   (`string→number`, `string→boolean`).
+   * - `false` — disables coercion globally; the slim-primitive gate
+   *   rejects type mismatches with its existing dev-warn instead.
+   * - `CoercionRegistry` — a custom array of `CoercionEntry` records.
+   *   Spread `defaultCoercionRules` to extend rather than replace:
+   *   `[...defaultCoercionRules, defineCoercion({ ... })]`.
+   *
+   * Coercion applies ONLY to user-typed DOM values flowing through
+   * the directive's assigner. Programmatic writes (`form.setValue`,
+   * `setValueWithInternalPath`) are NEVER coerced — they're
+   * authoritative writes whose strict typing is on the caller.
+   */
+  coerce?: boolean | CoercionRegistry
 }
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>
@@ -1112,6 +1146,88 @@ export type RegisterFlatPath<Form, Key extends keyof Form = keyof Form> =
 export type RegisterTransform = (value: unknown) => unknown
 
 /**
+ * Runtime type for a slim primitive kind. Used to narrow the
+ * `transform` parameter and return value on a `CoercionEntry` so
+ * authors writing rules don't have to cast `unknown`.
+ *
+ * Exhaustive over `SlimPrimitiveKind` — adding a new kind to that
+ * union must add a corresponding branch here.
+ */
+export type SlimRuntimeOf<K extends SlimPrimitiveKind> = K extends 'string'
+  ? string
+  : K extends 'number'
+    ? number
+    : K extends 'boolean'
+      ? boolean
+      : K extends 'bigint'
+        ? bigint
+        : K extends 'date'
+          ? Date
+          : K extends 'null'
+            ? null
+            : K extends 'undefined'
+              ? undefined
+              : K extends 'array'
+                ? readonly unknown[]
+                : K extends 'set'
+                  ? ReadonlySet<unknown>
+                  : K extends 'map'
+                    ? ReadonlyMap<unknown, unknown>
+                    : K extends 'object'
+                      ? Record<string, unknown>
+                      : K extends 'symbol'
+                        ? symbol
+                        : K extends 'function'
+                          ? (...args: never[]) => unknown
+                          : never
+
+/**
+ * Outcome of a coercion attempt.
+ *
+ * - `coerced: true` — the rule produced `value`, which the directive
+ *   forwards to the slim gate (the gate may still reject if the
+ *   value doesn't satisfy the path's accept set).
+ * - `coerced: false` — the rule decided it can't coerce this input.
+ *   The directive passes the original value through; the slim gate
+ *   decides downstream.
+ *
+ * Discriminated rather than `O | undefined` so rules with
+ * `output: 'undefined'` or `output: 'null'` don't conflict with the
+ * "skip" signal.
+ */
+export type CoercionResult<O> = { coerced: true; value: O } | { coerced: false }
+
+/**
+ * A single coercion rule. `input` and `output` are
+ * `SlimPrimitiveKind` literals; `transform` receives a value already
+ * narrowed to `SlimRuntimeOf<input>` and returns
+ * `CoercionResult<SlimRuntimeOf<output>>`.
+ *
+ * Rules MUST be sync. They SHOULD NOT throw — wrap internal
+ * try/catch when the conversion can fail (e.g. `BigInt(s)` throws
+ * for non-numeric strings). The library wraps each invocation in
+ * try/catch as defense in depth; throws are caught, logged once per
+ * `(input, output)`, and the original value passes through.
+ */
+export type CoercionEntry<
+  I extends SlimPrimitiveKind = SlimPrimitiveKind,
+  O extends SlimPrimitiveKind = SlimPrimitiveKind,
+> = {
+  readonly input: I
+  readonly output: O
+  readonly transform: (value: SlimRuntimeOf<I>) => CoercionResult<SlimRuntimeOf<O>>
+}
+
+/**
+ * A registry is an ordered array of `CoercionEntry` records.
+ * Consumers compose by spreading `defaultCoercionRules` and
+ * appending their own entries. Order is observable only when two
+ * entries share the same `(input, output)` pair — the library emits
+ * a one-shot dev-warn and the LATER entry wins.
+ */
+export type CoercionRegistry = readonly CoercionEntry[]
+
+/**
  * Options for `register(path, options)`. Per-field rather than
  * per-form so each persisted path is opted in at its own call site —
  * adding a new field can't accidentally leak into the persistence
@@ -1250,6 +1366,17 @@ export type RegisterValue<Value = unknown> = {
    * @internal
    */
   transforms?: ReadonlyArray<RegisterTransform>
+  /**
+   * Schema-driven coercion closure baked at register-time. Captures
+   * the path's slim accept set and the resolved coercion index so
+   * the per-event hot path is a single function call. Identity
+   * function when coercion is disabled or the path admits no
+   * coercion target. Optional so hand-rolled `RegisterValue` mocks
+   * (test fixtures, custom integrations) don't have to declare it —
+   * the directive falls back to identity.
+   * @internal
+   */
+  coerce?: (value: unknown) => unknown
   /**
    * Read-only, string-form view of the field's current value — what
    * the compile-time `:value` injection reads on every input /

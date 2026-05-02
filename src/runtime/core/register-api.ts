@@ -12,6 +12,7 @@ import { AnonPersistError } from './errors'
 import { extractSchemaFields } from './extract-schema-fields'
 import { canonicalizePath, type Path, type PathKey } from './paths'
 import { PERSISTENCE_MODULE_KEY } from './persistence'
+import { buildCoerceFn } from './schema-coerce'
 
 // Module-level frozen empty array — re-used as the transforms default
 // across every register() call that doesn't opt in. Avoids a per-call
@@ -146,6 +147,18 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
     const acknowledgeSensitive = options?.acknowledgeSensitive === true
     const transforms = options?.transforms ?? EMPTY_TRANSFORMS
 
+    // Schema-driven coerce closure. Captures the path's slim accept set
+    // and the form's resolved coercion index so the per-event hot path
+    // is a single function call. Identity when the form has coercion
+    // disabled (`useForm({ coerce: false })`) or the path admits no
+    // coercion target. Cached on RegisterValue so the directive doesn't
+    // re-walk the schema per keystroke.
+    const coerce = buildCoerceFn(
+      state.schema as Parameters<typeof buildCoerceFn>[0],
+      segments,
+      state.coerceIndex
+    )
+
     // Eager throw: opt-in declared but the form has no persistence wired.
     // Without the throw the directive silently records the opt-in, no
     // writes ever land, and the dev concludes "persistence is broken"
@@ -226,6 +239,7 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
       acknowledgeSensitive,
       persistOptIns: state.persistOptIns,
       transforms,
+      coerce,
     }
   }
 }

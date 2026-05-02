@@ -53,6 +53,7 @@ export { useRegister } from './runtime/composables/use-register'
 // The v-register directive (registered automatically by createChemicalXForms,
 // but exported for advanced consumers who install directives themselves).
 export { vRegister, isRegisterValue, assignKey } from './runtime/core/directive'
+export { defaultCoercionRules, defineCoercion } from './runtime/core/schema-coerce'
 
 // The `unset` sentinel — pass in `defaultValues`, `setValue`, or `reset`
 // to mark a primitive leaf as displayed-empty while storage holds the
@@ -74,6 +75,9 @@ export type {
   ApiErrorEntry,
   ApiErrorEnvelope,
   ChemicalXFormsDefaults,
+  CoercionEntry,
+  CoercionRegistry,
+  CoercionResult,
   CustomDirectiveRegisterAssignerFn,
   DefaultValuesResponse,
   FieldState,
@@ -110,6 +114,7 @@ export type {
   SetValuePayload,
   SettledValidationStatus,
   SlimPrimitiveKind,
+  SlimRuntimeOf,
   SubmitHandler,
   UseAbstractFormReturnType,
   UseFormConfiguration,

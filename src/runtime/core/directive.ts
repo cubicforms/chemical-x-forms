@@ -275,6 +275,19 @@ function logTransformFailure(
  * Log a Promise-returning transform. Same dev/prod posture as
  * `logTransformFailure` — informative in dev, opaque in prod.
  */
+/**
+ * Apply the field's coerce closure (built at register-time by
+ * `buildCoerceFn`) to a post-transform value. Identity when the
+ * RegisterValue is a hand-rolled mock that omits the field, or when
+ * coercion was disabled / no coerction target was resolved at the
+ * path. The closure itself runs the registry rule, post-validates
+ * the result, and falls back to the original on any rule failure
+ * (throw, wrong-kind, NaN) — see `schema-coerce.ts` for details.
+ */
+function applyCoerce(value: unknown, registerValue: RegisterValue): unknown {
+  return registerValue.coerce !== undefined ? registerValue.coerce(value) : value
+}
+
 function logTransformAsync(path: PathKey): void {
   if (__DEV__) {
     console.error(
@@ -326,7 +339,12 @@ const getModelAssigner = (
       // raw, they don't register transforms.
       const r = runTransforms(value, registerValue)
       if (!r.ok) return false
-      invokeArrayFns(fnArr, r.value, registerValue)
+      // Schema-driven coerce runs AFTER transforms — it's the final
+      // type-fixup before storage. Custom override handlers receive
+      // the coerced value, mirroring how transforms compose with
+      // overrides today. Consumers who want raw don't enable coerce.
+      const coerced = applyCoerce(r.value, registerValue)
+      invokeArrayFns(fnArr, coerced, registerValue)
       // Multi-listener case: no single boolean to surface. Return
       // undefined so the listener treats this as "succeeded" — matches
       // the back-compat contract for consumer-installed assigners.
@@ -338,7 +356,8 @@ const getModelAssigner = (
     return (value) => {
       const r = runTransforms(value, registerValue)
       if (!r.ok) return false
-      return handler(r.value, registerValue)
+      const coerced = applyCoerce(r.value, registerValue)
+      return handler(coerced, registerValue)
     }
   }
   // Default-installed assigner. Tagged so the listener-body bail
@@ -351,7 +370,8 @@ const getModelAssigner = (
   const defaultAssigner: CustomDirectiveRegisterAssignerFn = (value) => {
     const r = runTransforms(value, registerValue)
     if (!r.ok) return false
-    return registerValue.setValueWithInternalPath(r.value, computePersistMeta(el, registerValue))
+    const coerced = applyCoerce(r.value, registerValue)
+    return registerValue.setValueWithInternalPath(coerced, computePersistMeta(el, registerValue))
   }
   ;(defaultAssigner as unknown as DefaultAssignerCarrier)[DEFAULT_ASSIGNER_TAG] = true
   return defaultAssigner

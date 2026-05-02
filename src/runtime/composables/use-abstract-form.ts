@@ -285,6 +285,7 @@ function mergeWithDefaults<
   const onInvalidSubmit = configuration.onInvalidSubmit ?? defaults.onInvalidSubmit
   const history = configuration.history ?? defaults.history
   const rememberVariants = configuration.rememberVariants ?? defaults.rememberVariants
+  const coerce = configuration.coerce ?? defaults.coerce
   const fieldValidation =
     configuration.fieldValidation === undefined && defaults.fieldValidation === undefined
       ? undefined
@@ -295,6 +296,7 @@ function mergeWithDefaults<
     ...(onInvalidSubmit === undefined ? {} : { onInvalidSubmit }),
     ...(history === undefined ? {} : { history }),
     ...(rememberVariants === undefined ? {} : { rememberVariants }),
+    ...(coerce === undefined ? {} : { coerce }),
     ...(fieldValidation === undefined ? {} : { fieldValidation }),
   }
 }
@@ -351,6 +353,7 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
     ...(configuration.rememberVariants !== undefined
       ? { rememberVariants: configuration.rememberVariants }
       : {}),
+    ...(configuration.coerce !== undefined ? { coerce: configuration.coerce } : {}),
     ...(initialBlankPaths !== undefined ? { initialBlankPaths } : {}),
   }
   const state = createFormStore<F, G>(createOptions)

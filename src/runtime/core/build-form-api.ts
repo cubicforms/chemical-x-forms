@@ -279,12 +279,33 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // path filtered), this aggregate is UNFILTERED — inactive-variant
   // errors stay in. Consumers who want only addressable errors filter
   // the array themselves.
+  //
+  // Order is determined by the SET of errors currently present, not by
+  // the temporal sequence of validations. Each path is bucketed at its
+  // schema-declaration ordinal (`state.ensurePathOrdinal`); buckets sort
+  // by ordinal and flatten in order. Within one ordinal slot the
+  // per-store iteration order survives — schema → blank → user — so a
+  // path with both a schema error and a userErrors entry surfaces both
+  // at the same slot in their existing relative order. Resurrected
+  // errors return to the slot they originally occupied: clearing
+  // `email` then re-breaking it puts `email` back ahead of `password`,
+  // not at the end of the aggregate.
   const metaErrors = computed<readonly ValidationError[]>(() => {
-    const all: ValidationError[] = []
-    for (const errs of state.schemaErrors.values()) all.push(...errs)
-    for (const errs of state.derivedBlankErrors.value.values()) all.push(...errs)
-    for (const errs of state.userErrors.values()) all.push(...errs)
-    return all
+    const buckets = new Map<number, ValidationError[]>()
+    const collect = (errs: ReadonlyMap<PathKey, ValidationError[]>): void => {
+      for (const [pathKey, list] of errs) {
+        if (list.length === 0) continue
+        const ordinal = state.ensurePathOrdinal(pathKey)
+        const existing = buckets.get(ordinal)
+        if (existing === undefined) buckets.set(ordinal, [...list])
+        else existing.push(...list)
+      }
+    }
+    collect(state.schemaErrors)
+    collect(state.derivedBlankErrors.value)
+    collect(state.userErrors)
+    if (buckets.size === 0) return []
+    return [...buckets.entries()].sort(([a], [b]) => a - b).flatMap(([, errs]) => errs)
   })
 
   // --- Form-level meta bundle ---

@@ -242,6 +242,18 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    */
   getErrorsForPath(path: Path): ValidationError[]
 
+  /**
+   * Returns a stable schema-declaration ordinal for `key`, assigning a
+   * fresh one if the path hasn't been seen before. Drives
+   * `form.meta.errors` sort order so the aggregate is a function of the
+   * SET of errors currently present (not the temporal order their
+   * Map keys were last `set`). Construction-time seed walks every leaf
+   * in the schema's slim default; runtime callers (DU variant 2, dynamic
+   * array indices, refines targeting cross-field paths) pick up
+   * first-encounter ordinals and keep them for the form's lifetime.
+   */
+  ensurePathOrdinal(key: PathKey): number
+
   // --- DOM ---
   /**
    * Register `element` as a binding for `path`, tagged with the calling
@@ -657,6 +669,31 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   }
   const variantMemory = new Map<PathKey, Map<unknown, VariantSnapshot>>()
 
+  // Schema-declaration ordinal map for `form.meta.errors` sort order.
+  // Plain (non-reactive) Map: it's mutated lazily from inside the
+  // `metaErrors` computed when an unseen path appears, and a reactive
+  // Map would retrigger that computed on every assignment. Plain
+  // Map.set is invisible to Vue 3.5's reactivity tracking, so the
+  // computed only re-runs when one of the error stores changes — not
+  // when we extend the ordinal book during the same pass.
+  //
+  // Lifetime = FormStore lifetime. Never shrinks: an ordinal is
+  // assigned once per path and survives `reset()`, undo/redo, and
+  // hydration replay. Clearing then re-introducing an error at the
+  // same path returns to the SAME slot, so `meta.errors` doesn't
+  // shuffle when the user fixes a field and breaks it again.
+  const pathOrdinals = new Map<PathKey, number>()
+  let nextOrdinal = 0
+  function ensurePathOrdinal(key: PathKey): number {
+    let ordinal = pathOrdinals.get(key)
+    if (ordinal === undefined) {
+      ordinal = nextOrdinal
+      pathOrdinals.set(key, ordinal)
+      nextOrdinal += 1
+    }
+    return ordinal
+  }
+
   // Reactively-derived blank-required errors. Recomputes whenever
   // `blankPaths` mutates (Vue 3.5 reactive Set handlers track size + has).
   // The schema's `isRequiredAtPath` is referentially stable for a given
@@ -695,11 +732,15 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // Populate originals by diffing from empty-form to schema-initial. This is
   // always the schema's shape regardless of hydration, so pristine/dirty
   // comparisons are against what the form was supposed to start as.
+  // Same walk seeds `pathOrdinals` — `diffAndApply` visits every leaf in
+  // declaration order, so the ordinal map gets schema-declaration order
+  // for free with no extra traversal.
   const initStamp = new Date().toISOString()
   diffAndApply({}, schemaInitialData, [], (patch) => {
     if (patch.kind !== 'added') return
     const { key } = canonicalizePath(patch.path)
     originals.set(key, { segments: patch.path, value: patch.newValue })
+    ensurePathOrdinal(key)
   })
 
   // Populate fields from either the hydration payload (preserves exact
@@ -1835,6 +1876,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     addUserErrors,
     clearUserErrors,
     getErrorsForPath,
+    ensurePathOrdinal,
 
     registerElement,
     deregisterElement,

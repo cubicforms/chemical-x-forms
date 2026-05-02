@@ -32,7 +32,7 @@ function mount(): { app: App; api: Api } {
   const handle: { api?: Api } = {}
   const App = defineComponent({
     setup() {
-      handle.api = useForm({ schema, key: 'fielderrs-view', validationMode: 'lax' })
+      handle.api = useForm({ schema, key: 'fielderrs-view', strict: false })
       return () => h('div')
     },
   })
@@ -196,7 +196,7 @@ describe('form.errors — reactivity in render scope', () => {
     let renderedMessage = ''
     const Reader = defineComponent({
       setup() {
-        api = useForm({ schema, key: 'fielderrs-reactive', validationMode: 'lax' })
+        api = useForm({ schema, key: 'fielderrs-reactive', strict: false })
         return () => {
           renderedMessage = api.errors.email?.[0]?.message ?? ''
           return h('div', renderedMessage)

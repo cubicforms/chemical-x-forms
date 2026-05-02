@@ -111,17 +111,14 @@ async function waitUntil<T>(
 type AsyncApi = ReturnType<typeof useForm<typeof asyncSchema>>
 type SyncApi = ReturnType<typeof useForm<typeof syncSchema>>
 
-function mountAsyncForm(
-  persistKey: string,
-  validationMode: 'strict' | 'lax' = 'strict'
-): { app: App; api: AsyncApi } {
+function mountAsyncForm(persistKey: string, strict: boolean = true): { app: App; api: AsyncApi } {
   const handle: { api?: AsyncApi } = {}
   const App = defineComponent({
     setup() {
       handle.api = useForm({
         schema: asyncSchema,
         key: `async-hydrate-${persistKey}`,
-        validationMode,
+        strict,
         persist: { storage: 'local', key: persistKey, debounceMs: 20 },
         defaultValues: { email: '' } as AsyncForm,
       })
@@ -173,7 +170,7 @@ describe('persistence hydration — validation runs against the rehydrated value
       `test-async-hydrate-strict:${ASYNC_FP}`,
       JSON.stringify({ v: 4, data: { form: { email: 'taken@example.com' } } })
     )
-    const { app, api } = mountAsyncForm('test-async-hydrate-strict', 'strict')
+    const { app, api } = mountAsyncForm('test-async-hydrate-strict', true)
     apps.push(app)
     await waitUntil(() => (api.values.email === 'taken@example.com' ? true : null))
     expect(api.values.email).toBe('taken@example.com')
@@ -186,12 +183,12 @@ describe('persistence hydration — validation runs against the rehydrated value
 
   it('lax + async refine: same behavior — hydration triggers refine validation', async () => {
     // Lax skips the construction-time seed entirely; this proves the
-    // post-hydration revalidation is independent of `validationMode`.
+    // post-hydration revalidation is independent of `strict`.
     localStorage.setItem(
       `test-async-hydrate-lax:${ASYNC_FP}`,
       JSON.stringify({ v: 4, data: { form: { email: 'taken@example.com' } } })
     )
-    const { app, api } = mountAsyncForm('test-async-hydrate-lax', 'lax')
+    const { app, api } = mountAsyncForm('test-async-hydrate-lax', false)
     apps.push(app)
     await waitUntil(() => (api.values.email === 'taken@example.com' ? true : null))
     const errorMessage = await waitUntil(() => api.errors.email?.[0]?.message ?? null)
@@ -225,7 +222,7 @@ describe('persistence hydration — validation runs against the rehydrated value
       `test-async-hydrate-valid:${ASYNC_FP}`,
       JSON.stringify({ v: 4, data: { form: { email: 'fresh@example.com' } } })
     )
-    const { app, api } = mountAsyncForm('test-async-hydrate-valid', 'strict')
+    const { app, api } = mountAsyncForm('test-async-hydrate-valid', true)
     apps.push(app)
     await waitUntil(() => (api.values.email === 'fresh@example.com' ? true : null))
     await waitUntil(() => (api.meta.isValidating === false ? true : null))
@@ -242,7 +239,7 @@ describe('persistence hydration — validation runs against the rehydrated value
       `test-async-hydrate-flag:${ASYNC_FP}`,
       JSON.stringify({ v: 4, data: { form: { email: 'taken@example.com' } } })
     )
-    const { app, api } = mountAsyncForm('test-async-hydrate-flag', 'strict')
+    const { app, api } = mountAsyncForm('test-async-hydrate-flag', true)
     apps.push(app)
     await waitUntil(() => (api.values.email === 'taken@example.com' ? true : null))
     const sawValidating = await waitUntil(() => (api.meta.isValidating === true ? true : null), 500)

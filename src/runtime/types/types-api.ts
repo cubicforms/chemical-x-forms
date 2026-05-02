@@ -112,21 +112,6 @@ export type DefaultValuesResponse<TData> =
 export type ValidationResponseWithoutValue<Form> = Omit<ValidationResponse<Form>, 'data'>
 
 /**
- * How strictly to validate when deriving default values at construction.
- *
- * - `'strict'` (default): the schema's defaults are validated immediately;
- *   any failures populate `form.errors` from the first frame so the data
- *   layer is honest about the schema's verdict. The UI decides when to
- *   *show* errors (gate on `state.touched`, `state.submitCount`, etc.).
- * - `'lax'`: refinements are stripped during default-values derivation
- *   and the construction-time validation is skipped. Useful for multi-step
- *   wizards or forms that intentionally mount with placeholder data.
- *
- * Runtime validation (per-field and on submit) is identical in both modes.
- */
-export type ValidationMode = 'strict' | 'lax'
-
-/**
  * Sync-or-async return shape for `AbstractSchema.validateAtPath`. The
  * adapter returns the response inline when the schema and the
  * caller's options permit synchronous validation; otherwise a
@@ -159,7 +144,13 @@ export type ValidateOptions = {
 
 type GetDefaultValuesConfig<Form> = {
   useDefaultSchemaValues: boolean
-  validationMode?: ValidationMode
+  /**
+   * Whether to keep schema refinements when deriving slim defaults.
+   * `true` (default) — preserve refinements; `false` — strip them so
+   * placeholder data lands without immediate construction-time
+   * errors. Mirrors `useForm({ strict })`.
+   */
+  strict?: boolean
   constraints?: DeepPartial<WriteShape<Form>> | undefined
 }
 
@@ -834,21 +825,22 @@ export type UseFormConfiguration<
    */
   defaultValues?: DefaultValues
   /**
-   * How strictly to validate default values at construction.
+   * Whether to validate default values at construction. Default
+   * `true`.
    *
-   * - `'strict'` (default): the schema is run against the derived
+   * - `true` (default): the schema is run against the derived
    *   defaults immediately; any failures populate `form.errors` from
    *   the first frame. The UI decides when to *show* errors — gate
    *   on `state.touched`, `state.submitCount`, etc.
-   * - `'lax'`: refinements are stripped during defaults derivation
+   * - `false`: refinements are stripped during defaults derivation
    *   and construction-time validation is skipped. Useful for
    *   multi-step wizards, field arrays seeded with placeholder
    *   rows, or any form intentionally mounting with incomplete data.
    *
    * Runtime validation (per-field on edit, full-form on submit) is
-   * identical in both modes.
+   * identical regardless of this flag.
    */
-  validationMode?: ValidationMode
+  strict?: boolean
   /**
    * Automatic UI nudge on submit-validation failure. Fires after
    * errors are populated and before your `onError` callback runs.
@@ -1000,8 +992,8 @@ export type UseFormConfiguration<
  * here — they belong on the per-form call.
  */
 export type ChemicalXFormsDefaults = {
-  /** Default for `useForm({ validationMode })`. */
-  validationMode?: ValidationMode
+  /** Default for `useForm({ strict })`. Default `true`. */
+  strict?: boolean
   /** Default for `useForm({ onInvalidSubmit })`. */
   onInvalidSubmit?: OnInvalidSubmitPolicy
   /** Default for `useForm({ validateOn })` — when validation runs. */

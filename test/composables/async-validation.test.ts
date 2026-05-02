@@ -43,7 +43,7 @@ function mountForm(onCreated: (form: ReturnType<typeof useForm<typeof signupSche
       handle.api = useForm({
         schema: signupSchema,
         key: 'async-validation',
-        validationMode: 'lax',
+        strict: false,
       })
       onCreated(handle.api)
       return () => h('div')

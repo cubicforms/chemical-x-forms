@@ -29,7 +29,7 @@ describe('zod v3 adapter — fuzz over arbitrary supported schemas', () => {
       const adapter = zodAdapter(schema as z.ZodObject<z.ZodRawShape>)('f')
       const result = adapter.getDefaultValues({
         useDefaultSchemaValues: true,
-        validationMode: 'lax',
+        strict: false,
       })
       expect(result.success).toBe(true)
       expect(result.data).toBeDefined()

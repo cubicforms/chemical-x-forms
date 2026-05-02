@@ -90,10 +90,11 @@ describe('zod v3 adapter — transparent wrapper kinds', () => {
       email: z.string().pipe(z.string().email()),
     })
     const adapter = zodAdapter(schema)('f')
-    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
-    // Input schema default (pre-transform) is `''` — `email` validation
-    // would reject it but the slim-parse rebuilds a checks-free copy
-    // for default extraction.
+    // Pass `strict: false` so the slim-parse rebuilds a checks-free
+    // copy for default extraction. Strict mode (the default) would
+    // surface the `email` validation rejection of `''`.
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true, strict: false })
+    // Input schema default (pre-transform) is `''`.
     expect(result.success).toBe(true)
     expect((result.data as { email: string }).email).toBe('')
   })

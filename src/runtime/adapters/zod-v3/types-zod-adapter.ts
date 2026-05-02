@@ -5,7 +5,6 @@ import type {
   OnInvalidSubmitPolicy,
   PersistConfig,
   ValidateOnConfig,
-  ValidationMode,
 } from '../../types/types-api'
 
 /**
@@ -29,7 +28,7 @@ export type UseFormConfigurationWithZod<
   // types-api.ts for the full rationale.
   key?: FormKey
   defaultValues?: DefaultValues
-  validationMode?: ValidationMode
+  strict?: boolean
   onInvalidSubmit?: OnInvalidSubmitPolicy
   persist?: PersistConfig
   history?: HistoryConfig

@@ -32,7 +32,7 @@
     // strings — neither auto-marks blank, so `derivedBlankErrors`
     // stays empty and the user-injected entries are the only thing
     // appearing at errors[0].
-    validationMode: 'lax',
+    strict: false,
   })
   directForm.setFieldErrors([
     { message: 'Email already in use', path: ['email'], formKey: 'errors-direct' },

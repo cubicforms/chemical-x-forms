@@ -281,7 +281,7 @@ function mergeWithDefaults<
   // exactOptionalPropertyTypes rejects explicit `undefined` on optional
   // properties (different from omitting), so conditionally spread each
   // resolved value rather than assigning undefined into the field.
-  const validationMode = configuration.validationMode ?? defaults.validationMode
+  const strict = configuration.strict ?? defaults.strict
   const onInvalidSubmit = configuration.onInvalidSubmit ?? defaults.onInvalidSubmit
   const history = configuration.history ?? defaults.history
   const rememberVariants = configuration.rememberVariants ?? defaults.rememberVariants
@@ -295,7 +295,7 @@ function mergeWithDefaults<
   const debounceMs = (configuration as { debounceMs?: number }).debounceMs ?? defaults.debounceMs
   return {
     ...configuration,
-    ...(validationMode === undefined ? {} : { validationMode }),
+    ...(strict === undefined ? {} : { strict }),
     ...(onInvalidSubmit === undefined ? {} : { onInvalidSubmit }),
     ...(history === undefined ? {} : { history }),
     ...(rememberVariants === undefined ? {} : { rememberVariants }),
@@ -350,7 +350,7 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
     formKey: key,
     schema,
     defaultValues: walked.cleanedValues as DeepPartial<WriteShape<F>> | undefined,
-    validationMode: configuration.validationMode,
+    ...(configuration.strict !== undefined ? { strict: configuration.strict } : {}),
     hydration: pending,
     ...(configuration.validateOn !== undefined ? { validateOn: configuration.validateOn } : {}),
     ...((configuration as { debounceMs?: number }).debounceMs !== undefined

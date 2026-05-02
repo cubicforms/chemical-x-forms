@@ -38,7 +38,7 @@ async function flush(): Promise<void> {
 function mountWith<S extends z.ZodObject>(
   schema: S,
   defaults: Partial<z.infer<S>>,
-  validationMode: 'strict' | 'lax' = 'lax'
+  strict: boolean = false
 ): { api: ReturnType<typeof useForm<S>>; app: App } {
   const captured: { api?: ReturnType<typeof useForm<S>> } = {}
   const App = defineComponent({
@@ -46,7 +46,7 @@ function mountWith<S extends z.ZodObject>(
       const config = {
         schema,
         key: `slim-defaults-${Math.random().toString(36).slice(2)}`,
-        validationMode,
+        strict,
         defaultValues: defaults,
       }
       captured.api = (useForm as (cfg: unknown) => ReturnType<typeof useForm<S>>)(config)
@@ -143,7 +143,7 @@ describe('slim-primitive defaults — strict-mode surfaces refinement errors at 
 
   it('strict mount with refinement-invalid default surfaces a field error', async () => {
     const schema = z.object({ color: z.enum(['red', 'green', 'blue']) })
-    const { api, app } = mountWith(schema, { color: 'teal' as 'red' }, 'strict')
+    const { api, app } = mountWith(schema, { color: 'teal' as 'red' }, true)
     apps.push(app)
     // Strict-mode runs the FULL schema's safeParse at construction
     // and surfaces refinement errors. The form value is still 'teal'

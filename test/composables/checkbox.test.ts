@@ -52,7 +52,7 @@ describe('<input type="checkbox" v-register> — single boolean', () => {
 
     const Parent = defineComponent({
       setup() {
-        const form = useForm({ schema, key: 'cb-bool', validationMode: 'lax' })
+        const form = useForm({ schema, key: 'cb-bool', strict: false })
         captured.api = form
         return () =>
           withDirectives(h('input', { type: 'checkbox', class: 'agreed' }), [
@@ -93,7 +93,7 @@ describe('<input type="checkbox" v-register> — single boolean', () => {
           schema,
           key: 'cb-bool-init',
           defaultValues: { agreed: true },
-          validationMode: 'lax',
+          strict: false,
         })
         captured.api = form
         return () =>
@@ -129,7 +129,7 @@ describe('<input type="checkbox" v-register> — array group', () => {
 
     const Parent = defineComponent({
       setup() {
-        const form = useForm({ schema, key: 'cb-array', validationMode: 'lax' })
+        const form = useForm({ schema, key: 'cb-array', strict: false })
         captured.api = form
         return () =>
           h('div', [
@@ -190,7 +190,7 @@ describe('<input type="checkbox" v-register> — array group', () => {
           schema,
           key: 'cb-array-init',
           defaultValues: { fruits: ['apple', 'cherry'] },
-          validationMode: 'lax',
+          strict: false,
         })
         captured.api = form
         return () =>
@@ -234,7 +234,7 @@ describe('<input type="checkbox" v-register> — array group', () => {
 
     const Parent = defineComponent({
       setup() {
-        const form = useForm({ schema, key: 'cb-array-static-value', validationMode: 'lax' })
+        const form = useForm({ schema, key: 'cb-array-static-value', strict: false })
         captured.api = form
         return () =>
           withDirectives(h('input', { type: 'checkbox', value: 'apple', class: 'apple' }), [
@@ -272,7 +272,7 @@ describe('<input type="checkbox" v-register> — array group', () => {
 
       const Parent = defineComponent({
         setup() {
-          const form = useForm({ schema, key: 'cb-array-missing-value', validationMode: 'lax' })
+          const form = useForm({ schema, key: 'cb-array-missing-value', strict: false })
           captured.api = form
           // Intentionally NO `value` prop on the checkbox.
           return () =>
@@ -326,7 +326,7 @@ describe('<input type="checkbox" v-register> — Set group', () => {
           schema,
           key: 'cb-set',
           defaultValues: { tags: new Set<string>() },
-          validationMode: 'lax',
+          strict: false,
         })
         captured.api = form
         return () =>
@@ -392,7 +392,7 @@ describe('<input type="checkbox" v-register> — :true-value / :false-value', ()
           // would mount the checkbox already-checked. Setting
           // 'unsubscribe' isolates the toggle behavior.
           defaultValues: { newsletter: 'unsubscribe' },
-          validationMode: 'lax',
+          strict: false,
         })
         captured.api = form
         return () =>
@@ -453,7 +453,7 @@ describe('checkbox slim-primitive gate interactions', () => {
 
     const Parent = defineComponent({
       setup() {
-        captured.api = useForm({ schema, key: 'cb-gate-bool', validationMode: 'lax' })
+        captured.api = useForm({ schema, key: 'cb-gate-bool', strict: false })
         return () => h('div')
       },
     })
@@ -476,7 +476,7 @@ describe('checkbox slim-primitive gate interactions', () => {
 
     const Parent = defineComponent({
       setup() {
-        captured.api = useForm({ schema, key: 'cb-gate-array', validationMode: 'lax' })
+        captured.api = useForm({ schema, key: 'cb-gate-array', strict: false })
         return () => h('div')
       },
     })

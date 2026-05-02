@@ -227,7 +227,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
           constraints: config.constraints,
         })
 
-        if (config.validationMode === 'strict') {
+        if (config.strict !== false) {
           // Strict mode: run the *full* schema (not the slim one) so
           // refinement-level errors surface. If that passes, we're fine.
           //

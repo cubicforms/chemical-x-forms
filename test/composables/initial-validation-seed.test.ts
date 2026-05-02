@@ -29,10 +29,10 @@ const tightSchema = z.object({
 
 type Tight = z.infer<typeof tightSchema>
 
-function mountWithZod(options: {
-  validationMode?: 'strict' | 'lax'
-  defaultValues?: Partial<Tight>
-}): { app: App; api: ReturnType<typeof useForm<typeof tightSchema>> } {
+function mountWithZod(options: { strict?: boolean; defaultValues?: Partial<Tight> }): {
+  app: App
+  api: ReturnType<typeof useForm<typeof tightSchema>>
+} {
   type API = ReturnType<typeof useForm<typeof tightSchema>>
   const handle: { api?: API } = {}
   const App = defineComponent({
@@ -40,7 +40,7 @@ function mountWithZod(options: {
       handle.api = useForm({
         schema: tightSchema,
         key: 'init-seed',
-        ...(options.validationMode ? { validationMode: options.validationMode } : {}),
+        ...(options.strict !== undefined ? { strict: options.strict } : {}),
         ...(options.defaultValues ? { defaultValues: options.defaultValues } : {}),
       })
       return () => h('div')
@@ -97,8 +97,8 @@ describe('initial validation seed — strict mode', () => {
     expect(handle.api?.errors.email).toBeUndefined()
   })
 
-  it('strict is the default — omitting validationMode populates schemaErrors', () => {
-    // Pin: useForm({ schema, ... }) with no explicit validationMode
+  it('strict is the default — omitting strict populates schemaErrors', () => {
+    // Pin: useForm({ schema, ... }) with no explicit strict flag
     // must resolve to 'strict'. Flipping the default back to 'lax'
     // would silently regress consumers who expect "errors are a pure
     // function of (value, schema) at all times."
@@ -110,7 +110,7 @@ describe('initial validation seed — strict mode', () => {
   })
 
   it('populates schemaErrors at construction when defaults fail validation', () => {
-    const { app, api } = mountWithZod({ validationMode: 'strict' })
+    const { app, api } = mountWithZod({ strict: true })
     apps.push(app)
     // Empty defaults: '' fails .email(), '' fails .min(8). Both errors
     // surface in fieldErrors before any user interaction.
@@ -121,7 +121,7 @@ describe('initial validation seed — strict mode', () => {
 
   it('does NOT seed when defaults validate cleanly', () => {
     const { app, api } = mountWithZod({
-      validationMode: 'strict',
+      strict: true,
       defaultValues: { email: 'a@a.com', password: 'longenough' },
     })
     apps.push(app)
@@ -214,7 +214,7 @@ describe('initial validation seed — async-refine schema', () => {
         handle.api = useForm({
           schema: asyncSchema,
           key: 'init-seed-async-lax',
-          validationMode: 'lax',
+          strict: false,
           defaultValues: { email: 'taken@example.com' },
         })
         return () => h('div')
@@ -367,7 +367,7 @@ describe('initial validation seed — lax mode', () => {
     // schemaErrors-seed channel cleanly. A separate test in
     // derived-blank-errors.test.ts covers the reactive blank class
     // for numeric leaves.
-    const { app, api } = mountWithZod({ validationMode: 'lax' })
+    const { app, api } = mountWithZod({ strict: false })
     apps.push(app)
     expect(api.errors.email).toBeUndefined()
     expect(api.errors.password).toBeUndefined()
@@ -404,7 +404,7 @@ describe('initial validation seed — hydration takes precedence', () => {
     const state = createFormStore<Form>({
       formKey: 'hyd',
       schema: failingDefaultsSchema,
-      validationMode: 'strict',
+      strict: true,
       hydration: {
         form: { email: 'server@x.com', password: 'serverpw' },
         // Empty stores — hydration says the server saw a valid form.
@@ -458,7 +458,7 @@ describe('initial validation seed — hydration takes precedence', () => {
     const state = createFormStore<Form>({
       formKey: 'hyd2',
       schema: failingDefaultsSchema,
-      validationMode: 'strict',
+      strict: true,
       hydration: {
         form: { email: 'a@a', password: 'irrelevant' },
         schemaErrors: [[emailKey, onlyServerError]],

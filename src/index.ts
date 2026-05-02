@@ -119,7 +119,6 @@ export type {
   UseAbstractFormReturnType,
   UseFormConfiguration,
   ValidationError,
-  ValidationMode,
   ValidationResponse,
   ValidationResponseWithoutValue,
   WriteMeta,

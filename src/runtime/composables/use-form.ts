@@ -96,12 +96,12 @@ export function useForm<
   // Spread the full configuration so opt-in options (`onInvalidSubmit`,
   // `validateOn`, `debounceMs`, `persist`, `history`) reach useAbstractForm.
   // The explicit overrides below narrow schema / defaultValues to the
-  // shapes useAbstractForm expects. `key` and `validationMode` are
+  // shapes useAbstractForm expects. `key` and `strict` are
   // intentionally NOT re-listed — the spread carries them through, and
-  // writing `validationMode: configuration.validationMode ?? 'strict'`
-  // here would short-circuit the registry's app-level defaults
-  // (`createChemicalXForms({ defaults: { validationMode: 'lax' } })`).
-  // The library-level fallback to `'strict'` lives downstream in
+  // writing `strict: configuration.strict ?? true` here would
+  // short-circuit the registry's app-level defaults
+  // (`createChemicalXForms({ defaults: { strict: false } })`).
+  // The library-level fallback to `true` lives downstream in
   // `createFormStore`, where it can apply *after* the registry merge.
   return useAbstractForm<Form, GetValueFormType>({
     ...(configuration as UseFormConfiguration<

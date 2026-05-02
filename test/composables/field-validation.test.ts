@@ -38,7 +38,7 @@ function mountWith(options: { validateOn?: 'change' | 'blur' | 'submit'; debounc
         // strings — neither auto-marks blank (only numeric primitives
         // do), so `derivedBlankErrors` stays empty and each test can
         // observe the debounced run without confounding entries.
-        validationMode: 'lax',
+        strict: false,
         ...(options.validateOn !== undefined ? { validateOn: options.validateOn } : {}),
         ...(options.debounceMs !== undefined ? { debounceMs: options.debounceMs } : {}),
       } as Parameters<typeof useForm<typeof baseSchema>>[0])

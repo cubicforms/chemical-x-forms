@@ -26,7 +26,7 @@ describe('zod v4 adapter — fuzz over arbitrary supported schemas', () => {
     const adapter = zodAdapter(schema as z.ZodObject)('f')
     const result = adapter.getDefaultValues({
       useDefaultSchemaValues: true,
-      validationMode: 'lax',
+      strict: false,
     })
     expect(result.success).toBe(true)
     expect(result.data).toBeDefined()
@@ -43,7 +43,7 @@ describe('zod v4 adapter — fuzz over arbitrary supported schemas', () => {
       const adapter = zodAdapter(schema as z.ZodObject)('f')
       const initial = adapter.getDefaultValues({
         useDefaultSchemaValues: true,
-        validationMode: 'lax',
+        strict: false,
       })
       expect(initial.success).toBe(true)
       const validation = await adapter.validateAtPath(initial.data, undefined)
@@ -61,7 +61,7 @@ describe('zod v4 adapter — fuzz over arbitrary supported schemas', () => {
       // adapter ever produces errors here they must carry our key.
       const result = adapter.getDefaultValues({
         useDefaultSchemaValues: true,
-        validationMode: 'strict',
+        strict: true,
       })
       if (!result.success) {
         for (const err of result.errors) {

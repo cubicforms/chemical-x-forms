@@ -6,7 +6,6 @@ import type {
   DefaultValuesResponse,
   ValidateOn,
   ValidationError,
-  ValidationMode,
   WriteMeta,
 } from '../types/types-api'
 import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
@@ -471,7 +470,7 @@ export type CreateFormStoreOptions<F extends GenericForm, G extends GenericForm 
   readonly formKey: FormKey
   readonly schema: AbstractSchema<F, G>
   readonly defaultValues?: DeepPartial<WriteShape<F>> | undefined
-  readonly validationMode?: ValidationMode | undefined
+  readonly strict?: boolean | undefined
   readonly hydration?: FormStoreHydration | undefined
   /**
    * When per-field validation runs. Default `'change'`. See `ValidateOn`.
@@ -535,7 +534,7 @@ function isPathKeyUnder(existingKey: PathKey, parentPath: Path): boolean {
 export function createFormStore<F extends GenericForm, G extends GenericForm = F>(
   options: CreateFormStoreOptions<F, G>
 ): FormStore<F, G> {
-  const { formKey, schema, defaultValues, validationMode = 'strict', hydration } = options
+  const { formKey, schema, defaultValues, strict = true, hydration } = options
   const isSSR = options.isSSR === true
   const rememberVariants: boolean = options.rememberVariants !== false
   const fieldValidationMode: ValidateOn = options.validateOn ?? 'change'
@@ -589,7 +588,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   const schemaResponse: DefaultValuesResponse<F> = schema.getDefaultValues({
     useDefaultSchemaValues: true,
     constraints: completedConstraints,
-    validationMode,
+    strict,
   })
   const schemaInitialData = schemaResponse.data
 
@@ -786,10 +785,11 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     })
     // No hydration — seed schemaErrors from the construction-time
     // validation result IF the schema rejected the defaults AND the
-    // form was constructed in strict mode. Lax mode treats default
-    // values as "best-effort," so populating errors there would
-    // surprise consumers who explicitly opted out of strict checks.
-    if (validationMode === 'strict' && !schemaResponse.success) {
+    // form was constructed in strict mode. Non-strict mode treats
+    // default values as "best-effort," so populating errors there
+    // would surprise consumers who explicitly opted out via
+    // `strict: false`.
+    if (strict && !schemaResponse.success) {
       setAllSchemaErrors(schemaResponse.errors)
     }
   }
@@ -822,7 +822,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // work — sync-only schemas would otherwise pay a redundant
   // microtask + briefly flash `meta.isValidating: true` post-mount,
   // misrepresenting "validation is running" when nothing is.
-  if (!isSSR && validationMode === 'strict' && schema.needsAsyncValidation?.() === true) {
+  if (!isSSR && strict && schema.needsAsyncValidation?.() === true) {
     queueMicrotask(() => scheduleFieldValidation([], true /* immediate */))
   }
 
@@ -1569,7 +1569,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     const next = schema.getDefaultValues({
       useDefaultSchemaValues: true,
       constraints: nextDefaultValues ?? defaultValues,
-      validationMode,
+      strict,
     }).data
     // Replace form in one shot — applyFormReplacement will emit diffAndApply
     // patches and touch field records for every changed leaf.

@@ -113,11 +113,12 @@ export function zodAdapter<
           stripConfig: {
             stripZodEffects: true,
             stripDefaultValues: true,
-            // Lax strips refinements (so empty defaults pass); strict
-            // keeps them so the slim parse below surfaces refinement
-            // errors. Async refines are guarded by the try/catch
-            // below — they can't be surfaced synchronously regardless.
-            stripZodRefinements: (config.validationMode ?? 'lax') === 'lax',
+            // `strict: false` strips refinements (so empty defaults
+            // pass); strict keeps them so the slim parse below
+            // surfaces refinement errors. Async refines are guarded
+            // by the try/catch below — they can't be surfaced
+            // synchronously regardless.
+            stripZodRefinements: (config.strict ?? true) === false,
           },
         })
 
@@ -285,7 +286,7 @@ export function zodAdapter<
         const secondParse = slimSchema.safeParse(fixedData)
         const finalData = secondParse.success ? secondParse.data : fixedData
 
-        if ((config.validationMode ?? 'lax') === 'lax') {
+        if ((config.strict ?? true) === false) {
           return {
             data: finalData as Form,
             errors: undefined,

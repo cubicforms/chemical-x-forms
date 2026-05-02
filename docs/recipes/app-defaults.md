@@ -1,9 +1,10 @@
 # App-level defaults
 
-cx ships sensible library defaults (`fieldValidation: { on: 'change',
-debounceMs: 125 }`, `validationMode: 'strict'`, `onInvalidSubmit:
-'none'`) that fit most apps out of the box. Set app-wide overrides
-once via the plugin instead of repeating them at every `useForm` call.
+cx ships sensible library defaults (`validateOn: 'change'`,
+`debounceMs: 0`, `strict: true`, `coerce: true`,
+`rememberVariants: true`, `onInvalidSubmit: 'none'`) that fit most
+apps out of the box. Set app-wide overrides once via the plugin
+instead of repeating them at every `useForm` call.
 
 ## Setup
 
@@ -18,7 +19,7 @@ createApp(App)
   .use(
     createChemicalXForms({
       defaults: {
-        fieldValidation: { debounceMs: 100 },
+        debounceMs: 100,
         onInvalidSubmit: 'focus-first-error',
       },
     })
@@ -34,7 +35,7 @@ export default defineNuxtConfig({
   modules: ['@chemical-x/forms/nuxt'],
   chemicalX: {
     defaults: {
-      fieldValidation: { debounceMs: 100 },
+      debounceMs: 100,
       onInvalidSubmit: 'focus-first-error',
     },
   },
@@ -54,36 +55,33 @@ omitted, and the library's built-in default is the final fallback.
 
 ## Merge semantics
 
-| Option            | Merge                                                                      |
-| ----------------- | -------------------------------------------------------------------------- |
-| `validationMode`  | Per-form replaces default outright.                                        |
-| `onInvalidSubmit` | Per-form replaces default outright.                                        |
-| `history`         | Per-form replaces default outright (whole config object, not field-level). |
-| `fieldValidation` | **Field-level merge** — see below.                                         |
-
-`fieldValidation` is the only deep-merged option. It's small (`on` +
-`debounceMs`) and the use case is real: set `debounceMs` once for the
-whole app, override `on` per-form when needed.
+Every option resolves independently — set anything once at the app
+level, override anything per-form without losing the rest:
 
 ```ts
 // Plugin side
 createChemicalXForms({
-  defaults: { fieldValidation: { debounceMs: 100 } },
+  defaults: { validateOn: 'change', debounceMs: 100 },
 })
 
 // useForm calls
 useForm({ schema })
-// → fieldValidation: { on: 'change', debounceMs: 100 }
-//   (library default 'on' + app-level debounceMs)
+// → validateOn: 'change', debounceMs: 100 (app-level both)
 
-useForm({ schema, fieldValidation: { on: 'blur' } })
-// → fieldValidation: { on: 'blur', debounceMs: 100 }
-//   (per-form 'on' wins; app-level debounceMs carries over)
+useForm({ schema, validateOn: 'blur' })
+// → validateOn: 'blur', debounceMs: ignored
+//   (validateOn: 'blur' rejects debounceMs by type, the inherited
+//   100 is silently dropped)
 
-useForm({ schema, fieldValidation: { debounceMs: 50 } })
-// → fieldValidation: { on: 'change', debounceMs: 50 }
-//   (library default 'on' + per-form debounceMs)
+useForm({ schema, debounceMs: 25 })
+// → validateOn: 'change' (app-level), debounceMs: 25 (per-form wins)
 ```
+
+`validateOn` and `debounceMs` are flat top-level fields — there's no
+nested merge object anymore. The TS-level `ValidateOnConfig`
+discriminated union enforces that `debounceMs` is only valid when
+`validateOn` is `'change'` (or omitted); pairing it with `'blur'` /
+`'submit'` is a compile-time error.
 
 ## What's supported
 
@@ -91,10 +89,13 @@ useForm({ schema, fieldValidation: { debounceMs: 50 } })
 
 ```ts
 type ChemicalXFormsDefaults = {
-  validationMode?: 'strict' | 'lax'
+  strict?: boolean
+  validateOn?: 'change' | 'blur' | 'submit'
+  debounceMs?: number
   onInvalidSubmit?: 'none' | 'focus-first-error' | 'scroll-to-first-error' | 'both'
-  fieldValidation?: { on?: 'change' | 'blur' | 'none'; debounceMs?: number }
   history?: true | { max?: number }
+  rememberVariants?: boolean
+  coerce?: boolean | CoercionRegistry
 }
 ```
 
@@ -109,9 +110,9 @@ What's **not** supported (and why):
 
 ## Per-form `defaultValues`
 
-App-level defaults shape options like `validationMode` and
-`fieldValidation`. Per-form initial values live on each
-`useForm({ defaultValues })` call.
+App-level defaults shape options like `strict` and `validateOn`.
+Per-form initial values live on each `useForm({ defaultValues })`
+call.
 
 Three patterns:
 
@@ -172,7 +173,8 @@ import type { z } from 'zod'
 
 export function useAppForm<S extends z.ZodObject>(opts: Parameters<typeof cxUseForm<S>>[0]) {
   return cxUseForm({
-    fieldValidation: { on: 'change', debounceMs: 100 },
+    validateOn: 'change',
+    debounceMs: 100,
     ...opts,
   })
 }

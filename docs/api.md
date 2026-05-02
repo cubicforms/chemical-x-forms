@@ -37,16 +37,19 @@ const form = useForm({ schema, key: 'signup' })
 
 Options:
 
-| Field             | Type                                                                                                | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ----------------- | --------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `schema`          | `z.ZodType`                                                                                         | yes      | The Zod schema describing the form shape.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `key`             | `string`                                                                                            | no       | Form identity. Omit for one-off forms (runtime allocates a synthetic `__cx:anon:<id>` via `useId()`). Pass a string when you need cross-component lookup via `injectForm(key)`, shared state across call-sites, a stable `persist` storage-key default, or a recognisable DevTools label. Keys starting with `__cx:` are reserved for the library's internal synthetic-key namespace; passing one throws `ReservedFormKeyError`.                                                                                                                                                                                                                                                                                                           |
-| `defaultValues`   | `DeepPartial<DefaultValuesShape<Form>>`                                                             | no       | Constraints applied over schema defaults. Refinement-invalid leaves that satisfy the slim primitive type at their path (e.g. `'teal'` against `z.enum(['red','green','blue'])`, a 4-character string against `z.string().min(8)`) pass through unchanged so SSR / autosave rehydration can land partial-but-saved state as-is. Wrong-primitive leaves (a number where a string is expected) are still replaced by the schema default. Each primitive leaf may be the `unset` sentinel to mark the path displayed-empty at construction.                                                                                                                                                                                                    |
-| `validationMode`  | `'lax'` \| `'strict'`                                                                               | no       | Defaults to `'strict'` — defaults that fail the schema seed `schemaErrors` at construction. Pass `'lax'` to opt out (multi-step wizards, placeholder rows). See [Types](#types).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `onInvalidSubmit` | `'none'` \| `'focus-first-error'` \| `'scroll-to-first-error'` \| `'both'`                          | no       | What to do when submit fails validation. See [recipe](./recipes/focus-on-error.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `fieldValidation` | `{ on, debounceMs }`                                                                                | no       | Live field validation. Default `{ on: 'change', debounceMs: 125 }` — errors track live. Pass `{ on: 'none' }` to opt out (submit-only). See [recipe](./recipes/field-level-validation.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `persist`         | `FormStorageKind \| FormStorage \| { storage, key?, debounceMs?, include?, clearOnSubmitSuccess? }` | no       | Operational config for the persistence pipeline. Three input forms: a string shorthand (`'local'` / `'session'` / `'indexeddb'`), a custom `FormStorage` adapter passed directly, or the full options bag. Per-field opt-in lives at every `register('foo', { persist: true })` call site — this config alone never causes any field to persist. Storage keys carry the schema's fingerprint (`${base}:${fingerprint}`) so schema changes auto-invalidate old drafts; the orphan-cleanup pass on mount sweeps stale-fingerprint entries on the configured backend AND wipes any matching keys on the non-configured standard backends (cross-store cleanup). Malformed payloads are wiped on read. See [recipe](./recipes/persistence.md). |
-| `history`         | `true` \| `{ max?: number }`                                                                        | no       | Enable undo/redo. See [recipe](./recipes/undo-redo.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Field              | Type                                                                                                | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------ | --------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `schema`           | `z.ZodType`                                                                                         | yes      | The Zod schema describing the form shape.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `key`              | `string`                                                                                            | no       | Form identity. Omit for one-off forms (runtime allocates a synthetic `__cx:anon:<id>` via `useId()`). Pass a string when you need cross-component lookup via `injectForm(key)`, shared state across call-sites, a stable `persist` storage-key default, or a recognisable DevTools label. Keys starting with `__cx:` are reserved for the library's internal synthetic-key namespace; passing one throws `ReservedFormKeyError`.                                                                                                                                                                                                                                                                                                           |
+| `defaultValues`    | `DeepPartial<DefaultValuesShape<Form>>`                                                             | no       | Constraints applied over schema defaults. Refinement-invalid leaves that satisfy the slim primitive type at their path (e.g. `'teal'` against `z.enum(['red','green','blue'])`, a 4-character string against `z.string().min(8)`) pass through unchanged so SSR / autosave rehydration can land partial-but-saved state as-is. Wrong-primitive leaves (a number where a string is expected) are still replaced by the schema default. Each primitive leaf may be the `unset` sentinel to mark the path displayed-empty at construction.                                                                                                                                                                                                    |
+| `strict`           | `boolean`                                                                                           | no       | Defaults to `true` — defaults that fail the schema seed `schemaErrors` at construction. Pass `false` to opt out (multi-step wizards, placeholder rows).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `onInvalidSubmit`  | `'none'` \| `'focus-first-error'` \| `'scroll-to-first-error'` \| `'both'`                          | no       | What to do when submit fails validation. See [recipe](./recipes/focus-on-error.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `validateOn`       | `'change'` \| `'blur'` \| `'submit'`                                                                | no       | When per-field validation runs. Default `'change'` (every committed write). `'blur'` fires on focus-out; `'submit'` opts out of live validation entirely (submit is the only validator). See [recipe](./recipes/field-level-validation.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `debounceMs`       | `number`                                                                                            | no       | Milliseconds to wait after the last committed write before re-running validation. Default `0` (synchronous; no `setTimeout`). Only valid with `validateOn: 'change'` — TS enforces via `ValidateOnConfig`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `coerce`           | `boolean` \| `CoercionRegistry`                                                                     | no       | Schema-driven coercion of user-typed DOM values at the directive layer. Default `true` (built-in `string→number`, `string→boolean`). Pass `false` to disable, or a custom `CoercionRegistry` to replace. See [recipe](./recipes/coerce.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `rememberVariants` | `boolean`                                                                                           | no       | Whether to remember each discriminated-union variant's typed state across switches. Default `true` — switching back to a previous variant restores its prior subtree. Set `false` to drop the outgoing variant. See [recipe](./recipes/discriminated-unions.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `persist`          | `FormStorageKind \| FormStorage \| { storage, key?, debounceMs?, include?, clearOnSubmitSuccess? }` | no       | Operational config for the persistence pipeline. Three input forms: a string shorthand (`'local'` / `'session'` / `'indexeddb'`), a custom `FormStorage` adapter passed directly, or the full options bag. Per-field opt-in lives at every `register('foo', { persist: true })` call site — this config alone never causes any field to persist. Storage keys carry the schema's fingerprint (`${base}:${fingerprint}`) so schema changes auto-invalidate old drafts; the orphan-cleanup pass on mount sweeps stale-fingerprint entries on the configured backend AND wipes any matching keys on the non-configured standard backends (cross-store cleanup). Malformed payloads are wiped on read. See [recipe](./recipes/persistence.md). |
+| `history`          | `true` \| `{ max?: number }`                                                                        | no       | Enable undo/redo. See [recipe](./recipes/undo-redo.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 ### `zodAdapter(schema)`
 
@@ -254,10 +257,7 @@ already-extracted value plus the `RegisterValue`, and decides what
 </script>
 
 <template>
-  <input
-    v-register="form.register('username')"
-    @update:registerValue="uppercaseAssigner"
-  />
+  <input v-register="form.register('username')" @update:registerValue="uppercaseAssigner" />
 </template>
 ```
 
@@ -310,11 +310,9 @@ directive's assigner, and applies uniformly across every
 ```ts
 import type { RegisterTransform } from '@chemical-x/forms'
 
-const trim: RegisterTransform = (v) =>
-  typeof v === 'string' ? v.trim() : v
+const trim: RegisterTransform = (v) => (typeof v === 'string' ? v.trim() : v)
 
-const lowercase: RegisterTransform = (v) =>
-  typeof v === 'string' ? v.toLowerCase() : v
+const lowercase: RegisterTransform = (v) => (typeof v === 'string' ? v.toLowerCase() : v)
 
 // In setup
 const rv = form.register('email', { transforms: [trim, lowercase] })
@@ -371,7 +369,7 @@ call in try/catch; on throw OR Promise return:
   snapping the input to the prior value (same UX as the
   documented "rejection" pattern).
 - A `console.error` is logged. In dev (`process.env.NODE_ENV !==
-  'production'`) the message includes the path, transform index,
+'production'`) the message includes the path, transform index,
   transform `.name` (when set), the original error, and a
   remediation hint. In prod the message is a single fixed string
   with NONE of those — transform bodies can construct error
@@ -716,10 +714,10 @@ without optional-chaining.
 
 #### Surfaces
 
-| Member                     | Signature                                                                                                                                                            | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `setValue(value)`          | `<V extends SetValuePayload<WriteShape<Form>, WriteShape<Form>>>(value: V) => boolean`                                                                               | Replace the whole form. Callback form's `prev` widens via `WriteShape<Form>` (matching what's actually storable). Array `prev.posts[N]` reads get `\| undefined` from the consumer's `noUncheckedIndexedAccess: true`; iteration over `prev.posts` stays strict. Returns `false` if the slim-primitive gate rejects. Programmatic — does NOT trigger persistence.                                                                            |
-| `setValue(path, value)`    | `<P extends FlatPath<Form>, V extends SetValuePayload<WriteShape<NestedType<Form, P>>, NonNullable<WriteShape<NestedType<Form, P>>>>>(path: P, value: V) => boolean` | Replace a single leaf or sub-tree. Callback form's `prev` is `NonNullable<WriteShape<NestedType<Form, P>>>` — runtime auto-defaults missing slots before the callback fires. Returns `false` on slim-primitive rejection. Programmatic — does NOT trigger persistence.                                                                                                                                                                       |
+| Member                     | Signature                                                                                                                                                            | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setValue(value)`          | `<V extends SetValuePayload<WriteShape<Form>, WriteShape<Form>>>(value: V) => boolean`                                                                               | Replace the whole form. Callback form's `prev` widens via `WriteShape<Form>` (matching what's actually storable). Array `prev.posts[N]` reads get `\| undefined` from the consumer's `noUncheckedIndexedAccess: true`; iteration over `prev.posts` stays strict. Returns `false` if the slim-primitive gate rejects. Programmatic — does NOT trigger persistence.                                                                                                                                                                                                                                     |
+| `setValue(path, value)`    | `<P extends FlatPath<Form>, V extends SetValuePayload<WriteShape<NestedType<Form, P>>, NonNullable<WriteShape<NestedType<Form, P>>>>>(path: P, value: V) => boolean` | Replace a single leaf or sub-tree. Callback form's `prev` is `NonNullable<WriteShape<NestedType<Form, P>>>` — runtime auto-defaults missing slots before the callback fires. Returns `false` on slim-primitive rejection. Programmatic — does NOT trigger persistence.                                                                                                                                                                                                                                                                                                                                |
 | `register(path, options?)` | `(path: P, options?: RegisterOptions) => RegisterValue<NestedReadType<WriteShape<Form>, P>>`                                                                         | Produces the binding the `v-register` directive consumes. `innerRef`'s read type widens via `WriteShape<Form>` (matches what's storable) and carries `\| undefined` at array-crossing paths; the directive renders `undefined` as empty correctly. `options.persist: true` opts the field into persistence; `options.acknowledgeSensitive: true` overrides the sensitive-name heuristic; `options.transforms: [...]` runs a sync pipeline on user input before it lands in form state (see [Transforms](#transforms--registerpath--transforms-)). See [persistence recipe](./recipes/persistence.md). |
 
 ### Validation + submission
@@ -829,8 +827,8 @@ opt-in model these APIs sit on top of.
 | `redo()` | `() => boolean` | Replay a previously-undone snapshot. |
 
 `undo()` and `redo()` are top-level methods. The matching flags
-(`state.canUndo`, `state.canRedo`, `state.historySize`) live on the
-`state` bundle above. Inert stubs when `history` isn't
+(`meta.canUndo`, `meta.canRedo`, `meta.historySize`) live on the
+`meta` bundle above. Inert stubs when `history` isn't
 configured — consistent API shape, zero overhead.
 
 ### Field arrays (typed)
@@ -880,6 +878,9 @@ import type {
   ApiErrorEnvelope,
   ArrayItem,
   ArrayPath,
+  CoercionEntry,
+  CoercionRegistry,
+  CoercionResult,
   CurrentValueContext,
   CurrentValueWithContext,
   CustomDirectiveRegisterAssignerFn,
@@ -890,11 +891,11 @@ import type {
   FieldStateLeaf,
   FieldStateMap,
   FieldStateMapEntry,
-  FieldValidationConfig,
-  FieldValidationMode,
   FlatPath,
   FormErrorRecord,
+  FormErrorsSurface,
   FormKey,
+  FormMeta,
   FormStorage,
   FormStorageKind,
   GenericForm,
@@ -916,6 +917,7 @@ import type {
   ReactiveValidationStatus,
   RegisterDirective,
   RegisterFlatPath,
+  RegisterTransform,
   RegisterValue,
   SetValueCallback,
   SetValuePayload,
@@ -925,8 +927,9 @@ import type {
   Unset,
   UseAbstractFormReturnType,
   UseFormConfiguration,
+  ValidateOn,
+  ValidateOnConfig,
   ValidationError,
-  ValidationMode,
   ValidationResponse,
   ValidationResponseWithoutValue,
   WriteShape,
@@ -1001,10 +1004,35 @@ string; formKey: FormKey }`.
   `FieldStateLeaf`, plus `meta` (`MetaTrackerValue`). Returned by no
   current public API directly; useful when type-narrowing or
   building higher-order helpers.
-- **`ValidationMode`** — `'lax' | 'strict'`. Defaults to `'strict'` —
-  the data layer reports schema errors immediately when defaults fail.
-  Use `'lax'` to opt out (multi-step wizards, placeholder rows in field
-  arrays, any case where mounting with invalid data is expected).
+- **`ValidateOn`** — `'change' | 'blur' | 'submit'`. The trigger for
+  per-field validation. Default `'change'`. `'submit'` opts out of
+  live validation entirely (submit is the only validator).
+- **`ValidateOnConfig`** — discriminated union over `validateOn` that
+  enforces `debounceMs` is only valid with `'change'`. The public
+  `useForm` signature intersects `UseFormConfiguration` with this so
+  pairing `debounceMs` with `'blur'` / `'submit'` is a TS error
+  rather than a silent runtime drop.
+- **`RegisterTransform`** — `(value: unknown) => unknown`. Element of
+  `register(path, { transforms: [...] })`. Generic-erased so a
+  personal library of transforms plugs into any path. See
+  [Transforms](#transforms--registerpath--transforms-).
+- **`CoercionEntry<I, O>`** — `{ input: I; output: O; transform: (value) => CoercionResult<O> }`
+  where `I`, `O` extend `SlimPrimitiveKind`. One coercion rule. Author
+  with `defineCoercion(...)` for narrowed `transform` parameter typing.
+- **`CoercionRegistry`** — `readonly CoercionEntry[]`. The shape
+  consumed by `useForm({ coerce })` and `defaults.coerce`. Spread
+  `defaultCoercionRules` to extend rather than replace.
+- **`CoercionResult<O>`** — `{ coerced: true; value: O } | { coerced: false }`.
+  Returned by a `CoercionEntry.transform`. Returning `{ coerced: false }`
+  signals "this rule doesn't apply" — the write passes through
+  untouched.
+- **`FormMeta`** — the shape of `form.meta`: form-level flags
+  (`isDirty`, `isValid`, `isSubmitting`, `isValidating`), counters
+  (`submitCount`, `historySize`), the flat `errors` aggregate, and
+  the per-mount `instanceId`.
+- **`FormErrorsSurface<F>`** — the shape of `form.errors`. Drillable
+  callable Proxy; per-leaf `ValidationError[] | undefined`. Replaces
+  the pre-0.14 flat-record shape `Partial<Record<FlatPath<F>, ValidationError[]>>`.
 - **`AbstractSchema`** — the schema contract (6 methods:
   `fingerprint`, `getDefaultValues`, `getDefaultAtPath`,
   `getSchemasAtPath`, `validateAtPath`, `getSlimPrimitiveTypesAtPath`).

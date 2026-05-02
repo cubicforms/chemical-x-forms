@@ -219,6 +219,10 @@ export function buildPersistedPayload<Form>(
  * immediately, `cancel` drops it. Unlike a library `debounce`, this
  * one awaits the underlying async write inside `flush` so callers
  * can await full completion on consumer teardown.
+ *
+ * `debounceMs: 0` is the off switch — `schedule()` fires the write
+ * synchronously rather than queueing through `setTimeout(fn, 0)`
+ * (which is a macrotask the browser clamps to ~4 ms anyway).
  */
 export function createDebouncedWriter(
   write: () => Promise<void>,

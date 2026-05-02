@@ -29,7 +29,7 @@ as `errors` via a two-step pattern: parse the payload with
         if (result.ok) form.setFieldErrors(result.errors)
         return
       }
-      throw err // Other errors flow through to `state.submitError`.
+      throw err // Other errors flow through to `meta.submitError`.
     }
   })
 </script>
@@ -218,7 +218,7 @@ user-error store; merging is structural.
 ## Non-field errors
 
 Some server errors aren't tied to a field — rate limits, provider
-outages. They belong in `state.submitError`, not `errors`:
+outages. They belong in `meta.submitError`, not `errors`:
 
 ```ts
 const onSubmit = form.handleSubmit(async (values) => {

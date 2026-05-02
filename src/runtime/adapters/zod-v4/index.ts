@@ -36,9 +36,10 @@ export type { ZodKind } from './introspect'
  * })
  * ```
  *
- * Returns a form API exposing `register`, `getValue`, `setValue`,
- * `handleSubmit`, `state`, field-array helpers, and more. See
- * `UseAbstractFormReturnType` for the full surface.
+ * Returns a form API exposing `register`, `values`, `errors`,
+ * `fields`, `setValue`, `handleSubmit`, `meta`, field-array
+ * helpers, and more. See `UseAbstractFormReturnType` for the full
+ * surface.
  *
  * For Zod v3, import from `@chemical-x/forms/zod-v3` instead.
  */

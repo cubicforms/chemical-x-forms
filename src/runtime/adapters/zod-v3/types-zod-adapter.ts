@@ -1,5 +1,6 @@
 import type { z } from 'zod-v3'
 import type {
+  CoercionRegistry,
   FormKey,
   HistoryConfig,
   OnInvalidSubmitPolicy,
@@ -32,6 +33,8 @@ export type UseFormConfigurationWithZod<
   onInvalidSubmit?: OnInvalidSubmitPolicy
   persist?: PersistConfig
   history?: HistoryConfig
+  rememberVariants?: boolean
+  coerce?: boolean | CoercionRegistry
 }
 
 /**

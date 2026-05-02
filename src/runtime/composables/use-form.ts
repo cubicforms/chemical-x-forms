@@ -52,7 +52,7 @@ export function useForm<Form extends GenericForm, GetValueFormType extends Gener
  * ```
  *
  * Returns a form API exposing `register`, `values`, `errors`,
- * `fields`, `setValue`, `handleSubmit`, `state`, field-array
+ * `fields`, `setValue`, `handleSubmit`, `meta`, field-array
  * helpers, and more. See `UseAbstractFormReturnType` for the full
  * surface.
  *

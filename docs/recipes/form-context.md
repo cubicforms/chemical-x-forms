@@ -84,11 +84,11 @@ different branch of the component tree:
     /* … */
   }
 
-  const { state, handleSubmit } = injectForm<Form>('signup')
+  const { meta, handleSubmit } = injectForm<Form>('signup')
 </script>
 
 <template>
-  <button :disabled="!state.isDirty || state.isSubmitting" @click="handleSubmit(onSave)()">
+  <button :disabled="!meta.isDirty || meta.isSubmitting" @click="handleSubmit(onSave)()">
     Save
   </button>
 </template>
@@ -184,5 +184,5 @@ directly. `injectForm` is a small reactive overhead you don't
 need when there's nothing to share.
 
 Reach for it when field components are reusable across forms, or
-when a distant component needs read-only status (`state.isDirty`,
-`state.isSubmitting`, `errors`) of a form it doesn't own.
+when a distant component needs read-only status (`meta.isDirty`,
+`meta.isSubmitting`, `errors`) of a form it doesn't own.

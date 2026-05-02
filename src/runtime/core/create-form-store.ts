@@ -236,7 +236,7 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    * Merged read — returns `[...schemaErrors[path], ...userErrors[path]]`.
    * Schema errors come first (structural validation before business logic),
    * matching the iteration order for `getFirstErrorElement` and the
-   * top-level `fieldErrors` view.
+   * top-level `errors` drillable Proxy.
    */
   getErrorsForPath(path: Path): ValidationError[]
 
@@ -632,7 +632,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // Errors are split by source so each writer touches exactly one slot.
   // Schema validation owns `schemaErrors`; the `setFieldErrors*` APIs own
   // `userErrors`. The two stores merge on read via `getErrorsForPath` and
-  // the top-level `fieldErrors` view in build-form-api.
+  // the top-level `errors` drillable Proxy in build-form-api.
   const schemaErrors = reactive(new Map<PathKey, ValidationError[]>()) as Map<
     PathKey,
     ValidationError[]
@@ -1343,7 +1343,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // Two source-segregated stores: `schemaErrors` (validation-owned) and
   // `userErrors` (API-injected). Writers below are strict — each function
   // touches exactly one Map. The merged view is exposed via
-  // `getErrorsForPath` and the top-level `fieldErrors` computed.
+  // `getErrorsForPath` and the top-level `errors` drillable Proxy.
 
   /**
    * Append every entry in `entries` to its target Map at the canonical
@@ -1544,9 +1544,9 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       // a field is currently focused we keep whatever value it held.
       touched: focused ? (fields.get(key)?.touched ?? null) : true,
     })
-    // On blur (focused → false), `fieldValidation: { on: 'blur' }` fires
-    // an immediate (no-debounce) validation for this path. Ignored for
-    // change/none modes so behaviour matches the declared config.
+    // On blur (focused → false), `validateOn: 'blur'` fires an
+    // immediate (no-debounce) validation for this path. Ignored for
+    // change/submit modes so behaviour matches the declared config.
     if (!focused && fieldValidationMode === 'blur') {
       scheduleFieldValidation(path, true /* immediate */)
     }

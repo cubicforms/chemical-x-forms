@@ -85,7 +85,7 @@ It catches stale `form.values.contacts[N]` reads at compile time. Nuxt 3 / 4 set
     <input v-register="form.register('password')" type="password" placeholder="Password" />
     <small v-if="form.errors.password?.[0]">{{ form.errors.password[0].message }}</small>
 
-    <button :disabled="form.state.isSubmitting">Sign up</button>
+    <button :disabled="form.meta.isSubmitting">Sign up</button>
   </form>
 </template>
 ```
@@ -95,7 +95,7 @@ It catches stale `form.values.contacts[N]` reads at compile time. Nuxt 3 / 4 set
 - **`form.values`** — current values. `form.values.email`, `form.values.address.city`.
 - **`form.errors`** — per-field errors, keyed by dotted path. `form.errors.email?.[0]?.message`.
 - **`form.fields`** — per-field flags (`dirty`, `touched`, `errors`, `blank`, …). `form.fields.email.dirty`.
-- **`form.state`** — form-level flags (`isSubmitting`, `isValid`, `canUndo`, …).
+- **`form.meta`** — form-level flags + counters (`isSubmitting`, `isValid`, `canUndo`, `submitCount`, the flat `meta.errors` aggregate, the per-mount `instanceId`, …).
 - **`form.register(path)`** — typed two-way binding; pair with `v-register` on `<input>` / `<textarea>` / `<select>`.
 - **`form.handleSubmit(onValid, onInvalid?)`** — runs validation, dispatches. The valid callback receives the strict zod-inferred type.
 - **`form.setValue(path, value)`**, **`form.reset()`**, field-array helpers, undo / redo, persistence — see the [API reference](./docs/api.md).
@@ -103,7 +103,10 @@ It catches stale `form.values.contacts[N]` reads at compile time. Nuxt 3 / 4 set
 ## Features
 
 - **Schema-driven types** — every path, value, and error is inferred from the schema; no `any`.
-- **Live validation** — debounced `'change'` by default; `'blur'` and `'none'` available; async refinements await before submit dispatches.
+- **Live validation** — `validateOn: 'change'` by default with synchronous `debounceMs: 0`; `'blur'` and `'submit'` (opt-out) modes available; async refinements await before submit dispatches.
+- **Schema-driven coercion** — string DOM input → schema's typed slot (`string→number`, `string→boolean`) at the directive layer. Default-on; pass `useForm({ coerce: false })` to disable or a custom `CoercionRegistry` to extend.
+- **Register transforms** — `register('email', { transforms: [trim, lowercase] })` runs sync user-input normalization before storage commit. See [recipe](./docs/recipes/transforms.md).
+- **Discriminated-union variant memory** — switching a discriminator (`notify.channel: 'email' → 'sms' → 'email'`) restores the previous variant's typed subtree by default. Set `useForm({ rememberVariants: false })` to drop on switch.
 - **Field arrays** — `append` / `prepend` / `insert` / `remove` / `swap` / `move` / `replace`, fully typed at the call site.
 - **Drafts + undo / redo** — per-field opt-in persistence (`localStorage` / `sessionStorage` / IndexedDB / [custom backend](./docs/recipes/persistence.md#picking-a-backend)) and a bounded undo stack.
 - **Server errors** — `parseApiErrors(payload)` normalises a `{ message, code }[]` wire format; pair with `form.setFieldErrors(...)`. User errors survive schema revalidation.

@@ -9,7 +9,7 @@
  *   import { useForm } from '@chemical-x/forms/zod'
  *   import { z } from 'zod'
  *
- *   const { register, handleSubmit, fieldErrors } = useForm({
+ *   const { register, handleSubmit, errors } = useForm({
  *     schema: z.object({ email: z.email() }),
  *     key: 'signup',
  *   })

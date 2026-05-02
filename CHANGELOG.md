@@ -2,6 +2,87 @@
 
 ## Unreleased
 
+- **Breaking — `useForm` validation config flattens.** The nested
+  `fieldValidation: { on, debounceMs }` object is gone; both fields
+  move to the top level as `validateOn` and `debounceMs`. The third
+  trigger renames `'none'` → `'submit'` (submit IS the validator;
+  the new name reads more directly). The `debounceMs` default flips
+  `125` → `0` (synchronous; no `setTimeout` indirection — `0` is the
+  off-switch). `debounceMs` is now type-gated to `validateOn:
+  'change'` via the discriminated `ValidateOnConfig` union; pairing
+  it with `'blur'` / `'submit'` is a TS error rather than a silent
+  runtime drop. Type renames: `FieldValidationConfig`,
+  `FieldValidationMode` are deleted; new types are `ValidateOn`,
+  `ValidateOnConfig`. Migration in
+  [migration guide](./docs/migration/0.13-to-0.14.md).
+
+- **Breaking — `validationMode: 'strict' | 'lax'` → `strict: boolean`.**
+  String-literal config flattens to a boolean. Default is `true`
+  (previously `'strict'`). The `ValidationMode` type is deleted (no
+  alias; pre-1.0 clean replace). The v3 adapter's previously-inconsistent
+  `undefined` semantics standardize to match v4: `undefined` `strict`
+  now means strict everywhere (was `'lax'`-equivalent in the v3 path
+  pre-rename). Forms using the v3 adapter without an explicit
+  override now seed construction-time validation errors and keep
+  refinements in slim defaults; pass `strict: false` to opt back
+  into the old `'lax'`-equivalent behaviour.
+
+- **Breaking — useForm return shape rewritten around drillable
+  proxies + `meta`.** `form.state` → `form.meta` (plus a new
+  `meta.errors` flat aggregate and per-mount `meta.instanceId`).
+  `form.errors` / `form.values` / `form.fields` become leaf-aware
+  callable Proxies (drill via dot/bracket OR call dynamically;
+  single-bracket dotted access is intentionally NOT supported).
+  `useFormContext` → `injectForm`. `FormState` → `FormMeta`.
+  `FormFieldErrors` → `FormErrorsSurface`. Full migration in
+  [migration guide](./docs/migration/0.13-to-0.14.md).
+
+- **New — schema-driven coercion** (`useForm({ coerce })`).
+  User-typed DOM values get coerced to the schema's slim type at
+  the directive layer — `string→number` and `string→boolean` by
+  default. Pass `false` to disable, or a `CoercionRegistry` to
+  replace the built-in rules. `defineCoercion(...)` narrows
+  `transform` parameter typing for custom rules. Programmatic
+  writes (`form.setValue`, `setValueWithInternalPath`) are NEVER
+  coerced — coercion is user-input-only. New exports:
+  `defaultCoercionRules`, `defineCoercion`, `CoercionEntry`,
+  `CoercionRegistry`, `CoercionResult`. See
+  [recipe](./docs/recipes/coerce.md).
+
+- **New — register transforms** (`register(path, { transforms: [...] })`).
+  Sync pure-function pipeline that runs AFTER directive modifiers
+  (`.lazy` / `.trim` / `.number`) and BEFORE the assigner. Useful
+  for trim / lowercase / mask / clamp normalisations. New export:
+  `RegisterTransform = (value: unknown) => unknown`. Generic-erased
+  so a personal library of transforms plugs into any path. See
+  [recipe](./docs/recipes/transforms.md).
+
+- **New — discriminated-union variant memory** (`useForm({ rememberVariants })`).
+  Switching a DU variant (`notify.channel: 'email' → 'sms' →
+  'email'`) restores the previous variant's typed subtree by
+  default. Default `true`; pass `false` to drop the outgoing
+  variant on every switch. Memory is in-memory only and does not
+  survive reload — persisted state restores values on hydration,
+  but variant memory starts empty. `reset()` clears all memory;
+  `resetField(path)` clears entries under `path`. See
+  [recipe](./docs/recipes/discriminated-unions.md).
+
+- **Fix — DOM force-sync after default assigner.** When a transform
+  or coerce produces a value identical to current storage, the
+  diff-apply layer skipped the patch (no semantic change → no
+  reactive trigger → no render), leaving the DOM stranded at the
+  user-typed text. The directive now imperatively syncs the DOM
+  to storage after the default assigner runs across every variant
+  (text / checkbox / radio / select). Custom assigners
+  (`@update:registerValue`) keep ownership — the force-sync is
+  gated on `isDefaultAssigner`.
+
+- **Fix — `debounceMs: 0` skips `setTimeout` entirely.** Both the
+  field-validation debouncer and the persistence debouncer
+  (`createDebouncedWriter`) treat `0` as the off-switch. Pre-fix
+  they fell through to `setTimeout(fn, 0)` (next macrotask, browser
+  clamps to ~4 ms); now they fire synchronously.
+
 - **Persistence hydration now revalidates against the rehydrated
   value.** Pre-fix `wirePersistence` swapped in the persisted form
   via `applyFormReplacement` and stopped — sync errors stayed stale

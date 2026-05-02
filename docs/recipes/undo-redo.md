@@ -16,16 +16,16 @@ useForm({ schema, key: 'signup', history: { max: 200 } })
 
 ## API
 
-| Member              | Type            | What it does                                                            |
-| ------------------- | --------------- | ----------------------------------------------------------------------- |
-| `undo()`            | `() => boolean` | Revert to the previous snapshot. `false` at baseline (nothing to undo). |
-| `redo()`            | `() => boolean` | Replay a previously-undone snapshot. `false` when nothing's queued.     |
-| `state.canUndo`     | `boolean`       | Gate an "Undo" button on this.                                          |
-| `state.canRedo`     | `boolean`       | Gate a "Redo" button on this.                                           |
-| `state.historySize` | `number`        | Total snapshots across both stacks — useful for debug overlays.         |
+| Member             | Type            | What it does                                                            |
+| ------------------ | --------------- | ----------------------------------------------------------------------- |
+| `undo()`           | `() => boolean` | Revert to the previous snapshot. `false` at baseline (nothing to undo). |
+| `redo()`           | `() => boolean` | Replay a previously-undone snapshot. `false` when nothing's queued.     |
+| `meta.canUndo`     | `boolean`       | Gate an "Undo" button on this.                                          |
+| `meta.canRedo`     | `boolean`       | Gate a "Redo" button on this.                                           |
+| `meta.historySize` | `number`        | Total snapshots across both stacks — useful for debug overlays.         |
 
 `undo()` and `redo()` are top-level methods; the three flags live
-on the `state` reactive bundle alongside the rest of the form-level
+on the `meta` reactive bundle alongside the rest of the form-level
 aggregates. When `history` isn't configured, all five members are
 still present but inert: methods return `false`, flags read `false`
 / `0`. Templates don't need conditional logic.
@@ -36,7 +36,7 @@ Not wired by default — do it in a line:
 
 ```vue
 <script setup lang="ts">
-  const { undo, redo, state } = useForm({
+  const { undo, redo, meta } = useForm({
     schema,
     key: 'editor',
     history: true,
@@ -52,8 +52,8 @@ Not wired by default — do it in a line:
 
 <template>
   <div @keydown="onKeydown">
-    <button :disabled="!state.canUndo" @click="undo">Undo</button>
-    <button :disabled="!state.canRedo" @click="redo">Redo</button>
+    <button :disabled="!meta.canUndo" @click="undo">Undo</button>
+    <button :disabled="!meta.canRedo" @click="redo">Redo</button>
     <!-- …form fields… -->
   </div>
 </template>
@@ -69,7 +69,7 @@ What's NOT snapshotted:
 - **Field records** (touched / focused / blurred / isConnected) —
   UI interaction history, it shouldn't rewind. A field that was
   touched stays touched.
-- **Submission lifecycle** (`state.submitCount`, `state.submitError`).
+- **Submission lifecycle** (`meta.submitCount`, `meta.submitError`).
 - **Validation in-flight state**.
 
 ## What pushes a snapshot

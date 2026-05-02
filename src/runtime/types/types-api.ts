@@ -831,7 +831,7 @@ export type UseFormConfiguration<
    * - `true` (default): the schema is run against the derived
    *   defaults immediately; any failures populate `form.errors` from
    *   the first frame. The UI decides when to *show* errors — gate
-   *   on `state.touched`, `state.submitCount`, etc.
+   *   on `form.fields.<path>.touched`, `form.meta.submitCount`, etc.
    * - `false`: refinements are stripped during defaults derivation
    *   and construction-time validation is skipped. Useful for
    *   multi-step wizards, field arrays seeded with placeholder

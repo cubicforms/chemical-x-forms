@@ -1,4 +1,4 @@
-# Contributing to `@chemical-x/forms`
+# Contributing to `decant`
 
 Short-form guide. The canonical source of truth is the codebase —
 everything below leads you to the file that actually does the thing.

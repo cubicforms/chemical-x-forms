@@ -10,7 +10,7 @@ as `errors` via a two-step pattern: parse the payload with
 
 ```vue
 <script setup lang="ts">
-  import { useForm, parseApiErrors } from '@chemical-x/forms'
+  import { useForm, parseApiErrors } from 'decant'
   import { z } from 'zod'
 
   const schema = z.object({
@@ -145,7 +145,7 @@ Legacy string entries (`{ email: 'taken' }`), entries missing
 ## Branching on `code`
 
 ```ts
-import { CxErrorCode } from '@chemical-x/forms'
+import { CxErrorCode } from 'decant'
 
 for (const err of form.errors.email ?? []) {
   if (err.code === 'api:duplicate-email') {

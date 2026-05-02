@@ -647,6 +647,40 @@ const vRegisterText: RegisterTextCustomDirective = {
         if (isRegisterValue(value)) value.lastTypedForm.value = typedString
       }
       el[assignKey]?.(domValue)
+      // After the default assigner runs, force-sync the DOM when
+      // storage diverges from the post-cast/post-trim `domValue`.
+      // Two cases produce no Vue re-render and so leave the
+      // imperative `beforeUpdate` DOM-from-storage sync stranded:
+      //   1. A `transforms` pipeline mutated the write to a value
+      //      identical to current storage (a clamp at the cap, an
+      //      idempotent normalize, a coerce that re-emits the prior
+      //      stored shape) — `setValueWithInternalPath` produces no
+      //      patch, no reactive trigger, no render.
+      //   2. The slim-primitive gate (or a transform-throw) silently
+      //      rejected the write — storage stays at the prior value,
+      //      again no render.
+      // Either way the DOM keeps the user's raw typed text divorced
+      // from storage. Comparing post-cast `domValue` (not the raw
+      // typed string) preserves the typed-form contract: typing
+      // `1e2` against a number schema casts to 100, storage updates
+      // to 100, post-cast `domValue === storage`, no force-sync —
+      // the user keeps seeing `1e2` mid-typing.
+      //
+      // Gated on `isDefaultAssigner` because custom assigners
+      // (`@update:registerValue`, pre-installed `el[assignKey]`)
+      // own their own DOM/storage relationship — they may write to
+      // a different store, defer / batch / debounce, or intentionally
+      // not update `innerRef.value`. The default assigner's contract
+      // ("a successful write reflects in `innerRef.value` immediately")
+      // is what makes the post-write storage comparison meaningful.
+      if (isRegisterValue(value) && isDefaultAssigner(el[assignKey])) {
+        const storage = value.innerRef.value
+        if (storage !== domValue) {
+          const display = storage == null ? '' : String(storage)
+          if (el.value !== display) el.value = display
+          if (castToNumber) value.lastTypedForm.value = null
+        }
+      }
     })
     if (trim === true || castToNumber) {
       addEventListener(el, 'change', () => {
@@ -872,12 +906,23 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
       } else {
         assign?.(getCheckboxValue(el, checked))
       }
+      // After the default assigner runs, force-sync `el.checked` to
+      // current storage. Catches the no-op-write case: a transform
+      // mapped the click's value to current storage (e.g. an always-
+      // false transform on an already-false checkbox) — no patch, no
+      // render, no `beforeUpdate` setChecked. Without this the DOM
+      // stays at the user's click state, divorced from storage.
+      // Skipped for custom assigners (they own DOM/storage sync).
+      if (isRegisterValue(value) && isDefaultAssigner(el[assignKey])) {
+        setChecked(el, value)
+        el._lastAppliedModel = value.innerRef.value
+      }
     })
   },
   // set initial checked on mount to wait for true-value/false-value
-  mounted(el, binding, vnode) {
-    setChecked(el, binding, vnode)
-    if (isRegisterValue(binding.value)) el._lastAppliedModel = binding.value.innerRef.value
+  mounted(el, { value }) {
+    setChecked(el, value)
+    if (isRegisterValue(value)) el._lastAppliedModel = value.innerRef.value
   },
   // Skip the DOM sync when the model is identity-unchanged from the
   // last application. Pre-fix the scalar branch in `setChecked`
@@ -898,12 +943,12 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
     if (!isRegisterValue(binding.value)) return
     const currentModel = binding.value.innerRef.value
     if (el._lastAppliedModel === currentModel) return
-    setChecked(el, binding, vnode)
+    setChecked(el, binding.value)
     el._lastAppliedModel = currentModel
   },
 }
 
-function setChecked(el: HTMLInputElement, { value }: DirectiveBinding, _vnode: VNode) {
+function setChecked(el: HTMLInputElement, value: unknown): void {
   if (!isRegisterValue(value)) return
 
   const originalValue = value.innerRef.value
@@ -956,6 +1001,17 @@ const vRegisterRadio: RegisterRadioCustomDirective = {
     addEventListener(el, 'change', () => {
       if (shouldBailListener(el)) return
       el[assignKey]?.(getValue(el))
+      // After the default assigner runs, force-sync `el.checked` to
+      // current storage. Catches the no-op-write case where a
+      // transform maps the click's value to current storage — no
+      // patch, no render, no `beforeUpdate` sync. Skipped for custom
+      // assigners (they own DOM/storage sync).
+      if (isRegisterValue(value) && isDefaultAssigner(el[assignKey])) {
+        const currentModel = value.innerRef.value
+        const target = looseEqual(currentModel, applyCoerce(getValue(el), value))
+        if (el.checked !== target) el.checked = target
+        el._lastAppliedModel = currentModel
+      }
     })
   },
   // Initial checked-state sync runs in `mounted`, NOT `created` —
@@ -1024,6 +1080,17 @@ const vRegisterSelect: RegisterSelectCustomDirective = {
         void nextTick(() => {
           el._assigning = false
         })
+      }
+      // After the default assigner runs, force-sync the `<select>`
+      // selection to current storage. Catches the no-op-write case:
+      // a transform mapped the user's pick to current storage (e.g.
+      // always-fixed transform) — no patch, no render, no `updated`
+      // setSelected. Without this the DOM stays at the user's
+      // selection, divorced from storage. Skipped for custom
+      // assigners (they own DOM/storage sync).
+      if (isRegisterValue(value) && isDefaultAssigner(el[assignKey])) {
+        setSelected(el, value)
+        el._lastAppliedModel = value.innerRef.value
       }
     })
     setAssignFunction(el, vnode, value)

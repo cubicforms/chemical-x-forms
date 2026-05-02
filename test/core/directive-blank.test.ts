@@ -25,10 +25,20 @@ function makeRegisterValue<T>(initial: T): {
   markBlank: Spy
   setValue: Spy
 } {
+  const innerRef = ref(initial)
+  // Mirror the real assigner contract: a successful write updates
+  // `innerRef.value` to the post-coerce, post-transform value. The
+  // directive's input listener depends on this to detect storage-vs-
+  // typed divergence and force-sync the DOM (clamp transforms,
+  // silent slim-gate rejections, etc.); a no-op mock would always
+  // look like a stuck-storage rejection.
+  const setValue = vi.fn((v: unknown) => {
+    innerRef.value = v as T
+    return true
+  })
   const markBlank = vi.fn(() => true)
-  const setValue = vi.fn(() => true)
   const value: RegisterValue<T> = {
-    innerRef: ref(initial) as RegisterValue<T>['innerRef'],
+    innerRef: innerRef as RegisterValue<T>['innerRef'],
     displayValue: ref('') as Readonly<Ref<string>>,
     markBlank,
     lastTypedForm: ref<string | null>(null),

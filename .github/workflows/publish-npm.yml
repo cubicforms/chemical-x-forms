@@ -62,7 +62,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Stub @chemical-x/forms
+      - name: Stub decant
         run: pnpm dev:prepare
 
       - name: Validate ESLint and Types
@@ -168,7 +168,7 @@ jobs:
             echo "- Commit: [\`$SHORT_SHA\`]($REPO_URL/commit/$COMMIT_SHA) — $COMMIT_TITLE"
             echo "- Author: **$COMMIT_AUTHOR_NAME** <$COMMIT_AUTHOR_EMAIL>"
             echo "- Published via: [workflow run]($REPO_URL/actions/runs/${{ github.run_id }})"
-            echo "- npm: [\`@chemical-x/forms@$VERSION\`](https://www.npmjs.com/package/@chemical-x/forms/v/$VERSION)"
+            echo "- npm: [\`decant@$VERSION\`](https://www.npmjs.com/package/decant/v/$VERSION)"
             echo ""
             echo "---"
             echo ""

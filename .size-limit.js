@@ -10,6 +10,15 @@
 /** @param {import('esbuild').BuildOptions} config */
 const asEsm = (config) => ({ ...config, format: 'esm' })
 
+/**
+ * For Node-side tooling entries (Nuxt module, Vite plugin, compiler
+ * transforms): tell esbuild the bundle is for Node so `node:*`
+ * builtins resolve as externals instead of failing with
+ * `Could not resolve "node:path"`.
+ */
+/** @param {import('esbuild').BuildOptions} config */
+const asEsmNode = (config) => ({ ...config, format: 'esm', platform: 'node' })
+
 export default [
   {
     path: 'dist/index.mjs',
@@ -70,7 +79,28 @@ export default [
     // refinement-strip behaviour in zod-v4/v3 adapters. Measured at
     // 19.01 KB; the 5 KB ceiling gives runway for upcoming work
     // without per-PR bumps.
-    limit: '24 KB',
+    //
+    // Raised 24 → 28 KB on the 0.14 surface-refactor branch:
+    //   - schema-driven coercion (schema-coerce.ts:
+    //     defaultCoercionRules, defineCoercion, resolveCoercionIndex,
+    //     buildCoerceFn / buildElementCoerceFn) wired through every
+    //     register() + plugin defaults
+    //   - register transforms pipeline (RegisterTransform threading
+    //     through the directive assigner across all four v-register
+    //     variants)
+    //   - discriminated-union variant memory (per-variant subtree
+    //     snapshot / restore on discriminator change, reset /
+    //     resetField interactions)
+    //   - useForm return surface rewrite — drillable callable proxies
+    //     (errors-proxy.ts, surface-proxy.ts, leaf-aware FieldStateMap)
+    //     + meta.errors flat aggregate + meta.instanceId
+    //   - parseApiErrors bare-string entry shape
+    //   - DOM force-sync after default assigner (4 v-register variants)
+    //   - debounceMs: 0 sync-fire path in createDebouncedWriter +
+    //     field-validation scheduler
+    // Measured at 26.39 KB; 1.61 KB headroom for the follow-up docs /
+    // test commit.
+    limit: '28 KB',
     gzip: true,
     modifyEsbuildConfig: asEsm,
   },
@@ -99,7 +129,12 @@ export default [
     // Raised 19 → 24 KB tracking index.mjs's slim-primitive
     // write-contract bump (same shared core chunk + zod-v4
     // slim-primitives walker).
-    limit: '24 KB',
+    //
+    // Raised 24 → 28 KB tracking index.mjs's 0.14 surface-refactor
+    // bump (same shared core chunk: coerce + transforms + DU memory
+    // + meta-surface rewrite + DOM force-sync + sync-debounce).
+    // Measured at 25.71 KB.
+    limit: '28 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
@@ -128,7 +163,12 @@ export default [
     // Raised 19 → 24 KB tracking index.mjs's slim-primitive
     // write-contract bump (same shared core chunk + v3-inline
     // slimPrimitivesV3 walker on the v3 adapter).
-    limit: '24 KB',
+    //
+    // Raised 24 → 28 KB tracking index.mjs's 0.14 surface-refactor
+    // bump (same shared core chunk + UseFormConfigurationWithZod
+    // adding coerce / rememberVariants fields + getUnionDiscriminator
+    // plumbing in the v3 adapter). Measured at 25.68 KB.
+    limit: '28 KB',
     gzip: true,
     ignore: ['zod', 'lodash-es'],
     modifyEsbuildConfig: asEsm,
@@ -138,20 +178,20 @@ export default [
     limit: '6 KB',
     gzip: true,
     ignore: ['@nuxt/kit', 'nuxt/app'],
-    modifyEsbuildConfig: asEsm,
+    modifyEsbuildConfig: asEsmNode,
   },
   {
     path: 'dist/vite.mjs',
     limit: '4 KB',
     gzip: true,
     ignore: ['vite'],
-    modifyEsbuildConfig: asEsm,
+    modifyEsbuildConfig: asEsmNode,
   },
   {
     path: 'dist/transforms.mjs',
     limit: '6 KB',
     gzip: true,
     ignore: ['@vue/compiler-core'],
-    modifyEsbuildConfig: asEsm,
+    modifyEsbuildConfig: asEsmNode,
   },
 ]

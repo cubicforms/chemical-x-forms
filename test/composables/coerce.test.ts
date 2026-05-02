@@ -747,6 +747,198 @@ describe('consumer-extended registry — string->bigint', () => {
   })
 })
 
+// ============================================================
+// Read-side normalizer-symmetry sweep — the same shape of bug
+// (post-coerce model vs raw DOM-side comparison) lurks in every
+// directive site that compares model state against an option /
+// checkbox / radio attribute. Each test below uses a reactive
+// read on the value (the `<pre>` JSON.stringify) to schedule the
+// re-render that fires `beforeUpdate` / `setChecked` / `setSelected`
+// — without it, the bugs stay latent. Pre-fix these tests fail at
+// the visual-state assertion after the second toggle.
+// ============================================================
+
+describe('read-side coerce symmetry — array checkbox with case-mismatched boolean values', () => {
+  it('checkbox array stays in sync across toggles when option value is "True"/"False"', async () => {
+    const schema = z.object({ flags: z.array(z.boolean()) })
+    const { api, root } = mount(schema, { flags: [] }, (api) => {
+      const rv = api.register('flags')
+      return h('div', null, [
+        withDirectives(h('input', { type: 'checkbox', value: 'True', 'data-field': 't' }), [
+          [vRegister, rv],
+        ]),
+        h('pre', null, JSON.stringify(api.values.flags)),
+      ])
+    })
+    await flush()
+    const t = root.querySelector('[data-field="t"]') as HTMLInputElement
+    t.checked = true
+    t.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.flags).toEqual([true])
+    expect(t.checked).toBe(true) // pre-fix this would be false (array branch desync)
+
+    t.checked = false
+    t.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.flags).toEqual([])
+    expect(t.checked).toBe(false)
+  })
+})
+
+describe('read-side coerce symmetry — Set checkbox with numeric values', () => {
+  it('checkbox Set stays in sync — Set.has uses === so any kind mismatch breaks it', async () => {
+    const schema = z.object({ tags: z.set(z.number()) })
+    const { api, root } = mount(schema, { tags: new Set<number>() }, (api) => {
+      const rv = api.register('tags')
+      return h('div', null, [
+        withDirectives(h('input', { type: 'checkbox', value: '1', 'data-field': 'cb1' }), [
+          [vRegister, rv],
+        ]),
+        h('pre', null, JSON.stringify([...api.values.tags])),
+      ])
+    })
+    await flush()
+    const cb = root.querySelector('[data-field="cb1"]') as HTMLInputElement
+    cb.checked = true
+    cb.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.tags).toEqual(new Set([1]))
+    // Pre-fix Set.has(model, "1") against Set<number>{1} returned
+    // false (strict ===) → setChecked wrote el.checked = false.
+    expect(cb.checked).toBe(true)
+  })
+})
+
+describe('read-side coerce symmetry — multi-select with case-mismatched boolean options', () => {
+  it('select multi shows the selected booleans across re-renders', async () => {
+    const schema = z.object({ flags: z.array(z.boolean()), note: z.string() })
+    const { api, root } = mount(schema, { flags: [], note: '' }, (api) => {
+      const rvFlags = api.register('flags')
+      const rvNote = api.register('note')
+      return h('div', null, [
+        withDirectives(
+          h('select', { multiple: true, 'data-field': 'sel' }, [
+            h('option', { value: 'True' }, 'true'),
+            h('option', { value: 'False' }, 'false'),
+          ]),
+          [[vRegister, rvFlags]]
+        ),
+        withDirectives(h('input', { type: 'text', 'data-field': 'note' }), [[vRegister, rvNote]]),
+        h('pre', null, JSON.stringify(api.values.flags)),
+      ])
+    })
+    await flush()
+    const sel = root.querySelector('[data-field="sel"]') as HTMLSelectElement
+    const [optTrue, optFalse] = Array.from(sel.options) as [HTMLOptionElement, HTMLOptionElement]
+    optTrue.selected = true
+    optFalse.selected = true
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.flags).toEqual([true, false])
+
+    // Force another re-render via a sibling write — this exercises
+    // setSelected with the post-coerce model, where pre-fix
+    // `String(true)` ("true") wouldn't match `String(option.value)`
+    // ("True") and both options would silently get deselected.
+    const note = root.querySelector('[data-field="note"]') as HTMLInputElement
+    note.value = 'x'
+    note.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    expect(optTrue.selected).toBe(true)
+    expect(optFalse.selected).toBe(true)
+  })
+})
+
+describe('read-side coerce symmetry — single-select with case-mismatched boolean', () => {
+  it('select single highlights the option matching the post-coerce model', async () => {
+    const schema = z.object({ active: z.boolean() })
+    const { api, root } = mount(schema, { active: false }, (api) => {
+      const rv = api.register('active')
+      return h('div', null, [
+        withDirectives(
+          h('select', { 'data-field': 'sel' }, [
+            h('option', { value: 'False' }, 'false'),
+            h('option', { value: 'True' }, 'true'),
+          ]),
+          [[vRegister, rv]]
+        ),
+        h('pre', null, JSON.stringify(api.values.active)),
+      ])
+    })
+    await flush()
+    const sel = root.querySelector('[data-field="sel"]') as HTMLSelectElement
+    sel.value = 'True'
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.active).toBe(true)
+    // Pre-fix selectedIndex would land at -1 — looseEqual(true, "True")
+    // returned false, so no option matched.
+    expect(sel.selectedIndex).toBe(1)
+  })
+})
+
+describe('read-side coerce symmetry — radio with case-mismatched boolean values', () => {
+  it('radio cycle stays in sync — pre-fix every-other-click desynced like the checkbox case', async () => {
+    const schema = z.object({ active: z.boolean() })
+    const { api, root } = mount(schema, { active: false }, (api) => {
+      const rv = api.register('active')
+      return h('div', null, [
+        withDirectives(h('input', { type: 'radio', name: 'a', value: 'True', 'data-field': 't' }), [
+          [vRegister, rv],
+        ]),
+        withDirectives(
+          h('input', { type: 'radio', name: 'a', value: 'False', 'data-field': 'f' }),
+          [[vRegister, rv]]
+        ),
+        h('pre', null, JSON.stringify(api.values.active)),
+      ])
+    })
+    await flush()
+    const t = root.querySelector('[data-field="t"]') as HTMLInputElement
+    const f = root.querySelector('[data-field="f"]') as HTMLInputElement
+
+    t.checked = true
+    t.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.active).toBe(true)
+    // Pre-fix the beforeUpdate hook ran `looseEqual(true, "True")`
+    // → false → `el.checked = false`, immediately undoing the click.
+    expect(t.checked).toBe(true)
+    expect(f.checked).toBe(false)
+
+    f.checked = true
+    f.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.active).toBe(false)
+    expect(t.checked).toBe(false)
+    expect(f.checked).toBe(true)
+  })
+})
+
+describe('text input on numeric path without `.number` modifier', () => {
+  it('input visual mirrors the coerced number model (no clear-on-rerender)', async () => {
+    const schema = z.object({ age: z.number() })
+    const { api, root } = mount(schema, { age: 0 }, (api) => {
+      const rv = api.register('age')
+      return h('div', null, [
+        withDirectives(h('input', { type: 'text', 'data-field': 'age' }), [[vRegister, rv]]),
+        h('pre', null, JSON.stringify(api.values.age)),
+      ])
+    })
+    await flush()
+    const input = root.querySelector('[data-field="age"]') as HTMLInputElement
+    input.value = '25'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(api.values.age).toBe(25)
+    // Pre-fix the beforeUpdate hook fell through to
+    // `el.value = typeof 25 === 'string' ? 25 : ''` → input cleared.
+    expect(input.value).toBe('25')
+  })
+})
+
 describe('isRegisterValue / assignKey re-export sanity', () => {
   it('re-exported public symbols are reachable', () => {
     expect(typeof isRegisterValue).toBe('function')

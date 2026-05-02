@@ -288,6 +288,18 @@ function applyCoerce(value: unknown, registerValue: RegisterValue): unknown {
   return registerValue.coerce !== undefined ? registerValue.coerce(value) : value
 }
 
+/**
+ * Apply the field's element-level coerce closure (built at
+ * register-time by `buildElementCoerceFn`) to a scalar DOM-side
+ * value that should match an array/Set member. `coerceElement` is
+ * only set on container paths; for scalar paths or when coercion
+ * is disabled it's `undefined` and the raw value passes through.
+ * Mirrors `applyCoerce` for the path-level case.
+ */
+function applyElementCoerce(value: unknown, registerValue: RegisterValue): unknown {
+  return registerValue.coerceElement !== undefined ? registerValue.coerceElement(value) : value
+}
+
 function logTransformAsync(path: PathKey): void {
   if (__DEV__) {
     console.error(
@@ -778,7 +790,15 @@ const vRegisterText: RegisterTextCustomDirective = {
       }
     }
 
-    el.value = typeof newValue === 'string' ? newValue : ''
+    // Mirror Vue's `vModelText.beforeUpdate`: rely on the browser's
+    // implicit string coercion via the `el.value` setter, with a
+    // null/undefined → '' guard. Pre-fix this was
+    // `typeof newValue === 'string' ? newValue : ''`, which cleared
+    // the input whenever the post-coerce model was a number (e.g.
+    // a plain `<input type="text">` against `z.number()` with
+    // schema-driven coerce on). The defensive type-guard predates
+    // coerce and is now too narrow.
+    el.value = newValue == null ? '' : String(newValue)
   },
 }
 
@@ -796,12 +816,12 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
 
       // this side-steps subtle 2-way binding bugs where ref updates but input cannot be tracked by value
       const explicitValueRequired = true
-      const elementValue = getValue(el, explicitValueRequired)
+      const rawElementValue = getValue(el, explicitValueRequired)
 
       const checked = el.checked
       const assign = el[assignKey]
       if (isArray(modelValue)) {
-        if (elementValue === undefined) {
+        if (rawElementValue === undefined) {
           warn(
             'Checkbox bound to an array model is missing a `value` attribute — ' +
               'cannot determine which item to add or remove. ' +
@@ -809,6 +829,16 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
           )
           return
         }
+        // Element-level coerce on the raw DOM value so the
+        // looseIndexOf lookup and the new array's element shape
+        // match the post-coerce model. Without this, the change
+        // handler builds a mixed-type array (e.g. boolean members
+        // plus a raw string) and either fails to find the existing
+        // entry on uncheck (case-sensitive looseEqual on booleans)
+        // or appends a string to a typed-element array. The path-
+        // level coerce in the assigner cleans up the new array
+        // afterwards either way.
+        const elementValue = applyElementCoerce(rawElementValue, value)
         const index = looseIndexOf(modelValue, elementValue)
         const found = index !== -1
         if (checked && !found) {
@@ -819,7 +849,7 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
           assign?.(filtered)
         }
       } else if (isSet(modelValue)) {
-        if (elementValue === undefined) {
+        if (rawElementValue === undefined) {
           warn(
             'Checkbox bound to a Set model is missing a `value` attribute — ' +
               'cannot determine which item to add or remove. ' +
@@ -827,6 +857,11 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
           )
           return
         }
+        // Set's `.delete` uses strict ===, so coerce the element
+        // BEFORE the Set ops or removals silently fail when the
+        // model holds post-coerce booleans/numbers and the DOM
+        // gives back the raw string.
+        const elementValue = applyElementCoerce(rawElementValue, value)
         const cloned = new Set(modelValue)
         if (checked) {
           cloned.add(elementValue)
@@ -883,23 +918,27 @@ function setChecked(el: HTMLInputElement, { value }: DirectiveBinding, _vnode: V
   // static-attr fix) checks `_value` first, then the DOM property,
   // so all three paths (Vue dynamic, Vue hydrated static, manual
   // setAttribute) resolve identically.
+  // All three branches compare the post-coerce model against the
+  // RAW DOM-side value (the option's `value` attribute, or the
+  // checkbox's `_trueValue`). Coerce normalizes the WRITE direction
+  // (e.g. `"True"` → `true` for `z.boolean()`); without symmetric
+  // normalization on the READ direction, `looseEqual` /
+  // `looseIndexOf` / `Set.has` fight the user's click on every
+  // re-render. Route the raw value through the same `applyCoerce`
+  // closure to restore parity. See setChecked-mid-coerce regression
+  // tests in coerce.test.ts.
   if (isArray(originalValue)) {
-    checked = looseIndexOf(originalValue, getValue(el)) > -1
+    // Element-level coerce: the DOM-side raw value is a SCALAR
+    // matching against the array's element type, not the path's
+    // top-level type (which would be `array`, with no scalar
+    // coerce target).
+    checked = looseIndexOf(originalValue, applyElementCoerce(getValue(el), value)) > -1
   } else if (isSet(originalValue)) {
-    checked = originalValue.has(getValue(el))
+    // Set.has uses SameValueZero (===), not loose comparison —
+    // mismatch is fatal here, not just for case-sensitive booleans.
+    checked = originalValue.has(applyElementCoerce(getValue(el), value))
   } else {
-    // Compare against the COERCED `true-value`, not the raw
-    // attribute. The change handler routes the raw value through
-    // coerce before writing, so the model holds the post-coerce
-    // shape (e.g. boolean `true` for `true-value="True"`). Vue's
-    // `looseEqual` does a case-sensitive `String()` comparison, so
-    // `looseEqual(true, "True")` is false and setChecked would
-    // otherwise write `el.checked = false` immediately after the
-    // user's click — desyncing DOM from model. `value.coerce` is
-    // optional on RegisterValue (hand-rolled mocks may omit it);
-    // fall back to the raw value when absent.
-    const rawTrueValue = getCheckboxValue(el, true)
-    const trueValueCoerced = value.coerce !== undefined ? value.coerce(rawTrueValue) : rawTrueValue
+    const trueValueCoerced = applyCoerce(getCheckboxValue(el, true), value)
     checked = looseEqual(originalValue, trueValueCoerced)
   }
 
@@ -932,7 +971,9 @@ const vRegisterRadio: RegisterRadioCustomDirective = {
     // `vnode.props?.['value']` so SSR-hydrated static `value="..."`
     // attributes (which don't surface in vnode.props because Vue's
     // static-attr fast path skips patchProp) still resolve correctly.
-    el.checked = looseEqual(value.innerRef.value, getValue(el))
+    // Coerce the raw value the same way the change handler will so
+    // the comparison stays symmetric — see setChecked's note.
+    el.checked = looseEqual(value.innerRef.value, applyCoerce(getValue(el), value))
     el._lastAppliedModel = value.innerRef.value
   },
   // Skip the DOM sync when the model is identity-unchanged from the
@@ -950,7 +991,7 @@ const vRegisterRadio: RegisterRadioCustomDirective = {
     setAssignFunction(el, vnode, value)
     const currentModel = value.innerRef.value
     if (el._lastAppliedModel === currentModel) return
-    el.checked = looseEqual(currentModel, getValue(el))
+    el.checked = looseEqual(currentModel, applyCoerce(getValue(el), value))
     el._lastAppliedModel = currentModel
   },
 }
@@ -1076,6 +1117,12 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
     // long forms (thousands of options or selected items). Both
     // Array and Set primitive paths share this; only object-valued
     // option binds (rare) keep their original identity comparisons.
+    //
+    // Each option's raw `value` is routed through `applyCoerce`
+    // before stringifying so the comparison stays symmetric with
+    // the change handler's WRITE-side coerce — without it,
+    // `String(true) === "true"` but the option's raw `"True"`
+    // stringifies to `"True"` and the option silently never matches.
     const stringifiedMembers = new Set<string>()
     const iter: Iterable<unknown> = isArrayValue
       ? (externalValue as ReadonlyArray<unknown>)
@@ -1085,9 +1132,17 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
     for (let i = 0, l = el.options.length; i < l; i++) {
       const option = el.options[i]
       if (!option) continue
-      const optionValue = getValue(option)
+      // Element-level coerce: a multi-select's option matches a
+      // member of an array/Set model, so the comparison must run
+      // against the element type, not the path's top-level type.
+      const optionValue = applyElementCoerce(getValue(option), value)
       const optionType = typeof optionValue
       if (optionType === 'string' || optionType === 'number') {
+        option.selected = stringifiedMembers.has(String(optionValue))
+      } else if (optionType === 'boolean') {
+        // Booleans go through the same stringify channel — covers
+        // `<option value="True">` × `z.array(z.boolean())` after
+        // coerce normalises to `true`.
         option.selected = stringifiedMembers.has(String(optionValue))
       } else if (isArrayValue) {
         // Object option, Array model: structural equality via
@@ -1104,11 +1159,12 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
   }
 
   // Non-multiple: find the first option matching the scalar model
-  // and set selectedIndex; clear if nothing matches.
+  // and set selectedIndex; clear if nothing matches. Coerce the
+  // raw option value to keep parity with the change handler.
   for (let i = 0, l = el.options.length; i < l; i++) {
     const option = el.options[i]
     if (!option) continue
-    if (looseEqual(getValue(option), externalValue)) {
+    if (looseEqual(applyCoerce(getValue(option), value), externalValue)) {
       if (el.selectedIndex !== i) el.selectedIndex = i
       return
     }

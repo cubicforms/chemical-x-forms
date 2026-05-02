@@ -12,7 +12,7 @@ import { AnonPersistError } from './errors'
 import { extractSchemaFields } from './extract-schema-fields'
 import { canonicalizePath, type Path, type PathKey } from './paths'
 import { PERSISTENCE_MODULE_KEY } from './persistence'
-import { buildCoerceFn } from './schema-coerce'
+import { buildCoerceFn, buildElementCoerceFn } from './schema-coerce'
 
 // Module-level frozen empty array — re-used as the transforms default
 // across every register() call that doesn't opt in. Avoids a per-call
@@ -158,6 +158,11 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
       segments,
       state.coerceIndex
     )
+    const coerceElement = buildElementCoerceFn(
+      state.schema as Parameters<typeof buildElementCoerceFn>[0],
+      segments,
+      state.coerceIndex
+    )
 
     // Eager throw: opt-in declared but the form has no persistence wired.
     // Without the throw the directive silently records the opt-in, no
@@ -240,6 +245,7 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
       persistOptIns: state.persistOptIns,
       transforms,
       coerce,
+      ...(coerceElement !== undefined ? { coerceElement } : {}),
     }
   }
 }

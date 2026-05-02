@@ -1378,6 +1378,19 @@ export type RegisterValue<Value = unknown> = {
    */
   coerce?: (value: unknown) => unknown
   /**
+   * Element-level coercion closure for container paths
+   * (`z.array(...)` / `z.set(...)`). Coerces a scalar DOM-side
+   * value (an option's `value` attribute, a checkbox's value)
+   * against the container's element type. `undefined` when the
+   * path isn't a container — scalar paths use `coerce` exclusively.
+   *
+   * Used by the directive's read-side comparisons in setChecked
+   * (array/Set branches) and setSelected (multi-select) to keep
+   * parity with the change handler's WRITE-side path-level coerce.
+   * @internal
+   */
+  coerceElement?: (value: unknown) => unknown
+  /**
    * Read-only, string-form view of the field's current value — what
    * the compile-time `:value` injection reads on every input /
    * textarea / select bound by `v-register`.

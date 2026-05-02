@@ -168,6 +168,34 @@ export function buildCoerceFn(
 }
 
 /**
+ * Element-level coerce closure. Returns `undefined` when the path
+ * isn't a container (scalar paths use `buildCoerceFn` exclusively).
+ *
+ * Why this is separate from `buildCoerceFn`: the path-level closure
+ * handles the WRITE path correctly — given a container value, it
+ * iterates and coerces each element internally. But the directive's
+ * READ-side comparisons (`setChecked` array/Set branches,
+ * `setSelected` multi-select) compare a SCALAR DOM-side value (the
+ * option's `value` attribute) against the post-coerce container
+ * elements. The path-level closure can't help here because it would
+ * see a scalar and look up the path's accept set (`{ array }`),
+ * which has no scalar coercion target. The element-level closure
+ * skips ahead to the element-type accept set.
+ */
+export function buildElementCoerceFn(
+  schema: AbstractSchema<unknown, unknown>,
+  segments: Path,
+  index: CoercionIndex
+): ((value: unknown) => unknown) | undefined {
+  if (index === EMPTY_INDEX) return undefined
+  if (index.size === 0) return undefined
+  const accepted = schema.getSlimPrimitiveTypesAtPath(segments)
+  if (!accepted.has('array') && !accepted.has('set')) return undefined
+  const elementAccepted = schema.getSlimPrimitiveTypesAtPath([...segments, 0])
+  return (value) => coerceScalar(value, elementAccepted, index)
+}
+
+/**
  * Pick the unambiguous coercion target for an accept set. Returns
  * the target kind only when it's the SOLE coercible kind — if the
  * path admits both `string` and `number`, the schema explicitly

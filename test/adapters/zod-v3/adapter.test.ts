@@ -354,6 +354,90 @@ describe('zod v3 adapter — discriminated union routing', () => {
   })
 })
 
+// stripRefinements descended into objects, arrays, and effects pre-fix
+// but skipped Set / Tuple / Record / Union / DiscriminatedUnion /
+// Intersection / Lazy. Refinements nested inside those containers
+// survived into the slim schema, so `strict: false` defaults that
+// passed primitive shape (e.g. `''` for an email-refined tuple element)
+// still failed the slim parse and got fixed up downstream — which
+// "worked" but produced a different second-parse path than v4. The
+// fix gives v3 the same correctness floor as v4.
+describe('zod v3 adapter — stripRefinements (lax mode)', () => {
+  it('descends into z.tuple element refinements', () => {
+    const schema = z.object({
+      pair: z.tuple([z.string().email(), z.number().min(10)]),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true, strict: false })
+    expect(result.success).toBe(true)
+    expect(result.data).toEqual({ pair: ['', 0] })
+  })
+
+  it('descends into z.set element refinements', () => {
+    const schema = z.object({
+      tags: z.set(z.string().min(3)),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true, strict: false })
+    expect(result.success).toBe(true)
+    expect((result.data as { tags: unknown }).tags).toBeInstanceOf(Set)
+  })
+
+  it('descends into z.record value refinements', () => {
+    const schema = z.object({
+      counts: z.record(z.number().min(1)),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true, strict: false })
+    expect(result.success).toBe(true)
+    expect(result.data).toEqual({ counts: {} })
+  })
+
+  it('descends into z.union member refinements', () => {
+    const schema = z.object({
+      val: z.union([z.string().email(), z.number().int()]),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true, strict: false })
+    expect(result.success).toBe(true)
+  })
+
+  it('descends into z.intersection sides', () => {
+    const schema = z.object({
+      combo: z.intersection(
+        z.object({ a: z.string().email() }),
+        z.object({ b: z.number().min(10) })
+      ),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true, strict: false })
+    expect(result.success).toBe(true)
+    expect(result.data).toEqual({ combo: { a: '', b: 0 } })
+  })
+
+  it('descends into z.discriminatedUnion option refinements', () => {
+    const schema = z.object({
+      event: z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('a'), msg: z.string().min(5) }),
+        z.object({ kind: z.literal('b'), n: z.number() }),
+      ]),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true, strict: false })
+    expect(result.success).toBe(true)
+    expect(result.data).toEqual({ event: { kind: 'a', msg: '' } })
+  })
+
+  it('descends into z.lazy() target refinements', () => {
+    const inner = z.object({ name: z.string().email() })
+    const schema = z.object({ wrapped: z.lazy(() => inner) })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true, strict: false })
+    expect(result.success).toBe(true)
+    expect(result.data).toEqual({ wrapped: { name: '' } })
+  })
+})
+
 describe('zod v3 adapter — assertSupportedKinds', () => {
   it('throws UnsupportedSchemaError for z.promise(...)', () => {
     const schema = z.object({ pending: z.promise(z.string()) })

@@ -1641,6 +1641,79 @@ function stripRefinements<T extends z.ZodTypeAny>(schema: T) {
       return _stripRefinements(inner, depth + 1)
     }
 
+    // Container kinds that nest other schemas. Pre-fix, refinements
+    // inside these survived into the slim schema and the fix-up loop
+    // had to patch each leaf via the second-parse fallback. Mirroring
+    // v4's strip.ts means the FIRST slim parse passes for the lax
+    // contract, no fix-up needed.
+
+    if (isZodSchemaType(_schema, 'ZodSet')) {
+      const valueType = (_schema._def as { valueType?: z.ZodTypeAny }).valueType
+      if (!valueType) return _schema
+      return z.set(_stripRefinements(valueType, depth + 1))
+    }
+
+    if (isZodSchemaType(_schema, 'ZodTuple')) {
+      const items = (_schema._def as { items?: z.ZodTypeAny[] }).items
+      if (!items) return _schema
+      const stripped = items.map((it) => _stripRefinements(it, depth + 1))
+      return z.tuple(stripped as [z.ZodTypeAny, ...z.ZodTypeAny[]])
+    }
+
+    if (isZodSchemaType(_schema, 'ZodRecord')) {
+      const def = _schema._def as { keyType?: z.ZodTypeAny; valueType?: z.ZodTypeAny }
+      if (!def.valueType) return _schema
+      const value = _stripRefinements(def.valueType, depth + 1)
+      // z.record's two-arg form preserves the key schema; one-arg form
+      // assumes z.string(). Forward the key type unchanged — refinements
+      // on record keys aren't load-bearing for slim-schema concerns.
+      if (def.keyType) {
+        return z.record(def.keyType as z.ZodString, value)
+      }
+      return z.record(value)
+    }
+
+    if (isZodSchemaType(_schema, 'ZodUnion')) {
+      const options = (_schema._def as { options?: z.ZodTypeAny[] }).options
+      if (!options) return _schema
+      const stripped = options.map((o) => _stripRefinements(o, depth + 1))
+      return z.union(stripped as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]])
+    }
+
+    if (isZodSchemaType(_schema, 'ZodDiscriminatedUnion')) {
+      const def = _schema._def as {
+        discriminator?: string
+        options?: z.ZodObject<z.ZodRawShape>[]
+      }
+      if (def.discriminator === undefined || !def.options) return _schema
+      const stripped = def.options.map(
+        (o) => _stripRefinements(o, depth + 1) as z.ZodObject<z.ZodRawShape>
+      )
+      return z.discriminatedUnion(
+        def.discriminator,
+        stripped as [z.ZodObject<z.ZodRawShape>, ...z.ZodObject<z.ZodRawShape>[]]
+      )
+    }
+
+    if (isZodSchemaType(_schema, 'ZodIntersection')) {
+      const def = _schema._def as { left?: z.ZodTypeAny; right?: z.ZodTypeAny }
+      if (!def.left || !def.right) return _schema
+      return z.intersection(
+        _stripRefinements(def.left, depth + 1),
+        _stripRefinements(def.right, depth + 1)
+      )
+    }
+
+    if (isZodSchemaType(_schema, 'ZodLazy')) {
+      const getter = (_schema._def as { getter?: () => z.ZodTypeAny }).getter
+      if (!getter) return _schema
+      // Eagerly resolve once and capture the stripped target so the
+      // returned lazy resolves to a stable schema. assertSupportedKinds
+      // has already rejected self-referencing lazies, so this is finite.
+      const stripped = _stripRefinements(getter(), depth + 1)
+      return z.lazy(() => stripped)
+    }
+
     // Return other schema types as-is
     return _schema as T
   }

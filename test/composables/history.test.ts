@@ -2,7 +2,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
-import { useForm } from '../../src/zod'
+import { unset, useForm } from '../../src/zod'
+import { canonicalizePath } from '../../src/runtime/core/paths'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 
 /**
@@ -52,9 +53,9 @@ describe('history — default (history: true)', () => {
   it('canUndo starts false and flips true after first mutation', () => {
     const { app, api } = mountForm(true)
     apps.push(app)
-    expect(api.state.canUndo).toBe(false)
+    expect(api.meta.canUndo).toBe(false)
     api.setValue('email', 'a@example.com')
-    expect(api.state.canUndo).toBe(true)
+    expect(api.meta.canUndo).toBe(true)
   })
 
   it('undo restores the prior form value', () => {
@@ -78,7 +79,7 @@ describe('history — default (history: true)', () => {
     api.setValue('email', 'one@example.com')
     api.setValue('email', 'two@example.com')
     api.undo()
-    expect(api.state.canRedo).toBe(true)
+    expect(api.meta.canRedo).toBe(true)
     expect(api.redo()).toBe(true)
     expect(api.values.email).toBe('two@example.com')
   })
@@ -88,9 +89,9 @@ describe('history — default (history: true)', () => {
     apps.push(app)
     api.setValue('email', 'one@example.com')
     api.undo()
-    expect(api.state.canRedo).toBe(true)
+    expect(api.meta.canRedo).toBe(true)
     api.setValue('email', 'two@example.com')
-    expect(api.state.canRedo).toBe(false)
+    expect(api.meta.canRedo).toBe(false)
     expect(api.redo()).toBe(false)
   })
 
@@ -99,10 +100,10 @@ describe('history — default (history: true)', () => {
     apps.push(app)
     api.setValue('email', 'a@example.com')
     api.setValue('email', 'b@example.com')
-    expect(api.state.canUndo).toBe(true)
+    expect(api.meta.canUndo).toBe(true)
     api.reset()
-    expect(api.state.canUndo).toBe(false)
-    expect(api.state.canRedo).toBe(false)
+    expect(api.meta.canUndo).toBe(false)
+    expect(api.meta.canRedo).toBe(false)
   })
 
   it('restores errors alongside the form on undo', () => {
@@ -158,10 +159,92 @@ describe('history — bounded stack', () => {
     apps.push(app)
     api.setValue('email', 'a')
     api.setValue('email', 'b')
-    expect(api.state.historySize).toBe(3) // initial + 2 mutations
+    expect(api.meta.historySize).toBe(3) // initial + 2 mutations
     api.undo()
     // One moved from undo stack to redo stack — total is still 3.
-    expect(api.state.historySize).toBe(3)
+    expect(api.meta.historySize).toBe(3)
+  })
+})
+
+describe('history — blankPaths preservation', () => {
+  const apps: App[] = []
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+  })
+
+  // Numeric leaves can be in two consistent states: "storage holds the
+  // slim default AND blankPaths records the divergence" (cleared, displays
+  // ''), and "storage holds a real value, blankPaths empty" (typed, displays
+  // the value). History snapshots have to carry both halves — replaying
+  // the form value alone would pin a cleared field to '0' on the screen.
+  const numericSchema = z.object({ count: z.number() })
+  type NumericApi = ReturnType<typeof useForm<typeof numericSchema>>
+  const countKey = canonicalizePath('count').key
+
+  function mountNumericForm(): { app: App; api: NumericApi } {
+    const handle: { api?: NumericApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: numericSchema,
+          key: `history-blank-${Math.random().toString(36).slice(2)}`,
+          history: true,
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    return { app, api: handle.api as NumericApi }
+  }
+
+  it('undo restores blankPaths so a cleared numeric field stays displayed-empty', () => {
+    const { app, api } = mountNumericForm()
+    apps.push(app)
+
+    // 1. Type a real value: storage = 5, blankPaths = {}
+    api.setValue('count', 5)
+    expect(api.values.count).toBe(5)
+    expect(api.blankPaths.value.has(countKey)).toBe(false)
+
+    // 2. Clear via the unset sentinel: storage = 0 (slim default), blankPaths = {count}.
+    api.setValue('count', unset)
+    expect(api.values.count).toBe(0)
+    expect(api.blankPaths.value.has(countKey)).toBe(true)
+
+    // 3. Type again: storage = 10, blankPaths = {} (re-typing clears the blank mark).
+    api.setValue('count', 10)
+    expect(api.values.count).toBe(10)
+    expect(api.blankPaths.value.has(countKey)).toBe(false)
+
+    // 4. Undo — the snapshot we land on captured storage = 0 with blankPaths = {count}.
+    expect(api.undo()).toBe(true)
+    expect(api.values.count).toBe(0)
+    // The bug: blankPaths was reset along the redo path (step 3 above)
+    // and applyFormReplacement does not touch the set, so the restored
+    // state shows a misleading '0' on the wire. The fix re-seeds the
+    // set from the snapshot before the form replacement lands.
+    expect(api.blankPaths.value.has(countKey)).toBe(true)
+  })
+
+  it('redo replays a blank mark that the user just undid', () => {
+    const { app, api } = mountNumericForm()
+    apps.push(app)
+
+    // Build: real → blank → real, then undo → blank state, redo → real.
+    api.setValue('count', 7)
+    api.setValue('count', unset)
+    api.setValue('count', 12)
+
+    api.undo()
+    expect(api.values.count).toBe(0)
+    expect(api.blankPaths.value.has(countKey)).toBe(true)
+
+    expect(api.redo()).toBe(true)
+    expect(api.values.count).toBe(12)
+    expect(api.blankPaths.value.has(countKey)).toBe(false)
   })
 })
 
@@ -177,9 +260,9 @@ describe('history — disabled (no config)', () => {
     api.setValue('email', 'mutated')
     expect(api.undo()).toBe(false)
     expect(api.redo()).toBe(false)
-    expect(api.state.canUndo).toBe(false)
-    expect(api.state.canRedo).toBe(false)
-    expect(api.state.historySize).toBe(0)
+    expect(api.meta.canUndo).toBe(false)
+    expect(api.meta.canRedo).toBe(false)
+    expect(api.meta.historySize).toBe(0)
     expect(api.values.email).toBe('mutated')
   })
 })

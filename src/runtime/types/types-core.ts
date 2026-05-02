@@ -166,35 +166,6 @@ type Primitive = string | number | boolean | symbol | bigint | null | undefined
 export type IsTuple<T extends readonly unknown[]> = number extends T['length'] ? false : true
 
 /**
- * Tags every unbounded array's element type with `| undefined` so
- * code reading `arr[N]` has to narrow before using the result. This
- * mirrors the runtime reality that out-of-bounds reads return
- * `undefined`.
- *
- * Used by `form.values` and the whole-form `setValue((prev) => …)`
- * callback's `prev` argument so accessors are honest about
- * possibly-missing array positions. Tuple positions are preserved
- * unchanged — they're guaranteed by their position in the type.
- *
- * `Date`, `RegExp`, `Map`, `Set`, and function instances pass
- * through.
- */
-export type WithIndexedUndefined<T> = T extends
-  | Date
-  | RegExp
-  | Map<unknown, unknown>
-  | Set<unknown>
-  | ((...args: never) => unknown)
-  ? T
-  : T extends ReadonlyArray<infer Item>
-    ? IsTuple<T> extends true
-      ? { -readonly [K in keyof T]: WithIndexedUndefined<T[K]> }
-      : ReadonlyArray<WithIndexedUndefined<Item> | undefined>
-    : T extends object
-      ? { [K in keyof T]: WithIndexedUndefined<T[K]> }
-      : T
-
-/**
  * Path-resolved type for read-side APIs. Like `NestedType`, but once
  * the walk crosses an array index segment the resulting type is
  * tagged `| undefined` (the runtime can return undefined for
@@ -276,12 +247,13 @@ export type ArrayItem<Form, Path extends ArrayPath<Form>> =
  *
  * The runtime gate accepts any value at a path whose primitive type
  * matches the schema's slim primitive set at that path. Refinement-
- * level constraints (enum membership, literal equality, .email,
- * .min(N), regex, custom refines) are NOT enforced at write time —
- * they surface via field-level validation. The type widening here
- * mirrors that runtime behaviour, so `setValue('color', 'magenta')`
- * and `defaultValues: { color: 'teal' }` are not TS errors despite
- * being out-of-enum at the validation layer.
+ * level constraints (enum membership, literal equality, format
+ * checks, length / range bounds, regex, custom predicates) are NOT
+ * enforced at write time — they surface via field-level validation.
+ * The type widening here mirrors that runtime behaviour, so
+ * `setValue('color', 'magenta')` and `defaultValues: { color: 'teal' }`
+ * are not TS errors despite being out-of-enum at the validation
+ * layer.
  *
  * Tuple positions preserve their literal types via the homomorphic
  * mapped form (`{ [K in keyof T]: ... }` over a readonly tuple
@@ -331,8 +303,8 @@ export type WriteShape<T> = T extends string | number | boolean | bigint | symbo
  * displayed-empty" in `defaultValues`, `setValue`, and `reset`.
  *
  * Non-primitive leaves (`Date`, `RegExp`, `Map`, `Set`, functions)
- * stay strict — `defaultValues: { joinedAt: unset }` against
- * `z.date()` is a type error.
+ * stay strict — `defaultValues: { joinedAt: unset }` against a
+ * `Date`-typed leaf is a type error.
  *
  * The recursion mirrors `WriteShape<T>` exactly so `defaultValues`
  * stays compatible at every nested position; the only divergence is

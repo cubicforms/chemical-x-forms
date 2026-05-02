@@ -3,7 +3,7 @@ import { renderToString } from '@vue/server-renderer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Vue from 'vue'
 import { createSSRApp, defineComponent } from 'vue'
-import { useFormContext } from '../../src'
+import { injectForm } from '../../src'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { vRegisterHintTransform } from '../../src/runtime/lib/core/transforms/v-register-hint-transform'
 import { vRegisterPreambleTransform } from '../../src/runtime/lib/core/transforms/v-register-preamble-transform'
@@ -15,7 +15,7 @@ import { vRegisterPreambleTransform } from '../../src/runtime/lib/core/transform
  * to a `:data-cx-pre-mark` directive on the first root element so the
  * mark fires before any descendant template expression evaluates.
  * That hoist runs unconditionally — a `v-if` guard on the input itself
- * fires LATER in render order, so a nullable `useFormContext()`
+ * fires LATER in render order, so a nullable `injectForm()`
  * return that the consumer guarded around the input would still
  * dereference null in the preamble.
  *
@@ -51,7 +51,7 @@ describe('SSR preamble null-safety', () => {
     warnSpy.mockRestore()
   })
 
-  it('SSR does not throw when an input is gated by v-if against a null useFormContext', async () => {
+  it('SSR does not throw when an input is gated by v-if against a null injectForm', async () => {
     // Mirror the spike pattern: <SpikeCxChild form-key="totally-fake" />
     // resolves to null; the input is wrapped in v-if="ctx" so the v-if
     // branch never runs, but the preamble's hoisted call would still
@@ -65,7 +65,7 @@ describe('SSR preamble null-safety', () => {
     )
     const App = defineComponent({
       setup() {
-        const ctx = useFormContext<Form>('this-key-was-never-registered')
+        const ctx = injectForm<Form>('this-key-was-never-registered')
         return { ctx }
       },
       render,
@@ -86,7 +86,7 @@ describe('SSR preamble null-safety', () => {
     // The client-hydration setup re-runs and surfaces the same warn
     // there, so silencing the SSR pass is lossless and halves dev noise.
     const ourWarns = warnSpy.mock.calls.filter((args: readonly unknown[]) =>
-      String(args[0] ?? '').includes('useFormContext')
+      String(args[0] ?? '').includes('injectForm')
     )
     expect(ourWarns).toHaveLength(0)
   })
@@ -111,7 +111,7 @@ describe('SSR preamble null-safety', () => {
     const App = defineComponent({
       setup() {
         return {
-          bad: useFormContext<Form>('totally-fake'),
+          bad: injectForm<Form>('totally-fake'),
           good: { register: () => ({ markConnectedOptimistically: () => undefined }) },
         }
       },

@@ -18,7 +18,7 @@ import { fakeSchema } from '../utils/fake-schema'
  * favour of the first's (matching the existing "only first caller
  * wires the state" behaviour).
  *
- * NOTE: `useFormContext()` (no key) emits a separate `console.warn`
+ * NOTE: `injectForm()` (no key) emits a separate `console.warn`
  * lazily when it walks up to an ancestor that registered multiple
  * useForm() calls (covers the anonymous-forms footgun — see PR
  * #117). The fixtures here drive shared-store resolution by calling

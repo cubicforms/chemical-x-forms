@@ -76,4 +76,34 @@ describe('getNestedZodSchemasAtPath', () => {
     expect(byString).toHaveLength(1)
     expect(byArray).toHaveLength(1)
   })
+
+  // Set-element queries: needed by schema-coerce so it can ask
+  // `getSlimPrimitiveTypesAtPath([...path, 0])` for a set's element
+  // type. Without these branches the walker would bail at `set` and
+  // return [], matching the empty-accept "permissive" path that
+  // skipped element coercion entirely.
+  it('walks z.set(z.number()) → element schema', () => {
+    const schema = z.object({ tags: z.set(z.number()) })
+    const resolved = getNestedZodSchemasAtPath(schema, ['tags', 0])
+    expect(resolved).toHaveLength(1)
+    expect(resolved[0]?.safeParse(42).success).toBe(true)
+    expect(resolved[0]?.safeParse('42').success).toBe(false)
+  })
+
+  it('walks z.set(z.boolean()) → element schema', () => {
+    const schema = z.object({ flags: z.set(z.boolean()) })
+    const resolved = getNestedZodSchemasAtPath(schema, ['flags', 0])
+    expect(resolved).toHaveLength(1)
+    expect(resolved[0]?.safeParse(true).success).toBe(true)
+    expect(resolved[0]?.safeParse('true').success).toBe(false)
+  })
+
+  it('walks nested z.set(z.object(...)) → object element', () => {
+    const schema = z.object({
+      tags: z.set(z.object({ label: z.string() })),
+    })
+    const resolved = getNestedZodSchemasAtPath(schema, ['tags', 0, 'label'])
+    expect(resolved).toHaveLength(1)
+    expect(resolved[0]?.safeParse('x').success).toBe(true)
+  })
 })

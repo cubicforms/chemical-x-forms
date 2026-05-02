@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
+import { isRef } from 'vue'
 import { createFormStore } from '../../src/runtime/core/create-form-store'
 import { AnonPersistError } from '../../src/runtime/core/errors'
 import { buildRegister } from '../../src/runtime/core/register-api'
@@ -13,7 +14,7 @@ function makeRegister(opts?: { isSSR?: boolean }) {
     schema: fakeSchema<F>({ email: '', note: '' }),
     ...(opts?.isSSR === true ? { isSSR: true } : {}),
   })
-  return { state, register: buildRegister(state) }
+  return { state, register: buildRegister(state, 'test:inst') }
 }
 
 describe('buildRegister', () => {
@@ -24,7 +25,9 @@ describe('buildRegister', () => {
       expect(typeof rv.registerElement).toBe('function')
       expect(typeof rv.deregisterElement).toBe('function')
       expect(typeof rv.setValueWithInternalPath).toBe('function')
-      expect(rv.innerRef).toBeDefined()
+      // Tightened from `.toBeDefined()` — the contract is a Vue Ref,
+      // not an arbitrary non-undefined value.
+      expect(isRef(rv.innerRef)).toBe(true)
     })
 
     it('innerRef reflects current form value', () => {
@@ -109,8 +112,8 @@ describe('buildRegister', () => {
         formKey: 'B',
         schema: fakeSchema<F>({ email: '', note: '' }),
       })
-      const registerA = buildRegister(stateA)
-      const registerB = buildRegister(stateB)
+      const registerA = buildRegister(stateA, 'test:inst')
+      const registerB = buildRegister(stateB, 'test:inst')
 
       const rvA = registerA(['email'])
       const rvB = registerB(['email'])

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod-v3'
 import { zodAdapter } from '../../../src/runtime/adapters/zod-v3'
+import { UnsupportedSchemaError } from '../../../src/runtime/adapters/zod-v3/errors'
 
 /**
  * The v3 adapter is the pre-rewrite implementation moved verbatim in
@@ -119,6 +120,71 @@ describe('zod v3 adapter — getDefaultValues', () => {
     const adapter = zodAdapter(schema)('f')
     const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
     expect(result.data).toEqual({ event: { kind: 'click', x: 0 } })
+  })
+
+  // The four kinds below were previously unhandled — generateValue
+  // logged "unsupported schema kind" and returned `null`, so any form
+  // built against a schema using lazy / intersection / nativeEnum / set
+  // initialised with phantom nulls instead of the typed empty value.
+  // Each case mirrors v4's `deriveDefault` semantics.
+
+  it('z.lazy(...) descends into the lazy target for the default', () => {
+    // Non-recursive lazy — the wrapper is transparent, so the default
+    // should match the inner schema's empty object. (Recursive z.lazy
+    // patterns work too, but their generic typing on the inner shape
+    // doesn't survive `z.ZodType<T>` without conditional unwrapping
+    // that's noise for the unit-level coverage here.)
+    const inner = z.object({ text: z.string(), count: z.number() })
+    const schema = z.object({ root: z.lazy(() => inner) })
+    const adapter = zodAdapter(schema)('f')
+    expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({
+      root: { text: '', count: 0 },
+    })
+  })
+
+  it('z.intersection(A, B) merges defaults from both sides', () => {
+    const schema = z.object({
+      combo: z.intersection(z.object({ a: z.string() }), z.object({ b: z.number() })),
+    })
+    const adapter = zodAdapter(schema)('f')
+    expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({
+      combo: { a: '', b: 0 },
+    })
+  })
+
+  it('z.nativeEnum(StringEnum) defaults to the first declared value', () => {
+    enum Color {
+      Red = 'red',
+      Blue = 'blue',
+    }
+    const schema = z.object({ c: z.nativeEnum(Color) })
+    const adapter = zodAdapter(schema)('f')
+    expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({
+      c: 'red',
+    })
+  })
+
+  it('z.nativeEnum(NumericEnum) skips reverse-mapped string entries', () => {
+    enum Status {
+      Active,
+      Inactive,
+    }
+    const schema = z.object({ s: z.nativeEnum(Status) })
+    const adapter = zodAdapter(schema)('f')
+    expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({
+      // The first ACTUAL value is 0 (`Status.Active`); the reverse-mapped
+      // string keys ('0' → 'Active') aren't valid runtime enum members.
+      s: 0,
+    })
+  })
+
+  it('z.set(...) defaults to an empty Set', () => {
+    const schema = z.object({ tags: z.set(z.string()) })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
+    expect(result.success).toBe(true)
+    expect((result.data as { tags: unknown }).tags).toBeInstanceOf(Set)
+    expect((result.data as { tags: Set<string> }).tags.size).toBe(0)
   })
 })
 
@@ -285,5 +351,149 @@ describe('zod v3 adapter — discriminated union routing', () => {
         e.message === 'x must be non-negative'
     )
     expect(match).toBe(true)
+  })
+})
+
+// stripRefinements descended into objects, arrays, and effects pre-fix
+// but skipped Set / Tuple / Record / Union / DiscriminatedUnion /
+// Intersection / Lazy. Refinements nested inside those containers
+// survived into the slim schema, so `strict: false` defaults that
+// passed primitive shape (e.g. `''` for an email-refined tuple element)
+// still failed the slim parse and got fixed up downstream — which
+// "worked" but produced a different second-parse path than v4. The
+// fix gives v3 the same correctness floor as v4.
+describe('zod v3 adapter — stripRefinements (lax mode)', () => {
+  it('descends into z.tuple element refinements', () => {
+    const schema = z.object({
+      pair: z.tuple([z.string().email(), z.number().min(10)]),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true, strict: false })
+    expect(result.success).toBe(true)
+    expect(result.data).toEqual({ pair: ['', 0] })
+  })
+
+  it('descends into z.set element refinements', () => {
+    const schema = z.object({
+      tags: z.set(z.string().min(3)),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true, strict: false })
+    expect(result.success).toBe(true)
+    expect((result.data as { tags: unknown }).tags).toBeInstanceOf(Set)
+  })
+
+  it('descends into z.record value refinements', () => {
+    const schema = z.object({
+      counts: z.record(z.number().min(1)),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true, strict: false })
+    expect(result.success).toBe(true)
+    expect(result.data).toEqual({ counts: {} })
+  })
+
+  it('descends into z.union member refinements', () => {
+    const schema = z.object({
+      val: z.union([z.string().email(), z.number().int()]),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true, strict: false })
+    expect(result.success).toBe(true)
+  })
+
+  it('descends into z.intersection sides', () => {
+    const schema = z.object({
+      combo: z.intersection(
+        z.object({ a: z.string().email() }),
+        z.object({ b: z.number().min(10) })
+      ),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true, strict: false })
+    expect(result.success).toBe(true)
+    expect(result.data).toEqual({ combo: { a: '', b: 0 } })
+  })
+
+  it('descends into z.discriminatedUnion option refinements', () => {
+    const schema = z.object({
+      event: z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('a'), msg: z.string().min(5) }),
+        z.object({ kind: z.literal('b'), n: z.number() }),
+      ]),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true, strict: false })
+    expect(result.success).toBe(true)
+    expect(result.data).toEqual({ event: { kind: 'a', msg: '' } })
+  })
+
+  it('descends into z.lazy() target refinements', () => {
+    const inner = z.object({ name: z.string().email() })
+    const schema = z.object({ wrapped: z.lazy(() => inner) })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true, strict: false })
+    expect(result.success).toBe(true)
+    expect(result.data).toEqual({ wrapped: { name: '' } })
+  })
+})
+
+describe('zod v3 adapter — assertSupportedKinds', () => {
+  it('throws UnsupportedSchemaError for z.promise(...)', () => {
+    const schema = z.object({ pending: z.promise(z.string()) })
+    expect(() => zodAdapter(schema)('f')).toThrow(UnsupportedSchemaError)
+  })
+
+  it('throws UnsupportedSchemaError for z.function()', () => {
+    const schema = z.object({ cb: z.function() })
+    expect(() => zodAdapter(schema)('f')).toThrow(UnsupportedSchemaError)
+  })
+
+  it('throws UnsupportedSchemaError for z.map(...)', () => {
+    const schema = z.object({ index: z.map(z.string(), z.number()) })
+    expect(() => zodAdapter(schema)('f')).toThrow(UnsupportedSchemaError)
+  })
+
+  it('throws UnsupportedSchemaError for z.symbol()', () => {
+    const schema = z.object({ tag: z.symbol() })
+    expect(() => zodAdapter(schema)('f')).toThrow(UnsupportedSchemaError)
+  })
+
+  it('throws UnsupportedSchemaError for self-referencing z.lazy(...)', () => {
+    type Node = { value: string; child: Node }
+    const Node: z.ZodType<Node> = z.lazy(() => z.object({ value: z.string(), child: Node }))
+    const schema = z.object({ root: Node })
+    expect(() => zodAdapter(schema)('f')).toThrow(UnsupportedSchemaError)
+  })
+
+  it('descends through wrappers — z.promise nested in .optional() still throws', () => {
+    const schema = z.object({ pending: z.promise(z.string()).optional() })
+    expect(() => zodAdapter(schema)('f')).toThrow(UnsupportedSchemaError)
+  })
+
+  it('accepts non-recursive z.lazy(...) without throwing', () => {
+    const inner = z.object({ text: z.string() })
+    const schema = z.object({ root: z.lazy(() => inner) })
+    expect(() => zodAdapter(schema)('f')).not.toThrow()
+  })
+
+  it('accepts every supported kind without throwing', () => {
+    const schema = z.object({
+      str: z.string(),
+      num: z.number(),
+      bool: z.boolean(),
+      arr: z.array(z.string()),
+      tup: z.tuple([z.string(), z.number()]),
+      rec: z.record(z.string()),
+      set: z.set(z.string()),
+      enm: z.enum(['a', 'b']),
+      lit: z.literal('x'),
+      du: z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('a'), v: z.string() }),
+        z.object({ kind: z.literal('b'), v: z.number() }),
+      ]),
+      inter: z.intersection(z.object({ a: z.string() }), z.object({ b: z.number() })),
+    })
+    expect(() => zodAdapter(schema)('f')).not.toThrow()
   })
 })

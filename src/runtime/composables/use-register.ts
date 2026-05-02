@@ -38,7 +38,7 @@
  * When the wrapper's root IS the input itself, Vue's attribute
  * fallthrough handles the binding and `useRegister` is unnecessary.
  * For wrappers that bind multiple fields (compound forms), use
- * `useFormContext<Form>(key?)` and call `ctx.register(...)` directly.
+ * `injectForm<Form>(key?)` and call `ctx.register(...)` directly.
  */
 import {
   computed,
@@ -58,8 +58,18 @@ import type { RegisterValue } from '../types/types-api'
  * `onMounted` hook; read by the directive's deferred warn check to
  * skip the "is a no-op" warn for components that handle binding via
  * an inner v-register.
+ *
+ * `Symbol.for(...)` so the marker round-trips across duplicate copies
+ * of chemical-x — see `assignKey` in core/directive.ts for the same
+ * reasoning. `useRegister` and the directive are typically loaded
+ * from the same module copy, but a consumer importing from
+ * `@chemical-x/forms/zod` (Vite-optimized bundle) and the Nuxt
+ * plugin's relative-path import (live ESM) can land on different
+ * copies; a global symbol means the marker check still works.
  */
-export const REGISTER_OWNER_MARKER: unique symbol = Symbol('cxUseRegisterChild')
+export const REGISTER_OWNER_MARKER: unique symbol = Symbol.for(
+  'chemical-x-forms:register-owner-marker'
+)
 
 const warnedNoParentRV: WeakSet<object> | null = __DEV__ ? new WeakSet<object>() : null
 let warnedOutsideSetup = false

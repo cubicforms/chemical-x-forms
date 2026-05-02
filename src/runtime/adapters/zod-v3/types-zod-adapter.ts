@@ -1,11 +1,11 @@
 import type { z } from 'zod-v3'
 import type {
-  FieldValidationConfig,
+  CoercionRegistry,
   FormKey,
   HistoryConfig,
   OnInvalidSubmitPolicy,
   PersistConfig,
-  ValidationMode,
+  ValidateOnConfig,
 } from '../../types/types-api'
 
 /**
@@ -13,7 +13,10 @@ import type {
  * shape as the schema-agnostic `UseFormConfiguration`, but with
  * `schema` constrained to a `z.ZodObject` (or wrapped form).
  */
-export type UseFormConfigurationWithZod<Schema extends z.ZodType<unknown>, DefaultValues> = {
+export type UseFormConfigurationWithZod<
+  Schema extends z.ZodType<unknown>,
+  DefaultValues,
+> = ValidateOnConfig & {
   /** A Zod v3 `ZodObject` schema (or one wrapped in `.optional()` / `.nullable()` / `.default()` / `.refine()`). */
   schema: Schema extends z.ZodType<unknown>
     ? UnwrapZodObject<Schema> extends z.ZodObject<z.ZodRawShape>
@@ -26,11 +29,12 @@ export type UseFormConfigurationWithZod<Schema extends z.ZodType<unknown>, Defau
   // types-api.ts for the full rationale.
   key?: FormKey
   defaultValues?: DefaultValues
-  validationMode?: ValidationMode
+  strict?: boolean
   onInvalidSubmit?: OnInvalidSubmitPolicy
-  fieldValidation?: FieldValidationConfig
   persist?: PersistConfig
   history?: HistoryConfig
+  rememberVariants?: boolean
+  coerce?: boolean | CoercionRegistry
 }
 
 /**

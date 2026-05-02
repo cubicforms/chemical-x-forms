@@ -8,10 +8,13 @@ import { createChemicalXForms } from '../../src/runtime/core/plugin'
 /**
  * Debounced field-level validation.
  *
- * `fieldValidation: { on: 'change', debounceMs }` (default) schedules
- * validation on every `setValueAtPath` write; `on: 'blur'` fires
- * immediately on blur; `on: 'none'` is the explicit opt-out — writes
- * never schedule a field run, errors only update at submit time.
+ * `validateOn: 'change'` (default) + `debounceMs > 0` schedules
+ * validation on every `setValueAtPath` write; `validateOn: 'blur'`
+ * fires immediately on blur; `validateOn: 'submit'` is the explicit
+ * opt-out — writes never schedule a field run, errors only update
+ * at submit time. With `debounceMs: 0` (the new default) writes
+ * still validate per keystroke but go through the immediate (no
+ * `setTimeout`) branch.
  *
  * Runs concurrently with handleSubmit — submit-entry aborts in-flight
  * field runs so submit's full-form result is authoritative.
@@ -22,9 +25,7 @@ const baseSchema = z.object({
   password: z.string().min(8, 'min 8 chars'),
 })
 
-function mountWith(options: {
-  fieldValidation?: Parameters<typeof useForm<typeof baseSchema>>[0]['fieldValidation']
-}) {
+function mountWith(options: { validateOn?: 'change' | 'blur' | 'submit'; debounceMs?: number }) {
   type Returned = ReturnType<typeof useForm<typeof baseSchema>>
   const handle: { api?: Returned } = {}
   const App = defineComponent({
@@ -33,12 +34,14 @@ function mountWith(options: {
         schema: baseSchema,
         key: 'field-validation',
         // Pin lax: tests here exercise debounced field validation, not
-        // the construction-time strict-mode seed. Keeping the form
-        // mount-clean lets each test set the invalid value itself and
-        // assert the debounced run lands.
-        validationMode: 'lax',
-        ...(options.fieldValidation ? { fieldValidation: options.fieldValidation } : {}),
-      })
+        // the construction-time strict-mode seed. The schema is two
+        // strings — neither auto-marks blank (only numeric primitives
+        // do), so `derivedBlankErrors` stays empty and each test can
+        // observe the debounced run without confounding entries.
+        strict: false,
+        ...(options.validateOn !== undefined ? { validateOn: options.validateOn } : {}),
+        ...(options.debounceMs !== undefined ? { debounceMs: options.debounceMs } : {}),
+      } as Parameters<typeof useForm<typeof baseSchema>>[0])
       return () => h('div')
     },
   })
@@ -56,7 +59,7 @@ async function drainMicrotasks(rounds = 8): Promise<void> {
   }
 }
 
-describe('fieldValidation: { on: "change", debounceMs }', () => {
+describe('validateOn: "change", debounceMs > 0', () => {
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
@@ -65,7 +68,7 @@ describe('fieldValidation: { on: "change", debounceMs }', () => {
 
   it('debounces writes — only the most recent value is validated', async () => {
     vi.useFakeTimers()
-    const { app, api } = mountWith({ fieldValidation: { on: 'change', debounceMs: 200 } })
+    const { app, api } = mountWith({ validateOn: 'change', debounceMs: 200 })
     apps.push(app)
 
     // Rapid writes within the debounce window.
@@ -86,7 +89,7 @@ describe('fieldValidation: { on: "change", debounceMs }', () => {
 
   it('clears the errored path when the new value validates cleanly', async () => {
     vi.useFakeTimers()
-    const { app, api } = mountWith({ fieldValidation: { on: 'change', debounceMs: 50 } })
+    const { app, api } = mountWith({ validateOn: 'change', debounceMs: 50 })
     apps.push(app)
 
     api.setValue('email', 'not-email')
@@ -102,7 +105,7 @@ describe('fieldValidation: { on: "change", debounceMs }', () => {
 
   it('submit entry aborts pending field runs — submit result wins', async () => {
     vi.useFakeTimers()
-    const { app, api } = mountWith({ fieldValidation: { on: 'change', debounceMs: 500 } })
+    const { app, api } = mountWith({ validateOn: 'change', debounceMs: 500 })
     apps.push(app)
 
     // Queue a field validation but don't let it fire yet.
@@ -123,21 +126,19 @@ describe('fieldValidation: { on: "change", debounceMs }', () => {
     expect(api.errors.password?.[0]?.message).toBe('min 8 chars')
   })
 
-  it('on="change" is the default: writes schedule a debounced field run', async () => {
-    vi.useFakeTimers()
+  it('validateOn defaults to "change" with debounceMs: 0 — writes validate synchronously', async () => {
     const { app, api } = mountWith({})
     apps.push(app)
 
     api.setValue('email', 'not-an-email')
-    // Default debounceMs is 125; advance past it.
-    await vi.advanceTimersByTimeAsync(175)
+    // No setTimeout to wait on — microtask flush is enough.
     await drainMicrotasks()
     expect(api.errors.email?.[0]?.message).toBe('bad email')
   })
 
-  it('explicit on="none" opts out: writes never schedule a field run', async () => {
+  it('explicit validateOn: "submit" opts out: writes never schedule a field run', async () => {
     vi.useFakeTimers()
-    const { app, api } = mountWith({ fieldValidation: { on: 'none' } })
+    const { app, api } = mountWith({ validateOn: 'submit' })
     apps.push(app)
 
     api.setValue('email', 'not-an-email')
@@ -147,14 +148,14 @@ describe('fieldValidation: { on: "change", debounceMs }', () => {
   })
 })
 
-describe('fieldValidation: { on: "blur" }', () => {
+describe('validateOn: "blur"', () => {
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
   it('writing the value does NOT validate — only blur does', async () => {
-    const { app, api } = mountWith({ fieldValidation: { on: 'blur' } })
+    const { app, api } = mountWith({ validateOn: 'blur' })
     apps.push(app)
 
     api.setValue('email', 'invalid')
@@ -164,7 +165,7 @@ describe('fieldValidation: { on: "blur" }', () => {
   })
 })
 
-describe('fieldValidation: reset cancels pending runs', () => {
+describe('field validation: reset cancels pending runs', () => {
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
@@ -173,7 +174,7 @@ describe('fieldValidation: reset cancels pending runs', () => {
 
   it('reset() prevents a scheduled field-run timer from firing', async () => {
     vi.useFakeTimers()
-    const { app, api } = mountWith({ fieldValidation: { on: 'change', debounceMs: 300 } })
+    const { app, api } = mountWith({ validateOn: 'change', debounceMs: 300 })
     apps.push(app)
 
     api.setValue('email', 'not-an-email')

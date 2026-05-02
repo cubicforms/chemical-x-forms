@@ -61,7 +61,7 @@ more specific predicate instead:
 
 ```ts
 // Faster than gating on the whole-form state.isDirty:
-const isEmailDirty = computed(() => form.fieldState.email.dirty)
+const isEmailDirty = computed(() => form.fields.email.dirty)
 ```
 
 ## Reset cost

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { useForm } from '../../src'
 import { attachRegistryToApp, createRegistry } from '../../src/runtime/core/registry'
-import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
+import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 import { fakeSchema } from '../utils/fake-schema'
 
 /**
@@ -33,7 +33,7 @@ const defaults: BlogForm = {
 }
 
 function harness(initial?: Partial<BlogForm>) {
-  let captured!: UseAbstractFormReturnType<BlogForm>
+  let captured!: UseFormReturnType<BlogForm>
   const Probe = defineComponent({
     setup() {
       captured = useForm<BlogForm>({
@@ -210,16 +210,16 @@ describe('useForm — field array helpers', () => {
     // first-seen value was recorded as its own baseline.
     const { app, form } = harness({ tags: [] })
     apps.push(app)
-    expect(form.state.isDirty).toBe(false)
+    expect(form.meta.isDirty).toBe(false)
     form.append('tags', 'first')
-    expect(form.state.isDirty).toBe(true)
+    expect(form.meta.isDirty).toBe(true)
   })
 
   it('remove flips isDirty (removing an originals-tracked leaf is a mutation)', () => {
     const { app, form } = harness({ tags: ['a', 'b'] })
     apps.push(app)
-    expect(form.state.isDirty).toBe(false)
+    expect(form.meta.isDirty).toBe(false)
     form.remove('tags', 0)
-    expect(form.state.isDirty).toBe(true)
+    expect(form.meta.isDirty).toBe(true)
   })
 })

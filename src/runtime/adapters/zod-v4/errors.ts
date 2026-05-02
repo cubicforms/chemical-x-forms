@@ -1,5 +1,6 @@
 import type { z } from 'zod'
 import { __DEV__ } from '../../core/dev'
+import { CxError } from '../../core/errors'
 import type { FormKey, ValidationError } from '../../types/types-api'
 
 let warnedZodCodeMissing = false
@@ -51,9 +52,4 @@ export function zodIssuesToValidationErrors(
  * The error message includes the dotted path of the offending node
  * so you can locate it without traversing the whole schema.
  */
-export class UnsupportedSchemaError extends Error {
-  override readonly name = 'UnsupportedSchemaError'
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options)
-  }
-}
+export class UnsupportedSchemaError extends CxError {}

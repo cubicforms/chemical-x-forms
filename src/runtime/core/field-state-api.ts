@@ -42,7 +42,7 @@ export type FieldStateView = {
   /**
    * `true` when the user hasn't supplied a value yet — the input
    * renders as empty even though storage holds a slim default
-   * (e.g. `0` for `z.number()`, `''` for `z.string()`). Answers
+   * (e.g. `0` for a numeric leaf, `''` for a string leaf). Answers
    * the question: "Is this field empty because the user left it
    * blank, or because the slim default happens to be `0` / `''`?"
    *
@@ -63,21 +63,19 @@ export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<
       const value = state.getValueAtPath(segments)
       const original = state.originals.get(key)?.value
       const pristine = state.isPristineAtPath(segments)
-      // Read both schema + user errors at this key directly so this
-      // computed depends only on the two specific Map keys (Vue's
-      // collection handlers track per-key reads). Going through
+      // Read schema, derived-blank, and user errors at this key directly
+      // so this computed depends only on the specific Map keys it touches
+      // (Vue's collection handlers track per-key reads). Going through
       // `state.getErrorsForPath` would work too, but inline reads keep
-      // the dependency graph trivially obvious.
+      // the dependency graph trivially obvious. Order matches the
+      // top-level `errors` proxy: schema → derived-blank → user.
       const schemaForKey = state.schemaErrors.get(key)
+      const blankForKey = state.derivedBlankErrors.value.get(key)
       const userForKey = state.userErrors.get(key)
-      const errors =
-        schemaForKey === undefined
-          ? userForKey === undefined
-            ? []
-            : [...userForKey]
-          : userForKey === undefined
-            ? [...schemaForKey]
-            : [...schemaForKey, ...userForKey]
+      const errors: ValidationError[] = []
+      if (schemaForKey !== undefined) errors.push(...schemaForKey)
+      if (blankForKey !== undefined) errors.push(...blankForKey)
+      if (userForKey !== undefined) errors.push(...userForKey)
       return {
         value,
         original,

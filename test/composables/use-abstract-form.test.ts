@@ -5,7 +5,7 @@ import { renderToString } from '@vue/server-renderer'
 import { useForm } from '../../src'
 import { ANONYMOUS_FORM_KEY_PREFIX } from '../../src/runtime/core/defaults'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
-import { useFormContext } from '../../src/runtime/composables/use-form-context'
+import { injectForm } from '../../src/runtime/composables/use-form-context'
 import { fakeSchema } from '../utils/fake-schema'
 
 /**
@@ -127,15 +127,15 @@ describe('useForm — key is captured once at setup', () => {
     app.unmount()
   })
 
-  it('useFormContext under the new key after mutation does not find the form', async () => {
+  it('injectForm under the new key after mutation does not find the form', async () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
 
     const sourceKey = ref('form-original')
     const captured: {
       ownerApi?: ApiReturn
-      lookupOriginal?: ReturnType<typeof useFormContext<Form>>
-      lookupMutated?: ReturnType<typeof useFormContext<Form>>
+      lookupOriginal?: ReturnType<typeof injectForm<Form>>
+      lookupMutated?: ReturnType<typeof injectForm<Form>>
     } = {}
 
     const Owner = defineComponent({
@@ -149,8 +149,8 @@ describe('useForm — key is captured once at setup', () => {
     })
     const Lookup = defineComponent({
       setup() {
-        captured.lookupOriginal = useFormContext<Form>('form-original')
-        captured.lookupMutated = useFormContext<Form>('form-mutated')
+        captured.lookupOriginal = injectForm<Form>('form-original')
+        captured.lookupMutated = injectForm<Form>('form-mutated')
         return () => h('span')
       },
     })

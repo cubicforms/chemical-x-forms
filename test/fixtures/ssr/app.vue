@@ -28,8 +28,11 @@
     // Pin lax: this fixture proves user-injected errors render across
     // the SSR boundary. Strict-mode default would also seed schema
     // errors from the empty defaults, displacing the user-injected
-    // entries at errors[0] (schema-first ordering).
-    validationMode: 'lax',
+    // entries at errors[0] (schema-first ordering). The schema is two
+    // strings — neither auto-marks blank, so `derivedBlankErrors`
+    // stays empty and the user-injected entries are the only thing
+    // appearing at errors[0].
+    strict: false,
   })
   directForm.setFieldErrors([
     { message: 'Email already in use', path: ['email'], formKey: 'errors-direct' },
@@ -157,9 +160,9 @@
           directForm.errors.password?.[0]?.message ?? ''
         }}</span>
         <span id="errors-direct-fieldstate-email">{{
-          directForm.fieldState.email.errors[0]?.message ?? ''
+          directForm.fields.email.errors[0]?.message ?? ''
         }}</span>
-        <span id="errors-direct-count">{{ Object.keys(directForm.errors).length }}</span>
+        <span id="errors-direct-count">{{ directForm.meta.errors.length }}</span>
       </div>
 
       <!-- parseApiErrors → setFieldErrors -->

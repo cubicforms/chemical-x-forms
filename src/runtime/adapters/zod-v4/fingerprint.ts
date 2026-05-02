@@ -13,6 +13,7 @@ import {
   getObjectShape,
   getRecordKeyType,
   getRecordValueType,
+  getSetValueType,
   getTupleItems,
   getUnionOptions,
   kindOf,
@@ -149,6 +150,9 @@ function computeFingerprint(
 
     case 'array':
       return `array[${recurse(getArrayElement(schema as z.ZodArray))}]${formatChecks(schema)}`
+
+    case 'set':
+      return `set<${recurse(getSetValueType(schema))}>${formatChecks(schema)}`
 
     case 'tuple':
       return `tuple[${getTupleItems(schema).map(recurse).join(',')}]`

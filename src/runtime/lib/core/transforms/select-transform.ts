@@ -431,61 +431,92 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
     const previousOptionExpressions: CompoundExpressionNode['children'][] =
       typeof multipleExpression === 'string' ? [[multipleExpression]] : [multipleExpression]
 
-    // construct `:value` dynamic prop based on the existing `v-register` directive
-    const selectProps = node.props
+    // Multi-select hydration trap. Setting `select.value = X` on a
+    // `<select multiple>` runs the spec's value-setter loop: for each
+    // option, set selectedness to (option.value === X). For an array
+    // model, `displayValue.value` resolves to `String(arr)` —
+    // `"red,blue"` — which matches NO option's value, so the patch
+    // DESELECTS every option (including the SSR-selected ones the
+    // per-option `:selected` injection just placed). At runtime the
+    // directive's `setSelected` re-syncs from the model, but the value
+    // patch + the directive's identity-skip path can leave the DOM
+    // stuck deselected if the model hasn't moved since the last apply.
+    //
+    // Per-option `:selected` bindings are the canonical mechanism for
+    // multi-select initial state — the runtime directive's setSelected
+    // mirrors exactly the same logic on the client. The select-level
+    // `:value` adds nothing for multi: it's only useful as Vue's
+    // single-select `value` patch shorthand, which is benign there
+    // (`select.value = "1"` selects the matching option, a no-op when
+    // it's already selected via `<option selected>`).
+    //
+    // Conservative gate: skip `:value` whenever `multiple` isn't
+    // statically false. Static `<select>` and static `<select
+    // multiple="false">` keep the injection (`extractMultipleFromSelect…`
+    // returns the literal string `'false'` for both). Anything else —
+    // static `multiple`, `multiple="true"`, or a dynamic `:multiple`
+    // expression we can't evaluate at compile time — skips. The
+    // dynamic case is rare; trading SSR `value=` on the select for
+    // hydration correctness is the right call.
+    const isStaticallyNonMultiple = multipleExpression === 'false'
 
+    const selectProps = node.props
     snapshotProps(selectProps)
     removePropsByName(selectProps, ['value']) // actively prevent an attribute collision
-    const valuePropExpArray = Array.isArray(registerSummarizedProp?.value)
-      ? registerSummarizedProp.value
-      : [registerSummarizedProp?.value ?? 'undefined']
-    // Read `displayValue.value` rather than `innerRef.value` so
-    // selects share the same single read surface as text inputs.
-    // The directive never marks select paths blank (no
-    // DOM "empty" state), so in normal flow `displayValue` is just
-    // `String(storage)` — identical to today. The edge case where a
-    // consumer programmatically calls `setValue(numericPath, unset)`
-    // bound to a `<select>` is documented in the docs (browser falls
-    // back to first option; meta.blank surfaces the intent).
-    const initExpression = createCompoundExpression([
-      '(',
-      ...valuePropExpArray,
-      ')?.displayValue.value',
-    ])
 
-    const simpleExpression = createSimpleExpression(
-      flattenCompoundExpression(initExpression),
-      false
-    )
-    // `processExpression` can throw on malformed identifiers or
-    // exotic expression shapes. Pre-fix, the throw bubbled to the
-    // outer try/catch, which then ran the snapshot-restore path AND
-    // skipped both the select's `:value` injection AND every option's
-    // `:selected` binding — turning a single-expression problem into
-    // a whole-template fallback. Isolate here so a parser failure on
-    // this one expression keeps the other injections.
-    let outputExp: ExpressionNode
-    try {
-      outputExp = processExpression(simpleExpression, { ...context, prefixIdentifiers: false })
-    } catch (err) {
-      console.error(
-        '[@chemical-x/forms] select transform: processExpression failed; falling back to the unprocessed expression.',
-        err
+    if (isStaticallyNonMultiple) {
+      // construct `:value` dynamic prop based on the existing `v-register` directive
+      const valuePropExpArray = Array.isArray(registerSummarizedProp?.value)
+        ? registerSummarizedProp.value
+        : [registerSummarizedProp?.value ?? 'undefined']
+      // Read `displayValue.value` rather than `innerRef.value` so
+      // selects share the same single read surface as text inputs.
+      // The directive never marks select paths blank (no
+      // DOM "empty" state), so in normal flow `displayValue` is just
+      // `String(storage)` — identical to today. The edge case where a
+      // consumer programmatically calls `setValue(numericPath, unset)`
+      // bound to a `<select>` is documented in the docs (browser falls
+      // back to first option; meta.blank surfaces the intent).
+      const initExpression = createCompoundExpression([
+        '(',
+        ...valuePropExpArray,
+        ')?.displayValue.value',
+      ])
+
+      const simpleExpression = createSimpleExpression(
+        flattenCompoundExpression(initExpression),
+        false
       )
-      outputExp = simpleExpression
-    }
+      // `processExpression` can throw on malformed identifiers or
+      // exotic expression shapes. Pre-fix, the throw bubbled to the
+      // outer try/catch, which then ran the snapshot-restore path AND
+      // skipped both the select's `:value` injection AND every option's
+      // `:selected` binding — turning a single-expression problem into
+      // a whole-template fallback. Isolate here so a parser failure on
+      // this one expression keeps the other injections.
+      let outputExp: ExpressionNode
+      try {
+        outputExp = processExpression(simpleExpression, { ...context, prefixIdentifiers: false })
+      } catch (err) {
+        console.error(
+          '[@chemical-x/forms] select transform: processExpression failed; falling back to the unprocessed expression.',
+          err
+        )
+        outputExp = simpleExpression
+      }
 
-    const valueProp: DirectiveNode = {
-      rawName: ':value',
-      arg: createSimpleExpression('value', true),
-      exp: outputExp,
-      name: 'bind',
-      modifiers: [],
-      type: NodeTypes.DIRECTIVE,
-      loc: selectLoc,
-    }
+      const valueProp: DirectiveNode = {
+        rawName: ':value',
+        arg: createSimpleExpression('value', true),
+        exp: outputExp,
+        name: 'bind',
+        modifiers: [],
+        type: NodeTypes.DIRECTIVE,
+        loc: selectLoc,
+      }
 
-    node.props.push(valueProp)
+      node.props.push(valueProp)
+    }
 
     if (isSelect) {
       for (const child of node.children) {

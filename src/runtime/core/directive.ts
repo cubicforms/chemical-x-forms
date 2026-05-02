@@ -35,9 +35,11 @@ import type {
   RegisterRadioCustomDirective,
   RegisterSelectCustomDirective,
   RegisterTextCustomDirective,
+  RegisterTransform,
   RegisterValue,
   WriteMeta,
 } from '../types/types-api'
+import type { PathKey } from './paths'
 import { getOrAssignElementId } from './persistence/opt-in-registry'
 import { enforceSensitiveCheck } from './persistence/sensitive-names'
 
@@ -54,7 +56,15 @@ import { enforceSensitiveCheck } from './persistence/sensitive-names'
  * Most consumers never need this — the built-in directives wire
  * default assigners for text inputs, checkboxes, radios, and selects.
  */
-export const assignKey: unique symbol = Symbol('_assign')
+// `Symbol.for(...)` so `el[assignKey] = ...` round-trips across
+// duplicate copies of chemical-x. The directive (which writes the
+// default assigner) and the consumer-side composables/utilities (which
+// may read or override it) must agree on the key, or the directive
+// stops recognising consumer-installed assigners after the page is
+// served from a Vite-optimised copy that's distinct from the one the
+// directive registration came from. Same reasoning for `listenersKey`
+// and `DEFAULT_ASSIGNER_TAG` below.
+export const assignKey: unique symbol = Symbol.for('chemical-x-forms:assign-key')
 
 /**
  * Per-element bag of listener tuples added by the active directive
@@ -62,7 +72,7 @@ export const assignKey: unique symbol = Symbol('_assign')
  * so reused elements (KeepAlive, v-show) don't accumulate orphaned
  * handlers across activation cycles.
  */
-const listenersKey: unique symbol = Symbol('cxListeners')
+const listenersKey: unique symbol = Symbol.for('chemical-x-forms:directive-listeners')
 
 type TrackedListener = {
   event: string
@@ -153,7 +163,7 @@ function computePersistMeta(el: HTMLElement, registerValue: RegisterValue): Writ
  * has explicitly opted into reading whatever the listener captures,
  * so the bail doesn't apply.
  */
-const DEFAULT_ASSIGNER_TAG: unique symbol = Symbol('cxDefaultAssigner')
+const DEFAULT_ASSIGNER_TAG: unique symbol = Symbol.for('chemical-x-forms:default-assigner-tag')
 
 type DefaultAssignerCarrier = { [DEFAULT_ASSIGNER_TAG]?: boolean }
 
@@ -188,6 +198,122 @@ function shouldBailListener(el: HTMLElement): boolean {
   return isDefaultAssigner((el as unknown as { [k: symbol]: unknown })[assignKey])
 }
 
+/**
+ * Result of running a field's `transforms: [...]` pipeline. Discriminated
+ * so each assigner branch can short-circuit on failure without re-checking
+ * a sentinel. `ok: false` means the write should be aborted (the helper
+ * already logged via `console.error`); the caller returns `false` from
+ * the assigner so the existing rejected-write contract carries through.
+ */
+type TransformResult = { ok: true; value: unknown } | { ok: false }
+
+/**
+ * Apply the field's transform pipeline to a value. Each transform runs
+ * inside a per-call try/catch so a buggy or defensive-throw transform
+ * doesn't crash the host app. On throw the pipeline aborts (subsequent
+ * transforms don't run), nothing is written to form state, and the
+ * caller returns `false`. A `Promise` return is treated identically —
+ * transforms must be sync; canonicalize-before-write patterns belong
+ * in async field validation, not the assigner pipeline.
+ *
+ * `transforms` on `RegisterValue` is optional (test fixtures and
+ * custom integrations can omit it); a missing array short-circuits to
+ * the original value with no allocation.
+ */
+function runTransforms(initial: unknown, registerValue: RegisterValue): TransformResult {
+  const transforms = registerValue.transforms
+  if (transforms === undefined || transforms.length === 0) {
+    return { ok: true, value: initial }
+  }
+  let v = initial
+  for (let i = 0; i < transforms.length; i++) {
+    const fn = transforms[i] as RegisterTransform
+    try {
+      v = fn(v)
+    } catch (err) {
+      logTransformFailure(registerValue.path, i, fn, err)
+      return { ok: false }
+    }
+  }
+  if (v instanceof Promise) {
+    logTransformAsync(registerValue.path)
+    return { ok: false }
+  }
+  return { ok: true, value: v }
+}
+
+/**
+ * Log a transform throw. Dev message includes path, index, transform name,
+ * remediation hint, and the original error (with message + stack). Prod
+ * message is a fixed string with NONE of those — transform bodies are
+ * consumer code we don't control, so error messages and stack frames are
+ * an information-leak surface (consumer-typed values, file paths, internal
+ * function names). Set `NODE_ENV=development` to surface details.
+ */
+function logTransformFailure(
+  path: PathKey,
+  index: number,
+  fn: RegisterTransform,
+  err: unknown
+): void {
+  if (__DEV__) {
+    const namePart = fn.name !== '' ? `, '${fn.name}'` : ''
+    console.error(
+      `[@chemical-x/forms] transform threw for path '${path}' (index ${index}${namePart}) — ` +
+        `write aborted. Transforms must not throw; wrap your own try/catch if the throw is recoverable. ` +
+        `Original error:`,
+      err
+    )
+  } else {
+    console.error(
+      `[@chemical-x/forms] transform error — write aborted (set NODE_ENV=development for details).`
+    )
+  }
+}
+
+/**
+ * Log a Promise-returning transform. Same dev/prod posture as
+ * `logTransformFailure` — informative in dev, opaque in prod.
+ */
+/**
+ * Apply the field's coerce closure (built at register-time by
+ * `buildCoerceFn`) to a post-transform value. Identity when the
+ * RegisterValue is a hand-rolled mock that omits the field, or when
+ * coercion was disabled / no coerction target was resolved at the
+ * path. The closure itself runs the registry rule, post-validates
+ * the result, and falls back to the original on any rule failure
+ * (throw, wrong-kind, NaN) — see `schema-coerce.ts` for details.
+ */
+function applyCoerce(value: unknown, registerValue: RegisterValue): unknown {
+  return registerValue.coerce !== undefined ? registerValue.coerce(value) : value
+}
+
+/**
+ * Apply the field's element-level coerce closure (built at
+ * register-time by `buildElementCoerceFn`) to a scalar DOM-side
+ * value that should match an array/Set member. `coerceElement` is
+ * only set on container paths; for scalar paths or when coercion
+ * is disabled it's `undefined` and the raw value passes through.
+ * Mirrors `applyCoerce` for the path-level case.
+ */
+function applyElementCoerce(value: unknown, registerValue: RegisterValue): unknown {
+  return registerValue.coerceElement !== undefined ? registerValue.coerceElement(value) : value
+}
+
+function logTransformAsync(path: PathKey): void {
+  if (__DEV__) {
+    console.error(
+      `[@chemical-x/forms] transform pipeline for path '${path}' returned a Promise — ` +
+        `transforms must be sync. Use async field validation for canonicalize-before-write patterns. ` +
+        `Write aborted.`
+    )
+  } else {
+    console.error(
+      `[@chemical-x/forms] transform error — write aborted (set NODE_ENV=development for details).`
+    )
+  }
+}
+
 const getModelAssigner = (
   el: HTMLElement,
   vnode: VNode,
@@ -197,18 +323,40 @@ const getModelAssigner = (
   // single function or an array of functions depending on how many listeners
   // are bound. We narrow before dispatching.
   //
-  // User-supplied assigners receive `(value)` only; if they want their writes
-  // to participate in persistence they must call
-  // `registerValue.setValueWithInternalPath(value, customMeta)` themselves.
-  // The default assigner below auto-attaches per-element meta.
-  const fn: unknown = vnode.props?.['onUpdate:registerValue']
+  // Both shapes invoke the consumer's handler as `(value, registerValue)` so
+  // a top-level handler can call `rv.setValueWithInternalPath(value)` to
+  // forward the write into form state without having to capture `rv` via
+  // closure. Consumers wanting persistence-aware writes pass their own
+  // `meta` to `setValueWithInternalPath`; the default assigner below
+  // auto-attaches per-element meta.
+  //
+  // Vue 3.5's compiler emits TWO different prop keys for `@update:registerValue`
+  // depending on context. For native elements with an uppercase letter in the
+  // event name (e.g. the `V` in `registerValue`), the compiler preserves
+  // casing via the `on:` prefix form: `"on:update:registerValue"`. For
+  // components, vnode lifecycle events, or all-lowercase event names, it
+  // emits `"onUpdate:registerValue"`. Render-function authors using `h(...)`
+  // pick whichever key they like. We read both forms; for components the
+  // `onUpdate:` form normally wins, for plain `<input v-register>` the
+  // `on:update:` form is what survives the compiler.
+  // See @vue/compiler-core/transformOn (search for `[A-Z]/.test(rawName)`).
+  const fn: unknown =
+    vnode.props?.['onUpdate:registerValue'] ?? vnode.props?.['on:update:registerValue']
   if (isArray(fn)) {
+    const fnArr = fn.filter((x) => isFunction(x)) as ((...args: unknown[]) => unknown)[]
     return (value) => {
-      invokeArrayFns(
-        fn.filter((x) => isFunction(x)) as ((...args: unknown[]) => unknown)[],
-        value,
-        registerValue
-      )
+      // Transforms run BEFORE the override sees the value. A consumer
+      // who declared `transforms: [...]` intended "always normalize"; a
+      // silent bypass on override would be the surprise. If they want
+      // raw, they don't register transforms.
+      const r = runTransforms(value, registerValue)
+      if (!r.ok) return false
+      // Schema-driven coerce runs AFTER transforms — it's the final
+      // type-fixup before storage. Custom override handlers receive
+      // the coerced value, mirroring how transforms compose with
+      // overrides today. Consumers who want raw don't enable coerce.
+      const coerced = applyCoerce(r.value, registerValue)
+      invokeArrayFns(fnArr, coerced, registerValue)
       // Multi-listener case: no single boolean to surface. Return
       // undefined so the listener treats this as "succeeded" — matches
       // the back-compat contract for consumer-installed assigners.
@@ -216,7 +364,13 @@ const getModelAssigner = (
     }
   }
   if (isFunction(fn)) {
-    return fn as CustomDirectiveRegisterAssignerFn
+    const handler = fn as CustomDirectiveRegisterAssignerFn
+    return (value) => {
+      const r = runTransforms(value, registerValue)
+      if (!r.ok) return false
+      const coerced = applyCoerce(r.value, registerValue)
+      return handler(coerced, registerValue)
+    }
   }
   // Default-installed assigner. Tagged so the listener-body bail
   // (`shouldBailListener`) can distinguish it from consumer overrides
@@ -226,7 +380,10 @@ const getModelAssigner = (
   // vRegisterSelect's change handler) can detect rejection and gate
   // post-write side effects like the `_assigning` flag.
   const defaultAssigner: CustomDirectiveRegisterAssignerFn = (value) => {
-    return registerValue.setValueWithInternalPath(value, computePersistMeta(el, registerValue))
+    const r = runTransforms(value, registerValue)
+    if (!r.ok) return false
+    const coerced = applyCoerce(r.value, registerValue)
+    return registerValue.setValueWithInternalPath(coerced, computePersistMeta(el, registerValue))
   }
   ;(defaultAssigner as unknown as DefaultAssignerCarrier)[DEFAULT_ASSIGNER_TAG] = true
   return defaultAssigner
@@ -490,6 +647,40 @@ const vRegisterText: RegisterTextCustomDirective = {
         if (isRegisterValue(value)) value.lastTypedForm.value = typedString
       }
       el[assignKey]?.(domValue)
+      // After the default assigner runs, force-sync the DOM when
+      // storage diverges from the post-cast/post-trim `domValue`.
+      // Two cases produce no Vue re-render and so leave the
+      // imperative `beforeUpdate` DOM-from-storage sync stranded:
+      //   1. A `transforms` pipeline mutated the write to a value
+      //      identical to current storage (a clamp at the cap, an
+      //      idempotent normalize, a coerce that re-emits the prior
+      //      stored shape) — `setValueWithInternalPath` produces no
+      //      patch, no reactive trigger, no render.
+      //   2. The slim-primitive gate (or a transform-throw) silently
+      //      rejected the write — storage stays at the prior value,
+      //      again no render.
+      // Either way the DOM keeps the user's raw typed text divorced
+      // from storage. Comparing post-cast `domValue` (not the raw
+      // typed string) preserves the typed-form contract: typing
+      // `1e2` against a number schema casts to 100, storage updates
+      // to 100, post-cast `domValue === storage`, no force-sync —
+      // the user keeps seeing `1e2` mid-typing.
+      //
+      // Gated on `isDefaultAssigner` because custom assigners
+      // (`@update:registerValue`, pre-installed `el[assignKey]`)
+      // own their own DOM/storage relationship — they may write to
+      // a different store, defer / batch / debounce, or intentionally
+      // not update `innerRef.value`. The default assigner's contract
+      // ("a successful write reflects in `innerRef.value` immediately")
+      // is what makes the post-write storage comparison meaningful.
+      if (isRegisterValue(value) && isDefaultAssigner(el[assignKey])) {
+        const storage = value.innerRef.value
+        if (storage !== domValue) {
+          const display = storage == null ? '' : String(storage)
+          if (el.value !== display) el.value = display
+          if (castToNumber) value.lastTypedForm.value = null
+        }
+      }
     })
     if (trim === true || castToNumber) {
       addEventListener(el, 'change', () => {
@@ -633,7 +824,15 @@ const vRegisterText: RegisterTextCustomDirective = {
       }
     }
 
-    el.value = typeof newValue === 'string' ? newValue : ''
+    // Mirror Vue's `vModelText.beforeUpdate`: rely on the browser's
+    // implicit string coercion via the `el.value` setter, with a
+    // null/undefined → '' guard. Pre-fix this was
+    // `typeof newValue === 'string' ? newValue : ''`, which cleared
+    // the input whenever the post-coerce model was a number (e.g.
+    // a plain `<input type="text">` against `z.number()` with
+    // schema-driven coerce on). The defensive type-guard predates
+    // coerce and is now too narrow.
+    el.value = newValue == null ? '' : String(newValue)
   },
 }
 
@@ -651,12 +850,12 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
 
       // this side-steps subtle 2-way binding bugs where ref updates but input cannot be tracked by value
       const explicitValueRequired = true
-      const elementValue = getValue(el, explicitValueRequired)
+      const rawElementValue = getValue(el, explicitValueRequired)
 
       const checked = el.checked
       const assign = el[assignKey]
       if (isArray(modelValue)) {
-        if (elementValue === undefined) {
+        if (rawElementValue === undefined) {
           warn(
             'Checkbox bound to an array model is missing a `value` attribute — ' +
               'cannot determine which item to add or remove. ' +
@@ -664,6 +863,16 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
           )
           return
         }
+        // Element-level coerce on the raw DOM value so the
+        // looseIndexOf lookup and the new array's element shape
+        // match the post-coerce model. Without this, the change
+        // handler builds a mixed-type array (e.g. boolean members
+        // plus a raw string) and either fails to find the existing
+        // entry on uncheck (case-sensitive looseEqual on booleans)
+        // or appends a string to a typed-element array. The path-
+        // level coerce in the assigner cleans up the new array
+        // afterwards either way.
+        const elementValue = applyElementCoerce(rawElementValue, value)
         const index = looseIndexOf(modelValue, elementValue)
         const found = index !== -1
         if (checked && !found) {
@@ -674,7 +883,7 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
           assign?.(filtered)
         }
       } else if (isSet(modelValue)) {
-        if (elementValue === undefined) {
+        if (rawElementValue === undefined) {
           warn(
             'Checkbox bound to a Set model is missing a `value` attribute — ' +
               'cannot determine which item to add or remove. ' +
@@ -682,6 +891,11 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
           )
           return
         }
+        // Set's `.delete` uses strict ===, so coerce the element
+        // BEFORE the Set ops or removals silently fail when the
+        // model holds post-coerce booleans/numbers and the DOM
+        // gives back the raw string.
+        const elementValue = applyElementCoerce(rawElementValue, value)
         const cloned = new Set(modelValue)
         if (checked) {
           cloned.add(elementValue)
@@ -692,19 +906,49 @@ const vRegisterCheckbox: RegisterCheckboxCustomDirective = {
       } else {
         assign?.(getCheckboxValue(el, checked))
       }
+      // After the default assigner runs, force-sync `el.checked` to
+      // current storage. Catches the no-op-write case: a transform
+      // mapped the click's value to current storage (e.g. an always-
+      // false transform on an already-false checkbox) — no patch, no
+      // render, no `beforeUpdate` setChecked. Without this the DOM
+      // stays at the user's click state, divorced from storage.
+      // Skipped for custom assigners (they own DOM/storage sync).
+      if (isRegisterValue(value) && isDefaultAssigner(el[assignKey])) {
+        setChecked(el, value)
+        el._lastAppliedModel = value.innerRef.value
+      }
     })
   },
   // set initial checked on mount to wait for true-value/false-value
-  mounted: setChecked,
+  mounted(el, { value }) {
+    setChecked(el, value)
+    if (isRegisterValue(value)) el._lastAppliedModel = value.innerRef.value
+  },
+  // Skip the DOM sync when the model is identity-unchanged from the
+  // last application. Pre-fix the scalar branch in `setChecked`
+  // gated on `originalValue === oldValue`, comparing a primitive
+  // scalar against the wrapper RegisterValue object — always !==,
+  // so the guard was a silent no-op. Array / Set branches lacked
+  // any guard. The per-render re-apply mirrors the just-fixed
+  // `vRegisterSelect` shape: a sibling's reactive write triggers
+  // `beforeUpdate` mid-click, `setChecked` re-applies the prior
+  // model state, and the in-flight user toggle is clobbered before
+  // the browser fires `change`. Identity comparison on
+  // `innerRef.value` is sound for the same reason as multi-select —
+  // every form write produces a fresh value at the path (new
+  // primitives; new array/Set references along the spine), so
+  // reference equality tracks "did the model move" exactly.
   beforeUpdate(el, binding, vnode) {
     setAssignFunction(el, vnode, binding.value)
-    setChecked(el, binding, vnode)
+    if (!isRegisterValue(binding.value)) return
+    const currentModel = binding.value.innerRef.value
+    if (el._lastAppliedModel === currentModel) return
+    setChecked(el, binding.value)
+    el._lastAppliedModel = currentModel
   },
 }
 
-function setChecked(el: HTMLInputElement, { value, oldValue }: DirectiveBinding, _vnode: VNode) {
-  // store the v-registerer value on the element so it can be accessed by the
-  // change listener.
+function setChecked(el: HTMLInputElement, value: unknown): void {
   if (!isRegisterValue(value)) return
 
   const originalValue = value.innerRef.value
@@ -719,21 +963,31 @@ function setChecked(el: HTMLInputElement, { value, oldValue }: DirectiveBinding,
   // static-attr fix) checks `_value` first, then the DOM property,
   // so all three paths (Vue dynamic, Vue hydrated static, manual
   // setAttribute) resolve identically.
+  // All three branches compare the post-coerce model against the
+  // RAW DOM-side value (the option's `value` attribute, or the
+  // checkbox's `_trueValue`). Coerce normalizes the WRITE direction
+  // (e.g. `"True"` → `true` for `z.boolean()`); without symmetric
+  // normalization on the READ direction, `looseEqual` /
+  // `looseIndexOf` / `Set.has` fight the user's click on every
+  // re-render. Route the raw value through the same `applyCoerce`
+  // closure to restore parity. See setChecked-mid-coerce regression
+  // tests in coerce.test.ts.
   if (isArray(originalValue)) {
-    checked = looseIndexOf(originalValue, getValue(el)) > -1
+    // Element-level coerce: the DOM-side raw value is a SCALAR
+    // matching against the array's element type, not the path's
+    // top-level type (which would be `array`, with no scalar
+    // coerce target).
+    checked = looseIndexOf(originalValue, applyElementCoerce(getValue(el), value)) > -1
   } else if (isSet(originalValue)) {
-    checked = originalValue.has(getValue(el))
+    // Set.has uses SameValueZero (===), not loose comparison —
+    // mismatch is fatal here, not just for case-sensitive booleans.
+    checked = originalValue.has(applyElementCoerce(getValue(el), value))
   } else {
-    if (originalValue === oldValue) {
-      return
-    }
-    checked = looseEqual(originalValue, getCheckboxValue(el, true))
+    const trueValueCoerced = applyCoerce(getCheckboxValue(el, true), value)
+    checked = looseEqual(originalValue, trueValueCoerced)
   }
 
-  // Only update if the checked state has changed
-  const elChecked = el.checked
-
-  if (elChecked !== checked) {
+  if (el.checked !== checked) {
     el.checked = checked
   }
 }
@@ -747,6 +1001,17 @@ const vRegisterRadio: RegisterRadioCustomDirective = {
     addEventListener(el, 'change', () => {
       if (shouldBailListener(el)) return
       el[assignKey]?.(getValue(el))
+      // After the default assigner runs, force-sync `el.checked` to
+      // current storage. Catches the no-op-write case where a
+      // transform maps the click's value to current storage — no
+      // patch, no render, no `beforeUpdate` sync. Skipped for custom
+      // assigners (they own DOM/storage sync).
+      if (isRegisterValue(value) && isDefaultAssigner(el[assignKey])) {
+        const currentModel = value.innerRef.value
+        const target = looseEqual(currentModel, applyCoerce(getValue(el), value))
+        if (el.checked !== target) el.checked = target
+        el._lastAppliedModel = currentModel
+      }
     })
   },
   // Initial checked-state sync runs in `mounted`, NOT `created` —
@@ -762,15 +1027,28 @@ const vRegisterRadio: RegisterRadioCustomDirective = {
     // `vnode.props?.['value']` so SSR-hydrated static `value="..."`
     // attributes (which don't surface in vnode.props because Vue's
     // static-attr fast path skips patchProp) still resolve correctly.
-    el.checked = looseEqual(value.innerRef.value, getValue(el))
+    // Coerce the raw value the same way the change handler will so
+    // the comparison stays symmetric — see setChecked's note.
+    el.checked = looseEqual(value.innerRef.value, applyCoerce(getValue(el), value))
+    el._lastAppliedModel = value.innerRef.value
   },
-  beforeUpdate(el, { value, oldValue }, vnode) {
+  // Skip the DOM sync when the model is identity-unchanged from the
+  // last application. Pre-fix the guard read `value.innerRef.value
+  // !== oldValue`, comparing a primitive scalar against the previous
+  // binding's wrapper RegisterValue object — always !==, so the
+  // guard was a silent no-op and `el.checked = …` re-applied on
+  // every parent re-render. Same shape as the just-fixed
+  // `vRegisterSelect` and `setChecked` bugs: a sibling's reactive
+  // write triggers `beforeUpdate` mid-click and writes back the
+  // prior model state, clobbering the in-flight selection.
+  beforeUpdate(el, { value }, vnode) {
     if (!isRegisterValue(value)) return
 
     setAssignFunction(el, vnode, value)
-    if (value.innerRef.value !== oldValue) {
-      el.checked = looseEqual(value.innerRef.value, getValue(el))
-    }
+    const currentModel = value.innerRef.value
+    if (el._lastAppliedModel === currentModel) return
+    el.checked = looseEqual(currentModel, applyCoerce(getValue(el), value))
+    el._lastAppliedModel = currentModel
   },
 }
 
@@ -803,6 +1081,17 @@ const vRegisterSelect: RegisterSelectCustomDirective = {
           el._assigning = false
         })
       }
+      // After the default assigner runs, force-sync the `<select>`
+      // selection to current storage. Catches the no-op-write case:
+      // a transform mapped the user's pick to current storage (e.g.
+      // always-fixed transform) — no patch, no render, no `updated`
+      // setSelected. Without this the DOM stays at the user's
+      // selection, divorced from storage. Skipped for custom
+      // assigners (they own DOM/storage sync).
+      if (isRegisterValue(value) && isDefaultAssigner(el[assignKey])) {
+        setSelected(el, value)
+        el._lastAppliedModel = value.innerRef.value
+      }
     })
     setAssignFunction(el, vnode, value)
   },
@@ -810,14 +1099,34 @@ const vRegisterSelect: RegisterSelectCustomDirective = {
   // <option>s.
   mounted(el, { value }) {
     setSelected(el, value)
+    if (isRegisterValue(value)) el._lastAppliedModel = value.innerRef.value
   },
   beforeUpdate(el, binding, vnode) {
     setAssignFunction(el, vnode, binding.value)
   },
+  // Skip the DOM sync when the model is identity-unchanged from the
+  // last application. Parent re-renders fire `updated` whether or not
+  // the bound model actually moved (a typed character in a sibling,
+  // an async-validation tick, any reactive read elsewhere on the
+  // page). Without this guard, every such render unconditionally re-
+  // applies `setSelected` against the prior model, which on a
+  // `<select multiple>` clobbers any in-progress user selection
+  // between mousedown and the browser's change-event decision — the
+  // browser then sees no net change, never fires `change`, and the
+  // model never updates. Identity comparison is sound: every form
+  // write produces a new array/Set reference at the path (the diff-
+  // apply replacement of `form.value` rolls forward fresh structures
+  // along the spine), so reference equality on `innerRef.value`
+  // tracks "did the model move" exactly. The `_assigning` gate stays
+  // — it short-circuits the immediate post-write render where the
+  // DOM is already in sync from the user's click.
   updated(el, { value }) {
-    if (el._assigning !== true) {
-      setSelected(el, value)
-    }
+    if (el._assigning === true) return
+    if (!isRegisterValue(value)) return
+    const currentModel = value.innerRef.value
+    if (el._lastAppliedModel === currentModel) return
+    setSelected(el, value)
+    el._lastAppliedModel = currentModel
   },
 }
 
@@ -875,6 +1184,12 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
     // long forms (thousands of options or selected items). Both
     // Array and Set primitive paths share this; only object-valued
     // option binds (rare) keep their original identity comparisons.
+    //
+    // Each option's raw `value` is routed through `applyCoerce`
+    // before stringifying so the comparison stays symmetric with
+    // the change handler's WRITE-side coerce — without it,
+    // `String(true) === "true"` but the option's raw `"True"`
+    // stringifies to `"True"` and the option silently never matches.
     const stringifiedMembers = new Set<string>()
     const iter: Iterable<unknown> = isArrayValue
       ? (externalValue as ReadonlyArray<unknown>)
@@ -884,9 +1199,17 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
     for (let i = 0, l = el.options.length; i < l; i++) {
       const option = el.options[i]
       if (!option) continue
-      const optionValue = getValue(option)
+      // Element-level coerce: a multi-select's option matches a
+      // member of an array/Set model, so the comparison must run
+      // against the element type, not the path's top-level type.
+      const optionValue = applyElementCoerce(getValue(option), value)
       const optionType = typeof optionValue
       if (optionType === 'string' || optionType === 'number') {
+        option.selected = stringifiedMembers.has(String(optionValue))
+      } else if (optionType === 'boolean') {
+        // Booleans go through the same stringify channel — covers
+        // `<option value="True">` × `z.array(z.boolean())` after
+        // coerce normalises to `true`.
         option.selected = stringifiedMembers.has(String(optionValue))
       } else if (isArrayValue) {
         // Object option, Array model: structural equality via
@@ -903,11 +1226,12 @@ function setSelected(el: HTMLSelectElement, value: unknown) {
   }
 
   // Non-multiple: find the first option matching the scalar model
-  // and set selectedIndex; clear if nothing matches.
+  // and set selectedIndex; clear if nothing matches. Coerce the
+  // raw option value to keep parity with the change handler.
   for (let i = 0, l = el.options.length; i < l; i++) {
     const option = el.options[i]
     if (!option) continue
-    if (looseEqual(getValue(option), externalValue)) {
+    if (looseEqual(applyCoerce(getValue(option), value), externalValue)) {
       if (el.selectedIndex !== i) el.selectedIndex = i
       return
     }

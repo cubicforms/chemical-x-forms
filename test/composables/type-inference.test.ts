@@ -1,8 +1,7 @@
 import { describe, expectTypeOf, it } from 'vitest'
 import { z } from 'zod'
-import type { FormState } from '../../src'
+import type { FormMeta } from '../../src'
 import type { useForm } from '../../src/zod'
-import type { WithIndexedUndefined } from '../../src/runtime/types/types-core'
 
 /**
  * Type-inference tests for `useForm` via the Zod v4 adapter.
@@ -96,11 +95,17 @@ describe('useForm type inference — factory signature', () => {
     void missingSchemaConfig
   })
 
-  it('returns the inferred Form shape on form.values (with array taint)', () => {
-    // `form.values` is a Pinia-style readonly proxy over the form
-    // wrapped in `WithIndexedUndefined` — `values.tags[N]` etc. is
-    // `string | undefined` since arrays can be out-of-bounds at runtime.
-    expectTypeOf(form.values).toEqualTypeOf<Readonly<WithIndexedUndefined<ExpectedForm>>>()
+  it('returns the inferred Form shape on form.values', () => {
+    // `form.values` is a callable readonly proxy over the form. Array
+    // element types are strict (`tags: string[]`, not
+    // `(string | undefined)[]`) — the safety on `arr[N]` reads is
+    // delegated to the consumer's `noUncheckedIndexedAccess: true`
+    // tsconfig flag, which TypeScript already correctly suppresses on
+    // iteration (`for (const x of arr)` keeps `x: T`). Baking
+    // `| undefined` into the element would have broken legitimate
+    // iteration with no upside.
+    expectTypeOf(form.values).toMatchTypeOf<Readonly<ExpectedForm>>()
+    expectTypeOf(form.values).toBeCallableWith('email')
   })
 })
 
@@ -120,8 +125,11 @@ describe('useForm type inference — form.values', () => {
   })
 
   it('array index is undefined-tainted (out-of-bounds is honest)', () => {
-    // Numeric index access through a Vue readonly array proxy returns
-    // `T | undefined` — same honesty pass.
+    // Numeric index access on an unbounded array returns `T | undefined`
+    // because this repo's tsconfig sets `noUncheckedIndexedAccess: true`.
+    // The lib doesn't bake `| undefined` into the element type itself
+    // — that would also taint iteration, which is wrong (every iterated
+    // element exists by definition).
     expectTypeOf(form.values.tags[0]).toEqualTypeOf<string | undefined>()
   })
 
@@ -198,11 +206,14 @@ describe('useForm type inference — register', () => {
   })
 })
 
-describe('Phase 4: WithIndexedUndefined + strict SetValuePayload', () => {
+describe('Phase 4: strict SetValuePayload', () => {
   it('whole-form callback prev sees array elements as `T | undefined`', () => {
     form.setValue((prev) => {
-      // Array index reads are honestly tainted. `prev.posts[5]` could
-      // be out-of-bounds at runtime, so the type must include undefined.
+      // Array index reads are honestly tainted via the consumer's
+      // `noUncheckedIndexedAccess: true` tsconfig flag. `prev.posts[5]`
+      // could be out-of-bounds at runtime, so the type includes undefined.
+      // (Iteration over `prev.posts` keeps the strict element type — the
+      // flag scopes to indexed access only.)
       expectTypeOf(prev.posts[5]).toEqualTypeOf<{ title: string; views: number } | undefined>()
       expectTypeOf(prev.tags[0]).toEqualTypeOf<string | undefined>()
       // Non-array properties remain strict.
@@ -246,6 +257,46 @@ describe('Phase 4: WithIndexedUndefined + strict SetValuePayload', () => {
   })
 })
 
+describe('useForm type inference — primitive-array register paths', () => {
+  // Multi-select / multi-checkbox bindings register at the array root.
+  // The directive accepts arrays of any slim primitive (string, number,
+  // boolean, bigint), so the type must allow root registration on each.
+  const _multiSchema = z.object({
+    multiStrings: z.array(z.string()),
+    multiNumbers: z.array(z.number()),
+    multiBooleans: z.array(z.boolean()),
+    multiBigints: z.array(z.bigint()),
+  })
+  type MultiForm = ReturnType<typeof useForm<typeof _multiSchema>>
+  const multiForm = (() => {
+    const handler: ProxyHandler<() => unknown> = { get: () => proxy, apply: () => proxy }
+    const proxy: unknown = new Proxy(() => undefined, handler)
+    return proxy as MultiForm
+  })()
+
+  it('register accepts the array root for every primitive item type', () => {
+    expectTypeOf(multiForm.register('multiStrings').innerRef.value).toEqualTypeOf<string[]>()
+    expectTypeOf(multiForm.register('multiNumbers').innerRef.value).toEqualTypeOf<number[]>()
+    expectTypeOf(multiForm.register('multiBooleans').innerRef.value).toEqualTypeOf<boolean[]>()
+    expectTypeOf(multiForm.register('multiBigints').innerRef.value).toEqualTypeOf<bigint[]>()
+  })
+
+  it('register accepts indexed positions on every primitive array', () => {
+    expectTypeOf(multiForm.register('multiStrings.0').innerRef.value).toEqualTypeOf<
+      string | undefined
+    >()
+    expectTypeOf(multiForm.register('multiNumbers.0').innerRef.value).toEqualTypeOf<
+      number | undefined
+    >()
+    expectTypeOf(multiForm.register('multiBooleans.0').innerRef.value).toEqualTypeOf<
+      boolean | undefined
+    >()
+    expectTypeOf(multiForm.register('multiBigints.0').innerRef.value).toEqualTypeOf<
+      bigint | undefined
+    >()
+  })
+})
+
 describe('useForm type inference — handleSubmit', () => {
   it('callback `values` parameter is the fully inferred Form', () => {
     form.handleSubmit((values) => {
@@ -266,26 +317,29 @@ describe('useForm type inference — handleSubmit', () => {
   })
 })
 
-describe('useForm type inference — fieldState + errors', () => {
-  it('form.fieldState exposes a typed errors array on each path', () => {
-    expectTypeOf(form.fieldState.email.errors).toMatchTypeOf<ReadonlyArray<{ message: string }>>()
+describe('useForm type inference — fields + errors', () => {
+  it('form.fields exposes a typed errors array on each path', () => {
+    expectTypeOf(form.fields.email.errors).toMatchTypeOf<ReadonlyArray<{ message: string }>>()
   })
 
-  it('form.errors is a Readonly<FormFieldErrors<Form>> (Proxy view, no .value)', () => {
-    // Internally backed by a ComputedRef + Proxy; the public type is
-    // the unwrapped record so templates can dot-access without `.value`.
-    expectTypeOf(form.errors).toMatchTypeOf<Record<string, unknown>>()
-    // @ts-expect-error — errors is not a Ref, so `.value` is gone.
+  it('form.errors is a FormErrorsSurface<Form> — leaf-aware drillable callable Proxy', () => {
+    // Public type is a callable proxy; `(path)` returns a leaf array,
+    // dot-access returns leaf array OR sub-shape depending on the path.
+    expectTypeOf(form.errors.email).toMatchTypeOf<readonly { message: string }[] | undefined>()
+    // Callable signature exists on the surface itself.
+    expectTypeOf(form.errors).toBeCallableWith('email')
+    // No `.value` — the proxy is not a Ref.
+    // @ts-expect-error — errors is not a Ref.
     void form.errors.value
   })
 })
 
 describe('useForm type inference — form-level state bundle', () => {
-  it('`state` matches the exported `FormState` shape exactly', () => {
+  it('`state` matches the exported `FormMeta` shape exactly', () => {
     // Pins the whole-bundle contract: any future refactor that drops a
     // field, re-widens a type, or loses the auto-unwrap (re-exposing a
     // Ref/ComputedRef at a leaf) fails this assertion at compile time.
-    expectTypeOf(form.state).toEqualTypeOf<FormState>()
+    expectTypeOf(form.meta).toEqualTypeOf<FormMeta>()
   })
 
   it('scalar leaves are primitives, not Refs', () => {
@@ -293,27 +347,27 @@ describe('useForm type inference — form-level state bundle', () => {
     // `Readonly<ComputedRef<X>>`. Inside reactive() they auto-unwrap
     // on access — so the template footgun (binding to the wrapper
     // object instead of its .value) is gone at the type level too.
-    expectTypeOf(form.state.isDirty).toEqualTypeOf<boolean>()
-    expectTypeOf(form.state.isValid).toEqualTypeOf<boolean>()
-    expectTypeOf(form.state.isSubmitting).toEqualTypeOf<boolean>()
-    expectTypeOf(form.state.isValidating).toEqualTypeOf<boolean>()
-    expectTypeOf(form.state.submitCount).toEqualTypeOf<number>()
-    expectTypeOf(form.state.submitError).toEqualTypeOf<unknown>()
-    expectTypeOf(form.state.canUndo).toEqualTypeOf<boolean>()
-    expectTypeOf(form.state.canRedo).toEqualTypeOf<boolean>()
-    expectTypeOf(form.state.historySize).toEqualTypeOf<number>()
+    expectTypeOf(form.meta.isDirty).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.isValid).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.isSubmitting).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.isValidating).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.submitCount).toEqualTypeOf<number>()
+    expectTypeOf(form.meta.submitError).toEqualTypeOf<unknown>()
+    expectTypeOf(form.meta.canUndo).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.canRedo).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.historySize).toEqualTypeOf<number>()
   })
 
   it('rejects writes (state is readonly at the type level)', () => {
     // @ts-expect-error — state is readonly; prefer setValue / handleSubmit
-    form.state.isSubmitting = true
+    form.meta.isSubmitting = true
     // @ts-expect-error — same for counters
-    form.state.submitCount = 5
+    form.meta.submitCount = 5
   })
 
   it('rejects unknown keys', () => {
-    // @ts-expect-error — `foo` is not a FormState key
-    void form.state.foo
+    // @ts-expect-error — `foo` is not a FormMeta key
+    void form.meta.foo
   })
 })
 

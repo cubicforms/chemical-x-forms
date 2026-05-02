@@ -8,7 +8,8 @@ import { useAbstractForm } from '../../composables/use-abstract-form'
 import type {
   AbstractSchema,
   FormKey,
-  UseAbstractFormReturnType,
+  ValidateOnConfig,
+  UseFormReturnType,
   UseFormConfiguration,
 } from '../../types/types-api'
 import type { DeepPartial, DefaultValuesShape, GenericForm } from '../../types/types-core'
@@ -35,9 +36,10 @@ export type { ZodKind } from './introspect'
  * })
  * ```
  *
- * Returns a form API exposing `register`, `getValue`, `setValue`,
- * `handleSubmit`, `state`, field-array helpers, and more. See
- * `UseAbstractFormReturnType` for the full surface.
+ * Returns a form API exposing `register`, `values`, `errors`,
+ * `fields`, `setValue`, `handleSubmit`, `meta`, field-array
+ * helpers, and more. See `UseFormReturnType` for the full
+ * surface.
  *
  * For Zod v3, import from `@chemical-x/forms/zod-v3` instead.
  */
@@ -54,9 +56,9 @@ export function useForm<Schema extends z.ZodObject>(
         DefaultValuesShape<z.output<Schema> extends GenericForm ? z.output<Schema> : never>
       >
     >,
-    'schema'
-  > & { schema: Schema }
-): UseAbstractFormReturnType<
+    'schema' | 'validateOn' | 'debounceMs'
+  > & { schema: Schema } & ValidateOnConfig
+): UseFormReturnType<
   z.output<Schema> extends GenericForm ? z.output<Schema> : never,
   z.output<Schema> extends GenericForm ? z.output<Schema> : never
 > {
@@ -70,8 +72,15 @@ export function useForm<Schema extends z.ZodObject>(
   const adapter: (key: FormKey) => AbstractSchema<Form, Form> = zodV4Adapter(
     configuration.schema
   ) as (key: FormKey) => AbstractSchema<Form, Form>
+  // The discriminated `ValidateOnConfig` doesn't narrow cleanly through
+  // `Omit` + spread — TS picks the wrong variant after the structural
+  // rebuild. The runtime input is genuinely the right shape (the
+  // public `useForm` signature already enforced the discriminant on
+  // `configuration` before we got here), so cast to the parameter
+  // type to side-step the structural disagreement.
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
   return useAbstractForm<Form, Form>({
     ...configuration,
     schema: adapter,
-  })
+  } as Parameters<typeof useAbstractForm<Form, Form>>[0])
 }

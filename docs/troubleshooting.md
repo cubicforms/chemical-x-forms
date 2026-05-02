@@ -10,11 +10,11 @@ Three independent causes.
 without an inner refinement accepts anything. Double-check the
 schema is what you think it is.
 
-**You're in `validationMode: 'lax'` and watching `validate()`.** Lax
-mode strips refinements during default-values derivation so the form
+**You're in `strict: false` and watching `validate()`.** Lax mode
+strips refinements during default-values derivation so the form
 mounts with empty values without failing. Refinements re-apply on
-submit. If you want `validate()` to fire refinements immediately, drop
-the `validationMode: 'lax'` opt-out — strict is the default.
+submit. If you want `validate()` to fire refinements immediately,
+drop the `strict: false` opt-out — `strict: true` is the default.
 
 **The path doesn't match the schema.** `'items.0.name'` and
 `['items', 0, 'name']` canonicalise to the same path. But
@@ -148,7 +148,7 @@ v-register onto an inner native element:
 The dev-mode console warning `v-register on <div> is a no-op …`
 points here. See the [components recipe](./recipes/persistence.md#component-support)
 for the four supported patterns (native root, useRegister,
-useFormContext for compound components, and the `assignKey`
+injectForm for compound components, and the `assignKey`
 escape hatch).
 
 ## "Submit fails with 'No value supplied' on a field the user can leave blank"
@@ -204,10 +204,11 @@ receives a fully-defaulted `prev` — the runtime calls
 so consumer code can read `prev.first.toUpperCase()` directly. Drop
 the optional chain.
 
-Whole-form callback `prev` is `WithIndexedUndefined<Form>`, so
-array reads (`prev.posts[5]`) DO carry `| undefined` and need
-narrowing — that's the only case where defensive reads are still
-correct.
+Whole-form callback `prev` is `WriteShape<Form>`. Array reads
+(`prev.posts[5]`) carry `| undefined` from your tsconfig's
+`noUncheckedIndexedAccess: true` — narrow with `?.` or a guard.
+Iteration (`for (const p of prev.posts)`, `prev.posts.map(...)`)
+keeps the strict element type; that's the flag's intended scope.
 
 ## "`form.values.posts[0].title.toUpperCase()` started type-erroring"
 
@@ -220,12 +221,41 @@ chaining:
 form.values.posts[0]?.title?.toUpperCase() ?? ''
 ```
 
-Or read from `form.fieldState.posts[0].title.value` if you also want
+Or read from `form.fields.posts[0].title.value` if you also want
 the per-field flags (`dirty`, `errors`, `touched`) alongside the
 value. The same `| undefined` taint applies; narrow the same way.
 
 Tuple positions stay strict — out-of-bounds is a type-system error
 on tuples, not a runtime case.
+
+## "TS was happy but `form.values.contacts[42].name` crashed at runtime"
+
+Try enabling `noUncheckedIndexedAccess: true` in your tsconfig — it
+makes `arr[N]` reads return `T | undefined` so the type system
+catches stale indices. See
+[README → Recommended tsconfig](../README.md#recommended-tsconfig).
+
+## "Focus jumped to a field I didn't expect on submit"
+
+`focusFirstError` (and the `onInvalidSubmit: 'focus-first-error'`
+policy) targets the **visually-first** errored field — DOM-tree
+order via `compareDocumentPosition`. If your template renders
+fields in a different order than the schema declares them, the
+field rendered above another wins regardless of declaration order.
+
+Caveat: CSS `order:` flexbox/grid reordering is NOT respected.
+A child with `order: -1` appears visually first but stays in its
+DOM-tree position, and the focus algorithm uses DOM-tree position.
+The tradeoff is intentional — visual-order via
+`getBoundingClientRect` would force sync layout per comparison and
+break under `display: none`. If you genuinely need CSS-`order:`
+awareness, file an issue with a concrete repro.
+
+Scope is per `useForm()` callsite: two `useForm({ key })` calls
+sharing a key (sidebar + main) each focus only their own
+registered elements. Children reaching the form via `injectForm()`
+inherit their ancestor's instance ID, so parent-submit still
+focuses inputs registered by deep children.
 
 ## "Undo brought back stale field errors"
 

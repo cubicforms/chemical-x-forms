@@ -54,10 +54,13 @@ describe('unwrapToDiscriminatedUnion', () => {
 describe('getDiscriminatedUnionFirstOption', () => {
   it('returns the first option', () => {
     const first = getDiscriminatedUnionFirstOption(du)
-    expect(first).toBeDefined()
+    // Non-null assertion in place of `.toBeDefined()` + `?.` chain — if
+    // `first` is undefined the next line throws, surfacing the bug
+    // directly instead of skipping the safeParse assertions silently.
+    if (first === undefined) throw new Error('expected a first option')
     // First option is the 'ok' branch — parse with kind=ok should succeed.
-    expect(first?.safeParse({ kind: 'ok', value: 'x' }).success).toBe(true)
-    expect(first?.safeParse({ kind: 'err', message: 'x' }).success).toBe(false)
+    expect(first.safeParse({ kind: 'ok', value: 'x' }).success).toBe(true)
+    expect(first.safeParse({ kind: 'err', message: 'x' }).success).toBe(false)
   })
 
   it('returns undefined for non-DU schemas', () => {

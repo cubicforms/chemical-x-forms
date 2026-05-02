@@ -1,49 +1,129 @@
-import { computed, readonly, type ComputedRef, type Ref } from 'vue'
+import { computed, readonly, type Ref } from 'vue'
+import { __DEV__ } from './dev'
+import { canonicalizePath, type Path } from './paths'
 import type { GenericForm } from '../types/types-core'
 
 /**
- * Build a `ComputedRef<Readonly<F>>` whose `.value` is a deeply-readonly
- * Vue proxy over the form's storage value. Read identically in script
- * and template (no `.value` once the consumer accesses it through a
- * getter on the form return) — Pinia setup-store pattern.
+ * Public shape of `form.values` — a callable proxy that drills via
+ * dot/bracket OR call dynamically:
+ *
+ *   form.values.email                  // string (the value)
+ *   form.values.address.city           // string (chained descent)
+ *   form.values.address                // { city, … } — object, drillable further
+ *   form.values('address.city')        // function-call (dynamic / programmatic)
+ *   form.values(['address', 'city'])   // path-array form
+ *   form.values()                      // the whole form value (root)
+ *
+ * Asymmetry against `form.errors` / `form.fields`: containers in
+ * `values` ARE useful (they are the structural objects), so they
+ * terminate as well as descend. Errors and fields containers are
+ * descend-only because their content at a container level is a
+ * derivation (e.g. "any descendant dirty") rather than a real datum.
+ */
+export type ValuesProxy<F> = ((path?: string | Path) => unknown) & Readonly<F>
+
+/**
+ * Build the callable readonly Proxy that powers `form.values`.
  *
  * Reactivity contract:
  *
- *   - Writes are blocked. Vue's `readonly()` traps `set` / `delete` /
- *     `defineProperty` / etc. and emits a dev warn (silent in prod).
- *     The slim-primitive write gate stays the only path into storage.
+ *   - **Reads track dependencies normally.** The inner
+ *     `computed(() => readonly(form.value))` recomputes on every
+ *     whole-form swap (Ref reassignment via `reset()` / whole-form
+ *     `setValue`) and on every per-key write through Vue's reactive
+ *     tracking. Each read on the callable proxy delegates to
+ *     `inner.value.<key>`, which lands inside the consumer's active
+ *     effect — Vue tracks the dependency at access time.
  *
- *   - Reads track dependencies normally. The outer computed depends on
- *     `state.form.value` (the Ref); the inner readonly proxy traps each
- *     property read on the same effect graph as the underlying reactive
- *     target, so `form.values.email` inside a render effect re-runs on
- *     either the whole-form swap (`reset` / whole-form `setValue`) or a
- *     per-key write.
+ *   - **Writes are blocked.** Vue's `readonly()` traps `set` / `delete` /
+ *     `defineProperty` on the inner proxy. The callable wrapper
+ *     additionally rejects writes at its own boundary. The slim-
+ *     primitive write gate stays the only path into storage.
  *
- *   - Identity-stable on swap. `state.form.value = next` (the
- *     `applyFormReplacement` path used by `reset()` and whole-form
- *     `setValue`) reassigns the Ref's contained value. Vue's `readonly()`
- *     keys on TARGET identity, so a swap produces a fresh proxy. The
- *     wrapping `computed` invalidates on the swap and re-evaluates,
- *     handing out the new proxy. If a consumer caches `form.values`
- *     across the swap, the cached reference points at the OLD proxy —
- *     fine, since the old proxy still wraps the old (now-orphaned)
- *     target object. Re-reading `form.values` on the form return after
- *     the swap returns the fresh proxy.
+ *   - **Identity-stable on swap.** Vue's `readonly()` maps targets
+ *     to proxies by identity. A whole-form swap produces a fresh
+ *     readonly proxy; the wrapping computed invalidates and
+ *     re-evaluates. Consumers reading `form.values.<x>` always see
+ *     the current target's data.
  *
- *   - `readonly()` recurses. Nested object reads (`form.values.address.city`)
- *     return readonly proxies wrapping the inner reactive objects, so
- *     dependency tracking and write-blocking propagate to every depth.
- *     Arrays are wrapped too — mutating array methods (push, splice)
- *     throw the dev-mode `readonly` warn.
+ *   - **JSON.stringify works.** The callable proxy is `typeof ===
+ *     'function'`, which JSON.stringify normally omits — `toJSON`
+ *     short-circuits that path and returns the inner readonly proxy
+ *     so consumers serialise the actual form data, not `undefined`.
  *
- * Why a `computed` wrapper, not just `readonly(state.form.value)` cached
- * once: Vue's `readonlyMap` maps target → proxy by target identity. If
- * we cache `readonly(state.form.value)` at module init and `state.form`
- * is later swapped, the cache hands out a stale proxy over the
- * orphaned target. The `computed` re-evaluates on swap and produces a
- * fresh proxy keyed to the new target.
+ *   - **Symbol passthrough.** Vue's reactivity sigils
+ *     (`Symbol(__v_isRef)`, `Symbol(__v_isReadonly)`, etc.) and
+ *     iteration symbols resolve against the function target, not
+ *     the schema-aware branch.
  */
-export function buildValuesProxy<F extends GenericForm>(form: Ref<F>): ComputedRef<Readonly<F>> {
-  return computed(() => readonly(form.value)) as ComputedRef<Readonly<F>>
+export function buildValuesProxy<F extends GenericForm>(form: Ref<F>): ValuesProxy<F> {
+  const inner = computed(() => readonly(form.value))
+
+  // Arrow-function target: callable (typeof === 'function', `apply`
+  // trap fires) but no non-configurable `prototype` to satisfy the
+  // ownKeys Proxy invariant.
+  const target = (() => {}) as unknown as ValuesProxy<F>
+
+  return new Proxy(target, {
+    apply(_, __, args: unknown[]): unknown {
+      const arg = args[0] as string | Path | undefined
+      // No-arg: return the whole form value (the readonly root proxy).
+      if (arg === undefined) return inner.value
+      // Dynamic path: walk segments through the readonly proxy. Each
+      // step reads through the proxy's own get traps so dependency
+      // tracking propagates at every level.
+      const { segments } = canonicalizePath(arg)
+      let cursor: unknown = inner.value
+      for (const seg of segments) {
+        if (cursor === null || cursor === undefined) return undefined
+        cursor = (cursor as Record<string | number, unknown>)[seg]
+      }
+      return cursor
+    },
+    get(_, key: string | symbol): unknown {
+      // Symbol passthrough — Vue's reactivity sigils resolve here.
+      if (typeof key === 'symbol') return Reflect.get(target, key)
+      // toJSON: serialise the inner readonly proxy. JSON.stringify
+      // checks for toJSON before checking typeof, so the callable
+      // proxy serialises to the actual form data.
+      if (key === 'toJSON') return () => inner.value
+      // Property access: delegate to the readonly proxy. Vue's
+      // dependency tracking captures the read inside the consumer's
+      // active effect.
+      return (inner.value as Record<string, unknown>)[key]
+    },
+    has(_, key: string | symbol): boolean {
+      if (typeof key === 'symbol') return Reflect.has(target, key)
+      return Reflect.has(inner.value as object, key)
+    },
+    ownKeys(): ArrayLike<string | symbol> {
+      return Reflect.ownKeys(inner.value as object)
+    },
+    getOwnPropertyDescriptor(_, key: string | symbol): PropertyDescriptor | undefined {
+      const desc = Reflect.getOwnPropertyDescriptor(inner.value as object, key)
+      if (desc !== undefined) desc.configurable = true
+      return desc
+    },
+    // Match Vue's `readonly()` semantics: writes warn (in dev) and
+    // silently noop (return true). Returning false would throw
+    // TypeError in strict-mode consumers, surprising users who
+    // assigned through the proxy and expected it to be ignored.
+    set(_, key) {
+      if (__DEV__) {
+        console.warn(
+          `[@chemical-x/forms] form.values is read-only — write to "${String(key)}" was ignored. Use form.setValue / the directive / field-array helpers instead.`
+        )
+      }
+      return true
+    },
+    deleteProperty(_, key) {
+      if (__DEV__) {
+        console.warn(
+          `[@chemical-x/forms] form.values is read-only — delete of "${String(key)}" was ignored.`
+        )
+      }
+      return true
+    },
+    defineProperty: () => true,
+  })
 }

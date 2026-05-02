@@ -1,4 +1,5 @@
 import type {
+  AbstractSchema,
   FormStorage,
   FormStorageKind,
   PersistConfig,
@@ -218,6 +219,10 @@ export function buildPersistedPayload<Form>(
  * immediately, `cancel` drops it. Unlike a library `debounce`, this
  * one awaits the underlying async write inside `flush` so callers
  * can await full completion on consumer teardown.
+ *
+ * `debounceMs: 0` is the off switch — `schedule()` fires the write
+ * synchronously rather than queueing through `setTimeout(fn, 0)`
+ * (which is a macrotask the browser clamps to ~4 ms anyway).
  */
 export function createDebouncedWriter(
   write: () => Promise<void>,
@@ -232,6 +237,15 @@ export function createDebouncedWriter(
 
   function schedule(): void {
     if (timer !== null) clearTimeout(timer)
+    // `debounceMs: 0` is the off switch — fire the write synchronously
+    // rather than punting through `setTimeout(fn, 0)` (which queues a
+    // macrotask and the browser clamps to ~4 ms anyway).
+    if (debounceMs === 0) {
+      pending = write().finally(() => {
+        pending = null
+      })
+      return
+    }
     timer = setTimeout(() => {
       timer = null
       pending = write().finally(() => {
@@ -504,19 +518,60 @@ export function filterErrorsByPaths(
  *
  * Primitives in the sparse form override defaults. `null` and explicit
  * primitive values pass through (a persisted `null` is meaningful).
+ *
+ * **Discriminated unions:** when a path resolves to a DU in the
+ * schema AND the sparse value's discriminator differs from the
+ * defaults' discriminator (i.e. the persisted draft was written
+ * against a different active variant than the schema's first-variant
+ * default), the merge REBASES on the matching variant's slim default
+ * rather than deep-merging across variants. Without this, deep merge
+ * would produce an inconsistent shape carrying BOTH variants' keys
+ * (e.g. `{channel: 'sms', number: '...', address: ''}`) — violates
+ * the DU's per-variant shape contract and surfaces ghost fields in
+ * `form.values`.
  */
-export function mergeSparseHydration<F>(schemaDefaults: F, sparse: unknown): F {
-  return mergeDeep(schemaDefaults, sparse) as F
+export function mergeSparseHydration<F>(
+  schemaDefaults: F,
+  sparse: unknown,
+  schema?: AbstractSchema<unknown, unknown>
+): F {
+  return mergeDeep(schemaDefaults, sparse, [], schema) as F
 }
 
-function mergeDeep(target: unknown, source: unknown): unknown {
+function mergeDeep(
+  target: unknown,
+  source: unknown,
+  path: readonly Segment[],
+  schema: AbstractSchema<unknown, unknown> | undefined
+): unknown {
   if (source === undefined) return target
   if (source === null || typeof source !== 'object') return source
   if (Array.isArray(source)) return source
   if (!isPlainRecord(source)) return source
-  const out: Record<string, unknown> = isPlainRecord(target) ? { ...target } : {}
+  // DU rebase: if this path is a discriminated union AND target/
+  // source describe different variants, rebase target onto the
+  // matching variant's slim default before merging. Skips when no
+  // schema is provided (legacy callers / tests) or when the DU
+  // info isn't available at this path.
+  let mergeTarget = target
+  if (schema !== undefined) {
+    const du = schema.getUnionDiscriminatorAtPath(path as Segment[])
+    if (du !== undefined) {
+      const sourceDisc = (source as Record<string, unknown>)[du.discriminatorKey]
+      const targetDisc = isPlainRecord(target)
+        ? (target as Record<string, unknown>)[du.discriminatorKey]
+        : undefined
+      if (sourceDisc !== undefined && !Object.is(sourceDisc, targetDisc)) {
+        const variantDefault = du.getVariantDefault(sourceDisc)
+        if (isPlainRecord(variantDefault)) {
+          mergeTarget = variantDefault
+        }
+      }
+    }
+  }
+  const out: Record<string, unknown> = isPlainRecord(mergeTarget) ? { ...mergeTarget } : {}
   for (const key of Object.keys(source)) {
-    out[key] = mergeDeep(out[key], (source as Record<string, unknown>)[key])
+    out[key] = mergeDeep(out[key], (source as Record<string, unknown>)[key], [...path, key], schema)
   }
   return out
 }

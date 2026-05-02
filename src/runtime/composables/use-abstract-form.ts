@@ -33,14 +33,14 @@ import {
 import { hashStableString } from '../core/hash'
 import { canonicalizePath, type Path, type PathKey } from '../core/paths'
 import { deleteAtPath, getAtPath, setAtPath, isPlainRecord } from '../core/path-walker'
-import { kFormContext, useRegistry } from '../core/registry'
+import { kFormContext, kFormInstanceId, useRegistry } from '../core/registry'
 import { walkUnsetSentinels } from '../core/unset-walker'
 import type {
   AbstractSchema,
   ChemicalXFormsDefaults,
   FormKey,
   PersistConfigOptions,
-  UseAbstractFormReturnType,
+  UseFormReturnType,
   UseFormConfiguration,
   ValidationError,
 } from '../types/types-api'
@@ -49,7 +49,7 @@ import type { DeepPartial, DefaultValuesShape, GenericForm, WriteShape } from '.
 /**
  * Schema-agnostic `useForm`. Accepts any object that implements
  * `AbstractSchema` — useful when integrating a custom schema
- * adapter, a Valibot adapter, or any non-Zod validation library.
+ * adapter or a third-party validation library.
  *
  * ```ts
  * import { useForm } from '@chemical-x/forms'
@@ -60,12 +60,13 @@ import type { DeepPartial, DefaultValuesShape, GenericForm, WriteShape } from '.
  * })
  * ```
  *
- * For Zod, prefer the typed entry points at
+ * Most consumers prefer a typed entry point — e.g.
  * `@chemical-x/forms/zod` (v4) or `@chemical-x/forms/zod-v3` —
- * they wrap the schema with the adapter automatically.
+ * which wrap the underlying library's schema with the matching
+ * adapter automatically.
  *
- * Returns the same form API as the Zod-typed entry points; see
- * `UseAbstractFormReturnType` for the full surface.
+ * Returns the same form API as the typed entry points; see
+ * `UseFormReturnType` for the full surface.
  */
 
 export function useAbstractForm<
@@ -78,14 +79,14 @@ export function useAbstractForm<
     AbstractSchema<Form, GetValueFormType>,
     DeepPartial<DefaultValuesShape<Form>>
   >
-): UseAbstractFormReturnType<Form, GetValueFormType> {
+): UseFormReturnType<Form, GetValueFormType> {
   const key = resolveFormKey(configuration.key)
 
   // Resolve the schema (accepts either an AbstractSchema or a factory).
   // Preserve both generics — dropping `GetValueFormType` here would make
   // `state.schema.getSchemasAtPath(...)` return `AbstractSchema<_, Form>[]`
   // for consumers whose schema intentionally produces a different runtime
-  // shape (e.g. zod's `.transform(...)` narrowing).
+  // shape (e.g. an adapter that narrows via a transform).
   const resolvedSchema = getComputedSchema(key, configuration.schema)
 
   // Eager throw: persistence configured without an explicit `key:`. An
@@ -110,10 +111,10 @@ export function useAbstractForm<
   const registry = useRegistry()
 
   // Merge app-level defaults from the registry over per-form options.
-  // Per-form values always win for scalars; `fieldValidation` is
-  // shallow-merged at the field level so consumers can set
-  // `debounceMs` globally and override `on` per-form. Every downstream
-  // read uses `merged` so the merge happens exactly once.
+  // Per-form values always win for scalars; `validateOn` and `debounceMs`
+  // resolve independently so consumers can set `debounceMs` globally
+  // and override `validateOn` per-form. Every downstream read uses
+  // `merged` so the merge happens exactly once.
   const merged = mergeWithDefaults(registry.defaults, configuration)
 
   const existing = registry.forms.get(key) as FormStore<Form, GetValueFormType> | undefined
@@ -199,7 +200,7 @@ export function useAbstractForm<
   // Wire history (opt-in). Fresh-state-only — the module subscribes
   // to FormStore events, so subscribing twice would double-push
   // snapshots. Cache the module on the FormStore so subsequent
-  // `useForm` / `useFormContext` calls for the same key retrieve the
+  // `useForm` / `injectForm` calls for the same key retrieve the
   // SAME instance, keeping `canUndo` / `canRedo` / `historySize` /
   // `undo` / `redo` consistent across mount order.
   if (existing === undefined && merged.history !== undefined) {
@@ -209,20 +210,20 @@ export function useAbstractForm<
   }
 
   // Provide the FormStore to descendants via `kFormContext` so
-  // `useFormContext()` can resolve it without prop-threading.
+  // `injectForm()` can resolve it without prop-threading.
   //
   // ONLY anonymous `useForm()` calls fill the ambient slot. Keyed forms
-  // are explicitly addressable via `useFormContext<F>(key)` and don't
+  // are explicitly addressable via `injectForm<F>(key)` and don't
   // pollute the ambient context — keeping the two resolution modes
   // semantically distinct. A descendant of a keyed-only parent that
-  // calls `useFormContext<F>()` (no key) gets the "no ambient form"
+  // calls `injectForm<F>()` (no key) gets the "no ambient form"
   // throw, which is the right error: the form has a name; address it.
   //
   // Ambient mode is still "last-provide wins" among siblings: if two
   // anonymous `useForm()` calls run in the same component, the second
   // overwrites the first and descendants only see the second. We record
   // the per-instance history of ANONYMOUS provides here (silently) so
-  // that a descendant's `useFormContext<F>()` call can walk up, detect
+  // that a descendant's `injectForm<F>()` call can walk up, detect
   // the collision, and warn lazily. Recording is skipped on SSR so the
   // client-side warn fires once, not once-per-render-pass.
   if (configuration.key === undefined) {
@@ -230,7 +231,26 @@ export function useAbstractForm<
     provide(kFormContext, state as FormStore<GenericForm>)
   }
 
-  const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[1] = {}
+  // Per-`useForm()`-call instance ID. Distinct from `state.formKey`:
+  // the key identifies a SHARED FormStore (so two `useForm({ key:
+  // 'signup' })` calls return the same store), while `formInstanceId`
+  // identifies THIS specific callsite — important for `focusFirstError`
+  // / `scrollToFirstError` to scope to the elements THIS caller's
+  // `v-register` directives bound to. SSR-safe via Vue 3.5+'s
+  // `useId()`. Outside Vue setup (tests, ad-hoc composable use) we
+  // fall back to a module-local counter — uniqueness is what matters,
+  // and tests don't share form-instance state across mounts anyway.
+  const formInstanceId =
+    getCurrentInstance() !== null ? useId() : `cx:form-instance:${formInstanceCounter++}`
+  // Provided so descendants reaching via `injectForm()` inherit this ID
+  // and their locally-registered elements tag against the same instance.
+  // Sibling `useForm()` calls (different tree positions) provide their
+  // own IDs and stay isolated.
+  if (getCurrentInstance() !== null) {
+    provide(kFormInstanceId, formInstanceId)
+  }
+
+  const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[2] = {}
   if (merged.onInvalidSubmit !== undefined) {
     apiOptions.onInvalidSubmit = merged.onInvalidSubmit
   }
@@ -238,16 +258,16 @@ export function useAbstractForm<
   if (history !== undefined) {
     apiOptions.history = history
   }
-  return buildFormApi<Form, GetValueFormType>(state, apiOptions)
+  return buildFormApi<Form, GetValueFormType>(state, formInstanceId, apiOptions)
 }
 
 /**
  * Merge app-level defaults from the registry over a per-form
- * configuration. Per-form values always win for scalars; the
- * `fieldValidation` field is shallow-merged so defaults like
- * `{ debounceMs: 100 }` carry through even when the per-form call
- * passes `{ on: 'blur' }`. See `ChemicalXFormsDefaults` for the full
- * merge contract.
+ * configuration. Per-form values always win for scalars; `validateOn`
+ * and `debounceMs` resolve independently so a default like
+ * `{ debounceMs: 100 }` carries through even when the per-form call
+ * passes `{ validateOn: 'blur' }`. See `ChemicalXFormsDefaults` for the
+ * full merge contract.
  */
 function mergeWithDefaults<
   Form extends GenericForm,
@@ -261,25 +281,33 @@ function mergeWithDefaults<
   // exactOptionalPropertyTypes rejects explicit `undefined` on optional
   // properties (different from omitting), so conditionally spread each
   // resolved value rather than assigning undefined into the field.
-  const validationMode = configuration.validationMode ?? defaults.validationMode
+  const strict = configuration.strict ?? defaults.strict
   const onInvalidSubmit = configuration.onInvalidSubmit ?? defaults.onInvalidSubmit
   const history = configuration.history ?? defaults.history
-  const fieldValidation =
-    configuration.fieldValidation === undefined && defaults.fieldValidation === undefined
-      ? undefined
-      : { ...defaults.fieldValidation, ...configuration.fieldValidation }
+  const rememberVariants = configuration.rememberVariants ?? defaults.rememberVariants
+  const coerce = configuration.coerce ?? defaults.coerce
+  const validateOn = configuration.validateOn ?? defaults.validateOn
+  // `debounceMs` is type-narrowed in the public discriminated union to
+  // disallow non-`'change'` mode + debounce; here at the resolution
+  // boundary we only see the unwrapped fields, so the access is
+  // unconditional. The runtime check in `create-form-store.ts` ignores
+  // the value under non-`'change'` modes regardless.
+  const debounceMs = (configuration as { debounceMs?: number }).debounceMs ?? defaults.debounceMs
   return {
     ...configuration,
-    ...(validationMode === undefined ? {} : { validationMode }),
+    ...(strict === undefined ? {} : { strict }),
     ...(onInvalidSubmit === undefined ? {} : { onInvalidSubmit }),
     ...(history === undefined ? {} : { history }),
-    ...(fieldValidation === undefined ? {} : { fieldValidation }),
-  }
+    ...(rememberVariants === undefined ? {} : { rememberVariants }),
+    ...(coerce === undefined ? {} : { coerce }),
+    ...(validateOn === undefined ? {} : { validateOn }),
+    ...(debounceMs === undefined ? {} : { debounceMs }),
+  } as UseFormConfiguration<Form, GetValueFormType, Schema, Defaults>
 }
 
 /**
  * Shared key for the per-state history module cache. Exported would be
- * over-sharing — the only callers are this file and `useFormContext`.
+ * over-sharing — the only callers are this file and `injectForm`.
  */
 const HISTORY_MODULE_KEY = 'history'
 
@@ -322,10 +350,17 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
     formKey: key,
     schema,
     defaultValues: walked.cleanedValues as DeepPartial<WriteShape<F>> | undefined,
-    validationMode: configuration.validationMode,
+    ...(configuration.strict !== undefined ? { strict: configuration.strict } : {}),
     hydration: pending,
-    fieldValidation: configuration.fieldValidation,
+    ...(configuration.validateOn !== undefined ? { validateOn: configuration.validateOn } : {}),
+    ...((configuration as { debounceMs?: number }).debounceMs !== undefined
+      ? { debounceMs: (configuration as { debounceMs?: number }).debounceMs }
+      : {}),
     isSSR: registry.isSSR,
+    ...(configuration.rememberVariants !== undefined
+      ? { rememberVariants: configuration.rememberVariants }
+      : {}),
+    ...(configuration.coerce !== undefined ? { coerce: configuration.coerce } : {}),
     ...(initialBlankPaths !== undefined ? { initialBlankPaths } : {}),
   }
   const state = createFormStore<F, G>(createOptions)
@@ -355,6 +390,13 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
 let anonCounter = 0
 
 /**
+ * Module-local counter for `formInstanceId` allocation outside Vue
+ * setup (tests, ad-hoc composable usage). The setup-context path uses
+ * `useId()` for SSR-stable IDs; this counter is the test-only fallback.
+ */
+let formInstanceCounter = 0
+
+/**
  * One entry per ANONYMOUS `useForm()` call that landed in a
  * component's ambient provide slot. Keyed forms aren't recorded —
  * they don't fill the ambient slot in the first place. `source` is
@@ -374,7 +416,7 @@ export type AmbientProvideEntry = {
  * component's entry when it unmounts without us tracking
  * lifecycle.
  *
- * Exported so `useFormContext<F>()` (no key) can walk the parent
+ * Exported so `injectForm<F>()` (no key) can walk the parent
  * chain and emit a collision warning only when a descendant
  * actually consumes the ambient slot — eager warning in
  * `useForm()` misfired on components that call useForm multiple
@@ -415,7 +457,7 @@ function recordAmbientProvide(isSSR: boolean): void {
  *
  * Anonymous semantics: each `useForm({ schema })` call without a key
  * resolves to a distinct FormStore. Descendant components reach it via
- * ambient `useFormContext<F>()`; cross-component lookup by key is not
+ * ambient `injectForm<F>()`; cross-component lookup by key is not
  * possible (and not meaningful — the key is synthetic). Callers that
  * need shared state, distant lookup, persistence defaults, or a
  * recognisable DevTools label should pass an explicit `key`.
@@ -655,15 +697,19 @@ function wirePersistence<F extends GenericForm>(
       // schema defaults at this point — wirePersistence runs before
       // any user mutation could have happened) so non-persisted paths
       // keep their schema defaults.
-      const merged = mergeSparseHydration(toRaw(state.form.value) as F, payload.data.form)
+      const merged = mergeSparseHydration(
+        toRaw(state.form.value) as F,
+        payload.data.form,
+        state.schema as unknown as Parameters<typeof mergeSparseHydration>[2]
+      )
       state.applyFormReplacement(merged)
       // payload. Persistence is per-element opt-in, so the persisted
       // payload only covers paths within the opt-in scope (the leaf
       // paths populated in `payload.data.form`). Construction-time
-      // auto-marks for paths OUTSIDE that scope must survive — without
-      // this, a non-opted-in `z.number()` field's slim default (0)
-      // would lose its blank mark on hydrate and surface
-      // as `'0'` in its <input> instead of empty.
+      // auto-marks for paths OUTSIDE that scope must survive —
+      // without this, a non-opted-in numeric field's slim default
+      // (`0`) would lose its blank mark on hydrate and surface as
+      // `'0'` in its <input> instead of empty.
       //
       // Within the opt-in scope, the persisted state IS the truth: a
       // persisted path that's no longer blank (the user
@@ -691,6 +737,17 @@ function wirePersistence<F extends GenericForm>(
           state.setAllUserErrors(flat)
         }
       }
+      // Post-hydration revalidation: the construction-time seed ran
+      // against the empty default, so its errors describe a stale
+      // value. Async-only verdicts additionally never fire at
+      // construction (the sync seed contract can't surface them;
+      // schemas with async refinements / transforms / pipes degrade
+      // to success there). A full async run at the root path wipes
+      // `schemaErrors` and re-stamps with the authoritative result
+      // for the rehydrated value — sync errors get refreshed, async
+      // verdicts fire, the form lands in the state the persisted
+      // value actually deserves.
+      state.scheduleFieldValidation([], true /* immediate */)
     } catch {
       // Adapter IO errors shouldn't surface; storage adapters are
       // "best-effort" and already log their own warnings.

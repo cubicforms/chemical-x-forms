@@ -77,7 +77,7 @@ describe('zod-v4 adapter — supported variants of lazy/intersection/catch', () 
     const adapter = zodV4Adapter(schema)('test')
     const result = adapter.getDefaultValues({
       useDefaultSchemaValues: false,
-      validationMode: 'lax',
+      strict: false,
       constraints: undefined,
     })
     expect(result.data).toEqual({ wrap: { x: 0 } })
@@ -91,7 +91,7 @@ describe('zod-v4 adapter — supported variants of lazy/intersection/catch', () 
     const adapter = zodV4Adapter(schema)('test')
     const result = adapter.getDefaultValues({
       useDefaultSchemaValues: false,
-      validationMode: 'lax',
+      strict: false,
       constraints: undefined,
     })
     expect(result.data).toEqual({ item: { a: '', b: 0 } })
@@ -102,7 +102,7 @@ describe('zod-v4 adapter — supported variants of lazy/intersection/catch', () 
     const adapter = zodV4Adapter(schema)('test')
     const result = adapter.getDefaultValues({
       useDefaultSchemaValues: true,
-      validationMode: 'lax',
+      strict: false,
       constraints: undefined,
     })
     expect(result.data).toEqual({ n: 42 })
@@ -113,7 +113,7 @@ describe('zod-v4 adapter — supported variants of lazy/intersection/catch', () 
     const adapter = zodV4Adapter(schema)('test')
     const result = adapter.getDefaultValues({
       useDefaultSchemaValues: false,
-      validationMode: 'lax',
+      strict: false,
       constraints: undefined,
     })
     expect(result.data).toEqual({ n: 0 })

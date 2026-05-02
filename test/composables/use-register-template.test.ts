@@ -184,7 +184,7 @@ describe('useRegister — template-compiled v-register reaches inner input', () 
     // The inner input is what FormStore registered (via the directive
     // that landed on it from the inner `<input v-register>`). Focus
     // listeners are installed at registerElement time on that element.
-    expect(captured.api.fieldState.email.focused).toBe(true)
+    expect(captured.api.fields.email.focused).toBe(true)
   })
 
   // Direct assertion that the directive used in the template path is

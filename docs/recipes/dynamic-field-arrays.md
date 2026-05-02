@@ -111,14 +111,14 @@ Weaker (remounts reset the counter) but good enough in-session.
 For lists that only ever append and never reorder, raw index keys
 are OK.
 
-## values vs fieldState
+## values vs fields
 
 - `form.values.posts[0]?.title` → `string | undefined`. Reads carry
   `| undefined` once a path crosses an array index — at runtime,
   `posts[0]` could be missing (sparse, deleted, fresh-mount empty).
   Narrow with `?.` / optional checks before non-null operations.
   Tuple positions stay strict (their length is static).
-- `form.fieldState.posts[0].title` → reactive per-field state at the
+- `form.fields.posts[0].title` → reactive per-field state at the
   path. Leaf props: `value`, `dirty`, `errors`, `touched`, `focused`,
   `blurred`, `blank`, `isConnected`, `path`. Same `| undefined`
   taint on `value` once an array index is crossed.
@@ -127,8 +127,8 @@ are OK.
 <template>
   <div v-for="(post, index) in posts" :key="post.id">
     <input v-register="form.register(`posts.${index}.title`)" />
-    <span v-if="form.fieldState.posts[index].title.errors.length > 0" class="error">
-      {{ form.fieldState.posts[index].title.errors[0].message }}
+    <span v-if="form.fields.posts[index].title.errors.length > 0" class="error">
+      {{ form.fields.posts[index].title.errors[0].message }}
     </span>
   </div>
 </template>

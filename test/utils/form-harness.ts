@@ -32,7 +32,7 @@ type AnyUseForm = (opts: any) => any
  * an isolated app + form key (random suffix) so tests in the same
  * file don't collide.
  *
- * Defaults `validationMode: 'lax'` because the property tests focus
+ * Defaults `strict: false` because the property tests focus
  * on write-gate semantics, not refinement-time validation. Override
  * via `options` for tests that need strict mode.
  */
@@ -50,7 +50,7 @@ export function makeMounter<S>(
         captured.api = useFormFn({
           schema,
           key: `slim-${Math.random().toString(36).slice(2)}`,
-          validationMode: 'lax',
+          strict: false,
           ...options,
         })
         return () => h('div')

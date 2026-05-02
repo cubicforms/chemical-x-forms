@@ -41,18 +41,19 @@ export { useAbstractForm as useForm } from './runtime/composables/use-abstract-f
 // ancestor form (or an arbitrary form by key) without prop-threading.
 // The consumer supplies the `Form` generic — see the composable's
 // docblock for the type-erasure reasoning.
-export { useFormContext } from './runtime/composables/use-form-context'
+export { injectForm } from './runtime/composables/use-form-context'
 
 // Ambient bridge for components that wrap a single field and want to
 // re-bind v-register onto an inner native element. See the
 // `useRegister` section in `docs/api.md` for the wrapper-component
 // pattern; for compound components reaching multiple fields, prefer
-// `useFormContext`.
+// `injectForm`.
 export { useRegister } from './runtime/composables/use-register'
 
 // The v-register directive (registered automatically by createChemicalXForms,
 // but exported for advanced consumers who install directives themselves).
 export { vRegister, isRegisterValue, assignKey } from './runtime/core/directive'
+export { defaultCoercionRules, defineCoercion } from './runtime/core/schema-coerce'
 
 // The `unset` sentinel — pass in `defaultValues`, `setValue`, or `reset`
 // to mark a primitive leaf as displayed-empty while storage holds the
@@ -74,18 +75,19 @@ export type {
   ApiErrorEntry,
   ApiErrorEnvelope,
   ChemicalXFormsDefaults,
+  CoercionEntry,
+  CoercionRegistry,
+  CoercionResult,
   CustomDirectiveRegisterAssignerFn,
   DefaultValuesResponse,
   FieldState,
   FieldStateLeaf,
   FieldStateMap,
   FieldStateMapEntry,
-  FieldValidationConfig,
-  FieldValidationMode,
   FormErrorRecord,
-  FormFieldErrors,
+  FormErrorsSurface,
   FormKey,
-  FormState,
+  FormMeta,
   FormStorage,
   FormStorageKind,
   HandleSubmit,
@@ -104,16 +106,19 @@ export type {
   RegisterOptions,
   RegisterSelectModifier,
   RegisterTextModifier,
+  RegisterTransform,
   RegisterValue,
   SetValueCallback,
   SetValuePayload,
   SettledValidationStatus,
   SlimPrimitiveKind,
+  SlimRuntimeOf,
   SubmitHandler,
-  UseAbstractFormReturnType,
+  ValidateOn,
+  ValidateOnConfig,
+  UseFormReturnType,
   UseFormConfiguration,
   ValidationError,
-  ValidationMode,
   ValidationResponse,
   ValidationResponseWithoutValue,
   WriteMeta,
@@ -127,7 +132,6 @@ export type {
   IsTuple,
   NestedReadType,
   NestedType,
-  WithIndexedUndefined,
 } from './runtime/types/types-core'
 
 // Path primitives — exposed for consumers writing custom adapters that
@@ -135,9 +139,13 @@ export type {
 export { canonicalizePath, parseDottedPath, ROOT_PATH, ROOT_PATH_KEY } from './runtime/core/paths'
 export type { Path, PathKey, Segment } from './runtime/core/paths'
 
-// Error classes
+// Error classes — every library-emitted error extends `CxError`, so
+// consumers can write a single polymorphic catch (`catch (e) { if (e
+// instanceof CxError) ... }`) instead of OR-chaining instanceof
+// checks for each subclass.
 export {
   AnonPersistError,
+  CxError,
   InvalidPathError,
   OutsideSetupError,
   RegistryNotInstalledError,

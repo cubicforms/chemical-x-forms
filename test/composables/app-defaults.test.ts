@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { useForm as useFormV3 } from '../../src/zod-v3'
 import { ANONYMOUS_FORM_KEY_PREFIX } from '../../src/runtime/core/defaults'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
-import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
+import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 import { useForm } from '../../src/zod'
 import { z as zV3 } from 'zod-v3'
 
@@ -17,12 +17,12 @@ import { z as zV3 } from 'zod-v3'
  * Invariants locked here:
  *   1. Default applied when per-form omits the option.
  *   2. Per-form value wins for each scalar.
- *   3. `fieldValidation` shallow-merges at the field level
- *      (consumer can set `debounceMs` globally and override `on`
- *      per-form without losing the global debounce).
+ *   3. `validateOn` and `debounceMs` resolve independently — consumer
+ *      can set `debounceMs` globally and override `validateOn` per-form
+ *      without losing the global debounce.
  *   4. Anonymous `useForm()` (no key) picks up defaults.
  *   5. Multiple useForm calls in the same app share the defaults.
- *   6. v3 wrapper picks up app-level `validationMode` (regression
+ *   6. v3 wrapper picks up app-level `strict` (regression
  *      lock for the dropped `?? 'strict'` resolution).
  */
 
@@ -41,8 +41,9 @@ function mountWithDefaults(
       : never
     : never,
   formOptions: {
-    validationMode?: 'strict' | 'lax'
-    fieldValidation?: { on?: 'change' | 'blur' | 'none'; debounceMs?: number }
+    strict?: boolean
+    validateOn?: 'change' | 'blur' | 'submit'
+    debounceMs?: number
     defaultValues?: Partial<Tight>
     key?: string
   } = {}
@@ -53,16 +54,13 @@ function mountWithDefaults(
       handle.api = useForm({
         schema: tightSchema,
         ...(formOptions.key !== undefined ? { key: formOptions.key } : {}),
-        ...(formOptions.validationMode !== undefined
-          ? { validationMode: formOptions.validationMode }
-          : {}),
-        ...(formOptions.fieldValidation !== undefined
-          ? { fieldValidation: formOptions.fieldValidation }
-          : {}),
+        ...(formOptions.strict !== undefined ? { strict: formOptions.strict } : {}),
+        ...(formOptions.validateOn !== undefined ? { validateOn: formOptions.validateOn } : {}),
+        ...(formOptions.debounceMs !== undefined ? { debounceMs: formOptions.debounceMs } : {}),
         ...(formOptions.defaultValues !== undefined
           ? { defaultValues: formOptions.defaultValues }
           : {}),
-      })
+      } as Parameters<typeof useForm<typeof tightSchema>>[0])
       return () => h('div')
     },
   })
@@ -85,69 +83,73 @@ async function drainMicrotasks(rounds = 8): Promise<void> {
   }
 }
 
-describe('app-level defaults — validationMode', () => {
+describe('app-level defaults — strict', () => {
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  it("applies the registry's default when per-form omits validationMode", () => {
+  it("applies the registry's default when per-form omits strict", () => {
     // Default is 'lax'; without per-form override the form should NOT
     // seed schemaErrors at construction (lax behavior), even though
     // empty defaults fail .email() / .min(8). Without app-level
     // defaults the library would have applied 'strict' and seeded the
-    // errors.
-    const { app, api } = mountWithDefaults({ validationMode: 'lax' }, {})
+    // errors. The schema is two strings — neither auto-marks blank
+    // (only numeric primitives do), so `derivedBlankErrors` stays
+    // empty and the test reads only the schemaErrors-seed channel
+    // that lax mode disables.
+    const { app, api } = mountWithDefaults({ strict: false }, {})
     apps.push(app)
     expect(api.errors.email).toBeUndefined()
     expect(api.errors.password).toBeUndefined()
-    expect(api.state.isValid).toBe(true)
+    expect(api.meta.isValid).toBe(true)
   })
 
-  it('per-form validationMode wins over the registry default', () => {
+  it('per-form strict wins over the registry default', () => {
     // Registry says 'lax', but per-form says 'strict' — strict wins,
     // errors get seeded.
-    const { app, api } = mountWithDefaults({ validationMode: 'lax' }, { validationMode: 'strict' })
+    const { app, api } = mountWithDefaults({ strict: false }, { strict: true })
     apps.push(app)
     expect(api.errors.email?.[0]?.message).toBe('bad email')
     expect(api.errors.password?.[0]?.message).toBe('min 8 chars')
-    expect(api.state.isValid).toBe(false)
+    expect(api.meta.isValid).toBe(false)
   })
 
   it('falls back to library default (strict) when neither registry nor per-form sets it', () => {
-    // No registry default for validationMode → library fallback in
+    // No registry default for strict → library fallback in
     // createFormStore applies → 'strict' → seed fires.
     const { app, api } = mountWithDefaults({}, {})
     apps.push(app)
     expect(api.errors.email?.[0]?.message).toBe('bad email')
-    expect(api.state.isValid).toBe(false)
+    expect(api.meta.isValid).toBe(false)
   })
 })
 
-describe('app-level defaults — fieldValidation field-level merge', () => {
+describe('app-level defaults — validateOn / debounceMs resolution', () => {
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
     vi.useRealTimers()
   })
 
-  it('per-form on overrides while default debounceMs carries through', async () => {
-    // Default sets debounceMs = 50. Per-form passes only { on: 'change' }
-    // — the merged config should be { on: 'change', debounceMs: 50 }.
-    // Pin lax so the construction-time seed doesn't pre-populate the
-    // error we're trying to observe via debounced field-validation.
+  it('per-form validateOn overrides while default debounceMs carries through', async () => {
+    // Default sets debounceMs = 50. Per-form passes only validateOn:
+    // 'change' — both fields resolve independently, so the merged
+    // config is { validateOn: 'change', debounceMs: 50 }. Pin lax so
+    // the construction-time seed doesn't pre-populate the error we're
+    // trying to observe via debounced field-validation.
     vi.useFakeTimers()
     const { app, api } = mountWithDefaults(
-      { fieldValidation: { debounceMs: 50 } },
-      { fieldValidation: { on: 'change' }, validationMode: 'lax' }
+      { debounceMs: 50 },
+      { validateOn: 'change', strict: false }
     )
     apps.push(app)
 
     api.setValue('email', 'not-an-email')
-    // Just past the default debounce (50ms). If the per-form `on:
-    // 'change'` didn't merge correctly with the default debounceMs,
-    // the test would either see no error (debounce never fired) or
-    // need to wait the library default (125ms).
+    // Just past the default debounce (50ms). If validateOn and
+    // debounceMs didn't resolve independently, the test would either
+    // see no error (debounce never fired) or need to wait the library
+    // default (0ms — synchronous).
     await vi.advanceTimersByTimeAsync(75)
     await drainMicrotasks()
     expect(api.errors.email?.[0]?.message).toBe('bad email')
@@ -156,8 +158,8 @@ describe('app-level defaults — fieldValidation field-level merge', () => {
   it('per-form debounceMs overrides default debounceMs', async () => {
     vi.useFakeTimers()
     const { app, api } = mountWithDefaults(
-      { fieldValidation: { on: 'change', debounceMs: 500 } },
-      { fieldValidation: { debounceMs: 25 }, validationMode: 'lax' }
+      { validateOn: 'change', debounceMs: 500 },
+      { debounceMs: 25, strict: false }
     )
     apps.push(app)
 
@@ -168,11 +170,11 @@ describe('app-level defaults — fieldValidation field-level merge', () => {
     expect(api.errors.email?.[0]?.message).toBe('bad email')
   })
 
-  it("default fieldValidation applies entirely when per-form doesn't pass any", async () => {
+  it("default validateOn / debounceMs apply entirely when per-form doesn't pass any", async () => {
     vi.useFakeTimers()
     const { app, api } = mountWithDefaults(
-      { fieldValidation: { on: 'change', debounceMs: 30 } },
-      { validationMode: 'lax' }
+      { validateOn: 'change', debounceMs: 30 },
+      { strict: false }
     )
     apps.push(app)
 
@@ -191,8 +193,10 @@ describe('app-level defaults — anonymous + multi-form', () => {
 
   it('anonymous useForm() (no key) picks up app-level defaults', () => {
     // No `key` passed → synthetic `__cx:anon:` key allocated; defaults
-    // should still apply.
-    const { app, api } = mountWithDefaults({ validationMode: 'lax' }, {})
+    // should still apply. The schema is two strings — neither
+    // auto-marks blank, so this test reads the schemaErrors-seed
+    // channel only.
+    const { app, api } = mountWithDefaults({ strict: false }, {})
     apps.push(app)
     expect(api.errors.email).toBeUndefined()
     // Sanity: this anonymous form's key starts with the reserved prefix.
@@ -200,9 +204,11 @@ describe('app-level defaults — anonymous + multi-form', () => {
   })
 
   it('multiple useForm calls in the same app share the same defaults', () => {
-    // Two forms in one component, no per-form validationMode override
+    // Two forms in one component, no per-form strict override
     // — both should pick up the registry's 'lax' and BOTH should mount
-    // clean (no seeded errors).
+    // clean (no seeded errors). The schema is two strings — neither
+    // auto-marks blank, so this test isolates the schemaErrors-seed
+    // channel.
     type FormA = typeof tightSchema
     type FormB = typeof tightSchema
     const handles: {
@@ -217,7 +223,7 @@ describe('app-level defaults — anonymous + multi-form', () => {
       },
     })
     const app = createApp(App).use(
-      createChemicalXForms({ override: true, defaults: { validationMode: 'lax' } })
+      createChemicalXForms({ override: true, defaults: { strict: false } })
     )
     const root = document.createElement('div')
     document.body.appendChild(root)
@@ -234,18 +240,18 @@ describe('app-level defaults — v3 wrapper regression', () => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  it('zod v3 useForm picks up app-level validationMode (no eager ?? strict short-circuit)', () => {
-    // Regression lock for the dropped `validationMode: configuration.
-    // validationMode ?? 'strict'` line in src/runtime/composables/
+  it('zod v3 useForm picks up app-level strict (no eager ?? strict short-circuit)', () => {
+    // Regression lock for the dropped `strict: configuration.strict
+    // ?? true` line in src/runtime/composables/
     // use-form.ts. Before the fix, the v3 wrapper would resolve `'strict'`
     // before the merge could see the registry default — so an app-level
-    // `validationMode: 'lax'` would be silently overridden.
+    // `strict: false` would be silently overridden.
     const v3Schema = zV3.object({
       email: zV3.string().email(),
       password: zV3.string().min(8),
     })
     type V3Form = { email: string; password: string }
-    type V3API = UseAbstractFormReturnType<V3Form, V3Form>
+    type V3API = UseFormReturnType<V3Form, V3Form>
     const handle: { api?: V3API } = {}
     const App = defineComponent({
       setup() {
@@ -257,7 +263,7 @@ describe('app-level defaults — v3 wrapper regression', () => {
       },
     })
     const app = createApp(App).use(
-      createChemicalXForms({ override: true, defaults: { validationMode: 'lax' } })
+      createChemicalXForms({ override: true, defaults: { strict: false } })
     )
     const root = document.createElement('div')
     document.body.appendChild(root)

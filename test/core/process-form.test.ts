@@ -53,7 +53,7 @@ describe('buildProcessForm', () => {
   describe('validate (as a reactive Ref)', () => {
     it('starts pending and settles to success when schema passes', async () => {
       const state = alwaysValid()
-      const { validate } = buildProcessForm(state)
+      const { validate } = buildProcessForm(state, 'test:inst')
       const r = validate()
       // Initial synchronous read — the async parse hasn't settled yet.
       expect(r.value.pending).toBe(true)
@@ -68,7 +68,7 @@ describe('buildProcessForm', () => {
 
     it('settles to failure with errors when schema rejects', async () => {
       const state = alwaysInvalid()
-      const { validate } = buildProcessForm(state)
+      const { validate } = buildProcessForm(state, 'test:inst')
       const r = validate()
       await waitUntilSettled(r)
       expect(r.value.pending).toBe(false)
@@ -81,14 +81,16 @@ describe('buildProcessForm', () => {
 
     it('isValidating flips true during a run and back to false on settle', async () => {
       const state = alwaysValid()
-      const { validate } = buildProcessForm(state)
+      const { validate } = buildProcessForm(state, 'test:inst')
       expect(state.activeValidations.value).toBe(0)
       const r = validate()
       // The watchEffect defers the counter bump to a microtask (so the
       // write doesn't re-trigger the effect). Drain one microtask,
-      // then the counter should be > 0 while the parse is in flight.
+      // then the counter must be exactly 1 while the parse is in flight —
+      // this test fires a single validate(), so any other value would
+      // mean a leak or an extra concurrent validation.
       await Promise.resolve()
-      expect(state.activeValidations.value).toBeGreaterThan(0)
+      expect(state.activeValidations.value).toBe(1)
       await waitUntilSettled(r)
       expect(state.activeValidations.value).toBe(0)
     })
@@ -97,7 +99,7 @@ describe('buildProcessForm', () => {
   describe('validateAsync', () => {
     it('resolves to a settled response for the full form', async () => {
       const state = alwaysValid()
-      const { validateAsync } = buildProcessForm(state)
+      const { validateAsync } = buildProcessForm(state, 'test:inst')
       const response = await validateAsync()
       expect(response.success).toBe(true)
       expect(response.errors).toBeUndefined()
@@ -105,7 +107,7 @@ describe('buildProcessForm', () => {
 
     it('resolves to a failure response when the schema rejects', async () => {
       const state = alwaysInvalid()
-      const { validateAsync } = buildProcessForm(state)
+      const { validateAsync } = buildProcessForm(state, 'test:inst')
       const response = await validateAsync()
       expect(response.success).toBe(false)
       expect(response.errors).toEqual([
@@ -115,7 +117,7 @@ describe('buildProcessForm', () => {
 
     it('decrements activeValidations back to 0 on completion', async () => {
       const state = alwaysValid()
-      const { validateAsync } = buildProcessForm(state)
+      const { validateAsync } = buildProcessForm(state, 'test:inst')
       // validateAsync runs synchronously to the first await — its
       // counter bump happens before the returned promise resolves.
       const pending = validateAsync()
@@ -128,14 +130,14 @@ describe('buildProcessForm', () => {
   describe('handleSubmit', () => {
     it('returns a function (not a Promise) — consumers bind it to @submit', () => {
       const state = alwaysValid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       const fn = handleSubmit(async () => {})
       expect(typeof fn).toBe('function')
     })
 
     it('calls onSubmit with data when validation succeeds', async () => {
       const state = alwaysValid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       const onSubmit = vi.fn()
       await handleSubmit(onSubmit)()
       expect(onSubmit).toHaveBeenCalledOnce()
@@ -144,7 +146,7 @@ describe('buildProcessForm', () => {
 
     it('clears errors on successful submit', async () => {
       const state = alwaysValid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       state.setSchemaErrorsForPath(
         ['email'],
         [{ message: 'stale', path: ['email'], formKey: 'pf', code: 'cx:test-fixture' }]
@@ -156,7 +158,7 @@ describe('buildProcessForm', () => {
 
     it('populates state errors and calls onError when validation fails', async () => {
       const state = alwaysInvalid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       const onSubmit = vi.fn()
       const onError = vi.fn()
       await handleSubmit(onSubmit, onError)()
@@ -168,7 +170,7 @@ describe('buildProcessForm', () => {
     it('propagates a thrown onError as SubmitErrorHandlerError', async () => {
       // Pre-rewrite swallowed this into console.error. Fixed.
       const state = alwaysInvalid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       const handler = handleSubmit(
         async () => {},
         // eslint-disable-next-line @typescript-eslint/require-await
@@ -181,7 +183,7 @@ describe('buildProcessForm', () => {
 
     it('calls preventDefault on a submitted Event', async () => {
       const state = alwaysValid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       const preventDefault = vi.fn()
       const event = { preventDefault } as unknown as Event
 
@@ -193,7 +195,7 @@ describe('buildProcessForm', () => {
   describe('handleSubmit — submission lifecycle refs', () => {
     it('flips isSubmitting true for the duration of the handler, false after', async () => {
       const state = alwaysValid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       expect(state.isSubmitting.value).toBe(false)
 
       let observedMidFlight: boolean | undefined
@@ -208,7 +210,7 @@ describe('buildProcessForm', () => {
 
     it('increments submitCount on success', async () => {
       const state = alwaysValid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       expect(state.submitCount.value).toBe(0)
       await handleSubmit(async () => {})()
       expect(state.submitCount.value).toBe(1)
@@ -218,14 +220,14 @@ describe('buildProcessForm', () => {
 
     it('increments submitCount on validation failure', async () => {
       const state = alwaysInvalid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       await handleSubmit(async () => {})()
       expect(state.submitCount.value).toBe(1)
     })
 
     it('increments submitCount on user-callback throw', async () => {
       const state = alwaysValid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       const handler = handleSubmit(
         // eslint-disable-next-line @typescript-eslint/require-await
         async () => {
@@ -238,7 +240,7 @@ describe('buildProcessForm', () => {
 
     it('captures a thrown onSubmit into submitError (and still re-throws)', async () => {
       const state = alwaysValid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       const err = new Error('callback crash')
       const handler = handleSubmit(
         // eslint-disable-next-line @typescript-eslint/require-await
@@ -253,7 +255,7 @@ describe('buildProcessForm', () => {
 
     it('clears submitError at the start of a fresh submission', async () => {
       const state = alwaysValid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       // First run: user callback throws.
       const failing = handleSubmit(
         // eslint-disable-next-line @typescript-eslint/require-await
@@ -271,7 +273,7 @@ describe('buildProcessForm', () => {
 
     it('captures SubmitErrorHandlerError when the user onError throws', async () => {
       const state = alwaysInvalid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       const handler = handleSubmit(
         async () => {},
         // eslint-disable-next-line @typescript-eslint/require-await
@@ -285,7 +287,7 @@ describe('buildProcessForm', () => {
 
     it('leaves submitError null on successful submit', async () => {
       const state = alwaysValid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       await handleSubmit(async () => {})()
       expect(state.submitError.value).toBeNull()
     })
@@ -297,7 +299,7 @@ describe('buildProcessForm', () => {
       // The fix maintains an in-flight counter on FormStore; isSubmitting
       // is true iff the counter is > 0.
       const state = alwaysValid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
 
       let resolveFirst!: () => void
       let resolveSecond!: () => void
@@ -345,7 +347,7 @@ describe('buildProcessForm', () => {
       // state). With the clamp in place, isSubmitting stays false —
       // this test pins that guarantee.
       const state = alwaysValid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
 
       let resolveSubmit!: () => void
       const started = new Promise<void>((resolve) => {
@@ -382,7 +384,7 @@ describe('buildProcessForm', () => {
       // submitError with the thrown value after reset cleared it —
       // visually "unfocusing" the reset the consumer just triggered.
       const state = alwaysValid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       const err = new Error('post-reset crash')
 
       let rejectSubmit!: (e: unknown) => void
@@ -414,7 +416,7 @@ describe('buildProcessForm', () => {
       // Regression guard for the generation check: post-reset, new
       // submissions should behave exactly as before.
       const state = alwaysValid()
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
       state.reset()
 
       const err = new Error('fresh')
@@ -440,7 +442,7 @@ describe('buildProcessForm', () => {
       })
       const schema = fakeSchema<Signup>({ email: '', password: '' }, async () => validatePromise)
       const state = createFormStore<Signup>({ formKey: 'pf', schema })
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
 
       // Start a submit; awaits validation.
       const submitPromise = handleSubmit(async () => {})()
@@ -474,7 +476,7 @@ describe('buildProcessForm', () => {
       })
       const schema = fakeSchema<Signup>({ email: '', password: '' }, async () => validatePromise)
       const state = createFormStore<Signup>({ formKey: 'pf', schema })
-      const { handleSubmit } = buildProcessForm(state)
+      const { handleSubmit } = buildProcessForm(state, 'test:inst')
 
       const submitPromise = handleSubmit(async () => {})()
       await Promise.resolve()
@@ -512,7 +514,7 @@ describe('buildProcessForm', () => {
   describe('validate() — outside-scope dev warning', () => {
     it('warns once per FormStore, not on every call', () => {
       const state = alwaysValid()
-      const { validate } = buildProcessForm(state)
+      const { validate } = buildProcessForm(state, 'test:inst')
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
       try {
         validate()
@@ -530,7 +532,7 @@ describe('buildProcessForm', () => {
     it('does NOT warn when called inside an effect scope', async () => {
       const { effectScope } = await import('vue')
       const state = alwaysValid()
-      const { validate } = buildProcessForm(state)
+      const { validate } = buildProcessForm(state, 'test:inst')
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
       try {
         const scope = effectScope()

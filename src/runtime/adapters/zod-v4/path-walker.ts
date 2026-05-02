@@ -6,6 +6,7 @@ import {
   getIntersectionRight,
   getObjectShape,
   getRecordValueType,
+  getSetValueType,
   getTupleItems,
   getUnionOptions,
   kindOf,
@@ -49,11 +50,22 @@ function walkSegments(schema: z.ZodType, segments: readonly string[]): z.ZodType
   switch (kind) {
     case 'object': {
       const shape = getObjectShape(schema as z.ZodObject)
+      // Own-property check: `shape` is a plain object whose prototype
+      // is `Object.prototype`, so a bare `shape[head]` for `head ===
+      // 'toString'` / `'valueOf'` / `'hasOwnProperty'` etc. returns the
+      // inherited Function and the walker treats it as a schema. Filter
+      // to OWN keys so unknown segments resolve to "doesn't exist."
+      if (!Object.hasOwn(shape, head)) return []
       const next = shape[head]
       return next === undefined ? [] : walkSegments(next, rest)
     }
     case 'array':
       return walkSegments(getArrayElement(schema as z.ZodArray), rest)
+    case 'set':
+      // Sets aren't position-indexed, so the `head` segment is just a
+      // synthetic indexer (`[...path, 0]`) used to query the element
+      // type. We descend into the value schema and consume the segment.
+      return walkSegments(getSetValueType(schema), rest)
     case 'record':
       return walkSegments(getRecordValueType(schema), rest)
     case 'tuple': {
@@ -68,10 +80,11 @@ function walkSegments(schema: z.ZodType, segments: readonly string[]): z.ZodType
     case 'discriminated-union': {
       // Filter options whose shape contains this segment. Fallback: if no
       // option matches (e.g. the discriminator key itself), try every option.
+      // `Object.hasOwn` (not `in`) so `Object.prototype` keys don't leak.
       const options = getDiscriminatedOptions(schema)
       const matching = options.filter((opt) => {
         const shape = getObjectShape(opt)
-        return head in shape
+        return Object.hasOwn(shape, head)
       })
       const candidates = matching.length > 0 ? matching : options
       return candidates.flatMap((opt) => walkSegments(opt, segments))
@@ -124,5 +137,9 @@ function walkSegments(schema: z.ZodType, segments: readonly string[]): z.ZodType
     case 'custom':
     case 'template-literal':
       return []
+    default: {
+      const _exhaustive: never = kind
+      throw new Error(`walkSegments: unhandled ZodKind '${_exhaustive as string}'`)
+    }
   }
 }

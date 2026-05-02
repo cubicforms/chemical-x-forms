@@ -61,7 +61,7 @@ export type PendingHydration = Map<FormKey, SerializedFormData>
  * created per `app.use(createChemicalXForms())` call.
  *
  * Most consumers never touch this directly — `useForm` and
- * `useFormContext` reach the registry on your behalf. Access it
+ * `injectForm` reach the registry on your behalf. Access it
  * explicitly only when wiring SSR or a custom plugin integration.
  */
 export type ChemicalXRegistry = {
@@ -99,24 +99,48 @@ export type ChemicalXRegistry = {
 /**
  * The Vue `InjectionKey` under which the registry is provided on the
  * app. Most consumers never need this — `useForm` and
- * `useFormContext` resolve the registry automatically.
+ * `injectForm` resolve the registry automatically.
  */
-export const kChemicalXRegistry: InjectionKey<ChemicalXRegistry> = Symbol(
+// `Symbol.for(...)` so the key survives module duplication. If Vite's
+// dep optimizer ends up serving chemical-x as two separate copies (one
+// live-ESM, one pre-bundled — the standard hazard for linked-source
+// installs that opt into `optimizeDeps.include`), each copy still
+// resolves the same global symbol from the well-known string. Plugin
+// install's `app.provide(kChemicalXRegistry, ...)` and the page's
+// `inject(kChemicalXRegistry, null)` agree on the key, so `useForm`
+// finds its registry regardless of which copy did the provide. The
+// `chemical-x-forms:` prefix namespaces the key safely. Same reasoning
+// for `kFormContext` and `kFormInstanceId` below.
+export const kChemicalXRegistry: InjectionKey<ChemicalXRegistry> = Symbol.for(
   'chemical-x-forms:registry'
 )
 
 /**
  * Provides the current form's FormStore to descendants. Installed by
  * `useAbstractForm` after it resolves the state, so any nested component
- * can call `useFormContext()` without prop-threading the form API.
+ * can call `injectForm()` without prop-threading the form API.
  *
  * Typed as `FormStore<GenericForm>` — the descendant that re-emerges the
  * shape must supply its own `Form` generic, because Vue's InjectionKey
  * erases the generic at the provide/inject boundary.
  */
-export const kFormContext: InjectionKey<FormStore<GenericForm>> = Symbol(
+export const kFormContext: InjectionKey<FormStore<GenericForm>> = Symbol.for(
   'chemical-x-forms:form-context'
 )
+
+/**
+ * Provide / inject key for the per-`useForm()`-call instance ID. Provided
+ * alongside `kFormContext` so descendants reaching via `injectForm()`
+ * inherit the ancestor's `formInstanceId` and their locally-registered
+ * elements tag against the SAME instance — keeps parent-submit-focus
+ * working for inputs registered by deep children.
+ *
+ * Sibling `useForm({ key })` calls (e.g. sidebar + main rendering the
+ * same form) sit at distinct tree positions, so each provides its own
+ * ID; descendants of each branch inherit the branch's ID. Two ID spaces
+ * stay isolated even when the underlying FormStore is shared.
+ */
+export const kFormInstanceId: InjectionKey<string> = Symbol.for('chemical-x-forms:form-instance-id')
 
 declare module 'vue' {
   interface App {
@@ -219,7 +243,7 @@ export function createRegistry(options: CreateRegistryOptions = {}): ChemicalXRe
  * Look up the current app's registry from inside a component's
  * `setup()` (or any synchronous code on the setup call stack).
  *
- * Most consumers don't need this — `useForm` and `useFormContext`
+ * Most consumers don't need this — `useForm` and `injectForm`
  * call it on your behalf. Reach for it directly when building
  * custom integrations that need the raw registry.
  *

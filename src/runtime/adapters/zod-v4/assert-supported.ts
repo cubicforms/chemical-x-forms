@@ -8,6 +8,7 @@ import {
   getLazyGetter,
   getObjectShape,
   getRecordValueType,
+  getSetValueType,
   getTupleItems,
   getUnionOptions,
   kindOf,
@@ -64,6 +65,9 @@ export function assertSupportedKinds(
     }
     case 'array':
       assertSupportedKinds(getArrayElement(schema as z.ZodArray), [...path, '*'], lazyGetters)
+      return
+    case 'set':
+      assertSupportedKinds(getSetValueType(schema), [...path, '*'], lazyGetters)
       return
     case 'record':
       assertSupportedKinds(getRecordValueType(schema), [...path, '*'], lazyGetters)
@@ -140,5 +144,9 @@ export function assertSupportedKinds(
     case 'custom':
     case 'template-literal':
       return
+    default: {
+      const _exhaustive: never = kind
+      throw new Error(`assertSupportedKinds: unhandled ZodKind '${_exhaustive as string}'`)
+    }
   }
 }

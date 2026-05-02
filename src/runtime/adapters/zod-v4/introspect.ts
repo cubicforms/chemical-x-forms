@@ -18,6 +18,7 @@ import type { z } from 'zod'
 export type ZodKind =
   | 'object'
   | 'array'
+  | 'set'
   | 'record'
   | 'tuple'
   | 'union'
@@ -99,6 +100,8 @@ export function kindOf(schema: unknown): ZodKind {
       return 'object'
     case 'array':
       return 'array'
+    case 'set':
+      return 'set'
     case 'record':
       return 'record'
     case 'tuple':
@@ -174,6 +177,15 @@ export function getObjectShape(schema: z.ZodObject): Record<string, z.ZodType> {
 export function getArrayElement(schema: z.ZodArray): z.ZodType {
   const def = readDef(schema)
   return def?.element as z.ZodType
+}
+
+/**
+ * Returns the element schema of a `z.set(...)`. Symmetric to
+ * `getArrayElement`; v4 stores the set's element type on `def.valueType`.
+ */
+export function getSetValueType(schema: z.ZodType): z.ZodType {
+  const def = readDef(schema)
+  return def?.valueType as z.ZodType
 }
 
 export function getRecordKeyType(schema: z.ZodType): z.ZodType {
@@ -314,4 +326,111 @@ export function assertZodVersion(schema: unknown): void {
   if (def?.type === undefined) {
     throw new Error('[@chemical-x/forms/zod] schema is not zod v4. Install zod@^4 or use /zod-v3.')
   }
+}
+
+/**
+ * True iff any refinement check on the schema (or any descendant
+ * subschema) is async. Detection: walks the tree once, peeling
+ * wrappers (optional/nullable/default/readonly/catch/pipe), descending
+ * into containers (object props, array element, tuple items, union
+ * options, intersection sides, lazy getter, record key/value), and
+ * inspecting each `def.checks[].def.fn` for
+ * `constructor.name === 'AsyncFunction'`. Direct `async (v) => …`
+ * refinements are caught; sync functions that happen to return a
+ * Promise (rare; we'd recommend marking them `async`) are NOT.
+ *
+ * Used by the adapter's `needsAsyncValidation()` to drive the
+ * runtime's construction-time async-validation seed (see
+ * create-form-store's strict-mode block). False negatives just delay
+ * async refines until first mutation — matches the pre-detection
+ * behavior. False positives are unlikely (the AsyncFunction check is
+ * precise) and cost only one extra microtask of validation work.
+ */
+export function containsAsyncRefine(schema: z.ZodType, seen?: WeakSet<object>): boolean {
+  const visited = seen ?? new WeakSet<object>()
+  // Defensive guard: sub-adapters cast through `as` and a malformed leaf
+  // could land here as a non-object. The TS signature claims object, but
+  // runtime safety beats the conditional-narrowing lint complaint.
+  const candidate = schema as unknown
+  if (typeof candidate !== 'object' || candidate === null) return false
+  if (visited.has(candidate)) return false
+  visited.add(candidate)
+
+  const checks = getChecks(schema)
+  for (const check of checks) {
+    if (isAsyncCheck(check)) return true
+  }
+
+  const def = readDef(schema)
+  if (def === undefined) return false
+
+  if (def.innerType !== undefined && containsAsyncRefine(def.innerType as z.ZodType, visited)) {
+    return true
+  }
+  if (def.element !== undefined && containsAsyncRefine(def.element as z.ZodType, visited)) {
+    return true
+  }
+  if (def.in !== undefined && containsAsyncRefine(def.in as z.ZodType, visited)) {
+    return true
+  }
+  if (def.out !== undefined && containsAsyncRefine(def.out as z.ZodType, visited)) {
+    return true
+  }
+  if (def.left !== undefined && containsAsyncRefine(def.left as z.ZodType, visited)) {
+    return true
+  }
+  if (def.right !== undefined && containsAsyncRefine(def.right as z.ZodType, visited)) {
+    return true
+  }
+  if (def.keyType !== undefined && containsAsyncRefine(def.keyType as z.ZodType, visited)) {
+    return true
+  }
+  if (def.valueType !== undefined && containsAsyncRefine(def.valueType as z.ZodType, visited)) {
+    return true
+  }
+  if (def.shape !== undefined) {
+    for (const sub of Object.values(def.shape)) {
+      if (containsAsyncRefine(sub as z.ZodType, visited)) return true
+    }
+  }
+  if (def.entries !== undefined) {
+    for (const sub of Object.values(def.entries)) {
+      if (containsAsyncRefine(sub as z.ZodType, visited)) return true
+    }
+  }
+  if (def.options !== undefined) {
+    for (const sub of def.options) {
+      if (containsAsyncRefine(sub as z.ZodType, visited)) return true
+    }
+  }
+  if (def.items !== undefined) {
+    for (const sub of def.items) {
+      if (containsAsyncRefine(sub as z.ZodType, visited)) return true
+    }
+  }
+  if (typeof def.getter === 'function') {
+    try {
+      const inner = def.getter() as z.ZodType
+      if (containsAsyncRefine(inner, visited)) return true
+    } catch {
+      // Lazy schemas may throw on resolution before their referenced
+      // schema is constructed; treat as no async refine and move on.
+    }
+  }
+
+  return false
+}
+
+interface ZodCheckInternals {
+  _def?: { fn?: unknown }
+  def?: { fn?: unknown }
+  _zod?: { def?: { fn?: unknown } }
+}
+
+function isAsyncCheck(check: unknown): boolean {
+  if (typeof check !== 'object' || check === null) return false
+  const c = check as ZodCheckInternals
+  const fn = c._def?.fn ?? c.def?.fn ?? c._zod?.def?.fn
+  if (typeof fn !== 'function') return false
+  return fn.constructor.name === 'AsyncFunction'
 }

@@ -3,19 +3,27 @@ import type {
   AbstractSchema,
   FormKey,
   SlimPrimitiveKind,
+  UnionDiscriminatorContext,
   ValidationError,
+  ValidationResponse,
 } from '../../types/types-api'
 import { CxErrorCode } from '../../core/error-codes'
+import { canonicalizePath, type Path, type PathKey } from '../../core/paths'
 import type { DeepPartial, GenericForm } from '../../types/types-core'
 import { assertSupportedKinds } from './assert-supported'
+import { unwrapToDiscriminatedUnion } from './discriminator'
 import { zodIssuesToValidationErrors } from './errors'
 import { fingerprintZodSchema } from './fingerprint'
 import { deriveDefault, getDefaultValuesFromZodSchema } from './default-values'
 import {
   assertZodVersion,
+  containsAsyncRefine,
   getDiscriminatedOptions,
+  getDiscriminator,
   getIntersectionLeft,
   getIntersectionRight,
+  getLiteralValues,
+  getObjectShape,
   getUnionOptions,
   kindOf,
   unwrapInner,
@@ -195,8 +203,22 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
   assertSupportedKinds(rootSchema)
 
   return (formKey: FormKey): AbstractSchema<Form, Form> => {
+    // Per-adapter `isLeafAtPath` cache. Lifetime = one adapter instance
+    // (one per `useForm()` call). Memoises the slim-primitive walk so the
+    // leaf-aware proxy traps don't re-walk the schema on every read.
+    const leafCache = new Map<PathKey, boolean>()
+    // Memoised one-shot walk; `needsAsyncValidation` is queried at
+    // construction and possibly again from devtools, so a single tree
+    // traversal earns its keep across the adapter's lifetime.
+    let asyncValidationFlag: boolean | null = null
+
     return {
       fingerprint: () => fingerprintZodSchema(rootSchema),
+
+      needsAsyncValidation(): boolean {
+        asyncValidationFlag ??= containsAsyncRefine(rootSchema)
+        return asyncValidationFlag
+      },
 
       getDefaultValues(config): ReturnType<AbstractSchema<Form, Form>['getDefaultValues']> {
         const { data } = getDefaultValuesFromZodSchema<Form>({
@@ -205,7 +227,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
           constraints: config.constraints,
         })
 
-        if (config.validationMode === 'strict') {
+        if (config.strict !== false) {
           // Strict mode: run the *full* schema (not the slim one) so
           // refinement-level errors surface. If that passes, we're fine.
           //
@@ -269,6 +291,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
           (schema) =>
             ({
               fingerprint: () => fingerprintZodSchema(schema),
+              needsAsyncValidation: () => containsAsyncRefine(schema),
               getDefaultValues: () => ({
                 data: deriveDefault(schema, true),
                 errors: undefined,
@@ -312,6 +335,25 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         return out
       },
 
+      isLeafAtPath(path): boolean {
+        const cacheKey = canonicalizePath(path).key
+        const cached = leafCache.get(cacheKey)
+        if (cached !== undefined) return cached
+        const prim = this.getSlimPrimitiveTypesAtPath(path)
+        // Empty set → path doesn't exist in schema → descend
+        // permissively (treat as container so schema-named reserved keys
+        // at depth 2+ don't shadow). Any container kind in the set →
+        // descend. Otherwise every kind is a primitive → leaf.
+        const isLeaf =
+          prim.size > 0 &&
+          !prim.has('object') &&
+          !prim.has('array') &&
+          !prim.has('map') &&
+          !prim.has('set')
+        leafCache.set(cacheKey, isLeaf)
+        return isLeaf
+      },
+
       isRequiredAtPath(path): boolean {
         // Root form is always "required" in the structural sense — it's
         // the object we're parsing. Submit/validate's required-empty
@@ -326,27 +368,124 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         return resolved.every((candidate) => isLeafRequired(candidate))
       },
 
-      async validateAtPath(data, path): ReturnType<AbstractSchema<Form, Form>['validateAtPath']> {
-        if (path === undefined) {
-          const result = (await rootSchema.safeParseAsync(data)) as z.ZodSafeParseResult<Form>
-          if (result.success) {
-            return { data: result.data, errors: undefined, success: true, formKey }
-          }
-          return {
-            data: undefined,
-            errors: zodIssuesToValidationErrors(result.error.issues, formKey),
-            success: false,
-            formKey,
+      getUnionDiscriminatorAtPath(path): UnionDiscriminatorContext | undefined {
+        // Resolve every candidate at `path`; pick the unique one that
+        // is (or wraps) a discriminated union. Wrappers
+        // (`.optional()` / `.default(...)` / etc.) are peeled by
+        // `unwrapToDiscriminatedUnion`. Ambiguous resolutions (two
+        // distinct DUs both reachable) bail — the runtime then falls
+        // back to a plain write.
+        const candidates =
+          path.length === 0
+            ? [rootSchema as z.ZodType]
+            : getNestedZodSchemasAtPath(rootSchema, path)
+        let matchedUnion: z.ZodType | undefined
+        for (const candidate of candidates) {
+          const du = unwrapToDiscriminatedUnion(candidate)
+          if (du === undefined) continue
+          if (matchedUnion !== undefined && matchedUnion !== du) return undefined
+          matchedUnion = du
+        }
+        if (matchedUnion === undefined) return undefined
+        const discKey = getDiscriminator(matchedUnion)
+        if (discKey === undefined) return undefined
+        const options = getDiscriminatedOptions(matchedUnion)
+        return {
+          discriminatorKey: discKey,
+          getVariantDefault(value: unknown): unknown {
+            for (const opt of options) {
+              const shape = getObjectShape(opt)
+              const litSchema = shape[discKey]
+              if (litSchema === undefined) continue
+              if (kindOf(litSchema) !== 'literal') continue
+              const literalValues = getLiteralValues(litSchema)
+              if (literalValues.includes(value)) return deriveDefault(opt, true)
+            }
+            return undefined
+          },
+        }
+      },
+
+      validateAtPath(
+        data,
+        path,
+        options
+      ): ReturnType<AbstractSchema<Form, Form>['validateAtPath']> {
+        // Sync attempt: when `options.sync === true`, try `safeParse`
+        // (synchronous). It throws on async refines / pipes /
+        // transforms; we catch and fall through to `safeParseAsync`.
+        // Without the flag the adapter goes straight to async — the
+        // historical contract every non-reshape callsite expects.
+        const trySync = options?.sync === true
+        if (trySync) {
+          try {
+            return runSync()
+          } catch {
+            // Async-only schema. Fall through to the async path.
           }
         }
-        const resolved = getNestedZodSchemasAtPath(rootSchema, path)
-        if (resolved.length === 0) {
+        return runAsync()
+
+        function runSync(): ValidationResponse<Form> {
+          if (path === undefined) {
+            const result = rootSchema.safeParse(data) as z.ZodSafeParseResult<Form>
+            return result.success
+              ? { data: result.data, errors: undefined, success: true, formKey }
+              : {
+                  data: undefined,
+                  errors: zodIssuesToValidationErrors(result.error.issues, formKey),
+                  success: false,
+                  formKey,
+                }
+          }
+          const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+          if (resolved.length === 0) return pathNotFound(path)
+          const aggregated: ValidationError[] = []
+          for (const candidate of resolved) {
+            const result = candidate.safeParse(data)
+            if (result.success) {
+              return { data: result.data as Form, errors: undefined, success: true, formKey }
+            }
+            aggregated.push(...zodIssuesToValidationErrors(result.error.issues, formKey))
+          }
+          return { data: undefined, errors: aggregated, success: false, formKey }
+        }
+
+        async function runAsync(): Promise<ValidationResponse<Form>> {
+          if (path === undefined) {
+            const result = (await rootSchema.safeParseAsync(data)) as z.ZodSafeParseResult<Form>
+            return result.success
+              ? { data: result.data, errors: undefined, success: true, formKey }
+              : {
+                  data: undefined,
+                  errors: zodIssuesToValidationErrors(result.error.issues, formKey),
+                  success: false,
+                  formKey,
+                }
+          }
+          const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+          if (resolved.length === 0) return pathNotFound(path)
+          // Sequential await — parallel parses would run every
+          // branch's async side effects on a value only one branch
+          // should see.
+          const aggregated: ValidationError[] = []
+          for (const candidate of resolved) {
+            const result = await candidate.safeParseAsync(data)
+            if (result.success) {
+              return { data: result.data as Form, errors: undefined, success: true, formKey }
+            }
+            aggregated.push(...zodIssuesToValidationErrors(result.error.issues, formKey))
+          }
+          return { data: undefined, errors: aggregated, success: false, formKey }
+        }
+
+        function pathNotFound(p: Path): ValidationResponse<Form> {
           return {
             data: undefined,
             errors: [
               {
-                message: `Path '${path.join(PATH_SEPARATOR)}' did not resolve to any schema`,
-                path: [...path],
+                message: `Path '${p.join(PATH_SEPARATOR)}' did not resolve to any schema`,
+                path: [...p],
                 formKey,
                 code: CxErrorCode.PathNotFound,
               },
@@ -354,24 +493,6 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
             success: false,
             formKey,
           }
-        }
-        // Try each candidate (union branches); first success wins. The
-        // loop awaits sequentially — parallel parses are tempting but
-        // would run every branch's side effects (async refinements in
-        // particular) on a value only one branch should see.
-        const aggregated: ValidationError[] = []
-        for (const candidate of resolved) {
-          const result = await candidate.safeParseAsync(data)
-          if (result.success) {
-            return { data: result.data as Form, errors: undefined, success: true, formKey }
-          }
-          aggregated.push(...zodIssuesToValidationErrors(result.error.issues, formKey))
-        }
-        return {
-          data: undefined,
-          errors: aggregated,
-          success: false,
-          formKey,
         }
       },
     }

@@ -29,10 +29,13 @@ describe('zod v3 adapter — fuzz over arbitrary supported schemas', () => {
       const adapter = zodAdapter(schema as z.ZodObject<z.ZodRawShape>)('f')
       const result = adapter.getDefaultValues({
         useDefaultSchemaValues: true,
-        validationMode: 'lax',
+        strict: false,
       })
       expect(result.success).toBe(true)
-      expect(result.data).toBeDefined()
+      // After `success === true`, the result type narrows so `.data` is
+      // present by construction — assert on shape instead of mere
+      // existence.
+      expect(typeof result.data).toBe('object')
     }
   )
 
@@ -45,7 +48,10 @@ describe('zod v3 adapter — fuzz over arbitrary supported schemas', () => {
     // data. Post-5.6 the adapter method is Promise-returning, so the
     // property reads "never rejects" rather than "never throws".
     for (const probe of [undefined, null, 0, '', [], {}]) {
-      await expect(adapter.validateAtPath(probe, undefined)).resolves.toBeDefined()
+      // `toHaveProperty('success')` is the contract — a ValidationResponse
+      // — and is stronger than `toBeDefined()`, which would pass for any
+      // non-undefined resolution.
+      await expect(adapter.validateAtPath(probe, undefined)).resolves.toHaveProperty('success')
     }
   })
 

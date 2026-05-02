@@ -19,7 +19,7 @@ import {
  * the input in render order. But Vue's SSR is single-pass top-to-bottom,
  * so a template like:
  *
- *   <pre>{{ form.fieldState.password.isConnected }}</pre>
+ *   <pre>{{ form.fields.password.isConnected }}</pre>
  *   <input v-register="form.register('password')" />
  *
  * evaluates the `<pre>` first, BEFORE the v-register wrapper has had a
@@ -253,7 +253,7 @@ function injectPreamble(element: ElementNode, captured: readonly string[]): void
   // see the file header), and any throw inside one entry must not
   // prevent the rest from firing or break SSR. Common throw paths the
   // catch covers: a v-register against a null `ctx` (e.g. when
-  // `useFormContext` returned null and the input is gated by a v-if
+  // `injectForm` returned null and the input is gated by a v-if
   // the AST walker can't see — the v-if check fires later, so the
   // preamble would otherwise dereference null here).
   const callList = captured

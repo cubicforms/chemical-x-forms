@@ -1,5 +1,10 @@
 import { computed, ref, type Ref } from 'vue'
-import type { RegisterOptions, RegisterValue, WriteMeta } from '../types/types-api'
+import type {
+  RegisterOptions,
+  RegisterTransform,
+  RegisterValue,
+  WriteMeta,
+} from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { captureUserCallSite } from './dev-stack-trace'
@@ -7,6 +12,14 @@ import { AnonPersistError } from './errors'
 import { extractSchemaFields } from './extract-schema-fields'
 import { canonicalizePath, type Path, type PathKey } from './paths'
 import { PERSISTENCE_MODULE_KEY } from './persistence'
+import { buildCoerceFn, buildElementCoerceFn } from './schema-coerce'
+
+// Module-level frozen empty array — re-used as the transforms default
+// across every register() call that doesn't opt in. Avoids a per-call
+// allocation on the 99% of fields that don't declare normalization,
+// while keeping the directive's `for (const t of rv.transforms)`
+// iteration uniform (no null-check needed).
+const EMPTY_TRANSFORMS: ReadonlyArray<RegisterTransform> = Object.freeze([])
 
 /**
  * Register API factory. Given a FormStore, returns a `register(path)` that
@@ -26,7 +39,10 @@ import { PERSISTENCE_MODULE_KEY } from './persistence'
 
 const INTERACTIVE_TAG_NAMES = new Set(['INPUT', 'SELECT', 'TEXTAREA'])
 
-const cxListenersSymbol: unique symbol = Symbol('chemical-x-forms:focus-listeners')
+// `Symbol.for(...)` so duplicate copies of chemical-x agree on the
+// element-property key for stashed focus/blur handlers — see
+// `assignKey` in core/directive.ts for the same reasoning.
+const cxListenersSymbol: unique symbol = Symbol.for('chemical-x-forms:focus-listeners')
 
 type ElementWithListeners = HTMLElement & {
   [cxListenersSymbol]?: {
@@ -58,7 +74,7 @@ function detachFocusListeners(element: HTMLElement): void {
   delete target[cxListenersSymbol]
 }
 
-export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
+export function buildRegister<F extends GenericForm>(state: FormStore<F>, formInstanceId: string) {
   // Path-keyed cache of typed-form refs. Lifted out of the per-call
   // closure so multiple `register(path)` invocations for the same
   // path — e.g. two `<input v-register>` bindings to `'numberText'`,
@@ -129,6 +145,24 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
 
     const persist = options?.persist === true
     const acknowledgeSensitive = options?.acknowledgeSensitive === true
+    const transforms = options?.transforms ?? EMPTY_TRANSFORMS
+
+    // Schema-driven coerce closure. Captures the path's slim accept set
+    // and the form's resolved coercion index so the per-event hot path
+    // is a single function call. Identity when the form has coercion
+    // disabled (`useForm({ coerce: false })`) or the path admits no
+    // coercion target. Cached on RegisterValue so the directive doesn't
+    // re-walk the schema per keystroke.
+    const coerce = buildCoerceFn(
+      state.schema as Parameters<typeof buildCoerceFn>[0],
+      segments,
+      state.coerceIndex
+    )
+    const coerceElement = buildElementCoerceFn(
+      state.schema as Parameters<typeof buildElementCoerceFn>[0],
+      segments,
+      state.coerceIndex
+    )
 
     // Eager throw: opt-in declared but the form has no persistence wired.
     // Without the throw the directive silently records the opt-in, no
@@ -178,7 +212,7 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
         // component wrapper divs when fallthrough attributes carry the
         // directive past the intended `<input>` / `<select>` / `<textarea>`.
         if (!INTERACTIVE_TAG_NAMES.has(element.tagName)) return
-        const added = state.registerElement(segments, element)
+        const added = state.registerElement(segments, element, formInstanceId)
         if (added) attachFocusListeners(state, segments, element)
       },
 
@@ -209,6 +243,9 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>) {
       persist,
       acknowledgeSensitive,
       persistOptIns: state.persistOptIns,
+      transforms,
+      coerce,
+      ...(coerceElement !== undefined ? { coerceElement } : {}),
     }
   }
 }

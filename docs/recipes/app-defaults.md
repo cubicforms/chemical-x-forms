@@ -1,9 +1,10 @@
 # App-level defaults
 
-cx ships sensible library defaults (`fieldValidation: { on: 'change',
-debounceMs: 125 }`, `validationMode: 'strict'`, `onInvalidSubmit:
-'none'`) that fit most apps out of the box. Set app-wide overrides
-once via the plugin instead of repeating them at every `useForm` call.
+cx ships sensible library defaults (`validateOn: 'change'`,
+`debounceMs: 0`, `strict: true`, `coerce: true`,
+`rememberVariants: true`, `onInvalidSubmit: 'none'`) that fit most
+apps out of the box. Set app-wide overrides once via the plugin
+instead of repeating them at every `useForm` call.
 
 ## Setup
 
@@ -18,7 +19,7 @@ createApp(App)
   .use(
     createChemicalXForms({
       defaults: {
-        fieldValidation: { debounceMs: 100 },
+        debounceMs: 100,
         onInvalidSubmit: 'focus-first-error',
       },
     })
@@ -34,7 +35,7 @@ export default defineNuxtConfig({
   modules: ['@chemical-x/forms/nuxt'],
   chemicalX: {
     defaults: {
-      fieldValidation: { debounceMs: 100 },
+      debounceMs: 100,
       onInvalidSubmit: 'focus-first-error',
     },
   },
@@ -54,36 +55,33 @@ omitted, and the library's built-in default is the final fallback.
 
 ## Merge semantics
 
-| Option            | Merge                                                                      |
-| ----------------- | -------------------------------------------------------------------------- |
-| `validationMode`  | Per-form replaces default outright.                                        |
-| `onInvalidSubmit` | Per-form replaces default outright.                                        |
-| `history`         | Per-form replaces default outright (whole config object, not field-level). |
-| `fieldValidation` | **Field-level merge** — see below.                                         |
-
-`fieldValidation` is the only deep-merged option. It's small (`on` +
-`debounceMs`) and the use case is real: set `debounceMs` once for the
-whole app, override `on` per-form when needed.
+Every option resolves independently — set anything once at the app
+level, override anything per-form without losing the rest:
 
 ```ts
 // Plugin side
 createChemicalXForms({
-  defaults: { fieldValidation: { debounceMs: 100 } },
+  defaults: { validateOn: 'change', debounceMs: 100 },
 })
 
 // useForm calls
 useForm({ schema })
-// → fieldValidation: { on: 'change', debounceMs: 100 }
-//   (library default 'on' + app-level debounceMs)
+// → validateOn: 'change', debounceMs: 100 (app-level both)
 
-useForm({ schema, fieldValidation: { on: 'blur' } })
-// → fieldValidation: { on: 'blur', debounceMs: 100 }
-//   (per-form 'on' wins; app-level debounceMs carries over)
+useForm({ schema, validateOn: 'blur' })
+// → validateOn: 'blur', debounceMs: ignored
+//   (validateOn: 'blur' rejects debounceMs by type, the inherited
+//   100 is silently dropped)
 
-useForm({ schema, fieldValidation: { debounceMs: 50 } })
-// → fieldValidation: { on: 'change', debounceMs: 50 }
-//   (library default 'on' + per-form debounceMs)
+useForm({ schema, debounceMs: 25 })
+// → validateOn: 'change' (app-level), debounceMs: 25 (per-form wins)
 ```
+
+`validateOn` and `debounceMs` are flat top-level fields — there's no
+nested merge object anymore. The TS-level `ValidateOnConfig`
+discriminated union enforces that `debounceMs` is only valid when
+`validateOn` is `'change'` (or omitted); pairing it with `'blur'` /
+`'submit'` is a compile-time error.
 
 ## What's supported
 
@@ -91,10 +89,13 @@ useForm({ schema, fieldValidation: { debounceMs: 50 } })
 
 ```ts
 type ChemicalXFormsDefaults = {
-  validationMode?: 'strict' | 'lax'
+  strict?: boolean
+  validateOn?: 'change' | 'blur' | 'submit'
+  debounceMs?: number
   onInvalidSubmit?: 'none' | 'focus-first-error' | 'scroll-to-first-error' | 'both'
-  fieldValidation?: { on?: 'change' | 'blur' | 'none'; debounceMs?: number }
   history?: true | { max?: number }
+  rememberVariants?: boolean
+  coerce?: boolean | CoercionRegistry
 }
 ```
 
@@ -109,9 +110,9 @@ What's **not** supported (and why):
 
 ## Per-form `defaultValues`
 
-App-level defaults shape options like `validationMode` and
-`fieldValidation`. Per-form initial values live on each
-`useForm({ defaultValues })` call.
+App-level defaults shape options like `strict` and `validateOn`.
+Per-form initial values live on each `useForm({ defaultValues })`
+call.
 
 Three patterns:
 
@@ -122,34 +123,42 @@ import { unset } from '@chemical-x/forms/zod'
 //    is not blank for those leaves.
 useForm({ schema, defaultValues: { email: 'me@example.com', count: 10 } })
 
-// 2. Omit defaultValues entirely — every primitive leaf (string,
-//    number, boolean, bigint) is auto-marked blank at construction.
-//    Storage holds the schema's slim defaults; the form displays
-//    empty; submit raises 'No value supplied' for required schemas.
+// 2. Omit defaultValues entirely — every NUMERIC primitive leaf
+//    (number, bigint) is auto-marked blank at construction. Storage
+//    holds the schema's slim defaults; the form displays empty;
+//    `form.errors.<path>` reactively carries 'No value supplied' for
+//    required schemas. Strings and booleans are NOT auto-marked
+//    because their slim defaults match what the DOM shows natively
+//    — the schema is the authority on whether `''` / `false` is
+//    acceptable. See `docs/blank.md` for the full rationale.
 useForm({ schema })
 
-// 3. Mark specific leaves as `unset` — those leaves are blank;
-//    siblings without an explicit value are auto-marked too.
+// 3. Mark specific leaves as `unset` — those leaves are blank
+//    explicitly, regardless of type. Numeric siblings without an
+//    explicit value still auto-mark; string / boolean siblings
+//    without an explicit value are NOT auto-marked.
 useForm({ schema, defaultValues: { email: unset, count: 10 } })
-//                                  ^^^^^^^^^^^^^ blank
+//                                  ^^^^^^^^^^^^^ blank (explicit unset)
 //                                                  ^^^^^^^^^ explicit value
 ```
 
 `unset` works in `setValue('email', unset)` and `reset({ email: unset })`
 identically — same semantic everywhere.
 
-The auto-mark and the explicit `unset` paths converge on the same
-state: the path lives in the form's `blankPaths` set, surfaced via
-`form.fieldState.<path>.blank` and `form.blankPaths.value` for
-bulk introspection. Submit / validate / validateAsync raise `'No
-value supplied'` (`code: 'cx:no-value-supplied'`) for required
+Auto-mark and explicit `unset` converge on the same state: the path
+lives in the form's `blankPaths` set, surfaced via
+`form.fields.<path>.blank` and `form.blankPaths.value` for bulk
+introspection. The merged `form.errors.<path>` reactively carries
+`'No value supplied'` (`code: 'cx:no-value-supplied'`) for required
 schemas; `.optional()` / `.nullable()` / `.default(N)` / `.catch(N)`
 schemas accept the empty case.
 
-To opt a leaf OUT of auto-mark, supply a non-`unset` value for it
-(`defaultValues: { email: '' }` is the explicit "empty string is
-intentional" signal — storage holds `''` and the path is NOT
-blank).
+To opt a numeric leaf OUT of auto-mark, supply a non-`unset` value
+(`defaultValues: { count: 0 }` is the explicit "0 is intentional"
+signal). For strings and booleans you don't need an opt-out — they're
+not auto-marked in the first place. See `docs/blank.md` for why the
+asymmetry is principled (storage / display divergence is real for
+numerics and absent for strings / booleans).
 
 ## Alternative: userland wrapper
 
@@ -164,7 +173,8 @@ import type { z } from 'zod'
 
 export function useAppForm<S extends z.ZodObject>(opts: Parameters<typeof cxUseForm<S>>[0]) {
   return cxUseForm({
-    fieldValidation: { on: 'change', debounceMs: 100 },
+    validateOn: 'change',
+    debounceMs: 100,
     ...opts,
   })
 }

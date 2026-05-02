@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from 'vue'
 import { createFormStore } from '../../src/runtime/core/create-form-store'
+import { canonicalizePath } from '../../src/runtime/core/paths'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
-import { getRegistryFromApp } from '../../src/runtime/core/registry'
+import { getRegistryFromApp, type SerializedFormData } from '../../src/runtime/core/registry'
 import { hydrateChemicalXState, renderChemicalXState } from '../../src/runtime/core/serialize'
 import { fakeSchema } from '../utils/fake-schema'
 
@@ -112,5 +113,121 @@ describe('hydrateChemicalXState', () => {
     // Originals still derive from the schema — so pristine/dirty works client-side.
     expect(rehydratedState.getOriginalAtPath(['email'])).toBe('')
     expect(rehydratedState.isPristineAtPath(['email'])).toBe(false)
+  })
+})
+
+describe('hydration shape guard', () => {
+  // Defends against rolling deploys / stale cache: SSR running an older
+  // bundle version embeds a payload whose FieldRecord shape predates the
+  // current code. The cast `record as FieldRecord` would lie and downstream
+  // reads of `.touched` / `.focused` would crash. Each malformed entry
+  // gets dropped silently in prod; one-shot dev-warns name the offending
+  // key so the rolling-deploy diagnosis is obvious.
+
+  let warnSpy: ReturnType<typeof vi.spyOn>
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  })
+  afterEach(() => {
+    warnSpy.mockRestore()
+  })
+
+  // The shape-guard tests pass schema-shaped tuple lists by design, but the
+  // SerializedFormData type is structurally readonly. The cast keeps the
+  // test's "I know I'm passing junk" intent at the boundary.
+  function buildPayload(overrides: {
+    fields?: ReadonlyArray<readonly [string, unknown]>
+    schemaErrors?: ReadonlyArray<readonly [string, unknown]>
+    userErrors?: ReadonlyArray<readonly [string, unknown]>
+  }): SerializedFormData {
+    return {
+      form: { email: 'good@x', password: '' },
+      fields: overrides.fields ?? [],
+      schemaErrors: overrides.schemaErrors ?? [],
+      userErrors: overrides.userErrors ?? [],
+    }
+  }
+
+  it('skips FieldRecord entries that fail the shape check', () => {
+    const emailKey = canonicalizePath('email').key
+    const validRecord = {
+      path: ['email'],
+      updatedAt: '2025-01-01T00:00:00.000Z',
+      isConnected: true,
+      focused: null,
+      blurred: null,
+      touched: null,
+    }
+    const hydration = buildPayload({
+      fields: [
+        [emailKey, validRecord], // valid
+        ['malformed-null', null],
+        ['malformed-string', 'not an object'],
+        ['malformed-empty-obj', {}],
+        ['malformed-wrong-types', { path: 'not-array', isConnected: 'true' }],
+        ['malformed-missing-flags', { path: ['x'], updatedAt: null, isConnected: true }],
+      ],
+    })
+
+    const state = createFormStore<Signup>({
+      formKey: 'malformed-fields',
+      schema: fakeSchema<Signup>({ email: '', password: '' }),
+      hydration,
+    })
+
+    expect(state.fields.has(emailKey)).toBe(true)
+    expect(state.fields.get(emailKey)?.isConnected).toBe(true)
+    // Only the valid entry survived; five malformed entries were skipped.
+    expect(state.fields.size).toBe(1)
+  })
+
+  it('skips malformed schemaErrors / userErrors entries', () => {
+    const emailKey = canonicalizePath('email').key
+    const validErr = {
+      message: 'taken',
+      path: ['email'],
+      formKey: 'malformed-errors',
+      code: 'cx:test',
+    }
+    const hydration = buildPayload({
+      schemaErrors: [
+        [emailKey, [validErr]],
+        ['bad-array', 'not-an-array'],
+        ['array-with-junk', [{ message: 'ok', path: ['x'], formKey: 'k', code: 'c' }, null, 42]],
+        ['missing-fields', [{ message: 'ok' }]],
+      ],
+      userErrors: [
+        [emailKey, [validErr]],
+        ['null-value', null],
+      ],
+    })
+
+    const state = createFormStore<Signup>({
+      formKey: 'malformed-errors',
+      schema: fakeSchema<Signup>({ email: '', password: '' }),
+      hydration,
+    })
+
+    // Only the valid 'email' entry made it into each error map.
+    expect(state.schemaErrors.size).toBe(1)
+    expect(state.schemaErrors.get(emailKey)?.[0]?.message).toBe('taken')
+    expect(state.userErrors.size).toBe(1)
+    expect(state.userErrors.get(emailKey)?.[0]?.message).toBe('taken')
+  })
+
+  it('warns once per malformed entry in dev mode', () => {
+    const hydration = buildPayload({
+      fields: [['oops', null]],
+      schemaErrors: [['oops', 'not-array']],
+    })
+
+    createFormStore<Signup>({
+      formKey: 'warn-once',
+      schema: fakeSchema<Signup>({ email: '', password: '' }),
+      hydration,
+    })
+
+    const messages = warnSpy.mock.calls.map((call: unknown[]) => String(call[0]))
+    expect(messages.some((m: string) => m.includes('hydration') && m.includes('oops'))).toBe(true)
   })
 })

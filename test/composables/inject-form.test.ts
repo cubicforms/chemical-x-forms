@@ -2,12 +2,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h } from 'vue'
 import { useForm } from '../../src'
-import { useFormContext } from '../../src/runtime/composables/use-form-context'
+import { injectForm } from '../../src/runtime/composables/use-form-context'
 import { ANONYMOUS_FORM_KEY_PREFIX } from '../../src/runtime/core/defaults'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { fakeSchema } from '../utils/fake-schema'
 
-const NULL_WARN_MARKER = '[@chemical-x/forms] useFormContext'
+const NULL_WARN_MARKER = '[@chemical-x/forms] injectForm'
 
 type Form = {
   email: string
@@ -17,27 +17,27 @@ type Form = {
 const defaults: Form = { email: '', profile: { name: '' } }
 
 /**
- * jsdom is required because useFormContext's consumer ref-counting hook
+ * jsdom is required because injectForm's consumer ref-counting hook
  * runs inside `mount()`, which touches the DOM (even if the component
  * itself doesn't render anything interesting).
  */
-describe('useFormContext — ambient provide/inject', () => {
+describe('injectForm — ambient provide/inject', () => {
   it('resolves the nearest ancestor anonymous form and shares state with it', () => {
     const shared: {
       parent?: ReturnType<typeof useForm<Form>>
-      child?: ReturnType<typeof useFormContext<Form>>
+      child?: ReturnType<typeof injectForm<Form>>
     } = {}
 
     const Child = defineComponent({
       setup() {
-        shared.child = useFormContext<Form>()
+        shared.child = injectForm<Form>()
         return () => h('div')
       },
     })
 
     // Anonymous useForm — no key — fills the ambient slot. Keyed forms
-    // are not addressable via ambient `useFormContext()`; descendants
-    // must call `useFormContext<F>('that-key')` instead.
+    // are not addressable via ambient `injectForm()`; descendants
+    // must call `injectForm<F>('that-key')` instead.
     const Parent = defineComponent({
       setup() {
         shared.parent = useForm<Form>({ schema: fakeSchema(defaults) })
@@ -66,7 +66,7 @@ describe('useFormContext — ambient provide/inject', () => {
 
     const Child = defineComponent({
       setup() {
-        shared.child = useFormContext<Form>()?.key
+        shared.child = injectForm<Form>()?.key
         return () => h('div')
       },
     })
@@ -102,10 +102,10 @@ describe('useFormContext — ambient provide/inject', () => {
       )
 
     it('returns null and warns when there is no ancestor form', () => {
-      let captured: ReturnType<typeof useFormContext<Form>> | undefined
+      let captured: ReturnType<typeof injectForm<Form>> | undefined
       const Child = defineComponent({
         setup() {
-          captured = useFormContext<Form>()
+          captured = injectForm<Form>()
           return () => h('div')
         },
       })
@@ -125,13 +125,13 @@ describe('useFormContext — ambient provide/inject', () => {
 
     it('returns null and warns when the only ancestor form is keyed', () => {
       // Keyed useForm() does NOT fill the ambient slot — descendants must
-      // address it explicitly by key. A naive `useFormContext()` (no key)
+      // address it explicitly by key. A naive `injectForm()` (no key)
       // call inside such a subtree gets the same "no ambient" warn + null
       // it would get with no parent at all.
-      let captured: ReturnType<typeof useFormContext<Form>> | undefined
+      let captured: ReturnType<typeof injectForm<Form>> | undefined
       const Child = defineComponent({
         setup() {
-          captured = useFormContext<Form>()
+          captured = injectForm<Form>()
           return () => h('div')
         },
       })
@@ -151,10 +151,10 @@ describe('useFormContext — ambient provide/inject', () => {
     })
 
     it("warning message names the missing key when it's an explicit-key miss", () => {
-      let captured: ReturnType<typeof useFormContext<Form>> | undefined
+      let captured: ReturnType<typeof injectForm<Form>> | undefined
       const Orphan = defineComponent({
         setup() {
-          captured = useFormContext<Form>('never-registered')
+          captured = injectForm<Form>('never-registered')
           return () => h('div')
         },
       })
@@ -180,12 +180,12 @@ describe('useFormContext — ambient provide/inject', () => {
 
   it('mixed keyed + anonymous: ambient resolves to the (only) anonymous form', () => {
     // A parent that mixes keyed and anonymous useForm() calls: the keyed
-    // ones bypass ambient entirely, so a descendant's `useFormContext()`
+    // ones bypass ambient entirely, so a descendant's `injectForm()`
     // sees only the (single) anonymous form and resolves to it.
     const shared: { childKey?: string | undefined } = {}
     const Child = defineComponent({
       setup() {
-        shared.childKey = useFormContext<Form>()?.key
+        shared.childKey = injectForm<Form>()?.key
         return () => h('div')
       },
     })
@@ -203,17 +203,181 @@ describe('useFormContext — ambient provide/inject', () => {
     expect(shared.childKey?.startsWith(ANONYMOUS_FORM_KEY_PREFIX)).toBe(true)
     app.unmount()
   })
+
+  // Three-level nesting where two ancestors each register an anonymous
+  // useForm(). Vue's `inject` walks up from the calling component and
+  // returns the FIRST match — so a grandchild's `injectForm()` resolves
+  // to the parent (closer ancestor), shadowing the grandparent's
+  // anonymous form for descendants of the parent. Standard Vue
+  // provide/inject semantics; this test pins the behavior so a
+  // refactor to the `kFormContext` provide chain doesn't silently
+  // change which ancestor wins.
+  it('closest-ancestor wins through nested anonymous forms', () => {
+    const shared: {
+      grandparent?: ReturnType<typeof useForm<Form>>
+      parent?: ReturnType<typeof useForm<Form>>
+      grandchild?: ReturnType<typeof injectForm<Form>>
+    } = {}
+
+    const Grandchild = defineComponent({
+      setup() {
+        shared.grandchild = injectForm<Form>()
+        return () => h('div')
+      },
+    })
+    const Parent = defineComponent({
+      setup() {
+        shared.parent = useForm<Form>({ schema: fakeSchema(defaults) })
+        return () => h(Grandchild)
+      },
+    })
+    const Grandparent = defineComponent({
+      setup() {
+        shared.grandparent = useForm<Form>({ schema: fakeSchema(defaults) })
+        return () => h(Parent)
+      },
+    })
+
+    const app = createApp(Grandparent).use(createChemicalXForms({ override: true }))
+    app.mount(document.createElement('div'))
+
+    // Grandchild resolves to the PARENT (closer), not the grandparent.
+    // Both ancestors are anonymous and provide their own FormStore;
+    // standard inject semantics return the nearest provider.
+    expect(shared.grandparent).toBeDefined()
+    expect(shared.parent).toBeDefined()
+    expect(shared.grandchild).toBeDefined()
+    expect(shared.grandchild?.key).toBe(shared.parent?.key)
+    expect(shared.grandchild?.key).not.toBe(shared.grandparent?.key)
+
+    // State sharing confirms it's actually the parent's FormStore — a
+    // write through the parent surfaces in the grandchild's read, and
+    // does NOT leak into the grandparent.
+    shared.parent?.setValue('email', 'parent-write@x')
+    expect(shared.grandchild?.values.email).toBe('parent-write@x')
+    expect(shared.grandparent?.values.email).toBe('')
+
+    app.unmount()
+  })
+
+  // A keyed useForm() does NOT fill the ambient slot — its provide is
+  // skipped entirely (see useAbstractForm: `if (configuration.key ===
+  // undefined) provide(kFormContext, ...)`). So a chain
+  // Grandparent(anon) → Parent(keyed) → Grandchild(injectForm()) skips
+  // past Parent's keyed form and resolves to Grandparent's anonymous
+  // one. Pin the behavior so the keyed-ambient-skip rule doesn't
+  // regress to "keyed shadows ambient too."
+  it('mid-chain keyed form does not shadow ambient — grandchild resolves past it to the anonymous ancestor', () => {
+    const shared: {
+      grandparent?: ReturnType<typeof useForm<Form>>
+      grandchild?: ReturnType<typeof injectForm<Form>>
+    } = {}
+
+    const Grandchild = defineComponent({
+      setup() {
+        shared.grandchild = injectForm<Form>()
+        return () => h('div')
+      },
+    })
+    const Parent = defineComponent({
+      setup() {
+        // Keyed — does NOT fill the ambient slot. Grandchild's
+        // `injectForm()` (no key) walks past this provide.
+        useForm<Form>({ schema: fakeSchema(defaults), key: 'middle-keyed' })
+        return () => h(Grandchild)
+      },
+    })
+    const Grandparent = defineComponent({
+      setup() {
+        shared.grandparent = useForm<Form>({ schema: fakeSchema(defaults) })
+        return () => h(Parent)
+      },
+    })
+
+    const app = createApp(Grandparent).use(createChemicalXForms({ override: true }))
+    app.mount(document.createElement('div'))
+
+    expect(shared.grandparent).toBeDefined()
+    expect(shared.grandchild).toBeDefined()
+    expect(shared.grandchild?.key).toBe(shared.grandparent?.key)
+
+    // Confirm the resolved store is grandparent's — write surfaces
+    // through both, the keyed form in the middle stays untouched (it's
+    // addressable via injectForm('middle-keyed') only).
+    shared.grandparent?.setValue('email', 'grandparent@x')
+    expect(shared.grandchild?.values.email).toBe('grandparent@x')
+
+    app.unmount()
+  })
+
+  // Two siblings each call useForm() anonymously. Their subtrees see
+  // their own ancestor's form, NOT the other's. Standard tree-position
+  // semantics, but worth pinning so a refactor to a flat ambient
+  // registry (instead of provide/inject) doesn't silently leak state
+  // across siblings.
+  it('sibling anonymous forms do not leak into each other', () => {
+    const shared: {
+      leftParent?: ReturnType<typeof useForm<Form>>
+      rightParent?: ReturnType<typeof useForm<Form>>
+      leftChild?: ReturnType<typeof injectForm<Form>>
+      rightChild?: ReturnType<typeof injectForm<Form>>
+    } = {}
+
+    const LeftChild = defineComponent({
+      setup() {
+        shared.leftChild = injectForm<Form>()
+        return () => h('div')
+      },
+    })
+    const RightChild = defineComponent({
+      setup() {
+        shared.rightChild = injectForm<Form>()
+        return () => h('div')
+      },
+    })
+    const LeftBranch = defineComponent({
+      setup() {
+        shared.leftParent = useForm<Form>({ schema: fakeSchema(defaults) })
+        return () => h(LeftChild)
+      },
+    })
+    const RightBranch = defineComponent({
+      setup() {
+        shared.rightParent = useForm<Form>({ schema: fakeSchema(defaults) })
+        return () => h(RightChild)
+      },
+    })
+    const Root = defineComponent({
+      setup: () => () => h('div', [h(LeftBranch), h(RightBranch)]),
+    })
+
+    const app = createApp(Root).use(createChemicalXForms({ override: true }))
+    app.mount(document.createElement('div'))
+
+    expect(shared.leftParent?.key).not.toBe(shared.rightParent?.key)
+    expect(shared.leftChild?.key).toBe(shared.leftParent?.key)
+    expect(shared.rightChild?.key).toBe(shared.rightParent?.key)
+
+    // Cross-branch isolation: writes on the left don't surface on the
+    // right's children.
+    shared.leftParent?.setValue('email', 'left@x')
+    shared.rightParent?.setValue('email', 'right@x')
+    expect(shared.leftChild?.values.email).toBe('left@x')
+    expect(shared.rightChild?.values.email).toBe('right@x')
+
+    app.unmount()
+  })
 })
 
-describe('useFormContext — explicit key resolution', () => {
+describe('injectForm — explicit key resolution', () => {
   it('resolves a form by key even when the caller is not a descendant', () => {
-    const shared: { sibling?: ReturnType<typeof useFormContext<Form>> } = {}
+    const shared: { sibling?: ReturnType<typeof injectForm<Form>> } = {}
 
     const Sibling = defineComponent({
       setup() {
         // Not a child of Owner; reaches the form purely via the registry
         // lookup path.
-        shared.sibling = useFormContext<Form>('owner-form')
+        shared.sibling = injectForm<Form>('owner-form')
         return () => h('div')
       },
     })
@@ -244,10 +408,10 @@ describe('useFormContext — explicit key resolution', () => {
 
   it('returns null and warns when the explicit key is not registered', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    let captured: ReturnType<typeof useFormContext<Form>> | undefined
+    let captured: ReturnType<typeof injectForm<Form>> | undefined
     const Orphan = defineComponent({
       setup() {
-        captured = useFormContext<Form>('never-registered')
+        captured = injectForm<Form>('never-registered')
         return () => h('div')
       },
     })
@@ -264,9 +428,9 @@ describe('useFormContext — explicit key resolution', () => {
   })
 })
 
-describe('useFormContext — consumer ref-counting', () => {
+describe('injectForm — consumer ref-counting', () => {
   it('keeps the form alive while any child holds it; evicts after last unmount', () => {
-    // We ref-count via the trackConsumer path in useFormContext. Unmount
+    // We ref-count via the trackConsumer path in injectForm. Unmount
     // the parent after the child while the underlying form is still
     // needed — the registry must keep the state alive as long as any
     // consumer (direct or via context) is mounted.
@@ -277,7 +441,7 @@ describe('useFormContext — consumer ref-counting', () => {
 
     const Child = defineComponent({
       setup() {
-        useFormContext<Form>('lifetime-form')
+        injectForm<Form>('lifetime-form')
         return () => h('span')
       },
     })

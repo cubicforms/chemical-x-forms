@@ -27,7 +27,7 @@ type AbstractSchema<Form, GetValueFormType = Form> = {
   different strings. Used to detect shared-key mismatches AND to
   key persisted drafts — see
   [Fingerprint implementation](#fingerprint-implementation).
-- **`getDefaultValues({ useDefaultSchemaValues, constraints, validationMode })`**
+- **`getDefaultValues({ useDefaultSchemaValues, constraints, strict })`**
   — returns `{ data, errors, success, formKey }`. Called at form
   creation and on `reset()`.
 - **`getDefaultAtPath(path)`** — returns the schema-prescribed
@@ -203,13 +203,13 @@ export function useForm<F extends GenericForm>(options: {
   schema: MyLibSchema<F>
   key: string
   defaultValues?: DeepPartial<F>
-  validationMode?: 'lax' | 'strict'
+  strict?: boolean
 }) {
   return useAbstractForm<F>({
     schema: myLibAdapter(options.schema),
     key: options.key,
     defaultValues: options.defaultValues,
-    validationMode: options.validationMode,
+    strict: options.strict,
   })
 }
 ```
@@ -366,7 +366,7 @@ type Form = v.InferOutput<typeof schema>
 type Form = { email: string; password: string }
 ```
 
-`useForm`'s return type (`UseAbstractFormReturnType<Form>`)
+`useForm`'s return type (`UseFormReturnType<Form>`)
 carries no schema-library-specific types — the public surface is
 identical regardless of adapter.
 

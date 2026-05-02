@@ -4,9 +4,8 @@ import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { CxErrorCode } from '../../src/runtime/core/error-codes'
-import { canonicalizePath } from '../../src/runtime/core/paths'
 import { attachRegistryToApp, createRegistry } from '../../src/runtime/core/registry'
-import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
+import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 
 /**
  * `handleSubmit` / `validate` / `validateAsync` synthesise a "Required"
@@ -25,13 +24,13 @@ import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-ap
  */
 
 function setupForm<F extends z.ZodObject<Record<string, z.ZodType>>>(schema: F) {
-  let captured!: UseAbstractFormReturnType<z.output<F> & Record<string, unknown>>
+  let captured!: UseFormReturnType<z.output<F> & Record<string, unknown>>
   const Probe = defineComponent({
     setup() {
       captured = useForm({
         schema,
         key: `req-empty-${Math.random().toString(36).slice(2)}`,
-      }) as unknown as UseAbstractFormReturnType<z.output<F> & Record<string, unknown>>
+      }) as unknown as UseFormReturnType<z.output<F> & Record<string, unknown>>
       return () => h('div')
     },
   })
@@ -56,20 +55,9 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     const { app, form } = setupForm(schema)
     apps.push(app)
 
-    const incomeKey = canonicalizePath('income').key
-    // Mark income as blank via the runtime channel.
-    // setValueWithInternalPath isn't exposed; call setValueAtPath
-    // directly through the form store via setValue's leaf form +
-    // a meta-aware injector. For this test we reach into the store
-    // — the directive wiring lands in commit 5.
-    // Since `setValue` doesn't accept WriteMeta, drop a path into
-    // the set directly via the reactive interface.
-    const Probe = (app as unknown as { _instance?: { proxy?: unknown } })._instance
-    expect(Probe).toBeDefined()
-    // Better path: register a hook that calls the gate via the
-    // RegisterValue.setValueWithInternalPath. The register binding
-    // exposes that internal method to the directive — we use it
-    // here as a back door.
+    // Mark income as blank via the RegisterValue back-door — the
+    // register binding exposes setValueWithInternalPath, which is
+    // what the directive calls when the user clears a numeric input.
     const binding = form.register('income') as unknown as {
       setValueWithInternalPath: (
         v: unknown,
@@ -96,7 +84,6 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
     // Anchor the human-readable message once; downstream tests assert on `code`.
     expect(requiredErr?.message).toBe('No value supplied')
     expect(form.errors['income']?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
-    void incomeKey
   })
 
   it('does NOT raise for an optional path even when blank', async () => {

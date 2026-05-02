@@ -6,6 +6,7 @@ import { useForm } from '../../src/zod'
 import { assignKey, vRegister } from '../../src/runtime/core/directive'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { useRegister } from '../../src/runtime/composables/use-register'
+import type { RegisterValue } from '../../src/runtime/types/types-api'
 
 /**
  * Runtime contract for `<MyComponent v-register="register(...)" />`.
@@ -49,6 +50,7 @@ async function mountWithChild(
   options?: {
     persist?: boolean
     acknowledgeSensitive?: boolean
+    transforms?: ReadonlyArray<(value: unknown) => unknown>
     onUpdateRegisterValue?: (...args: unknown[]) => void
     installAssigner?: (el: HTMLElement) => void
   }
@@ -73,6 +75,7 @@ async function mountWithChild(
       const rv = api.register('email', {
         ...(options?.persist ? { persist: true } : {}),
         ...(options?.acknowledgeSensitive ? { acknowledgeSensitive: true } : {}),
+        ...(options?.transforms ? { transforms: options.transforms } : {}),
       })
       return () =>
         withDirectives(
@@ -222,7 +225,7 @@ describe('pattern 2: v-register on a non-form root WITH useRegister (recommended
     innerInput.focus()
     innerInput.dispatchEvent(new Event('focus', { bubbles: true }))
     await flush()
-    expect(mounted.api.fieldState.email.focused).toBe(true)
+    expect(mounted.api.fields.email.focused).toBe(true)
   })
 })
 
@@ -269,7 +272,7 @@ describe('non-pattern: v-register on a non-form root WITHOUT useRegister/assignK
 
   it('FormStore element registry SKIPS non-INTERACTIVE roots (silent no-op)', async () => {
     mounted = await mountWithChild(PlainDivChild)
-    const fs = mounted.api.fieldState.email
+    const fs = mounted.api.fields.email
     expect(fs.focused).toBeNull()
     expect(fs.blurred).toBeNull()
     expect(fs.touched).toBeNull()
@@ -402,6 +405,341 @@ describe('pattern 3: @update:registerValue prop on a component', () => {
     // Default assigner was bypassed — the FormStore did NOT receive
     // the write because the listener didn't forward.
     expect(mounted.api.values.email).toBe('')
+  })
+
+  it('passes the RegisterValue as second arg so a top-level handler can re-call setValueWithInternalPath', async () => {
+    // Mirrors spike-cx 15o: a top-level handler outside setup() can't
+    // close over `rv` — the directive must hand it in as the second arg.
+    // Without this, `rv.setValueWithInternalPath(...)` throws because
+    // the second param is `undefined`.
+    const ChildInput = defineComponent({
+      name: 'ChildInput',
+      inheritAttrs: false,
+      setup(_, { attrs }) {
+        return () => h('input', { type: 'text', ...attrs })
+      },
+    })
+
+    let receivedRv: unknown
+    const upperCaseAssigner = (value: unknown, rv: RegisterValue): void => {
+      receivedRv = rv
+      rv.setValueWithInternalPath(String(value ?? '').toUpperCase())
+    }
+
+    mounted = await mountWithChild(ChildInput, {
+      onUpdateRegisterValue: upperCaseAssigner as (...args: unknown[]) => void,
+    })
+
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = 'hello'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    expect(receivedRv).toBeDefined()
+    expect(mounted.api.values.email).toBe('HELLO')
+  })
+
+  it('detects the listener under the `on:update:registerValue` key (compiler form for native elements with uppercase event names)', async () => {
+    // Vue 3.5's compiler-core/transformOn preserves case for plain
+    // elements when the rawName has uppercase letters (the V in
+    // `registerValue`), emitting `"on:update:registerValue"` instead
+    // of the camelCase `"onUpdate:registerValue"` form `h()` produces.
+    // The directive must read both keys or compiled-template usage
+    // (the entire SFC consumer surface) silently falls through to
+    // the default assigner.
+    let receivedRv: unknown
+    const upperCaseAssigner = (value: unknown, rv: RegisterValue): void => {
+      receivedRv = rv
+      rv.setValueWithInternalPath(String(value ?? '').toUpperCase())
+    }
+
+    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const Parent = defineComponent({
+      setup() {
+        const api = useForm({ schema, key: `compiler-${Math.random().toString(36).slice(2)}` })
+        handle.api = api
+        const rv = api.register('email')
+        return () =>
+          withDirectives(
+            h('input', {
+              type: 'text',
+              // Mirrors the compiler output for
+              // `<input v-register @update:registerValue="...">`.
+              'on:update:registerValue': upperCaseAssigner,
+            }),
+            [[vRegister, rv]]
+          )
+      },
+    })
+    const localApp = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    localApp.mount(root)
+    await flush()
+
+    const input = root.firstElementChild as HTMLInputElement
+    input.value = 'hello'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    localApp.unmount()
+    document.body.innerHTML = ''
+
+    if (handle.api === undefined) throw new Error('api never set')
+    expect(receivedRv).toBeDefined()
+    expect(handle.api.values.email).toBe('HELLO')
+  })
+})
+
+describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
+  let mounted: MountReturn | undefined
+
+  afterEach(() => {
+    mounted?.app.unmount()
+    mounted = undefined
+    document.body.innerHTML = ''
+  })
+
+  const ChildInput = defineComponent({
+    name: 'ChildInput',
+    inheritAttrs: false,
+    setup(_, { attrs }) {
+      return () => h('input', { type: 'text', ...attrs })
+    },
+  })
+
+  const upper = (v: unknown): unknown => (typeof v === 'string' ? v.toUpperCase() : v)
+  const trim = (v: unknown): unknown => (typeof v === 'string' ? v.trim() : v)
+  const lower = (v: unknown): unknown => (typeof v === 'string' ? v.toLowerCase() : v)
+
+  it('1. single transform applies in default assigner', async () => {
+    mounted = await mountWithChild(ChildInput, { transforms: [upper] })
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = 'abc'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(mounted.api.values.email).toBe('ABC')
+  })
+
+  it('2. multi-transform composition (left-to-right)', async () => {
+    mounted = await mountWithChild(ChildInput, { transforms: [trim, lower] })
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = '  HELLO  '
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(mounted.api.values.email).toBe('hello')
+  })
+
+  it('3. transforms compose with @update:registerValue override (override sees post-transform value)', async () => {
+    let received: unknown
+    mounted = await mountWithChild(ChildInput, {
+      transforms: [upper],
+      onUpdateRegisterValue: (v: unknown) => {
+        received = v
+      },
+    })
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = 'abc'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(received).toBe('ABC')
+  })
+
+  it('4. programmatic writes bypass transforms', async () => {
+    mounted = await mountWithChild(ChildInput, { transforms: [upper] })
+    mounted.api.setValue('email', 'lowercase')
+    await flush()
+    expect(mounted.api.values.email).toBe('lowercase')
+  })
+
+  it('5. empty / absent transforms is a no-op', async () => {
+    mounted = await mountWithChild(ChildInput, { transforms: [] })
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = 'untouched'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(mounted.api.values.email).toBe('untouched')
+  })
+
+  it('6. transform throws — caught, logged, write aborted, listener still works', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const throwTransform = (_: unknown): unknown => {
+      throw new Error('boom')
+    }
+    mounted = await mountWithChild(ChildInput, { transforms: [throwTransform] })
+
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = 'abc'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    expect(errSpy).toHaveBeenCalled()
+    const msg = errSpy.mock.calls[0]?.[0] as string
+    expect(msg).toContain('transform threw')
+    expect(msg).toContain('email')
+    expect(msg).toContain('index 0')
+    expect(mounted.api.values.email).toBe('') // write aborted; default preserved
+
+    // Subsequent typing still flows — failure didn't poison the listener.
+    errSpy.mockClear()
+    mounted = await mountWithChild(ChildInput, { transforms: [upper] })
+    const input2 = mounted.rootEl as HTMLInputElement
+    input2.value = 'def'
+    input2.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(mounted.api.values.email).toBe('DEF')
+
+    errSpy.mockRestore()
+  })
+
+  it('7. throw mid-pipeline — subsequent transforms do not run', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const calls: string[] = []
+    const t1 = (v: unknown): unknown => {
+      calls.push('t1')
+      return v
+    }
+    const t2 = (_: unknown): unknown => {
+      calls.push('t2')
+      throw new Error('mid')
+    }
+    const t3 = (v: unknown): unknown => {
+      calls.push('t3')
+      return v
+    }
+    mounted = await mountWithChild(ChildInput, { transforms: [t1, t2, t3] })
+
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = 'abc'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    expect(calls).toEqual(['t1', 't2'])
+    expect(calls).not.toContain('t3')
+    expect(mounted.api.values.email).toBe('')
+    errSpy.mockRestore()
+  })
+
+  it('9. Promise return — write aborted with async-specific dev message', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const asyncTransform = (v: unknown): unknown => Promise.resolve(v)
+    mounted = await mountWithChild(ChildInput, { transforms: [asyncTransform] })
+
+    const input = mounted.rootEl as HTMLInputElement
+    input.value = 'abc'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    expect(errSpy).toHaveBeenCalled()
+    const msg = errSpy.mock.calls[0]?.[0] as string
+    expect(msg).toContain('returned a Promise')
+    expect(msg).toContain('email')
+    expect(msg).toContain('Use async field validation')
+    expect(mounted.api.values.email).toBe('')
+    errSpy.mockRestore()
+  })
+
+  it('11. failure isolation — one path throwing does not affect others', async () => {
+    // Mount a parent with two RegisterValue bindings; one throws, one normalizes.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const Parent = defineComponent({
+      setup() {
+        const api = useForm({ schema, key: `iso-${Math.random().toString(36).slice(2)}` })
+        handle.api = api
+        const rvA = api.register('email', {
+          transforms: [
+            (_: unknown) => {
+              throw new Error('A throws')
+            },
+          ],
+        })
+        const rvB = api.register('name', { transforms: [upper] })
+        return () =>
+          h('div', null, [
+            withDirectives(h('input', { type: 'text', 'data-field': 'A' }), [[vRegister, rvA]]),
+            withDirectives(h('input', { type: 'text', 'data-field': 'B' }), [[vRegister, rvB]]),
+          ])
+      },
+    })
+    const localApp = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    localApp.mount(root)
+    await flush()
+
+    const inputA = root.querySelector('[data-field="A"]') as HTMLInputElement
+    const inputB = root.querySelector('[data-field="B"]') as HTMLInputElement
+
+    inputA.value = 'abc'
+    inputA.dispatchEvent(new Event('input', { bubbles: true }))
+    inputB.value = 'def'
+    inputB.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    if (handle.api === undefined) throw new Error('api never set')
+    expect(handle.api.values.email).toBe('') // A's write aborted
+    expect(handle.api.values.name).toBe('DEF') // B's normalization applied
+
+    localApp.unmount()
+    document.body.innerHTML = ''
+    errSpy.mockRestore()
+  })
+
+  it('12. per-binding isolation — same path, two register() call sites, only the typed-in binding runs its pipeline', async () => {
+    // Two inputs bound to the SAME path 'email'. One register() call passes
+    // transforms: [upper], the other passes no transforms. Each input must
+    // run its OWN pipeline when the user types into it — typing in A runs
+    // upper, typing in B writes raw. No cross-element leakage at the
+    // transform layer; form state at the path is still a single shared
+    // slot (last-write-wins), so we can read it back to verify.
+    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const Parent = defineComponent({
+      setup() {
+        const api = useForm({ schema, key: `per-bind-${Math.random().toString(36).slice(2)}` })
+        handle.api = api
+        const rvA = api.register('email', { transforms: [upper] })
+        const rvB = api.register('email')
+        return () =>
+          h('div', null, [
+            withDirectives(h('input', { type: 'text', 'data-bind': 'A' }), [[vRegister, rvA]]),
+            withDirectives(h('input', { type: 'text', 'data-bind': 'B' }), [[vRegister, rvB]]),
+          ])
+      },
+    })
+    const localApp = createApp(Parent).use(createChemicalXForms())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    localApp.mount(root)
+    await flush()
+
+    if (handle.api === undefined) throw new Error('api never set')
+    const inputA = root.querySelector('[data-bind="A"]') as HTMLInputElement
+    const inputB = root.querySelector('[data-bind="B"]') as HTMLInputElement
+
+    // Type into A → A's transform runs → uppercase lands.
+    inputA.value = 'abc'
+    inputA.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(handle.api.values.email).toBe('ABC')
+
+    // Type into B → B has no transforms → raw value lands, overwriting A's
+    // earlier write. Proves B's bypass is independent of A's pipeline.
+    inputB.value = 'xyz'
+    inputB.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(handle.api.values.email).toBe('xyz')
+
+    // Type into A again → A's pipeline still works after B's untransformed
+    // write. Proves the closure capture per binding survives across other
+    // bindings' assigner runs on the same path.
+    inputA.value = 'def'
+    inputA.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+    expect(handle.api.values.email).toBe('DEF')
+
+    localApp.unmount()
+    document.body.innerHTML = ''
   })
 })
 

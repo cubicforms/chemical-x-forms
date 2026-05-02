@@ -2,7 +2,187 @@
 
 ## Unreleased
 
-_No unreleased changes yet._
+- **Breaking — `useForm` validation config flattens.** The nested
+  `fieldValidation: { on, debounceMs }` object is gone; both fields
+  move to the top level as `validateOn` and `debounceMs`. The third
+  trigger renames `'none'` → `'submit'` (submit IS the validator;
+  the new name reads more directly). The `debounceMs` default flips
+  `125` → `0` (synchronous; no `setTimeout` indirection — `0` is the
+  off-switch). `debounceMs` is now type-gated to `validateOn:
+  'change'` via the discriminated `ValidateOnConfig` union; pairing
+  it with `'blur'` / `'submit'` is a TS error rather than a silent
+  runtime drop. Type renames: `FieldValidationConfig`,
+  `FieldValidationMode` are deleted; new types are `ValidateOn`,
+  `ValidateOnConfig`. Migration in
+  [migration guide](./docs/migration/0.13-to-0.14.md).
+
+- **Breaking — `validationMode: 'strict' | 'lax'` → `strict: boolean`.**
+  String-literal config flattens to a boolean. Default is `true`
+  (previously `'strict'`). The `ValidationMode` type is deleted (no
+  alias; pre-1.0 clean replace). The v3 adapter's previously-inconsistent
+  `undefined` semantics standardize to match v4: `undefined` `strict`
+  now means strict everywhere (was `'lax'`-equivalent in the v3 path
+  pre-rename). Forms using the v3 adapter without an explicit
+  override now seed construction-time validation errors and keep
+  refinements in slim defaults; pass `strict: false` to opt back
+  into the old `'lax'`-equivalent behaviour.
+
+- **Breaking — useForm return shape rewritten around drillable
+  proxies + `meta`.** `form.state` → `form.meta` (plus a new
+  `meta.errors` flat aggregate and per-mount `meta.instanceId`).
+  `form.errors` / `form.values` / `form.fields` become leaf-aware
+  callable Proxies (drill via dot/bracket OR call dynamically;
+  single-bracket dotted access is intentionally NOT supported).
+  `useFormContext` → `injectForm`. `FormState` → `FormMeta`.
+  `FormFieldErrors` → `FormErrorsSurface`. Full migration in
+  [migration guide](./docs/migration/0.13-to-0.14.md).
+
+- **New — schema-driven coercion** (`useForm({ coerce })`).
+  User-typed DOM values get coerced to the schema's slim type at
+  the directive layer — `string→number` and `string→boolean` by
+  default. Pass `false` to disable, or a `CoercionRegistry` to
+  replace the built-in rules. `defineCoercion(...)` narrows
+  `transform` parameter typing for custom rules. Programmatic
+  writes (`form.setValue`, `setValueWithInternalPath`) are NEVER
+  coerced — coercion is user-input-only. New exports:
+  `defaultCoercionRules`, `defineCoercion`, `CoercionEntry`,
+  `CoercionRegistry`, `CoercionResult`. See
+  [recipe](./docs/recipes/coerce.md).
+
+- **New — register transforms** (`register(path, { transforms: [...] })`).
+  Sync pure-function pipeline that runs AFTER directive modifiers
+  (`.lazy` / `.trim` / `.number`) and BEFORE the assigner. Useful
+  for trim / lowercase / mask / clamp normalisations. New export:
+  `RegisterTransform = (value: unknown) => unknown`. Generic-erased
+  so a personal library of transforms plugs into any path. See
+  [recipe](./docs/recipes/transforms.md).
+
+- **New — discriminated-union variant memory** (`useForm({ rememberVariants })`).
+  Switching a DU variant (`notify.channel: 'email' → 'sms' →
+  'email'`) restores the previous variant's typed subtree by
+  default. Default `true`; pass `false` to drop the outgoing
+  variant on every switch. Memory is in-memory only and does not
+  survive reload — persisted state restores values on hydration,
+  but variant memory starts empty. `reset()` clears all memory;
+  `resetField(path)` clears entries under `path`. See
+  [recipe](./docs/recipes/discriminated-unions.md).
+
+- **Fix — DOM force-sync after default assigner.** When a transform
+  or coerce produces a value identical to current storage, the
+  diff-apply layer skipped the patch (no semantic change → no
+  reactive trigger → no render), leaving the DOM stranded at the
+  user-typed text. The directive now imperatively syncs the DOM
+  to storage after the default assigner runs across every variant
+  (text / checkbox / radio / select). Custom assigners
+  (`@update:registerValue`) keep ownership — the force-sync is
+  gated on `isDefaultAssigner`.
+
+- **Fix — `debounceMs: 0` skips `setTimeout` entirely.** Both the
+  field-validation debouncer and the persistence debouncer
+  (`createDebouncedWriter`) treat `0` as the off-switch. Pre-fix
+  they fell through to `setTimeout(fn, 0)` (next macrotask, browser
+  clamps to ~4 ms); now they fire synchronously.
+
+- **Persistence hydration now revalidates against the rehydrated
+  value.** Pre-fix `wirePersistence` swapped in the persisted form
+  via `applyFormReplacement` and stopped — sync errors stayed stale
+  (still describing the empty default), and async refines never
+  fired. A consumer who persisted `email: 'taken@example.com'`
+  (passes `z.email()` sync, fails an async uniqueness refine) would
+  refresh into a form the runtime considered VALID, surfacing
+  whatever success message the template gated on `errors.email`
+  being absent. Hydration now schedules an immediate full-form
+  validation pass so sync + async results land against the actual
+  rehydrated value. Affects every `persist:` configuration.
+
+- **New — construction-time async-validation seed in strict mode.**
+  Schemas carrying async-only verdicts (e.g. zod's
+  `.refine(async (v) => …)`) previously didn't surface those errors
+  at construction — sync `safeParse` throws on async pieces, the
+  adapter caught and returned success. The runtime now asks the
+  schema's `needsAsyncValidation()` and queues a one-shot full-form
+  async pass when true, so errors land on a later microtask without
+  waiting for a user mutation or a manual `validateAsync()` call.
+  Two timing gates protect SSR↔CSR hydration parity: (a) the
+  scheduling is skipped entirely on SSR (microtasks don't get
+  awaited before serialisation, so the validation can't complete
+  server-side; firing it would only stamp a misleading
+  `isValidating: true` into the SSR HTML); (b) the client-side
+  scheduling is wrapped in `queueMicrotask` so the
+  `activeValidations++` lands AFTER Vue's synchronous hydration /
+  first render, keeping SSR and CSR first-render output in sync.
+  Sync schemas (the common case) still validate fully synchronously
+  — detection skips the async pass so `meta.isValidating` doesn't
+  flash true at mount for forms that have nothing async to validate.
+  `AbstractSchema` gains an OPTIONAL `needsAsyncValidation?(): boolean`
+  method — adapters that don't model async work can omit it, the
+  runtime treats absence as `false`. Zod v4 implements it via a
+  schema-tree walk; the v3 adapter omits it (consumers wanting
+  construction-time async errors should use `@chemical-x/forms/zod`).
+
+- **`parseApiErrors` now accepts the bare-string Rails / DRF / Laravel
+  shape (`{ field: ["msg"] }`).** Pre-fix the parser required every
+  entry to be a structured `{ message, code }` object; payloads
+  emitting bare strings (the de facto JSON convention for many
+  backends) returned `result.ok === false` and the recommended
+  `if (result.ok) form.setFieldErrors(result.errors)` pattern silently
+  did nothing. Bare strings now synthesize a `{ message: <str>,
+  code: <defaultCode> }` ValidationError, with `defaultCode`
+  defaulting to `'api:unknown'` and configurable via the new
+  `defaultCode?: string` option. Structured `{ message, code }`
+  entries continue to forward `code` verbatim. Mixed arrays are
+  fine. Half-structured entries (`{ message }` missing `code`) are
+  still rejected — a server emitting that probably has a bug worth
+  surfacing.
+
+- **Behavior change — `focusFirstError` / `scrollToFirstError` /
+  `onInvalidSubmit: 'focus-first-error'` target the visually-first
+  errored field instead of the schema-declaration-first.** "First" is
+  now DOM-tree order via `compareDocumentPosition`; pre-fix it was
+  schema-declaration order (the order Zod emitted issues, which the
+  internal error Map preserved). Templates that rendered fields in a
+  different order than the schema declared them previously focused
+  the wrong field on submit failure. CSS `order:` flexbox/grid
+  reordering is NOT respected — DOM-tree order wins. See the
+  [troubleshooting entry](./docs/troubleshooting.md#focus-jumped-to-a-field-i-didnt-expect-on-submit)
+  for the caveat.
+
+- **Behavior change — focus is now scoped to the calling
+  `useForm()` instance.** When two `useForm({ key })` callsites share
+  a key (sidebar + main rendering the same form), each callsite's
+  `focusFirstError` only targets elements registered through THAT
+  callsite. Pre-fix, the sidebar's submit could focus the main
+  form's input or vice versa. Children reaching the form via
+  `injectForm()` inherit their ancestor's instance ID, so
+  parent-submit-focus continues to work for inputs registered by
+  deep children.
+
+- **New — `form.meta.instanceId: string`.** Per-`useForm()`-call
+  identity, opaque format, stable per mount. Useful for devtools
+  panels disambiguating shared-key mounts, telemetry hooks tagging
+  events, E2E test selectors (`data-form-id={form.meta.instanceId}`),
+  and Vue `:key` on keyed lists of dynamically-rendered forms.
+  Treat as identity, not state — don't parse, don't compare
+  ordinally, don't persist.
+
+- **Breaking — dropped `WithIndexedUndefined` from `form.values` and
+  the whole-form `setValue((prev) => …)` callback.** The wrapper baked
+  `| undefined` into every unbounded array's element type so
+  `arr[N]` reads were honest about out-of-bounds — but the same
+  widening also tainted iteration (`v-for`, `for-of`, `.map`, etc.)
+  where every element exists by definition, producing spurious
+  `T | undefined` on perfectly safe reads. The job is better done by
+  TypeScript's `noUncheckedIndexedAccess: true` tsconfig flag, which
+  scopes the taint to indexed access only and leaves iteration as
+  `T`. The lib-level wrap was both redundant for consumers who set
+  the flag, and worse than nothing for those who didn't (no
+  iteration ergonomics either way).
+
+  Migration: enable `noUncheckedIndexedAccess: true` in your
+  consumer tsconfig (Nuxt projects already get it via the generated
+  `.nuxt/tsconfig.*.json`). `arr[N]` and `prev.posts[N]` reads keep
+  the same `T | undefined` typing they had before; iteration cleans
+  up. The `WithIndexedUndefined<T>` type export is removed.
 
 ## v0.13.0
 _No unreleased changes yet._

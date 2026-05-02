@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
 import { z } from 'zod-v3'
-import type { FormStorage, UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
+import type { FormStorage, UseFormReturnType } from '../../src/runtime/types/types-api'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { useForm } from '../../src/zod-v3'
@@ -12,13 +12,13 @@ import { hashStableString } from '../../src/runtime/core/hash'
 /**
  * Regression pin: the zod v3 `useForm` wrapper used to hand-pick the
  * options it forwarded to `useAbstractForm`, silently dropping the
- * opt-in ones (`onInvalidSubmit`, `fieldValidation`, `persist`,
+ * opt-in ones (`onInvalidSubmit`, `validateOn`, `debounceMs`, `persist`,
  * `history`). These tests prove each option now reaches the runtime.
  */
 
 const schema = z.object({ email: z.string(), password: z.string() })
 type Form = { email: string; password: string }
-type ApiReturn = UseAbstractFormReturnType<Form, Form>
+type ApiReturn = UseFormReturnType<Form, Form>
 
 // Mount helper that accepts any v3 useForm options bag. Using `never`
 // here side-steps TS picking the wrong `useForm` overload at the
@@ -58,7 +58,7 @@ describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  it('forwards fieldValidation — live field errors populate without submit', async () => {
+  it('forwards validateOn / debounceMs — live field errors populate without submit', async () => {
     const strictSchema = z.object({
       email: z.string().email('bad email'),
       password: z.string().min(8, 'min 8 chars'),
@@ -66,7 +66,8 @@ describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
     const { app, api } = mount({
       schema: strictSchema,
       key: 'v3-fieldvalidation',
-      fieldValidation: { on: 'change', debounceMs: 20 },
+      validateOn: 'change',
+      debounceMs: 20,
     })
     apps.push(app)
 

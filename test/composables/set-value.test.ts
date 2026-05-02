@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { useForm } from '../../src'
 import { attachRegistryToApp, createRegistry } from '../../src/runtime/core/registry'
-import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
+import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 import { fakeSchema } from '../utils/fake-schema'
 
 /**
@@ -38,7 +38,7 @@ const defaults: SignupForm = {
 }
 
 function harness() {
-  let captured!: UseAbstractFormReturnType<SignupForm>
+  let captured!: UseFormReturnType<SignupForm>
   const Probe = defineComponent({
     setup() {
       captured = useForm<SignupForm>({
@@ -71,7 +71,7 @@ describe('setValue — value form (existing behaviour)', () => {
     }
     const result = form.setValue(next)
     expect(result).toBe(true)
-    expect(form.values).toEqual(next)
+    expect(form.values()).toEqual(next)
   })
 
   it('writes a leaf when called with (path, value)', () => {

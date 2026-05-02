@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { unset, useForm } from '../../src/zod'
 import { canonicalizePath } from '../../src/runtime/core/paths'
 import { attachRegistryToApp, createRegistry } from '../../src/runtime/core/registry'
-import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
+import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 
 /**
  * Public API coverage for the `unset` symbol — declarative
@@ -19,14 +19,14 @@ function setupForm<F extends z.ZodObject<Record<string, z.ZodType>>>(
   schema: F,
   defaultValues?: Parameters<typeof useForm<F>>[0]['defaultValues']
 ) {
-  let captured!: UseAbstractFormReturnType<z.output<F> & Record<string, unknown>>
+  let captured!: UseFormReturnType<z.output<F> & Record<string, unknown>>
   const Probe = defineComponent({
     setup() {
       captured = useForm({
         schema,
         key: `te-${Math.random().toString(36).slice(2)}`,
         ...(defaultValues !== undefined ? { defaultValues } : {}),
-      }) as unknown as UseAbstractFormReturnType<z.output<F> & Record<string, unknown>>
+      }) as unknown as UseFormReturnType<z.output<F> & Record<string, unknown>>
       return () => h('div')
     },
   })
@@ -148,7 +148,7 @@ describe('reset(args) with unset', () => {
     expect(form.values.count).toBe(0)
     expect(form.blankPaths.value.has(canonicalizePath('count').key)).toBe(true)
     // Dirty resets to false: the new baseline is "blank for this path".
-    expect(form.state.isDirty).toBe(false)
+    expect(form.meta.isDirty).toBe(false)
   })
 })
 
@@ -161,7 +161,7 @@ describe('getFieldState meta.blank + flat blank', () => {
   it('reports blank for a path marked via defaultValues', () => {
     const { app, form } = setupForm(z.object({ count: z.number() }), { count: unset })
     apps.push(app)
-    const fs = form.fieldState.count
+    const fs = form.fields.count
     expect((fs as unknown as { blank: boolean }).blank).toBe(true)
   })
 
@@ -169,7 +169,7 @@ describe('getFieldState meta.blank + flat blank', () => {
     const { app, form } = setupForm(z.object({ count: z.number() }), { count: unset })
     apps.push(app)
     form.setValue('count', 5)
-    const fs = form.fieldState.count
+    const fs = form.fields.count
     expect((fs as unknown as { blank: boolean }).blank).toBe(false)
   })
 })
@@ -212,53 +212,66 @@ describe('runtime guard: unset on non-primitive leaf', () => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  it('does not mark the object path itself, but recurses into the slim subtree to auto-mark primitive children', () => {
+  it('does not mark the object path itself, but recurses into the slim subtree to auto-mark numeric children', () => {
     // Object leaf — schema's getDefaultAtPath returns the structural
-    // default `{ name: '' }`. The walker emits a dev-warn for the
+    // default `{ age: 0 }`. The walker emits a dev-warn for the
     // misuse, replaces with the slim default, and recurses into the
-    // subtree so unspecified primitive children still get auto-marked
-    // (consistent with omitting the object entirely).
-    const { app, form } = setupForm(z.object({ profile: z.object({ name: z.string() }) }), {
-      profile: unset as unknown as { name: string },
-    })
+    // subtree so unspecified NUMERIC children still get auto-marked
+    // (consistent with omitting the object entirely). String children
+    // do NOT auto-mark — see `docs/blank.md` on the storage / display
+    // divergence rule.
+    const { app, form } = setupForm(
+      z.object({ profile: z.object({ name: z.string(), age: z.number() }) }),
+      { profile: unset as unknown as { name: string; age: number } }
+    )
     apps.push(app)
     // Object path itself NOT marked — `unset` at non-primitive is a
     // misuse; the dev-warn signals "library is recovering."
     expect(form.blankPaths.value.has(canonicalizePath('profile').key)).toBe(false)
-    // Children auto-marked: the consumer didn't supply `profile.name`,
-    // so it's logically "blank" in the freshly opened form.
-    expect(form.blankPaths.value.has(canonicalizePath('profile.name').key)).toBe(true)
+    // Numeric child auto-marked: storage / display divergence applies.
+    expect(form.blankPaths.value.has(canonicalizePath('profile.age').key)).toBe(true)
+    // String child NOT auto-marked: storage `''` matches DOM `''`,
+    // no side-channel needed.
+    expect(form.blankPaths.value.has(canonicalizePath('profile.name').key)).toBe(false)
   })
 })
 
-describe('auto-mark: unspecified primitive leaves are blank on construction', () => {
-  // Rationale: a freshly opened form has no user input yet, so every
-  // primitive leaf the consumer didn't explicitly fill is logically
-  // "blank." This is the public-housing footgun fix taken to its
-  // logical conclusion — devs no longer have to remember `unset` for
-  // every leaf to get the right submit semantics. To opt a leaf out
-  // of auto-mark, supply a non-`unset` value for it in defaultValues.
+describe('auto-mark: unspecified numeric leaves are blank on construction', () => {
+  // Rationale: numeric primitives (`number`, `bigint`) have a
+  // genuine storage / display divergence — storage is forced to `0`
+  // / `0n` while the DOM input shows `''`, so the runtime needs the
+  // `blank` side-channel to tell "user typed 0" from "user supplied
+  // nothing." Strings and booleans don't have this divergence (`''`
+  // / `false` match what the DOM shows natively), so they are NOT
+  // auto-marked — the schema is the authority on whether `''` /
+  // `false` is acceptable. See `docs/blank.md` for the conceptual
+  // model. Explicit `unset` opts ANY primitive in regardless of type.
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  it('email example: useForm({ schema: z.object({ email: z.string() }) }) marks email', () => {
+  it('z.string() leaf is NOT auto-marked at mount', () => {
     const { app, form } = setupForm(z.object({ email: z.string() }))
     apps.push(app)
-    expect(form.blankPaths.value.has(canonicalizePath('email').key)).toBe(true)
-    expect(form.blankPaths.value.size).toBe(1)
+    // Storage `''` matches DOM `''` — no side-channel needed; the
+    // schema (`z.string()`) accepts `''` and the library doesn't
+    // override that verdict.
+    expect(form.blankPaths.value.has(canonicalizePath('email').key)).toBe(false)
+    expect(form.blankPaths.value.size).toBe(0)
   })
 
-  it('marks every primitive leaf when defaultValues is omitted entirely', () => {
+  it('marks numeric leaves only when defaultValues is omitted entirely', () => {
     const { app, form } = setupForm(
       z.object({ name: z.string(), age: z.number(), agreed: z.boolean() })
     )
     apps.push(app)
-    expect(form.blankPaths.value.has(canonicalizePath('name').key)).toBe(true)
+    // String / boolean: storage matches DOM; no auto-mark.
+    expect(form.blankPaths.value.has(canonicalizePath('name').key)).toBe(false)
+    expect(form.blankPaths.value.has(canonicalizePath('agreed').key)).toBe(false)
+    // Number: storage `0` ≠ DOM `''`; auto-mark fires.
     expect(form.blankPaths.value.has(canonicalizePath('age').key)).toBe(true)
-    expect(form.blankPaths.value.has(canonicalizePath('agreed').key)).toBe(true)
-    expect(form.blankPaths.value.size).toBe(3)
+    expect(form.blankPaths.value.size).toBe(1)
   })
 
   it('partial defaults: auto-marks only unspecified leaves', () => {
@@ -293,30 +306,32 @@ describe('auto-mark: unspecified primitive leaves are blank on construction', ()
     expect(form.blankPaths.value.has(canonicalizePath('user.age').key)).toBe(true)
   })
 
-  it('nested object: omitting the outer object recurses to mark all primitive leaves below', () => {
+  it('nested object: omitting the outer object recurses, marks numeric children only', () => {
     const { app, form } = setupForm(
       z.object({ user: z.object({ name: z.string(), age: z.number() }) })
     )
     apps.push(app)
-    expect(form.blankPaths.value.has(canonicalizePath('user.name').key)).toBe(true)
+    // String child: not auto-marked.
+    expect(form.blankPaths.value.has(canonicalizePath('user.name').key)).toBe(false)
+    // Numeric child: auto-marked.
     expect(form.blankPaths.value.has(canonicalizePath('user.age').key)).toBe(true)
     // The object path itself is NOT marked — only primitive leaves are.
     expect(form.blankPaths.value.has(canonicalizePath('user').key)).toBe(false)
   })
 
-  it('optional leaf: marks the path even though slim default is undefined', () => {
+  it('optional string leaf is NOT auto-marked (slim is undefined, no divergence)', () => {
     const { app, form } = setupForm(z.object({ note: z.string().optional() }))
     apps.push(app)
-    expect(form.blankPaths.value.has(canonicalizePath('note').key)).toBe(true)
-    // Storage is undefined per the optional schema — the mark is
-    // about UI/display intent, not about validation requiredness.
+    // `undefined` isn't a numeric primitive — no auto-mark.
+    expect(form.blankPaths.value.has(canonicalizePath('note').key)).toBe(false)
     expect(form.values.note).toBeUndefined()
   })
 
-  it('nullable leaf: marks the path even though slim default is null', () => {
+  it('nullable string leaf is NOT auto-marked (slim is null, no divergence)', () => {
     const { app, form } = setupForm(z.object({ note: z.string().nullable() }))
     apps.push(app)
-    expect(form.blankPaths.value.has(canonicalizePath('note').key)).toBe(true)
+    // `null` isn't a numeric primitive — no auto-mark.
+    expect(form.blankPaths.value.has(canonicalizePath('note').key)).toBe(false)
     expect(form.values.note).toBeNull()
   })
 
@@ -347,16 +362,29 @@ describe('auto-mark: unspecified primitive leaves are blank on construction', ()
     expect(form.blankPaths.value.size).toBe(0)
   })
 
-  it('explicit unset still works alongside auto-mark', () => {
-    // `count` via explicit unset, `name` via auto-mark — same outcome
-    // (both end up in the set). The difference is documentation: `unset`
-    // is the dev's deliberate signal, auto-mark is the inferred default.
+  it('explicit unset opts string leaves in (universal opt-in beats type-gated auto-mark)', () => {
+    // `count` via explicit unset, `name` ALSO via explicit unset.
+    // Auto-mark is numeric-only, but `unset` is the documented
+    // consumer signal that overrides the type gate — explicit intent
+    // wins everywhere.
+    const { app, form } = setupForm(z.object({ count: z.number(), name: z.string() }), {
+      count: unset,
+      name: unset,
+    })
+    apps.push(app)
+    expect(form.blankPaths.value.has(canonicalizePath('count').key)).toBe(true)
+    expect(form.blankPaths.value.has(canonicalizePath('name').key)).toBe(true)
+  })
+
+  it('explicit unset on numeric + omitted string: only numeric is marked', () => {
+    // Without an explicit `unset` for `name`, the string leaf isn't
+    // auto-marked (storage `''` already matches what the DOM shows).
     const { app, form } = setupForm(z.object({ count: z.number(), name: z.string() }), {
       count: unset,
     })
     apps.push(app)
     expect(form.blankPaths.value.has(canonicalizePath('count').key)).toBe(true)
-    expect(form.blankPaths.value.has(canonicalizePath('name').key)).toBe(true)
+    expect(form.blankPaths.value.has(canonicalizePath('name').key)).toBe(false)
   })
 
   it('auto-marks ride into the post-construction baseline (reset restores them)', () => {
@@ -392,6 +420,6 @@ describe('auto-mark: unspecified primitive leaves are blank on construction', ()
     // count as "dirty" (the user hasn't done anything yet).
     const { app, form } = setupForm(z.object({ count: z.number(), name: z.string() }))
     apps.push(app)
-    expect(form.state.isDirty).toBe(false)
+    expect(form.meta.isDirty).toBe(false)
   })
 })

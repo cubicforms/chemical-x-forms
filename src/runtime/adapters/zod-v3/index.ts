@@ -8,9 +8,12 @@ import type {
   AbstractSchema,
   FormKey,
   SlimPrimitiveKind,
+  UnionDiscriminatorContext,
   ValidationError,
+  ValidationResponse,
 } from '../../types/types-api'
 import { getAtPath } from '../../core/path-walker'
+import { canonicalizePath, type Path, type PathKey } from '../../core/paths'
 import { slimKindOf } from '../../core/slim-primitive-gate'
 
 // The adapter exchanges dotted-string paths with core at the
@@ -54,8 +57,10 @@ function constraintsAreSlimValid(slimSchema: z.ZodSchema, constraints: unknown):
 import { __DEV__ } from '../../core/dev'
 import { CxErrorCode } from '../../core/error-codes'
 import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from './types-zod'
+import { assertSupportedKinds } from './assert-supported'
 import { fingerprintZodSchema } from './fingerprint'
 import { isZodSchemaType } from './helpers'
+import { slimPrimitivesV3 } from './slim-primitives'
 
 let warnedZodCodeMissing = false
 
@@ -80,6 +85,12 @@ export function zodAdapter<
     _isRootSchema: boolean
   ): AbstractSchema<Form, GetValueFormType> {
     if (_isRootSchema) {
+      // Walk the original schema (not the stripped one) so the assert
+      // descends through user-declared wrappers (`.optional()`,
+      // `.nullable()`, `.default()`) before checking each leaf. Throws
+      // for kinds we can't represent — `z.promise`, `z.function`,
+      // `z.map`, `z.symbol` — and for self-referencing `z.lazy(...)`.
+      assertSupportedKinds(_zodSchema)
       const [_schema] = stripRootSchema(_zodSchema, {
         stripDefaultValues: true,
         stripNullable: true,
@@ -92,6 +103,10 @@ export function zodAdapter<
         throw new Error(`ZodAdapter: expected ZodObject, got ${name}`)
       }
     }
+    // Per-adapter `isLeafAtPath` cache. Lifetime = one adapter instance
+    // (one per `useForm()` call). Memoises the slim-primitive walk so
+    // the leaf-aware proxy traps don't re-walk the schema on every read.
+    const leafCache = new Map<PathKey, boolean>()
     const abstractSchema: AbstractSchema<Form, GetValueFormType> = {
       fingerprint: () => fingerprintZodSchema(_zodSchema),
       getDefaultValues(config) {
@@ -106,11 +121,12 @@ export function zodAdapter<
           stripConfig: {
             stripZodEffects: true,
             stripDefaultValues: true,
-            // Lax strips refinements (so empty defaults pass); strict
-            // keeps them so the slim parse below surfaces refinement
-            // errors. Async refines are guarded by the try/catch
-            // below — they can't be surfaced synchronously regardless.
-            stripZodRefinements: (config.validationMode ?? 'lax') === 'lax',
+            // `strict: false` strips refinements (so empty defaults
+            // pass); strict keeps them so the slim parse below
+            // surfaces refinement errors. Async refines are guarded
+            // by the try/catch below — they can't be surfaced
+            // synchronously regardless.
+            stripZodRefinements: (config.strict ?? true) === false,
           },
         })
 
@@ -278,7 +294,7 @@ export function zodAdapter<
         const secondParse = slimSchema.safeParse(fixedData)
         const finalData = secondParse.success ? secondParse.data : fixedData
 
-        if ((config.validationMode ?? 'lax') === 'lax') {
+        if ((config.strict ?? true) === false) {
           return {
             data: finalData as Form,
             errors: undefined,
@@ -362,6 +378,44 @@ export function zodAdapter<
         if (!leaf) return false
         return isLeafRequiredV3(leaf)
       },
+      getUnionDiscriminatorAtPath(path): UnionDiscriminatorContext | undefined {
+        // Resolve every candidate at `path`; pick the unique one that
+        // is (or wraps) a discriminated union. `peelV3Wrappers` peels
+        // optional / nullable / default / effects / pipeline / readonly
+        // / branded.
+        const candidates =
+          path.length === 0
+            ? [_zodSchema as z.ZodTypeAny]
+            : (getNestedZodSchemasAtPath(_zodSchema, path) as z.ZodTypeAny[])
+        let matchedUnion: z.ZodTypeAny | undefined
+        for (const candidate of candidates) {
+          const peeled = peelV3Wrappers(candidate)
+          if (!isZodSchemaType(peeled, 'ZodDiscriminatedUnion')) continue
+          if (matchedUnion !== undefined && matchedUnion !== peeled) return undefined
+          matchedUnion = peeled
+        }
+        if (matchedUnion === undefined) return undefined
+        const discKey = (
+          matchedUnion as z.ZodDiscriminatedUnion<string, z.ZodDiscriminatedUnionOption<string>[]>
+        )._def.discriminator
+        const options = (
+          matchedUnion as z.ZodDiscriminatedUnion<string, z.ZodDiscriminatedUnionOption<string>[]>
+        )._def.options
+        return {
+          discriminatorKey: discKey,
+          getVariantDefault(value: unknown): unknown {
+            for (const opt of options) {
+              const litSchema = opt.shape[discKey] as z.ZodTypeAny | undefined
+              if (!litSchema) continue
+              if (!isZodSchemaType(litSchema, 'ZodLiteral')) continue
+              if (litSchema._def.value === value) {
+                return getDefaultValuesFromZodSchema(opt as unknown as z.ZodSchema, true, _formKey)
+              }
+            }
+            return undefined
+          },
+        }
+      },
       getSlimPrimitiveTypesAtPath(path) {
         if (path.length === 0) return new Set(['object'])
         const [strippedSchema] = stripRootSchema(_zodSchema, {
@@ -385,83 +439,124 @@ export function zodAdapter<
         }
         return out
       },
-      async validateAtPath(data, path) {
-        if (path === undefined) {
-          // safeParseAsync accepts both sync and async refinements —
-          // matches the v4 adapter's contract so .refine(async ...) is a
-          // first-class schema feature for both adapters.
-          const { success, data: successData, error } = await _zodSchema.safeParseAsync(data)
-          if (success) {
-            return {
-              data: successData,
-              success,
-              errors: undefined,
-              formKey: _formKey,
-            }
-          }
-
-          return {
-            success,
-            data: undefined,
-            errors: zodIssuesToValidationErrors(error.issues, _formKey),
-            formKey: _formKey,
+      isLeafAtPath(path) {
+        const cacheKey = canonicalizePath(path).key
+        const cached = leafCache.get(cacheKey)
+        if (cached !== undefined) return cached
+        const prim = abstractSchema.getSlimPrimitiveTypesAtPath(path)
+        // Empty set → path doesn't exist in schema → descend permissively
+        // (treat as container so schema-named reserved keys at depth 2+
+        // don't shadow). Any container kind in the set → descend.
+        // Otherwise every kind is a primitive → leaf.
+        const isLeaf =
+          prim.size > 0 &&
+          !prim.has('object') &&
+          !prim.has('array') &&
+          !prim.has('map') &&
+          !prim.has('set')
+        leafCache.set(cacheKey, isLeaf)
+        return isLeaf
+      },
+      validateAtPath(data, path, options) {
+        // Sync attempt: when `options.sync === true`, try `safeParse`
+        // (synchronous). It throws on async refines / pipes /
+        // transforms; we catch and fall through to `safeParseAsync`.
+        // Without the flag the adapter goes straight to async — the
+        // historical contract every non-reshape callsite expects.
+        const trySync = options?.sync === true
+        if (trySync) {
+          try {
+            return runSync()
+          } catch {
+            // Async-only schema. Fall through to the async path.
           }
         }
+        return runAsync()
 
-        const [strippedSchema] = stripRootSchema(_zodSchema, {
-          stripDefaultValues: true,
-          stripNullable: true,
-          stripOptional: true,
-        })
-        const slimSchema = getSlimSchema({
-          schema: strippedSchema,
-          stripConfig: {
+        function runSync(): ValidationResponse<Form> {
+          if (path === undefined) {
+            const { success, data: successData, error } = _zodSchema.safeParse(data)
+            return success
+              ? { data: successData, success, errors: undefined, formKey: _formKey }
+              : {
+                  success,
+                  data: undefined,
+                  errors: zodIssuesToValidationErrors(error.issues, _formKey),
+                  formKey: _formKey,
+                }
+          }
+          const nestedZodSchemas = nestedSchemasAtPath(path)
+          if (!nestedZodSchemas.length) return pathNotFound(path)
+          const accumulatedErrors: z.ZodError<unknown>[] = []
+          for (const nestedSchema of nestedZodSchemas) {
+            const { data: successData, success, error } = nestedSchema.safeParse(data)
+            if (!success) {
+              accumulatedErrors.push(error)
+              continue
+            }
+            return { data: successData, errors: undefined, success: true, formKey: _formKey }
+          }
+          return aggregatedFailure(accumulatedErrors)
+        }
+
+        async function runAsync(): Promise<ValidationResponse<Form>> {
+          if (path === undefined) {
+            const { success, data: successData, error } = await _zodSchema.safeParseAsync(data)
+            return success
+              ? { data: successData, success, errors: undefined, formKey: _formKey }
+              : {
+                  success,
+                  data: undefined,
+                  errors: zodIssuesToValidationErrors(error.issues, _formKey),
+                  formKey: _formKey,
+                }
+          }
+          const nestedZodSchemas = nestedSchemasAtPath(path)
+          if (!nestedZodSchemas.length) return pathNotFound(path)
+          // Sequential await — parallelising would run every branch's
+          // async side effects on a value only one branch should see.
+          const accumulatedErrors: z.ZodError<unknown>[] = []
+          for (const nestedSchema of nestedZodSchemas) {
+            const { data: successData, success, error } = await nestedSchema.safeParseAsync(data)
+            if (!success) {
+              accumulatedErrors.push(error)
+              continue
+            }
+            return { data: successData, errors: undefined, success: true, formKey: _formKey }
+          }
+          return aggregatedFailure(accumulatedErrors)
+        }
+
+        function nestedSchemasAtPath(p: Path): z.ZodTypeAny[] {
+          const [strippedSchema] = stripRootSchema(_zodSchema, {
             stripDefaultValues: true,
-          },
-        })
-        const nestedZodSchemas = getNestedZodSchemasAtPath(slimSchema, path)
+            stripNullable: true,
+            stripOptional: true,
+          })
+          const slimSchema = getSlimSchema({
+            schema: strippedSchema,
+            stripConfig: { stripDefaultValues: true },
+          })
+          return getNestedZodSchemasAtPath(slimSchema, p)
+        }
 
-        // The structured ValidationError in the return already tells
-        // the caller the path didn't resolve — no extra console noise.
-        if (!nestedZodSchemas.length) {
+        function pathNotFound(p: Path): ValidationResponse<Form> {
           return {
             data: undefined,
-            errors: NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA([...path], _formKey),
+            errors: NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA([...p], _formKey),
             success: false,
             formKey: _formKey,
           }
         }
 
-        // Branch-by-branch sequential await — parallelising would run
-        // every branch's async side effects on a value only one branch
-        // should see. See the v4 adapter's matching comment.
-        const accumulatedErrors: z.ZodError<unknown>[] = []
-        for (const nestedSchema of nestedZodSchemas) {
-          const { data: successData, success, error } = await nestedSchema.safeParseAsync(data)
-
-          if (!success) {
-            accumulatedErrors.push(error)
-            continue // try with remaining nested schemas
-          }
-
+        function aggregatedFailure(errors: z.ZodError<unknown>[]): ValidationResponse<Form> {
+          const allIssues = errors.reduce<z.ZodIssue[]>((acc, e) => [...acc, ...e.issues], [])
           return {
-            data: successData,
-            errors: undefined,
-            success: true,
+            data: undefined,
+            errors: zodIssuesToValidationErrors(allIssues, _formKey),
+            success: false,
             formKey: _formKey,
           }
-        }
-
-        // no nested schemas matched, this is a failure mode
-        const allIssues = accumulatedErrors.reduce<z.ZodIssue[]>(
-          (accumulator, _error) => [...accumulator, ..._error.issues],
-          []
-        )
-        return {
-          data: undefined,
-          errors: zodIssuesToValidationErrors(allIssues, _formKey),
-          success: false,
-          formKey: _formKey,
         }
       },
     }
@@ -504,173 +599,6 @@ function zodIssuesToValidationErrors(issues: z.ZodIssue[], formKey: FormKey): Va
   }
 
   return validationErrors
-}
-
-const PERMISSIVE_V3: ReadonlySet<SlimPrimitiveKind> = new Set<SlimPrimitiveKind>([
-  'string',
-  'number',
-  'boolean',
-  'bigint',
-  'date',
-  'null',
-  'undefined',
-  'object',
-  'array',
-  'symbol',
-  'function',
-  'map',
-  'set',
-])
-
-const MAX_LAZY_DEPTH_V3 = 64
-
-/**
- * Slim-primitive walker for v3. Returns the set of `SlimPrimitiveKind`s
- * a schema accepts at write time. Wrappers (ZodOptional / ZodNullable /
- * ZodDefault / ZodEffects / ZodPipeline / ZodReadonly / ZodBranded /
- * ZodCatch / ZodLazy) are peeled; refinement-level constraints are
- * ignored.
- *
- * Mirrors the v4 implementation in `src/runtime/adapters/zod-v4/slim-primitives.ts`.
- */
-function slimPrimitivesV3(schema: z.ZodTypeAny, depth = 0): Set<SlimPrimitiveKind> {
-  if (depth > MAX_LAZY_DEPTH_V3) return new Set(PERMISSIVE_V3)
-  const def = (
-    schema as {
-      _def?: {
-        typeName?: string
-        innerType?: z.ZodTypeAny
-        type?: z.ZodTypeAny
-        schema?: z.ZodTypeAny
-        in?: z.ZodTypeAny
-        out?: z.ZodTypeAny
-        getter?: () => z.ZodTypeAny
-        options?: readonly z.ZodTypeAny[]
-        left?: z.ZodTypeAny
-        right?: z.ZodTypeAny
-      }
-    }
-  )._def
-  const typeName = def?.typeName
-
-  if (isZodSchemaType(schema, 'ZodString')) return new Set(['string'])
-  if (isZodSchemaType(schema, 'ZodNumber')) return new Set(['number'])
-  if (isZodSchemaType(schema, 'ZodBoolean')) return new Set(['boolean'])
-  if (isZodSchemaType(schema, 'ZodBigInt')) return new Set(['bigint'])
-  if (isZodSchemaType(schema, 'ZodDate')) return new Set(['date'])
-  if (isZodSchemaType(schema, 'ZodNull')) return new Set(['null'])
-  if (isZodSchemaType(schema, 'ZodUndefined')) return new Set(['undefined'])
-  if (typeName === 'ZodVoid') return new Set(['undefined'])
-  if (typeName === 'ZodNaN') return new Set(['number'])
-
-  if (isZodSchemaType(schema, 'ZodEnum')) {
-    const options = (schema as z.ZodEnum<[string, ...string[]]>).options
-    const out = new Set<SlimPrimitiveKind>()
-    for (const v of options) {
-      if (typeof v === 'string') out.add('string')
-      else if (typeof v === 'number') out.add('number')
-    }
-    return out.size === 0 ? new Set(['string']) : out
-  }
-  if (isZodSchemaType(schema, 'ZodLiteral')) {
-    const value = (schema as z.ZodLiteral<unknown>).value
-    return new Set([slimKindOfRawV3(value)])
-  }
-  if (isZodSchemaType(schema, 'ZodObject') || typeName === 'ZodRecord') {
-    return new Set(['object'])
-  }
-  if (isZodSchemaType(schema, 'ZodArray') || typeName === 'ZodTuple') {
-    return new Set(['array'])
-  }
-  if (isZodSchemaType(schema, 'ZodOptional')) {
-    const inner = def?.innerType
-    const innerSet =
-      inner === undefined ? new Set<SlimPrimitiveKind>() : slimPrimitivesV3(inner, depth + 1)
-    innerSet.add('undefined')
-    return innerSet
-  }
-  if (isZodSchemaType(schema, 'ZodNullable')) {
-    const inner = def?.innerType
-    const innerSet =
-      inner === undefined ? new Set<SlimPrimitiveKind>() : slimPrimitivesV3(inner, depth + 1)
-    innerSet.add('null')
-    return innerSet
-  }
-  if (
-    isZodSchemaType(schema, 'ZodDefault') ||
-    isZodSchemaType(schema, 'ZodReadonly') ||
-    isZodSchemaType(schema, 'ZodCatch') ||
-    isZodSchemaType(schema, 'ZodBranded')
-  ) {
-    const inner = def?.innerType ?? def?.type
-    return inner === undefined ? new Set(PERMISSIVE_V3) : slimPrimitivesV3(inner, depth + 1)
-  }
-  if (isZodSchemaType(schema, 'ZodEffects')) {
-    // ZodEffects wraps refinements/transforms. Use the inner schema
-    // type — writes are pre-transform values.
-    const inner = def?.schema
-    return inner === undefined ? new Set(PERMISSIVE_V3) : slimPrimitivesV3(inner, depth + 1)
-  }
-  if (isZodSchemaType(schema, 'ZodPipeline')) {
-    // Pipeline: input side ('in').
-    const inner = def?.in
-    return inner === undefined ? new Set(PERMISSIVE_V3) : slimPrimitivesV3(inner, depth + 1)
-  }
-  if (typeName === 'ZodLazy') {
-    const getter = def?.getter
-    if (typeof getter !== 'function') return new Set(PERMISSIVE_V3)
-    return slimPrimitivesV3(getter(), depth + 1)
-  }
-  if (isZodSchemaType(schema, 'ZodUnion') || isZodSchemaType(schema, 'ZodDiscriminatedUnion')) {
-    const options = def?.options ?? []
-    const out = new Set<SlimPrimitiveKind>()
-    for (const opt of options) {
-      for (const k of slimPrimitivesV3(opt, depth + 1)) out.add(k)
-    }
-    return out.size === 0 ? new Set(PERMISSIVE_V3) : out
-  }
-  if (typeName === 'ZodIntersection') {
-    const left = def?.left
-    const right = def?.right
-    const leftSet = left === undefined ? new Set(PERMISSIVE_V3) : slimPrimitivesV3(left, depth + 1)
-    const rightSet =
-      right === undefined ? new Set(PERMISSIVE_V3) : slimPrimitivesV3(right, depth + 1)
-    const out = new Set<SlimPrimitiveKind>()
-    for (const k of leftSet) if (rightSet.has(k)) out.add(k)
-    return out
-  }
-  if (typeName === 'ZodNever') return new Set()
-  if (typeName === 'ZodAny' || typeName === 'ZodUnknown') return new Set(PERMISSIVE_V3)
-
-  return new Set(PERMISSIVE_V3)
-}
-
-function slimKindOfRawV3(value: unknown): SlimPrimitiveKind {
-  if (value === null) return 'null'
-  if (value === undefined) return 'undefined'
-  if (Array.isArray(value)) return 'array'
-  if (value instanceof Date) return 'date'
-  const t = typeof value
-  switch (t) {
-    case 'string':
-      return 'string'
-    case 'number':
-      return 'number'
-    case 'boolean':
-      return 'boolean'
-    case 'bigint':
-      return 'bigint'
-    case 'symbol':
-      return 'symbol'
-    case 'function':
-      return 'function'
-    case 'undefined':
-      return 'undefined'
-    case 'object':
-      return 'object'
-    default:
-      return 'object'
-  }
 }
 
 function coercePathSegments(path: readonly (string | number | symbol)[]): (string | number)[] {
@@ -721,9 +649,17 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
     const key = String(segments[index] ?? '')
     if (isZodSchemaType(currentSchema, 'ZodObject')) {
       const shape = currentSchema._def.shape() as z.ZodRawShape
-      currentSchema = shape[key]
+      // Own-property check: a bare `shape[key]` returns
+      // `Object.prototype.toString` etc. for any user lookup of those
+      // keys, which then walks as an "unknown schema" and reports a
+      // permissive slim-primitive set. Filter to OWN keys.
+      currentSchema = Object.hasOwn(shape, key) ? shape[key] : undefined
     } else if (isZodSchemaType(currentSchema, 'ZodArray')) {
       currentSchema = currentSchema._def.type
+    } else if (isZodSchemaType(currentSchema, 'ZodSet')) {
+      // Sets aren't position-indexed; the segment is a synthetic
+      // indexer used to query the element type via `[...path, 0]`.
+      currentSchema = currentSchema._def.valueType
     } else if (isZodSchemaType(currentSchema, 'ZodRecord')) {
       currentSchema = currentSchema._def.valueType
     } else if (isZodSchemaType(currentSchema, 'ZodDiscriminatedUnion')) {
@@ -910,7 +846,7 @@ function walkV3ToLeafSchema(
 
     if (isZodSchemaType(current, 'ZodObject')) {
       const shape = current._def.shape() as z.ZodRawShape
-      current = shape[key]
+      current = Object.hasOwn(shape, key) ? shape[key] : undefined
       i++
       continue
     }
@@ -1360,6 +1296,51 @@ function getDefaultValuesFromZodSchema<
       if (inner) return generateValue(inner)
     }
 
+    // ZodLazy — recursive schemas (comment trees, file system shapes).
+    // Resolve the getter once; the inner schema's own ZodOptional /
+    // base-case branch terminates the recursion.
+    if (isZodSchemaType(schema, 'ZodLazy')) {
+      const inner = (schema._def as { getter?: () => z.ZodTypeAny }).getter?.()
+      if (inner) return generateValue(inner)
+    }
+
+    // ZodIntersection — `z.intersection(A, B)` must satisfy both sides
+    // at parse time, so the merged shape carries both halves' defaults.
+    // `merge` mutates its first arg, so seed an empty record. Leaves on
+    // either side replace; nested records merge recursively.
+    if (isZodSchemaType(schema, 'ZodIntersection')) {
+      const def = schema._def as { left?: z.ZodTypeAny; right?: z.ZodTypeAny }
+      const left = def.left ? generateValue(def.left) : undefined
+      const right = def.right ? generateValue(def.right) : undefined
+      return merge({}, left, right)
+    }
+
+    // ZodNativeEnum — TS-enum-backed selects. Numeric enums get
+    // reverse-mapped (`enum E { A }` → `{ A: 0, '0': 'A' }`); the valid
+    // runtime members are the keys whose VALUE'S key isn't itself a
+    // number. String enums have no reverse mapping, so every key is
+    // valid. Pick the first valid value as the default.
+    if (isZodSchemaType(schema, 'ZodNativeEnum')) {
+      const values = (schema._def as { values?: Record<string, unknown> }).values
+      if (values) {
+        const lookup = values as Record<string, unknown>
+        const validKeys = Object.keys(lookup).filter(
+          (k) => typeof lookup[lookup[k] as string] !== 'number'
+        )
+        if (validKeys.length > 0) {
+          const first = validKeys[0]
+          if (first !== undefined) return lookup[first]
+        }
+      }
+    }
+
+    // ZodSet — empty Set; populated entries would have to reach into
+    // the element schema's defaults, but a Set's only meaningful
+    // empty state is `new Set()`.
+    if (isZodSchemaType(schema, 'ZodSet')) {
+      return new Set()
+    }
+
     console.warn(
       `[@chemical-x/forms] zod-v3 adapter: unsupported schema kind ` +
         `'${schema.constructor.name}' on form '${formKey}'. Defaulting the field to null. ` +
@@ -1489,6 +1470,79 @@ function stripRefinements<T extends z.ZodTypeAny>(schema: T) {
       const inner = (_schema._def as { in?: z.ZodTypeAny }).in
       if (!inner) return _schema
       return _stripRefinements(inner, depth + 1)
+    }
+
+    // Container kinds that nest other schemas. Pre-fix, refinements
+    // inside these survived into the slim schema and the fix-up loop
+    // had to patch each leaf via the second-parse fallback. Mirroring
+    // v4's strip.ts means the FIRST slim parse passes for the lax
+    // contract, no fix-up needed.
+
+    if (isZodSchemaType(_schema, 'ZodSet')) {
+      const valueType = (_schema._def as { valueType?: z.ZodTypeAny }).valueType
+      if (!valueType) return _schema
+      return z.set(_stripRefinements(valueType, depth + 1))
+    }
+
+    if (isZodSchemaType(_schema, 'ZodTuple')) {
+      const items = (_schema._def as { items?: z.ZodTypeAny[] }).items
+      if (!items) return _schema
+      const stripped = items.map((it) => _stripRefinements(it, depth + 1))
+      return z.tuple(stripped as [z.ZodTypeAny, ...z.ZodTypeAny[]])
+    }
+
+    if (isZodSchemaType(_schema, 'ZodRecord')) {
+      const def = _schema._def as { keyType?: z.ZodTypeAny; valueType?: z.ZodTypeAny }
+      if (!def.valueType) return _schema
+      const value = _stripRefinements(def.valueType, depth + 1)
+      // z.record's two-arg form preserves the key schema; one-arg form
+      // assumes z.string(). Forward the key type unchanged — refinements
+      // on record keys aren't load-bearing for slim-schema concerns.
+      if (def.keyType) {
+        return z.record(def.keyType as z.ZodString, value)
+      }
+      return z.record(value)
+    }
+
+    if (isZodSchemaType(_schema, 'ZodUnion')) {
+      const options = (_schema._def as { options?: z.ZodTypeAny[] }).options
+      if (!options) return _schema
+      const stripped = options.map((o) => _stripRefinements(o, depth + 1))
+      return z.union(stripped as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]])
+    }
+
+    if (isZodSchemaType(_schema, 'ZodDiscriminatedUnion')) {
+      const def = _schema._def as {
+        discriminator?: string
+        options?: z.ZodObject<z.ZodRawShape>[]
+      }
+      if (def.discriminator === undefined || !def.options) return _schema
+      const stripped = def.options.map(
+        (o) => _stripRefinements(o, depth + 1) as z.ZodObject<z.ZodRawShape>
+      )
+      return z.discriminatedUnion(
+        def.discriminator,
+        stripped as [z.ZodObject<z.ZodRawShape>, ...z.ZodObject<z.ZodRawShape>[]]
+      )
+    }
+
+    if (isZodSchemaType(_schema, 'ZodIntersection')) {
+      const def = _schema._def as { left?: z.ZodTypeAny; right?: z.ZodTypeAny }
+      if (!def.left || !def.right) return _schema
+      return z.intersection(
+        _stripRefinements(def.left, depth + 1),
+        _stripRefinements(def.right, depth + 1)
+      )
+    }
+
+    if (isZodSchemaType(_schema, 'ZodLazy')) {
+      const getter = (_schema._def as { getter?: () => z.ZodTypeAny }).getter
+      if (!getter) return _schema
+      // Eagerly resolve once and capture the stripped target so the
+      // returned lazy resolves to a stable schema. assertSupportedKinds
+      // has already rejected self-referencing lazies, so this is finite.
+      const stripped = _stripRefinements(getter(), depth + 1)
+      return z.lazy(() => stripped)
     }
 
     // Return other schema types as-is

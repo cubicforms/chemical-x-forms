@@ -1,29 +1,23 @@
-import { computed, reactive, readonly, type ComputedRef, type Ref } from 'vue'
+import { computed, reactive, readonly, type Ref } from 'vue'
 import type {
-  FormErrorRecord,
-  FormFieldErrors,
-  FormState,
+  FormErrorsSurface,
+  FormMeta,
   OnInvalidSubmitPolicy,
   ReactiveValidationStatus,
   RegisterValue,
-  UseAbstractFormReturnType,
+  UseFormReturnType,
   ValidationError,
   ValidationResponseWithoutValue,
 } from '../types/types-api'
-import type {
-  DeepPartial,
-  DefaultValuesShape,
-  GenericForm,
-  WithIndexedUndefined,
-  WriteShape,
-} from '../types/types-core'
+import type { DeepPartial, DefaultValuesShape, GenericForm } from '../types/types-core'
 import { __DEV__ } from './dev'
 import type { FormStore } from './create-form-store'
+import { buildErrorsProxy } from './errors-proxy'
 import { buildFieldArrayApi } from './field-arrays'
 import { buildFieldStateProxy } from './field-state-proxy'
 import type { HistoryModule } from './history'
 import { getAtPath } from './path-walker'
-import { canonicalizePath, type Path, type PathKey, type Segment } from './paths'
+import { canonicalizePath, type Path, type PathKey } from './paths'
 import { PERSISTENCE_MODULE_KEY, type PersistenceModule } from './persistence'
 import { enforceSensitiveCheck } from './persistence/sensitive-names'
 import { buildProcessForm } from './process-form'
@@ -72,7 +66,7 @@ function readonlySetSnapshot<T>(source: Iterable<T>): ReadonlySet<T> {
 /**
  * Build the public form API from a FormStore. Extracted from
  * `useAbstractForm` so that both the top-level form entry (which creates
- * a fresh state) and `useFormContext` (which resolves state from an
+ * a fresh state) and `injectForm` (which resolves state from an
  * ambient provide/inject) produce identical API shapes without
  * duplicating the wiring.
  *
@@ -82,9 +76,12 @@ function readonlySetSnapshot<T>(source: Iterable<T>): ReadonlySet<T> {
  */
 export function buildFormApi<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
   state: FormStore<Form>,
+  formInstanceId: string,
   options: BuildFormApiOptions = {}
-): UseAbstractFormReturnType<Form, GetValueFormType> {
-  const register = buildRegister(state) as (path: string | Path) => RegisterValue<unknown>
+): UseFormReturnType<Form, GetValueFormType> {
+  const register = buildRegister(state, formInstanceId) as (
+    path: string | Path
+  ) => RegisterValue<unknown>
   // Don't set `onInvalidSubmit: undefined` — exactOptionalPropertyTypes
   // treats an explicit-undefined value differently from an omitted
   // property. Only pass the key when the consumer opted in.
@@ -94,7 +91,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     validate: validateBuilt,
     validateAsync: validateAsyncBuilt,
     handleSubmit,
-  } = buildProcessForm(state, processOptions)
+  } = buildProcessForm(state, formInstanceId, processOptions)
 
   const validate = (pathInput?: string) =>
     validateBuilt(pathInput) as Ref<ReactiveValidationStatus<Form>>
@@ -178,35 +175,33 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     return state.setValueAtPath(segments, resolvedValue)
   }
 
-  // --- Error store API — dotted-key record for back-compat ---
-  // The view merges `schemaErrors` (validation-owned) and `userErrors`
-  // (API-injected) into a single dotted-key record per path. Iteration
-  // order is schema-first then user — matching the "structural validation
-  // before business logic" UX expectation. Consumers reading
-  // `fieldErrors.email` see schema issues at index 0 and any user-injected
-  // entries appended after.
+  // --- Error store API — leaf-aware drillable callable Proxy ---
+  // `form.errors` merges three reactive sources at every leaf path:
+  //   1. `schemaErrors` — refinement-class errors written by the
+  //      validation pipeline (`scheduleFieldValidation`, `handleSubmit`,
+  //      construction-time seed, hydration).
+  //   2. `derivedBlankErrors` — the reactively-derived "No value supplied"
+  //      class. Pure function of `(blankPaths, schema.isRequiredAtPath)`,
+  //      no writers.
+  //   3. `userErrors` — API-injected errors written by `setFieldErrors*`
+  //      / `parseApiErrors`-fed entries.
   //
-  // The dotted-key derivation is best-effort: paths with a literal `.`
-  // inside a single segment (`['user.name']`) produce the same record key
-  // as the sibling pair (`['user', 'name']`). This collision only surfaces
-  // in pathological schemas that declare both shapes on the same form —
-  // in that case the errors merge under the shared dotted key. Consumers
-  // who need collision-free access read via `getFieldState(path).errors`
-  // (or the underlying `state.getErrorsForPath`) instead of the legacy
-  // dotted record.
+  // Iteration order at each leaf is schema → derived-blank → user, so
+  // consumers reading `errors.email` see the structural / synthesised
+  // errors first and any user-injected entries appended after. Mirrored
+  // in `state.getErrorsForPath` and the per-field accessor.
   //
-  // The internal computed stays — laziness + dependency tracking are
-  // useful. The public surface wraps it in a Proxy (see fieldErrorsView
-  // below) so templates can dot-access directly without `.value`, and
-  // the readonly contract is enforced at runtime via set/delete traps.
-  const fieldErrorsComputed = computed<FormErrorRecord>(() => {
-    const record: FormErrorRecord = {}
-    appendStoreToRecord(record, state.schemaErrors)
-    appendStoreToRecord(record, state.userErrors)
-    return record
-  })
-
-  const fieldErrors = createReadonlyErrorView(fieldErrorsComputed)
+  // Active-path filter: errors whose `err.path` is no longer reachable
+  // through the live form value (e.g. the inactive variant of a
+  // discriminated union after a switch) are hidden from `form.errors`.
+  // The store-side entries STAY — per-field accessors and the
+  // `form.meta.errors` aggregate still expose them, so a programmatic
+  // consumer reading errors at a specific path can see what's known
+  // about it even when the path isn't currently in the active schema.
+  //
+  // Container paths are descend-only (no terminal). The "give me every
+  // error" need is served by `form.meta.errors` (flat ValidationError[]).
+  const errorsProxy = buildErrorsProxy(state)
 
   function setFieldErrors(errors: ValidationError[]): void {
     state.setAllUserErrors(errors)
@@ -253,7 +248,10 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   })
 
   const isValid = computed<boolean>(
-    () => state.schemaErrors.size === 0 && state.userErrors.size === 0
+    () =>
+      state.schemaErrors.size === 0 &&
+      state.userErrors.size === 0 &&
+      state.derivedBlankErrors.value.size === 0
   )
 
   // --- Submission lifecycle ---
@@ -275,17 +273,52 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   const canRedo = history?.canRedo ?? computed(() => false)
   const historySize = history?.historySize ?? computed(() => 0)
 
-  // --- Form-level state bundle ---
+  // --- Form-level meta aggregate ---
+  // `metaErrors` flattens the three reactive error stores into a single
+  // ValidationError[]. Unlike `form.errors.<path>` (per-leaf, active-
+  // path filtered), this aggregate is UNFILTERED — inactive-variant
+  // errors stay in. Consumers who want only addressable errors filter
+  // the array themselves.
+  //
+  // Order is determined by the SET of errors currently present, not by
+  // the temporal sequence of validations. Each path is bucketed at its
+  // schema-declaration ordinal (`state.ensurePathOrdinal`); buckets sort
+  // by ordinal and flatten in order. Within one ordinal slot the
+  // per-store iteration order survives — schema → blank → user — so a
+  // path with both a schema error and a userErrors entry surfaces both
+  // at the same slot in their existing relative order. Resurrected
+  // errors return to the slot they originally occupied: clearing
+  // `email` then re-breaking it puts `email` back ahead of `password`,
+  // not at the end of the aggregate.
+  const metaErrors = computed<readonly ValidationError[]>(() => {
+    const buckets = new Map<number, ValidationError[]>()
+    const collect = (errs: ReadonlyMap<PathKey, ValidationError[]>): void => {
+      for (const [pathKey, list] of errs) {
+        if (list.length === 0) continue
+        const ordinal = state.ensurePathOrdinal(pathKey)
+        const existing = buckets.get(ordinal)
+        if (existing === undefined) buckets.set(ordinal, [...list])
+        else existing.push(...list)
+      }
+    }
+    collect(state.schemaErrors)
+    collect(state.derivedBlankErrors.value)
+    collect(state.userErrors)
+    if (buckets.size === 0) return []
+    return [...buckets.entries()].sort(([a], [b]) => a - b).flatMap(([, errs]) => errs)
+  })
+
+  // --- Form-level meta bundle ---
   // Vue auto-unwraps refs that are top-level on a setup return, but not
   // refs nested in a return *object* — those render as their wrapper
   // (always truthy) and silently break bindings like `:disabled`. We
-  // work around it by placing the 9 scalars inside `reactive()`, which
-  // unwraps ref values on property access at any depth; `readonly()`
-  // layers a runtime write-guard on top.
+  // work around it by placing the scalars + computed array inside
+  // `reactive()`, which unwraps ref values on property access at any
+  // depth; `readonly()` layers a runtime write-guard on top.
   //
-  // Named `formState` locally to avoid shadowing the `state: FormStore<F>`
-  // param this function receives; exposed as `state` on the public return.
-  const formState = readonly(
+  // Named `formMeta` locally to avoid shadowing the `state: FormStore<F>`
+  // param this function receives; exposed as `meta` on the public return.
+  const formMeta = readonly(
     reactive({
       isDirty,
       isValid,
@@ -296,8 +329,15 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       canUndo,
       canRedo,
       historySize,
+      errors: metaErrors,
+      // Per-`useForm()`-call identity. Stable for one mount; new on
+      // re-mount; orthogonal to `form.key` (which is the user-supplied
+      // shared identifier). Useful for devtools panels disambiguating
+      // shared-key instances, telemetry hooks tagging events with
+      // "which mount", and E2E tests stamping `data-form-id`.
+      instanceId: formInstanceId,
     })
-  ) as FormState
+  ) as FormMeta
 
   // --- Persistence handle (cached on FormStore by useAbstractForm
   // when persist: is configured). The persist + clearPersistedDraft
@@ -380,15 +420,18 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   }
 
   // --- Focus / scroll to first error ---
+  // Both helpers scope to `formInstanceId` so two `useForm()` callsites
+  // sharing a `key` (e.g. sidebar + main mounting the same form) only
+  // focus / scroll within their own registered elements.
   const focusFirstError = (options?: { preventScroll?: boolean }): boolean => {
-    const target = state.getFirstErrorElement()
+    const target = state.getFirstErrorElement(formInstanceId)
     if (target === null) return false
     target.element.focus(options)
     return true
   }
 
   const scrollToFirstError = (options?: ScrollIntoViewOptions): boolean => {
-    const target = state.getFirstErrorElement()
+    const target = state.getFirstErrorElement(formInstanceId)
     if (target === null) return false
     target.element.scrollIntoView(options)
     return true
@@ -414,54 +457,44 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // `valuesProxyComputed.value` is a deeply-readonly Vue proxy. The
   // computed wrapping ensures `state.form.value` reassignments (the
   // `applyFormReplacement` path used by `reset()` and whole-form
-  // `setValue`) invalidate the cached proxy and produce a fresh one
-  // keyed to the new target. The public `values` getter on the return
-  // object reads `.value` so consumers get the proxy directly with no
-  // `.value` access from their side.
-  const valuesProxyComputed = buildValuesProxy(state.form)
+  // `setValue`) invalidate the inner readonly proxy and produce a
+  // fresh one keyed to the new target. The callable proxy itself is
+  // identity-stable — consumers caching `form.values` get a stable
+  // reference whose underlying data tracks the live form value.
+  const valuesProxy = buildValuesProxy(state.form)
 
   // --- Pinia-style reactive per-field state proxy ---
   // Allocated once per buildFormApi call (one per consumer). Each Proxy
   // node memoizes its descendants and the per-path FieldStateView
   // computed it reads through, so repeated access to the same path
-  // (`form.fieldState.email` twice) returns the same object — useful
+  // (`form.fields.email` twice) returns the same object — useful
   // for downstream `===` checks and Vue's render diff.
   const fieldStateProxy = buildFieldStateProxy(state)
 
   return {
     handleSubmit,
-    // `values` is a getter so reads route through the wrapping computed
-    // and pick up reactivity at the call site (every consumer template
-    // / effect that reads `form.values.<x>` subscribes to the underlying
-    // form ref). A plain property assignment (`values: valuesProxyComputed.value`)
-    // would snapshot once at buildFormApi time and never invalidate.
-    get values() {
-      return valuesProxyComputed.value as Readonly<
-        WithIndexedUndefined<WriteShape<GetValueFormType>>
-      >
-    },
-    fieldState: fieldStateProxy as unknown as UseAbstractFormReturnType<
-      Form,
-      GetValueFormType
-    >['fieldState'],
-    setValue: setValueImpl as UseAbstractFormReturnType<Form, GetValueFormType>['setValue'],
-    validate: validate as UseAbstractFormReturnType<Form, GetValueFormType>['validate'],
-    validateAsync: validateAsync as UseAbstractFormReturnType<
-      Form,
-      GetValueFormType
-    >['validateAsync'],
-    register: register as UseAbstractFormReturnType<Form, GetValueFormType>['register'],
+    // `values` is the callable readonly Proxy. Each `get` trap reads
+    // through `inner.value` (a `computed(() => readonly(form.value))`)
+    // so reactivity tracking propagates at the call site. Identity-
+    // stable across whole-form swaps (the inner readonly proxy
+    // re-keys; the outer callable proxy stays the same instance).
+    values: valuesProxy as unknown as UseFormReturnType<Form, GetValueFormType>['values'],
+    fields: fieldStateProxy as unknown as UseFormReturnType<Form, GetValueFormType>['fields'],
+    setValue: setValueImpl as UseFormReturnType<Form, GetValueFormType>['setValue'],
+    validate: validate as UseFormReturnType<Form, GetValueFormType>['validate'],
+    validateAsync: validateAsync as UseFormReturnType<Form, GetValueFormType>['validateAsync'],
+    register: register as UseFormReturnType<Form, GetValueFormType>['register'],
     key: state.formKey,
-    errors: fieldErrors as unknown as Readonly<FormFieldErrors<Form>>,
-    toRef: pathToRef as UseAbstractFormReturnType<Form, GetValueFormType>['toRef'],
+    errors: errorsProxy as unknown as FormErrorsSurface<Form>,
+    toRef: pathToRef as UseFormReturnType<Form, GetValueFormType>['toRef'],
     setFieldErrors,
     addFieldErrors,
     clearFieldErrors,
-    state: formState,
-    reset: reset as UseAbstractFormReturnType<Form, GetValueFormType>['reset'],
-    resetField: resetField as UseAbstractFormReturnType<Form, GetValueFormType>['resetField'],
-    persist: persist as UseAbstractFormReturnType<Form, GetValueFormType>['persist'],
-    clearPersistedDraft: clearPersistedDraft as UseAbstractFormReturnType<
+    meta: formMeta,
+    reset: reset as UseFormReturnType<Form, GetValueFormType>['reset'],
+    resetField: resetField as UseFormReturnType<Form, GetValueFormType>['resetField'],
+    persist: persist as UseFormReturnType<Form, GetValueFormType>['persist'],
+    clearPersistedDraft: clearPersistedDraft as UseFormReturnType<
       Form,
       GetValueFormType
     >['clearPersistedDraft'],
@@ -469,103 +502,13 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     scrollToFirstError,
     undo,
     redo,
-    append: fieldArrays.append as UseAbstractFormReturnType<Form, GetValueFormType>['append'],
-    prepend: fieldArrays.prepend as UseAbstractFormReturnType<Form, GetValueFormType>['prepend'],
-    insert: fieldArrays.insert as UseAbstractFormReturnType<Form, GetValueFormType>['insert'],
-    remove: fieldArrays.remove as UseAbstractFormReturnType<Form, GetValueFormType>['remove'],
-    swap: fieldArrays.swap as UseAbstractFormReturnType<Form, GetValueFormType>['swap'],
-    move: fieldArrays.move as UseAbstractFormReturnType<Form, GetValueFormType>['move'],
-    replace: fieldArrays.replace as UseAbstractFormReturnType<Form, GetValueFormType>['replace'],
+    append: fieldArrays.append as UseFormReturnType<Form, GetValueFormType>['append'],
+    prepend: fieldArrays.prepend as UseFormReturnType<Form, GetValueFormType>['prepend'],
+    insert: fieldArrays.insert as UseFormReturnType<Form, GetValueFormType>['insert'],
+    remove: fieldArrays.remove as UseFormReturnType<Form, GetValueFormType>['remove'],
+    swap: fieldArrays.swap as UseFormReturnType<Form, GetValueFormType>['swap'],
+    move: fieldArrays.move as UseFormReturnType<Form, GetValueFormType>['move'],
+    replace: fieldArrays.replace as UseFormReturnType<Form, GetValueFormType>['replace'],
     blankPaths: blankPathsView,
   }
-}
-
-/**
- * Append every entry in `store` to `record`, keyed by the entry's dotted
- * path. Used by the merged `fieldErrors` view: callers invoke it twice —
- * first with `schemaErrors`, then with `userErrors` — so each per-key
- * array reflects schema-first-then-user order.
- *
- * Mutates `record` in place to avoid allocating an intermediate per call;
- * the wrapping computed allocates one record per recompute.
- */
-function appendStoreToRecord(
-  record: FormErrorRecord,
-  store: Map<unknown, ValidationError[]>
-): void {
-  for (const [, entries] of store) {
-    for (const err of entries) {
-      const dottedKey = (err.path as ReadonlyArray<Segment>).map(String).join('.')
-      const existingForKey = record[dottedKey]
-      if (existingForKey === undefined) record[dottedKey] = [err]
-      else existingForKey.push(err)
-    }
-  }
-}
-
-/**
- * Wrap a `ComputedRef<FormErrorRecord>` in a Proxy that exposes the
- * underlying record's keys directly on the public object.
- *
- * Why a Proxy and not the bare ComputedRef:
- *   - Vue templates auto-unwrap refs only when they are top-level keys
- *     of the setup return. `useForm()` returns an API object, so any
- *     ref nested inside (`fieldErrors`, etc.) does NOT auto-unwrap.
- *     Authors hit this as `anon.fieldErrors.value.email` in templates,
- *     which is a footgun. The Proxy lets them write
- *     `anon.fieldErrors.email` directly.
- *   - Readonly is preserved: `set` / `deleteProperty` / `defineProperty`
- *     traps reject writes. Consumers must go through `setFieldErrors`,
- *     `addFieldErrors`, or `clearFieldErrors`. (Type-level `Readonly<>`
- *     enforces this at compile time too.)
- *   - Reactivity is preserved: every trap that delegates to
- *     `source.value` reads the ComputedRef inside the consumer's render
- *     scope, so Vue tracks the dependency exactly as it would for a
- *     direct `.value` read. Templates re-render on error changes.
- *   - Laziness is preserved: the underlying ComputedRef only recomputes
- *     when its inputs (state.schemaErrors / state.userErrors) change
- *     AND a trap that reads `source.value` fires.
- */
-function createReadonlyErrorView<T extends FormErrorRecord>(source: ComputedRef<T>): T {
-  const target: T = Object.create(null) as T
-  return new Proxy(target, {
-    get(_, key) {
-      return (source.value as Record<string | symbol, unknown>)[key as string]
-    },
-    has(_, key) {
-      return key in source.value
-    },
-    ownKeys() {
-      return Reflect.ownKeys(source.value as object)
-    },
-    getOwnPropertyDescriptor(_, key) {
-      const desc = Reflect.getOwnPropertyDescriptor(source.value as object, key)
-      // Proxy invariant: when the underlying target ({}) lacks the key,
-      // the descriptor we report MUST have configurable: true. The
-      // delegated descriptor inherits configurable: true from the plain
-      // object record, but we set it explicitly to be defensive.
-      if (desc !== undefined) desc.configurable = true
-      return desc
-    },
-    set() {
-      if (__DEV__) {
-        console.warn(
-          '[@chemical-x/forms] form.errors is read-only — write via setFieldErrors / addFieldErrors / clearFieldErrors.'
-        )
-      }
-      return false
-    },
-    deleteProperty() {
-      if (__DEV__) {
-        console.warn('[@chemical-x/forms] form.errors is read-only — clear via clearFieldErrors.')
-      }
-      return false
-    },
-    defineProperty() {
-      return false
-    },
-    setPrototypeOf() {
-      return false
-    },
-  })
 }

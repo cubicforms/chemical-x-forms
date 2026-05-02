@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { addImports, addPlugin, addTypeTemplate, createResolver, defineNuxtModule } from '@nuxt/kit'
 import { inputTextAreaNodeTransform } from './runtime/lib/core/transforms/input-text-area-transform'
 import { selectNodeTransform } from './runtime/lib/core/transforms/select-transform'
@@ -14,7 +16,7 @@ import type { ChemicalXFormsDefaults } from './runtime/types/types-api'
  * export default defineNuxtConfig({
  *   modules: ['@chemical-x/forms/nuxt'],
  *   chemicalX: {
- *     defaults: { fieldValidation: { debounceMs: 100 } },
+ *     defaults: { debounceMs: 100 },
  *   },
  * })
  * ```
@@ -35,6 +37,45 @@ export interface CXModuleOptions {
  */
 export type CXRuntimeConfig = {
   defaults: ChemicalXFormsDefaults
+}
+
+/**
+ * Whether `specifier` is resolvable using ESM resolution from either the
+ * consumer's project root or chemical-x's own module location. Returning
+ * true matches what Vite's resolver would do for `optimizeDeps.include`,
+ * so a true here means Vite will pre-bundle the dep without warning.
+ *
+ * Why two probe locations:
+ *   - Consumer-rootDir probe finds direct deps + their declared peers
+ *     (the standard pnpm strict-isolation visibility).
+ *   - Chemical-x-module probe finds peers chemical-x itself declares —
+ *     specifically the optional `@vue/devtools-api`, which lands in
+ *     chemical-x's own node_modules tree (or pnpm virtual store) when
+ *     installed, even if the consumer never references it directly.
+ *
+ * Why ESM resolution (`import.meta.resolve`) rather than CJS
+ * (`createRequire(...).resolve`):
+ *   - chemical-x's exports map declares only `import` conditions for
+ *     non-`/nuxt` entries. CJS resolve hits ERR_PACKAGE_PATH_NOT_EXPORTED
+ *     for `@chemical-x/forms` and its sub-entries.
+ *   - pnpm strict isolation hides hoisted transitives behind the
+ *     virtual store. CJS resolve walks the bare node_modules chain and
+ *     misses them; ESM resolve follows pnpm's symlinks correctly.
+ *   - `import.meta.resolve(spec, parentURL)` is sync and stable in
+ *     Node 20.6+, which chemical-x already requires (engines.node).
+ */
+function isResolvableForVite(specifier: string, consumerRootDir: string): boolean {
+  const consumerURL = pathToFileURL(join(consumerRootDir, 'package.json')).href
+  return canResolve(specifier, consumerURL) || canResolve(specifier, import.meta.url)
+}
+
+function canResolve(specifier: string, fromURL: string): boolean {
+  try {
+    import.meta.resolve(specifier, fromURL)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export default defineNuxtModule<CXModuleOptions>({
@@ -65,6 +106,35 @@ export default defineNuxtModule<CXModuleOptions>({
     runtimePublic['chemicalX'] = {
       defaults: _options.defaults ?? {},
     } satisfies CXRuntimeConfig
+
+    // Force-include chemical-x's own peers that Vite's startup crawl
+    // tends to miss for Nuxt projects. Vite scans `index.html` + the
+    // statically-known entry points but doesn't deeply follow into
+    // pages that get loaded via Nuxt's dynamic router; deps imported
+    // exclusively from page chunks are discovered when the page first
+    // requests, the optimizer rebundles, and Vite silently broadcasts
+    // `{"type":"full-reload","path":"*"}` over the HMR WebSocket — what
+    // consumers see as "the page loads, then reloads itself a second
+    // later." Vite's own "discovered new dependencies at runtime"
+    // warning recommends exactly this remediation.
+    //
+    // We declare here only deps chemical-x itself owns the relationship
+    // with — `@vue/devtools-api` (chemical-x's DevTools integration
+    // peer) and `zod` (the `/zod` and `/zod-v3` adapter peer). Consumer-
+    // side deps (vue-query, immer, etc.) are the consumer's
+    // responsibility — they declare them in their own
+    // `vite.optimizeDeps.include`. Each push is gated on the spec
+    // being resolvable from the consumer's project (or chemical-x's
+    // own module context for chemical-x's optional peers like
+    // devtools-api), so consumers without the optional peer don't see
+    // a "failed to resolve" warning at boot.
+    nuxt.options.vite.optimizeDeps ??= {}
+    nuxt.options.vite.optimizeDeps.include ??= []
+    const include = nuxt.options.vite.optimizeDeps.include
+    for (const spec of ['@vue/devtools-api', 'zod']) {
+      if (!isResolvableForVite(spec, nuxt.options.rootDir)) continue
+      if (!include.includes(spec)) include.push(spec)
+    }
 
     const resolver = createResolver(import.meta.url)
 

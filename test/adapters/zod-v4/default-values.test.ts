@@ -113,7 +113,7 @@ describe('zodAdapter.getDefaultValues — strict-mode refinement enforcement', (
     const adapter = zodAdapter(schema)('test-form')
     const result = adapter.getDefaultValues({
       useDefaultSchemaValues: true,
-      validationMode: 'strict',
+      strict: true,
       constraints: undefined,
     })
     expect(result.success).toBe(false)
@@ -132,7 +132,7 @@ describe('zodAdapter.getDefaultValues — strict-mode refinement enforcement', (
     const adapter = zodAdapter(schema)('test-form')
     const result = adapter.getDefaultValues({
       useDefaultSchemaValues: true,
-      validationMode: 'strict',
+      strict: true,
       constraints: undefined,
     })
     expect(result.success).toBe(true)

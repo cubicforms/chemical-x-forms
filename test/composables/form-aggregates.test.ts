@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { useForm } from '../../src'
 import { attachRegistryToApp, createRegistry } from '../../src/runtime/core/registry'
-import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
+import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 import { fakeSchema } from '../utils/fake-schema'
 
 /**
@@ -26,7 +26,7 @@ type SignupForm = {
 const defaults: SignupForm = { email: '', password: '' }
 
 function harness(initial?: Partial<SignupForm>) {
-  let captured!: UseAbstractFormReturnType<SignupForm>
+  let captured!: UseFormReturnType<SignupForm>
   const merged: SignupForm = { ...defaults, ...initial }
   const Probe = defineComponent({
     setup() {
@@ -57,24 +57,24 @@ describe('useForm — isDirty / isValid form-level aggregates', () => {
   it('pristine form is !isDirty && isValid', () => {
     const { app, form } = harness()
     apps.push(app)
-    expect(form.state.isDirty).toBe(false)
-    expect(form.state.isValid).toBe(true)
+    expect(form.meta.isDirty).toBe(false)
+    expect(form.meta.isValid).toBe(true)
   })
 
   it('setValue on any leaf flips isDirty true', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setValue('email', 'user@example.com')
-    expect(form.state.isDirty).toBe(true)
+    expect(form.meta.isDirty).toBe(true)
   })
 
   it('undoing all mutations flips isDirty back to false', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setValue('email', 'user@example.com')
-    expect(form.state.isDirty).toBe(true)
+    expect(form.meta.isDirty).toBe(true)
     form.setValue('email', '')
-    expect(form.state.isDirty).toBe(false)
+    expect(form.meta.isDirty).toBe(false)
   })
 
   it('recording errors via setFieldErrors flips isValid false', () => {
@@ -83,7 +83,7 @@ describe('useForm — isDirty / isValid form-level aggregates', () => {
     form.setFieldErrors([
       { path: ['email'], message: 'required', formKey: form.key, code: 'api:validation' },
     ])
-    expect(form.state.isValid).toBe(false)
+    expect(form.meta.isValid).toBe(false)
   })
 
   it('clearing errors flips isValid back to true', () => {
@@ -92,9 +92,9 @@ describe('useForm — isDirty / isValid form-level aggregates', () => {
     form.setFieldErrors([
       { path: ['email'], message: 'required', formKey: form.key, code: 'api:validation' },
     ])
-    expect(form.state.isValid).toBe(false)
+    expect(form.meta.isValid).toBe(false)
     form.clearFieldErrors()
-    expect(form.state.isValid).toBe(true)
+    expect(form.meta.isValid).toBe(true)
   })
 
   it('isDirty and isValid are independent — dirty-but-valid is a real state', () => {
@@ -102,7 +102,7 @@ describe('useForm — isDirty / isValid form-level aggregates', () => {
     apps.push(app)
     form.setValue('email', 'a@b')
     // No errors recorded → still valid.
-    expect(form.state.isDirty).toBe(true)
-    expect(form.state.isValid).toBe(true)
+    expect(form.meta.isDirty).toBe(true)
+    expect(form.meta.isValid).toBe(true)
   })
 })

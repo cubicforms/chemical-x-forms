@@ -139,9 +139,13 @@ export type {
 export { canonicalizePath, parseDottedPath, ROOT_PATH, ROOT_PATH_KEY } from './runtime/core/paths'
 export type { Path, PathKey, Segment } from './runtime/core/paths'
 
-// Error classes
+// Error classes — every library-emitted error extends `CxError`, so
+// consumers can write a single polymorphic catch (`catch (e) { if (e
+// instanceof CxError) ... }`) instead of OR-chaining instanceof
+// checks for each subclass.
 export {
   AnonPersistError,
+  CxError,
   InvalidPathError,
   OutsideSetupError,
   RegistryNotInstalledError,

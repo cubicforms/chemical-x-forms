@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   AnonPersistError,
+  CxError,
   InvalidPathError,
   OutsideSetupError,
   RegistryNotInstalledError,
+  ReservedFormKeyError,
+  SensitivePersistFieldError,
   SubmitErrorHandlerError,
 } from '../../src/runtime/core/errors'
 
@@ -137,6 +140,43 @@ describe('error classes', () => {
         }
       })()
       expect(thrown).toBeInstanceOf(AnonPersistError)
+    })
+  })
+
+  // CxError is the shared parent of every library-emitted error class so
+  // consumers can write a single polymorphic catch (`catch (e) { if (e
+  // instanceof CxError) ... }`) instead of OR-chaining instanceof
+  // checks for every subclass. The migration is a clean break — the
+  // class shape is additive (Error stays in the prototype chain) but the
+  // public surface gains a new symbol.
+  describe('CxError base class', () => {
+    it('all library error classes are instanceof CxError', () => {
+      expect(new InvalidPathError('x')).toBeInstanceOf(CxError)
+      expect(new SubmitErrorHandlerError('x')).toBeInstanceOf(CxError)
+      expect(new RegistryNotInstalledError()).toBeInstanceOf(CxError)
+      expect(new OutsideSetupError()).toBeInstanceOf(CxError)
+      expect(new ReservedFormKeyError('__cx:foo')).toBeInstanceOf(CxError)
+      expect(new SensitivePersistFieldError('password')).toBeInstanceOf(CxError)
+      expect(new AnonPersistError({ cause: 'no-key' })).toBeInstanceOf(CxError)
+    })
+
+    it('still extends Error so consumers using catch (e: Error) keep working', () => {
+      expect(new InvalidPathError('x')).toBeInstanceOf(Error)
+      expect(new AnonPersistError({ cause: 'no-key' })).toBeInstanceOf(Error)
+    })
+
+    it('preserves message + cause + name on the subclass when caught as CxError', () => {
+      const inner = new TypeError('inner')
+      let captured: CxError | undefined
+      try {
+        throw new InvalidPathError('outer', { cause: inner })
+      } catch (e) {
+        if (e instanceof CxError) captured = e
+      }
+      expect(captured).toBeDefined()
+      expect(captured?.message).toBe('outer')
+      expect(captured?.cause).toBe(inner)
+      expect(captured?.name).toBe('InvalidPathError')
     })
   })
 })

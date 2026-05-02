@@ -2,31 +2,39 @@
  * Typed error classes thrown by the form library. Each one signals a
  * distinct misuse so calling code can branch on `instanceof` instead
  * of pattern-matching error messages.
+ *
+ * Every class extends `CxError`, so consumers can write a single
+ * polymorphic catch (`catch (e) { if (e instanceof CxError) ... }`)
+ * instead of OR-chaining checks for each subclass. `CxError` itself
+ * extends the standard `Error`, so existing `instanceof Error` usage
+ * keeps working.
  */
+
+/**
+ * Base for every error class thrown by `@chemical-x/forms`. Sets
+ * `this.name` from the constructor's `new.target.name`, so subclasses
+ * don't have to redeclare their own name override.
+ */
+export class CxError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options)
+    this.name = new.target.name
+  }
+}
 
 /**
  * Thrown when a path string is malformed — typically a dotted path
  * with empty segments (e.g. `'a..b'`, leading or trailing dots).
  * Use array form (`['a', 'b']`) for keys that contain literal dots.
  */
-export class InvalidPathError extends Error {
-  override readonly name = 'InvalidPathError'
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options)
-  }
-}
+export class InvalidPathError extends CxError {}
 
 /**
  * Thrown when a `handleSubmit`-supplied `onError` callback itself
  * throws or rejects. Wraps the inner failure so both the original
  * cause (via `error.cause`) and the propagation site are visible.
  */
-export class SubmitErrorHandlerError extends Error {
-  override readonly name = 'SubmitErrorHandlerError'
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options)
-  }
-}
+export class SubmitErrorHandlerError extends CxError {}
 
 /**
  * Thrown by `useForm` / `injectForm` when the form library's
@@ -35,8 +43,7 @@ export class SubmitErrorHandlerError extends Error {
  * Fix: add `app.use(createChemicalXForms())` to your app entry
  * (or `@chemical-x/forms/nuxt` for Nuxt projects).
  */
-export class RegistryNotInstalledError extends Error {
-  override readonly name = 'RegistryNotInstalledError'
+export class RegistryNotInstalledError extends CxError {
   constructor() {
     super(
       '[@chemical-x/forms] Registry not found. Install the plugin via `app.use(createChemicalXForms())`.'
@@ -52,8 +59,7 @@ export class RegistryNotInstalledError extends Error {
  * Fix: move the call into `setup()`, or trigger it from a child
  * component whose `setup()` runs the composable.
  */
-export class OutsideSetupError extends Error {
-  override readonly name = 'OutsideSetupError'
+export class OutsideSetupError extends CxError {
   constructor() {
     super(
       '[@chemical-x/forms] useForm / injectForm called outside Vue setup(). ' +
@@ -68,8 +74,7 @@ export class OutsideSetupError extends Error {
  * internally (e.g. for anonymous `useForm()` calls without an
  * explicit key). Pick a different prefix for your form.
  */
-export class ReservedFormKeyError extends Error {
-  override readonly name = 'ReservedFormKeyError'
+export class ReservedFormKeyError extends CxError {
   constructor(key: string) {
     super(
       `[@chemical-x/forms] Form key "${key}" uses the reserved "__cx:" namespace. ` +
@@ -111,8 +116,7 @@ export class ReservedFormKeyError extends Error {
  * Fix: pass `acknowledgeSensitive: true` to confirm the persistence
  * is intentional, or persist the data server-side instead.
  */
-export class SensitivePersistFieldError extends Error {
-  override readonly name = 'SensitivePersistFieldError'
+export class SensitivePersistFieldError extends CxError {
   constructor(path: ReadonlyArray<string | number> | string) {
     const display = Array.isArray(path) ? path.join('.') : String(path)
     super(
@@ -145,8 +149,7 @@ export class SensitivePersistFieldError extends Error {
  * Fix: align the two layers — set `persist:` + `key:` on `useForm()`,
  * or remove `{ persist: true }` from the offending `register()` call.
  */
-export class AnonPersistError extends Error {
-  override readonly name = 'AnonPersistError'
+export class AnonPersistError extends CxError {
   readonly schemaFields: readonly string[] | undefined
   readonly callSite: string | undefined
   override readonly cause: 'no-key' | 'register-without-config'

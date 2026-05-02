@@ -57,7 +57,7 @@ const HINT_SUFFIX = `)`
  * `getFieldState(path).isConnected` after hydration.
  *
  * Must run after `vRegisterPreambleTransform`. Wired automatically
- * by `@chemical-x/forms/vite` and `@chemical-x/forms/nuxt`.
+ * by `decant/vite` and `decant/nuxt`.
  */
 export const vRegisterHintTransform: NodeTransform = (node) => {
   try {
@@ -74,7 +74,7 @@ export const vRegisterHintTransform: NodeTransform = (node) => {
     // directive: skip this transform entirely. The runtime mark is
     // fail-safe — without the wrapper, we just get the existing
     // false→true flicker on first paint, never an incorrect render.
-    console.error('[@chemical-x/forms] v-register hint transform failed, skipping:', err)
+    console.error('[decant] v-register hint transform failed, skipping:', err)
   }
 }
 

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, isReactive, isReadonly, isRef, nextTick, watch } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 
 /**
  * `form.values` — Pinia-style reactive readonly proxy over the form
@@ -51,7 +51,7 @@ function mountForm(): {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createChemicalXForms())
+  const app = createApp(App).use(createDecant())
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)

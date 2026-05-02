@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { useRegister } from '../../src/runtime/composables/use-register'
 import { vRegister } from '../../src/runtime/core/directive'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 
 /**
  * Unit tests for the `useRegister()` composable. The composable's
@@ -100,7 +100,7 @@ describe('useRegister — inside child setup', () => {
       warnings.push(args.map((a) => String(a)).join(' '))
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -137,7 +137,7 @@ describe('useRegister — inside child setup', () => {
       warnings.push(args.map((a) => String(a)).join(' '))
     })
 
-    app = createApp(defineComponent({ render: () => h(Child) })).use(createChemicalXForms())
+    app = createApp(defineComponent({ render: () => h(Child) })).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -196,7 +196,7 @@ describe('useRegister — inside child setup', () => {
       warnings.push(args.map((a) => String(a)).join(' '))
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -243,7 +243,7 @@ describe('useRegister — inside child setup', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -281,7 +281,7 @@ describe('useRegister — inside child setup', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -357,7 +357,7 @@ describe('useRegister — sentinel suppresses parent-directive warn', () => {
       warnings.push(args.map((a) => String(a)).join(' '))
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -405,7 +405,7 @@ describe('useRegister — sentinel suppresses parent-directive warn', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -468,7 +468,7 @@ describe('useRegister — inner v-register receives full directive lifecycle', (
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -534,7 +534,7 @@ describe('useRegister — strips bridge keys from attrs (no inheritAttrs needed)
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -576,7 +576,7 @@ describe('useRegister — strips bridge keys from attrs (no inheritAttrs needed)
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -619,7 +619,7 @@ describe('useRegister — strips bridge keys from attrs (no inheritAttrs needed)
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

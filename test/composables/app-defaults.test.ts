@@ -4,13 +4,13 @@ import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { useForm as useFormV3 } from '../../src/zod-v3'
 import { ANONYMOUS_FORM_KEY_PREFIX } from '../../src/runtime/core/defaults'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 import { useForm } from '../../src/zod'
 import { z as zV3 } from 'zod-v3'
 
 /**
- * App-level defaults: `createChemicalXForms({ defaults: ... })` lets
+ * App-level defaults: `createDecant({ defaults: ... })` lets
  * consumers configure cx-wide preferences once. Per-form options
  * always win.
  *
@@ -35,7 +35,7 @@ type Tight = z.infer<typeof tightSchema>
 type API = ReturnType<typeof useForm<typeof tightSchema>>
 
 function mountWithDefaults(
-  defaults: Parameters<typeof createChemicalXForms>[0] extends infer T
+  defaults: Parameters<typeof createDecant>[0] extends infer T
     ? T extends { defaults?: infer D }
       ? D
       : never
@@ -65,7 +65,7 @@ function mountWithDefaults(
     },
   })
   const app = createApp(App).use(
-    createChemicalXForms({
+    createDecant({
       override: true,
       ...(defaults !== undefined ? { defaults } : {}),
     })
@@ -222,9 +222,7 @@ describe('app-level defaults — anonymous + multi-form', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(
-      createChemicalXForms({ override: true, defaults: { strict: false } })
-    )
+    const app = createApp(App).use(createDecant({ override: true, defaults: { strict: false } }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -262,9 +260,7 @@ describe('app-level defaults — v3 wrapper regression', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(
-      createChemicalXForms({ override: true, defaults: { strict: false } })
-    )
+    const app = createApp(App).use(createDecant({ override: true, defaults: { strict: false } }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

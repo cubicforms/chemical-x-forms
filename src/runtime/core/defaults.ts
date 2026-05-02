@@ -7,7 +7,7 @@
  * timing/policy defaults.
  *
  * Per-form `useForm({ ... })` options always win over these. App-level
- * `createChemicalXForms({ defaults: ... })` options sit between the
+ * `createDecant({ defaults: ... })` options sit between the
  * two: per-form > app-level > library default.
  */
 
@@ -61,7 +61,7 @@ export const DEFAULT_HISTORY_MAX_SNAPSHOTS = 50
  * constant so multi-tenant deployments can audit or reserve their
  * own prefix without grepping for the literal.
  */
-export const PERSISTENCE_KEY_PREFIX = 'chemical-x-forms:'
+export const PERSISTENCE_KEY_PREFIX = 'decant:'
 
 /**
  * Reserved namespace for the library's internal synthetic keys

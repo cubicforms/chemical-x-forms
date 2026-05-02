@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, nextTick, watchEffect, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
 
 /**
@@ -62,7 +62,7 @@ function mountWithSnapshotter(): { app: App; api: ProfileApi; snapshots: string[
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createChemicalXForms({ override: true }))
+  const app = createApp(App).use(createDecant({ override: true }))
   app.config.warnHandler = () => {}
   app.config.errorHandler = () => {}
   app.mount(document.createElement('div'))

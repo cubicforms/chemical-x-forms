@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
 import { hashStableString } from '../../src/runtime/core/hash'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 import { useForm } from '../../src/zod'
 
 /**
@@ -125,7 +125,7 @@ function mountAsyncForm(persistKey: string, strict: boolean = true): { app: App;
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createChemicalXForms())
+  const app = createApp(App).use(createDecant())
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -148,7 +148,7 @@ function mountSyncForm(persistKey: string): { app: App; api: SyncApi } {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createChemicalXForms())
+  const app = createApp(App).use(createDecant())
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)

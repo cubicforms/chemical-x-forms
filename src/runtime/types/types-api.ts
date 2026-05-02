@@ -160,7 +160,7 @@ type GetDefaultValuesConfig<Form> = {
  * schema library.
  *
  * Most consumers never touch this type directly — the typed entry
- * points (e.g. `@chemical-x/forms/zod`, `@chemical-x/forms/zod-v3`)
+ * points (e.g. `decant/zod`, `decant/zod-v3`)
  * wire an adapter automatically. Implement this interface only when
  * adding support for a new schema library (Valibot, ArkType, custom).
  */
@@ -705,7 +705,7 @@ export type PersistConfigOptions = {
   storage: FormStorageKind | FormStorage
 
   /**
-   * Storage key namespace. Defaults to `chemical-x-forms:${formKey}`.
+   * Storage key namespace. Defaults to `decant:${formKey}`.
    * Override when you need a custom prefix (e.g. multi-tenant apps
    * where the same form key may exist per-tenant).
    */
@@ -786,7 +786,7 @@ export type UseFormConfiguration<
 > = {
   /**
    * The schema describing the form's shape and validation rules.
-   * Typed entry points like `@chemical-x/forms/zod` accept the
+   * Typed entry points like `decant/zod` accept the
    * underlying library's schema directly and wrap an adapter; the
    * abstract entry point accepts any object implementing
    * `AbstractSchema`.
@@ -947,7 +947,7 @@ export type UseFormConfiguration<
   /**
    * Schema-driven coercion of user-typed DOM values at the v-register
    * directive layer. Per-form override of the plugin-level
-   * `ChemicalXFormsDefaults.coerce`.
+   * `DecantDefaults.coerce`.
    *
    * - `true` / `undefined` — runs the built-in `defaultCoercionRules`.
    * - `false` — disables coercion; the slim gate rejects mismatches.
@@ -964,18 +964,18 @@ export type UseFormConfiguration<
 
 /**
  * App-level defaults applied to every `useForm` call. Set these once
- * per app via `createChemicalXForms({ defaults })` (bare Vue) or
- * `chemicalX.defaults` (Nuxt module).
+ * per app via `createDecant({ defaults })` (bare Vue) or
+ * `decant.defaults` (Nuxt module).
  *
  * Resolution order (per-form wins):
  *
- *   useForm({ ... })  >  createChemicalXForms({ defaults })  >  library default
+ *   useForm({ ... })  >  createDecant({ defaults })  >  library default
  *
  * `validateOn` and `debounceMs` resolve per-field — set the debounce
  * globally while still overriding the trigger per form:
  *
  * ```ts
- * createChemicalXForms({
+ * createDecant({
  *   defaults: { debounceMs: 100 },
  * })
  * // later
@@ -991,7 +991,7 @@ export type UseFormConfiguration<
  * `schema`, `key`, `defaultValues`, and `persist` are not configurable
  * here — they belong on the per-form call.
  */
-export type ChemicalXFormsDefaults = {
+export type DecantDefaults = {
   /** Default for `useForm({ strict })`. Default `true`. */
   strict?: boolean
   /** Default for `useForm({ onInvalidSubmit })`. */
@@ -1672,7 +1672,7 @@ export type RegisterModelDynamicCustomDirective = ObjectDirective<
  *
  * <!-- MyField.vue (root is <label>, not <input>) -->
  * <script setup>
- * import { useRegister } from '@chemical-x/forms'
+ * import { useRegister } from 'decant'
  * defineProps<{ label: string }>()
  * const register = useRegister()
  * </script>
@@ -1692,8 +1692,8 @@ export type RegisterModelDynamicCustomDirective = ObjectDirective<
  * See `RegisterTextModifier` / `RegisterSelectModifier` for
  * per-modifier semantics.
  *
- * Registered globally by `createChemicalXForms()` (and by the
- * `@chemical-x/forms/nuxt` module). Most consumers don't import the
+ * Registered globally by `createDecant()` (and by the
+ * `decant/nuxt` module). Most consumers don't import the
  * directive itself — it's exposed for integrations that install
  * directives manually.
  */

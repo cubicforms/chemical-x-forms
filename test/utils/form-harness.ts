@@ -8,7 +8,7 @@
  * own typed import without the harness coupling to either zod major.
  */
 import { createApp, defineComponent, h, nextTick, type App } from 'vue'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 
 /**
  * Drain microtasks + Vue's queue four times. Four is empirical —
@@ -56,7 +56,7 @@ export function makeMounter<S>(
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

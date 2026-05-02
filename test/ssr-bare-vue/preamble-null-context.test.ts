@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Vue from 'vue'
 import { createSSRApp, defineComponent } from 'vue'
 import { injectForm } from '../../src'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 import { vRegisterHintTransform } from '../../src/runtime/lib/core/transforms/v-register-hint-transform'
 import { vRegisterPreambleTransform } from '../../src/runtime/lib/core/transforms/v-register-preamble-transform'
 
@@ -71,7 +71,7 @@ describe('SSR preamble null-safety', () => {
       render,
     })
     const app = createSSRApp(App)
-    app.use(createChemicalXForms({ override: true }))
+    app.use(createDecant({ override: true }))
 
     // The catchable failure mode pre-fix was an unhandled rejection
     // bubbling out of `_sfc_ssrRender`. If that ever returns, this
@@ -118,7 +118,7 @@ describe('SSR preamble null-safety', () => {
       render,
     })
     const app = createSSRApp(App)
-    app.use(createChemicalXForms({ override: true }))
+    app.use(createDecant({ override: true }))
 
     const html = await renderToString(app)
     expect(html).toContain('<input')

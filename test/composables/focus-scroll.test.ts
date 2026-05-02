@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 import { useForm } from '../../src'
 import { injectForm } from '../../src/runtime/composables/use-form-context'
 import type { Path } from '../../src/runtime/core/paths'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 import { fakeSchema } from '../utils/fake-schema'
 
 type Form = {
@@ -93,7 +93,7 @@ function mountWith(options: {
     },
   })
 
-  const app = createApp(App).use(createChemicalXForms({ override: true }))
+  const app = createApp(App).use(createDecant({ override: true }))
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -379,7 +379,7 @@ describe('focusFirstError — shared-key form isolation', () => {
       setup: () => () => h('div', [h(SidebarForm), h(MainForm)]),
     })
 
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createDecant({ override: true }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -430,7 +430,7 @@ describe('focusFirstError — shared-key form isolation', () => {
     const App = defineComponent({
       setup: () => () => h('div', [h(FormA), h(FormB)]),
     })
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createDecant({ override: true }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -521,7 +521,7 @@ describe('focusFirstError — sort cache invalidation', () => {
       },
     })
 
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createDecant({ override: true }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -615,7 +615,7 @@ describe('focusFirstError — instanceId inheritance through injectForm', () => 
       },
     })
 
-    const app = createApp(Parent).use(createChemicalXForms({ override: true }))
+    const app = createApp(Parent).use(createDecant({ override: true }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -693,7 +693,7 @@ describe('focusFirstError — instanceId inheritance through injectForm', () => 
       },
     })
 
-    const app = createApp(Grandparent).use(createChemicalXForms({ override: true }))
+    const app = createApp(Grandparent).use(createDecant({ override: true }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

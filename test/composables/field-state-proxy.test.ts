@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, nextTick, watch, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 
 /**
  * `form.fields` — Pinia-style nested reactive proxy. Each path
@@ -49,7 +49,7 @@ function mountForm(): {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createChemicalXForms())
+  const app = createApp(App).use(createDecant())
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)

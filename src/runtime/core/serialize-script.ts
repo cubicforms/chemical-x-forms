@@ -5,7 +5,7 @@
  * break out of the script tag.
  *
  * ```ts
- * const payload = escapeForInlineScript(JSON.stringify(renderChemicalXState(app)))
+ * const payload = escapeForInlineScript(JSON.stringify(renderDecantState(app)))
  * // `<script>window.__CX_STATE__ = ${payload}</script>` is safe.
  * ```
  *

@@ -1,8 +1,8 @@
 /**
- * `@chemical-x/forms/zod-v3` — Zod v3 adapter.
+ * `decant/zod-v3` — Zod v3 adapter.
  *
  * This subpath is considered legacy; new projects should use
- * `@chemical-x/forms/zod` (v4 adapter) once v4 support lands. The two
+ * `decant/zod` (v4 adapter) once v4 support lands. The two
  * adapters are physically isolated (separate directories, no cross-imports,
  * enforced by ESLint), so v3 can be removed in a future major without
  * touching v4 or the framework-agnostic core.
@@ -13,7 +13,7 @@
  *
  * Usage:
  *
- *   import { useForm } from '@chemical-x/forms/zod-v3'
+ *   import { useForm } from 'decant/zod-v3'
  *   import { z } from 'zod'
  *
  *   const { register, handleSubmit } = useForm({

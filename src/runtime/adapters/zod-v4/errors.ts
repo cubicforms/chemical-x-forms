@@ -29,7 +29,7 @@ export function zodIssuesToValidationErrors(
       if (__DEV__ && !warnedZodCodeMissing) {
         warnedZodCodeMissing = true
         console.warn(
-          '[@chemical-x/forms] zod-v4 adapter received an issue with no string `code`; ' +
+          '[decant] zod-v4 adapter received an issue with no string `code`; ' +
             "stamping `'zod:unknown'`. This usually means a custom Zod plugin emitted " +
             'an issue without the standard code field.'
         )

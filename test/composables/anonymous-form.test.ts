@@ -5,7 +5,7 @@ import { renderToString } from '@vue/server-renderer'
 import { useForm, injectForm } from '../../src'
 import { ANONYMOUS_FORM_KEY_PREFIX, RESERVED_KEY_PREFIX } from '../../src/runtime/core/defaults'
 import { ReservedFormKeyError } from '../../src/runtime/core/errors'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 import { fakeSchema } from '../utils/fake-schema'
 
 /**
@@ -52,7 +52,7 @@ describe('anonymous useForm — independent state per setup call', () => {
       },
     })
 
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -89,7 +89,7 @@ describe('anonymous useForm — ambient injectForm access', () => {
       },
     })
 
-    const app = createApp(Parent).use(createChemicalXForms())
+    const app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -135,7 +135,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -159,7 +159,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
         return () => h('div', [h(Child)])
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -190,7 +190,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
         return () => h('div', [h(Child)])
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -232,7 +232,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
         return () => h('div', [h(Child)])
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -268,7 +268,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
         return () => h('div', [h(Child)])
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -293,7 +293,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
         return () => h('div', [h(Child)])
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -321,7 +321,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
         return () => h('div', [h(ChildA), h(ChildB)])
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -351,12 +351,12 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     })
 
     const serverApp = createSSRApp(App)
-    serverApp.use(createChemicalXForms({ override: true }))
+    serverApp.use(createDecant({ override: true }))
     await renderToString(serverApp)
 
     expect(warnSpy).not.toHaveBeenCalled()
 
-    const clientApp = createApp(App).use(createChemicalXForms())
+    const clientApp = createApp(App).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     clientApp.mount(root)
@@ -384,7 +384,7 @@ describe('anonymous useForm — SSR determinism', () => {
 
     // Server-side render — useId() draws from Vue's SSR id allocator.
     const serverApp = createSSRApp(App((api) => (serverApi = api)))
-    serverApp.use(createChemicalXForms({ override: true }))
+    serverApp.use(createDecant({ override: true }))
     await renderToString(serverApp)
 
     // Client-side mount of the same tree shape — useId() must match
@@ -392,7 +392,7 @@ describe('anonymous useForm — SSR determinism', () => {
     // entry. We simulate the client by creating a fresh app (new
     // registry, fresh id allocator) and confirming the same position
     // resolves to the same id.
-    const clientApp = createApp(App((api) => (clientApi = api))).use(createChemicalXForms())
+    const clientApp = createApp(App((api) => (clientApi = api))).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     clientApp.mount(root)
@@ -419,7 +419,7 @@ describe('reserved key namespace', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createDecant({ override: true }))
     // The throw IS the test's signal — vitest captures it via
     // `.toThrow(...)`. Vue still emits a `[Vue warn]: Unhandled error
     // during execution of setup function` to stderr before re-throwing,

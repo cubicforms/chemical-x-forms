@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import type { RegisterValue } from '@chemical-x/forms/types'
+  import type { RegisterValue } from 'decant/types'
 
   const { fruit: fruitRegisterValue } = defineProps<{ fruit: RegisterValue }>()
 </script>

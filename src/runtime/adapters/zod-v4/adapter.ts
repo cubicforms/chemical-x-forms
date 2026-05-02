@@ -184,7 +184,7 @@ function isLeafRequired(schema: z.ZodType, depth = 0): boolean {
  * Wrap a Zod v4 `ZodObject` schema in an `AbstractSchema` factory.
  *
  * Most consumers never call this directly — `useForm` from
- * `@chemical-x/forms/zod` does the wrapping automatically. Reach for
+ * `decant/zod` does the wrapping automatically. Reach for
  * it when you need an adapter outside of `useForm` (e.g. validating
  * data with the same library used elsewhere in the form runtime, or
  * exposing the adapter to a custom integration).

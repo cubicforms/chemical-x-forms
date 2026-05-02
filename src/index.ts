@@ -1,13 +1,13 @@
 /**
- * `@chemical-x/forms` — framework-agnostic core entry.
+ * `decant` — framework-agnostic core entry.
  *
  * Consumers under bare Vue 3:
  *
  *   import { createApp } from 'vue'
- *   import { createChemicalXForms, useForm } from '@chemical-x/forms'
- *   import { chemicalXForms as chemicalXVite } from '@chemical-x/forms/vite'
+ *   import { createDecant, useForm } from 'decant'
+ *   import { decant as decantVite } from 'decant/vite'
  *
- *   createApp(App).use(createChemicalXForms()).mount('#app')
+ *   createApp(App).use(createDecant()).mount('#app')
  *
  * Consumers under Nuxt don't touch this file — the Nuxt module (`./nuxt`
  * subpath) installs everything automatically.
@@ -15,21 +15,21 @@
  * For schema-library integrations (Zod v3 today; Valibot / ArkType /
  * custom later), import from the matching subpath:
  *
- *   import { useForm, zodAdapter } from '@chemical-x/forms/zod-v3'
+ *   import { useForm, zodAdapter } from 'decant/zod-v3'
  */
 
 // The plugin, registry, serialization helpers
-export { createChemicalXForms } from './runtime/core/plugin'
-export type { ChemicalXFormsPluginOptions } from './runtime/core/plugin'
+export { createDecant } from './runtime/core/plugin'
+export type { DecantPluginOptions } from './runtime/core/plugin'
 export {
   createRegistry,
   getRegistryFromApp,
-  kChemicalXRegistry,
+  kDecantRegistry,
   useRegistry,
 } from './runtime/core/registry'
-export type { ChemicalXRegistry, SerializedFormData } from './runtime/core/registry'
-export { hydrateChemicalXState, renderChemicalXState } from './runtime/core/serialize'
-export type { SerializedChemicalXState } from './runtime/core/serialize'
+export type { DecantRegistry, SerializedFormData } from './runtime/core/registry'
+export { hydrateDecantState, renderDecantState } from './runtime/core/serialize'
+export type { SerializedDecantState } from './runtime/core/serialize'
 export { escapeForInlineScript } from './runtime/core/serialize-script'
 
 // The abstract useForm — works against any AbstractSchema implementation.
@@ -50,7 +50,7 @@ export { injectForm } from './runtime/composables/use-form-context'
 // `injectForm`.
 export { useRegister } from './runtime/composables/use-register'
 
-// The v-register directive (registered automatically by createChemicalXForms,
+// The v-register directive (registered automatically by createDecant,
 // but exported for advanced consumers who install directives themselves).
 export { vRegister, isRegisterValue, assignKey } from './runtime/core/directive'
 export { defaultCoercionRules, defineCoercion } from './runtime/core/schema-coerce'
@@ -74,7 +74,7 @@ export type {
   ApiErrorDetails,
   ApiErrorEntry,
   ApiErrorEnvelope,
-  ChemicalXFormsDefaults,
+  DecantDefaults,
   CoercionEntry,
   CoercionRegistry,
   CoercionResult,

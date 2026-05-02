@@ -13,14 +13,14 @@ import { useAbstractForm } from './use-abstract-form'
  * Create a form bound to a custom `AbstractSchema` adapter.
  *
  * ```ts
- * import { useForm } from '@chemical-x/forms/zod-v3'
+ * import { useForm } from 'decant/zod-v3'
  *
  * const form = useForm({ schema: myAdapter, defaultValues: { … } })
  * ```
  *
  * For Zod schemas, prefer the overload that accepts a `ZodObject`
  * directly — it wraps the adapter automatically. For Zod v4, import
- * from `@chemical-x/forms/zod` instead.
+ * from `decant/zod` instead.
  */
 export function useForm<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
   configuration: UseFormConfiguration<
@@ -34,7 +34,7 @@ export function useForm<Form extends GenericForm, GetValueFormType extends Gener
  * Create a form bound to a Zod v3 `ZodObject` schema.
  *
  * ```ts
- * import { useForm } from '@chemical-x/forms/zod-v3'
+ * import { useForm } from 'decant/zod-v3'
  * import { z } from 'zod'
  *
  * const form = useForm({
@@ -52,7 +52,7 @@ export function useForm<Form extends GenericForm, GetValueFormType extends Gener
  * helpers, and more. See `UseFormReturnType` for the full
  * surface.
  *
- * For Zod v4, import from `@chemical-x/forms/zod` instead.
+ * For Zod v4, import from `decant/zod` instead.
  */
 export function useForm<
   Schema extends z.ZodObject<z.ZodRawShape>,
@@ -96,7 +96,7 @@ export function useForm<
   // intentionally NOT re-listed — the spread carries them through, and
   // writing `strict: configuration.strict ?? true` here would
   // short-circuit the registry's app-level defaults
-  // (`createChemicalXForms({ defaults: { strict: false } })`).
+  // (`createDecant({ defaults: { strict: false } })`).
   // The library-level fallback to `true` lives downstream in
   // `createFormStore`, where it can apply *after* the registry merge.
   return useAbstractForm<Form, GetValueFormType>({

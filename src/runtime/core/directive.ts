@@ -888,7 +888,19 @@ function setChecked(el: HTMLInputElement, { value }: DirectiveBinding, _vnode: V
   } else if (isSet(originalValue)) {
     checked = originalValue.has(getValue(el))
   } else {
-    checked = looseEqual(originalValue, getCheckboxValue(el, true))
+    // Compare against the COERCED `true-value`, not the raw
+    // attribute. The change handler routes the raw value through
+    // coerce before writing, so the model holds the post-coerce
+    // shape (e.g. boolean `true` for `true-value="True"`). Vue's
+    // `looseEqual` does a case-sensitive `String()` comparison, so
+    // `looseEqual(true, "True")` is false and setChecked would
+    // otherwise write `el.checked = false` immediately after the
+    // user's click — desyncing DOM from model. `value.coerce` is
+    // optional on RegisterValue (hand-rolled mocks may omit it);
+    // fall back to the raw value when absent.
+    const rawTrueValue = getCheckboxValue(el, true)
+    const trueValueCoerced = value.coerce !== undefined ? value.coerce(rawTrueValue) : rawTrueValue
+    checked = looseEqual(originalValue, trueValueCoerced)
   }
 
   if (el.checked !== checked) {

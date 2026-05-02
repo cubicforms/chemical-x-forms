@@ -281,6 +281,170 @@ describe('checkbox scalar — boolean path (no-op)', () => {
   })
 })
 
+describe('checkbox with true-value / false-value — composes with coerce', () => {
+  // `:true-value` / `:false-value` are Vue v-model conventions that
+  // store custom values in the model when a checkbox toggles. The
+  // directive routes the chosen value through the same assigner
+  // pipeline as everything else, so coerce composes correctly:
+  // already-correct kinds are no-ops; string-typed attrs against a
+  // numeric/boolean schema get coerced; misaligned attrs vs schema
+  // (e.g. "yes"/"no" against z.boolean()) pass through and the gate
+  // rejects with its existing dev-warn.
+
+  it('string true-value/false-value against z.string() schema → no-op (already string)', async () => {
+    const schema = z.object({ choice: z.string() })
+    const { api, root } = mount(schema, { choice: 'no' }, (api) => {
+      const rv = api.register('choice')
+      return h('div', null, [
+        withDirectives(
+          h('input', {
+            type: 'checkbox',
+            'true-value': 'yes',
+            'false-value': 'no',
+            'data-field': 'cb',
+          }),
+          [[vRegister, rv]]
+        ),
+      ])
+    })
+    await flush()
+    const cb = root.querySelector('[data-field="cb"]') as HTMLInputElement
+    cb.checked = true
+    cb.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.choice).toBe('yes')
+  })
+
+  // Bound `:true-value` (non-string) is exercised via templates +
+  // checkbox.test.ts directly — render-function `h()` doesn't reach
+  // Vue's `_trueValue` slot the same way the compiled template
+  // path does. Verified end-to-end in spike-cx.vue scenarios.
+
+  it('case-insensitive true-value="True" against z.boolean() schema → coerced to true', async () => {
+    const schema = z.object({ accepted: z.boolean() })
+    const { api, root } = mount(schema, { accepted: false }, (api) => {
+      const rv = api.register('accepted')
+      return h('div', null, [
+        withDirectives(
+          h('input', {
+            type: 'checkbox',
+            'true-value': 'True',
+            'false-value': 'False',
+            'data-field': 'cb',
+          }),
+          [[vRegister, rv]]
+        ),
+      ])
+    })
+    await flush()
+    const cb = root.querySelector('[data-field="cb"]') as HTMLInputElement
+    cb.checked = true
+    cb.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.accepted).toBe(true)
+  })
+
+  it('checkbox visual stays in sync with model across multiple toggles (case-mismatched true-value)', async () => {
+    // Regression for the desync where setChecked compared the
+    // post-coerce boolean model against the RAW `_trueValue` string
+    // ("True", capital T) via `looseEqual`. Vue's looseEqual does
+    // case-sensitive `String()` comparison — `looseEqual(true,
+    // "True")` is false — so setChecked decided the box should be
+    // unchecked and overwrote the user's click. Fix: setChecked
+    // coerces the raw _trueValue through the same registry before
+    // comparing.
+    //
+    // We set `_trueValue` / `_falseValue` imperatively via a ref
+    // callback because render-function `h()` can't reach Vue's
+    // template-only `:true-value` slot. The `<pre>` reading
+    // `api.values.accepted` matters: it's the reactive dep that
+    // schedules the re-render which fires `beforeUpdate` →
+    // `setChecked`. Without it, the bug stays latent (no rerender,
+    // no faulty re-comparison) and the test would pass pre-fix.
+    const schema = z.object({ accepted: z.boolean() })
+    const { api, root } = mount(schema, { accepted: false }, (api) => {
+      const rv = api.register('accepted')
+      return h('div', null, [
+        withDirectives(
+          h('input', {
+            type: 'checkbox',
+            'data-field': 'cb',
+            ref: (el: unknown) => {
+              if (el === null || !(el instanceof HTMLInputElement)) return
+              const carrier = el as HTMLInputElement & {
+                _trueValue?: unknown
+                _falseValue?: unknown
+              }
+              carrier._trueValue = 'True'
+              carrier._falseValue = 'False'
+            },
+          }),
+          [[vRegister, rv]]
+        ),
+        h('pre', null, JSON.stringify(api.values.accepted)),
+      ])
+    })
+    await flush()
+    const cb = root.querySelector('[data-field="cb"]') as HTMLInputElement
+    expect(cb.checked).toBe(false)
+    expect(api.values.accepted).toBe(false)
+
+    // Toggle ON.
+    cb.checked = true
+    cb.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.accepted).toBe(true)
+    expect(cb.checked).toBe(true) // pre-fix this would be false (desync)
+
+    // Toggle OFF.
+    cb.checked = false
+    cb.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.accepted).toBe(false)
+    expect(cb.checked).toBe(false)
+
+    // Toggle ON again — confirm the cycle is clean (no every-other-
+    // click desync that the original report described).
+    cb.checked = true
+    cb.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    expect(api.values.accepted).toBe(true)
+    expect(cb.checked).toBe(true)
+  })
+
+  it('misaligned attrs ("yes"/"no") against z.boolean() schema → passthrough; gate rejects', async () => {
+    // Documented contract: when true-value/false-value disagree with
+    // the schema's slim type, coerce can't bridge the gap unless the
+    // consumer registers a rule. The slim gate rejects, the dev-warn
+    // surfaces, and the dev fixes either the schema or the attrs (or
+    // adds a custom coercion entry).
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const schema = z.object({ accepted: z.boolean() })
+    const { api, root } = mount(schema, { accepted: false }, (api) => {
+      const rv = api.register('accepted')
+      return h('div', null, [
+        withDirectives(
+          h('input', {
+            type: 'checkbox',
+            'true-value': 'yes',
+            'false-value': 'no',
+            'data-field': 'cb',
+          }),
+          [[vRegister, rv]]
+        ),
+      ])
+    })
+    await flush()
+    const cb = root.querySelector('[data-field="cb"]') as HTMLInputElement
+    cb.checked = true
+    cb.dispatchEvent(new Event('change', { bubbles: true }))
+    await flush()
+    // 'yes' isn't 'true'/'false' post-trim+lowercase → coerce passes
+    // through → gate rejects → state preserves the original `false`.
+    expect(api.values.accepted).toBe(false)
+  })
+})
+
 describe('radio — boolean path', () => {
   it('selecting value="true"/"false" radios stores boolean', async () => {
     const schema = z.object({ active: z.boolean() })

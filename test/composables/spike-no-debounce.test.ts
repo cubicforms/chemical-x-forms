@@ -181,7 +181,8 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
     // The discriminated `ValidateOnConfig` makes `debounceMs` a TS error
     // when paired with `'blur'` or `'submit'`. The `@ts-expect-error`
     // directives below fail the build if the constraint regresses. The
-    // assertion params don't run — the build is the gate.
+    // body executes nothing meaningful at runtime — vitest accepts the
+    // empty test, the build is the gate.
     type Opts = Parameters<typeof useForm<typeof schema>>[0]
     const ok1: Opts = { schema, validateOn: 'change', debounceMs: 50 }
     const ok2: Opts = { schema, validateOn: 'blur' }
@@ -196,7 +197,6 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
     const bad2: Opts = { schema, validateOn: 'submit', debounceMs: 0 }
     void bad1
     void bad2
-    expect(true).toBe(true)
   })
 })
 

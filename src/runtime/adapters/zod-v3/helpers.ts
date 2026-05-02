@@ -36,6 +36,8 @@ type ZodTypeMap = {
   ZodBranded: z.ZodBranded<z.ZodTypeAny, string | number | symbol>
   ZodCatch: z.ZodCatch<z.ZodTypeAny>
   ZodIntersection: z.ZodIntersection<z.ZodTypeAny, z.ZodTypeAny>
+  ZodLazy: z.ZodLazy<z.ZodTypeAny>
+  ZodNativeEnum: z.ZodNativeEnum<z.EnumLike>
 }
 
 /**

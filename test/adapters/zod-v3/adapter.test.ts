@@ -120,6 +120,71 @@ describe('zod v3 adapter — getDefaultValues', () => {
     const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
     expect(result.data).toEqual({ event: { kind: 'click', x: 0 } })
   })
+
+  // The four kinds below were previously unhandled — generateValue
+  // logged "unsupported schema kind" and returned `null`, so any form
+  // built against a schema using lazy / intersection / nativeEnum / set
+  // initialised with phantom nulls instead of the typed empty value.
+  // Each case mirrors v4's `deriveDefault` semantics.
+
+  it('z.lazy(...) descends into the lazy target for the default', () => {
+    // Non-recursive lazy — the wrapper is transparent, so the default
+    // should match the inner schema's empty object. (Recursive z.lazy
+    // patterns work too, but their generic typing on the inner shape
+    // doesn't survive `z.ZodType<T>` without conditional unwrapping
+    // that's noise for the unit-level coverage here.)
+    const inner = z.object({ text: z.string(), count: z.number() })
+    const schema = z.object({ root: z.lazy(() => inner) })
+    const adapter = zodAdapter(schema)('f')
+    expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({
+      root: { text: '', count: 0 },
+    })
+  })
+
+  it('z.intersection(A, B) merges defaults from both sides', () => {
+    const schema = z.object({
+      combo: z.intersection(z.object({ a: z.string() }), z.object({ b: z.number() })),
+    })
+    const adapter = zodAdapter(schema)('f')
+    expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({
+      combo: { a: '', b: 0 },
+    })
+  })
+
+  it('z.nativeEnum(StringEnum) defaults to the first declared value', () => {
+    enum Color {
+      Red = 'red',
+      Blue = 'blue',
+    }
+    const schema = z.object({ c: z.nativeEnum(Color) })
+    const adapter = zodAdapter(schema)('f')
+    expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({
+      c: 'red',
+    })
+  })
+
+  it('z.nativeEnum(NumericEnum) skips reverse-mapped string entries', () => {
+    enum Status {
+      Active,
+      Inactive,
+    }
+    const schema = z.object({ s: z.nativeEnum(Status) })
+    const adapter = zodAdapter(schema)('f')
+    expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({
+      // The first ACTUAL value is 0 (`Status.Active`); the reverse-mapped
+      // string keys ('0' → 'Active') aren't valid runtime enum members.
+      s: 0,
+    })
+  })
+
+  it('z.set(...) defaults to an empty Set', () => {
+    const schema = z.object({ tags: z.set(z.string()) })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
+    expect(result.success).toBe(true)
+    expect((result.data as { tags: unknown }).tags).toBeInstanceOf(Set)
+    expect((result.data as { tags: Set<string> }).tags.size).toBe(0)
+  })
 })
 
 describe('zod v3 adapter — validateAtPath', () => {

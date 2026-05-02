@@ -1458,6 +1458,51 @@ function getDefaultValuesFromZodSchema<
       if (inner) return generateValue(inner)
     }
 
+    // ZodLazy — recursive schemas (comment trees, file system shapes).
+    // Resolve the getter once; the inner schema's own ZodOptional /
+    // base-case branch terminates the recursion.
+    if (isZodSchemaType(schema, 'ZodLazy')) {
+      const inner = (schema._def as { getter?: () => z.ZodTypeAny }).getter?.()
+      if (inner) return generateValue(inner)
+    }
+
+    // ZodIntersection — `z.intersection(A, B)` must satisfy both sides
+    // at parse time, so the merged shape carries both halves' defaults.
+    // `merge` mutates its first arg, so seed an empty record. Leaves on
+    // either side replace; nested records merge recursively.
+    if (isZodSchemaType(schema, 'ZodIntersection')) {
+      const def = schema._def as { left?: z.ZodTypeAny; right?: z.ZodTypeAny }
+      const left = def.left ? generateValue(def.left) : undefined
+      const right = def.right ? generateValue(def.right) : undefined
+      return merge({}, left, right)
+    }
+
+    // ZodNativeEnum — TS-enum-backed selects. Numeric enums get
+    // reverse-mapped (`enum E { A }` → `{ A: 0, '0': 'A' }`); the valid
+    // runtime members are the keys whose VALUE'S key isn't itself a
+    // number. String enums have no reverse mapping, so every key is
+    // valid. Pick the first valid value as the default.
+    if (isZodSchemaType(schema, 'ZodNativeEnum')) {
+      const values = (schema._def as { values?: Record<string, unknown> }).values
+      if (values) {
+        const lookup = values as Record<string, unknown>
+        const validKeys = Object.keys(lookup).filter(
+          (k) => typeof lookup[lookup[k] as string] !== 'number'
+        )
+        if (validKeys.length > 0) {
+          const first = validKeys[0]
+          if (first !== undefined) return lookup[first]
+        }
+      }
+    }
+
+    // ZodSet — empty Set; populated entries would have to reach into
+    // the element schema's defaults, but a Set's only meaningful
+    // empty state is `new Set()`.
+    if (isZodSchemaType(schema, 'ZodSet')) {
+      return new Set()
+    }
+
     console.warn(
       `[@chemical-x/forms] zod-v3 adapter: unsupported schema kind ` +
         `'${schema.constructor.name}' on form '${formKey}'. Defaulting the field to null. ` +

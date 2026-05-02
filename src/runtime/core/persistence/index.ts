@@ -233,6 +233,15 @@ export function createDebouncedWriter(
 
   function schedule(): void {
     if (timer !== null) clearTimeout(timer)
+    // `debounceMs: 0` is the off switch — fire the write synchronously
+    // rather than punting through `setTimeout(fn, 0)` (which queues a
+    // macrotask and the browser clamps to ~4 ms anyway).
+    if (debounceMs === 0) {
+      pending = write().finally(() => {
+        pending = null
+      })
+      return
+    }
     timer = setTimeout(() => {
       timer = null
       pending = write().finally(() => {

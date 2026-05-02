@@ -552,6 +552,14 @@ export type FieldValidationConfig = {
   /**
    * Debounce window in milliseconds for `on: 'change'`. Ignored when
    * `on` is `'blur'` or `'none'`. Default `125`.
+   *
+   * Pass `0` to disable debouncing entirely — validation runs
+   * synchronously inside the keystroke handler. Useful for tight UX
+   * feedback loops where every keystroke should re-render errors,
+   * and for tests that want deterministic single-tick semantics.
+   * Note that schema work is still off the synchronous path
+   * (`Promise.resolve().then(validateAtPath)`); only the debounce
+   * timer is skipped.
    */
   debounceMs?: number
 }
@@ -678,7 +686,16 @@ export type PersistConfigOptions = {
    */
   key?: string
 
-  /** How long to wait after the last mutation before writing. Default `300` ms. */
+  /**
+   * How long to wait after the last mutation before writing. Default
+   * `300` ms.
+   *
+   * Pass `0` to disable debouncing — every form change writes to the
+   * storage adapter immediately, no `setTimeout` indirection. Almost
+   * never the right choice for production (the storage adapter sees
+   * every keystroke), but useful for tests or for diagnosing perceived
+   * lag.
+   */
   debounceMs?: number
 
   /**

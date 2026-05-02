@@ -1231,7 +1231,11 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
         })
     }
 
-    if (immediate) {
+    // `debounceMs: 0` is the off switch — `setTimeout(fn, 0)` would
+    // punt to the next macrotask (browsers also clamp to ~4 ms), and
+    // the indirection serves no purpose when the consumer asked for
+    // "no debounce." Run synchronously like the `immediate` branch.
+    if (immediate || fieldValidationDebounceMs === 0) {
       run()
     } else {
       fresh.timer = setTimeout(run, fieldValidationDebounceMs)

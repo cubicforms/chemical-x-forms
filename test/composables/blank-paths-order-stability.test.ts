@@ -36,7 +36,7 @@ function mountForm<Schema extends z.ZodObject>(schema: Schema): { app: App; api:
       handle.api = useForm({
         schema,
         key: `blank-order-${Math.random().toString(36).slice(2)}`,
-        updateOn: 'change',
+        validateOn: 'change',
         debounceMs: 0,
       }) as unknown as ApiFor<Schema>
       return () => h('div')

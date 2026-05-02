@@ -4,7 +4,7 @@ import type {
   HistoryConfig,
   OnInvalidSubmitPolicy,
   PersistConfig,
-  UpdateOnConfig,
+  ValidateOnConfig,
   ValidationMode,
 } from '../../types/types-api'
 
@@ -16,7 +16,7 @@ import type {
 export type UseFormConfigurationWithZod<
   Schema extends z.ZodType<unknown>,
   DefaultValues,
-> = UpdateOnConfig & {
+> = ValidateOnConfig & {
   /** A Zod v3 `ZodObject` schema (or one wrapped in `.optional()` / `.nullable()` / `.default()` / `.refine()`). */
   schema: Schema extends z.ZodType<unknown>
     ? UnwrapZodObject<Schema> extends z.ZodObject<z.ZodRawShape>

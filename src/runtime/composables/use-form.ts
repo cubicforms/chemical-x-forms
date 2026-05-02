@@ -47,7 +47,7 @@ export function useForm<Form extends GenericForm, GetValueFormType extends Gener
  *     password: z.string().min(8),
  *   }),
  *   defaultValues: { email: '' },
- *   updateOn: 'blur',
+ *   validateOn: 'blur',
  * })
  * ```
  *
@@ -94,7 +94,7 @@ export function useForm<
     : schema
 
   // Spread the full configuration so opt-in options (`onInvalidSubmit`,
-  // `updateOn`, `debounceMs`, `persist`, `history`) reach useAbstractForm.
+  // `validateOn`, `debounceMs`, `persist`, `history`) reach useAbstractForm.
   // The explicit overrides below narrow schema / defaultValues to the
   // shapes useAbstractForm expects. `key` and `validationMode` are
   // intentionally NOT re-listed — the spread carries them through, and

@@ -4,7 +4,7 @@ import type {
   CoercionRegistry,
   FormKey,
   DefaultValuesResponse,
-  UpdateOn,
+  ValidateOn,
   ValidationError,
   ValidationMode,
   WriteMeta,
@@ -474,15 +474,15 @@ export type CreateFormStoreOptions<F extends GenericForm, G extends GenericForm 
   readonly validationMode?: ValidationMode | undefined
   readonly hydration?: FormStoreHydration | undefined
   /**
-   * When per-field validation runs. Default `'change'`. See `UpdateOn`.
-   * The discriminated union `UpdateOnConfig` lives at the public
+   * When per-field validation runs. Default `'change'`. See `ValidateOn`.
+   * The discriminated union `ValidateOnConfig` lives at the public
    * `useForm` boundary; the internal store accepts the resolved
    * fields directly so the type-narrowing dance stays at the public
    * surface.
    */
-  readonly updateOn?: UpdateOn | undefined
+  readonly validateOn?: ValidateOn | undefined
   /**
-   * Per-field debounce when `updateOn === 'change'`. Default `0`
+   * Per-field debounce when `validateOn === 'change'`. Default `0`
    * (disabled). Ignored under `'blur'` and `'submit'`.
    */
   readonly debounceMs?: number | undefined
@@ -538,7 +538,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   const { formKey, schema, defaultValues, validationMode = 'strict', hydration } = options
   const isSSR = options.isSSR === true
   const rememberVariants: boolean = options.rememberVariants !== false
-  const fieldValidationMode: UpdateOn = options.updateOn ?? 'change'
+  const fieldValidationMode: ValidateOn = options.validateOn ?? 'change'
   const fieldValidationDebounceMs: number =
     options.debounceMs ?? DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS
 

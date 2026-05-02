@@ -46,7 +46,7 @@ function mountForm<Schema extends z.ZodObject>(
         schema,
         key: `meta-order-${Math.random().toString(36).slice(2)}`,
         defaultValues,
-        updateOn: 'change',
+        validateOn: 'change',
         debounceMs: 0,
       }) as unknown as ApiFor<Schema>
       return () => h('div')

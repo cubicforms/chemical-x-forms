@@ -111,9 +111,9 @@ export function useAbstractForm<
   const registry = useRegistry()
 
   // Merge app-level defaults from the registry over per-form options.
-  // Per-form values always win for scalars; `updateOn` and `debounceMs`
+  // Per-form values always win for scalars; `validateOn` and `debounceMs`
   // resolve independently so consumers can set `debounceMs` globally
-  // and override `updateOn` per-form. Every downstream read uses
+  // and override `validateOn` per-form. Every downstream read uses
   // `merged` so the merge happens exactly once.
   const merged = mergeWithDefaults(registry.defaults, configuration)
 
@@ -263,10 +263,10 @@ export function useAbstractForm<
 
 /**
  * Merge app-level defaults from the registry over a per-form
- * configuration. Per-form values always win for scalars; `updateOn`
+ * configuration. Per-form values always win for scalars; `validateOn`
  * and `debounceMs` resolve independently so a default like
  * `{ debounceMs: 100 }` carries through even when the per-form call
- * passes `{ updateOn: 'blur' }`. See `ChemicalXFormsDefaults` for the
+ * passes `{ validateOn: 'blur' }`. See `ChemicalXFormsDefaults` for the
  * full merge contract.
  */
 function mergeWithDefaults<
@@ -286,7 +286,7 @@ function mergeWithDefaults<
   const history = configuration.history ?? defaults.history
   const rememberVariants = configuration.rememberVariants ?? defaults.rememberVariants
   const coerce = configuration.coerce ?? defaults.coerce
-  const updateOn = configuration.updateOn ?? defaults.updateOn
+  const validateOn = configuration.validateOn ?? defaults.validateOn
   // `debounceMs` is type-narrowed in the public discriminated union to
   // disallow non-`'change'` mode + debounce; here at the resolution
   // boundary we only see the unwrapped fields, so the access is
@@ -300,7 +300,7 @@ function mergeWithDefaults<
     ...(history === undefined ? {} : { history }),
     ...(rememberVariants === undefined ? {} : { rememberVariants }),
     ...(coerce === undefined ? {} : { coerce }),
-    ...(updateOn === undefined ? {} : { updateOn }),
+    ...(validateOn === undefined ? {} : { validateOn }),
     ...(debounceMs === undefined ? {} : { debounceMs }),
   } as UseFormConfiguration<Form, GetValueFormType, Schema, Defaults>
 }
@@ -352,7 +352,7 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
     defaultValues: walked.cleanedValues as DeepPartial<WriteShape<F>> | undefined,
     validationMode: configuration.validationMode,
     hydration: pending,
-    ...(configuration.updateOn !== undefined ? { updateOn: configuration.updateOn } : {}),
+    ...(configuration.validateOn !== undefined ? { validateOn: configuration.validateOn } : {}),
     ...((configuration as { debounceMs?: number }).debounceMs !== undefined
       ? { debounceMs: (configuration as { debounceMs?: number }).debounceMs }
       : {}),

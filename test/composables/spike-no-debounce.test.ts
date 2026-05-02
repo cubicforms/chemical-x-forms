@@ -62,7 +62,7 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
           // Pin debounceMs explicitly — the library default is 0 now,
           // so we have to opt into the slow path to test the timer
           // semantics.
-          updateOn: 'change',
+          validateOn: 'change',
           debounceMs: 125,
         })
         const rv = handle.api.register('email')
@@ -101,7 +101,7 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
           schema,
           defaultValues: { email: 'good@example.com' },
           key: `nodebounce-${Math.random().toString(36).slice(2)}`,
-          updateOn: 'change',
+          validateOn: 'change',
           debounceMs: 0,
         })
         const rv = handle.api.register('email')
@@ -137,7 +137,7 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
           schema,
           defaultValues: { email: 'good@example.com' },
           key: `live-${Math.random().toString(36).slice(2)}`,
-          updateOn: 'change',
+          validateOn: 'change',
           debounceMs: 0,
         })
         const rv = handle.api.register('email')
@@ -177,23 +177,23 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
     }
   })
 
-  it('type-level: debounceMs is rejected with updateOn: "blur" or "submit"', () => {
-    // The discriminated `UpdateOnConfig` makes `debounceMs` a TS error
+  it('type-level: debounceMs is rejected with validateOn: "blur" or "submit"', () => {
+    // The discriminated `ValidateOnConfig` makes `debounceMs` a TS error
     // when paired with `'blur'` or `'submit'`. The `@ts-expect-error`
     // directives below fail the build if the constraint regresses. The
     // assertion params don't run — the build is the gate.
     type Opts = Parameters<typeof useForm<typeof schema>>[0]
-    const ok1: Opts = { schema, updateOn: 'change', debounceMs: 50 }
-    const ok2: Opts = { schema, updateOn: 'blur' }
-    const ok3: Opts = { schema, updateOn: 'submit' }
+    const ok1: Opts = { schema, validateOn: 'change', debounceMs: 50 }
+    const ok2: Opts = { schema, validateOn: 'blur' }
+    const ok3: Opts = { schema, validateOn: 'submit' }
     void ok1
     void ok2
     void ok3
 
-    // @ts-expect-error — debounceMs is not allowed under updateOn: 'blur'
-    const bad1: Opts = { schema, updateOn: 'blur', debounceMs: 0 }
-    // @ts-expect-error — debounceMs is not allowed under updateOn: 'submit'
-    const bad2: Opts = { schema, updateOn: 'submit', debounceMs: 0 }
+    // @ts-expect-error — debounceMs is not allowed under validateOn: 'blur'
+    const bad1: Opts = { schema, validateOn: 'blur', debounceMs: 0 }
+    // @ts-expect-error — debounceMs is not allowed under validateOn: 'submit'
+    const bad2: Opts = { schema, validateOn: 'submit', debounceMs: 0 }
     void bad1
     void bad2
     expect(true).toBe(true)

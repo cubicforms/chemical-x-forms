@@ -531,50 +531,65 @@ export type ReactiveValidationStatus<Form> = PendingValidationStatus | SettledVa
 export type OnInvalidSubmitPolicy = 'none' | 'focus-first-error' | 'scroll-to-first-error' | 'both'
 
 /**
- * When per-field validation runs between submit attempts.
+ * When per-field VALIDATION runs. (Form storage updates on every
+ * keystroke regardless of mode — only validation timing varies.)
  *
  * - `'change'` (default): every keystroke / write schedules a
- *   debounced validation for the affected path. Errors track the
- *   live value continuously so the UI can show inline feedback
- *   without waiting for submit.
+ *   validation for the affected path. With `debounceMs: 0` (also the
+ *   default) the run is synchronous in the keystroke handler;
+ *   positive `debounceMs` coalesces rapid bursts.
  * - `'blur'`: validate immediately when the user tabs away from a
- *   registered field. No debounce.
+ *   registered field. No debounce — `debounceMs` is rejected by the
+ *   type.
  * - `'submit'`: no live validation. `handleSubmit` and explicit
  *   `validate()` / `validateAsync()` calls are the only validation
- *   surfaces.
+ *   surfaces. `debounceMs` is rejected by the type.
  */
-export type UpdateOn = 'change' | 'blur' | 'submit'
+export type ValidateOn = 'change' | 'blur' | 'submit'
 
 /**
- * Validation timing config — `updateOn` is the trigger, `debounceMs`
- * the per-keystroke delay. `debounceMs` is ONLY meaningful with
- * `updateOn: 'change'` (the default); `'blur'` and `'submit'` ignore
- * it. The discriminated union below makes the constraint a TS error
- * instead of a silent runtime drop, so consumers can't accidentally
- * configure a debounce that does nothing.
+ * Validation timing config — `validateOn` is the trigger, `debounceMs`
+ * the wait (after the LAST input) before the next validation run
+ * fires. `debounceMs` ONLY governs validation; form storage tracks
+ * every keystroke synchronously regardless of mode or debounce, so
+ * `form.values` is always live.
  *
- * Pass `debounceMs: 0` (the default) to disable debouncing entirely —
- * validation runs synchronously inside the keystroke handler, no
- * `setTimeout` indirection. Schema work itself stays off the sync
- * path (`Promise.resolve().then(validateAtPath)`); only the debounce
- * timer is skipped. Set `debounceMs` to a positive number to
- * coalesce rapid bursts (useful for slow async adapters or for
- * smoothing inline feedback under heavy typing).
+ * `debounceMs` is only meaningful with `validateOn: 'change'` (the
+ * default); `'blur'` and `'submit'` ignore the wait entirely (blur
+ * fires validation immediately on focus-out; submit is its own
+ * trigger). The discriminated union below makes pairing `debounceMs`
+ * with `'blur'` / `'submit'` a TS error instead of a silent runtime
+ * drop.
+ *
+ * Pass `debounceMs: 0` (the default) to disable validation
+ * debouncing — every keystroke triggers a validation pass with no
+ * `setTimeout` indirection. Schema work itself still rides
+ * `Promise.resolve().then(validateAtPath)` — async but microtask, so
+ * errors land on the next tick. Set `debounceMs` to a positive
+ * number to coalesce rapid bursts (useful for slow async adapters or
+ * for smoothing inline feedback under heavy typing).
  */
-export type UpdateOnConfig =
+export type ValidateOnConfig =
   | {
-      /** Update trigger. Default `'change'`. */
-      updateOn?: 'change'
+      /** Validation trigger. Default `'change'`. */
+      validateOn?: 'change'
       /**
-       * Debounce window in milliseconds. Default `0` (no debounce).
-       * Set to a positive number to coalesce rapid bursts.
+       * Milliseconds to wait after the LAST input event before
+       * running validation. Default `0` (validation runs synchronously
+       * in the keystroke handler; no `setTimeout`). Set to a positive
+       * number to coalesce rapid keystrokes into a single validation
+       * pass.
+       *
+       * Note: this is purely the validation debounce. Form storage
+       * (`form.values`) is updated on every keystroke regardless of
+       * this value.
        */
       debounceMs?: number
     }
   | {
-      /** Update trigger. */
-      updateOn: 'blur' | 'submit'
-      /** `debounceMs` is not allowed with `'blur'` or `'submit'` modes. */
+      /** Validation trigger. */
+      validateOn: 'blur' | 'submit'
+      /** `debounceMs` is not allowed with `'blur'` or `'submit'`. */
       debounceMs?: never
     }
 
@@ -761,7 +776,7 @@ export type PersistConfig = FormStorageKind | FormStorage | PersistConfigOptions
  * const form = useForm({
  *   schema: signupSchema,
  *   defaultValues: { email: '' },
- *   updateOn: 'change',
+ *   validateOn: 'change',
  *   debounceMs: 200,
  *   persist: 'local',
  * })
@@ -845,19 +860,25 @@ export type UseFormConfiguration<
   onInvalidSubmit?: OnInvalidSubmitPolicy
 
   /**
-   * When per-field validation runs. Default `'change'`. See `UpdateOn`
-   * for mode semantics.
+   * When per-field VALIDATION runs (storage tracks every keystroke
+   * regardless). Default `'change'`. See `ValidateOn` for mode
+   * semantics.
    *
    * The strict public `useForm` signature wraps this type in an
-   * intersection with `UpdateOnConfig`, which enforces that
+   * intersection with `ValidateOnConfig`, which enforces that
    * `debounceMs` is only allowed under `'change'`. Internal callers
    * (adapters, hydration paths) work with the loose form below.
    */
-  updateOn?: UpdateOn
+  validateOn?: ValidateOn
   /**
-   * Per-field debounce window when `updateOn === 'change'`. Default
-   * `0` (debouncing disabled). Set to a positive number to coalesce
-   * rapid bursts. Ignored under `'blur'` and `'submit'`.
+   * Milliseconds to wait after the LAST input event before running
+   * validation. Default `0` (validation fires synchronously in the
+   * keystroke handler; no `setTimeout`). Set to a positive number to
+   * coalesce rapid keystrokes. Ignored under `validateOn: 'blur'`
+   * and `'submit'`.
+   *
+   * This is purely a VALIDATION debounce — `form.values` updates on
+   * every keystroke regardless of this setting.
    */
   debounceMs?: number
 
@@ -951,7 +972,7 @@ export type UseFormConfiguration<
  *
  *   useForm({ ... })  >  createChemicalXForms({ defaults })  >  library default
  *
- * `updateOn` and `debounceMs` resolve per-field — set the debounce
+ * `validateOn` and `debounceMs` resolve per-field — set the debounce
  * globally while still overriding the trigger per form:
  *
  * ```ts
@@ -959,12 +980,12 @@ export type UseFormConfiguration<
  *   defaults: { debounceMs: 100 },
  * })
  * // later
- * useForm({ schema, updateOn: 'blur' })
- * // → { updateOn: 'blur', debounceMs: <ignored under blur> }
+ * useForm({ schema, validateOn: 'blur' })
+ * // → { validateOn: 'blur', debounceMs: <ignored under blur> }
  * ```
  *
  * Note: per the discriminated union, `debounceMs` only takes effect
- * when `updateOn` is `'change'` (or omitted). Setting it as an
+ * when `validateOn` is `'change'` (or omitted). Setting it as an
  * app-level default is fine — forms that switch to `'blur'` /
  * `'submit'` simply ignore the inherited `debounceMs`.
  *
@@ -976,11 +997,12 @@ export type ChemicalXFormsDefaults = {
   validationMode?: ValidationMode
   /** Default for `useForm({ onInvalidSubmit })`. */
   onInvalidSubmit?: OnInvalidSubmitPolicy
-  /** Default for `useForm({ updateOn })`. See `UpdateOn`. */
-  updateOn?: UpdateOn
+  /** Default for `useForm({ validateOn })` — when validation runs. */
+  validateOn?: ValidateOn
   /**
-   * Default for `useForm({ debounceMs })`. Only meaningful when
-   * `updateOn` resolves to `'change'`. Default `0`.
+   * Default for `useForm({ debounceMs })` — ms to wait after the last
+   * input event before re-running validation. Only meaningful when
+   * `validateOn` resolves to `'change'`. Default `0` (synchronous).
    */
   debounceMs?: number
   /** Default for `useForm({ history })`. */

@@ -12,10 +12,16 @@
  */
 
 /**
- * Field-validation debounce (`useForm({ debounceMs })`). Default `0`
- * (debounce disabled): typing produces synchronous error feedback,
- * which matches the obvious mental model and avoids a "why is my
- * error 125 ms behind my keystroke?" footgun for new consumers.
+ * Validation debounce (`useForm({ debounceMs })`) — ms to wait after
+ * the LAST input event before running validation. Default `0`
+ * (debounce disabled): every keystroke fires a validation pass
+ * synchronously, no `setTimeout`. Matches the obvious mental model
+ * and avoids the "why is my error 125 ms behind my keystroke?"
+ * footgun for new consumers.
+ *
+ * NOTE: this is purely the validation debounce. Form storage
+ * (`form.values`) is always live — every keystroke commits
+ * regardless of this value.
  *
  * Devs who need coalescing — slow async adapters, validation that
  * runs heavy work — opt in explicitly with `debounceMs: 200` (or any

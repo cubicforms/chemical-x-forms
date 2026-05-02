@@ -41,7 +41,7 @@ function mountForm<Schema extends z.ZodObject>(
         // Immediate field-validation so each setValue's `change`-mode
         // schedule fires synchronously after the next microtask.
         // Behaviour under test doesn't depend on the debounce window.
-        updateOn: 'change',
+        validateOn: 'change',
         debounceMs: 0,
       }) as unknown as LooseApi<Schema>
       return () => h('div')

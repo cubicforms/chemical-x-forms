@@ -82,7 +82,7 @@ function mount(
         // keying after reshape, blank-mark round-trip, recursion)
         // doesn't depend on the debounce — it depends on what
         // schema-validation does to the stores once it runs.
-        updateOn: 'change',
+        validateOn: 'change',
         debounceMs: 0,
       }) as unknown as ProfileApi
       return () => h('div')

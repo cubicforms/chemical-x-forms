@@ -108,7 +108,7 @@ function mount(persistKey: string): {
         persist: { storage: 'local', key: persistKey, debounceMs: 10 },
         // Sync field validation — irrelevant to this contract but keeps
         // tests deterministic against the new sync pre-pass.
-        updateOn: 'change',
+        validateOn: 'change',
         debounceMs: 0,
       }) as unknown as Api
       handle.api = api

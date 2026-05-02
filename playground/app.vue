@@ -18,7 +18,7 @@
   const signupForm = useForm({
     schema: signupSchema,
     key: 'signup',
-    updateOn: 'change',
+    validateOn: 'change',
   })
   const emailReg = signupForm.register('email')
   const passwordReg = signupForm.register('password')
@@ -61,14 +61,14 @@
     schema: debounceSchema,
     key: 'demo-slow',
     defaultValues: { email: 'good@example.com' },
-    updateOn: 'change',
+    validateOn: 'change',
     debounceMs: 250,
   })
   const offForm = useForm({
     schema: debounceSchema,
     key: 'demo-off',
     defaultValues: { email: 'good@example.com' },
-    updateOn: 'change',
+    validateOn: 'change',
     debounceMs: 0,
   })
 </script>

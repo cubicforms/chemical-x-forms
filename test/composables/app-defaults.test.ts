@@ -17,8 +17,8 @@ import { z as zV3 } from 'zod-v3'
  * Invariants locked here:
  *   1. Default applied when per-form omits the option.
  *   2. Per-form value wins for each scalar.
- *   3. `updateOn` and `debounceMs` resolve independently — consumer
- *      can set `debounceMs` globally and override `updateOn` per-form
+ *   3. `validateOn` and `debounceMs` resolve independently — consumer
+ *      can set `debounceMs` globally and override `validateOn` per-form
  *      without losing the global debounce.
  *   4. Anonymous `useForm()` (no key) picks up defaults.
  *   5. Multiple useForm calls in the same app share the defaults.
@@ -42,7 +42,7 @@ function mountWithDefaults(
     : never,
   formOptions: {
     validationMode?: 'strict' | 'lax'
-    updateOn?: 'change' | 'blur' | 'submit'
+    validateOn?: 'change' | 'blur' | 'submit'
     debounceMs?: number
     defaultValues?: Partial<Tight>
     key?: string
@@ -57,7 +57,7 @@ function mountWithDefaults(
         ...(formOptions.validationMode !== undefined
           ? { validationMode: formOptions.validationMode }
           : {}),
-        ...(formOptions.updateOn !== undefined ? { updateOn: formOptions.updateOn } : {}),
+        ...(formOptions.validateOn !== undefined ? { validateOn: formOptions.validateOn } : {}),
         ...(formOptions.debounceMs !== undefined ? { debounceMs: formOptions.debounceMs } : {}),
         ...(formOptions.defaultValues !== undefined
           ? { defaultValues: formOptions.defaultValues }
@@ -127,28 +127,28 @@ describe('app-level defaults — validationMode', () => {
   })
 })
 
-describe('app-level defaults — updateOn / debounceMs resolution', () => {
+describe('app-level defaults — validateOn / debounceMs resolution', () => {
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
     vi.useRealTimers()
   })
 
-  it('per-form updateOn overrides while default debounceMs carries through', async () => {
-    // Default sets debounceMs = 50. Per-form passes only updateOn:
+  it('per-form validateOn overrides while default debounceMs carries through', async () => {
+    // Default sets debounceMs = 50. Per-form passes only validateOn:
     // 'change' — both fields resolve independently, so the merged
-    // config is { updateOn: 'change', debounceMs: 50 }. Pin lax so
+    // config is { validateOn: 'change', debounceMs: 50 }. Pin lax so
     // the construction-time seed doesn't pre-populate the error we're
     // trying to observe via debounced field-validation.
     vi.useFakeTimers()
     const { app, api } = mountWithDefaults(
       { debounceMs: 50 },
-      { updateOn: 'change', validationMode: 'lax' }
+      { validateOn: 'change', validationMode: 'lax' }
     )
     apps.push(app)
 
     api.setValue('email', 'not-an-email')
-    // Just past the default debounce (50ms). If updateOn and
+    // Just past the default debounce (50ms). If validateOn and
     // debounceMs didn't resolve independently, the test would either
     // see no error (debounce never fired) or need to wait the library
     // default (0ms — synchronous).
@@ -160,7 +160,7 @@ describe('app-level defaults — updateOn / debounceMs resolution', () => {
   it('per-form debounceMs overrides default debounceMs', async () => {
     vi.useFakeTimers()
     const { app, api } = mountWithDefaults(
-      { updateOn: 'change', debounceMs: 500 },
+      { validateOn: 'change', debounceMs: 500 },
       { debounceMs: 25, validationMode: 'lax' }
     )
     apps.push(app)
@@ -172,10 +172,10 @@ describe('app-level defaults — updateOn / debounceMs resolution', () => {
     expect(api.errors.email?.[0]?.message).toBe('bad email')
   })
 
-  it("default updateOn / debounceMs apply entirely when per-form doesn't pass any", async () => {
+  it("default validateOn / debounceMs apply entirely when per-form doesn't pass any", async () => {
     vi.useFakeTimers()
     const { app, api } = mountWithDefaults(
-      { updateOn: 'change', debounceMs: 30 },
+      { validateOn: 'change', debounceMs: 30 },
       { validationMode: 'lax' }
     )
     apps.push(app)

@@ -52,7 +52,7 @@ function mountWithSnapshotter(): { app: App; api: ProfileApi; snapshots: string[
         // debounceMs: 0 disables debouncing so validation runs
         // synchronously inside the keystroke handler — minimising the
         // flicker window without going through `setTimeout`.
-        updateOn: 'change',
+        validateOn: 'change',
         debounceMs: 0,
       }) as unknown as ProfileApi
       // Capture every distinct render's view of `form.errors`.

@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
-import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
+import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 
 /**
  * `derivedBlankErrors` (computed off `blankPaths`) feeds
@@ -22,10 +22,7 @@ import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-ap
  * out of the new pass.
  */
 
-type ApiFor<Schema extends z.ZodObject> = Omit<
-  UseAbstractFormReturnType<z.output<Schema>>,
-  'setValue'
-> & {
+type ApiFor<Schema extends z.ZodObject> = Omit<UseFormReturnType<z.output<Schema>>, 'setValue'> & {
   setValue: (path: string, value: unknown) => boolean
 }
 

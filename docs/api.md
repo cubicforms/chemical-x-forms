@@ -925,7 +925,7 @@ import type {
   SlimPrimitiveKind,
   SubmitHandler,
   Unset,
-  UseAbstractFormReturnType,
+  UseFormReturnType,
   UseFormConfiguration,
   ValidateOn,
   ValidateOnConfig,

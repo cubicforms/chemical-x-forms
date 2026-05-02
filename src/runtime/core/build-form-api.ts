@@ -5,7 +5,7 @@ import type {
   OnInvalidSubmitPolicy,
   ReactiveValidationStatus,
   RegisterValue,
-  UseAbstractFormReturnType,
+  UseFormReturnType,
   ValidationError,
   ValidationResponseWithoutValue,
 } from '../types/types-api'
@@ -78,7 +78,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   state: FormStore<Form>,
   formInstanceId: string,
   options: BuildFormApiOptions = {}
-): UseAbstractFormReturnType<Form, GetValueFormType> {
+): UseFormReturnType<Form, GetValueFormType> {
   const register = buildRegister(state, formInstanceId) as (
     path: string | Path
   ) => RegisterValue<unknown>
@@ -478,29 +478,23 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     // so reactivity tracking propagates at the call site. Identity-
     // stable across whole-form swaps (the inner readonly proxy
     // re-keys; the outer callable proxy stays the same instance).
-    values: valuesProxy as unknown as UseAbstractFormReturnType<Form, GetValueFormType>['values'],
-    fields: fieldStateProxy as unknown as UseAbstractFormReturnType<
-      Form,
-      GetValueFormType
-    >['fields'],
-    setValue: setValueImpl as UseAbstractFormReturnType<Form, GetValueFormType>['setValue'],
-    validate: validate as UseAbstractFormReturnType<Form, GetValueFormType>['validate'],
-    validateAsync: validateAsync as UseAbstractFormReturnType<
-      Form,
-      GetValueFormType
-    >['validateAsync'],
-    register: register as UseAbstractFormReturnType<Form, GetValueFormType>['register'],
+    values: valuesProxy as unknown as UseFormReturnType<Form, GetValueFormType>['values'],
+    fields: fieldStateProxy as unknown as UseFormReturnType<Form, GetValueFormType>['fields'],
+    setValue: setValueImpl as UseFormReturnType<Form, GetValueFormType>['setValue'],
+    validate: validate as UseFormReturnType<Form, GetValueFormType>['validate'],
+    validateAsync: validateAsync as UseFormReturnType<Form, GetValueFormType>['validateAsync'],
+    register: register as UseFormReturnType<Form, GetValueFormType>['register'],
     key: state.formKey,
     errors: errorsProxy as unknown as FormErrorsSurface<Form>,
-    toRef: pathToRef as UseAbstractFormReturnType<Form, GetValueFormType>['toRef'],
+    toRef: pathToRef as UseFormReturnType<Form, GetValueFormType>['toRef'],
     setFieldErrors,
     addFieldErrors,
     clearFieldErrors,
     meta: formMeta,
-    reset: reset as UseAbstractFormReturnType<Form, GetValueFormType>['reset'],
-    resetField: resetField as UseAbstractFormReturnType<Form, GetValueFormType>['resetField'],
-    persist: persist as UseAbstractFormReturnType<Form, GetValueFormType>['persist'],
-    clearPersistedDraft: clearPersistedDraft as UseAbstractFormReturnType<
+    reset: reset as UseFormReturnType<Form, GetValueFormType>['reset'],
+    resetField: resetField as UseFormReturnType<Form, GetValueFormType>['resetField'],
+    persist: persist as UseFormReturnType<Form, GetValueFormType>['persist'],
+    clearPersistedDraft: clearPersistedDraft as UseFormReturnType<
       Form,
       GetValueFormType
     >['clearPersistedDraft'],
@@ -508,13 +502,13 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     scrollToFirstError,
     undo,
     redo,
-    append: fieldArrays.append as UseAbstractFormReturnType<Form, GetValueFormType>['append'],
-    prepend: fieldArrays.prepend as UseAbstractFormReturnType<Form, GetValueFormType>['prepend'],
-    insert: fieldArrays.insert as UseAbstractFormReturnType<Form, GetValueFormType>['insert'],
-    remove: fieldArrays.remove as UseAbstractFormReturnType<Form, GetValueFormType>['remove'],
-    swap: fieldArrays.swap as UseAbstractFormReturnType<Form, GetValueFormType>['swap'],
-    move: fieldArrays.move as UseAbstractFormReturnType<Form, GetValueFormType>['move'],
-    replace: fieldArrays.replace as UseAbstractFormReturnType<Form, GetValueFormType>['replace'],
+    append: fieldArrays.append as UseFormReturnType<Form, GetValueFormType>['append'],
+    prepend: fieldArrays.prepend as UseFormReturnType<Form, GetValueFormType>['prepend'],
+    insert: fieldArrays.insert as UseFormReturnType<Form, GetValueFormType>['insert'],
+    remove: fieldArrays.remove as UseFormReturnType<Form, GetValueFormType>['remove'],
+    swap: fieldArrays.swap as UseFormReturnType<Form, GetValueFormType>['swap'],
+    move: fieldArrays.move as UseFormReturnType<Form, GetValueFormType>['move'],
+    replace: fieldArrays.replace as UseFormReturnType<Form, GetValueFormType>['replace'],
     blankPaths: blankPathsView,
   }
 }

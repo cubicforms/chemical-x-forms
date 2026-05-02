@@ -2205,7 +2205,7 @@ export interface FormMeta {
  * form.meta.isSubmitting        // form-level reactive flag
  * ```
  */
-export type UseAbstractFormReturnType<
+export type UseFormReturnType<
   Form extends GenericForm,
   GetValueFormType extends GenericForm = Form,
 > = {

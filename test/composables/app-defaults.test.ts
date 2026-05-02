@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { useForm as useFormV3 } from '../../src/zod-v3'
 import { ANONYMOUS_FORM_KEY_PREFIX } from '../../src/runtime/core/defaults'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
-import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
+import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 import { useForm } from '../../src/zod'
 import { z as zV3 } from 'zod-v3'
 
@@ -251,7 +251,7 @@ describe('app-level defaults — v3 wrapper regression', () => {
       password: zV3.string().min(8),
     })
     type V3Form = { email: string; password: string }
-    type V3API = UseAbstractFormReturnType<V3Form, V3Form>
+    type V3API = UseFormReturnType<V3Form, V3Form>
     const handle: { api?: V3API } = {}
     const App = defineComponent({
       setup() {

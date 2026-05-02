@@ -116,7 +116,7 @@ export type {
   SubmitHandler,
   ValidateOn,
   ValidateOnConfig,
-  UseAbstractFormReturnType,
+  UseFormReturnType,
   UseFormConfiguration,
   ValidationError,
   ValidationResponse,

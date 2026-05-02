@@ -7,7 +7,7 @@ import { useForm } from '../../src/zod'
 import { useForm as useFormV3 } from '../../src/zod-v3'
 import { CxErrorCode } from '../../src/runtime/core/error-codes'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
-import type { UseAbstractFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
+import type { UseFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
 
 /**
  * Discriminated-union variant switch — when the discriminator value
@@ -41,7 +41,7 @@ const profileSchema = z.object({
 // inferred type. The runtime shape under test is what matters here.
 // Cast `setValue` to a permissive signature so individual call sites
 // don't each need a `never` cast.
-type ProfileApi = Omit<UseAbstractFormReturnType<z.output<typeof profileSchema>>, 'setValue'> & {
+type ProfileApi = Omit<UseFormReturnType<z.output<typeof profileSchema>>, 'setValue'> & {
   setValue: (path: string, value: unknown) => boolean
   values: {
     name: string
@@ -231,10 +231,7 @@ describe('discriminated-union variant switch — numeric variant blank auto-mark
   })
   // Loose API type for the same reason as ProfileApi above —
   // cross-variant writes during the switch.
-  type NumericApi = Omit<
-    UseAbstractFormReturnType<z.output<typeof numericVariantSchema>>,
-    'setValue'
-  > & {
+  type NumericApi = Omit<UseFormReturnType<z.output<typeof numericVariantSchema>>, 'setValue'> & {
     setValue: (path: string, value: unknown) => boolean
     values: { payout: { kind: string } & Record<string, unknown> }
   }
@@ -335,10 +332,7 @@ describe('discriminated-union variant switch — wrapped DU', () => {
         ])
         .default({ channel: 'email', address: '' }),
     })
-    type WrappedApi = Omit<
-      UseAbstractFormReturnType<z.output<typeof wrappedSchema>>,
-      'setValue'
-    > & {
+    type WrappedApi = Omit<UseFormReturnType<z.output<typeof wrappedSchema>>, 'setValue'> & {
       setValue: (path: string, value: unknown) => boolean
       values: { notify: { channel: string } & Record<string, unknown> }
     }
@@ -377,7 +371,7 @@ describe('discriminated-union variant switch — DU inside an array', () => {
       ])
     ),
   })
-  type ArrayApi = Omit<UseAbstractFormReturnType<z.output<typeof arraySchema>>, 'setValue'> & {
+  type ArrayApi = Omit<UseFormReturnType<z.output<typeof arraySchema>>, 'setValue'> & {
     setValue: (path: string, value: unknown) => boolean
     values: { events: Array<{ type: string } & Record<string, unknown>> }
   }
@@ -425,7 +419,7 @@ describe('discriminated-union variant switch — zod v3 adapter', () => {
       zV3.object({ channel: zV3.literal('sms'), number: zV3.string() }),
     ]),
   })
-  type V3Api = Omit<UseAbstractFormReturnType<zV3.infer<typeof v3Schema>>, 'setValue'> & {
+  type V3Api = Omit<UseFormReturnType<zV3.infer<typeof v3Schema>>, 'setValue'> & {
     setValue: (path: string, value: unknown) => boolean
     values: { notify: { channel: string } & Record<string, unknown> }
   }
@@ -563,7 +557,7 @@ describe('variant memory — round-trip preserves typed data', () => {
         z.object({ kind: z.literal('c'), cv: z.string() }),
       ]),
     })
-    type TriApi = Omit<UseAbstractFormReturnType<z.output<typeof triSchema>>, 'setValue'> & {
+    type TriApi = Omit<UseFormReturnType<z.output<typeof triSchema>>, 'setValue'> & {
       setValue: (path: string, value: unknown) => boolean
       values: { pick: { kind: string } & Record<string, unknown> }
     }
@@ -838,7 +832,7 @@ const flowSchema = z.object({
     z.object({ step: z.literal('review'), notes: z.string() }),
   ]),
 })
-type FlowApi = Omit<UseAbstractFormReturnType<z.output<typeof flowSchema>>, 'setValue'> & {
+type FlowApi = Omit<UseFormReturnType<z.output<typeof flowSchema>>, 'setValue'> & {
   setValue: (path: string, value: unknown) => boolean
   values: { flow: { step: string } & Record<string, unknown> }
 }
@@ -1062,7 +1056,7 @@ describe('variant memory — DU nested inside an array element', () => {
       ])
     ),
   })
-  type ArrayApi = Omit<UseAbstractFormReturnType<z.output<typeof arraySchema>>, 'setValue'> & {
+  type ArrayApi = Omit<UseFormReturnType<z.output<typeof arraySchema>>, 'setValue'> & {
     setValue: (path: string, value: unknown) => boolean
     values: { events: Array<{ type: string } & Record<string, unknown>> }
   }
@@ -1184,7 +1178,7 @@ describe('variant memory — nested DUs (depth 3)', () => {
       z.object({ phase: z.literal('submit'), confirmed: z.string() }),
     ]),
   })
-  type WizardApi = Omit<UseAbstractFormReturnType<z.output<typeof wizardSchema>>, 'setValue'> & {
+  type WizardApi = Omit<UseFormReturnType<z.output<typeof wizardSchema>>, 'setValue'> & {
     setValue: (path: string, value: unknown) => boolean
     values: { wizard: { phase: string } & Record<string, unknown> }
   }

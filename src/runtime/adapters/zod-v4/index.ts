@@ -9,7 +9,7 @@ import type {
   AbstractSchema,
   FormKey,
   ValidateOnConfig,
-  UseAbstractFormReturnType,
+  UseFormReturnType,
   UseFormConfiguration,
 } from '../../types/types-api'
 import type { DeepPartial, DefaultValuesShape, GenericForm } from '../../types/types-core'
@@ -38,7 +38,7 @@ export type { ZodKind } from './introspect'
  *
  * Returns a form API exposing `register`, `values`, `errors`,
  * `fields`, `setValue`, `handleSubmit`, `meta`, field-array
- * helpers, and more. See `UseAbstractFormReturnType` for the full
+ * helpers, and more. See `UseFormReturnType` for the full
  * surface.
  *
  * For Zod v3, import from `@chemical-x/forms/zod-v3` instead.
@@ -58,7 +58,7 @@ export function useForm<Schema extends z.ZodObject>(
     >,
     'schema' | 'validateOn' | 'debounceMs'
   > & { schema: Schema } & ValidateOnConfig
-): UseAbstractFormReturnType<
+): UseFormReturnType<
   z.output<Schema> extends GenericForm ? z.output<Schema> : never,
   z.output<Schema> extends GenericForm ? z.output<Schema> : never
 > {

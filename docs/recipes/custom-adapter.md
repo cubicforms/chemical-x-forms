@@ -366,7 +366,7 @@ type Form = v.InferOutput<typeof schema>
 type Form = { email: string; password: string }
 ```
 
-`useForm`'s return type (`UseAbstractFormReturnType<Form>`)
+`useForm`'s return type (`UseFormReturnType<Form>`)
 carries no schema-library-specific types — the public surface is
 identical regardless of adapter.
 

@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, nextTick, watchEffect, type App } from '
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
-import type { UseAbstractFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
+import type { UseFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
 
 /**
  * Visual flicker on DU variant switch: spike-cx.vue shows the
@@ -36,7 +36,7 @@ const profileSchema = z.object({
   ]),
 })
 
-type ProfileApi = Omit<UseAbstractFormReturnType<z.output<typeof profileSchema>>, 'setValue'> & {
+type ProfileApi = Omit<UseFormReturnType<z.output<typeof profileSchema>>, 'setValue'> & {
   setValue: (path: string, value: unknown) => boolean
 }
 

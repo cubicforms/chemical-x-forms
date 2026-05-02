@@ -1,10 +1,6 @@
 import type { z } from 'zod-v3'
 import { zodAdapter } from '../adapters/zod-v3'
-import type {
-  AbstractSchema,
-  UseAbstractFormReturnType,
-  UseFormConfiguration,
-} from '../types/types-api'
+import type { AbstractSchema, UseFormReturnType, UseFormConfiguration } from '../types/types-api'
 import type { DeepPartial, DefaultValuesShape, GenericForm } from '../types/types-core'
 import type { TypeWithNullableDynamicKeys } from '../adapters/zod-v3/types-zod'
 import type {
@@ -33,7 +29,7 @@ export function useForm<Form extends GenericForm, GetValueFormType extends Gener
     AbstractSchema<Form, GetValueFormType>,
     DeepPartial<DefaultValuesShape<Form>>
   >
-): UseAbstractFormReturnType<Form, GetValueFormType>
+): UseFormReturnType<Form, GetValueFormType>
 /**
  * Create a form bound to a Zod v3 `ZodObject` schema.
  *
@@ -53,7 +49,7 @@ export function useForm<Form extends GenericForm, GetValueFormType extends Gener
  *
  * Returns a form API exposing `register`, `values`, `errors`,
  * `fields`, `setValue`, `handleSubmit`, `meta`, field-array
- * helpers, and more. See `UseAbstractFormReturnType` for the full
+ * helpers, and more. See `UseFormReturnType` for the full
  * surface.
  *
  * For Zod v4, import from `@chemical-x/forms/zod` instead.
@@ -66,7 +62,7 @@ export function useForm<
     Schema,
     DeepPartial<DefaultValuesShape<z.infer<UnwrapZodObject<Schema>>>>
   >
-): UseAbstractFormReturnType<z.infer<UnwrapZodObject<Schema>>, GetValueFormType>
+): UseFormReturnType<z.infer<UnwrapZodObject<Schema>>, GetValueFormType>
 export function useForm<
   Schema extends z.ZodSchema<unknown>,
   Form extends GenericForm = z.infer<UnwrapZodObject<Schema>>,
@@ -83,7 +79,7 @@ export function useForm<
         Schema,
         DeepPartial<DefaultValuesShape<z.infer<UnwrapZodObject<Schema>>>>
       >
-): UseAbstractFormReturnType<Form, GetValueFormType> {
+): UseFormReturnType<Form, GetValueFormType> {
   function isZodType(value: unknown): value is z.ZodType {
     return typeof value === 'object' && value !== null && '_def' in value
   }

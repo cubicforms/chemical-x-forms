@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
-import type { UseAbstractFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
+import type { UseFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
 
 /**
  * Edge cases adjacent to the schemaErrors-keying fix in
@@ -20,7 +20,7 @@ import type { UseAbstractFormReturnType, ValidationError } from '../../src/runti
  */
 
 type LooseApi<Schema extends z.ZodObject> = Omit<
-  UseAbstractFormReturnType<z.output<Schema>>,
+  UseFormReturnType<z.output<Schema>>,
   'setValue'
 > & {
   setValue: (path: string, value: unknown) => boolean

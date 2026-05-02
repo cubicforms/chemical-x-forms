@@ -40,7 +40,7 @@ import type {
   ChemicalXFormsDefaults,
   FormKey,
   PersistConfigOptions,
-  UseAbstractFormReturnType,
+  UseFormReturnType,
   UseFormConfiguration,
   ValidationError,
 } from '../types/types-api'
@@ -66,7 +66,7 @@ import type { DeepPartial, DefaultValuesShape, GenericForm, WriteShape } from '.
  * adapter automatically.
  *
  * Returns the same form API as the typed entry points; see
- * `UseAbstractFormReturnType` for the full surface.
+ * `UseFormReturnType` for the full surface.
  */
 
 export function useAbstractForm<
@@ -79,7 +79,7 @@ export function useAbstractForm<
     AbstractSchema<Form, GetValueFormType>,
     DeepPartial<DefaultValuesShape<Form>>
   >
-): UseAbstractFormReturnType<Form, GetValueFormType> {
+): UseFormReturnType<Form, GetValueFormType> {
   const key = resolveFormKey(configuration.key)
 
   // Resolve the schema (accepts either an AbstractSchema or a factory).

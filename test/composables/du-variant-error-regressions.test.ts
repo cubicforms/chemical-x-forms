@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { unset, useForm } from '../../src/zod'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
-import type { UseAbstractFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
+import type { UseFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
 
 /**
  * Regression coverage for failure modes observed in spike-cx.vue
@@ -53,7 +53,7 @@ const profileSchema = z.object({
 // the strict inferred type doesn't permit (variant-only keys aren't
 // in the WriteShape). The runtime accepts the calls; we widen the
 // surface here so each call site doesn't need a per-line cast.
-type ProfileApi = Omit<UseAbstractFormReturnType<z.output<typeof profileSchema>>, 'setValue'> & {
+type ProfileApi = Omit<UseFormReturnType<z.output<typeof profileSchema>>, 'setValue'> & {
   setValue: (path: string, value: unknown) => boolean
 }
 

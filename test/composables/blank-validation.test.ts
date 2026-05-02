@@ -6,7 +6,7 @@ import { useForm } from '../../src/zod'
 import { CxErrorCode } from '../../src/runtime/core/error-codes'
 import { canonicalizePath } from '../../src/runtime/core/paths'
 import { attachRegistryToApp, createRegistry } from '../../src/runtime/core/registry'
-import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
+import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 
 /**
  * `handleSubmit` / `validate` / `validateAsync` synthesise a "Required"
@@ -25,13 +25,13 @@ import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-ap
  */
 
 function setupForm<F extends z.ZodObject<Record<string, z.ZodType>>>(schema: F) {
-  let captured!: UseAbstractFormReturnType<z.output<F> & Record<string, unknown>>
+  let captured!: UseFormReturnType<z.output<F> & Record<string, unknown>>
   const Probe = defineComponent({
     setup() {
       captured = useForm({
         schema,
         key: `req-empty-${Math.random().toString(36).slice(2)}`,
-      }) as unknown as UseAbstractFormReturnType<z.output<F> & Record<string, unknown>>
+      }) as unknown as UseFormReturnType<z.output<F> & Record<string, unknown>>
       return () => h('div')
     },
   })

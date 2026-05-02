@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
-import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
+import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 
 /**
  * `form.meta.errors` is sorted by a stable schema-declaration ordinal.
@@ -28,10 +28,7 @@ import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-ap
  * AFTER clear-and-re-introduce until this drop.
  */
 
-type ApiFor<Schema extends z.ZodObject> = Omit<
-  UseAbstractFormReturnType<z.output<Schema>>,
-  'setValue'
-> & {
+type ApiFor<Schema extends z.ZodObject> = Omit<UseFormReturnType<z.output<Schema>>, 'setValue'> & {
   setValue: (path: string, value: unknown) => boolean
 }
 

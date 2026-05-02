@@ -10,7 +10,7 @@ import {
   useRegistry,
   type ChemicalXRegistry,
 } from '../core/registry'
-import type { FormKey, UseAbstractFormReturnType } from '../types/types-api'
+import type { FormKey, UseFormReturnType } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import { ambientProvideHistory } from './use-abstract-form'
 
@@ -64,7 +64,7 @@ let injectedInstanceCounter = 0
  */
 export function injectForm<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
   key?: FormKey
-): UseAbstractFormReturnType<Form, GetValueFormType> | null {
+): UseFormReturnType<Form, GetValueFormType> | null {
   const registry = useRegistry()
 
   const state = resolveState<Form>(key, registry)

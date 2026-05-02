@@ -7,7 +7,7 @@ import { vRegister } from '../../src/runtime/core/directive'
 import { createChemicalXForms } from '../../src/runtime/core/plugin'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
 import { hashStableString } from '../../src/runtime/core/hash'
-import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-api'
+import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 
 /**
  * Variant memory × persistence interaction. The contract under test:
@@ -79,7 +79,7 @@ const profileSchema = z.object({
 const FP = hashStableString(fingerprintZodSchema(profileSchema))
 const fpKey = (base: string): string => `${base}:${FP}`
 
-type Api = Omit<UseAbstractFormReturnType<z.output<typeof profileSchema>>, 'setValue'> & {
+type Api = Omit<UseFormReturnType<z.output<typeof profileSchema>>, 'setValue'> & {
   setValue: (path: string, value: unknown) => boolean
 }
 

@@ -14,20 +14,26 @@
 /**
  * Validation debounce (`useForm({ debounceMs })`) — ms to wait after
  * the LAST input event before running validation. Default `0`
- * (debounce disabled): every keystroke fires a validation pass
+ * (debounce disabled): every committed write fires a validation pass
  * synchronously, no `setTimeout`. Matches the obvious mental model
  * and avoids the "why is my error 125 ms behind my keystroke?"
  * footgun for new consumers.
  *
- * NOTE: this is purely the validation debounce. Form storage
- * (`form.values`) is always live — every keystroke commits
- * regardless of this value.
+ * NOTE: this is purely the VALIDATION debounce. Form storage
+ * (`form.values`) commits on every write the directive forwards;
+ * `setValueWithInternalPath` writes immediately and triggers a
+ * validation schedule. WHEN the directive actually forwards a write
+ * is a separate concern controlled by input modifiers — `<input
+ * v-register>` commits on every keystroke (`input` event), but
+ * `<input v-register.lazy>` defers to the `change` event so storage
+ * only commits on blur. The validation debounce is independent of
+ * either path: it always counts ms since the last committed write.
  *
- * Devs who need coalescing — slow async adapters, validation that
- * runs heavy work — opt in explicitly with `debounceMs: 200` (or any
- * positive number). The off-by-default posture trades CPU cycles for
- * UX latency wins, and the cycles only matter for adapters that are
- * actually expensive.
+ * Devs who need validation coalescing — slow async adapters,
+ * validation that runs heavy work — opt in with `debounceMs: 200`
+ * (or any positive number). The off-by-default posture trades CPU
+ * cycles for UX latency wins, and the cycles only matter for
+ * adapters that are actually expensive.
  */
 export const DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS = 0
 

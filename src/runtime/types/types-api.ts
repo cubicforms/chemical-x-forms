@@ -531,12 +531,14 @@ export type ReactiveValidationStatus<Form> = PendingValidationStatus | SettledVa
 export type OnInvalidSubmitPolicy = 'none' | 'focus-first-error' | 'scroll-to-first-error' | 'both'
 
 /**
- * When per-field VALIDATION runs. (Form storage updates on every
- * keystroke regardless of mode — only validation timing varies.)
+ * When per-field VALIDATION runs. Only validation timing varies per
+ * mode; storage commit timing is the directive's concern (the
+ * default `<input v-register>` commits per keystroke; `.lazy` defers
+ * to blur).
  *
- * - `'change'` (default): every keystroke / write schedules a
+ * - `'change'` (default): every committed write schedules a
  *   validation for the affected path. With `debounceMs: 0` (also the
- *   default) the run is synchronous in the keystroke handler;
+ *   default) the run is synchronous in the write handler;
  *   positive `debounceMs` coalesces rapid bursts.
  * - `'blur'`: validate immediately when the user tabs away from a
  *   registered field. No debounce — `debounceMs` is rejected by the
@@ -549,10 +551,13 @@ export type ValidateOn = 'change' | 'blur' | 'submit'
 
 /**
  * Validation timing config — `validateOn` is the trigger, `debounceMs`
- * the wait (after the LAST input) before the next validation run
- * fires. `debounceMs` ONLY governs validation; form storage tracks
- * every keystroke synchronously regardless of mode or debounce, so
- * `form.values` is always live.
+ * the wait (after the last committed write) before the next
+ * validation run fires. `debounceMs` ONLY governs validation;
+ * `setValueWithInternalPath` commits to `form.values` immediately
+ * regardless of debounce. (How OFTEN the directive forwards writes
+ * to storage is the directive's concern — default `<input
+ * v-register>` commits per keystroke; `<input v-register.lazy>`
+ * defers to the blur `change` event.)
  *
  * `debounceMs` is only meaningful with `validateOn: 'change'` (the
  * default); `'blur'` and `'submit'` ignore the wait entirely (blur
@@ -562,8 +567,8 @@ export type ValidateOn = 'change' | 'blur' | 'submit'
  * drop.
  *
  * Pass `debounceMs: 0` (the default) to disable validation
- * debouncing — every keystroke triggers a validation pass with no
- * `setTimeout` indirection. Schema work itself still rides
+ * debouncing — every committed write triggers a validation pass with
+ * no `setTimeout` indirection. Schema work itself still rides
  * `Promise.resolve().then(validateAtPath)` — async but microtask, so
  * errors land on the next tick. Set `debounceMs` to a positive
  * number to coalesce rapid bursts (useful for slow async adapters or
@@ -574,15 +579,15 @@ export type ValidateOnConfig =
       /** Validation trigger. Default `'change'`. */
       validateOn?: 'change'
       /**
-       * Milliseconds to wait after the LAST input event before
+       * Milliseconds to wait after the last committed write before
        * running validation. Default `0` (validation runs synchronously
-       * in the keystroke handler; no `setTimeout`). Set to a positive
-       * number to coalesce rapid keystrokes into a single validation
-       * pass.
+       * after the write; no `setTimeout`). Set to a positive number
+       * to coalesce rapid bursts into a single validation pass.
        *
-       * Note: this is purely the validation debounce. Form storage
-       * (`form.values`) is updated on every keystroke regardless of
-       * this value.
+       * Note: this is purely the validation debounce. Storage commits
+       * happen at the directive's listener (per-keystroke for
+       * `<input v-register>`, per-blur for `<input v-register.lazy>`)
+       * — `debounceMs` doesn't change either.
        */
       debounceMs?: number
     }
@@ -860,8 +865,9 @@ export type UseFormConfiguration<
   onInvalidSubmit?: OnInvalidSubmitPolicy
 
   /**
-   * When per-field VALIDATION runs (storage tracks every keystroke
-   * regardless). Default `'change'`. See `ValidateOn` for mode
+   * When per-field VALIDATION runs (the directive's listener controls
+   * how often storage commits — per keystroke by default, per blur
+   * with `.lazy`). Default `'change'`. See `ValidateOn` for mode
    * semantics.
    *
    * The strict public `useForm` signature wraps this type in an
@@ -871,14 +877,15 @@ export type UseFormConfiguration<
    */
   validateOn?: ValidateOn
   /**
-   * Milliseconds to wait after the LAST input event before running
-   * validation. Default `0` (validation fires synchronously in the
-   * keystroke handler; no `setTimeout`). Set to a positive number to
-   * coalesce rapid keystrokes. Ignored under `validateOn: 'blur'`
-   * and `'submit'`.
+   * Milliseconds to wait after the last committed write before
+   * running validation. Default `0` (validation fires synchronously
+   * after the write; no `setTimeout`). Set to a positive number to
+   * coalesce rapid bursts. Ignored under `validateOn: 'blur'` and
+   * `'submit'`.
    *
-   * This is purely a VALIDATION debounce — `form.values` updates on
-   * every keystroke regardless of this setting.
+   * This is purely a VALIDATION debounce — storage commits are the
+   * directive's concern (per keystroke for `<input v-register>`,
+   * per blur for `<input v-register.lazy>`).
    */
   debounceMs?: number
 

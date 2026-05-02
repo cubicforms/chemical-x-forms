@@ -1039,24 +1039,32 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
         ? { ...(baseline as Record<string, unknown>), ...consumerOverrides }
         : baseline
 
-    // Drop blank-path bookkeeping under `parentPath` — those paths
-    // belong to the OLD variant's leaves and don't exist in the new
-    // effective shape.
-    for (const existingKey of [...blankPaths]) {
-      if (isPathKeyUnder(existingKey, parentPath)) {
-        blankPaths.delete(existingKey)
-      }
-    }
     // New blanks: restored from memory (preserves the user's prior
     // explicit blanks + numeric auto-marks together) or recomputed
     // from the resolved `finalValue` (mount-time rule: storage /
     // display divergence for `number` / `bigint` numeric leaves).
+    // Compute BEFORE the drop loop so we know which old keys survive
+    // — `Set.add` on a deleted-and-re-added key re-inserts at the END
+    // of insertion order, which would shift `derivedBlankErrors` (and
+    // therefore `form.meta.errors`) on every same-disc reshape even
+    // when nothing about the post-reshape shape actually changed.
     let newBlankPaths: PathKey[]
     if (restoredBlanks !== undefined) {
       newBlankPaths = restoredBlanks
     } else {
       newBlankPaths = []
       walkUnspecified(finalValue, [...parentPath], newBlankPaths)
+    }
+    const survivingBlankKeys = new Set<PathKey>(newBlankPaths)
+    // Drop blank-path bookkeeping under `parentPath` — those paths
+    // belong to the OLD variant's leaves and don't exist in the new
+    // effective shape. Skip keys present in `survivingBlankKeys`: the
+    // `add` below is a no-op for an existing Set member (preserves the
+    // original insertion slot).
+    for (const existingKey of [...blankPaths]) {
+      if (isPathKeyUnder(existingKey, parentPath) && !survivingBlankKeys.has(existingKey)) {
+        blankPaths.delete(existingKey)
+      }
     }
 
     const currentValue = getAtPath(form.value, parentPath)

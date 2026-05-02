@@ -75,13 +75,15 @@ describe('selectNodeTransform — option value fallback (D3)', () => {
     const code = compileWithTransform(
       `<select v-register="fruit"><option value="apple">Apple</option></select>`
     )
-    expect(countSelectedBindings(code)).toBeGreaterThan(0)
+    // One <option> ⇒ exactly one :selected binding. Tightened from `> 0`
+    // so a duplicate-injection regression can't hide.
+    expect(countSelectedBindings(code)).toBe(1)
     expect(code).toContain('apple')
   })
 
   it('falls back to static text content when value= is missing', () => {
     const code = compileWithTransform(`<select v-register="fruit"><option>apple</option></select>`)
-    expect(countSelectedBindings(code)).toBeGreaterThan(0)
+    expect(countSelectedBindings(code)).toBe(1)
     expect(code).toContain('"apple"') // synthesized as a JSON string literal
   })
 
@@ -89,7 +91,7 @@ describe('selectNodeTransform — option value fallback (D3)', () => {
     const code = compileWithTransform(
       `<select v-register="fruit"><option>  apple  </option></select>`
     )
-    expect(countSelectedBindings(code)).toBeGreaterThan(0)
+    expect(countSelectedBindings(code)).toBe(1)
     expect(code).toContain('"apple"')
   })
 

@@ -197,7 +197,9 @@ describe('DevTools plugin — inspector + timeline wiring', () => {
     await Promise.resolve()
 
     const submitEvents = currentMock.api!._events.filter((e) => e.event.title === 'submit.success')
-    expect(submitEvents.length).toBeGreaterThan(0)
+    // Single handleSubmit() invocation ⇒ exactly one submit.success
+    // event. Pre-fix `> 0` would mask a duplicate-emit regression.
+    expect(submitEvents).toHaveLength(1)
     expect(submitEvents[0]?.event.subtitle).toBe('dev-timeline')
   })
 })
@@ -279,7 +281,9 @@ describe('DevTools plugin — sensitive-name redaction (B5)', () => {
     await Promise.resolve()
 
     const changes = currentMock.api!._events.filter((e) => e.event.title === 'form.change')
-    expect(changes.length).toBeGreaterThan(0)
+    // Single setValue() ⇒ exactly one form.change event. Tightened
+    // from `> 0` so a duplicate-emit regression no longer hides.
+    expect(changes).toHaveLength(1)
     const last = changes[changes.length - 1]!
     const form = last.event.data?.['form'] as { password?: unknown; email?: unknown }
     expect(form.password).toBe('[redacted]')

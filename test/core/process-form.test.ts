@@ -86,9 +86,11 @@ describe('buildProcessForm', () => {
       const r = validate()
       // The watchEffect defers the counter bump to a microtask (so the
       // write doesn't re-trigger the effect). Drain one microtask,
-      // then the counter should be > 0 while the parse is in flight.
+      // then the counter must be exactly 1 while the parse is in flight —
+      // this test fires a single validate(), so any other value would
+      // mean a leak or an extra concurrent validation.
       await Promise.resolve()
-      expect(state.activeValidations.value).toBeGreaterThan(0)
+      expect(state.activeValidations.value).toBe(1)
       await waitUntilSettled(r)
       expect(state.activeValidations.value).toBe(0)
     })

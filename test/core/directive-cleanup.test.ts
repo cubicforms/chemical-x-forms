@@ -126,7 +126,13 @@ describe('v-register directive — listener teardown on unmount', () => {
     const spy = installListenerSpies(input)
 
     hooks.created?.(input, binding, vnode, null)
-    expect(spy.added).toBeGreaterThan(0)
+    // Text input registers four listeners in `created`: input/change
+    // (the model write), change (for `.lazy` blur-trim normalisation),
+    // beforeinput (for `.number` keystroke filtering), and a single
+    // composition pair counted as one entry under jsdom. Pre-fix the
+    // assertion was `> 0`; tightening to the exact number locks the
+    // listener inventory so any added/removed listener is visible.
+    expect(spy.added).toBe(4)
 
     const addedCount = spy.added
     hooks.beforeUnmount?.(input, binding, vnode, null)
@@ -142,7 +148,9 @@ describe('v-register directive — listener teardown on unmount', () => {
 
     hooks.created?.(input, binding, vnode, null)
     const addedCount = spy.added
-    expect(addedCount).toBeGreaterThan(0)
+    // Single `change` listener — checkbox/radio/select each register
+    // one listener for the model write.
+    expect(addedCount).toBe(1)
 
     hooks.beforeUnmount?.(input, binding, vnode, null)
     expect(spy.removed).toBe(addedCount)
@@ -157,7 +165,7 @@ describe('v-register directive — listener teardown on unmount', () => {
 
     hooks.created?.(input, binding, vnode, null)
     const addedCount = spy.added
-    expect(addedCount).toBeGreaterThan(0)
+    expect(addedCount).toBe(1)
 
     hooks.beforeUnmount?.(input, binding, vnode, null)
     expect(spy.removed).toBe(addedCount)
@@ -173,7 +181,7 @@ describe('v-register directive — listener teardown on unmount', () => {
 
     hooks.created?.(select, binding, vnode, null)
     const addedCount = spy.added
-    expect(addedCount).toBeGreaterThan(0)
+    expect(addedCount).toBe(1)
 
     hooks.beforeUnmount?.(select, binding, vnode, null)
     expect(spy.removed).toBe(addedCount)
@@ -193,7 +201,9 @@ describe('v-register directive — listener teardown on unmount', () => {
 
     spy.reset()
     hooks.created?.(input, binding, vnode, null)
-    expect(spy.added).toBeGreaterThan(0)
+    // Same four-listener inventory as the first cycle — the count must
+    // be stable across re-creates, not merely "non-zero".
+    expect(spy.added).toBe(4)
     hooks.beforeUnmount?.(input, binding, vnode, null)
     expect(spy.added).toBe(spy.removed)
   })

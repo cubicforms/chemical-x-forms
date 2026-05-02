@@ -539,30 +539,44 @@ export type OnInvalidSubmitPolicy = 'none' | 'focus-first-error' | 'scroll-to-fi
  *   without waiting for submit.
  * - `'blur'`: validate immediately when the user tabs away from a
  *   registered field. No debounce.
- * - `'none'`: opt out entirely. `handleSubmit` and explicit
+ * - `'submit'`: no live validation. `handleSubmit` and explicit
  *   `validate()` / `validateAsync()` calls are the only validation
  *   surfaces.
  */
-export type FieldValidationMode = 'change' | 'blur' | 'none'
+export type UpdateOn = 'change' | 'blur' | 'submit'
 
-/** Per-field validation configuration passed via `useForm({ fieldValidation })`. */
-export type FieldValidationConfig = {
-  /** When validation runs. Default `'change'`. */
-  on?: FieldValidationMode
-  /**
-   * Debounce window in milliseconds for `on: 'change'`. Ignored when
-   * `on` is `'blur'` or `'none'`. Default `125`.
-   *
-   * Pass `0` to disable debouncing entirely — validation runs
-   * synchronously inside the keystroke handler. Useful for tight UX
-   * feedback loops where every keystroke should re-render errors,
-   * and for tests that want deterministic single-tick semantics.
-   * Note that schema work is still off the synchronous path
-   * (`Promise.resolve().then(validateAtPath)`); only the debounce
-   * timer is skipped.
-   */
-  debounceMs?: number
-}
+/**
+ * Validation timing config — `updateOn` is the trigger, `debounceMs`
+ * the per-keystroke delay. `debounceMs` is ONLY meaningful with
+ * `updateOn: 'change'` (the default); `'blur'` and `'submit'` ignore
+ * it. The discriminated union below makes the constraint a TS error
+ * instead of a silent runtime drop, so consumers can't accidentally
+ * configure a debounce that does nothing.
+ *
+ * Pass `debounceMs: 0` (the default) to disable debouncing entirely —
+ * validation runs synchronously inside the keystroke handler, no
+ * `setTimeout` indirection. Schema work itself stays off the sync
+ * path (`Promise.resolve().then(validateAtPath)`); only the debounce
+ * timer is skipped. Set `debounceMs` to a positive number to
+ * coalesce rapid bursts (useful for slow async adapters or for
+ * smoothing inline feedback under heavy typing).
+ */
+export type UpdateOnConfig =
+  | {
+      /** Update trigger. Default `'change'`. */
+      updateOn?: 'change'
+      /**
+       * Debounce window in milliseconds. Default `0` (no debounce).
+       * Set to a positive number to coalesce rapid bursts.
+       */
+      debounceMs?: number
+    }
+  | {
+      /** Update trigger. */
+      updateOn: 'blur' | 'submit'
+      /** `debounceMs` is not allowed with `'blur'` or `'submit'` modes. */
+      debounceMs?: never
+    }
 
 /**
  * Built-in storage backends:
@@ -747,7 +761,8 @@ export type PersistConfig = FormStorageKind | FormStorage | PersistConfigOptions
  * const form = useForm({
  *   schema: signupSchema,
  *   defaultValues: { email: '' },
- *   fieldValidation: { on: 'change', debounceMs: 200 },
+ *   updateOn: 'change',
+ *   debounceMs: 200,
  *   persist: 'local',
  * })
  * ```
@@ -830,22 +845,21 @@ export type UseFormConfiguration<
   onInvalidSubmit?: OnInvalidSubmitPolicy
 
   /**
-   * When per-field validation runs between submit attempts. Default
-   * `{ on: 'change', debounceMs: 125 }` — errors track the live
-   * value continuously.
+   * When per-field validation runs. Default `'change'`. See `UpdateOn`
+   * for mode semantics.
    *
-   * - `{ on: 'change', debounceMs }` — schedule validation after the
-   *   user stops typing. Rapid successive edits reset the timer;
-   *   stale in-flight runs are cancelled.
-   * - `{ on: 'blur' }` — validate immediately when the user tabs
-   *   away from the field. Ignores `debounceMs`.
-   * - `{ on: 'none' }` — opt out. `handleSubmit` and explicit
-   *   `validate*()` calls are the only validation surfaces.
-   *
-   * Field validation always defers to `handleSubmit`'s full-form
-   * run on submit — the submit result is authoritative.
+   * The strict public `useForm` signature wraps this type in an
+   * intersection with `UpdateOnConfig`, which enforces that
+   * `debounceMs` is only allowed under `'change'`. Internal callers
+   * (adapters, hydration paths) work with the loose form below.
    */
-  fieldValidation?: FieldValidationConfig
+  updateOn?: UpdateOn
+  /**
+   * Per-field debounce window when `updateOn === 'change'`. Default
+   * `0` (debouncing disabled). Set to a positive number to coalesce
+   * rapid bursts. Ignored under `'blur'` and `'submit'`.
+   */
+  debounceMs?: number
 
   /**
    * Opt-in persistence of the form's draft state. Off by default —
@@ -937,17 +951,22 @@ export type UseFormConfiguration<
  *
  *   useForm({ ... })  >  createChemicalXForms({ defaults })  >  library default
  *
- * `fieldValidation` shallow-merges so you can set `debounceMs`
- * globally and still override `on` per form:
+ * `updateOn` and `debounceMs` resolve per-field — set the debounce
+ * globally while still overriding the trigger per form:
  *
  * ```ts
  * createChemicalXForms({
- *   defaults: { fieldValidation: { debounceMs: 100 } },
+ *   defaults: { debounceMs: 100 },
  * })
  * // later
- * useForm({ schema, fieldValidation: { on: 'blur' } })
- * // → { on: 'blur', debounceMs: 100 }
+ * useForm({ schema, updateOn: 'blur' })
+ * // → { updateOn: 'blur', debounceMs: <ignored under blur> }
  * ```
+ *
+ * Note: per the discriminated union, `debounceMs` only takes effect
+ * when `updateOn` is `'change'` (or omitted). Setting it as an
+ * app-level default is fine — forms that switch to `'blur'` /
+ * `'submit'` simply ignore the inherited `debounceMs`.
  *
  * `schema`, `key`, `defaultValues`, and `persist` are not configurable
  * here — they belong on the per-form call.
@@ -957,8 +976,13 @@ export type ChemicalXFormsDefaults = {
   validationMode?: ValidationMode
   /** Default for `useForm({ onInvalidSubmit })`. */
   onInvalidSubmit?: OnInvalidSubmitPolicy
-  /** Default (shallow-merged) for `useForm({ fieldValidation })`. */
-  fieldValidation?: FieldValidationConfig
+  /** Default for `useForm({ updateOn })`. See `UpdateOn`. */
+  updateOn?: UpdateOn
+  /**
+   * Default for `useForm({ debounceMs })`. Only meaningful when
+   * `updateOn` resolves to `'change'`. Default `0`.
+   */
+  debounceMs?: number
   /** Default for `useForm({ history })`. */
   history?: HistoryConfig
   /** Default for `useForm({ rememberVariants })`. */

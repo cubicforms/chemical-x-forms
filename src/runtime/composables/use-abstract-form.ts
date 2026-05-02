@@ -111,10 +111,10 @@ export function useAbstractForm<
   const registry = useRegistry()
 
   // Merge app-level defaults from the registry over per-form options.
-  // Per-form values always win for scalars; `fieldValidation` is
-  // shallow-merged at the field level so consumers can set
-  // `debounceMs` globally and override `on` per-form. Every downstream
-  // read uses `merged` so the merge happens exactly once.
+  // Per-form values always win for scalars; `updateOn` and `debounceMs`
+  // resolve independently so consumers can set `debounceMs` globally
+  // and override `updateOn` per-form. Every downstream read uses
+  // `merged` so the merge happens exactly once.
   const merged = mergeWithDefaults(registry.defaults, configuration)
 
   const existing = registry.forms.get(key) as FormStore<Form, GetValueFormType> | undefined
@@ -263,11 +263,11 @@ export function useAbstractForm<
 
 /**
  * Merge app-level defaults from the registry over a per-form
- * configuration. Per-form values always win for scalars; the
- * `fieldValidation` field is shallow-merged so defaults like
- * `{ debounceMs: 100 }` carry through even when the per-form call
- * passes `{ on: 'blur' }`. See `ChemicalXFormsDefaults` for the full
- * merge contract.
+ * configuration. Per-form values always win for scalars; `updateOn`
+ * and `debounceMs` resolve independently so a default like
+ * `{ debounceMs: 100 }` carries through even when the per-form call
+ * passes `{ updateOn: 'blur' }`. See `ChemicalXFormsDefaults` for the
+ * full merge contract.
  */
 function mergeWithDefaults<
   Form extends GenericForm,
@@ -286,10 +286,13 @@ function mergeWithDefaults<
   const history = configuration.history ?? defaults.history
   const rememberVariants = configuration.rememberVariants ?? defaults.rememberVariants
   const coerce = configuration.coerce ?? defaults.coerce
-  const fieldValidation =
-    configuration.fieldValidation === undefined && defaults.fieldValidation === undefined
-      ? undefined
-      : { ...defaults.fieldValidation, ...configuration.fieldValidation }
+  const updateOn = configuration.updateOn ?? defaults.updateOn
+  // `debounceMs` is type-narrowed in the public discriminated union to
+  // disallow non-`'change'` mode + debounce; here at the resolution
+  // boundary we only see the unwrapped fields, so the access is
+  // unconditional. The runtime check in `create-form-store.ts` ignores
+  // the value under non-`'change'` modes regardless.
+  const debounceMs = (configuration as { debounceMs?: number }).debounceMs ?? defaults.debounceMs
   return {
     ...configuration,
     ...(validationMode === undefined ? {} : { validationMode }),
@@ -297,8 +300,9 @@ function mergeWithDefaults<
     ...(history === undefined ? {} : { history }),
     ...(rememberVariants === undefined ? {} : { rememberVariants }),
     ...(coerce === undefined ? {} : { coerce }),
-    ...(fieldValidation === undefined ? {} : { fieldValidation }),
-  }
+    ...(updateOn === undefined ? {} : { updateOn }),
+    ...(debounceMs === undefined ? {} : { debounceMs }),
+  } as UseFormConfiguration<Form, GetValueFormType, Schema, Defaults>
 }
 
 /**
@@ -348,7 +352,10 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
     defaultValues: walked.cleanedValues as DeepPartial<WriteShape<F>> | undefined,
     validationMode: configuration.validationMode,
     hydration: pending,
-    fieldValidation: configuration.fieldValidation,
+    ...(configuration.updateOn !== undefined ? { updateOn: configuration.updateOn } : {}),
+    ...((configuration as { debounceMs?: number }).debounceMs !== undefined
+      ? { debounceMs: (configuration as { debounceMs?: number }).debounceMs }
+      : {}),
     isSSR: registry.isSSR,
     ...(configuration.rememberVariants !== undefined
       ? { rememberVariants: configuration.rememberVariants }

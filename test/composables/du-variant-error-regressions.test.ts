@@ -77,11 +77,13 @@ function mount(
         key: `du-error-regression-${Math.random().toString(36).slice(2)}`,
         defaultValues,
         // Immediate field validation so tests don't have to flush a
-        // 125ms debounce window after every setValue. Behaviour under
-        // test (error-keying after reshape, blank-mark round-trip,
-        // recursion) doesn't depend on the debounce — it depends on
-        // what schema-validation does to the stores once it runs.
-        fieldValidation: { on: 'change', debounceMs: 0 },
+        // Disable debouncing so the test sees the schema's verdict on
+        // the same tick as the write. Behaviour under test (error-
+        // keying after reshape, blank-mark round-trip, recursion)
+        // doesn't depend on the debounce — it depends on what
+        // schema-validation does to the stores once it runs.
+        updateOn: 'change',
+        debounceMs: 0,
       }) as unknown as ProfileApi
       return () => h('div')
     },

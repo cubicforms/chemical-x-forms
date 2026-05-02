@@ -17,9 +17,9 @@ import { z as zV3 } from 'zod-v3'
  * Invariants locked here:
  *   1. Default applied when per-form omits the option.
  *   2. Per-form value wins for each scalar.
- *   3. `fieldValidation` shallow-merges at the field level
- *      (consumer can set `debounceMs` globally and override `on`
- *      per-form without losing the global debounce).
+ *   3. `updateOn` and `debounceMs` resolve independently — consumer
+ *      can set `debounceMs` globally and override `updateOn` per-form
+ *      without losing the global debounce.
  *   4. Anonymous `useForm()` (no key) picks up defaults.
  *   5. Multiple useForm calls in the same app share the defaults.
  *   6. v3 wrapper picks up app-level `validationMode` (regression
@@ -42,7 +42,8 @@ function mountWithDefaults(
     : never,
   formOptions: {
     validationMode?: 'strict' | 'lax'
-    fieldValidation?: { on?: 'change' | 'blur' | 'none'; debounceMs?: number }
+    updateOn?: 'change' | 'blur' | 'submit'
+    debounceMs?: number
     defaultValues?: Partial<Tight>
     key?: string
   } = {}
@@ -56,13 +57,12 @@ function mountWithDefaults(
         ...(formOptions.validationMode !== undefined
           ? { validationMode: formOptions.validationMode }
           : {}),
-        ...(formOptions.fieldValidation !== undefined
-          ? { fieldValidation: formOptions.fieldValidation }
-          : {}),
+        ...(formOptions.updateOn !== undefined ? { updateOn: formOptions.updateOn } : {}),
+        ...(formOptions.debounceMs !== undefined ? { debounceMs: formOptions.debounceMs } : {}),
         ...(formOptions.defaultValues !== undefined
           ? { defaultValues: formOptions.defaultValues }
           : {}),
-      })
+      } as Parameters<typeof useForm<typeof tightSchema>>[0])
       return () => h('div')
     },
   })
@@ -127,30 +127,31 @@ describe('app-level defaults — validationMode', () => {
   })
 })
 
-describe('app-level defaults — fieldValidation field-level merge', () => {
+describe('app-level defaults — updateOn / debounceMs resolution', () => {
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
     vi.useRealTimers()
   })
 
-  it('per-form on overrides while default debounceMs carries through', async () => {
-    // Default sets debounceMs = 50. Per-form passes only { on: 'change' }
-    // — the merged config should be { on: 'change', debounceMs: 50 }.
-    // Pin lax so the construction-time seed doesn't pre-populate the
-    // error we're trying to observe via debounced field-validation.
+  it('per-form updateOn overrides while default debounceMs carries through', async () => {
+    // Default sets debounceMs = 50. Per-form passes only updateOn:
+    // 'change' — both fields resolve independently, so the merged
+    // config is { updateOn: 'change', debounceMs: 50 }. Pin lax so
+    // the construction-time seed doesn't pre-populate the error we're
+    // trying to observe via debounced field-validation.
     vi.useFakeTimers()
     const { app, api } = mountWithDefaults(
-      { fieldValidation: { debounceMs: 50 } },
-      { fieldValidation: { on: 'change' }, validationMode: 'lax' }
+      { debounceMs: 50 },
+      { updateOn: 'change', validationMode: 'lax' }
     )
     apps.push(app)
 
     api.setValue('email', 'not-an-email')
-    // Just past the default debounce (50ms). If the per-form `on:
-    // 'change'` didn't merge correctly with the default debounceMs,
-    // the test would either see no error (debounce never fired) or
-    // need to wait the library default (125ms).
+    // Just past the default debounce (50ms). If updateOn and
+    // debounceMs didn't resolve independently, the test would either
+    // see no error (debounce never fired) or need to wait the library
+    // default (0ms — synchronous).
     await vi.advanceTimersByTimeAsync(75)
     await drainMicrotasks()
     expect(api.errors.email?.[0]?.message).toBe('bad email')
@@ -159,8 +160,8 @@ describe('app-level defaults — fieldValidation field-level merge', () => {
   it('per-form debounceMs overrides default debounceMs', async () => {
     vi.useFakeTimers()
     const { app, api } = mountWithDefaults(
-      { fieldValidation: { on: 'change', debounceMs: 500 } },
-      { fieldValidation: { debounceMs: 25 }, validationMode: 'lax' }
+      { updateOn: 'change', debounceMs: 500 },
+      { debounceMs: 25, validationMode: 'lax' }
     )
     apps.push(app)
 
@@ -171,10 +172,10 @@ describe('app-level defaults — fieldValidation field-level merge', () => {
     expect(api.errors.email?.[0]?.message).toBe('bad email')
   })
 
-  it("default fieldValidation applies entirely when per-form doesn't pass any", async () => {
+  it("default updateOn / debounceMs apply entirely when per-form doesn't pass any", async () => {
     vi.useFakeTimers()
     const { app, api } = mountWithDefaults(
-      { fieldValidation: { on: 'change', debounceMs: 30 } },
+      { updateOn: 'change', debounceMs: 30 },
       { validationMode: 'lax' }
     )
     apps.push(app)

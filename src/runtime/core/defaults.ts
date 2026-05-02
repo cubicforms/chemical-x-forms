@@ -1,6 +1,6 @@
 /**
  * Library-level default constants. All consumer-facing fallbacks for
- * the bundled options (`fieldValidation.debounceMs`, `persist.debounceMs`,
+ * the bundled options (`debounceMs`, `persist.debounceMs`,
  * `history.max`, etc.) resolve to one of these — extracting them here
  * keeps the JSDoc on the public option type and the runtime fallback
  * in lockstep, and gives reviewers a single file to scan when tuning
@@ -12,12 +12,18 @@
  */
 
 /**
- * Field-validation debounce (`fieldValidation.debounceMs`). 125 ms is
- * below the perceptual threshold for most typists while still
- * coalescing rapid bursts so the schema doesn't re-run on every
- * keystroke.
+ * Field-validation debounce (`useForm({ debounceMs })`). Default `0`
+ * (debounce disabled): typing produces synchronous error feedback,
+ * which matches the obvious mental model and avoids a "why is my
+ * error 125 ms behind my keystroke?" footgun for new consumers.
+ *
+ * Devs who need coalescing — slow async adapters, validation that
+ * runs heavy work — opt in explicitly with `debounceMs: 200` (or any
+ * positive number). The off-by-default posture trades CPU cycles for
+ * UX latency wins, and the cycles only matter for adapters that are
+ * actually expensive.
  */
-export const DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS = 125
+export const DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS = 0
 
 /**
  * Persistence write debounce (`persist.debounceMs`). 300 ms is

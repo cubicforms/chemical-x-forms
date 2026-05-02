@@ -2,10 +2,9 @@ import { computed, reactive, ref, type ComputedRef, type Ref } from 'vue'
 import type {
   AbstractSchema,
   CoercionRegistry,
-  FieldValidationConfig,
-  FieldValidationMode,
   FormKey,
   DefaultValuesResponse,
+  UpdateOn,
   ValidationError,
   ValidationMode,
   WriteMeta,
@@ -474,7 +473,19 @@ export type CreateFormStoreOptions<F extends GenericForm, G extends GenericForm 
   readonly defaultValues?: DeepPartial<WriteShape<F>> | undefined
   readonly validationMode?: ValidationMode | undefined
   readonly hydration?: FormStoreHydration | undefined
-  readonly fieldValidation?: FieldValidationConfig | undefined
+  /**
+   * When per-field validation runs. Default `'change'`. See `UpdateOn`.
+   * The discriminated union `UpdateOnConfig` lives at the public
+   * `useForm` boundary; the internal store accepts the resolved
+   * fields directly so the type-narrowing dance stays at the public
+   * surface.
+   */
+  readonly updateOn?: UpdateOn | undefined
+  /**
+   * Per-field debounce when `updateOn === 'change'`. Default `0`
+   * (disabled). Ignored under `'blur'` and `'submit'`.
+   */
+  readonly debounceMs?: number | undefined
   readonly isSSR?: boolean | undefined
   /**
    * Path keys to seed the `blankPaths` set with at construction.
@@ -527,9 +538,9 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   const { formKey, schema, defaultValues, validationMode = 'strict', hydration } = options
   const isSSR = options.isSSR === true
   const rememberVariants: boolean = options.rememberVariants !== false
-  const fieldValidationMode: FieldValidationMode = options.fieldValidation?.on ?? 'change'
+  const fieldValidationMode: UpdateOn = options.updateOn ?? 'change'
   const fieldValidationDebounceMs: number =
-    options.fieldValidation?.debounceMs ?? DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS
+    options.debounceMs ?? DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS
 
   type FieldValidationEntry = {
     controller: AbortController
@@ -1178,7 +1189,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
    * tripped the timer scheduler N milliseconds ago.
    */
   function scheduleFieldValidation(path: Path, immediate: boolean): void {
-    if (fieldValidationMode === 'none') return
+    if (fieldValidationMode === 'submit') return
     const { key } = canonicalizePath(path)
     const prev = fieldValidationState.get(key)
     if (prev !== undefined) {

@@ -49,10 +49,11 @@ function mountWithSnapshotter(): { app: App; api: ProfileApi; snapshots: string[
         schema: profileSchema,
         key: `flicker-${Math.random().toString(36).slice(2)}`,
         defaultValues: { notify: { channel: 'email', address: '' } },
-        // debounceMs: 0 minimises the flicker window in the test
-        // environment but does NOT eliminate it — setTimeout(fn, 0)
-        // is a macrotask, queued after Vue's microtask render.
-        fieldValidation: { on: 'change', debounceMs: 0 },
+        // debounceMs: 0 disables debouncing so validation runs
+        // synchronously inside the keystroke handler — minimising the
+        // flicker window without going through `setTimeout`.
+        updateOn: 'change',
+        debounceMs: 0,
       }) as unknown as ProfileApi
       // Capture every distinct render's view of `form.errors`.
       watchEffect(() => {

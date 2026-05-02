@@ -16,7 +16,7 @@ import type { ChemicalXFormsDefaults } from './runtime/types/types-api'
  * export default defineNuxtConfig({
  *   modules: ['@chemical-x/forms/nuxt'],
  *   chemicalX: {
- *     defaults: { fieldValidation: { debounceMs: 100 } },
+ *     defaults: { debounceMs: 100 },
  *   },
  * })
  * ```

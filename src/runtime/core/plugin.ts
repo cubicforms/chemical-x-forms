@@ -25,7 +25,7 @@ export type ChemicalXFormsPluginOptions = SSRDetectOptions & {
    * ```ts
    * app.use(
    *   createChemicalXForms({
-   *     defaults: { fieldValidation: { debounceMs: 100 } },
+   *     defaults: { debounceMs: 100 },
    *   })
    * )
    * ```

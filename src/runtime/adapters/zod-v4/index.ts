@@ -8,6 +8,7 @@ import { useAbstractForm } from '../../composables/use-abstract-form'
 import type {
   AbstractSchema,
   FormKey,
+  UpdateOnConfig,
   UseAbstractFormReturnType,
   UseFormConfiguration,
 } from '../../types/types-api'
@@ -54,8 +55,8 @@ export function useForm<Schema extends z.ZodObject>(
         DefaultValuesShape<z.output<Schema> extends GenericForm ? z.output<Schema> : never>
       >
     >,
-    'schema'
-  > & { schema: Schema }
+    'schema' | 'updateOn' | 'debounceMs'
+  > & { schema: Schema } & UpdateOnConfig
 ): UseAbstractFormReturnType<
   z.output<Schema> extends GenericForm ? z.output<Schema> : never,
   z.output<Schema> extends GenericForm ? z.output<Schema> : never
@@ -70,8 +71,15 @@ export function useForm<Schema extends z.ZodObject>(
   const adapter: (key: FormKey) => AbstractSchema<Form, Form> = zodV4Adapter(
     configuration.schema
   ) as (key: FormKey) => AbstractSchema<Form, Form>
+  // The discriminated `UpdateOnConfig` doesn't narrow cleanly through
+  // `Omit` + spread — TS picks the wrong variant after the structural
+  // rebuild. The runtime input is genuinely the right shape (the
+  // public `useForm` signature already enforced the discriminant on
+  // `configuration` before we got here), so cast to the parameter
+  // type to side-step the structural disagreement.
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
   return useAbstractForm<Form, Form>({
     ...configuration,
     schema: adapter,
-  })
+  } as Parameters<typeof useAbstractForm<Form, Form>>[0])
 }

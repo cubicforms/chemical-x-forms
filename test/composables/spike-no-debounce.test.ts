@@ -1,17 +1,17 @@
 // @vitest-environment jsdom
 //
-// Spike: `fieldValidation.debounceMs: 0` and `persist.debounceMs: 0`
+// Spike: `debounceMs: 0` (the new default) and `persist.debounceMs: 0`
 // as the off switch. Demonstrates the user-visible difference between
-// the default debounced flow and the synchronous flow: every keystroke
+// an EXPLICIT slow debounce and the synchronous flow: every keystroke
 // produces immediate error feedback / immediate persistence write,
-// without waiting for a `setTimeout(fn, 0)` macrotask.
+// without waiting for a `setTimeout` macrotask.
 //
 // "Synchronous" here means "no `setTimeout` indirection on the
 // debounce side." The schema work itself still rides
 // `Promise.resolve().then(validateAtPath)` — async but microtask, so
 // `await Promise.resolve()` between keystrokes is enough to surface
-// errors. The default-debounced form needs a real `setTimeout(>0)`
-// flush to surface anything.
+// errors. A form with an explicit positive `debounceMs` needs a real
+// `setTimeout(>0)` flush to surface anything.
 import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
 import { z } from 'zod'
@@ -43,12 +43,12 @@ async function timerFlush(ms: number): Promise<void> {
   await nextTick()
 }
 
-describe('spike — fieldValidation.debounceMs: 0 disables the debounce timer', () => {
+describe('spike — debounceMs: 0 disables the debounce timer', () => {
   const schema = z.object({
     email: z.string().email('Enter a valid email.'),
   })
 
-  it('default debounce: post-keystroke errors do NOT surface until the timer fires', async () => {
+  it('explicit positive debounce: post-keystroke errors do NOT surface until the timer fires', async () => {
     const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
     const Parent = defineComponent({
       setup() {
@@ -59,8 +59,11 @@ describe('spike — fieldValidation.debounceMs: 0 disables the debounce timer', 
           // error. We're testing the per-keystroke debounce, not mount.
           defaultValues: { email: 'good@example.com' },
           key: `default-${Math.random().toString(36).slice(2)}`,
-          // Implicit: debounceMs: 125 (the library default).
-          fieldValidation: { on: 'change' },
+          // Pin debounceMs explicitly — the library default is 0 now,
+          // so we have to opt into the slow path to test the timer
+          // semantics.
+          updateOn: 'change',
+          debounceMs: 125,
         })
         const rv = handle.api.register('email')
         return () =>
@@ -80,8 +83,8 @@ describe('spike — fieldValidation.debounceMs: 0 disables the debounce timer', 
     input.value = 'a'
     input.dispatchEvent(new Event('input', { bubbles: true }))
 
-    // Microtask flush only — the default debounce timer hasn't fired,
-    // so no per-keystroke re-validation has run. Errors stay empty.
+    // Microtask flush only — the explicit 125 ms debounce timer hasn't
+    // fired, so no per-keystroke re-validation has run. Errors stay empty.
     await microtaskFlush()
     expect(handle.api?.errors.email).toBeUndefined()
 
@@ -98,7 +101,8 @@ describe('spike — fieldValidation.debounceMs: 0 disables the debounce timer', 
           schema,
           defaultValues: { email: 'good@example.com' },
           key: `nodebounce-${Math.random().toString(36).slice(2)}`,
-          fieldValidation: { on: 'change', debounceMs: 0 },
+          updateOn: 'change',
+          debounceMs: 0,
         })
         const rv = handle.api.register('email')
         return () =>
@@ -133,7 +137,8 @@ describe('spike — fieldValidation.debounceMs: 0 disables the debounce timer', 
           schema,
           defaultValues: { email: 'good@example.com' },
           key: `live-${Math.random().toString(36).slice(2)}`,
-          fieldValidation: { on: 'change', debounceMs: 0 },
+          updateOn: 'change',
+          debounceMs: 0,
         })
         const rv = handle.api.register('email')
         return () =>
@@ -170,6 +175,28 @@ describe('spike — fieldValidation.debounceMs: 0 disables the debounce timer', 
       const hasError = handle.api?.errors.email !== undefined
       expect(hasError).toBe(!step.valid)
     }
+  })
+
+  it('type-level: debounceMs is rejected with updateOn: "blur" or "submit"', () => {
+    // The discriminated `UpdateOnConfig` makes `debounceMs` a TS error
+    // when paired with `'blur'` or `'submit'`. The `@ts-expect-error`
+    // directives below fail the build if the constraint regresses. The
+    // assertion params don't run — the build is the gate.
+    type Opts = Parameters<typeof useForm<typeof schema>>[0]
+    const ok1: Opts = { schema, updateOn: 'change', debounceMs: 50 }
+    const ok2: Opts = { schema, updateOn: 'blur' }
+    const ok3: Opts = { schema, updateOn: 'submit' }
+    void ok1
+    void ok2
+    void ok3
+
+    // @ts-expect-error — debounceMs is not allowed under updateOn: 'blur'
+    const bad1: Opts = { schema, updateOn: 'blur', debounceMs: 0 }
+    // @ts-expect-error — debounceMs is not allowed under updateOn: 'submit'
+    const bad2: Opts = { schema, updateOn: 'submit', debounceMs: 0 }
+    void bad1
+    void bad2
+    expect(true).toBe(true)
   })
 })
 

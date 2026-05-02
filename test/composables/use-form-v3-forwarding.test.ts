@@ -12,7 +12,7 @@ import { hashStableString } from '../../src/runtime/core/hash'
 /**
  * Regression pin: the zod v3 `useForm` wrapper used to hand-pick the
  * options it forwarded to `useAbstractForm`, silently dropping the
- * opt-in ones (`onInvalidSubmit`, `fieldValidation`, `persist`,
+ * opt-in ones (`onInvalidSubmit`, `updateOn`, `debounceMs`, `persist`,
  * `history`). These tests prove each option now reaches the runtime.
  */
 
@@ -58,7 +58,7 @@ describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  it('forwards fieldValidation — live field errors populate without submit', async () => {
+  it('forwards updateOn / debounceMs — live field errors populate without submit', async () => {
     const strictSchema = z.object({
       email: z.string().email('bad email'),
       password: z.string().min(8, 'min 8 chars'),
@@ -66,7 +66,8 @@ describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
     const { app, api } = mount({
       schema: strictSchema,
       key: 'v3-fieldvalidation',
-      fieldValidation: { on: 'change', debounceMs: 20 },
+      updateOn: 'change',
+      debounceMs: 20,
     })
     apps.push(app)
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { zodAdapter } from '../../../src/runtime/adapters/zod-v4'
 
@@ -164,21 +164,45 @@ describe('zod v4: isLeafAtPath — non-existent paths', () => {
 })
 
 describe('zod v4: isLeafAtPath — cache behaviour', () => {
-  it('returns the same result on repeated calls (memoised)', () => {
+  it('memoises so the second call skips the slim-primitive walk', () => {
     const schema = z.object({ email: z.string(), address: z.object({ city: z.string() }) })
     const adapter = zodAdapter(schema)('f')
+    // The cache short-circuits before calling
+    // `getSlimPrimitiveTypesAtPath`. Spy on it: after the cold call,
+    // the spy should record one invocation; after the warm call on
+    // the same canonical key, the spy count must NOT advance.
+    const spy = vi.spyOn(adapter, 'getSlimPrimitiveTypesAtPath')
+
     expect(adapter.isLeafAtPath(['email'])).toBe(true)
+    expect(spy).toHaveBeenCalledTimes(1)
     expect(adapter.isLeafAtPath(['email'])).toBe(true)
+    expect(spy).toHaveBeenCalledTimes(1) // cache hit — no extra walk
+
+    // Different path → cold miss → spy advances by one.
     expect(adapter.isLeafAtPath(['address'])).toBe(false)
+    expect(spy).toHaveBeenCalledTimes(2)
     expect(adapter.isLeafAtPath(['address'])).toBe(false)
+    expect(spy).toHaveBeenCalledTimes(2)
+
+    spy.mockRestore()
   })
 
   it('canonicalises so dotted-form and array-form share the cache', () => {
     const schema = z.object({ users: z.array(z.object({ name: z.string() })) })
     const adapter = zodAdapter(schema)('f')
-    // Both should resolve to the same canonical key — and both should
-    // return the same answer (the leaf at users.0.name).
+    const spy = vi.spyOn(adapter, 'getSlimPrimitiveTypesAtPath')
+
+    // Array-form first — populates the cache under the canonical key.
     expect(adapter.isLeafAtPath(['users', 0, 'name'])).toBe(true)
+    expect(spy).toHaveBeenCalledTimes(1)
+
+    // Repeated array-form must hit the cache (canonicalises to the
+    // same key). If the cache key changed shape between calls the
+    // spy would advance — which is exactly the regression the title
+    // claims this test prevents.
     expect(adapter.isLeafAtPath(['users', 0, 'name'])).toBe(true)
+    expect(spy).toHaveBeenCalledTimes(1)
+
+    spy.mockRestore()
   })
 })

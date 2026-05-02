@@ -1346,34 +1346,40 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
    * issue at its canonical store key — `form.errors.<path>` reads
    * hit, and stale entries from a previous variant don't survive.
    *
-   * The clear sweep removes the scheduled path itself AND every
-   * strict descendant currently in the store. Without the sweep, an
-   * email-variant `notify.address` entry would persist after switching
-   * to sms (the new run only writes `notify.number`), letting a
-   * ghost error leak through `form.meta.errors`.
-   *
-   * Skipped optimisation: re-using existing arrays when the leaf-key
-   * group is identical to the current entry. We always write a fresh
-   * array so Vue's reactive Map.set fires every consumer; profile
-   * before adding equality short-circuits — most validations land at
-   * leaves where the array is one-deep, so the savings are marginal.
+   * Insertion-order stability: `Map.set` on an EXISTING key updates the
+   * value in place and preserves the slot's position; `Map.delete`
+   * followed by `Map.set` re-inserts at the END. `form.meta.errors`
+   * iterates this Map in insertion order, so a per-field
+   * re-validation that delete-then-sets the scheduled key flips the
+   * aggregate's order on every keystroke. The grouped pass below
+   * computes the surviving key set FIRST so we only delete keys that
+   * genuinely drop out (an old DU-variant leaf that the new pass
+   * doesn't write); keys that survive get an in-place `set` that keeps
+   * their original slot.
    */
   function applySchemaErrorsForSubtree(path: Path, entries: ValidationError[]): void {
     const { key: parentKey } = canonicalizePath(path)
-    schemaErrors.delete(parentKey)
-    for (const existingKey of [...schemaErrors.keys()]) {
-      if (isPathKeyUnder(existingKey, path)) schemaErrors.delete(existingKey)
-    }
-    if (entries.length === 0) return
-    // Group by each error's own canonical leaf path. Multiple issues
-    // at the same path (e.g. two refinements failing the same leaf)
-    // merge into one array — preserves adapter ordering.
+    // Group by each error's own canonical leaf path FIRST so we know
+    // which keys survive this pass. Multiple issues at the same path
+    // (e.g. two refinements failing the same leaf) merge into one
+    // array — preserves adapter ordering within the leaf.
     const grouped = new Map<PathKey, ValidationError[]>()
     for (const err of entries) {
       const { key } = canonicalizePath(err.path as Path)
       const list = grouped.get(key)
       if (list === undefined) grouped.set(key, [err])
       else list.push(err)
+    }
+    // Drop the parent key only if not in the new pass.
+    if (!grouped.has(parentKey)) schemaErrors.delete(parentKey)
+    // Drop stale descendants: existing keys under `path` that the new
+    // pass doesn't write (DU-variant leaves that disappeared on
+    // reshape). Keys that DO appear in `grouped` stay where they are
+    // — the `set` below updates them in place.
+    for (const existingKey of [...schemaErrors.keys()]) {
+      if (isPathKeyUnder(existingKey, path) && !grouped.has(existingKey)) {
+        schemaErrors.delete(existingKey)
+      }
     }
     for (const [leafKey, group] of grouped) {
       schemaErrors.set(leafKey, group)

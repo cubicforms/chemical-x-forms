@@ -57,6 +57,7 @@ function constraintsAreSlimValid(slimSchema: z.ZodSchema, constraints: unknown):
 import { __DEV__ } from '../../core/dev'
 import { CxErrorCode } from '../../core/error-codes'
 import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from './types-zod'
+import { assertSupportedKinds } from './assert-supported'
 import { fingerprintZodSchema } from './fingerprint'
 import { isZodSchemaType } from './helpers'
 
@@ -83,6 +84,12 @@ export function zodAdapter<
     _isRootSchema: boolean
   ): AbstractSchema<Form, GetValueFormType> {
     if (_isRootSchema) {
+      // Walk the original schema (not the stripped one) so the assert
+      // descends through user-declared wrappers (`.optional()`,
+      // `.nullable()`, `.default()`) before checking each leaf. Throws
+      // for kinds we can't represent — `z.promise`, `z.function`,
+      // `z.map`, `z.symbol` — and for self-referencing `z.lazy(...)`.
+      assertSupportedKinds(_zodSchema)
       const [_schema] = stripRootSchema(_zodSchema, {
         stripDefaultValues: true,
         stripNullable: true,

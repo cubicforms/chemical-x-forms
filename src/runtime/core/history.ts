@@ -15,6 +15,11 @@ import type { PathKey } from './paths'
  *  - `form` — the whole form value, captured by reference. Vue's
  *    form ref is replaced wholesale on every mutation, so the
  *    snapshot reference is stable: old references don't mutate.
+ *  - `blankPaths` — set membership at capture time. A numeric field
+ *    can be in two visually-distinct states with the same storage
+ *    value (`0` typed vs `0` cleared); the blank set is what
+ *    distinguishes them. Replaying form alone strands a cleared
+ *    field on the screen as `0`.
  *  - `schemaErrors` + `userErrors` — shallow-cloned Map entries from
  *    each source-segregated store. Captured separately so undo
  *    preserves the lifecycle distinction (schema errors are validation
@@ -28,6 +33,7 @@ import type { PathKey } from './paths'
 
 export type HistorySnapshot<F> = {
   readonly form: F
+  readonly blankPaths: ReadonlyArray<PathKey>
   readonly schemaErrors: ReadonlyArray<readonly [PathKey, ValidationError[]]>
   readonly userErrors: ReadonlyArray<readonly [PathKey, ValidationError[]]>
 }
@@ -75,6 +81,7 @@ export function createHistoryModule<F extends GenericForm>(
     // the generic parameter the caller bound.
     return {
       form: state.form.value as unknown as F,
+      blankPaths: [...state.blankPaths],
       schemaErrors: [...state.schemaErrors.entries()].map(([k, v]) => [k, [...v]] as const),
       userErrors: [...state.userErrors.entries()].map(([k, v]) => [k, [...v]] as const),
     }
@@ -115,6 +122,15 @@ export function createHistoryModule<F extends GenericForm>(
 
   function restore(snap: HistorySnapshot<F>): void {
     suppressNext = true
+    // Re-seed `blankPaths` BEFORE the form replacement fires. Listeners
+    // on `onFormChange` (persistence's onFormChange tap, devtools, the
+    // user's own subscriptions) read the form alongside `blankPaths`
+    // when deciding what to persist or surface; updating both before
+    // the listener loop runs keeps the pair consistent. If blankPaths
+    // landed AFTER applyFormReplacement, the listeners would see new
+    // form + stale blank set for one tick.
+    state.blankPaths.clear()
+    for (const key of snap.blankPaths) state.blankPaths.add(key)
     // Undo / redo replays a whole-form snapshot, so the persist decision
     // can't be made per-path. Rule: if the form has any opted-in path
     // at all, the rewind reaches the persistence layer (so the durable

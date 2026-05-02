@@ -21,7 +21,13 @@ describe('createChemicalXForms', () => {
     // _context is the public-ish AppContext that holds directives/components/mixins.
     // Stable across Vue 3 versions; used here as the most direct lookup.
     const ctx = app._context as unknown as { directives: Record<string, unknown> }
-    expect(ctx.directives['register']).toBeDefined()
+    // A custom directive registers as an object keyed by lifecycle
+    // hooks — `created` is mandatory (the v-register variants all
+    // implement it). Tightened from `.toBeDefined()`, which would
+    // pass for `null` or any plain object.
+    expect(ctx.directives['register']).toEqual(
+      expect.objectContaining({ created: expect.any(Function) })
+    )
     app.unmount()
   })
 

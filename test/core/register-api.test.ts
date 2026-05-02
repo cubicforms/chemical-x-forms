@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
+import { isRef } from 'vue'
 import { createFormStore } from '../../src/runtime/core/create-form-store'
 import { AnonPersistError } from '../../src/runtime/core/errors'
 import { buildRegister } from '../../src/runtime/core/register-api'
@@ -24,7 +25,9 @@ describe('buildRegister', () => {
       expect(typeof rv.registerElement).toBe('function')
       expect(typeof rv.deregisterElement).toBe('function')
       expect(typeof rv.setValueWithInternalPath).toBe('function')
-      expect(rv.innerRef).toBeDefined()
+      // Tightened from `.toBeDefined()` — the contract is a Vue Ref,
+      // not an arbitrary non-undefined value.
+      expect(isRef(rv.innerRef)).toBe(true)
     })
 
     it('innerRef reflects current form value', () => {

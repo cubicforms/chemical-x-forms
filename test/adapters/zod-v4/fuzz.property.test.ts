@@ -29,7 +29,10 @@ describe('zod v4 adapter — fuzz over arbitrary supported schemas', () => {
       strict: false,
     })
     expect(result.success).toBe(true)
-    expect(result.data).toBeDefined()
+    // After `success === true`, the result type narrows so `.data` is
+    // present by construction — assert on shape instead of mere
+    // existence.
+    expect(typeof result.data).toBe('object')
   })
 
   test.prop([arbRootSchema])(

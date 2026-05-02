@@ -20,6 +20,7 @@ import {
   setAtPath,
   setAtPathWithSchemaFill,
 } from './path-walker'
+import { __DEV__ } from './dev'
 import { resolveCoercionIndex, type CoercionIndex } from './schema-coerce'
 import { isSlimPrimitiveValid } from './slim-primitive-gate'
 import { walkUnspecified } from './unset-walker'
@@ -47,6 +48,47 @@ export type FieldRecord = {
   readonly focused: boolean | null
   readonly blurred: boolean | null
   readonly touched: boolean | null
+}
+
+// Hydration shape guards — defend against rolling deploys / stale cache
+// where the SSR bundle's record shape diverges from the client's. The
+// `as FieldRecord` / `as ValidationError[]` casts in the hydration loop
+// would otherwise silently admit malformed entries; downstream reads of
+// `.touched` / `.code` then crash with "Cannot read properties of
+// undefined" far away from the actual cause. Skip the malformed entries
+// and warn once per key in dev so the rolling-deploy diagnosis is loud.
+function isHydratedFieldRecord(value: unknown): value is FieldRecord {
+  if (typeof value !== 'object' || value === null) return false
+  const r = value as Partial<FieldRecord>
+  return (
+    Array.isArray(r.path) &&
+    (typeof r.updatedAt === 'string' || r.updatedAt === null) &&
+    typeof r.isConnected === 'boolean' &&
+    (typeof r.focused === 'boolean' || r.focused === null) &&
+    (typeof r.blurred === 'boolean' || r.blurred === null) &&
+    (typeof r.touched === 'boolean' || r.touched === null)
+  )
+}
+
+function isHydratedValidationErrorArray(value: unknown): value is ValidationError[] {
+  if (!Array.isArray(value)) return false
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) return false
+    const e = entry as Partial<ValidationError>
+    if (typeof e.message !== 'string') return false
+    if (!Array.isArray(e.path)) return false
+    if (typeof e.formKey !== 'string') return false
+    if (typeof e.code !== 'string') return false
+  }
+  return true
+}
+
+function warnMalformedHydration(formKey: FormKey, kind: string, rawKey: string): void {
+  if (!__DEV__) return
+  console.warn(
+    `[@chemical-x/forms] hydration: skipping malformed ${kind} entry at key '${rawKey}' on form '${formKey}'. ` +
+      `This usually means the SSR bundle is on a different version than the client (rolling deploy / stale cache).`
+  )
 }
 
 /** Per-path DOM element tracking. Client-only. */
@@ -757,7 +799,11 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // server-side timestamps and flags) or by walking initialData for leaves.
   if (hydration !== undefined) {
     for (const [rawKey, record] of hydration.fields) {
-      fields.set(rawKey as PathKey, record as FieldRecord)
+      if (typeof rawKey !== 'string' || !isHydratedFieldRecord(record)) {
+        warnMalformedHydration(formKey, 'FieldRecord', String(rawKey))
+        continue
+      }
+      fields.set(rawKey as PathKey, record)
     }
     // Hydration takes precedence over the construction-time seed
     // below: the server already authored whatever error state the
@@ -765,10 +811,18 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // Each store replays from its own snapshot so the source-segregation
     // invariant is preserved across SSR round-trip.
     for (const [rawKey, errs] of hydration.schemaErrors) {
-      schemaErrors.set(rawKey as PathKey, errs as ValidationError[])
+      if (typeof rawKey !== 'string' || !isHydratedValidationErrorArray(errs)) {
+        warnMalformedHydration(formKey, 'schemaErrors', String(rawKey))
+        continue
+      }
+      schemaErrors.set(rawKey as PathKey, errs)
     }
     for (const [rawKey, errs] of hydration.userErrors) {
-      userErrors.set(rawKey as PathKey, errs as ValidationError[])
+      if (typeof rawKey !== 'string' || !isHydratedValidationErrorArray(errs)) {
+        warnMalformedHydration(formKey, 'userErrors', String(rawKey))
+        continue
+      }
+      userErrors.set(rawKey as PathKey, errs)
     }
   } else {
     diffAndApply({}, initialData, [], (patch) => {

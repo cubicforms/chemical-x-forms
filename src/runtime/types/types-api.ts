@@ -1927,7 +1927,6 @@ export type FormErrorStore = Map<FormKey, FormErrorRecord>
  * dotted string as a single key, which would land on a non-existent
  * path. Use chained dot/bracket access or the callable form.
  */
-export type FormFieldErrors<Form extends GenericForm> = FormErrorsSurface<Form>
 
 /**
  * Recursive shape of the `form.errors` proxy. Mirrors the schema:
@@ -2443,7 +2442,7 @@ export type UseAbstractFormReturnType<
    * `clearFieldErrors`. Server-side errors flow through
    * `parseApiErrors` first.
    */
-  errors: FormFieldErrors<Form>
+  errors: FormErrorsSurface<Form>
 
   /**
    * Escape hatch for the rare case a consumer needs a `Ref<T>` —

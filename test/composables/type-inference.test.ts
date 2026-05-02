@@ -322,7 +322,7 @@ describe('useForm type inference — fields + errors', () => {
     expectTypeOf(form.fields.email.errors).toMatchTypeOf<ReadonlyArray<{ message: string }>>()
   })
 
-  it('form.errors is a FormFieldErrors<Form> — leaf-aware drillable callable Proxy', () => {
+  it('form.errors is a FormErrorsSurface<Form> — leaf-aware drillable callable Proxy', () => {
     // Public type is a callable proxy; `(path)` returns a leaf array,
     // dot-access returns leaf array OR sub-shape depending on the path.
     expectTypeOf(form.errors.email).toMatchTypeOf<readonly { message: string }[] | undefined>()

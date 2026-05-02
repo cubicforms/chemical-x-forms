@@ -86,7 +86,6 @@ export type {
   FieldStateMapEntry,
   FormErrorRecord,
   FormErrorsSurface,
-  FormFieldErrors,
   FormKey,
   FormMeta,
   FormStorage,

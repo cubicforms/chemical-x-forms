@@ -1,6 +1,6 @@
 import { computed, reactive, readonly, type Ref } from 'vue'
 import type {
-  FormFieldErrors,
+  FormErrorsSurface,
   FormMeta,
   OnInvalidSubmitPolicy,
   ReactiveValidationStatus,
@@ -491,7 +491,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     >['validateAsync'],
     register: register as UseAbstractFormReturnType<Form, GetValueFormType>['register'],
     key: state.formKey,
-    errors: errorsProxy as unknown as FormFieldErrors<Form>,
+    errors: errorsProxy as unknown as FormErrorsSurface<Form>,
     toRef: pathToRef as UseAbstractFormReturnType<Form, GetValueFormType>['toRef'],
     setFieldErrors,
     addFieldErrors,

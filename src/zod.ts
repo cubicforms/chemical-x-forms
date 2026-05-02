@@ -15,14 +15,7 @@
  *   })
  */
 
-export {
-  UnsupportedSchemaError,
-  assertZodVersion,
-  kindOf,
-  useForm,
-  zodAdapter,
-} from './runtime/adapters/zod-v4'
-export type { ZodKind } from './runtime/adapters/zod-v4'
+export { UnsupportedSchemaError, useForm, zodAdapter } from './runtime/adapters/zod-v4'
 // injectForm is schema-agnostic — the consumer supplies the Form
 // generic — so re-exporting from the /zod subpath is purely for
 // discoverability alongside useForm.

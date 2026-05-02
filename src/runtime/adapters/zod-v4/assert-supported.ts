@@ -144,5 +144,9 @@ export function assertSupportedKinds(
     case 'custom':
     case 'template-literal':
       return
+    default: {
+      const _exhaustive: never = kind
+      throw new Error(`assertSupportedKinds: unhandled ZodKind '${_exhaustive as string}'`)
+    }
   }
 }

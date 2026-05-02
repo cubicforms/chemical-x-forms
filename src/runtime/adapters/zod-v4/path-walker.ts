@@ -137,5 +137,9 @@ function walkSegments(schema: z.ZodType, segments: readonly string[]): z.ZodType
     case 'custom':
     case 'template-literal':
       return []
+    default: {
+      const _exhaustive: never = kind
+      throw new Error(`walkSegments: unhandled ZodKind '${_exhaustive as string}'`)
+    }
   }
 }

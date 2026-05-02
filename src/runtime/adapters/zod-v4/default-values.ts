@@ -147,6 +147,10 @@ function defaultForKind(kind: ZodKind, schema: z.ZodType, useDefault: boolean): 
       // is unreachable through the public surface. Kept for exhaustive
       // switch safety when `deriveDefault` is called directly in tests.
       return undefined
+    default: {
+      const _exhaustive: never = kind
+      throw new Error(`deriveDefault: unhandled ZodKind '${_exhaustive as string}'`)
+    }
   }
 }
 

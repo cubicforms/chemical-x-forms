@@ -160,6 +160,14 @@ export function stripRefinements(schema: z.ZodType): z.ZodType {
     case 'custom':
     case 'template-literal':
       return schema
+    default: {
+      // Compile-time exhaustiveness pin. If `ZodKind` grows a new
+      // variant, this line breaks first — pointing at the offending
+      // value — instead of a diffuse "function lacks return statement"
+      // elsewhere in the file. Mirrors the pattern in assertSupportedKinds.
+      const _exhaustive: never = kind
+      throw new Error(`stripRefinements: unhandled ZodKind '${_exhaustive as string}'`)
+    }
   }
 }
 
@@ -323,6 +331,10 @@ export function getSlimSchema(schema: z.ZodType, stripConfig: StripConfig): z.Zo
       // Preserve the catch wrapper so downstream safeParse still uses
       // the declared fallback — stripping it would discard user intent.
       return (slimmedInner as z.ZodType).catch(getCatchDefault(schema) as never)
+    }
+    default: {
+      const _exhaustive: never = kind
+      throw new Error(`getSlimSchema: unhandled ZodKind '${_exhaustive as string}'`)
     }
   }
 }

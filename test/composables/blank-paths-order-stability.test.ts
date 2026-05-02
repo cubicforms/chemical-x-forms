@@ -22,24 +22,20 @@ import type { UseAbstractFormReturnType } from '../../src/runtime/types/types-ap
  * out of the new pass.
  */
 
-type ApiFor<Schema extends z.ZodType> = Omit<
+type ApiFor<Schema extends z.ZodObject> = Omit<
   UseAbstractFormReturnType<z.output<Schema>>,
   'setValue'
 > & {
   setValue: (path: string, value: unknown) => boolean
 }
 
-function mountForm<Schema extends z.ZodType>(
-  schema: Schema,
-  defaultValues: NonNullable<Parameters<typeof useForm<Schema>>[0]['defaultValues']>
-): { app: App; api: ApiFor<Schema> } {
+function mountForm<Schema extends z.ZodObject>(schema: Schema): { app: App; api: ApiFor<Schema> } {
   const handle: { api?: ApiFor<Schema> } = {}
   const App = defineComponent({
     setup() {
       handle.api = useForm({
         schema,
         key: `blank-order-${Math.random().toString(36).slice(2)}`,
-        defaultValues,
         fieldValidation: { on: 'change', debounceMs: 0 },
       }) as unknown as ApiFor<Schema>
       return () => h('div')
@@ -83,7 +79,7 @@ describe('derivedBlankErrors — insertion-order stability across DU reshape', (
   it('same-disc Case B reshape preserves blankPaths order', async () => {
     // Omitted defaults — the construction-time walker auto-marks
     // every numeric primitive leaf in schema-declaration order.
-    const { app, api } = mountForm(schema, undefined)
+    const { app, api } = mountForm(schema)
     apps.push(app)
     await flushValidations()
 
@@ -98,7 +94,7 @@ describe('derivedBlankErrors — insertion-order stability across DU reshape', (
   })
 
   it('same-disc Case B reshape preserves form.meta.errors order', async () => {
-    const { app, api } = mountForm(schema, undefined)
+    const { app, api } = mountForm(schema)
     apps.push(app)
     await flushValidations()
 

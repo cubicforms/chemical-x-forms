@@ -85,7 +85,7 @@ export async function getStorageAdapter(
 /**
  * Persisted payload envelope.
  *
- * `v` is a CX-INTERNAL storage-format version — bumped only when the
+ * `v` is a attaform-INTERNAL storage-format version — bumped only when the
  * library's persisted payload schema itself changes (e.g. adding a new
  * field, restructuring `data`). It is NOT consumer-controlled.
  * Schema-driven invalidation uses the storage key's `:${fingerprint}`
@@ -118,7 +118,7 @@ export type PersistedPayload<Form> = {
 }
 
 /**
- * Current CX-internal envelope version. Bumped only when the library
+ * Current attaform-internal envelope version. Bumped only when the library
  * changes the persisted payload's structural shape — readers reject
  * envelopes with a different `v`. Schema-content invalidation is
  * handled at the storage key level (the `:${fingerprint}` suffix), so

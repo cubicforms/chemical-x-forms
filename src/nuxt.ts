@@ -21,7 +21,7 @@ import type { AttaformDefaults } from './runtime/types/types-api'
  * })
  * ```
  */
-export interface CXModuleOptions {
+export interface AttaformModuleOptions {
   /**
    * App-level defaults applied to every `useForm` call. Per-form
    * options always win. See `AttaformDefaults` for the
@@ -35,7 +35,7 @@ export interface CXModuleOptions {
  * Reach it via `useRuntimeConfig().public.attaform` if you need to
  * read the configured defaults outside the form library itself.
  */
-export type CXRuntimeConfig = {
+export type AttaformRuntimeConfig = {
   defaults: AttaformDefaults
 }
 
@@ -78,7 +78,7 @@ function canResolve(specifier: string, fromURL: string): boolean {
   }
 }
 
-export default defineNuxtModule<CXModuleOptions>({
+export default defineNuxtModule<AttaformModuleOptions>({
   meta: {
     name: 'attaform',
     configKey: 'attaform',
@@ -105,7 +105,7 @@ export default defineNuxtModule<CXModuleOptions>({
     const runtimePublic = nuxt.options.runtimeConfig.public as Record<string, unknown>
     runtimePublic['attaform'] = {
       defaults: _options.defaults ?? {},
-    } satisfies CXRuntimeConfig
+    } satisfies AttaformRuntimeConfig
 
     // Force-include attaform's own peers that Vite's startup crawl
     // tends to miss for Nuxt projects. Vite scans `index.html` + the

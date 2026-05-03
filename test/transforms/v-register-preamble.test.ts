@@ -64,7 +64,7 @@ describe('vRegisterPreambleTransform', () => {
     it('captures un-wrapped expressions when registered before the hint transform', () => {
       // Critical ordering invariant: preamble's pre-order capture must
       // see the original expression, not the IIFE-wrapped form. If this
-      // breaks, the preamble's text would contain `__cxRv` references
+      // breaks, the preamble's text would contain `__attaRv` references
       // pointing at a free identifier (the wrapper's parameter is gone
       // by the time the preamble injects).
       const code = compileWithPreambleOnly(
@@ -76,8 +76,8 @@ describe('vRegisterPreambleTransform', () => {
       const occurrences = code.match(/markConnectedOptimistically/g)?.length ?? 0
       expect(occurrences).toBe(1)
       // The captured expression in the preamble does NOT contain the
-      // hint wrapper's marker (`__cxRv`), proving we captured pre-wrap.
-      expect(code).not.toContain('__cxRv')
+      // hint wrapper's marker (`__attaRv`), proving we captured pre-wrap.
+      expect(code).not.toContain('__attaRv')
     })
   })
 

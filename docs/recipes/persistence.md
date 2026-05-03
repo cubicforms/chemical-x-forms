@@ -1,7 +1,7 @@
 # Persist drafts across reloads
 
 Long forms — multi-step onboarding, checkout, surveys — should
-survive a navigation mistake or a browser refresh. Cx persists drafts
+survive a navigation mistake or a browser refresh. Attaform persists drafts
 to client-side storage with a per-field opt-in.
 
 ## The threat model
@@ -351,7 +351,7 @@ a string prefix (e.g. custom keys `my-form` vs `my-form-2`).
 ### Removing `persist:` entirely
 
 Removing the `persist:` option from `useForm()` is the same hygiene
-problem one step further. Cx sweeps all three standard backends for
+problem one step further. Attaform sweeps all three standard backends for
 the form's default key whenever `useForm()` is called without a
 `persist:` option, so a deployment that disables persistence (for
 compliance, simplification, whatever) actually clears the on-disk

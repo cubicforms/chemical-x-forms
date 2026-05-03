@@ -12,7 +12,7 @@ import {
  * IIFE that calls `markConnectedOptimistically()` on the resulting
  * `RegisterValue` and returns the same object:
  *
- *   ((__cxRv) => (__cxRv?.markConnectedOptimistically?.(), __cxRv))(<expr>)
+ *   ((__attaRv) => (__attaRv?.markConnectedOptimistically?.(), __attaRv))(<expr>)
  *
  * Why this exists: Vue intentionally skips directive lifecycle hooks
  * during SSR (see `core/directive.ts`'s top comment). That means the
@@ -46,7 +46,7 @@ import {
  * and skips re-wrapping.
  */
 
-const HINT_MARKER = '__cxRv'
+const HINT_MARKER = '__attaRv'
 const HINT_PREFIX = `((${HINT_MARKER}) => (${HINT_MARKER}?.markConnectedOptimistically?.(), ${HINT_MARKER}))(`
 const HINT_SUFFIX = `)`
 

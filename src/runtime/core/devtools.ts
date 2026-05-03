@@ -1,14 +1,14 @@
 import type { App } from 'vue'
 import type { FormStore } from './create-form-store'
-import type { ChemicalXRegistry } from './registry'
+import type { DecantRegistry } from './registry'
 import type { GenericForm } from '../types/types-core'
 import type { FormKey } from '../types/types-api'
 import { canonicalizePath } from './paths'
 import { isSensitivePath } from './persistence/sensitive-names'
 
 /**
- * Vue DevTools plugin wiring for @chemical-x/forms. Lazy-imported by
- * `createChemicalXForms` under dev-mode guards so the production
+ * Vue DevTools plugin wiring for decant. Lazy-imported by
+ * `createDecant` under dev-mode guards so the production
  * bundle tree-shakes it out entirely.
  *
  * Registers:
@@ -20,13 +20,13 @@ import { isSensitivePath } from './persistence/sensitive-names'
  *    pushes through `state.setValueAtPath`, mutating the form.
  *
  * Tolerant of missing `@vue/devtools-api` — the peer dep is marked
- * optional. If the import fails, `setupChemicalXDevtools` silently
+ * optional. If the import fails, `setupDecantDevtools` silently
  * no-ops so production builds / users without DevTools installed
  * don't see errors.
  */
 
-const INSPECTOR_ID = 'chemical-x-forms'
-const TIMELINE_LAYER_ID = 'chemical-x-forms:events'
+const INSPECTOR_ID = 'decant'
+const TIMELINE_LAYER_ID = 'decant:events'
 
 const REDACTED = '[redacted]'
 
@@ -131,10 +131,7 @@ type SetupDevtoolsPluginFn = (
  * DevTools was wired successfully, `false` otherwise — useful for
  * tests.
  */
-export async function setupChemicalXDevtools(
-  app: App,
-  registry: ChemicalXRegistry
-): Promise<boolean> {
+export async function setupDecantDevtools(app: App, registry: DecantRegistry): Promise<boolean> {
   let mod: { setupDevtoolsPlugin?: SetupDevtoolsPluginFn }
   try {
     mod = (await import('@vue/devtools-api')) as {
@@ -152,25 +149,25 @@ export async function setupChemicalXDevtools(
   setupDevtoolsPlugin(
     {
       id: INSPECTOR_ID,
-      label: 'Chemical X Forms',
-      packageName: '@chemical-x/forms',
-      homepage: 'https://github.com/cubicforms/chemical-x-forms',
+      label: 'Decant',
+      packageName: 'decant',
+      homepage: 'https://github.com/decantjs/forms',
       app,
-      componentStateTypes: ['Chemical X form'],
+      componentStateTypes: ['Decant form'],
     },
     (api) => wire(api, app, registry)
   )
   return true
 }
 
-function wire(api: UnsafeDevtoolsApi, app: App, registry: ChemicalXRegistry): void {
+function wire(api: UnsafeDevtoolsApi, app: App, registry: DecantRegistry): void {
   // Per-form subscriber bookkeeping — we keep the unsubscribers so
   // the registry's eviction path can detach them when a form is
   // disposed. Using a Map keyed by FormKey mirrors the registry.
   const subscriberUnsubs = new Map<FormKey, () => void>()
 
-  api.addInspector({ id: INSPECTOR_ID, label: 'Chemical X Forms', app })
-  api.addTimelineLayer({ id: TIMELINE_LAYER_ID, label: 'Chemical X Forms', color: 0x5b8def })
+  api.addInspector({ id: INSPECTOR_ID, label: 'Decant', app })
+  api.addTimelineLayer({ id: TIMELINE_LAYER_ID, label: 'Decant', color: 0x5b8def })
 
   function refreshTree(): void {
     api.sendInspectorTree(INSPECTOR_ID)

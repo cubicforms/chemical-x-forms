@@ -133,13 +133,13 @@ function indexRules(rules: CoercionRegistry): CoercionIndex {
       typeof (candidate as { transform?: unknown }).transform !== 'function'
     ) {
       if (__DEV__) {
-        console.warn('[@chemical-x/forms] coercion entry missing or invalid `transform` — skipped.')
+        console.warn('[decant] coercion entry missing or invalid `transform` — skipped.')
       }
       continue
     }
     const key = `${entry.input}->${entry.output}` as const
     if (idx.has(key) && __DEV__) {
-      console.warn(`[@chemical-x/forms] duplicate coercion rule for '${key}' — last entry wins.`)
+      console.warn(`[decant] duplicate coercion rule for '${key}' — last entry wins.`)
     }
     idx.set(key, entry)
   }
@@ -250,7 +250,7 @@ function coerceScalar(
   } catch (err) {
     if (__DEV__ && shouldWarnOnce(`${entry.input}->${entry.output}::throw`)) {
       console.warn(
-        `[@chemical-x/forms] coercion '${entry.input}->${entry.output}' threw — write passes through.`,
+        `[decant] coercion '${entry.input}->${entry.output}' threw — write passes through.`,
         err
       )
     }
@@ -264,7 +264,7 @@ function coerceScalar(
   if (returnedKind !== entry.output) {
     if (__DEV__ && shouldWarnOnce(`${entry.input}->${entry.output}::wrong-kind:${returnedKind}`)) {
       console.warn(
-        `[@chemical-x/forms] coercion '${entry.input}->${entry.output}' produced a ${returnedKind} — write passes through.`
+        `[decant] coercion '${entry.input}->${entry.output}' produced a ${returnedKind} — write passes through.`
       )
     }
     return value
@@ -272,7 +272,7 @@ function coerceScalar(
   if (entry.output === 'number' && !Number.isFinite(result.value as number)) {
     if (__DEV__ && shouldWarnOnce(`${entry.input}->${entry.output}::nan`)) {
       console.warn(
-        `[@chemical-x/forms] coercion '${entry.input}->${entry.output}' produced a non-finite number — write passes through.`
+        `[decant] coercion '${entry.input}->${entry.output}' produced a non-finite number — write passes through.`
       )
     }
     return value

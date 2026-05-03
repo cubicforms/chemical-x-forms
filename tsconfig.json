@@ -25,10 +25,10 @@
     "pretty": true,
     "paths": {
       "@runtime/*": ["./src/runtime/*"],
-      "@chemical-x/forms": ["./src/index.ts"],
-      "@chemical-x/forms/types": ["./src/runtime/types/types-api.ts"],
-      "@chemical-x/forms/zod": ["./src/zod.ts"],
-      "@chemical-x/forms/zod-v3": ["./src/zod-v3.ts"]
+      "decant": ["./src/index.ts"],
+      "decant/types": ["./src/runtime/types/types-api.ts"],
+      "decant/zod": ["./src/zod.ts"],
+      "decant/zod-v3": ["./src/zod-v3.ts"]
     },
     "removeComments": false,
     "stripInternal": true,

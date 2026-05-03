@@ -16,7 +16,7 @@ Install the module and call `useForm` normally:
 ```ts
 // nuxt.config.ts
 export default defineNuxtConfig({
-  modules: ['@chemical-x/forms/nuxt'],
+  modules: ['decant/nuxt'],
 })
 ```
 
@@ -29,7 +29,7 @@ export default defineNuxtConfig({
 Values, errors, and touched / focused / blurred flags survive the
 server → client round-trip through `nuxtApp.payload`. Need to peek?
 Open the rendered HTML and look for your Nuxt payload `<script>`;
-`chemicalX` is a top-level key.
+`decant` is a top-level key.
 
 ## Bare Vue — two functions
 
@@ -38,24 +38,20 @@ Open the rendered HTML and look for your Nuxt payload `<script>`;
 ```ts
 import { createSSRApp } from 'vue'
 import { renderToString } from '@vue/server-renderer'
-import {
-  createChemicalXForms,
-  escapeForInlineScript,
-  renderChemicalXState,
-} from '@chemical-x/forms'
+import { createDecant, escapeForInlineScript, renderDecantState } from 'decant'
 import App from './App.vue'
 
 export async function render(url: string) {
   const app = createSSRApp(App)
-  app.use(createChemicalXForms())
+  app.use(createDecant())
 
   const html = await renderToString(app)
 
-  const chemicalXState = renderChemicalXState(app)
+  const decantState = renderDecantState(app)
   // escapeForInlineScript keeps `</script>` and U+2028 / U+2029
   // separators out of the inline payload so it can't break out of
   // the <script> tag.
-  const payload = escapeForInlineScript(JSON.stringify(chemicalXState))
+  const payload = escapeForInlineScript(JSON.stringify(decantState))
 
   return { html, payload }
 }
@@ -67,7 +63,7 @@ export async function render(url: string) {
 <body>
   <div id="app"><!--ssr-outlet--></div>
   <script>
-    window.__CHEMICAL_X_STATE__ = {{{ payload }}};
+    window.__DECANT_STATE__ = {{{ payload }}};
   </script>
   <script type="module" src="/src/entry-client.ts"></script>
 </body>
@@ -77,16 +73,16 @@ export async function render(url: string) {
 
 ```ts
 import { createSSRApp } from 'vue'
-import { createChemicalXForms, hydrateChemicalXState } from '@chemical-x/forms'
+import { createDecant, hydrateDecantState } from 'decant'
 import App from './App.vue'
 
 const app = createSSRApp(App)
-app.use(createChemicalXForms())
+app.use(createDecant())
 
 // Replay the server's form state BEFORE mounting — forms read from
 // the hydration bag during setup.
-const serialized = (window as any).__CHEMICAL_X_STATE__
-if (serialized !== undefined) hydrateChemicalXState(app, serialized)
+const serialized = (window as any).__DECANT_STATE__
+if (serialized !== undefined) hydrateDecantState(app, serialized)
 
 app.mount('#app')
 ```
@@ -105,7 +101,7 @@ values the server rendered.
 
 **"The form is empty on the client even though the server rendered values."**
 
-- Did you call `hydrateChemicalXState(app, payload)` before
+- Did you call `hydrateDecantState(app, payload)` before
   `app.mount(...)`? It has to land before `setup` runs.
 - Does the form's `key` match between server and client? Hard-code
   it as a string literal. `uuidv4()` or `Math.random()` produces a

@@ -1,5 +1,5 @@
 {
-  "name": "@chemical-x/forms",
+  "name": "decant",
   "version": "0.13.0",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
@@ -19,7 +19,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/cubicforms/chemical-x-forms"
+    "url": "https://github.com/decantjs/forms"
   },
   "scripts": {
     "dev": "nuxi dev playground",
@@ -45,10 +45,10 @@
     "version": "node scripts/promote-changelog.mjs && (node scripts/generate-release-notes.mjs || echo '[version] release-notes step failed; continuing') && git add CHANGELOG.md RELEASES.md",
     "prepare": "husky"
   },
-  "description": "A fully type-safe, schema-driven form library that gives you superpowers. Chemical X included.",
+  "description": "A fully type-safe, schema-driven form library for Vue 3 that gives you superpowers.",
   "author": "Oswald Chisala",
   "bugs": {
-    "url": "https://github.com/cubicforms/chemical-x-forms/issues"
+    "url": "https://github.com/decantjs/forms/issues"
   },
   "exports": {
     ".": {
@@ -98,8 +98,7 @@
     "composable",
     "field-array",
     "reactive",
-    "cubic forms",
-    "chemical x"
+    "decant"
   ],
   "license": "MIT",
   "packageManager": "pnpm@9.7.0",

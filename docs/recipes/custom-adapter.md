@@ -1,6 +1,6 @@
 # Plug in your own schema library
 
-Chemical X is schema-agnostic. Zod is just one implementation of
+Decant is schema-agnostic. Zod is just one implementation of
 the internal `AbstractSchema` contract. If you're on Valibot,
 ArkType, Effect-Schema, or a hand-rolled validator, wire yours in
 without forking the library.
@@ -87,8 +87,8 @@ import type {
   SlimPrimitiveKind,
   ValidationError,
   ValidationResponse,
-} from '@chemical-x/forms'
-import type { DeepPartial, GenericForm } from '@chemical-x/forms'
+} from 'decant'
+import type { DeepPartial, GenericForm } from 'decant'
 
 // Permissive fallback used by `getSlimPrimitiveTypesAtPath` when the
 // schema doesn't declare a path. Adapter-specific — your library's
@@ -196,7 +196,7 @@ microtask and the caller's code works identically.
 
 ```ts
 // useForm.ts
-import { useForm as useAbstractForm } from '@chemical-x/forms'
+import { useForm as useAbstractForm } from 'decant'
 import { myLibAdapter } from './adapter'
 
 export function useForm<F extends GenericForm>(options: {

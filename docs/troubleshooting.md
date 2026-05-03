@@ -23,7 +23,7 @@ when the position is an array index.
 
 ## "Hydration mismatch after SSR"
 
-**Did you call `hydrateChemicalXState(app, payload)` before
+**Did you call `hydrateDecantState(app, payload)` before
 `app.mount(...)`?** It has to land before setup runs. See the
 [SSR recipe](./recipes/ssr-hydration.md).
 
@@ -58,7 +58,7 @@ In dev, a collision whose schemas disagree on shape surfaces as
 a `console.warn`:
 
 ```
-[@chemical-x/forms] Two useForm() calls with key "signup" use
+[decant] Two useForm() calls with key "signup" use
 structurally-different schemas. Only the first caller wires the
 form; the second caller's schema is silently ignored (shared
 "last-write" semantics). …
@@ -93,9 +93,9 @@ The schema generic couldn't be inferred. Two likely causes:
 - Your schema is typed as bare `ZodObject` without its concrete
   shape. Use the literal (`z.object({ email: z.string() })`) or
   give the variable a precise type.
-- You imported `useForm` from `@chemical-x/forms` (the abstract
+- You imported `useForm` from `decant` (the abstract
   entry) but passed a zod schema directly. Import from
-  `@chemical-x/forms/zod` or `/zod-v3` instead.
+  `decant/zod` or `/zod-v3` instead.
 
 See the [0.7 → 0.8 migration](./migration/0.7-to-0.8.md) for the
 subpath split and required-`key` contract.
@@ -134,7 +134,7 @@ v-register onto an inner native element:
 ```vue
 <!-- StyledInput.vue -->
 <script setup lang="ts">
-  import { useRegister } from '@chemical-x/forms'
+  import { useRegister } from 'decant'
   const register = useRegister()
 </script>
 

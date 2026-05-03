@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 
 /**
  * Phase 5.6 — async validation end-to-end.
@@ -49,7 +49,7 @@ function mountForm(onCreated: (form: ReturnType<typeof useForm<typeof signupSche
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createChemicalXForms({ override: true }))
+  const app = createApp(App).use(createDecant({ override: true }))
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)

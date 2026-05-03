@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { useRegister } from '../../src/runtime/composables/use-register'
 import { vRegister } from '../../src/runtime/core/directive'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 import { inputTextAreaNodeTransform } from '../../src/runtime/lib/core/transforms/input-text-area-transform'
 import { selectNodeTransform } from '../../src/runtime/lib/core/transforms/select-transform'
 import { vRegisterHintTransform } from '../../src/runtime/lib/core/transforms/v-register-hint-transform'
@@ -32,7 +32,7 @@ import { vRegisterPreambleTransform } from '../../src/runtime/lib/core/transform
  *   4. vRegisterHintTransform — hints / dev-warns
  *
  * The directive itself is registered globally by
- * `createChemicalXForms()` (the app plugin), matching what consumer
+ * `createDecant()` (the app plugin), matching what consumer
  * apps do.
  */
 
@@ -83,7 +83,7 @@ describe('useRegister — template-compiled v-register reaches inner input', () 
     // Child SFC equivalent: <label><input v-register="register" /></label>.
     // After compilation, the `v-register` directive on the inner input
     // is resolved against the globally-registered `register` directive
-    // (see createChemicalXForms()). The render function reads
+    // (see createDecant()). The render function reads
     // `register` from setup return.
     const Child = defineComponent({
       name: 'Child',
@@ -112,7 +112,7 @@ describe('useRegister — template-compiled v-register reaches inner input', () 
       render: compileTemplateToRender(`<Child v-register="form.register('email')" />`),
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -165,7 +165,7 @@ describe('useRegister — template-compiled v-register reaches inner input', () 
       render: compileTemplateToRender(`<Child v-register="form.register('email')" />`),
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -193,7 +193,7 @@ describe('useRegister — template-compiled v-register reaches inner input', () 
   // started silently no-op'ing.
   it('the globally-registered v-register directive is the same vRegister this lib exports', () => {
     const probe = createApp({ render: () => null })
-    probe.use(createChemicalXForms())
+    probe.use(createDecant())
     expect(probe._context.directives['register']).toBe(vRegister)
   })
 })

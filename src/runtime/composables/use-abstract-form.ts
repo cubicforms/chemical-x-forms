@@ -37,7 +37,7 @@ import { kFormContext, kFormInstanceId, useRegistry } from '../core/registry'
 import { walkUnsetSentinels } from '../core/unset-walker'
 import type {
   AbstractSchema,
-  ChemicalXFormsDefaults,
+  DecantDefaults,
   FormKey,
   PersistConfigOptions,
   UseFormReturnType,
@@ -52,7 +52,7 @@ import type { DeepPartial, DefaultValuesShape, GenericForm, WriteShape } from '.
  * adapter or a third-party validation library.
  *
  * ```ts
- * import { useForm } from '@chemical-x/forms'
+ * import { useForm } from 'decant'
  *
  * const form = useForm({
  *   schema: myCustomAdapter,
@@ -61,7 +61,7 @@ import type { DeepPartial, DefaultValuesShape, GenericForm, WriteShape } from '.
  * ```
  *
  * Most consumers prefer a typed entry point — e.g.
- * `@chemical-x/forms/zod` (v4) or `@chemical-x/forms/zod-v3` —
+ * `decant/zod` (v4) or `decant/zod-v3` —
  * which wrap the underlying library's schema with the matching
  * adapter automatically.
  *
@@ -266,7 +266,7 @@ export function useAbstractForm<
  * configuration. Per-form values always win for scalars; `validateOn`
  * and `debounceMs` resolve independently so a default like
  * `{ debounceMs: 100 }` carries through even when the per-form call
- * passes `{ validateOn: 'blur' }`. See `ChemicalXFormsDefaults` for the
+ * passes `{ validateOn: 'blur' }`. See `DecantDefaults` for the
  * full merge contract.
  */
 function mergeWithDefaults<
@@ -275,7 +275,7 @@ function mergeWithDefaults<
   Schema extends AbstractSchema<Form, GetValueFormType>,
   Defaults extends DeepPartial<DefaultValuesShape<Form>>,
 >(
-  defaults: ChemicalXFormsDefaults,
+  defaults: DecantDefaults,
   configuration: UseFormConfiguration<Form, GetValueFormType, Schema, Defaults>
 ): UseFormConfiguration<Form, GetValueFormType, Schema, Defaults> {
   // exactOptionalPropertyTypes rejects explicit `undefined` on optional
@@ -507,15 +507,12 @@ function warnOnSchemaFingerprintMismatch(
     existingFp = existing.fingerprint()
     incomingFp = incoming.fingerprint()
   } catch (error) {
-    console.error(
-      `[@chemical-x/forms] fingerprint() threw for key "${key}"; skipping mismatch check.`,
-      error
-    )
+    console.error(`[decant] fingerprint() threw for key "${key}"; skipping mismatch check.`, error)
     return
   }
   if (existingFp === incomingFp) return
   console.warn(
-    `[@chemical-x/forms] useForm() calls with key "${key}" use different schemas; first wins, second is ignored. Use identical schemas or unique keys.\n  existing: ${existingFp}\n  incoming: ${incomingFp}`
+    `[decant] useForm() calls with key "${key}" use different schemas; first wins, second is ignored. Use identical schemas or unique keys.\n  existing: ${existingFp}\n  incoming: ${incomingFp}`
   )
 }
 
@@ -972,7 +969,7 @@ function enforceAnonPersistRule(formKey: string, isSSR: boolean): boolean {
   if (!isSSR && !warnedAnonPersistKeys.has(formKey)) {
     warnedAnonPersistKeys.add(formKey)
     console.warn(
-      "[@chemical-x/forms] persist: ignored — anonymous useForm() can't safely persist " +
+      "[decant] persist: ignored — anonymous useForm() can't safely persist " +
         '(key drift + cross-form collision risk).\n' +
         '  Persistence is disabled for this form; the app keeps working.\n' +
         "  Fix: useForm({ schema, key: 'login', persist: '...' })"

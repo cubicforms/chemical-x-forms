@@ -22,7 +22,7 @@ import { createApp, defineComponent, h, nextTick, withDirectives, type App } fro
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 
 async function flush(): Promise<void> {
   for (let i = 0; i < 4; i++) {
@@ -63,7 +63,7 @@ describe('register({ transforms }) — prod log shape (information-leak guard)',
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -112,7 +112,7 @@ describe('register({ transforms }) — prod log shape (information-leak guard)',
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-  import { parseApiErrors } from '@chemical-x/forms'
-  import { useForm } from '@chemical-x/forms/zod'
+  import { parseApiErrors } from 'decant'
+  import { useForm } from 'decant/zod'
   import z from 'zod'
 
   // 1. Basic register + form.values across multiple inputs binding to the same path.
@@ -75,7 +75,7 @@
 
 <template>
   <div style="font-family: system-ui; max-width: 720px; margin: 2rem auto; padding: 0 1rem">
-    <h1>chemical-x-forms playground</h1>
+    <h1>decant playground</h1>
 
     <h2>1. Multiple inputs, one path</h2>
     <p>current fruit: '{{ fruitForm.values.fruit }}'</p>

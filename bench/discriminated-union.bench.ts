@@ -14,7 +14,7 @@ import { createSSRApp, defineComponent, h } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { z } from 'zod'
 import { useForm } from '../src/runtime/adapters/zod-v4'
-import { createChemicalXForms } from '../src/runtime/core/plugin'
+import { createDecant } from '../src/runtime/core/plugin'
 
 const schema = z.object({
   event: z.discriminatedUnion('kind', [
@@ -33,7 +33,7 @@ function mount() {
     },
   })
   const app = createSSRApp(App)
-  app.use(createChemicalXForms({ override: true }))
+  app.use(createDecant({ override: true }))
   void renderToString(app)
   if (captured === undefined) throw new Error('useForm setup did not run')
   return captured

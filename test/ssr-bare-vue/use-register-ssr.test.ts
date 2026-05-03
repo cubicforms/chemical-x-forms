@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Vue from 'vue'
 import { createSSRApp, defineComponent } from 'vue'
 import { useForm, useRegister } from '../../src'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 import { selectNodeTransform } from '../../src/runtime/lib/core/transforms/select-transform'
 import { vRegisterHintTransform } from '../../src/runtime/lib/core/transforms/v-register-hint-transform'
 import { vRegisterPreambleTransform } from '../../src/runtime/lib/core/transforms/v-register-preamble-transform'
@@ -92,7 +92,7 @@ function makeAppWithParentChildTemplate(parentTemplate: string) {
     render: compileWithCxTransforms(parentTemplate),
   })
   const app = createSSRApp(Parent)
-  app.use(createChemicalXForms({ override: true /* SSR */ }))
+  app.use(createDecant({ override: true /* SSR */ }))
   return app
 }
 
@@ -187,7 +187,7 @@ describe('useRegister — SSR (renderToString)', () => {
       },
     })
     const app = createSSRApp(Parent)
-    app.use(createChemicalXForms({ override: true }))
+    app.use(createDecant({ override: true }))
     await renderToString(app)
 
     const noParentRvWarns = warnings.filter((w) =>

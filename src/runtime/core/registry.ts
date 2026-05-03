@@ -1,6 +1,6 @@
 import type { App, InjectionKey } from 'vue'
 import { getCurrentInstance, inject, shallowReactive } from 'vue'
-import type { ChemicalXFormsDefaults, FormKey } from '../types/types-api'
+import type { DecantDefaults, FormKey } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { OutsideSetupError, RegistryNotInstalledError } from './errors'
@@ -8,7 +8,7 @@ import { detectSSR, type SSRDetectOptions } from './ssr'
 
 /**
  * Per-Vue-app container for all form state instances. Each
- * `app.use(createChemicalXForms())` call gets its own registry,
+ * `app.use(createDecant())` call gets its own registry,
  * so the library runs under bare Vue 3 + SSR (via
  * `@vue/server-renderer`) and Nuxt with the same code path.
  *
@@ -20,8 +20,8 @@ import { detectSSR, type SSRDetectOptions } from './ssr'
 
 /**
  * Serialised snapshot of one form's state, captured by
- * `renderChemicalXState` for SSR and replayed by
- * `hydrateChemicalXState` on the client. Round-trips through
+ * `renderDecantState` for SSR and replayed by
+ * `hydrateDecantState` on the client. Round-trips through
  * JSON-safe tuples; field references are intentionally omitted
  * (DOM nodes don't survive serialisation).
  */
@@ -57,28 +57,28 @@ export type SerializedFormData = {
 export type PendingHydration = Map<FormKey, SerializedFormData>
 
 /**
- * The library's per-Vue-app container. One `ChemicalXRegistry` is
- * created per `app.use(createChemicalXForms())` call.
+ * The library's per-Vue-app container. One `DecantRegistry` is
+ * created per `app.use(createDecant())` call.
  *
  * Most consumers never touch this directly — `useForm` and
  * `injectForm` reach the registry on your behalf. Access it
  * explicitly only when wiring SSR or a custom plugin integration.
  */
-export type ChemicalXRegistry = {
+export type DecantRegistry = {
   /**
    * Live forms keyed by `FormKey`.
    * @internal
    */
   readonly forms: Map<FormKey, FormStore<GenericForm>>
   /**
-   * Snapshots staged by `hydrateChemicalXState` waiting to be consumed by the next `useForm` call.
+   * Snapshots staged by `hydrateDecantState` waiting to be consumed by the next `useForm` call.
    * @internal
    */
   readonly pendingHydration: PendingHydration
   /** `true` while running on the server during SSR; `false` on the client. */
   readonly isSSR: boolean
   /** App-level defaults applied to every `useForm` call. */
-  readonly defaults: ChemicalXFormsDefaults
+  readonly defaults: DecantDefaults
   /**
    * Track a consumer of `key`. Returns a dispose function — call it
    * when the consumer unmounts. The form is evicted automatically
@@ -102,18 +102,16 @@ export type ChemicalXRegistry = {
  * `injectForm` resolve the registry automatically.
  */
 // `Symbol.for(...)` so the key survives module duplication. If Vite's
-// dep optimizer ends up serving chemical-x as two separate copies (one
+// dep optimizer ends up serving decant as two separate copies (one
 // live-ESM, one pre-bundled — the standard hazard for linked-source
 // installs that opt into `optimizeDeps.include`), each copy still
 // resolves the same global symbol from the well-known string. Plugin
-// install's `app.provide(kChemicalXRegistry, ...)` and the page's
-// `inject(kChemicalXRegistry, null)` agree on the key, so `useForm`
+// install's `app.provide(kDecantRegistry, ...)` and the page's
+// `inject(kDecantRegistry, null)` agree on the key, so `useForm`
 // finds its registry regardless of which copy did the provide. The
-// `chemical-x-forms:` prefix namespaces the key safely. Same reasoning
+// `decant:` prefix namespaces the key safely. Same reasoning
 // for `kFormContext` and `kFormInstanceId` below.
-export const kChemicalXRegistry: InjectionKey<ChemicalXRegistry> = Symbol.for(
-  'chemical-x-forms:registry'
-)
+export const kDecantRegistry: InjectionKey<DecantRegistry> = Symbol.for('decant:registry')
 
 /**
  * Provides the current form's FormStore to descendants. Installed by
@@ -124,9 +122,7 @@ export const kChemicalXRegistry: InjectionKey<ChemicalXRegistry> = Symbol.for(
  * shape must supply its own `Form` generic, because Vue's InjectionKey
  * erases the generic at the provide/inject boundary.
  */
-export const kFormContext: InjectionKey<FormStore<GenericForm>> = Symbol.for(
-  'chemical-x-forms:form-context'
-)
+export const kFormContext: InjectionKey<FormStore<GenericForm>> = Symbol.for('decant:form-context')
 
 /**
  * Provide / inject key for the per-`useForm()`-call instance ID. Provided
@@ -140,12 +136,12 @@ export const kFormContext: InjectionKey<FormStore<GenericForm>> = Symbol.for(
  * ID; descendants of each branch inherit the branch's ID. Two ID spaces
  * stay isolated even when the underlying FormStore is shared.
  */
-export const kFormInstanceId: InjectionKey<string> = Symbol.for('chemical-x-forms:form-instance-id')
+export const kFormInstanceId: InjectionKey<string> = Symbol.for('decant:form-instance-id')
 
 declare module 'vue' {
   interface App {
     /** @internal */
-    _chemicalX?: ChemicalXRegistry
+    _decant?: DecantRegistry
   }
 }
 
@@ -155,24 +151,24 @@ export type CreateRegistryOptions = SSRDetectOptions & {
    * App-level defaults applied to every `useForm` call. Per-form
    * options always win. Omitted is equivalent to `{}`.
    */
-  defaults?: ChemicalXFormsDefaults
+  defaults?: DecantDefaults
 }
 
 /**
- * Create a fresh `ChemicalXRegistry`. `createChemicalXForms()` calls
+ * Create a fresh `DecantRegistry`. `createDecant()` calls
  * this internally — most consumers never need to call it directly.
  * Use it when building a custom plugin that doesn't want the
- * `createChemicalXForms` plugin's auto-install behaviour (e.g. test
+ * `createDecant` plugin's auto-install behaviour (e.g. test
  * harnesses, embedded apps).
  */
-export function createRegistry(options: CreateRegistryOptions = {}): ChemicalXRegistry {
+export function createRegistry(options: CreateRegistryOptions = {}): DecantRegistry {
   const isSSR = detectSSR(options)
   // Frozen so accidental writes downstream throw in dev. Public surface
-  // (`createChemicalXForms({ defaults })`) treats this as data, not as
+  // (`createDecant({ defaults })`) treats this as data, not as
   // a mutation point — there's no public API to update defaults after
   // install, and adding one would invite race conditions with already-
   // mounted forms.
-  const defaults: ChemicalXFormsDefaults = Object.freeze({ ...(options.defaults ?? {}) })
+  const defaults: DecantDefaults = Object.freeze({ ...(options.defaults ?? {}) })
   // The outer object is plain (it holds references we never rebind); inner
   // Maps are reactive via Vue's collection handlers so per-key reads track
   // per-key. `shallowReactive` avoids Vue's deep Ref-unwrapping, which would
@@ -253,14 +249,14 @@ export function createRegistry(options: CreateRegistryOptions = {}): ChemicalXRe
  *   into setup, or trigger it from a child component.
  * - `RegistryNotInstalledError` when called inside setup but the
  *   plugin wasn't installed. Add
- *   `app.use(createChemicalXForms())` to your app entry.
+ *   `app.use(createDecant())` to your app entry.
  */
-export function useRegistry(): ChemicalXRegistry {
+export function useRegistry(): DecantRegistry {
   const instance = getCurrentInstance()
   if (instance === null) {
     throw new OutsideSetupError()
   }
-  const registry = inject(kChemicalXRegistry, null)
+  const registry = inject(kDecantRegistry, null)
   if (registry === null) {
     throw new RegistryNotInstalledError()
   }
@@ -269,21 +265,21 @@ export function useRegistry(): ChemicalXRegistry {
 
 /**
  * Look up a Vue app's registry by `App` reference. Used by
- * SSR helpers (`renderChemicalXState`, `hydrateChemicalXState`) that
+ * SSR helpers (`renderDecantState`, `hydrateDecantState`) that
  * run outside a component setup context.
  *
  * Throws `RegistryNotInstalledError` when the app hasn't been wired
- * with `createChemicalXForms()`.
+ * with `createDecant()`.
  */
-export function getRegistryFromApp(app: App): ChemicalXRegistry {
-  const registry = app._chemicalX
+export function getRegistryFromApp(app: App): DecantRegistry {
+  const registry = app._decant
   if (registry === undefined) {
     throw new RegistryNotInstalledError()
   }
   return registry
 }
 
-export function attachRegistryToApp(app: App, registry: ChemicalXRegistry): void {
-  app.provide(kChemicalXRegistry, registry)
-  app._chemicalX = registry
+export function attachRegistryToApp(app: App, registry: DecantRegistry): void {
+  app.provide(kDecantRegistry, registry)
+  app._decant = registry
 }

@@ -53,7 +53,7 @@ export function createLocalStorageAdapter(): FormStorage {
         if (__DEV__ && !warnedOnFailure) {
           warnedOnFailure = true
           console.warn(
-            '[@chemical-x/forms] localStorage write failed; subsequent writes will silently no-op for this form. ' +
+            '[decant] localStorage write failed; subsequent writes will silently no-op for this form. ' +
               'Common causes: quota exceeded, private-mode storage lock. ' +
               'Switch to `persist: "indexeddb"` for larger payloads.',
             err

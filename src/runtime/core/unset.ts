@@ -43,7 +43,7 @@ export type Unset = typeof _unsetBrand
  * @see {@link isUnset} — type guard that narrows a value back to {@link Unset}.
  * @see `docs/blank.md` — the conceptual model behind blank-aware fields.
  */
-export const unset: Unset = Symbol.for('@chemical-x/forms/unset') as Unset
+export const unset: Unset = Symbol.for('decant/unset') as Unset
 
 /**
  * Type guard — `true` when `value` is the `unset` sentinel.

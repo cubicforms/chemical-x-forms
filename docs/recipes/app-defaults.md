@@ -13,11 +13,11 @@ instead of repeating them at every `useForm` call.
 ```ts
 // main.ts
 import { createApp } from 'vue'
-import { createChemicalXForms } from '@chemical-x/forms'
+import { createDecant } from 'decant'
 
 createApp(App)
   .use(
-    createChemicalXForms({
+    createDecant({
       defaults: {
         debounceMs: 100,
         onInvalidSubmit: 'focus-first-error',
@@ -32,8 +32,8 @@ createApp(App)
 ```ts
 // nuxt.config.ts
 export default defineNuxtConfig({
-  modules: ['@chemical-x/forms/nuxt'],
-  chemicalX: {
+  modules: ['decant/nuxt'],
+  decant: {
     defaults: {
       debounceMs: 100,
       onInvalidSubmit: 'focus-first-error',
@@ -47,7 +47,7 @@ export default defineNuxtConfig({
 For each option, the resolved value is the first defined among:
 
 ```
-useForm({ … })  >  createChemicalXForms({ defaults })  >  library default
+useForm({ … })  >  createDecant({ defaults })  >  library default
 ```
 
 So a per-form value always wins, an app-level default fills in when
@@ -60,7 +60,7 @@ level, override anything per-form without losing the rest:
 
 ```ts
 // Plugin side
-createChemicalXForms({
+createDecant({
   defaults: { validateOn: 'change', debounceMs: 100 },
 })
 
@@ -85,10 +85,10 @@ discriminated union enforces that `debounceMs` is only valid when
 
 ## What's supported
 
-`ChemicalXFormsDefaults` covers the form-shaping options:
+`DecantDefaults` covers the form-shaping options:
 
 ```ts
-type ChemicalXFormsDefaults = {
+type DecantDefaults = {
   strict?: boolean
   validateOn?: 'change' | 'blur' | 'submit'
   debounceMs?: number
@@ -117,7 +117,7 @@ call.
 Three patterns:
 
 ```ts
-import { unset } from '@chemical-x/forms/zod'
+import { unset } from 'decant/zod'
 
 // 1. Plain values — explicit defaults flow into storage and the form
 //    is not blank for those leaves.
@@ -168,7 +168,7 @@ your project:
 
 ```ts
 // composables/useAppForm.ts
-import { useForm as cxUseForm } from '@chemical-x/forms/zod'
+import { useForm as cxUseForm } from 'decant/zod'
 import type { z } from 'zod'
 
 export function useAppForm<S extends z.ZodObject>(opts: Parameters<typeof cxUseForm<S>>[0]) {

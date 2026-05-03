@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { unset, useForm } from '../../src/zod'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
 
 /**
@@ -88,7 +88,7 @@ function mount(
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createChemicalXForms({ override: true }))
+  const app = createApp(App).use(createDecant({ override: true }))
   app.config.warnHandler = (msg: string) => {
     warnings.push(msg)
   }

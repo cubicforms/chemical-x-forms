@@ -86,7 +86,7 @@ function isHydratedValidationErrorArray(value: unknown): value is ValidationErro
 function warnMalformedHydration(formKey: FormKey, kind: string, rawKey: string): void {
   if (!__DEV__) return
   console.warn(
-    `[@chemical-x/forms] hydration: skipping malformed ${kind} entry at key '${rawKey}' on form '${formKey}'. ` +
+    `[decant] hydration: skipping malformed ${kind} entry at key '${rawKey}' on form '${formKey}'. ` +
       `This usually means the SSR bundle is on a different version than the client (rolling deploy / stale cache).`
   )
 }
@@ -460,7 +460,7 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
 
   /**
    * Resolved schema-coercion index — the merged config from
-   * `createChemicalXForms({ defaults: { coerce } })` ∪ `useForm({ coerce })`,
+   * `createDecant({ defaults: { coerce } })` ∪ `useForm({ coerce })`,
    * keyed by `${input}->${output}` for O(1) per-keystroke dispatch.
    * Empty Map when coercion is disabled. Read at `register()` time
    * by `buildCoerceFn` to bake the per-path coerce closure on
@@ -922,7 +922,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       try {
         listener(next, meta)
       } catch (err) {
-        console.error('[@chemical-x/forms] onFormChange threw:', err)
+        console.error('[decant] onFormChange threw:', err)
       }
     }
   }
@@ -1341,7 +1341,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       try {
         listener()
       } catch (err) {
-        console.error('[@chemical-x/forms] onSubmitSuccess threw:', err)
+        console.error('[decant] onSubmitSuccess threw:', err)
       }
     }
   }
@@ -1373,7 +1373,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       try {
         hook()
       } catch (err) {
-        console.error('[@chemical-x/forms] cleanup threw:', err)
+        console.error('[decant] cleanup threw:', err)
       }
     }
     cleanupHooks.length = 0
@@ -1702,7 +1702,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       try {
         listener()
       } catch (err) {
-        console.error('[@chemical-x/forms] onReset threw:', err)
+        console.error('[decant] onReset threw:', err)
       }
     }
   }
@@ -1739,7 +1739,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
         // guarantees primitive-correctness. A rejected reset write
         // signals an invariant violation upstream.
         console.error(
-          `[@chemical-x/forms] resetField: leaf write rejected for path '${targetKey}' — ` +
+          `[decant] resetField: leaf write rejected for path '${targetKey}' — ` +
             `originals contain a value that doesn't satisfy the slim primitive shape. ` +
             `This is a bug in the construction pipeline.`
         )
@@ -1779,7 +1779,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     const wroteSubtree = setValueAtPath(targetSegments, subtree)
     if (!wroteSubtree) {
       console.error(
-        `[@chemical-x/forms] resetField: subtree write rejected at path '${targetKey}' — ` +
+        `[decant] resetField: subtree write rejected at path '${targetKey}' — ` +
           `originals contain values that don't satisfy the slim primitive shape. ` +
           `This is a bug in the construction pipeline.`
       )

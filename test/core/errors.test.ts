@@ -48,9 +48,9 @@ describe('error classes', () => {
   })
 
   describe('RegistryNotInstalledError', () => {
-    it('has a helpful default message pointing at createChemicalXForms', () => {
+    it('has a helpful default message pointing at createDecant', () => {
       const err = new RegistryNotInstalledError()
-      expect(err.message).toContain('createChemicalXForms')
+      expect(err.message).toContain('createDecant')
       expect(err.name).toBe('RegistryNotInstalledError')
     })
   })

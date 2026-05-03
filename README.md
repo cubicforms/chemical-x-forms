@@ -1,9 +1,9 @@
-# 🧪 Chemical X Forms
+# Decant
 
 [![npm version][npm-version-src]][npm-version-href]
 [![npm downloads][npm-downloads-src]][npm-downloads-href]
 [![License][license-src]][license-href]
-[![Node.js Test Suite](https://github.com/cubicforms/chemical-x-forms/actions/workflows/matrix.yml/badge.svg)](https://github.com/cubicforms/chemical-x-forms/actions/workflows/matrix.yml)
+[![Node.js Test Suite](https://github.com/decantjs/forms/actions/workflows/matrix.yml/badge.svg)](https://github.com/decantjs/forms/actions/workflows/matrix.yml)
 [![Nuxt][nuxt-src]][nuxt-href]
 
 A type-safe, schema-driven form library for Vue 3 and Nuxt with first-class Zod support.
@@ -11,7 +11,7 @@ A type-safe, schema-driven form library for Vue 3 and Nuxt with first-class Zod 
 ## Installation
 
 ```bash
-npm install @chemical-x/forms zod
+npm install decant zod
 ```
 
 **Nuxt 3 / 4** — install the module:
@@ -19,7 +19,7 @@ npm install @chemical-x/forms zod
 ```ts
 // nuxt.config.ts
 export default defineNuxtConfig({
-  modules: ['@chemical-x/forms/nuxt'],
+  modules: ['decant/nuxt'],
 })
 ```
 
@@ -28,18 +28,18 @@ export default defineNuxtConfig({
 ```ts
 // main.ts
 import { createApp } from 'vue'
-import { createChemicalXForms } from '@chemical-x/forms'
+import { createDecant } from 'decant'
 
-createApp(App).use(createChemicalXForms()).mount('#app')
+createApp(App).use(createDecant()).mount('#app')
 ```
 
 ```ts
 // vite.config.ts
 import vue from '@vitejs/plugin-vue'
-import { chemicalXForms } from '@chemical-x/forms/vite'
+import { decant } from 'decant/vite'
 
 export default defineConfig({
-  plugins: [vue(), chemicalXForms()],
+  plugins: [vue(), decant()],
 })
 ```
 
@@ -63,7 +63,7 @@ It catches stale `form.values.contacts[N]` reads at compile time. Nuxt 3 / 4 set
 ```vue
 <script setup lang="ts">
   import { z } from 'zod'
-  import { useForm } from '@chemical-x/forms/zod' // zod v4; use /zod-v3 for v3
+  import { useForm } from 'decant/zod' // zod v4; use /zod-v3 for v3
 
   const schema = z.object({
     email: z.email(),
@@ -112,7 +112,7 @@ It catches stale `form.values.contacts[N]` reads at compile time. Nuxt 3 / 4 set
 - **Server errors** — `parseApiErrors(payload)` normalises a `{ message, code }[]` wire format; pair with `form.setFieldErrors(...)`. User errors survive schema revalidation.
 - **Stable error codes** — every `ValidationError` carries `code: string`. Library codes (`cx:`) live on the exported `CxErrorCode` enum; adapter codes use a `zod:` prefix; consumers pick their own (`api:`, `auth:`, …).
 - **Clearable required fields** — the `unset` sentinel marks a field displayed-empty while storage holds the schema's slim default. Submit fails with `'No value supplied'` for required schemas; `.optional()` / `.nullable()` / `.default(N)` opt out.
-- **SSR** — Nuxt handles the payload round-trip automatically; bare Vue uses `renderChemicalXState` / `hydrateChemicalXState` ([recipe](./docs/recipes/ssr-hydration.md)).
+- **SSR** — Nuxt handles the payload round-trip automatically; bare Vue uses `renderDecantState` / `hydrateDecantState` ([recipe](./docs/recipes/ssr-hydration.md)).
 
 ## Documentation
 
@@ -133,11 +133,11 @@ MIT — see [LICENSE](./LICENSE).
 
 <!-- Badges -->
 
-[npm-version-src]: https://img.shields.io/npm/v/@chemical-x/forms/latest.svg?style=flat&colorA=020420&colorB=00DC82
-[npm-version-href]: https://npmjs.com/package/@chemical-x/forms
-[npm-downloads-src]: https://img.shields.io/npm/dm/@chemical-x/forms.svg?style=flat&colorA=020420&colorB=00DC82
-[npm-downloads-href]: https://npm.chart.dev/@chemical-x/forms
-[license-src]: https://img.shields.io/npm/l/@chemical-x/forms.svg?style=flat&colorA=020420&colorB=00DC82
-[license-href]: https://npmjs.com/package/@chemical-x/forms
+[npm-version-src]: https://img.shields.io/npm/v/decant/latest.svg?style=flat&colorA=020420&colorB=00DC82
+[npm-version-href]: https://npmjs.com/package/decant
+[npm-downloads-src]: https://img.shields.io/npm/dm/decant.svg?style=flat&colorA=020420&colorB=00DC82
+[npm-downloads-href]: https://npm.chart.dev/decant
+[license-src]: https://img.shields.io/npm/l/decant.svg?style=flat&colorA=020420&colorB=00DC82
+[license-href]: https://npmjs.com/package/decant
 [nuxt-src]: https://img.shields.io/badge/Nuxt-020420?logo=nuxt.js
 [nuxt-href]: https://nuxt.com

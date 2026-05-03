@@ -4,12 +4,7 @@ import type { FormStore } from '../core/create-form-store'
 import { __DEV__ } from '../core/dev'
 import { captureUserCallSite } from '../core/dev-stack-trace'
 import type { HistoryModule } from '../core/history'
-import {
-  kFormContext,
-  kFormInstanceId,
-  useRegistry,
-  type ChemicalXRegistry,
-} from '../core/registry'
+import { kFormContext, kFormInstanceId, useRegistry, type DecantRegistry } from '../core/registry'
 import type { FormKey, UseFormReturnType } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import { ambientProvideHistory } from './use-abstract-form'
@@ -121,7 +116,7 @@ export function injectForm<Form extends GenericForm, GetValueFormType extends Ge
  */
 function resolveState<Form extends GenericForm>(
   key: FormKey | undefined,
-  registry: ChemicalXRegistry
+  registry: DecantRegistry
 ): FormStore<Form> | null {
   if (key !== undefined) {
     const stored = registry.forms.get(key) as FormStore<Form> | undefined
@@ -152,8 +147,7 @@ function warnMiss(detail: string, isSSR: boolean): void {
   if (!__DEV__ || isSSR) return
   const frame = captureUserCallSite()
   console.warn(
-    `[@chemical-x/forms] injectForm: ${detail}. Returning null.` +
-      (frame !== undefined ? ` ${frame}` : '')
+    `[decant] injectForm: ${detail}. Returning null.` + (frame !== undefined ? ` ${frame}` : '')
   )
 }
 
@@ -185,7 +179,7 @@ function warnIfAmbientProviderHadDuplicates(): void {
       if (history.length > 1) {
         const lines = history.map((entry) => `  - ${entry.source ?? '<unknown location>'}`)
         console.warn(
-          '[@chemical-x/forms] injectForm<F>() (no key) resolved against ' +
+          '[decant] injectForm<F>() (no key) resolved against ' +
             'an ancestor with multiple anonymous useForm() calls; descendants ' +
             'only see the last-provided form. Anonymous useForm() calls were:\n' +
             lines.join('\n') +

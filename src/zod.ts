@@ -1,12 +1,12 @@
 /**
- * `@chemical-x/forms/zod` — Zod v4 adapter (recommended).
+ * `decant/zod` — Zod v4 adapter (recommended).
  *
  * Requires `zod@^4` in the consumer's project. If you're still on zod@3,
- * import from `@chemical-x/forms/zod-v3` instead.
+ * import from `decant/zod-v3` instead.
  *
  * Usage:
  *
- *   import { useForm } from '@chemical-x/forms/zod'
+ *   import { useForm } from 'decant/zod'
  *   import { z } from 'zod'
  *
  *   const { register, handleSubmit, errors } = useForm({

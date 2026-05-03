@@ -17,7 +17,7 @@ import { createApp, defineComponent, h, nextTick, withDirectives, type App } fro
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 
 let app: App | undefined
 afterEach(() => {
@@ -72,7 +72,7 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
           ])
       },
     })
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -111,7 +111,7 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
           ])
       },
     })
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -147,7 +147,7 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
           ])
       },
     })
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -234,7 +234,7 @@ describe('spike — persist.debounceMs: 0 writes immediately on every form chang
           ])
       },
     })
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -284,7 +284,7 @@ describe('spike — persist.debounceMs: 0 writes immediately on every form chang
           ])
       },
     })
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

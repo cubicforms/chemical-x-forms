@@ -4,12 +4,12 @@ import { getRegistryFromApp, type SerializedFormData } from './registry'
 
 /**
  * Serialised snapshot of every form in a Vue app, produced by
- * `renderChemicalXState` and consumed by `hydrateChemicalXState`.
+ * `renderDecantState` and consumed by `hydrateDecantState`.
  *
  * JSON-safe — pass to `JSON.stringify`, `devalue`, or any other
  * serialiser before embedding in your SSR payload.
  */
-export type SerializedChemicalXState = {
+export type SerializedDecantState = {
   /** Tuples of `[formKey, snapshot]` for every form in the app. */
   readonly forms: ReadonlyArray<readonly [FormKey, SerializedFormData]>
 }
@@ -20,10 +20,10 @@ export type SerializedChemicalXState = {
  *
  * ```ts
  * import { renderToString } from '@vue/server-renderer'
- * import { renderChemicalXState, escapeForInlineScript } from '@chemical-x/forms'
+ * import { renderDecantState, escapeForInlineScript } from 'decant'
  *
  * const html = await renderToString(app)
- * const state = renderChemicalXState(app)
+ * const state = renderDecantState(app)
  * const payload = escapeForInlineScript(JSON.stringify(state))
  *
  * return `
@@ -32,11 +32,11 @@ export type SerializedChemicalXState = {
  * `
  * ```
  *
- * Pair with `hydrateChemicalXState` on the client to restore the
+ * Pair with `hydrateDecantState` on the client to restore the
  * forms in their server-rendered state. Nuxt users don't need this —
- * `@chemical-x/forms/nuxt` wires SSR automatically.
+ * `decant/nuxt` wires SSR automatically.
  */
-export function renderChemicalXState(app: App): SerializedChemicalXState {
+export function renderDecantState(app: App): SerializedDecantState {
   const registry = getRegistryFromApp(app)
   const forms: Array<readonly [FormKey, SerializedFormData]> = []
   for (const [key, state] of registry.forms) {
@@ -65,17 +65,17 @@ export function renderChemicalXState(app: App): SerializedChemicalXState {
  *
  * ```ts
  * import { createApp } from 'vue'
- * import { createChemicalXForms, hydrateChemicalXState } from '@chemical-x/forms'
+ * import { createDecant, hydrateDecantState } from 'decant'
  *
- * const app = createApp(App).use(createChemicalXForms())
- * hydrateChemicalXState(app, window.__CX_STATE__)
+ * const app = createApp(App).use(createDecant())
+ * hydrateDecantState(app, window.__CX_STATE__)
  * app.mount('#app')
  * ```
  *
  * The next `useForm({ key })` call for each serialised form picks up
  * the snapshot transparently — no further action is required.
  */
-export function hydrateChemicalXState(app: App, payload: SerializedChemicalXState): void {
+export function hydrateDecantState(app: App, payload: SerializedDecantState): void {
   const registry = getRegistryFromApp(app)
   for (const [key, data] of payload.forms) {
     registry.pendingHydration.set(key, data)

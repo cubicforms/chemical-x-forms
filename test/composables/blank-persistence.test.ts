@@ -8,7 +8,7 @@ import { CxErrorCode } from '../../src/runtime/core/error-codes'
 import { canonicalizePath } from '../../src/runtime/core/paths'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
 import { hashStableString } from '../../src/runtime/core/hash'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 
 /**
  * Round-trip coverage for blank across `localStorage`
@@ -106,7 +106,7 @@ describe('persistence — v=2 envelope rejection emits a one-time dev-warn', () 
           ])
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createDecant())
     apps.push(app)
     app.mount(document.createElement('div'))
 
@@ -164,7 +164,7 @@ describe('persistence — blank round-trips across mount', () => {
           )
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createDecant())
     apps.push(app)
     app.mount(document.createElement('div'))
 
@@ -205,7 +205,7 @@ describe('persistence — blank round-trips across mount', () => {
           )
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createDecant())
     apps.push(app)
     app.mount(root)
 
@@ -262,7 +262,7 @@ describe('persistence — blank round-trips across mount', () => {
           )
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createDecant())
     apps.push(app)
     app.mount(document.createElement('div'))
 

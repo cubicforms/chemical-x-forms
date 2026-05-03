@@ -39,10 +39,10 @@ const EMPTY_TRANSFORMS: ReadonlyArray<RegisterTransform> = Object.freeze([])
 
 const INTERACTIVE_TAG_NAMES = new Set(['INPUT', 'SELECT', 'TEXTAREA'])
 
-// `Symbol.for(...)` so duplicate copies of chemical-x agree on the
+// `Symbol.for(...)` so duplicate copies of decant agree on the
 // element-property key for stashed focus/blur handlers — see
 // `assignKey` in core/directive.ts for the same reasoning.
-const cxListenersSymbol: unique symbol = Symbol.for('chemical-x-forms:focus-listeners')
+const cxListenersSymbol: unique symbol = Symbol.for('decant:focus-listeners')
 
 type ElementWithListeners = HTMLElement & {
   [cxListenersSymbol]?: {

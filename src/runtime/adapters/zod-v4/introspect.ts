@@ -315,7 +315,7 @@ export function getDiscriminatedOptions(schema: z.ZodType): readonly z.ZodObject
 
 /**
  * Verify a schema is Zod v4. Throws a clear error if it's a v3
- * schema mistakenly imported through `@chemical-x/forms/zod`.
+ * schema mistakenly imported through `decant/zod`.
  *
  * Most consumers never call this directly — the v4 adapter calls it
  * internally on every schema. Reach for it only when wiring a custom
@@ -324,7 +324,7 @@ export function getDiscriminatedOptions(schema: z.ZodType): readonly z.ZodObject
 export function assertZodVersion(schema: unknown): void {
   const def = readDef(schema)
   if (def?.type === undefined) {
-    throw new Error('[@chemical-x/forms/zod] schema is not zod v4. Install zod@^4 or use /zod-v3.')
+    throw new Error('[decant/zod] schema is not zod v4. Install zod@^4 or use /zod-v3.')
   }
 }
 

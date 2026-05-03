@@ -16,7 +16,7 @@ import { createApp, defineComponent, h, nextTick, withDirectives, type App } fro
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister, isRegisterValue, assignKey } from '../../src/runtime/core/directive'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 import { defineCoercion, defaultCoercionRules } from '../../src/runtime/core/schema-coerce'
 
 async function flush(): Promise<void> {
@@ -38,7 +38,7 @@ function mount<S extends z.ZodObject>(
   schema: S,
   defaultValues: z.infer<S>,
   body: (api: ReturnType<typeof useForm<S>>) => unknown,
-  pluginOpts?: Parameters<typeof createChemicalXForms>[0]
+  pluginOpts?: Parameters<typeof createDecant>[0]
 ): { api: ReturnType<typeof useForm<S>>; root: HTMLDivElement } {
   const handle: { api?: ReturnType<typeof useForm<S>> } = {}
   const Parent = defineComponent({
@@ -52,7 +52,7 @@ function mount<S extends z.ZodObject>(
       return () => body(api)
     },
   })
-  app = createApp(Parent).use(createChemicalXForms(pluginOpts))
+  app = createApp(Parent).use(createDecant(pluginOpts))
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -504,7 +504,7 @@ describe('programmatic write bypass', () => {
 })
 
 describe('plugin-default off', () => {
-  it('createChemicalXForms({ defaults: { coerce: false } }) disables coerce globally', async () => {
+  it('createDecant({ defaults: { coerce: false } }) disables coerce globally', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const schema = z.object({ age: z.number() })
     const { api, root } = mount(
@@ -548,7 +548,7 @@ describe('per-form override beats plugin default (both directions)', () => {
           ])
       },
     })
-    app = createApp(Parent).use(createChemicalXForms({ defaults: { coerce: false } }))
+    app = createApp(Parent).use(createDecant({ defaults: { coerce: false } }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -581,7 +581,7 @@ describe('per-form override beats plugin default (both directions)', () => {
           ])
       },
     })
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -733,7 +733,7 @@ describe('consumer-extended registry — string->bigint', () => {
           ])
       },
     })
-    app = createApp(Parent).use(createChemicalXForms({ defaults: { coerce: customRules } }))
+    app = createApp(Parent).use(createDecant({ defaults: { coerce: customRules } }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

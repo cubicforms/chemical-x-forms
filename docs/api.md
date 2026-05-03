@@ -1,28 +1,28 @@
 # API reference
 
-Every public export of `@chemical-x/forms`, grouped by subpath. Each
+Every public export of `decant`, grouped by subpath. Each
 entry gives the signature, the shape of the return value, and the
 minimal example you need to wire it up.
 
 ## Contents
 
-- [`@chemical-x/forms/zod`](#chemical-xformszod) — recommended entry
-- [`@chemical-x/forms/zod-v3`](#chemical-xformszod-v3) — legacy
-- [`@chemical-x/forms`](#chemical-xforms) — framework-agnostic core
-- [`@chemical-x/forms/nuxt`](#chemical-xformsnuxt) — Nuxt module
-- [`@chemical-x/forms/vite`](#chemical-xformsvite) — Vite plugin
-- [`@chemical-x/forms/transforms`](#chemical-xformstransforms) — raw transforms
+- [`decant/zod`](#decantformszod) — recommended entry
+- [`decant/zod-v3`](#decantformszod-v3) — legacy
+- [`decant`](#decantforms) — framework-agnostic core
+- [`decant/nuxt`](#decantformsnuxt) — Nuxt module
+- [`decant/vite`](#decantformsvite) — Vite plugin
+- [`decant/transforms`](#decantformstransforms) — raw transforms
 - [The useForm return value](#the-useform-return-value)
 - [Types](#types)
 
 ---
 
-## `@chemical-x/forms/zod`
+## `decant/zod`
 
 Zod v4 adapter. Requires `zod@^4`.
 
 ```ts
-import { useForm, zodAdapter, kindOf, assertZodVersion } from '@chemical-x/forms/zod'
+import { useForm, zodAdapter, kindOf, assertZodVersion } from 'decant/zod'
 ```
 
 ### `useForm<Schema>(options)`
@@ -73,13 +73,13 @@ Union of the strings returned by `kindOf`.
 
 ---
 
-## `@chemical-x/forms/zod-v3`
+## `decant/zod-v3`
 
 Zod v3 adapter. Requires `zod@^3`. New projects should use `/zod`
 (v4).
 
 ```ts
-import { useForm, zodAdapter, isZodSchemaType } from '@chemical-x/forms/zod-v3'
+import { useForm, zodAdapter, isZodSchemaType } from 'decant/zod-v3'
 ```
 
 Same surface as `/zod` for the functions that apply. Helper types
@@ -88,41 +88,41 @@ for v3 introspection (`UnwrapZodObject`, `ZodTypeWithInnerType`,
 
 ---
 
-## `@chemical-x/forms`
+## `decant`
 
 The framework-agnostic core. Use this if you're bringing your own
 schema library or wiring SSR by hand.
 
 ```ts
 import {
-  createChemicalXForms,
+  createDecant,
   useForm, // re-export of useAbstractForm
   injectForm,
   useRegistry,
-  renderChemicalXState,
-  hydrateChemicalXState,
+  renderDecantState,
+  hydrateDecantState,
   escapeForInlineScript,
   vRegister,
   canonicalizePath,
   parseApiErrors,
-} from '@chemical-x/forms'
+} from 'decant'
 ```
 
-### `createChemicalXForms(options?)`
+### `createDecant(options?)`
 
 The Vue plugin. Install once per app.
 
 ```ts
-createApp(App).use(createChemicalXForms()).mount('#app')
+createApp(App).use(createDecant()).mount('#app')
 ```
 
 Options:
 
-| Field      | Type                     | Description                                                                                         |
-| ---------- | ------------------------ | --------------------------------------------------------------------------------------------------- |
-| `override` | `boolean`                | Force `isSSR` to `true` / `false`. Auto-detected otherwise.                                         |
-| `devtools` | `boolean`                | Enable the Vue DevTools plugin. Default `true`. See [recipe](./recipes/devtools.md).                |
-| `defaults` | `ChemicalXFormsDefaults` | App-level option defaults applied to every `useForm` call. See [recipe](./recipes/app-defaults.md). |
+| Field      | Type             | Description                                                                                         |
+| ---------- | ---------------- | --------------------------------------------------------------------------------------------------- |
+| `override` | `boolean`        | Force `isSSR` to `true` / `false`. Auto-detected otherwise.                                         |
+| `devtools` | `boolean`        | Enable the Vue DevTools plugin. Default `true`. See [recipe](./recipes/devtools.md).                |
+| `defaults` | `DecantDefaults` | App-level option defaults applied to every `useForm` call. See [recipe](./recipes/app-defaults.md). |
 
 ### `useForm<Form>({ schema, key, ... })`
 
@@ -150,16 +150,16 @@ independent of component-tree position.
 
 ### `useRegistry()`
 
-Returns the current app's `ChemicalXRegistry`. Must be called inside
+Returns the current app's `DecantRegistry`. Must be called inside
 a component's `setup()`.
 
-### `renderChemicalXState(app) → SerializedChemicalXState`
+### `renderDecantState(app) → SerializedDecantState`
 
 Server-side: serialize every form in the app to a plain object safe
-for `JSON.stringify`. Pair with `hydrateChemicalXState` on the
+for `JSON.stringify`. Pair with `hydrateDecantState` on the
 client.
 
-### `hydrateChemicalXState(app, payload)`
+### `hydrateDecantState(app, payload)`
 
 Client-side: rehydrate forms from the serialized payload. Call
 before `app.mount(...)`.
@@ -168,18 +168,18 @@ before `app.mount(...)`.
 
 Takes a JSON string and escapes the characters that would let a
 form value break out of an inline `<script>` tag: `<`, `>`, `&`,
-U+2028, U+2029. Pair with `renderChemicalXState` when hand-rolling
+U+2028, U+2029. Pair with `renderDecantState` when hand-rolling
 SSR; Nuxt handles it for you via `devalue`.
 
 ```ts
-const payload = escapeForInlineScript(JSON.stringify(renderChemicalXState(app)))
+const payload = escapeForInlineScript(JSON.stringify(renderDecantState(app)))
 // `<script>window.__STATE__ = ${payload}</script>` is safe to inline.
 ```
 
 ### `vRegister`
 
 The `v-register` directive. Registered automatically by
-`createChemicalXForms`; exported for consumers installing directives
+`createDecant`; exported for consumers installing directives
 manually.
 
 Bind to a native input, select, textarea, checkbox, or radio:
@@ -201,7 +201,7 @@ handles it and `useRegister` is unnecessary.
 
 <!-- MyField.vue (root is <label>, not <input>) -->
 <script setup lang="ts">
-  import { useRegister } from '@chemical-x/forms'
+  import { useRegister } from 'decant'
   defineProps<{ label: string }>()
   const register = useRegister()
 </script>
@@ -247,7 +247,7 @@ already-extracted value plus the `RegisterValue`, and decides what
 
 ```vue
 <script setup lang="ts">
-  import type { RegisterValue } from '@chemical-x/forms'
+  import type { RegisterValue } from 'decant'
 
   const form = useForm({ schema, defaultValues: { username: '' } })
 
@@ -308,7 +308,7 @@ directive's assigner, and applies uniformly across every
 `<input type="checkbox">`, `<input type="radio">`).
 
 ```ts
-import type { RegisterTransform } from '@chemical-x/forms'
+import type { RegisterTransform } from 'decant'
 
 const trim: RegisterTransform = (v) => (typeof v === 'string' ? v.trim() : v)
 
@@ -476,8 +476,8 @@ machine identification. Convention is `<scope>:<kebab-case>`:
 The library exports `CxErrorCode` for branching on internal codes:
 
 ```ts
-import { CxErrorCode } from '@chemical-x/forms'
-// or '@chemical-x/forms/zod' / '@chemical-x/forms/zod-v3'
+import { CxErrorCode } from 'decant'
+// or 'decant/zod' / 'decant/zod-v3'
 
 if (error.code === CxErrorCode.NoValueSupplied) {
   // user opened the form and hasn't filled this field yet
@@ -504,7 +504,7 @@ A brand-typed sentinel symbol used to mark a primitive leaf as
 `z.boolean()`, `0n` for `z.bigint()`).
 
 ```ts
-import { unset, useForm } from '@chemical-x/forms/zod'
+import { unset, useForm } from 'decant/zod'
 import { z } from 'zod'
 
 const form = useForm({
@@ -579,14 +579,14 @@ brand-typed `unique symbol` flavor for type-level usage.
 
 ---
 
-## `@chemical-x/forms/nuxt`
+## `decant/nuxt`
 
 A Nuxt module that installs the plugin, registers the node
 transforms, and auto-imports `useForm`. Add to `nuxt.config.ts`:
 
 ```ts
 export default defineNuxtConfig({
-  modules: ['@chemical-x/forms/nuxt'],
+  modules: ['decant/nuxt'],
 })
 ```
 
@@ -595,7 +595,7 @@ needed.
 
 ---
 
-## `@chemical-x/forms/vite`
+## `decant/vite`
 
 A Vite plugin that injects the `v-register` node transforms into
 `@vitejs/plugin-vue`. Required under bare Vue + Vite for SSR-
@@ -605,23 +605,23 @@ correct `v-register` bindings on `<input>`, `<textarea>`, and
 ```ts
 // vite.config.ts
 import vue from '@vitejs/plugin-vue'
-import { chemicalXForms } from '@chemical-x/forms/vite'
+import { decant } from 'decant/vite'
 
 export default defineConfig({
-  plugins: [vue(), chemicalXForms()],
+  plugins: [vue(), decant()],
 })
 ```
 
 ---
 
-## `@chemical-x/forms/transforms`
+## `decant/transforms`
 
 The raw Vue compiler-core node transforms. Use this subpath only
 when you're rolling your own bundler pipeline (esbuild, Rspack,
 custom Rollup).
 
 ```ts
-import { inputTextAreaNodeTransform, selectNodeTransform } from '@chemical-x/forms/transforms'
+import { inputTextAreaNodeTransform, selectNodeTransform } from 'decant/transforms'
 ```
 
 ---
@@ -933,7 +933,7 @@ import type {
   ValidationResponse,
   ValidationResponseWithoutValue,
   WriteShape,
-} from '@chemical-x/forms'
+} from 'decant'
 ```
 
 The ones you'll touch most:
@@ -968,7 +968,7 @@ The ones you'll touch most:
   `z.date()` is a type error.
 - **`Unset`** — the brand-typed `unique symbol` flavor of the
   `unset` sentinel for type-level usage. The runtime symbol is
-  exported alongside under the same name from `@chemical-x/forms`.
+  exported alongside under the same name from `decant`.
 - **`IsTuple<T>`** — `true` for tuples (literal `length`), `false`
   for unbounded arrays (`length: number`). Used internally by
   `NestedReadType` to decide whether to taint past a numeric

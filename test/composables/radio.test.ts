@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, nextTick, withDirectives, type App } fro
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 
 /**
  * `<input type="radio" v-register>` end-to-end coverage.
@@ -71,7 +71,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -135,7 +135,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -183,7 +183,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -231,7 +231,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -289,7 +289,7 @@ describe('<input type="radio" v-register> — hydration with static value attrib
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -342,7 +342,7 @@ describe('<input type="radio" v-register> — slim-gate interactions', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -372,7 +372,7 @@ describe('<input type="radio" v-register> — slim-gate interactions', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

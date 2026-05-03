@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { unset } from '../../src/zod'
 import { useForm } from '../../src/zod'
 import { CxErrorCode } from '../../src/runtime/core/error-codes'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 
 /**
  * Reactive `derivedBlankErrors` contract — `errors = f(schema, state)`.
@@ -45,7 +45,7 @@ function mountNumeric(): { app: App; api: NumericApi } {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createChemicalXForms({ override: true }))
+  const app = createApp(App).use(createDecant({ override: true }))
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -140,7 +140,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createDecant({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -159,7 +159,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createDecant({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -178,7 +178,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createDecant({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -213,7 +213,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createDecant({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -235,7 +235,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createDecant({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -253,7 +253,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createDecant({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -282,7 +282,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createDecant({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -300,7 +300,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createDecant({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -318,7 +318,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createDecant({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -341,7 +341,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createDecant({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -410,7 +410,7 @@ describe('derivedBlankErrors — independent of imperative writers', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createDecant({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 

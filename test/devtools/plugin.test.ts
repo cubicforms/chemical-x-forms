@@ -2,8 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
-import { setupChemicalXDevtools } from '../../src/runtime/core/devtools'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { setupDecantDevtools } from '../../src/runtime/core/devtools'
+import { createDecant } from '../../src/runtime/core/plugin'
 import { createRegistry, attachRegistryToApp } from '../../src/runtime/core/registry'
 import { useForm } from '../../src/zod'
 
@@ -125,13 +125,13 @@ describe('DevTools plugin — inspector + timeline wiring', () => {
     const app = createApp(defineComponent({ setup: () => () => h('div') }))
     const registry = createRegistry({})
     attachRegistryToApp(app, registry)
-    const ok = await setupChemicalXDevtools(app, registry)
+    const ok = await setupDecantDevtools(app, registry)
     expect(ok).toBe(true)
     expect(currentMock.api!.addInspector).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'chemical-x-forms' })
+      expect.objectContaining({ id: 'decant' })
     )
     expect(currentMock.api!.addTimelineLayer).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'chemical-x-forms:events' })
+      expect.objectContaining({ id: 'decant:events' })
     )
   })
 
@@ -150,10 +150,10 @@ describe('DevTools plugin — inspector + timeline wiring', () => {
     })
     registry.forms.set('dev-tree', state)
 
-    await setupChemicalXDevtools(regApp, registry)
+    await setupDecantDevtools(regApp, registry)
 
     const payload = {
-      inspectorId: 'chemical-x-forms',
+      inspectorId: 'decant',
       filter: '',
       rootNodes: [] as Array<{ id: string; label: string }>,
     }
@@ -177,7 +177,7 @@ describe('DevTools plugin — inspector + timeline wiring', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms({ devtools: false }))
+    const app = createApp(App).use(createDecant({ devtools: false }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -186,7 +186,7 @@ describe('DevTools plugin — inspector + timeline wiring', () => {
     // Register the devtools against the app's own registry.
     const { getRegistryFromApp } = await import('../../src/runtime/core/registry')
     const registry = getRegistryFromApp(app)
-    await setupChemicalXDevtools(app, registry)
+    await setupDecantDevtools(app, registry)
     // Drain microtasks so the devtools subscriber has subscribed.
     await Promise.resolve()
     await Promise.resolve()
@@ -233,10 +233,10 @@ describe('DevTools plugin — sensitive-name redaction (B5)', () => {
     })
     registry.forms.set('redact-form', state)
 
-    await setupChemicalXDevtools(regApp, registry)
+    await setupDecantDevtools(regApp, registry)
 
     const payload = {
-      inspectorId: 'chemical-x-forms',
+      inspectorId: 'decant',
       nodeId: 'form:redact-form',
       state: {} as Record<string, Array<{ key: string; value: unknown; editable?: boolean }>>,
     }
@@ -266,7 +266,7 @@ describe('DevTools plugin — sensitive-name redaction (B5)', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms({ devtools: false }))
+    const app = createApp(App).use(createDecant({ devtools: false }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -274,7 +274,7 @@ describe('DevTools plugin — sensitive-name redaction (B5)', () => {
 
     const { getRegistryFromApp } = await import('../../src/runtime/core/registry')
     const registry = getRegistryFromApp(app)
-    await setupChemicalXDevtools(app, registry)
+    await setupDecantDevtools(app, registry)
     await Promise.resolve()
 
     handle.api!.setValue('password', 'super-secret')
@@ -303,10 +303,10 @@ describe('DevTools plugin — sensitive-name redaction (B5)', () => {
     state.applyFormReplacement({ password: 'original' })
     registry.forms.set('edit-block', state)
 
-    await setupChemicalXDevtools(regApp, registry)
+    await setupDecantDevtools(regApp, registry)
 
     currentMock.api!._handlers.editInspectorState!({
-      inspectorId: 'chemical-x-forms',
+      inspectorId: 'decant',
       nodeId: 'form:edit-block',
       // path = ['Form value', 'form', 'password']
       path: ['Form value', 'form', 'password'],

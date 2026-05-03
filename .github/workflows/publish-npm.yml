@@ -1,12 +1,16 @@
 name: Publish to NPM and Version Bump
-run-name: Publish ${{ github.event.inputs.version_type }} release to NPM and Version Bump
+run-name: Publish ${{ github.event.inputs.prerelease_id != '' && format('{0} ({1})', github.event.inputs.version_type, github.event.inputs.prerelease_id) || github.event.inputs.version_type }} release to NPM
 on:
   workflow_dispatch:
     inputs:
       version_type:
-        description: 'Version type (major, minor, patch)'
+        description: 'Version type (major, minor, patch). For prereleases, this is the base bump that the prerelease attaches to (used only when starting a NEW prerelease cycle).'
         required: true
         default: 'patch'
+      prerelease_id:
+        description: 'Prerelease identifier (alpha, beta, rc, next, ...). Leave EMPTY for a stable release. Example flow: 0.2.1 → 0.2.2-beta.0 → 0.2.2-beta.1 → 0.2.2.'
+        required: false
+        default: ''
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -21,18 +25,68 @@ jobs:
 
       - name: Calculate next version
         id: calculate-next-version
+        env:
+          VERSION_TYPE: ${{ github.event.inputs.version_type }}
+          PRERELEASE_ID: ${{ github.event.inputs.prerelease_id }}
         run: |
-          CURRENT=$(node -p "require('./package.json').version")
-          # Using semver.org compliant version incrementing
-          if [ "${{ github.event.inputs.version_type }}" = "major" ]; then
-            NEXT=$(echo $CURRENT | awk -F. '{print $1+1".0.0"}')
-          elif [ "${{ github.event.inputs.version_type }}" = "minor" ]; then
-            NEXT=$(echo $CURRENT | awk -F. '{print $1"."$2+1".0"}')
-          else
-            NEXT=$(echo $CURRENT | awk -F. '{print $1"."$2"."$3+1}')
-          fi
+          # Computed in Node so we can handle prerelease semantics without
+          # depending on `semver` being installed (this step runs BEFORE
+          # `pnpm install`). Pure-JS version inc, matching `semver.inc`:
+          #
+          #   stable + no preid    → bump <type>           e.g. 0.13.0 → 0.13.1
+          #   stable + preid       → pre<type> + .0        e.g. 0.13.0 → 0.13.1-beta.0
+          #   prerelease + no preid → drop suffix          e.g. 0.13.1-beta.5 → 0.13.1
+          #   prerelease + same preid → bump counter       e.g. 0.13.1-beta.5 → 0.13.1-beta.6
+          #   prerelease + new preid → switch preid, .0    e.g. 0.13.1-beta.5 → 0.13.1-rc.0
+          #
+          # version_type is consulted ONLY when starting a new prerelease
+          # cycle from stable. Once you're inside a prerelease cycle, base
+          # bumps are deferred until you exit (run with empty prerelease_id
+          # then bump separately, or pass version_type=patch which drops
+          # the suffix without re-bumping).
+          NEXT=$(node -e '
+            const v = require("./package.json").version;
+            const type = process.env.VERSION_TYPE;
+            const preid = process.env.PRERELEASE_ID;
+            const m = v.match(/^(\d+)\.(\d+)\.(\d+)(?:-([\w.-]+?)(?:\.(\d+))?)?$/);
+            if (!m) { console.error("Unparseable version: " + v); process.exit(1); }
+            let [, maj, min, pat, curId, curN] = m;
+            maj = +maj; min = +min; pat = +pat;
+            curN = curN === undefined ? null : +curN;
+            const onPrerelease = curId !== undefined;
+            const bumpBase = (t) => {
+              if (t === "major") { maj++; min = 0; pat = 0; }
+              else if (t === "minor") { min++; pat = 0; }
+              else { pat++; }
+            };
+            let next;
+            if (preid) {
+              if (onPrerelease) {
+                if (curId === preid && curN !== null) {
+                  next = `${maj}.${min}.${pat}-${preid}.${curN + 1}`;
+                } else {
+                  next = `${maj}.${min}.${pat}-${preid}.0`;
+                }
+              } else {
+                bumpBase(type);
+                next = `${maj}.${min}.${pat}-${preid}.0`;
+              }
+            } else {
+              if (onPrerelease) {
+                next = `${maj}.${min}.${pat}`;
+              } else {
+                bumpBase(type);
+                next = `${maj}.${min}.${pat}`;
+              }
+            }
+            console.log(next);
+          ')
           echo "next_version=$NEXT" >> $GITHUB_OUTPUT
-          echo "WORKFLOW_TITLE=Publish ${{ github.event.inputs.version_type }} release to NPM (v. $NEXT)" >> $GITHUB_ENV
+          if [ -n "$PRERELEASE_ID" ]; then
+            echo "WORKFLOW_TITLE=Publish $VERSION_TYPE prerelease ($PRERELEASE_ID) to NPM (v. $NEXT)" >> $GITHUB_ENV
+          else
+            echo "WORKFLOW_TITLE=Publish $VERSION_TYPE release to NPM (v. $NEXT)" >> $GITHUB_ENV
+          fi
 
       - name: Update version
         run: echo "::notice title=Version::Publishing version ${{ steps.calculate-next-version.outputs.next_version }}"
@@ -62,7 +116,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Stub @chemical-x/forms
+      - name: Stub decant
         run: pnpm dev:prepare
 
       - name: Validate ESLint and Types
@@ -99,11 +153,29 @@ jobs:
         # generate-notes endpoint).
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION_TYPE: ${{ github.event.inputs.version_type }}
+          PRERELEASE_ID: ${{ github.event.inputs.prerelease_id }}
         run: |
-          if [ -z "${{ github.event.inputs.version_type }}" ]; then
-            pnpm version patch
+          if [ -n "$PRERELEASE_ID" ]; then
+            # Prerelease modes match the calculate-next-version logic.
+            #   Already on a prerelease (any preid) → `prerelease --preid <id>`:
+            #     this either bumps the counter (same preid) or switches
+            #     preid + resets counter to 0 (different preid). Either way
+            #     the base does NOT advance — that's handled when exiting.
+            #   Stable → `pre<type> --preid <id>`: bumps base by <type>
+            #     and adds `-<id>.0` to start the cycle.
+            CURRENT=$(node -p "require('./package.json').version")
+            if echo "$CURRENT" | grep -qE -- "-[A-Za-z]"; then
+              pnpm version prerelease --preid "$PRERELEASE_ID"
+            else
+              pnpm version "pre${VERSION_TYPE}" --preid "$PRERELEASE_ID"
+            fi
           else
-            pnpm version ${{ github.event.inputs.version_type }}
+            # Stable release. If currently on a prerelease, `pnpm version
+            # <type>` drops the prerelease suffix and keeps the base
+            # (e.g. 0.2.2-beta.5 + patch → 0.2.2). If on stable, it bumps
+            # by <type> as usual.
+            pnpm version "${VERSION_TYPE:-patch}"
           fi
 
       - name: Build
@@ -115,9 +187,21 @@ jobs:
         # already declares `id-token: write`; npm's registry records
         # the statement so consumers can verify a tarball came from
         # this repo via `npm audit signatures`.
-        run: pnpm publish --access public --provenance
+        #
+        # Prereleases publish under a dist-tag matching the preid (e.g.
+        # `decant@beta`, `decant@alpha`) — `npm install decant` still
+        # resolves to `latest` (the stable line), and consumers opt in
+        # via `npm install decant@beta`. Without `--tag`, pnpm publish
+        # defaults to `latest`, which would shadow the stable release.
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PRERELEASE_ID: ${{ github.event.inputs.prerelease_id }}
+        run: |
+          if [ -n "$PRERELEASE_ID" ]; then
+            pnpm publish --access public --provenance --tag "$PRERELEASE_ID"
+          else
+            pnpm publish --access public --provenance
+          fi
 
       - name: Push version bump
         if: success()
@@ -168,7 +252,7 @@ jobs:
             echo "- Commit: [\`$SHORT_SHA\`]($REPO_URL/commit/$COMMIT_SHA) — $COMMIT_TITLE"
             echo "- Author: **$COMMIT_AUTHOR_NAME** <$COMMIT_AUTHOR_EMAIL>"
             echo "- Published via: [workflow run]($REPO_URL/actions/runs/${{ github.run_id }})"
-            echo "- npm: [\`@chemical-x/forms@$VERSION\`](https://www.npmjs.com/package/@chemical-x/forms/v/$VERSION)"
+            echo "- npm: [\`decant@$VERSION\`](https://www.npmjs.com/package/decant/v/$VERSION)"
             echo ""
             echo "---"
             echo ""
@@ -178,14 +262,22 @@ jobs:
           # `--verify-tag` confirms the tag exists on the remote before
           # creating the release, so a failed `git push --follow-tags`
           # above would short-circuit here rather than produce an
-          # orphan release. `--latest` marks this as the primary
-          # release on the repo's releases page — valid for patch /
-          # minor / major bumps (the only modes this workflow accepts).
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --notes-file "$RUNNER_TEMP/release-body.md" \
-            --verify-tag \
-            --latest
+          # orphan release. Stable releases use `--latest` (primary on
+          # the repo's releases page); prereleases use `--prerelease`
+          # so they don't shadow the stable line.
+          if [ -n "${{ github.event.inputs.prerelease_id }}" ]; then
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file "$RUNNER_TEMP/release-body.md" \
+              --verify-tag \
+              --prerelease
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file "$RUNNER_TEMP/release-body.md" \
+              --verify-tag \
+              --latest
+          fi
 
       - name: Rollback version bump if failed
         if: failure()

@@ -101,7 +101,7 @@ That's an explicit consumer signal, not runtime inference. Use the
 `unset` sentinel:
 
 ```ts
-import { unset, useForm } from '@chemical-x/forms/zod'
+import { unset, useForm } from 'decant/zod'
 
 useForm({
   schema: z.object({ agreed: z.boolean(), note: z.string() }),

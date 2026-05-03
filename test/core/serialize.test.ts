@@ -3,16 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from 'vue'
 import { createFormStore } from '../../src/runtime/core/create-form-store'
 import { canonicalizePath } from '../../src/runtime/core/paths'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 import { getRegistryFromApp, type SerializedFormData } from '../../src/runtime/core/registry'
-import { hydrateChemicalXState, renderChemicalXState } from '../../src/runtime/core/serialize'
+import { hydrateDecantState, renderDecantState } from '../../src/runtime/core/serialize'
 import { fakeSchema } from '../utils/fake-schema'
 
 type Signup = { email: string; password: string }
 
 function seedServerApp(formKey: string, initialEmail: string) {
   const app = createApp({ render: () => null })
-  app.use(createChemicalXForms({ override: true }))
+  app.use(createDecant({ override: true }))
   const registry = getRegistryFromApp(app)
   const state = createFormStore<Signup>({
     formKey,
@@ -22,7 +22,7 @@ function seedServerApp(formKey: string, initialEmail: string) {
   return { app, state }
 }
 
-describe('renderChemicalXState', () => {
+describe('renderDecantState', () => {
   it('extracts form data and source-segregated errors for every registered form', () => {
     const { app, state } = seedServerApp('signup', 'a@a')
     // Schema validation populates the schema-error store directly via
@@ -35,7 +35,7 @@ describe('renderChemicalXState', () => {
     state.setAllUserErrors([
       { message: 'banned-domain', path: ['email'], formKey: 'signup', code: 'api:validation' },
     ])
-    const payload = renderChemicalXState(app)
+    const payload = renderDecantState(app)
     expect(payload.forms).toHaveLength(1)
     const entry = payload.forms[0]
     expect(entry).toBeDefined()
@@ -49,7 +49,7 @@ describe('renderChemicalXState', () => {
 
   it('does not include originals or elements in the payload', () => {
     const { app } = seedServerApp('x', 'y')
-    const payload = renderChemicalXState(app)
+    const payload = renderDecantState(app)
     const firstEntry = payload.forms[0]
     expect(firstEntry).toBeDefined()
     if (firstEntry === undefined) return
@@ -63,9 +63,9 @@ describe('renderChemicalXState', () => {
 
   it('is round-trippable through JSON.stringify', () => {
     const { app } = seedServerApp('rt', 'z@z')
-    const payload = renderChemicalXState(app)
+    const payload = renderDecantState(app)
     const serialised = JSON.stringify(payload)
-    const restored = JSON.parse(serialised) as ReturnType<typeof renderChemicalXState>
+    const restored = JSON.parse(serialised) as ReturnType<typeof renderDecantState>
     expect(restored.forms).toHaveLength(1)
     const entry = restored.forms[0]
     expect(entry).toBeDefined()
@@ -76,15 +76,15 @@ describe('renderChemicalXState', () => {
   })
 })
 
-describe('hydrateChemicalXState', () => {
+describe('hydrateDecantState', () => {
   it('stages entries into pendingHydration for later consumption', () => {
     const { app } = seedServerApp('stage', 'a@a')
-    const payload = renderChemicalXState(app)
+    const payload = renderDecantState(app)
 
     // Simulate the client: fresh app, same plugin, then hydrate.
     const clientApp = createApp({ render: () => null })
-    clientApp.use(createChemicalXForms())
-    hydrateChemicalXState(clientApp, payload)
+    clientApp.use(createDecant())
+    hydrateDecantState(clientApp, payload)
     const registry = getRegistryFromApp(clientApp)
     expect(registry.pendingHydration.has('stage')).toBe(true)
   })
@@ -92,11 +92,11 @@ describe('hydrateChemicalXState', () => {
   it('reconstructs an equivalent FormStore when the client creates a form with hydration', () => {
     const { app, state } = seedServerApp('rt2', 'server@x')
     state.setValueAtPath(['email'], 'server-edited@x')
-    const payload = renderChemicalXState(app)
+    const payload = renderDecantState(app)
 
     const clientApp = createApp({ render: () => null })
-    clientApp.use(createChemicalXForms())
-    hydrateChemicalXState(clientApp, payload)
+    clientApp.use(createDecant())
+    hydrateDecantState(clientApp, payload)
     const clientRegistry = getRegistryFromApp(clientApp)
 
     const pending = clientRegistry.pendingHydration.get('rt2')

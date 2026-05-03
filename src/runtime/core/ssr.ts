@@ -4,7 +4,7 @@
  * of truth instead of sniffing `import.meta.*` (bundler-specific) at each
  * call site.
  *
- * Consumers can override explicitly via `createChemicalXForms({ ssr: true })`;
+ * Consumers can override explicitly via `createDecant({ ssr: true })`;
  * the default heuristic handles the common Node-vs-browser split without
  * relying on any bundler-injected flag.
  */

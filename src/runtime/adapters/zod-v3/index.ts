@@ -1,7 +1,7 @@
 import { cloneDeep, isFunction, merge, set } from 'lodash-es'
 // Imports zod v3 via the pnpm alias defined in devDependencies; the
 // published bundle rewrites this specifier back to 'zod' via the build
-// step (see build.config.ts). Consumers of `@chemical-x/forms/zod-v3`
+// step (see build.config.ts). Consumers of `decant/zod-v3`
 // install zod@3 themselves and the resolved import works.
 import { z } from 'zod-v3'
 import type {
@@ -68,7 +68,7 @@ let warnedZodCodeMissing = false
  * Wrap a Zod v3 `ZodObject` schema in an `AbstractSchema` factory.
  *
  * Most consumers never call this directly — `useForm` from
- * `@chemical-x/forms/zod-v3` does the wrapping automatically. Reach
+ * `decant/zod-v3` does the wrapping automatically. Reach
  * for it only when integrating with a custom code path that needs
  * the adapter outside of `useForm`.
  *
@@ -195,7 +195,7 @@ export function zodAdapter<
             const path = coercePathSegments(issue.path)
             if (!schemasAtPath.length) {
               console.error(
-                `[@chemical-x/forms] zod-v3 adapter: no schema at path ` +
+                `[decant] zod-v3 adapter: no schema at path ` +
                   `'${path.join(PATH_SEPARATOR)}' for key '${_formKey}'. ` +
                   `Skipping the issue. (This is a library-internal invariant — please file a bug.)`
               )
@@ -578,7 +578,7 @@ function zodIssuesToValidationErrors(issues: z.ZodIssue[], formKey: FormKey): Va
       if (__DEV__ && !warnedZodCodeMissing) {
         warnedZodCodeMissing = true
         console.warn(
-          '[@chemical-x/forms] zod-v3 adapter received an issue with no string `code`; ' +
+          '[decant] zod-v3 adapter received an issue with no string `code`; ' +
             "stamping `'zod:unknown'`. This usually means a custom Zod plugin emitted " +
             'an issue without the standard code field.'
         )
@@ -1342,7 +1342,7 @@ function getDefaultValuesFromZodSchema<
     }
 
     console.warn(
-      `[@chemical-x/forms] zod-v3 adapter: unsupported schema kind ` +
+      `[decant] zod-v3 adapter: unsupported schema kind ` +
         `'${schema.constructor.name}' on form '${formKey}'. Defaulting the field to null. ` +
         `Use a supported zod kind (object/array/record/string/number/etc.) at this path.`
     )

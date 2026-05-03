@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, nextTick, ref, withDirectives, type App 
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { assignKey, vRegister } from '../../src/runtime/core/directive'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 import { useRegister } from '../../src/runtime/composables/use-register'
 import type { RegisterValue } from '../../src/runtime/types/types-api'
 
@@ -95,7 +95,7 @@ async function mountWithChild(
     },
   })
 
-  const app = createApp(Parent).use(createChemicalXForms())
+  const app = createApp(Parent).use(createDecant())
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -344,7 +344,7 @@ describe('pattern 4: v-register on a non-form root WITH assignKey (kept-current 
       },
     })
 
-    const app = createApp(Parent).use(createChemicalXForms())
+    const app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -471,7 +471,7 @@ describe('pattern 3: @update:registerValue prop on a component', () => {
           )
       },
     })
-    const localApp = createApp(Parent).use(createChemicalXForms())
+    const localApp = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     localApp.mount(root)
@@ -662,7 +662,7 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
           ])
       },
     })
-    const localApp = createApp(Parent).use(createChemicalXForms())
+    const localApp = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     localApp.mount(root)
@@ -707,7 +707,7 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
           ])
       },
     })
-    const localApp = createApp(Parent).use(createChemicalXForms())
+    const localApp = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     localApp.mount(root)
@@ -773,7 +773,7 @@ describe('v-register="undefined" is a graceful no-op (invariant 4)', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -829,7 +829,7 @@ describe('v-register="undefined" is a graceful no-op (invariant 4)', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -974,7 +974,7 @@ describe("multi-root component — directive lands on Vue's placeholder ⚠", ()
       },
     })
 
-    const app = createApp(Parent).use(createChemicalXForms())
+    const app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -1012,7 +1012,7 @@ describe('component re-render with prop change does NOT leak listeners (works �
           withDirectives(h(ChildInput, { hint: hint.value, registerValue: rv }), [[vRegister, rv]])
       },
     })
-    const app = createApp(Parent).use(createChemicalXForms())
+    const app = createApp(Parent).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

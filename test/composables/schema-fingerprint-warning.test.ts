@@ -4,7 +4,7 @@ import { createApp, defineComponent, h } from 'vue'
 import { z } from 'zod'
 import { useForm as useZodForm } from '../../src/zod'
 import { useForm } from '../../src'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createDecant } from '../../src/runtime/core/plugin'
 import { fakeSchema } from '../utils/fake-schema'
 
 /**
@@ -63,7 +63,7 @@ describe('schema-fingerprint shared-key warning', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -131,7 +131,7 @@ describe('schema-fingerprint shared-key warning', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createDecant())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

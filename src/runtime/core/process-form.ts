@@ -139,7 +139,7 @@ export function buildProcessForm<F extends GenericForm>(
     ) {
       warnedNoScopeStores.add(state as FormStore<GenericForm>)
       console.warn(
-        '[@chemical-x/forms] validate() called outside a Vue effect scope; ' +
+        '[decant] validate() called outside a Vue effect scope; ' +
           'its reactive watcher will leak until the form is garbage-collected. ' +
           'Fix: call validate() inside setup() / a child component, ' +
           'or wrap the call in `effectScope().run(...)`.'

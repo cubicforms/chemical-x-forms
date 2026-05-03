@@ -11,7 +11,7 @@
  */
 
 /**
- * Base for every error class thrown by `@chemical-x/forms`. Sets
+ * Base for every error class thrown by `decant`. Sets
  * `this.name` from the constructor's `new.target.name`, so subclasses
  * don't have to redeclare their own name override.
  */
@@ -40,14 +40,12 @@ export class SubmitErrorHandlerError extends CxError {}
  * Thrown by `useForm` / `injectForm` when the form library's
  * plugin hasn't been installed on the current Vue app.
  *
- * Fix: add `app.use(createChemicalXForms())` to your app entry
- * (or `@chemical-x/forms/nuxt` for Nuxt projects).
+ * Fix: add `app.use(createDecant())` to your app entry
+ * (or `decant/nuxt` for Nuxt projects).
  */
 export class RegistryNotInstalledError extends CxError {
   constructor() {
-    super(
-      '[@chemical-x/forms] Registry not found. Install the plugin via `app.use(createChemicalXForms())`.'
-    )
+    super('[decant] Registry not found. Install the plugin via `app.use(createDecant())`.')
   }
 }
 
@@ -62,7 +60,7 @@ export class RegistryNotInstalledError extends CxError {
 export class OutsideSetupError extends CxError {
   constructor() {
     super(
-      '[@chemical-x/forms] useForm / injectForm called outside Vue setup(). ' +
+      '[decant] useForm / injectForm called outside Vue setup(). ' +
         'Move into setup or mount a child component to trigger from an event.'
     )
   }
@@ -77,7 +75,7 @@ export class OutsideSetupError extends CxError {
 export class ReservedFormKeyError extends CxError {
   constructor(key: string) {
     super(
-      `[@chemical-x/forms] Form key "${key}" uses the reserved "__cx:" namespace. ` +
+      `[decant] Form key "${key}" uses the reserved "__cx:" namespace. ` +
         `Use a different prefix — "__cx:" is for library-internal synthetic keys ` +
         `(anonymous useForm() calls without an explicit key).`
     )
@@ -120,7 +118,7 @@ export class SensitivePersistFieldError extends CxError {
   constructor(path: ReadonlyArray<string | number> | string) {
     const display = Array.isArray(path) ? path.join('.') : String(path)
     super(
-      `[@chemical-x/forms] Refusing to persist "${display}" — this path matches a ` +
+      `[decant] Refusing to persist "${display}" — this path matches a ` +
         `sensitive-name pattern (password / cvv / ssn / token / etc.). Storing sensitive ` +
         `data in client-side storage is a compliance risk (HIPAA / PII / PCI-DSS / SOC2). ` +
         `Fix: persist this server-side, OR pass \`acknowledgeSensitive: true\` to register() ` +
@@ -183,5 +181,5 @@ function formatAnonPersistMessage(opts: {
       ? ` Fix: add \`key: '<stable-id>'\` to useForm().`
       : ` Fix: add \`persist: 'session'\` (or 'local') and \`key:\` to useForm(), or remove \`{ persist: true }\` from this register() call.`
   const where = opts.callSite !== undefined ? ` ${opts.callSite}` : ''
-  return `[@chemical-x/forms] ${head}${fields}${fix}${where}`
+  return `[decant] ${head}${fields}${fix}${where}`
 }

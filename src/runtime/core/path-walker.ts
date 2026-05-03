@@ -88,21 +88,25 @@ export function isPlainRecord(value: unknown): value is Record<string, unknown> 
 }
 
 export function setAtPath(root: unknown, path: Path, value: unknown): unknown {
-  if (path.length === 0) return value
+  return setAtPathOffset(root, path, value, 0)
+}
 
-  const head = path[0] as Segment
-  const rest = path.slice(1)
+function setAtPathOffset(root: unknown, path: Path, value: unknown, offset: number): unknown {
+  if (offset >= path.length) return value
+
+  const head = path[offset] as Segment
+  const nextOffset = offset + 1
 
   if (typeof head === 'number') {
     const arr = Array.isArray(root) ? [...root] : []
     // Extend sparse arrays with undefined slots up to the target index.
     while (arr.length <= head) arr.push(undefined)
-    arr[head] = setAtPath(arr[head], rest, value)
+    arr[head] = setAtPathOffset(arr[head], path, value, nextOffset)
     return arr
   }
 
   const rec: Record<string, unknown> = isPlainRecord(root) ? { ...root } : {}
-  rec[head] = setAtPath(rec[head], rest, value)
+  rec[head] = setAtPathOffset(rec[head], path, value, nextOffset)
   return rec
 }
 
@@ -121,33 +125,38 @@ export function setAtPath(root: unknown, path: Path, value: unknown): unknown {
  * paths the user might have opted in.
  */
 export function deleteAtPath(root: unknown, path: Path): unknown {
-  if (path.length === 0) return undefined
+  return deleteAtPathOffset(root, path, 0)
+}
 
-  const head = path[0] as Segment
-  const rest = path.slice(1)
+function deleteAtPathOffset(root: unknown, path: Path, offset: number): unknown {
+  if (offset >= path.length) return undefined
+
+  const head = path[offset] as Segment
+  const isLeafStep = offset === path.length - 1
+  const nextOffset = offset + 1
 
   if (typeof head === 'number') {
     if (!Array.isArray(root)) return root
     if (head < 0 || head >= root.length) return root
-    if (rest.length === 0) {
+    if (isLeafStep) {
       const arr = [...root]
       arr.splice(head, 1)
       return arr
     }
     const arr = [...root]
-    arr[head] = deleteAtPath(arr[head], rest)
+    arr[head] = deleteAtPathOffset(arr[head], path, nextOffset)
     return arr
   }
 
   if (!isPlainRecord(root)) return root
-  if (rest.length === 0) {
+  if (isLeafStep) {
     const rec: Record<string, unknown> = { ...root }
     delete rec[head]
     return rec
   }
   if (!(head in root)) return root
   const rec: Record<string, unknown> = { ...root }
-  rec[head] = deleteAtPath(rec[head], rest)
+  rec[head] = deleteAtPathOffset(rec[head], path, nextOffset)
   return rec
 }
 
@@ -184,6 +193,24 @@ export function mergeStructural(
   consumer: unknown,
   defaultValue: unknown = schema.getDefaultAtPath(path)
 ): unknown {
+  // Internal recursion uses a single mutable scratch path: each level
+  // pushes its segment before descending and pops on return. Eliminates
+  // the per-recursion `[...path, key]` / `[...path, i]` allocation
+  // that previously fired on every object key + every array element.
+  // Schema adapters (zod / standard-schema) read `getDefaultAtPath`
+  // synchronously and don't retain the path, so passing the live
+  // scratch is safe; if a future adapter needed retention, snapshot
+  // inside that adapter rather than allocating per-call here.
+  const scratch: Segment[] = path.slice()
+  return mergeStructuralImpl(schema, scratch, consumer, defaultValue)
+}
+
+function mergeStructuralImpl(
+  schema: SchemaForFill,
+  scratch: Segment[],
+  consumer: unknown,
+  defaultValue: unknown
+): unknown {
   // Consumer is missing — fall back to the schema default. When the
   // schema default itself is `undefined` (path doesn't exist in the
   // schema), the result is `undefined` and we don't fight it.
@@ -199,22 +226,32 @@ export function mergeStructural(
   // up to the structural length; for arrays, length tracks consumer.
   if (Array.isArray(consumer)) {
     const TUPLE_PROBE_INDEX = 1_000_000
-    const probe = schema.getDefaultAtPath([...path, TUPLE_PROBE_INDEX])
+    scratch.push(TUPLE_PROBE_INDEX)
+    const probe = schema.getDefaultAtPath(scratch)
+    scratch.pop()
     let targetLen = consumer.length
     if (probe === undefined) {
       // Tuple-like: find structural length via sequential probe. Cap
       // protects against pathological recursive lazies.
       let n = consumer.length
-      while (n < 1024 && schema.getDefaultAtPath([...path, n]) !== undefined) n++
+      while (n < 1024) {
+        scratch.push(n)
+        const v = schema.getDefaultAtPath(scratch)
+        scratch.pop()
+        if (v === undefined) break
+        n++
+      }
       targetLen = n
     }
     let mutated = targetLen > consumer.length
     const out = consumer.slice() as unknown[]
     while (out.length < targetLen) out.push(undefined)
     for (let i = 0; i < targetLen; i++) {
-      const elemDefault = schema.getDefaultAtPath([...path, i])
+      scratch.push(i)
+      const elemDefault = schema.getDefaultAtPath(scratch)
       const consumerElem = i < consumer.length ? consumer[i] : undefined
-      const merged = mergeStructural(schema, [...path, i], consumerElem, elemDefault)
+      const merged = mergeStructuralImpl(schema, scratch, consumerElem, elemDefault)
+      scratch.pop()
       if (merged !== consumerElem) {
         out[i] = merged
         mutated = true
@@ -241,7 +278,9 @@ export function mergeStructural(
         // Recurse so that filling produces a structurally-complete
         // sub-tree (covers nested-object defaults that themselves
         // contain wrappers / unions).
-        const filled = mergeStructural(schema, [...path, key], undefined, defAtKey)
+        scratch.push(key)
+        const filled = mergeStructuralImpl(schema, scratch, undefined, defAtKey)
+        scratch.pop()
         if (filled !== undefined) {
           out[key] = filled
           mutated = true
@@ -250,7 +289,9 @@ export function mergeStructural(
     }
     // Recurse into consumer-supplied keys to catch nested gaps.
     for (const key of Object.keys(consumer)) {
-      const merged = mergeStructural(schema, [...path, key], consumer[key], defaultValue[key])
+      scratch.push(key)
+      const merged = mergeStructuralImpl(schema, scratch, consumer[key], defaultValue[key])
+      scratch.pop()
       if (merged !== consumer[key]) {
         out[key] = merged
         mutated = true

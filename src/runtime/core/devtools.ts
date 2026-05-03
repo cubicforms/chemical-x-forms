@@ -4,7 +4,7 @@ import type { DecantRegistry } from './registry'
 import type { GenericForm } from '../types/types-core'
 import type { FormKey } from '../types/types-api'
 import { canonicalizePath } from './paths'
-import { isSensitivePath } from './persistence/sensitive-names'
+import { isSensitivePath, segmentMatchesSensitive } from './persistence/sensitive-names'
 
 /**
  * Vue DevTools plugin wiring for decant. Lazy-imported by
@@ -46,27 +46,43 @@ const REDACTED = '[redacted]'
  * `acknowledgeSensitive: true` on persistence does NOT bypass this —
  * if the consumer opted into persisting the value, they still
  * shouldn't see it in DevTools timelines that grow unbounded.
+ *
+ * Implementation note: tracks an `inSensitiveSubtree` flag through
+ * the recursion instead of allocating a fresh path array per node
+ * + calling `isSensitivePath` per leaf. Once any ancestor segment
+ * matches the heuristic, the flag stays set for every descendant —
+ * the leaf simply returns `REDACTED` without re-scanning the path.
+ * For a 100-leaf form: ~100 path allocations + ~100 full-path regex
+ * sweeps → 0 path allocations + ~100 single-segment regex sweeps,
+ * with whole-subtree short-circuit when sensitive ancestors are
+ * found early.
  */
-function redactSensitiveLeaves(
-  value: unknown,
-  pathSoFar: ReadonlyArray<string | number> = []
-): unknown {
+function redactSensitiveLeaves(value: unknown): unknown {
+  return redactImpl(value, false)
+}
+
+function redactImpl(value: unknown, inSensitiveSubtree: boolean): unknown {
   if (value === null || value === undefined) return value
   if (typeof value !== 'object') {
-    // Primitive leaf — redact if the enclosing path is sensitive.
-    return isSensitivePath([...pathSoFar]) ? REDACTED : value
+    return inSensitiveSubtree ? REDACTED : value
   }
   if (Array.isArray(value)) {
-    return value.map((item, idx) => redactSensitiveLeaves(item, [...pathSoFar, idx]))
+    // Numeric segments never match the sensitive-name heuristic
+    // (segmentMatchesSensitive rejects non-string segments), so the
+    // flag passes through unchanged when descending into arrays.
+    return value.map((item) => redactImpl(item, inSensitiveSubtree))
   }
-  // Plain object (Map / Set / Date / etc. fall through to "treat as
-  // primitive" — DevTools rendering of those is already heuristic).
+  // Non-plain object (Map / Set / Date / class instance) — redact
+  // wholesale if we're already in a sensitive subtree; otherwise pass
+  // through. DevTools rendering of these is already heuristic, so we
+  // don't try to descend into them.
   if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
-    return isSensitivePath([...pathSoFar]) ? REDACTED : value
+    return inSensitiveSubtree ? REDACTED : value
   }
   const out: Record<string, unknown> = {}
   for (const key of Object.keys(value as Record<string, unknown>)) {
-    out[key] = redactSensitiveLeaves((value as Record<string, unknown>)[key], [...pathSoFar, key])
+    const childSensitive = inSensitiveSubtree || segmentMatchesSensitive(key)
+    out[key] = redactImpl((value as Record<string, unknown>)[key], childSensitive)
   }
   return out
 }

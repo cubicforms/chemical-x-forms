@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { unset, useForm } from '../../src/zod'
 import { canonicalizePath } from '../../src/runtime/core/paths'
-import { createDecant } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
  * Phase 5.9 — undo/redo.
@@ -37,7 +37,7 @@ function mountForm(history: Parameters<typeof useForm<typeof schema>>[0]['histor
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createDecant())
+  const app = createApp(App).use(createAttaform())
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -193,7 +193,7 @@ describe('history — blankPaths preservation', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

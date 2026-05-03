@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   AnonPersistError,
-  CxError,
+  AttaformError,
   InvalidPathError,
   OutsideSetupError,
   RegistryNotInstalledError,
@@ -48,9 +48,9 @@ describe('error classes', () => {
   })
 
   describe('RegistryNotInstalledError', () => {
-    it('has a helpful default message pointing at createDecant', () => {
+    it('has a helpful default message pointing at createAttaform', () => {
       const err = new RegistryNotInstalledError()
-      expect(err.message).toContain('createDecant')
+      expect(err.message).toContain('createAttaform')
       expect(err.name).toBe('RegistryNotInstalledError')
     })
   })
@@ -85,10 +85,10 @@ describe('error classes', () => {
       const err = new AnonPersistError({
         cause: 'no-key',
         schemaFields: ['email', 'password'],
-        callSite: 'spike-cx.vue:171:21',
+        callSite: 'spike.vue:171:21',
       })
       expect(err.schemaFields).toEqual(['email', 'password'])
-      expect(err.callSite).toBe('spike-cx.vue:171:21')
+      expect(err.callSite).toBe('spike.vue:171:21')
       expect(err.cause).toBe('no-key')
     })
 
@@ -126,9 +126,9 @@ describe('error classes', () => {
     it('appends the callSite at the end of the message when provided', () => {
       const err = new AnonPersistError({
         cause: 'no-key',
-        callSite: 'spike-cx.vue:171:21',
+        callSite: 'spike.vue:171:21',
       })
-      expect(err.message).toContain('spike-cx.vue:171:21')
+      expect(err.message).toContain('spike.vue:171:21')
     })
 
     it('throws with instanceof-checkable type across module boundaries', () => {
@@ -143,21 +143,21 @@ describe('error classes', () => {
     })
   })
 
-  // CxError is the shared parent of every library-emitted error class so
+  // AttaformError is the shared parent of every library-emitted error class so
   // consumers can write a single polymorphic catch (`catch (e) { if (e
-  // instanceof CxError) ... }`) instead of OR-chaining instanceof
+  // instanceof AttaformError) ... }`) instead of OR-chaining instanceof
   // checks for every subclass. The migration is a clean break — the
   // class shape is additive (Error stays in the prototype chain) but the
   // public surface gains a new symbol.
-  describe('CxError base class', () => {
-    it('all library error classes are instanceof CxError', () => {
-      expect(new InvalidPathError('x')).toBeInstanceOf(CxError)
-      expect(new SubmitErrorHandlerError('x')).toBeInstanceOf(CxError)
-      expect(new RegistryNotInstalledError()).toBeInstanceOf(CxError)
-      expect(new OutsideSetupError()).toBeInstanceOf(CxError)
-      expect(new ReservedFormKeyError('__cx:foo')).toBeInstanceOf(CxError)
-      expect(new SensitivePersistFieldError('password')).toBeInstanceOf(CxError)
-      expect(new AnonPersistError({ cause: 'no-key' })).toBeInstanceOf(CxError)
+  describe('AttaformError base class', () => {
+    it('all library error classes are instanceof AttaformError', () => {
+      expect(new InvalidPathError('x')).toBeInstanceOf(AttaformError)
+      expect(new SubmitErrorHandlerError('x')).toBeInstanceOf(AttaformError)
+      expect(new RegistryNotInstalledError()).toBeInstanceOf(AttaformError)
+      expect(new OutsideSetupError()).toBeInstanceOf(AttaformError)
+      expect(new ReservedFormKeyError('__atta:foo')).toBeInstanceOf(AttaformError)
+      expect(new SensitivePersistFieldError('password')).toBeInstanceOf(AttaformError)
+      expect(new AnonPersistError({ cause: 'no-key' })).toBeInstanceOf(AttaformError)
     })
 
     it('still extends Error so consumers using catch (e: Error) keep working', () => {
@@ -165,13 +165,13 @@ describe('error classes', () => {
       expect(new AnonPersistError({ cause: 'no-key' })).toBeInstanceOf(Error)
     })
 
-    it('preserves message + cause + name on the subclass when caught as CxError', () => {
+    it('preserves message + cause + name on the subclass when caught as AttaformError', () => {
       const inner = new TypeError('inner')
-      let captured: CxError | undefined
+      let captured: AttaformError | undefined
       try {
         throw new InvalidPathError('outer', { cause: inner })
       } catch (e) {
-        if (e instanceof CxError) captured = e
+        if (e instanceof AttaformError) captured = e
       }
       expect(captured).toBeDefined()
       expect(captured?.message).toBe('outer')

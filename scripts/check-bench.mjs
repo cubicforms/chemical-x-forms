@@ -20,7 +20,7 @@ import { join } from 'node:path'
 
 const RATIO_FLOOR = 3.0
 
-const tmp = mkdtempSync(join(tmpdir(), 'cx-bench-'))
+const tmp = mkdtempSync(join(tmpdir(), 'attaform-bench-'))
 const outputPath = join(tmp, 'bench.json')
 
 // Run the bench; let vitest write to our temp JSON file so we don't fight

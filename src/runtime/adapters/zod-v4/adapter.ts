@@ -7,7 +7,7 @@ import type {
   ValidationError,
   ValidationResponse,
 } from '../../types/types-api'
-import { CxErrorCode } from '../../core/error-codes'
+import { AttaformErrorCode } from '../../core/error-codes'
 import { canonicalizePath, type Path, type PathKey } from '../../core/paths'
 import type { DeepPartial, GenericForm } from '../../types/types-core'
 import { assertSupportedKinds } from './assert-supported'
@@ -222,7 +222,7 @@ function isLeafRequired(schema: z.ZodType, depth = 0): boolean {
  * Wrap a Zod v4 `ZodObject` schema in an `AbstractSchema` factory.
  *
  * Most consumers never call this directly — `useForm` from
- * `decant/zod` does the wrapping automatically. Reach for
+ * `attaform/zod` does the wrapping automatically. Reach for
  * it when you need an adapter outside of `useForm` (e.g. validating
  * data with the same library used elsewhere in the form runtime, or
  * exposing the adapter to a custom integration).
@@ -536,7 +536,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
                 message: `Path '${p.join(PATH_SEPARATOR)}' did not resolve to any schema`,
                 path: [...p],
                 formKey,
-                code: CxErrorCode.PathNotFound,
+                code: AttaformErrorCode.PathNotFound,
               },
             ],
             success: false,

@@ -272,7 +272,7 @@ export function getCatchDefault(schema: z.ZodType): unknown {
   const cv = def?.catchValue
   if (typeof cv !== 'function') return undefined
   try {
-    return cv({ error: new Error('cx:default-values'), input: undefined })
+    return cv({ error: new Error('atta:default-values'), input: undefined })
   } catch {
     return undefined
   }
@@ -315,7 +315,7 @@ export function getDiscriminatedOptions(schema: z.ZodType): readonly z.ZodObject
 
 /**
  * Verify a schema is Zod v4. Throws a clear error if it's a v3
- * schema mistakenly imported through `decant/zod`.
+ * schema mistakenly imported through `attaform/zod`.
  *
  * Most consumers never call this directly — the v4 adapter calls it
  * internally on every schema. Reach for it only when wiring a custom
@@ -324,7 +324,7 @@ export function getDiscriminatedOptions(schema: z.ZodType): readonly z.ZodObject
 export function assertZodVersion(schema: unknown): void {
   const def = readDef(schema)
   if (def?.type === undefined) {
-    throw new Error('[decant/zod] schema is not zod v4. Install zod@^4 or use /zod-v3.')
+    throw new Error('[attaform/zod] schema is not zod v4. Install zod@^4 or use /zod-v3.')
   }
 }
 

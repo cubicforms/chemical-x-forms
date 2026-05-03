@@ -44,7 +44,7 @@ export type ValidationError = {
   /**
    * Stable machine identifier for the failure, scoped by prefix:
    *
-   * - `cx:` — library-internal codes (see `CxErrorCode`).
+   * - `atta:` — library-internal codes (see `AttaformErrorCode`).
    * - adapter prefix (e.g. `zod:`) — forwarded from the underlying
    *   schema library's own issue code, when one exists.
    * - consumer-defined — anything else (e.g. `api:duplicate-email`,
@@ -160,7 +160,7 @@ type GetDefaultValuesConfig<Form> = {
  * schema library.
  *
  * Most consumers never touch this type directly — the typed entry
- * points (e.g. `decant/zod`, `decant/zod-v3`)
+ * points (e.g. `attaform/zod`, `attaform/zod-v3`)
  * wire an adapter automatically. Implement this interface only when
  * adding support for a new schema library (Valibot, ArkType, custom).
  */
@@ -728,7 +728,7 @@ export type PersistConfigOptions = {
   storage: FormStorageKind | FormStorage
 
   /**
-   * Storage key namespace. Defaults to `decant:${formKey}`.
+   * Storage key namespace. Defaults to `attaform:${formKey}`.
    * Override when you need a custom prefix (e.g. multi-tenant apps
    * where the same form key may exist per-tenant).
    */
@@ -809,7 +809,7 @@ export type UseFormConfiguration<
 > = {
   /**
    * The schema describing the form's shape and validation rules.
-   * Typed entry points like `decant/zod` accept the
+   * Typed entry points like `attaform/zod` accept the
    * underlying library's schema directly and wrap an adapter; the
    * abstract entry point accepts any object implementing
    * `AbstractSchema`.
@@ -830,7 +830,7 @@ export type UseFormConfiguration<
    * - to give DevTools and validation errors a recognisable label;
    * - to namespace persisted drafts.
    *
-   * Keys starting with `__cx:` are reserved for internal use and
+   * Keys starting with `__atta:` are reserved for internal use and
    * throw `ReservedFormKeyError` if passed.
    */
   key?: FormKey
@@ -970,7 +970,7 @@ export type UseFormConfiguration<
   /**
    * Schema-driven coercion of user-typed DOM values at the v-register
    * directive layer. Per-form override of the plugin-level
-   * `DecantDefaults.coerce`.
+   * `AttaformDefaults.coerce`.
    *
    * - `true` / `undefined` — runs the built-in `defaultCoercionRules`.
    * - `false` — disables coercion; the slim gate rejects mismatches.
@@ -987,18 +987,18 @@ export type UseFormConfiguration<
 
 /**
  * App-level defaults applied to every `useForm` call. Set these once
- * per app via `createDecant({ defaults })` (bare Vue) or
- * `decant.defaults` (Nuxt module).
+ * per app via `createAttaform({ defaults })` (bare Vue) or
+ * `attaform.defaults` (Nuxt module).
  *
  * Resolution order (per-form wins):
  *
- *   useForm({ ... })  >  createDecant({ defaults })  >  library default
+ *   useForm({ ... })  >  createAttaform({ defaults })  >  library default
  *
  * `validateOn` and `debounceMs` resolve per-field — set the debounce
  * globally while still overriding the trigger per form:
  *
  * ```ts
- * createDecant({
+ * createAttaform({
  *   defaults: { debounceMs: 100 },
  * })
  * // later
@@ -1014,7 +1014,7 @@ export type UseFormConfiguration<
  * `schema`, `key`, `defaultValues`, and `persist` are not configurable
  * here — they belong on the per-form call.
  */
-export type DecantDefaults = {
+export type AttaformDefaults = {
   /** Default for `useForm({ strict })`. Default `true`. */
   strict?: boolean
   /** Default for `useForm({ onInvalidSubmit })`. */
@@ -1211,7 +1211,7 @@ export type RegisterFlatPath<Form, Key extends keyof Form = keyof Form> =
  *   typeof v === 'string' ? v.trim() : v
  * ```
  *
- * Type-safety at the call site is delegated to cx's slim-primitive
+ * Type-safety at the call site is delegated to attaform's slim-primitive
  * gate — a transform that produces a value the path's storage
  * doesn't accept gets rejected at write time with a standard
  * diagnostic.
@@ -1222,7 +1222,7 @@ export type RegisterFlatPath<Form, Key extends keyof Form = keyof Form> =
  * patterns; use sync transforms for fire-and-forget side effects
  * (`void doIt(value); return value`).
  *
- * Throws are caught and aborted: cx wraps each transform call in
+ * Throws are caught and aborted: attaform wraps each transform call in
  * try/catch so a buggy or defensive-throw transform doesn't crash
  * the host app. On throw the pipeline aborts (subsequent transforms
  * don't run), nothing is written to form state, and the assigner
@@ -1695,7 +1695,7 @@ export type RegisterModelDynamicCustomDirective = ObjectDirective<
  *
  * <!-- MyField.vue (root is <label>, not <input>) -->
  * <script setup>
- * import { useRegister } from 'decant'
+ * import { useRegister } from 'attaform'
  * defineProps<{ label: string }>()
  * const register = useRegister()
  * </script>
@@ -1715,8 +1715,8 @@ export type RegisterModelDynamicCustomDirective = ObjectDirective<
  * See `RegisterTextModifier` / `RegisterSelectModifier` for
  * per-modifier semantics.
  *
- * Registered globally by `createDecant()` (and by the
- * `decant/nuxt` module). Most consumers don't import the
+ * Registered globally by `createAttaform()` (and by the
+ * `attaform/nuxt` module). Most consumers don't import the
  * directive itself — it's exposed for integrations that install
  * directives manually.
  */

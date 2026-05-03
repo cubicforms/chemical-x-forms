@@ -5,8 +5,8 @@ import { z } from 'zod'
 import { z as zV3 } from 'zod-v3'
 import { useForm } from '../../src/zod'
 import { useForm as useFormV3 } from '../../src/zod-v3'
-import { CxErrorCode } from '../../src/runtime/core/error-codes'
-import { createDecant } from '../../src/runtime/core/plugin'
+import { AttaformErrorCode } from '../../src/runtime/core/error-codes'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
 
 /**
@@ -64,7 +64,7 @@ function mountProfile(): { app: App; api: ProfileApi } {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createDecant({ override: true }))
+  const app = createApp(App).use(createAttaform({ override: true }))
   app.mount(document.createElement('div'))
   return { app, api: handle.api as ProfileApi }
 }
@@ -254,7 +254,7 @@ describe('discriminated-union variant switch — numeric variant blank auto-mark
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
     return handle.api as NumericApi
@@ -273,7 +273,7 @@ describe('discriminated-union variant switch — numeric variant blank auto-mark
     // and storage / display diverge — auto-mark fires, derived error
     // appears reactively.
     expect((api.values.payout as Record<string, unknown>)['threshold']).toBe(0)
-    expect(api.errors('payout.threshold')?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(api.errors('payout.threshold')?.[0]?.code).toBe(AttaformErrorCode.NoValueSupplied)
   })
 })
 
@@ -348,7 +348,7 @@ describe('discriminated-union variant switch — wrapped DU', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as WrappedApi
@@ -399,7 +399,7 @@ describe('discriminated-union variant switch — DU inside an array', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as ArrayApi
@@ -442,7 +442,7 @@ describe('discriminated-union variant switch — zod v3 adapter', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
     return handle.api as V3Api
@@ -510,7 +510,7 @@ function mountProfileWith(options: { rememberVariants?: boolean } = {}): {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createDecant({ override: true }))
+  const app = createApp(App).use(createAttaform({ override: true }))
   app.mount(document.createElement('div'))
   return { app, api: handle.api as ProfileApi }
 }
@@ -573,7 +573,7 @@ describe('variant memory — round-trip preserves typed data', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as TriApi
@@ -852,7 +852,7 @@ function mountFlow(): { app: App; api: FlowApi } {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createDecant({ override: true }))
+  const app = createApp(App).use(createAttaform({ override: true }))
   app.mount(document.createElement('div'))
   return { app, api: handle.api as FlowApi }
 }
@@ -1084,7 +1084,7 @@ describe('variant memory — DU nested inside an array element', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
     return handle.api as ArrayApi
@@ -1209,7 +1209,7 @@ describe('variant memory — nested DUs (depth 3)', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
     return handle.api as WizardApi
@@ -1316,7 +1316,7 @@ describe('variant memory — history (undo/redo) interaction', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as ProfileApi

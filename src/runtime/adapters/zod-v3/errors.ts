@@ -1,4 +1,4 @@
-import { CxError } from '../../core/errors'
+import { AttaformError } from '../../core/errors'
 
 /**
  * Thrown when a zod-v3 schema includes a kind the form library cannot
@@ -10,4 +10,4 @@ import { CxError } from '../../core/errors'
  * the v4 adapter's `UnsupportedSchemaError` so consumers see the same
  * failure shape across adapters.
  */
-export class UnsupportedSchemaError extends CxError {}
+export class UnsupportedSchemaError extends AttaformError {}

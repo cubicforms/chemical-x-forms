@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { useForm } from '../../src/zod'
 import { z } from 'zod'
-import { createDecant } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
  * Debounced field-level validation.
@@ -45,7 +45,7 @@ function mountWith(options: { validateOn?: 'change' | 'blur' | 'submit'; debounc
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createDecant({ override: true }))
+  const app = createApp(App).use(createAttaform({ override: true }))
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)

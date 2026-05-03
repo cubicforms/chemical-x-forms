@@ -1,7 +1,7 @@
 import { cloneDeep, isFunction, merge, set } from 'lodash-es'
 // Imports zod v3 via the pnpm alias defined in devDependencies; the
 // published bundle rewrites this specifier back to 'zod' via the build
-// step (see build.config.ts). Consumers of `decant/zod-v3`
+// step (see build.config.ts). Consumers of `attaform/zod-v3`
 // install zod@3 themselves and the resolved import works.
 import { z } from 'zod-v3'
 import type {
@@ -55,7 +55,7 @@ function constraintsAreSlimValid(slimSchema: z.ZodSchema, constraints: unknown):
 }
 
 import { __DEV__ } from '../../core/dev'
-import { CxErrorCode } from '../../core/error-codes'
+import { AttaformErrorCode } from '../../core/error-codes'
 import type { TypeWithNullableDynamicKeys, ZodTypeWithInnerType } from './types-zod'
 import { assertSupportedKinds } from './assert-supported'
 import { fingerprintZodSchema } from './fingerprint'
@@ -68,7 +68,7 @@ let warnedZodCodeMissing = false
  * Wrap a Zod v3 `ZodObject` schema in an `AbstractSchema` factory.
  *
  * Most consumers never call this directly — `useForm` from
- * `decant/zod-v3` does the wrapping automatically. Reach
+ * `attaform/zod-v3` does the wrapping automatically. Reach
  * for it only when integrating with a custom code path that needs
  * the adapter outside of `useForm`.
  *
@@ -195,7 +195,7 @@ export function zodAdapter<
             const path = coercePathSegments(issue.path)
             if (!schemasAtPath.length) {
               console.error(
-                `[decant] zod-v3 adapter: no schema at path ` +
+                `[attaform] zod-v3 adapter: no schema at path ` +
                   `'${path.join(PATH_SEPARATOR)}' for key '${_formKey}'. ` +
                   `Skipping the issue. (This is a library-internal invariant — please file a bug.)`
               )
@@ -601,7 +601,7 @@ function zodIssuesToValidationErrors(issues: z.ZodIssue[], formKey: FormKey): Va
       if (__DEV__ && !warnedZodCodeMissing) {
         warnedZodCodeMissing = true
         console.warn(
-          '[decant] zod-v3 adapter received an issue with no string `code`; ' +
+          '[attaform] zod-v3 adapter received an issue with no string `code`; ' +
             "stamping `'zod:unknown'`. This usually means a custom Zod plugin emitted " +
             'an issue without the standard code field.'
         )
@@ -638,7 +638,7 @@ const NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA = (path: (string | number)[], 
       message: `Programming Error: useForm.validateAtPath failed to find 1 or more schemas corresponding to the path ${path} in the concrete schema. Does the nested schema exist on form with key '${formKey}'?`,
       path,
       formKey,
-      code: CxErrorCode.PathNotFound,
+      code: AttaformErrorCode.PathNotFound,
     },
   ] satisfies ValidationError[]
 
@@ -1365,7 +1365,7 @@ function getDefaultValuesFromZodSchema<
     }
 
     console.warn(
-      `[decant] zod-v3 adapter: unsupported schema kind ` +
+      `[attaform] zod-v3 adapter: unsupported schema kind ` +
         `'${schema.constructor.name}' on form '${formKey}'. Defaulting the field to null. ` +
         `Use a supported zod kind (object/array/record/string/number/etc.) at this path.`
     )

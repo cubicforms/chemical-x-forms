@@ -27,7 +27,7 @@ import { createApp, defineComponent, h, nextTick, withDirectives, type App } fro
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
-import { createDecant } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 
 async function flush(): Promise<void> {
   for (let i = 0; i < 6; i++) {
@@ -70,7 +70,7 @@ describe('spike 18c — `<input type="number">` + clamp transform DOM/storage pa
           ])
       },
     })
-    app = createApp(Parent).use(createDecant())
+    app = createApp(Parent).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -125,7 +125,7 @@ describe('spike 18c — `<input type="number">` + clamp transform DOM/storage pa
           ])
       },
     })
-    app = createApp(Parent).use(createDecant())
+    app = createApp(Parent).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -168,7 +168,7 @@ describe('spike 18c — `<input type="number">` + clamp transform DOM/storage pa
           ])
       },
     })
-    app = createApp(Parent).use(createDecant())
+    app = createApp(Parent).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

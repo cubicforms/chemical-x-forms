@@ -7,7 +7,7 @@
  * timing/policy defaults.
  *
  * Per-form `useForm({ ... })` options always win over these. App-level
- * `createDecant({ defaults: ... })` options sit between the
+ * `createAttaform({ defaults: ... })` options sit between the
  * two: per-form > app-level > library default.
  */
 
@@ -61,7 +61,7 @@ export const DEFAULT_HISTORY_MAX_SNAPSHOTS = 50
  * constant so multi-tenant deployments can audit or reserve their
  * own prefix without grepping for the literal.
  */
-export const PERSISTENCE_KEY_PREFIX = 'decant:'
+export const PERSISTENCE_KEY_PREFIX = 'attaform:'
 
 /**
  * Reserved namespace for the library's internal synthetic keys
@@ -73,11 +73,11 @@ export const PERSISTENCE_KEY_PREFIX = 'decant:'
  * universally, lowering the chance a consumer would naturally pick
  * a key from this space anyway.
  */
-export const RESERVED_KEY_PREFIX = '__cx:'
+export const RESERVED_KEY_PREFIX = '__atta:'
 
 /**
  * Synthetic-key prefix for `useForm()` calls without an explicit
- * `key`. Lives inside the reserved `__cx:` namespace so the entry-
+ * `key`. Lives inside the reserved `__atta:` namespace so the entry-
  * level reject in `resolveFormKey` covers it automatically — see
  * `RESERVED_KEY_PREFIX` for the enforcement story.
  */

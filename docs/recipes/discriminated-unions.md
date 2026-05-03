@@ -1,6 +1,6 @@
 # Discriminated unions with variant memory
 
-When a discriminated-union variant changes, cx reshapes storage
+When a discriminated-union variant changes, attaform reshapes storage
 to the new variant's slim default — the old variant's keys are
 purged, the new variant's keys are seeded. By default, switching
 back to a previously-visited variant restores its prior typed

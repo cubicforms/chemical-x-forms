@@ -116,7 +116,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Stub decant
+      - name: Stub attaform
         run: pnpm dev:prepare
 
       - name: Validate ESLint and Types
@@ -189,9 +189,9 @@ jobs:
         # this repo via `npm audit signatures`.
         #
         # Prereleases publish under a dist-tag matching the preid (e.g.
-        # `decant@beta`, `decant@alpha`) — `npm install decant` still
+        # `attaform@beta`, `attaform@alpha`) — `npm install attaform` still
         # resolves to `latest` (the stable line), and consumers opt in
-        # via `npm install decant@beta`. Without `--tag`, pnpm publish
+        # via `npm install attaform@beta`. Without `--tag`, pnpm publish
         # defaults to `latest`, which would shadow the stable release.
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -252,7 +252,7 @@ jobs:
             echo "- Commit: [\`$SHORT_SHA\`]($REPO_URL/commit/$COMMIT_SHA) — $COMMIT_TITLE"
             echo "- Author: **$COMMIT_AUTHOR_NAME** <$COMMIT_AUTHOR_EMAIL>"
             echo "- Published via: [workflow run]($REPO_URL/actions/runs/${{ github.run_id }})"
-            echo "- npm: [\`decant@$VERSION\`](https://www.npmjs.com/package/decant/v/$VERSION)"
+            echo "- npm: [\`attaform@$VERSION\`](https://www.npmjs.com/package/attaform/v/$VERSION)"
             echo ""
             echo "---"
             echo ""

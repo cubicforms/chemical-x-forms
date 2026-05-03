@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
-import { createDecant } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
  * Regression spec: every write through setValue must leave the form
@@ -60,7 +60,7 @@ function harness(initialPeople: Form['people']) {
     },
   })
   const app = createApp(Probe)
-  app.use(createDecant())
+  app.use(createAttaform())
   app.mount(document.createElement('div'))
   return { app, form: captured }
 }
@@ -225,7 +225,7 @@ function profileHarness(initial: Partial<ProfileForm['user']>) {
     },
   })
   const app = createApp(Probe)
-  app.use(createDecant())
+  app.use(createAttaform())
   app.mount(document.createElement('div'))
   return { app, form: captured }
 }
@@ -320,7 +320,7 @@ function addressHarness(initialPeople: AddressForm['address']['people']) {
     },
   })
   const app = createApp(Probe)
-  app.use(createDecant())
+  app.use(createAttaform())
   app.mount(document.createElement('div'))
   return { app, form: captured }
 }
@@ -408,7 +408,7 @@ function cascadeHarness() {
     },
   })
   const app = createApp(Probe)
-  app.use(createDecant())
+  app.use(createAttaform())
   app.mount(document.createElement('div'))
   return { app, form: captured }
 }
@@ -528,7 +528,7 @@ function tupleHarness(initial: TupleForm['coords']) {
     },
   })
   const app = createApp(Probe)
-  app.use(createDecant())
+  app.use(createAttaform())
   app.mount(document.createElement('div'))
   return { app, form: captured }
 }

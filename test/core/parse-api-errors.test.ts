@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseApiErrors } from '../../src/runtime/core/parse-api-errors'
 
-const formKey = 'cx-test-form'
+const formKey = 'atta-test-form'
 
 describe('parseApiErrors (structured result)', () => {
   describe('null / undefined input', () => {

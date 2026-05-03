@@ -7,7 +7,7 @@ import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { AnonPersistError } from '../../src/runtime/core/errors'
 import { __resetIndexedDbForTests } from '../../src/runtime/core/persistence/indexeddb'
-import { createDecant } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
 import { hashStableString } from '../../src/runtime/core/hash'
 
@@ -152,7 +152,7 @@ function mountForm(persist: Parameters<typeof useForm<typeof schema>>[0]['persis
         ])
     },
   })
-  const app = createApp(App).use(createDecant())
+  const app = createApp(App).use(createAttaform())
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -345,9 +345,9 @@ describe('persistence — non-opted-in blank paths survive hydration', () => {
     })
     const customFp = hashStableString(fingerprintZodSchema(customSchema))
     // Default `resolveStorageKeyBase`: `${PERSISTENCE_KEY_PREFIX}${formKey}`,
-    // and PERSISTENCE_KEY_PREFIX is 'decant:'. Then the full
+    // and PERSISTENCE_KEY_PREFIX is 'attaform:'. Then the full
     // storage key appends `:${hashedFingerprint}`.
-    const customKey = `decant:test-non-optin-tep:${customFp}`
+    const customKey = `attaform:test-non-optin-tep:${customFp}`
 
     // Pre-seed sessionStorage with a payload representing the state
     // after a user typed into the opted-in email field.
@@ -389,7 +389,7 @@ describe('persistence — non-opted-in blank paths survive hydration', () => {
           ])
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -491,7 +491,7 @@ describe('persistence — anonymous useForm() rejects persist (dev throw)', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     apps.push(app)
     const root = document.createElement('div')
     document.body.appendChild(root)
@@ -686,7 +686,7 @@ describe('persistence — per-element opt-in', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -727,7 +727,7 @@ describe('persistence — per-element opt-in', () => {
           ])
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -781,7 +781,7 @@ describe('persistence — per-element opt-in', () => {
           ])
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -840,7 +840,7 @@ describe('persistence — sensitive-name heuristic', () => {
           ])
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     let captured: unknown
     app.config.errorHandler = (err): void => {
       captured = err
@@ -876,7 +876,7 @@ describe('persistence — sensitive-name heuristic', () => {
           ])
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     let captured: unknown
     app.config.errorHandler = (err): void => {
       captured = err
@@ -900,7 +900,7 @@ describe('persistence — sensitive-name heuristic', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -921,7 +921,7 @@ describe('persistence — sensitive-name heuristic', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -965,7 +965,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -998,7 +998,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -1033,7 +1033,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -1061,7 +1061,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -1141,7 +1141,7 @@ describe('persistence — reset wipes the persisted draft', () => {
           ])
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -1201,7 +1201,7 @@ describe('persistence — reset wipes the persisted draft', () => {
           return () => h('div')
         },
       })
-      const app = createApp(App).use(createDecant())
+      const app = createApp(App).use(createAttaform())
       const root = document.createElement('div')
       document.body.appendChild(root)
       // Construct-time should NOT throw.
@@ -1210,8 +1210,8 @@ describe('persistence — reset wipes the persisted draft', () => {
       await drain()
       const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
       const errorCalls = errorSpy.mock.calls.map((args) => args.join(' '))
-      const cxNoise = [...warnCalls, ...errorCalls].filter((m) => m.includes('[decant]'))
-      expect(cxNoise).toEqual([])
+      const attaformNoise = [...warnCalls, ...errorCalls].filter((m) => m.includes('[attaform]'))
+      expect(attaformNoise).toEqual([])
     } finally {
       warnSpy.mockRestore()
       errorSpy.mockRestore()
@@ -1219,7 +1219,7 @@ describe('persistence — reset wipes the persisted draft', () => {
   })
 
   it('throws AnonPersistError(no-key) when useForm({ persist }) is called without key:', () => {
-    // Anonymous keys (`__cx:anon:*`) drift across mounts; persistence
+    // Anonymous keys (`__atta:anon:*`) drift across mounts; persistence
     // wired against one is unsafe and forecloses on future encrypted
     // backends. Throw at construct time with schemaFields + callSite
     // baked into the error so the offender is identifiable from the
@@ -1234,7 +1234,7 @@ describe('persistence — reset wipes the persisted draft', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
 
@@ -1267,7 +1267,7 @@ describe('persistence — reset wipes the persisted draft', () => {
           )
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
 
@@ -1348,7 +1348,7 @@ describe('persistence — shorthand config', () => {
   })
 
   it("persist: 'local' (string shorthand) writes to localStorage with default key", async () => {
-    // The default key is `decant:${formKey}` — mountForm
+    // The default key is `attaform:${formKey}` — mountForm
     // generates a unique formKey, so the resolved storage key is unique
     // per test and we read back via the same scheme.
     const handle: { api?: ApiReturn; el?: HTMLInputElement } = {}
@@ -1372,7 +1372,7 @@ describe('persistence — shorthand config', () => {
           )
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -1382,7 +1382,7 @@ describe('persistence — shorthand config', () => {
     el.value = 'shorthand@example.com'
     el.dispatchEvent(new Event('input', { bubbles: true }))
     // Default debounceMs is 300 — allow 600 ms for the timer + adapter chain.
-    const expectedKey = `decant:${formKey}:${FP}`
+    const expectedKey = `attaform:${formKey}:${FP}`
     const raw = await waitUntil(() => localStorage.getItem(expectedKey), 1000)
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string) as { v: number; data: { form: { email: string } } }
@@ -1423,7 +1423,7 @@ describe('persistence — shorthand config', () => {
           )
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -1434,7 +1434,7 @@ describe('persistence — shorthand config', () => {
     await waitUntil(() => (writes.length > 0 ? true : null), 1000)
     expect(writes.length).toBeGreaterThan(0)
     const [writtenKey, writtenValue] = writes[writes.length - 1]!
-    expect(writtenKey).toBe(`decant:${formKey}:${FP}`)
+    expect(writtenKey).toBe(`attaform:${formKey}:${FP}`)
     const payload = writtenValue as { data: { form: { email: string } } }
     expect(payload.data.form.email).toBe('custom@example.com')
   })
@@ -1475,7 +1475,7 @@ describe('persistence — cross-store cleanup at mount', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -1536,7 +1536,7 @@ describe('persistence — cross-store cleanup at mount', () => {
     // The shorthand is normalised to { storage: 'local' } before the
     // sweep — same code path, same behaviour.
     const formKey = `shorthand-cleanup-${Math.random().toString(36).slice(2)}`
-    const expectedStorageKey = `decant:${formKey}`
+    const expectedStorageKey = `attaform:${formKey}`
     sessionStorage.setItem(expectedStorageKey, JSON.stringify({ stale: 'session' }))
     const App = defineComponent({
       setup() {
@@ -1544,7 +1544,7 @@ describe('persistence — cross-store cleanup at mount', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -1572,7 +1572,7 @@ describe('persistence — cross-store cleanup at mount', () => {
     // The "I disabled persistence in this deployment" scenario.
     //
     // Deployment N had `useForm({ key: 'signup', persist: 'local' })` and
-    // wrote an entry under `decant:signup`. Deployment N+1
+    // wrote an entry under `attaform:signup`. Deployment N+1
     // removed the `persist:` option entirely (compliance pivot,
     // simplification, whatever) but kept the same form `key`. On next
     // mount, the orphaned entry from deployment N must be wiped from
@@ -1583,7 +1583,7 @@ describe('persistence — cross-store cleanup at mount', () => {
     // This test simulates that gap directly: pre-seed a stale entry,
     // mount with NO persist option, expect the entry gone.
     const formKey = 'persist-removed'
-    const expectedStorageKey = `decant:${formKey}`
+    const expectedStorageKey = `attaform:${formKey}`
     localStorage.setItem(
       expectedStorageKey,
       JSON.stringify({ v: 4, data: { form: { email: 'old@x.com' } } })
@@ -1603,7 +1603,7 @@ describe('persistence — cross-store cleanup at mount', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -1722,11 +1722,11 @@ describe('FormStorage.listKeys — per-backend', () => {
       await import('../../src/runtime/core/persistence/local-storage')
     const adapter = createLocalStorageAdapter()
     localStorage.clear()
-    localStorage.setItem('cx-test:a', 'va')
-    localStorage.setItem('cx-test:b:fp', 'vb')
+    localStorage.setItem('atta-test:a', 'va')
+    localStorage.setItem('atta-test:b:fp', 'vb')
     localStorage.setItem('other:x', 'vx')
-    const keys = await adapter.listKeys('cx-test:')
-    expect(keys.sort()).toEqual(['cx-test:a', 'cx-test:b:fp'])
+    const keys = await adapter.listKeys('atta-test:')
+    expect(keys.sort()).toEqual(['atta-test:a', 'atta-test:b:fp'])
     localStorage.clear()
   })
 
@@ -1806,8 +1806,8 @@ describe('persistence — dispose race (B1)', () => {
     // Use the registry from app1 (any of them works — both share the
     // create-app pattern but have separate registries; we drain each
     // by calling its registry's shutdown).
-    const registry1 = app1._decant
-    const registry2 = app2._decant
+    const registry1 = app1._attaform
+    const registry2 = app2._attaform
     expect(registry1).toBeDefined()
     expect(registry2).toBeDefined()
     await Promise.all([registry1?.shutdown(), registry2?.shutdown()])

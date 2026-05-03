@@ -13,7 +13,7 @@ import type {
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { __DEV__ } from './dev'
-import { CxErrorCode } from './error-codes'
+import { AttaformErrorCode } from './error-codes'
 import { SubmitErrorHandlerError } from './errors'
 import { canonicalizePath, segmentsForPathKey, type Path } from './paths'
 
@@ -101,7 +101,7 @@ export function buildProcessForm<F extends GenericForm>(
               message: adapterThrowMessage(err),
               path: [],
               formKey: state.formKey,
-              code: CxErrorCode.AdapterThrew,
+              code: AttaformErrorCode.AdapterThrew,
             },
           ],
           success: false,
@@ -139,7 +139,7 @@ export function buildProcessForm<F extends GenericForm>(
     ) {
       warnedNoScopeStores.add(state as FormStore<GenericForm>)
       console.warn(
-        '[decant] validate() called outside a Vue effect scope; ' +
+        '[attaform] validate() called outside a Vue effect scope; ' +
           'its reactive watcher will leak until the form is garbage-collected. ' +
           'Fix: call validate() inside setup() / a child component, ' +
           'or wrap the call in `effectScope().run(...)`.'

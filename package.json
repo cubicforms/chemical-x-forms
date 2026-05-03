@@ -1,5 +1,5 @@
 {
-  "name": "decant",
+  "name": "attaform",
   "version": "0.13.0",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
@@ -19,7 +19,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/decantjs/forms"
+    "url": "https://github.com/attaform/attaform"
   },
   "scripts": {
     "dev": "nuxi dev playground",
@@ -48,7 +48,7 @@
   "description": "A fully type-safe, schema-driven form library for Vue 3 that gives you superpowers.",
   "author": "Oswald Chisala",
   "bugs": {
-    "url": "https://github.com/decantjs/forms/issues"
+    "url": "https://github.com/attaform/attaform/issues"
   },
   "exports": {
     ".": {
@@ -98,7 +98,7 @@
     "composable",
     "field-array",
     "reactive",
-    "decant"
+    "attaform"
   ],
   "license": "MIT",
   "packageManager": "pnpm@9.7.0",

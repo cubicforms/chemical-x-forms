@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { createFormStore } from '../../src/runtime/core/create-form-store'
-import { createDecant } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import { canonicalizePath } from '../../src/runtime/core/paths'
 import { useForm } from '../../src/zod'
 import { fakeSchema } from '../utils/fake-schema'
@@ -46,7 +46,7 @@ function mountWithZod(options: { strict?: boolean; defaultValues?: Partial<Tight
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createDecant({ override: true }))
+  const app = createApp(App).use(createAttaform({ override: true }))
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -88,7 +88,7 @@ describe('initial validation seed — strict mode', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -183,7 +183,7 @@ describe('initial validation seed — async-refine schema', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -220,7 +220,7 @@ describe('initial validation seed — async-refine schema', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -258,10 +258,10 @@ describe('initial validation seed — async-refine schema', () => {
         return () => h('div')
       },
     })
-    // Override the registry to SSR mode — `createDecant({
+    // Override the registry to SSR mode — `createAttaform({
     // override: true })` flips `detectSSR` to true, matching what
     // happens during a Nuxt server pass.
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -299,7 +299,7 @@ describe('initial validation seed — async-refine schema', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -339,7 +339,7 @@ describe('initial validation seed — async-refine schema', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -389,12 +389,17 @@ describe('initial validation seed — hydration takes precedence', () => {
         password: config.constraints?.password ?? '',
       },
       errors: [
-        { path: ['email'], message: 'seeded email error', formKey: 'hyd', code: 'cx:test-fixture' },
+        {
+          path: ['email'],
+          message: 'seeded email error',
+          formKey: 'hyd',
+          code: 'atta:test-fixture',
+        },
         {
           path: ['password'],
           message: 'seeded password error',
           formKey: 'hyd',
-          code: 'cx:test-fixture',
+          code: 'atta:test-fixture',
         },
       ],
       success: false,
@@ -432,13 +437,13 @@ describe('initial validation seed — hydration takes precedence', () => {
           path: ['email'],
           message: 'seed should not appear',
           formKey: 'hyd2',
-          code: 'cx:test-fixture',
+          code: 'atta:test-fixture',
         },
         {
           path: ['password'],
           message: 'seed should not appear',
           formKey: 'hyd2',
-          code: 'cx:test-fixture',
+          code: 'atta:test-fixture',
         },
       ],
       success: false,

@@ -45,7 +45,7 @@ describe('useRegistry', () => {
 
   it('throws RegistryNotInstalledError when called inside setup but no plugin attached', () => {
     // Inside setup, `getCurrentInstance()` resolves — but the `inject`
-    // for `kDecantRegistry` returns null because `app.use(...)` was
+    // for `kAttaformRegistry` returns null because `app.use(...)` was
     // never called. Different cause, different fix from the case above.
     let captured: unknown
     const Probe = defineComponent({
@@ -96,7 +96,7 @@ describe('useRegistry', () => {
 })
 
 describe('getRegistryFromApp / attachRegistryToApp', () => {
-  it('round-trips via the app._decant escape hatch', () => {
+  it('round-trips via the app._attaform escape hatch', () => {
     const registry = createRegistry()
     const app = createApp({ render: () => null })
     attachRegistryToApp(app, registry)

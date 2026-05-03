@@ -11,7 +11,7 @@ import type {
 import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
 import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS } from './defaults'
 import { diffAndApply } from './diff-apply'
-import { CxErrorCode } from './error-codes'
+import { AttaformErrorCode } from './error-codes'
 import {
   canonicalizePath,
   segmentsForPathKey,
@@ -92,7 +92,7 @@ function isHydratedValidationErrorArray(value: unknown): value is ValidationErro
 function warnMalformedHydration(formKey: FormKey, kind: string, rawKey: string): void {
   if (!__DEV__) return
   console.warn(
-    `[decant] hydration: skipping malformed ${kind} entry at key '${rawKey}' on form '${formKey}'. ` +
+    `[attaform] hydration: skipping malformed ${kind} entry at key '${rawKey}' on form '${formKey}'. ` +
       `This usually means the SSR bundle is on a different version than the client (rolling deploy / stale cache).`
   )
 }
@@ -466,7 +466,7 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
 
   /**
    * Resolved schema-coercion index — the merged config from
-   * `createDecant({ defaults: { coerce } })` ∪ `useForm({ coerce })`,
+   * `createAttaform({ defaults: { coerce } })` ∪ `useForm({ coerce })`,
    * keyed by `${input}->${output}` for O(1) per-keystroke dispatch.
    * Empty Map when coercion is disabled. Read at `register()` time
    * by `buildCoerceFn` to bake the per-path coerce closure on
@@ -765,7 +765,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
           message: 'No value supplied',
           path: [...segments],
           formKey,
-          code: CxErrorCode.NoValueSupplied,
+          code: AttaformErrorCode.NoValueSupplied,
         },
       ])
     }
@@ -925,7 +925,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       try {
         listener(next, meta)
       } catch (err) {
-        console.error('[decant] onFormChange threw:', err)
+        console.error('[attaform] onFormChange threw:', err)
       }
     }
   }
@@ -1344,7 +1344,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       try {
         listener()
       } catch (err) {
-        console.error('[decant] onSubmitSuccess threw:', err)
+        console.error('[attaform] onSubmitSuccess threw:', err)
       }
     }
   }
@@ -1376,7 +1376,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       try {
         hook()
       } catch (err) {
-        console.error('[decant] cleanup threw:', err)
+        console.error('[attaform] cleanup threw:', err)
       }
     }
     cleanupHooks.length = 0
@@ -1705,7 +1705,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       try {
         listener()
       } catch (err) {
-        console.error('[decant] onReset threw:', err)
+        console.error('[attaform] onReset threw:', err)
       }
     }
   }
@@ -1738,7 +1738,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
         // guarantees primitive-correctness. A rejected reset write
         // signals an invariant violation upstream.
         console.error(
-          `[decant] resetField: leaf write rejected for path '${targetKey}' — ` +
+          `[attaform] resetField: leaf write rejected for path '${targetKey}' — ` +
             `originals contain a value that doesn't satisfy the slim primitive shape. ` +
             `This is a bug in the construction pipeline.`
         )
@@ -1778,7 +1778,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     const wroteSubtree = setValueAtPath(targetSegments, subtree)
     if (!wroteSubtree) {
       console.error(
-        `[decant] resetField: subtree write rejected at path '${targetKey}' — ` +
+        `[attaform] resetField: subtree write rejected at path '${targetKey}' — ` +
           `originals contain values that don't satisfy the slim primitive shape. ` +
           `This is a bug in the construction pipeline.`
       )

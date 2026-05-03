@@ -23,7 +23,7 @@ when the position is an array index.
 
 ## "Hydration mismatch after SSR"
 
-**Did you call `hydrateDecantState(app, payload)` before
+**Did you call `hydrateAttaformState(app, payload)` before
 `app.mount(...)`?** It has to land before setup runs. See the
 [SSR recipe](./recipes/ssr-hydration.md).
 
@@ -58,7 +58,7 @@ In dev, a collision whose schemas disagree on shape surfaces as
 a `console.warn`:
 
 ```
-[decant] Two useForm() calls with key "signup" use
+[attaform] Two useForm() calls with key "signup" use
 structurally-different schemas. Only the first caller wires the
 form; the second caller's schema is silently ignored (shared
 "last-write" semantics). …
@@ -93,9 +93,9 @@ The schema generic couldn't be inferred. Two likely causes:
 - Your schema is typed as bare `ZodObject` without its concrete
   shape. Use the literal (`z.object({ email: z.string() })`) or
   give the variable a precise type.
-- You imported `useForm` from `decant` (the abstract
+- You imported `useForm` from `attaform` (the abstract
   entry) but passed a zod schema directly. Import from
-  `decant/zod` or `/zod-v3` instead.
+  `attaform/zod` or `/zod-v3` instead.
 
 See the [0.7 → 0.8 migration](./migration/0.7-to-0.8.md) for the
 subpath split and required-`key` contract.
@@ -134,7 +134,7 @@ v-register onto an inner native element:
 ```vue
 <!-- StyledInput.vue -->
 <script setup lang="ts">
-  import { useRegister } from 'decant'
+  import { useRegister } from 'attaform'
   const register = useRegister()
 </script>
 
@@ -166,7 +166,7 @@ schema. Three resolutions, depending on intent:
   string is intentional" and skips the auto-mark for that leaf.
 - **The library should treat a blank field as "user didn't fill
   it."** Working as intended — the synthesized error
-  (`code: 'cx:no-value-supplied'`) prevents silently submitting
+  (`code: 'atta:no-value-supplied'`) prevents silently submitting
   `0` / `''` / `false` for an unfilled required field.
 
 See [app-defaults recipe](./recipes/app-defaults.md) for the

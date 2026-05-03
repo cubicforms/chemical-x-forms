@@ -187,8 +187,8 @@ function couldResolveToFileType(value: SummarizedProp['value']): boolean {
  * `<textarea v-register>`. Injects the `:value` / `:checked`
  * bindings required for SSR-correct initial render.
  *
- * Wired automatically by `decant/vite` and
- * `decant/nuxt`. Use directly only when integrating with
+ * Wired automatically by `attaform/vite` and
+ * `attaform/nuxt`. Use directly only when integrating with
  * a custom bundler.
  */
 export const inputTextAreaNodeTransform: NodeTransform = (node) => {
@@ -363,6 +363,6 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
     // alone handles value binding (via mounted/beforeUpdate), so the only
     // cost is a one-frame flash on SSR initial render.
 
-    console.error('[decant] input/textarea transform failed, skipping:', err)
+    console.error('[attaform] input/textarea transform failed, skipping:', err)
   }
 }

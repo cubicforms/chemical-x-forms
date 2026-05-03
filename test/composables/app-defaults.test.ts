@@ -4,14 +4,14 @@ import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { useForm as useFormV3 } from '../../src/zod-v3'
 import { ANONYMOUS_FORM_KEY_PREFIX } from '../../src/runtime/core/defaults'
-import { createDecant } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 import { useForm } from '../../src/zod'
 import { z as zV3 } from 'zod-v3'
 
 /**
- * App-level defaults: `createDecant({ defaults: ... })` lets
- * consumers configure cx-wide preferences once. Per-form options
+ * App-level defaults: `createAttaform({ defaults: ... })` lets
+ * consumers configure library-wide preferences once. Per-form options
  * always win.
  *
  * Invariants locked here:
@@ -35,7 +35,7 @@ type Tight = z.infer<typeof tightSchema>
 type API = ReturnType<typeof useForm<typeof tightSchema>>
 
 function mountWithDefaults(
-  defaults: Parameters<typeof createDecant>[0] extends infer T
+  defaults: Parameters<typeof createAttaform>[0] extends infer T
     ? T extends { defaults?: infer D }
       ? D
       : never
@@ -65,7 +65,7 @@ function mountWithDefaults(
     },
   })
   const app = createApp(App).use(
-    createDecant({
+    createAttaform({
       override: true,
       ...(defaults !== undefined ? { defaults } : {}),
     })
@@ -192,7 +192,7 @@ describe('app-level defaults — anonymous + multi-form', () => {
   })
 
   it('anonymous useForm() (no key) picks up app-level defaults', () => {
-    // No `key` passed → synthetic `__cx:anon:` key allocated; defaults
+    // No `key` passed → synthetic `__atta:anon:` key allocated; defaults
     // should still apply. The schema is two strings — neither
     // auto-marks blank, so this test reads the schemaErrors-seed
     // channel only.
@@ -222,7 +222,7 @@ describe('app-level defaults — anonymous + multi-form', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true, defaults: { strict: false } }))
+    const app = createApp(App).use(createAttaform({ override: true, defaults: { strict: false } }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -260,7 +260,7 @@ describe('app-level defaults — v3 wrapper regression', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true, defaults: { strict: false } }))
+    const app = createApp(App).use(createAttaform({ override: true, defaults: { strict: false } }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

@@ -8,7 +8,7 @@ no matter how the user typed.
 ## Basic example
 
 ```ts
-import type { RegisterTransform } from 'decant'
+import type { RegisterTransform } from 'attaform'
 
 const trim: RegisterTransform = (v) => (typeof v === 'string' ? v.trim() : v)
 
@@ -25,7 +25,7 @@ const rv = form.register('email', { transforms: [trim, lowercase] })
 
 `RegisterTransform` is `(value: unknown) => unknown` —
 generic-erased so the same `trim` works for every string path.
-Type-safety at the call site is delegated to cx's slim-primitive
+Type-safety at the call site is delegated to attaform's slim-primitive
 gate at write time.
 
 ## Pipeline ordering
@@ -75,7 +75,7 @@ transforms and read the first arg.
 
 ## Failure mode
 
-Transforms must be **sync**. cx wraps each call in try/catch; on
+Transforms must be **sync**. attaform wraps each call in try/catch; on
 throw OR Promise return:
 
 - The pipeline aborts (subsequent transforms don't run).

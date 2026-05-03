@@ -17,7 +17,7 @@ That's it — the plugin auto-wires when the dep is present:
 ```ts
 // main.ts
 createApp(App)
-  .use(createDecant()) // devtools: true by default
+  .use(createAttaform()) // devtools: true by default
   .mount('#app')
 ```
 
@@ -28,7 +28,7 @@ Supports DevTools v6 and v7 (`@vue/devtools-api` v6.6+).
 Skip the wiring in production, keep it in dev:
 
 ```ts
-import.meta.env.PROD ? createDecant({ devtools: false }) : createDecant()
+import.meta.env.PROD ? createAttaform({ devtools: false }) : createAttaform()
 ```
 
 If the peer dep isn't installed at runtime, nothing breaks — the
@@ -38,7 +38,7 @@ plugin silently skips setup.
 
 ### Inspector
 
-`Decant` shows up alongside "Pinia", "Router", etc.
+`Attaform` shows up alongside "Pinia", "Router", etc.
 Expand it to see one node per registered form (keyed by the form's
 `key`). Select a form to view:
 
@@ -52,7 +52,7 @@ Expand it to see one node per registered form (keyed by the form's
 
 ### Timeline
 
-A "Decant" timeline layer logs:
+A "Attaform" timeline layer logs:
 
 | Event            | Fires on                                                                  |
 | ---------------- | ------------------------------------------------------------------------- |

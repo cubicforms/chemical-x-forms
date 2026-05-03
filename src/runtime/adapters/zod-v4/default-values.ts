@@ -305,7 +305,7 @@ export function getDefaultValuesFromZodSchema<Form>(
   return { data: fixedData as unknown as Form, success: false, slimSchema }
 }
 
-const SKIP = Symbol('cx:skip-fix')
+const SKIP = Symbol('atta:skip-fix')
 
 /**
  * Map a Zod v4 issue to a concrete replacement value for the path the

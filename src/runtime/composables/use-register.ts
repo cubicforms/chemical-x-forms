@@ -10,7 +10,7 @@
  *
  * <!-- MyInput.vue -->
  * <script setup lang="ts">
- *   import { useRegister } from 'decant'
+ *   import { useRegister } from 'attaform'
  *   const register = useRegister()
  * </script>
  *
@@ -60,14 +60,14 @@ import type { RegisterValue } from '../types/types-api'
  * an inner v-register.
  *
  * `Symbol.for(...)` so the marker round-trips across duplicate copies
- * of decant — see `assignKey` in core/directive.ts for the same
+ * of attaform — see `assignKey` in core/directive.ts for the same
  * reasoning. `useRegister` and the directive are typically loaded
  * from the same module copy, but a consumer importing from
- * `decant/zod` (Vite-optimized bundle) and the Nuxt
+ * `attaform/zod` (Vite-optimized bundle) and the Nuxt
  * plugin's relative-path import (live ESM) can land on different
  * copies; a global symbol means the marker check still works.
  */
-export const REGISTER_OWNER_MARKER: unique symbol = Symbol.for('decant:register-owner-marker')
+export const REGISTER_OWNER_MARKER: unique symbol = Symbol.for('attaform:register-owner-marker')
 
 const warnedNoParentRV: WeakSet<object> | null = __DEV__ ? new WeakSet<object>() : null
 let warnedOutsideSetup = false
@@ -176,7 +176,7 @@ function warnOutsideSetup(): void {
   warnedOutsideSetup = true
   const frame = captureUserCallSite()
   console.warn(
-    `[decant] useRegister() called outside a component setup; returning ComputedRef<undefined>. ` +
+    `[attaform] useRegister() called outside a component setup; returning ComputedRef<undefined>. ` +
       `Fix: call it inside <script setup> or a setup() function — not from an event handler ` +
       `or async callback.` +
       (frame !== undefined ? ` ${frame}` : '')
@@ -189,7 +189,7 @@ function warnNoParentRV(instance: object): void {
   warnedNoParentRV.add(instance)
   const frame = captureUserCallSite()
   console.warn(
-    `[decant] useRegister: no parent registerValue prop; returning ComputedRef<undefined>. ` +
+    `[attaform] useRegister: no parent registerValue prop; returning ComputedRef<undefined>. ` +
       `Pass v-register on the parent: \`<YourComponent v-register="form.register('field')" />\`.` +
       (frame !== undefined ? ` ${frame}` : '')
   )

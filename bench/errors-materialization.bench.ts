@@ -33,7 +33,7 @@ function makeErrorStore(): Map<PathKey, ErrorEntry[]> {
   for (let i = 0; i < 100; i++) {
     const dotted = `group${Math.floor(i / 10)}.field${i % 10}`
     const { key, segments } = canonicalizePath(dotted)
-    m.set(key, [{ message: `bad ${i}`, path: segments, code: 'cx:test' }])
+    m.set(key, [{ message: `bad ${i}`, path: segments, code: 'atta:test' }])
   }
   return m
 }

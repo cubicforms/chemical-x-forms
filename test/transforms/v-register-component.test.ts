@@ -68,7 +68,7 @@ describe('v-register on Vue components — AST behaviour', () => {
   })
 
   describe('vRegisterPreambleTransform — captures component bindings (works ✓)', () => {
-    it('hoists a component binding into :data-cx-pre-mark on the first root element', () => {
+    it('hoists a component binding into :data-atta-pre-mark on the first root element', () => {
       const code = compileWith(
         `<div>
            <pre>{{ form.fields.email }}</pre>
@@ -76,7 +76,7 @@ describe('v-register on Vue components — AST behaviour', () => {
          </div>`,
         [vRegisterPreambleTransform, vRegisterHintTransform]
       )
-      expect(code).toContain('data-cx-pre-mark')
+      expect(code).toContain('data-atta-pre-mark')
       // The hoisted expression is the original (un-wrapped) call;
       // identifier prefixing turns `form` into `_ctx.form`.
       expect(code).toMatch(/_ctx\.form\.register\(['"]email['"]\)/)
@@ -90,7 +90,7 @@ describe('v-register on Vue components — AST behaviour', () => {
         vRegisterPreambleTransform,
         vRegisterHintTransform,
       ])
-      expect(code).toContain('data-cx-pre-mark')
+      expect(code).toContain('data-atta-pre-mark')
     })
 
     it('does NOT hoist a component binding inside v-for (loop-local path)', () => {
@@ -102,7 +102,7 @@ describe('v-register on Vue components — AST behaviour', () => {
       )
       // The path expression references `i`, which isn't in scope at
       // root level. Hoisting it would crash on render.
-      expect(code).not.toContain('data-cx-pre-mark')
+      expect(code).not.toContain('data-atta-pre-mark')
     })
   })
 
@@ -262,8 +262,8 @@ describe('v-register on Vue components — AST behaviour', () => {
       expect(code).toContain('registerValue:')
       // vRegisterHintTransform wrapped the directive expression.
       expect(code).toContain('markConnectedOptimistically')
-      // vRegisterPreambleTransform hoisted into data-cx-pre-mark.
-      expect(code).toContain('data-cx-pre-mark')
+      // vRegisterPreambleTransform hoisted into data-atta-pre-mark.
+      expect(code).toContain('data-atta-pre-mark')
     })
 
     it('mixed template (component + native input): both branches contribute', () => {

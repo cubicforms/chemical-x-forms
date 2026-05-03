@@ -3,11 +3,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, nextTick, watchEffect, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
-import { createDecant } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
 
 /**
- * Visual flicker on DU variant switch: spike-cx.vue shows the
+ * Visual flicker on DU variant switch: spike.vue shows the
  * materialised `form.errors` momentarily collapse to `{}` between
  * email-variant errors (E) and sms-variant errors (S) — i.e. the user
  * sees `E → {} → S` instead of `E → S`.
@@ -62,7 +62,7 @@ function mountWithSnapshotter(): { app: App; api: ProfileApi; snapshots: string[
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createDecant({ override: true }))
+  const app = createApp(App).use(createAttaform({ override: true }))
   app.config.warnHandler = () => {}
   app.config.errorHandler = () => {}
   app.mount(document.createElement('div'))

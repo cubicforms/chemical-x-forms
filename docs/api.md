@@ -1,28 +1,28 @@
 # API reference
 
-Every public export of `decant`, grouped by subpath. Each
+Every public export of `attaform`, grouped by subpath. Each
 entry gives the signature, the shape of the return value, and the
 minimal example you need to wire it up.
 
 ## Contents
 
-- [`decant/zod`](#decantformszod) — recommended entry
-- [`decant/zod-v3`](#decantformszod-v3) — legacy
-- [`decant`](#decantforms) — framework-agnostic core
-- [`decant/nuxt`](#decantformsnuxt) — Nuxt module
-- [`decant/vite`](#decantformsvite) — Vite plugin
-- [`decant/transforms`](#decantformstransforms) — raw transforms
+- [`attaform/zod`](#attaformformszod) — recommended entry
+- [`attaform/zod-v3`](#attaformformszod-v3) — legacy
+- [`attaform`](#attaformforms) — framework-agnostic core
+- [`attaform/nuxt`](#attaformformsnuxt) — Nuxt module
+- [`attaform/vite`](#attaformformsvite) — Vite plugin
+- [`attaform/transforms`](#attaformformstransforms) — raw transforms
 - [The useForm return value](#the-useform-return-value)
 - [Types](#types)
 
 ---
 
-## `decant/zod`
+## `attaform/zod`
 
 Zod v4 adapter. Requires `zod@^4`.
 
 ```ts
-import { useForm, zodAdapter, kindOf, assertZodVersion } from 'decant/zod'
+import { useForm, zodAdapter, kindOf, assertZodVersion } from 'attaform/zod'
 ```
 
 ### `useForm<Schema>(options)`
@@ -40,7 +40,7 @@ Options:
 | Field              | Type                                                                                                | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ------------------ | --------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `schema`           | `z.ZodType`                                                                                         | yes      | The Zod schema describing the form shape.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `key`              | `string`                                                                                            | no       | Form identity. Omit for one-off forms (runtime allocates a synthetic `__cx:anon:<id>` via `useId()`). Pass a string when you need cross-component lookup via `injectForm(key)`, shared state across call-sites, a stable `persist` storage-key default, or a recognisable DevTools label. Keys starting with `__cx:` are reserved for the library's internal synthetic-key namespace; passing one throws `ReservedFormKeyError`.                                                                                                                                                                                                                                                                                                           |
+| `key`              | `string`                                                                                            | no       | Form identity. Omit for one-off forms (runtime allocates a synthetic `__atta:anon:<id>` via `useId()`). Pass a string when you need cross-component lookup via `injectForm(key)`, shared state across call-sites, a stable `persist` storage-key default, or a recognisable DevTools label. Keys starting with `__atta:` are reserved for the library's internal synthetic-key namespace; passing one throws `ReservedFormKeyError`.                                                                                                                                                                                                                                                                                                       |
 | `defaultValues`    | `DeepPartial<DefaultValuesShape<Form>>`                                                             | no       | Constraints applied over schema defaults. Refinement-invalid leaves that satisfy the slim primitive type at their path (e.g. `'teal'` against `z.enum(['red','green','blue'])`, a 4-character string against `z.string().min(8)`) pass through unchanged so SSR / autosave rehydration can land partial-but-saved state as-is. Wrong-primitive leaves (a number where a string is expected) are still replaced by the schema default. Each primitive leaf may be the `unset` sentinel to mark the path displayed-empty at construction.                                                                                                                                                                                                    |
 | `strict`           | `boolean`                                                                                           | no       | Defaults to `true` — defaults that fail the schema seed `schemaErrors` at construction. Pass `false` to opt out (multi-step wizards, placeholder rows).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `onInvalidSubmit`  | `'none'` \| `'focus-first-error'` \| `'scroll-to-first-error'` \| `'both'`                          | no       | What to do when submit fails validation. See [recipe](./recipes/focus-on-error.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
@@ -73,13 +73,13 @@ Union of the strings returned by `kindOf`.
 
 ---
 
-## `decant/zod-v3`
+## `attaform/zod-v3`
 
 Zod v3 adapter. Requires `zod@^3`. New projects should use `/zod`
 (v4).
 
 ```ts
-import { useForm, zodAdapter, isZodSchemaType } from 'decant/zod-v3'
+import { useForm, zodAdapter, isZodSchemaType } from 'attaform/zod-v3'
 ```
 
 Same surface as `/zod` for the functions that apply. Helper types
@@ -88,41 +88,41 @@ for v3 introspection (`UnwrapZodObject`, `ZodTypeWithInnerType`,
 
 ---
 
-## `decant`
+## `attaform`
 
 The framework-agnostic core. Use this if you're bringing your own
 schema library or wiring SSR by hand.
 
 ```ts
 import {
-  createDecant,
+  createAttaform,
   useForm, // re-export of useAbstractForm
   injectForm,
   useRegistry,
-  renderDecantState,
-  hydrateDecantState,
+  renderAttaformState,
+  hydrateAttaformState,
   escapeForInlineScript,
   vRegister,
   canonicalizePath,
   parseApiErrors,
-} from 'decant'
+} from 'attaform'
 ```
 
-### `createDecant(options?)`
+### `createAttaform(options?)`
 
 The Vue plugin. Install once per app.
 
 ```ts
-createApp(App).use(createDecant()).mount('#app')
+createApp(App).use(createAttaform()).mount('#app')
 ```
 
 Options:
 
-| Field      | Type             | Description                                                                                         |
-| ---------- | ---------------- | --------------------------------------------------------------------------------------------------- |
-| `override` | `boolean`        | Force `isSSR` to `true` / `false`. Auto-detected otherwise.                                         |
-| `devtools` | `boolean`        | Enable the Vue DevTools plugin. Default `true`. See [recipe](./recipes/devtools.md).                |
-| `defaults` | `DecantDefaults` | App-level option defaults applied to every `useForm` call. See [recipe](./recipes/app-defaults.md). |
+| Field      | Type               | Description                                                                                         |
+| ---------- | ------------------ | --------------------------------------------------------------------------------------------------- |
+| `override` | `boolean`          | Force `isSSR` to `true` / `false`. Auto-detected otherwise.                                         |
+| `devtools` | `boolean`          | Enable the Vue DevTools plugin. Default `true`. See [recipe](./recipes/devtools.md).                |
+| `defaults` | `AttaformDefaults` | App-level option defaults applied to every `useForm` call. See [recipe](./recipes/app-defaults.md). |
 
 ### `useForm<Form>({ schema, key, ... })`
 
@@ -150,16 +150,16 @@ independent of component-tree position.
 
 ### `useRegistry()`
 
-Returns the current app's `DecantRegistry`. Must be called inside
+Returns the current app's `AttaformRegistry`. Must be called inside
 a component's `setup()`.
 
-### `renderDecantState(app) → SerializedDecantState`
+### `renderAttaformState(app) → SerializedAttaformState`
 
 Server-side: serialize every form in the app to a plain object safe
-for `JSON.stringify`. Pair with `hydrateDecantState` on the
+for `JSON.stringify`. Pair with `hydrateAttaformState` on the
 client.
 
-### `hydrateDecantState(app, payload)`
+### `hydrateAttaformState(app, payload)`
 
 Client-side: rehydrate forms from the serialized payload. Call
 before `app.mount(...)`.
@@ -168,18 +168,18 @@ before `app.mount(...)`.
 
 Takes a JSON string and escapes the characters that would let a
 form value break out of an inline `<script>` tag: `<`, `>`, `&`,
-U+2028, U+2029. Pair with `renderDecantState` when hand-rolling
+U+2028, U+2029. Pair with `renderAttaformState` when hand-rolling
 SSR; Nuxt handles it for you via `devalue`.
 
 ```ts
-const payload = escapeForInlineScript(JSON.stringify(renderDecantState(app)))
+const payload = escapeForInlineScript(JSON.stringify(renderAttaformState(app)))
 // `<script>window.__STATE__ = ${payload}</script>` is safe to inline.
 ```
 
 ### `vRegister`
 
 The `v-register` directive. Registered automatically by
-`createDecant`; exported for consumers installing directives
+`createAttaform`; exported for consumers installing directives
 manually.
 
 Bind to a native input, select, textarea, checkbox, or radio:
@@ -201,7 +201,7 @@ handles it and `useRegister` is unnecessary.
 
 <!-- MyField.vue (root is <label>, not <input>) -->
 <script setup lang="ts">
-  import { useRegister } from 'decant'
+  import { useRegister } from 'attaform'
   defineProps<{ label: string }>()
   const register = useRegister()
 </script>
@@ -247,7 +247,7 @@ already-extracted value plus the `RegisterValue`, and decides what
 
 ```vue
 <script setup lang="ts">
-  import type { RegisterValue } from 'decant'
+  import type { RegisterValue } from 'attaform'
 
   const form = useForm({ schema, defaultValues: { username: '' } })
 
@@ -308,7 +308,7 @@ directive's assigner, and applies uniformly across every
 `<input type="checkbox">`, `<input type="radio">`).
 
 ```ts
-import type { RegisterTransform } from 'decant'
+import type { RegisterTransform } from 'attaform'
 
 const trim: RegisterTransform = (v) => (typeof v === 'string' ? v.trim() : v)
 
@@ -328,7 +328,7 @@ intentionally generic-erased so a personal library of transforms
 plugs into any `register()` slot regardless of the path's value
 type — write defensive bodies that no-op on type mismatch and the
 same `trim` works for every string path. Type-safety at the call
-site is delegated to cx's slim-primitive gate at write time.
+site is delegated to attaform's slim-primitive gate at write time.
 
 **Pipeline ordering.** Transforms run AFTER directive modifier
 extraction (`.lazy` switches the listener from `input` to `change`;
@@ -360,7 +360,7 @@ A consumer who declared transforms intended "always normalize"; a
 silent bypass when an override is attached would be the surprise.
 If you want the raw extracted value, don't register transforms.
 
-**Failure mode.** Transforms must be sync. cx wraps each transform
+**Failure mode.** Transforms must be sync. attaform wraps each transform
 call in try/catch; on throw OR Promise return:
 
 - The pipeline aborts (subsequent transforms don't run).
@@ -469,17 +469,17 @@ machine identification. Convention is `<scope>:<kebab-case>`:
 
 | Scope    | Owner              | Examples                                                                          |
 | -------- | ------------------ | --------------------------------------------------------------------------------- |
-| `cx:`    | Library core       | `cx:no-value-supplied`, `cx:adapter-threw`, `cx:path-not-found`                   |
+| `atta:`  | Library core       | `atta:no-value-supplied`, `atta:adapter-threw`, `atta:path-not-found`             |
 | `zod:`   | Zod adapter        | `zod:too_small`, `zod:invalid_format`, `zod:custom` (forwarded from `issue.code`) |
 | consumer | Your app / backend | `api:duplicate-email`, `auth:expired-token`, `myapp:account-locked`               |
 
-The library exports `CxErrorCode` for branching on internal codes:
+The library exports `AttaformErrorCode` for branching on internal codes:
 
 ```ts
-import { CxErrorCode } from 'decant'
-// or 'decant/zod' / 'decant/zod-v3'
+import { AttaformErrorCode } from 'attaform'
+// or 'attaform/zod' / 'attaform/zod-v3'
 
-if (error.code === CxErrorCode.NoValueSupplied) {
+if (error.code === AttaformErrorCode.NoValueSupplied) {
   // user opened the form and hasn't filled this field yet
 }
 if (error.code.startsWith('zod:')) {
@@ -504,7 +504,7 @@ A brand-typed sentinel symbol used to mark a primitive leaf as
 `z.boolean()`, `0n` for `z.bigint()`).
 
 ```ts
-import { unset, useForm } from 'decant/zod'
+import { unset, useForm } from 'attaform/zod'
 import { z } from 'zod'
 
 const form = useForm({
@@ -579,14 +579,14 @@ brand-typed `unique symbol` flavor for type-level usage.
 
 ---
 
-## `decant/nuxt`
+## `attaform/nuxt`
 
 A Nuxt module that installs the plugin, registers the node
 transforms, and auto-imports `useForm`. Add to `nuxt.config.ts`:
 
 ```ts
 export default defineNuxtConfig({
-  modules: ['decant/nuxt'],
+  modules: ['attaform/nuxt'],
 })
 ```
 
@@ -595,7 +595,7 @@ needed.
 
 ---
 
-## `decant/vite`
+## `attaform/vite`
 
 A Vite plugin that injects the `v-register` node transforms into
 `@vitejs/plugin-vue`. Required under bare Vue + Vite for SSR-
@@ -605,23 +605,23 @@ correct `v-register` bindings on `<input>`, `<textarea>`, and
 ```ts
 // vite.config.ts
 import vue from '@vitejs/plugin-vue'
-import { decant } from 'decant/vite'
+import { attaform } from 'attaform/vite'
 
 export default defineConfig({
-  plugins: [vue(), decant()],
+  plugins: [vue(), attaform()],
 })
 ```
 
 ---
 
-## `decant/transforms`
+## `attaform/transforms`
 
 The raw Vue compiler-core node transforms. Use this subpath only
 when you're rolling your own bundler pipeline (esbuild, Rspack,
 custom Rollup).
 
 ```ts
-import { inputTextAreaNodeTransform, selectNodeTransform } from 'decant/transforms'
+import { inputTextAreaNodeTransform, selectNodeTransform } from 'attaform/transforms'
 ```
 
 ---
@@ -933,7 +933,7 @@ import type {
   ValidationResponse,
   ValidationResponseWithoutValue,
   WriteShape,
-} from 'decant'
+} from 'attaform'
 ```
 
 The ones you'll touch most:
@@ -968,7 +968,7 @@ The ones you'll touch most:
   `z.date()` is a type error.
 - **`Unset`** — the brand-typed `unique symbol` flavor of the
   `unset` sentinel for type-level usage. The runtime symbol is
-  exported alongside under the same name from `decant`.
+  exported alongside under the same name from `attaform`.
 - **`IsTuple<T>`** — `true` for tuples (literal `length`), `false`
   for unbounded arrays (`length: number`). Used internally by
   `NestedReadType` to decide whether to taint past a numeric

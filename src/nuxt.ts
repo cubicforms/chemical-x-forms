@@ -5,64 +5,64 @@ import { inputTextAreaNodeTransform } from './runtime/lib/core/transforms/input-
 import { selectNodeTransform } from './runtime/lib/core/transforms/select-transform'
 import { vRegisterHintTransform } from './runtime/lib/core/transforms/v-register-hint-transform'
 import { vRegisterPreambleTransform } from './runtime/lib/core/transforms/v-register-preamble-transform'
-import type { DecantDefaults } from './runtime/types/types-api'
+import type { AttaformDefaults } from './runtime/types/types-api'
 
 /**
- * Options accepted by `decant/nuxt` under the `decant`
+ * Options accepted by `attaform/nuxt` under the `attaform`
  * config key.
  *
  * ```ts
  * // nuxt.config.ts
  * export default defineNuxtConfig({
- *   modules: ['decant/nuxt'],
- *   decant: {
+ *   modules: ['attaform/nuxt'],
+ *   attaform: {
  *     defaults: { debounceMs: 100 },
  *   },
  * })
  * ```
  */
-export interface CXModuleOptions {
+export interface AttaformModuleOptions {
   /**
    * App-level defaults applied to every `useForm` call. Per-form
-   * options always win. See `DecantDefaults` for the
+   * options always win. See `AttaformDefaults` for the
    * supported option set and merge rules.
    */
-  defaults?: DecantDefaults
+  defaults?: AttaformDefaults
 }
 
 /**
  * Shape of the Nuxt public runtime-config slot the module populates.
- * Reach it via `useRuntimeConfig().public.decant` if you need to
+ * Reach it via `useRuntimeConfig().public.attaform` if you need to
  * read the configured defaults outside the form library itself.
  */
-export type CXRuntimeConfig = {
-  defaults: DecantDefaults
+export type AttaformRuntimeConfig = {
+  defaults: AttaformDefaults
 }
 
 /**
  * Whether `specifier` is resolvable using ESM resolution from either the
- * consumer's project root or decant's own module location. Returning
+ * consumer's project root or attaform's own module location. Returning
  * true matches what Vite's resolver would do for `optimizeDeps.include`,
  * so a true here means Vite will pre-bundle the dep without warning.
  *
  * Why two probe locations:
  *   - Consumer-rootDir probe finds direct deps + their declared peers
  *     (the standard pnpm strict-isolation visibility).
- *   - decant-module probe finds peers decant itself declares —
+ *   - attaform-module probe finds peers attaform itself declares —
  *     specifically the optional `@vue/devtools-api`, which lands in
- *     decant's own node_modules tree (or pnpm virtual store) when
+ *     attaform's own node_modules tree (or pnpm virtual store) when
  *     installed, even if the consumer never references it directly.
  *
  * Why ESM resolution (`import.meta.resolve`) rather than CJS
  * (`createRequire(...).resolve`):
- *   - decant's exports map declares only `import` conditions for
+ *   - attaform's exports map declares only `import` conditions for
  *     non-`/nuxt` entries. CJS resolve hits ERR_PACKAGE_PATH_NOT_EXPORTED
- *     for `decant` and its sub-entries.
+ *     for `attaform` and its sub-entries.
  *   - pnpm strict isolation hides hoisted transitives behind the
  *     virtual store. CJS resolve walks the bare node_modules chain and
  *     misses them; ESM resolve follows pnpm's symlinks correctly.
  *   - `import.meta.resolve(spec, parentURL)` is sync and stable in
- *     Node 20.6+, which decant already requires (engines.node).
+ *     Node 20.6+, which attaform already requires (engines.node).
  */
 function isResolvableForVite(specifier: string, consumerRootDir: string): boolean {
   const consumerURL = pathToFileURL(join(consumerRootDir, 'package.json')).href
@@ -78,10 +78,10 @@ function canResolve(specifier: string, fromURL: string): boolean {
   }
 }
 
-export default defineNuxtModule<CXModuleOptions>({
+export default defineNuxtModule<AttaformModuleOptions>({
   meta: {
-    name: 'decant',
-    configKey: 'decant',
+    name: 'attaform',
+    configKey: 'attaform',
     compatibility: {
       nuxt: '>=3.0.0',
     },
@@ -103,11 +103,11 @@ export default defineNuxtModule<CXModuleOptions>({
     // by default — the plugin's merge code reads this slot directly
     // without a `?? {}` guard at every call site.
     const runtimePublic = nuxt.options.runtimeConfig.public as Record<string, unknown>
-    runtimePublic['decant'] = {
+    runtimePublic['attaform'] = {
       defaults: _options.defaults ?? {},
-    } satisfies CXRuntimeConfig
+    } satisfies AttaformRuntimeConfig
 
-    // Force-include decant's own peers that Vite's startup crawl
+    // Force-include attaform's own peers that Vite's startup crawl
     // tends to miss for Nuxt projects. Vite scans `index.html` + the
     // statically-known entry points but doesn't deeply follow into
     // pages that get loaded via Nuxt's dynamic router; deps imported
@@ -118,14 +118,14 @@ export default defineNuxtModule<CXModuleOptions>({
     // later." Vite's own "discovered new dependencies at runtime"
     // warning recommends exactly this remediation.
     //
-    // We declare here only deps decant itself owns the relationship
-    // with — `@vue/devtools-api` (decant's DevTools integration
+    // We declare here only deps attaform itself owns the relationship
+    // with — `@vue/devtools-api` (attaform's DevTools integration
     // peer) and `zod` (the `/zod` and `/zod-v3` adapter peer). Consumer-
     // side deps (vue-query, immer, etc.) are the consumer's
     // responsibility — they declare them in their own
     // `vite.optimizeDeps.include`. Each push is gated on the spec
-    // being resolvable from the consumer's project (or decant's
-    // own module context for decant's optional peers like
+    // being resolvable from the consumer's project (or attaform's
+    // own module context for attaform's optional peers like
     // devtools-api), so consumers without the optional peer don't see
     // a "failed to resolve" warning at boot.
     nuxt.options.vite.optimizeDeps ??= {}
@@ -139,9 +139,9 @@ export default defineNuxtModule<CXModuleOptions>({
     const resolver = createResolver(import.meta.url)
 
     // Auto-import `useForm` — the framework-agnostic core composable (same
-    // binding as `decant`'s top-level `useForm` export, which
+    // binding as `attaform`'s top-level `useForm` export, which
     // is the abstract form composable). Consumers who want the zod-typed
-    // wrapper must import from `decant/zod` or `/zod-v3`
+    // wrapper must import from `attaform/zod` or `/zod-v3`
     // explicitly.
     //
     // We point at the public package entry rather than a relative
@@ -149,19 +149,19 @@ export default defineNuxtModule<CXModuleOptions>({
     // `src/runtime/composables/use-abstract-form` path has no matching
     // `dist/runtime/…` file (build.config's entries don't include it),
     // so a `resolver.resolve(...)` would raise ENOENT at Nuxt's auto-
-    // import step. Importing from `decant` resolves through
-    // the shared chunk, identical to what `decant/zod`
+    // import step. Importing from `attaform` resolves through
+    // the shared chunk, identical to what `attaform/zod`
     // consumers bundle — single registry instance across both import
     // surfaces.
-    addImports([{ name: 'useForm', from: 'decant' }])
+    addImports([{ name: 'useForm', from: 'attaform' }])
 
-    // Plugin that installs `createDecant()` on the Vue app and
+    // Plugin that installs `createAttaform()` on the Vue app and
     // wires the payload serialize/hydrate bridge. Uses a physical
-    // `src/runtime/plugins/decant.ts` file (shipped to
-    // `dist/runtime/plugins/decant.mjs` via an explicit entry in
+    // `src/runtime/plugins/attaform.ts` file (shipped to
+    // `dist/runtime/plugins/attaform.mjs` via an explicit entry in
     // build.config.ts) rather than an inline plugin template, because a
-    // template's `import { createDecant } from 'decant'`
-    // resolves through the `decant` package entry — which in
+    // template's `import { createAttaform } from 'attaform'`
+    // resolves through the `attaform` package entry — which in
     // local dev (`unbuild --stub`) is a jiti runtime transpiler whose
     // `node:module`/`createRequire` imports Nitro's Rollup build cannot
     // bundle. A physical file lets Nitro follow its imports directly
@@ -176,18 +176,18 @@ export default defineNuxtModule<CXModuleOptions>({
     // they guarantee the registry is installed (and SSR payload staged
     // into `pendingHydration`) before any `useForm` call runs.
     addPlugin({
-      src: resolver.resolve('./runtime/plugins/decant'),
+      src: resolver.resolve('./runtime/plugins/attaform'),
     })
 
     // v-register directive type. The directive itself is globally
-    // registered by `createDecant().install(app)` in the plugin
+    // registered by `createAttaform().install(app)` in the plugin
     // above; this template only publishes the type so that
     // `<input v-register="…">` type-checks in consumer SFCs.
     addTypeTemplate({
       filename: 'types/v-register.d.ts',
-      getContents: () => `// Generated by decant
+      getContents: () => `// Generated by attaform
 import type { ObjectDirective } from "vue"
-import type { RegisterDirective } from "decant/types"
+import type { RegisterDirective } from "attaform/types"
 
 declare module "vue" {
   interface GlobalDirectives {

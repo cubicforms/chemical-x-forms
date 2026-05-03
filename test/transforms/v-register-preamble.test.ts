@@ -26,14 +26,14 @@ function compileWithPreambleOnly(template: string): string {
 
 describe('vRegisterPreambleTransform', () => {
   describe('happy path', () => {
-    it('emits a data-cx-pre-mark prop on the root element when v-register bindings exist', () => {
+    it('emits a data-atta-pre-mark prop on the root element when v-register bindings exist', () => {
       const code = compileWithTransforms(
         `<div>
            <pre>{{ form.fields.password }}</pre>
            <input v-register="form.register('password')" />
          </div>`
       )
-      expect(code).toContain('data-cx-pre-mark')
+      expect(code).toContain('data-atta-pre-mark')
       // The preamble's collected expression must reference the user's
       // path-bearing call. processExpression prefixes free identifiers
       // with `_ctx.`, so we look for the prefixed form.
@@ -53,7 +53,7 @@ describe('vRegisterPreambleTransform', () => {
            <textarea v-register="form.register('note')" />
          </div>`
       )
-      expect(code).toContain('data-cx-pre-mark')
+      expect(code).toContain('data-atta-pre-mark')
       // All three paths appear once in the preamble call list, plus
       // once each in their per-element directive bindings.
       expect(code).toMatch(/_ctx\.form\.register\(['"]email['"]\)/)
@@ -88,11 +88,11 @@ describe('vRegisterPreambleTransform', () => {
            <input v-for="i in 10" v-register="form.register('item.' + i)" :key="i" />
          </div>`
       )
-      // No data-cx-pre-mark emitted because the only v-register is on
+      // No data-atta-pre-mark emitted because the only v-register is on
       // an iterated element — its path expression references the loop
       // local `i`, which isn't in scope at root level. Hoisting it
       // would produce a runtime ReferenceError.
-      expect(code).not.toContain('data-cx-pre-mark')
+      expect(code).not.toContain('data-atta-pre-mark')
     })
 
     it('does NOT capture bindings nested inside a v-for ancestor', () => {
@@ -103,7 +103,7 @@ describe('vRegisterPreambleTransform', () => {
            </div>
          </div>`
       )
-      expect(code).not.toContain('data-cx-pre-mark')
+      expect(code).not.toContain('data-atta-pre-mark')
     })
 
     it('still captures static bindings in templates that ALSO have v-for elsewhere', () => {
@@ -115,7 +115,7 @@ describe('vRegisterPreambleTransform', () => {
            <input v-for="i in 10" v-register="form.register('item.' + i)" :key="i" />
          </div>`
       )
-      expect(code).toContain('data-cx-pre-mark')
+      expect(code).toContain('data-atta-pre-mark')
       expect(code).toMatch(/_ctx\.form\.register\(['"]header['"]\)/)
     })
   })
@@ -123,14 +123,14 @@ describe('vRegisterPreambleTransform', () => {
   describe('emptiness / no-ops', () => {
     it('does not inject when there are no v-register bindings', () => {
       const code = compileWithTransforms(`<div><input type="text" /></div>`)
-      expect(code).not.toContain('data-cx-pre-mark')
+      expect(code).not.toContain('data-atta-pre-mark')
     })
 
     it('does not inject when the only root content is text', () => {
       // No element to host the preamble — bail silently rather than
       // synthesizing a wrapper element.
       const code = compileWithTransforms(`hello world`)
-      expect(code).not.toContain('data-cx-pre-mark')
+      expect(code).not.toContain('data-atta-pre-mark')
     })
   })
 
@@ -142,9 +142,9 @@ describe('vRegisterPreambleTransform', () => {
       // capture would land in `state.captured` twice, doubling the
       // mark calls inside the injected expression.
       //
-      // Counting `data-cx-pre-mark` is misleading: Vue codegen lists
+      // Counting `data-atta-pre-mark` is misleading: Vue codegen lists
       // dynamic prop names in its PROPS patch flag too (e.g.
-      // `["data-cx-pre-mark"]`), so the literal appears at least
+      // `["data-atta-pre-mark"]`), so the literal appears at least
       // twice in compiled output regardless. We instead count
       // `markConnectedOptimistically` invocations — exactly one per
       // collected binding when idempotent.

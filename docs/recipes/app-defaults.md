@@ -1,6 +1,6 @@
 # App-level defaults
 
-cx ships sensible library defaults (`validateOn: 'change'`,
+attaform ships sensible library defaults (`validateOn: 'change'`,
 `debounceMs: 0`, `strict: true`, `coerce: true`,
 `rememberVariants: true`, `onInvalidSubmit: 'none'`) that fit most
 apps out of the box. Set app-wide overrides once via the plugin

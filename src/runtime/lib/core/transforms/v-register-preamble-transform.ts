@@ -30,13 +30,13 @@ import {
  * Fix: hoist the marks one level up. We walk the entire template AST,
  * collect every static `v-register` binding (skipping descendants of
  * `v-for`, since those reference loop locals not available at root
- * scope), and prepend a synthetic `:data-cx-pre-mark` directive on the
+ * scope), and prepend a synthetic `:data-atta-pre-mark` directive on the
  * first root element. Vue evaluates element prop bindings before
- * recursing into children, so the IIFE inside `:data-cx-pre-mark` fires
+ * recursing into children, so the IIFE inside `:data-atta-pre-mark` fires
  * every collected mark BEFORE any descendant template expression runs.
  *
  * The binding's expression resolves to `undefined`, which Vue's SSR
- * renderer drops (no `data-cx-pre-mark` attribute appears in the
+ * renderer drops (no `data-atta-pre-mark` attribute appears in the
  * rendered HTML). The side effect — flipping `isConnected: true` on
  * each field record — is the only output we want.
  *
@@ -84,7 +84,7 @@ type TraversalState = {
 }
 const stateByRoot: WeakMap<RootNode, TraversalState> = new WeakMap()
 
-const PREAMBLE_ATTR = 'data-cx-pre-mark'
+const PREAMBLE_ATTR = 'data-atta-pre-mark'
 
 /**
  * Vue compiler node transform that hoists `v-register`'s SSR
@@ -230,7 +230,7 @@ function flattenExpression(exp: ExpressionNode): string {
 }
 
 /**
- * Build and prepend the `:data-cx-pre-mark` directive to the element's
+ * Build and prepend the `:data-atta-pre-mark` directive to the element's
  * props. The expression is a comma-chain of
  * `(<expr>)?.markConnectedOptimistically?.()` calls, ending in
  * `undefined` so the attribute resolves to `undefined` and Vue's SSR

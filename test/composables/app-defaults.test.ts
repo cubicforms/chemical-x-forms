@@ -11,7 +11,7 @@ import { z as zV3 } from 'zod-v3'
 
 /**
  * App-level defaults: `createAttaform({ defaults: ... })` lets
- * consumers configure cx-wide preferences once. Per-form options
+ * consumers configure library-wide preferences once. Per-form options
  * always win.
  *
  * Invariants locked here:

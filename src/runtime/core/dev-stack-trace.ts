@@ -1,6 +1,6 @@
 /**
  * Dev-only call-site capture for warnings that want to point the
- * reader at the offending line of their code (not at a cx-internal
+ * reader at the offending line of their code (not at a attaform-internal
  * frame). Walks the stack past `attaform` frames, picks the
  * first frame that looks like user code, then strips the dev-server
  * scheme + host + Vite/Nuxt's `/_nuxt/` prefix so the warning doesn't
@@ -16,7 +16,7 @@
  * captured frame is purely an inline pointer in the message text,
  * and short paths read better there than full URLs.
  *
- * The cx-frame regex matches both the published path
+ * The attaform-frame regex matches both the published path
  * (`attaform/...`) and the linked / source path
  * (`attaform/...`) so local dev via `make link-attaform` surfaces
  * the same trimmed frames.
@@ -27,7 +27,7 @@ export function captureUserCallSite(): string | undefined {
   const raw = new Error().stack
   if (typeof raw !== 'string') return undefined
   const lines = raw.split('\n')
-  // Skip the "Error" message line and any frame inside cx itself.
+  // Skip the "Error" message line and any frame inside attaform itself.
   for (let i = 1; i < lines.length; i++) {
     const frame = lines[i]
     if (frame === undefined) continue

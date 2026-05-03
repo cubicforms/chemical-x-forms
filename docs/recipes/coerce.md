@@ -1,6 +1,6 @@
 # Schema-driven coercion
 
-cx coerces user-typed DOM values to the schema's slim type at the
+attaform coerces user-typed DOM values to the schema's slim type at the
 directive layer — `'25'` → `25` for a `z.number()` slot, `'true'` →
 `true` for a `z.boolean()` slot. The schema is authoritative for
 storage shape; consumers stop sprinkling `.number` modifiers across
@@ -85,7 +85,7 @@ useForm({ schema, coerce: [stringToBigint] })
 // string→number and string→boolean are NOT registered.
 ```
 
-cx never merges past the array boundary — passing a registry is a
+attaform never merges past the array boundary — passing a registry is a
 "replace" operation by design.
 
 ## App-level default
@@ -100,11 +100,11 @@ createAttaform({
 
 Per-form `useForm({ coerce })` overrides the plugin default per
 form (replace, not merge — same semantics as everywhere else in
-cx).
+attaform).
 
 ## Pipeline ordering
 
-For a single user-typed write, cx applies (in order):
+For a single user-typed write, attaform applies (in order):
 
 ```
 DOM event → modifier cast → coerce → transforms[0..n] → assigner

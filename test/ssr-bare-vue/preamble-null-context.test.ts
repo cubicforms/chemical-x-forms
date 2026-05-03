@@ -12,7 +12,7 @@ import { vRegisterPreambleTransform } from '../../src/runtime/lib/core/transform
  * SSR null-safety for the v-register preamble.
  *
  * The preamble transform hoists every captured `v-register` expression
- * to a `:data-cx-pre-mark` directive on the first root element so the
+ * to a `:data-atta-pre-mark` directive on the first root element so the
  * mark fires before any descendant template expression evaluates.
  * That hoist runs unconditionally — a `v-if` guard on the input itself
  * fires LATER in render order, so a nullable `injectForm()`

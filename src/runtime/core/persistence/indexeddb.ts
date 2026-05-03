@@ -160,9 +160,9 @@ export function createIndexedDbAdapter(): FormStorage {
       await runWriteOp((store) => void store.delete(key))
     },
     async listKeys(prefix) {
-      // `IDBKeyRange.bound(prefix, prefix + '￿')` would skip cx
+      // `IDBKeyRange.bound(prefix, prefix + '￿')` would skip attaform
       // keys that contain the U+FFFF code unit; safer to fetch all
-      // keys and filter in-process. The cx-managed key namespace is
+      // keys and filter in-process. The attaform-managed key namespace is
       // tiny in practice, so the cost is negligible.
       const all = await runReadOp<IDBValidKey[]>(
         (store) => store.getAllKeys() as IDBRequest<IDBValidKey[]>

@@ -4,7 +4,7 @@ import type { PathKey } from '../paths'
  * Per-element identity for the persistence opt-in registry.
  *
  * Why WeakMap-keyed monotonic counter:
- *   - **No DOM mutation.** A `data-cx-id` attribute would alter SSR
+ *   - **No DOM mutation.** A `data-atta-id` attribute would alter SSR
  *     output and risk hydration discrepancies. WeakMap is invisible.
  *   - **Auto-GC.** When the element is removed from the DOM and goes
  *     out of all references, the WeakMap entry vanishes — no leak.

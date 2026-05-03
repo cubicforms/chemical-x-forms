@@ -12,7 +12,7 @@ survives logouts. Persisting a benign field like a name or address
 is fine. Persisting a CVV, password, SSN, or API token is a
 compliance liability — HIPAA, PII, PCI-DSS, SOC2.
 
-The cx persistence model defaults to "nothing persists" and forces
+The attaform persistence model defaults to "nothing persists" and forces
 each persisted field to be announced explicitly at its `register()`
 call site. Adding a sensitive field later doesn't quietly extend an
 existing persistence config — its register call has to opt in, and
@@ -237,13 +237,13 @@ The persisted payload contains only opted-in paths:
 
 // Persisted payload, written under key attaform:signup:${fingerprint}
 {
-  v: 4,                                          // cx-internal envelope version
+  v: 4,                                          // attaform-internal envelope version
   data: { form: { email: '…', phone: '…' } }     // no `cvv`
 }
 ```
 
-The `v` field on the envelope is internal to cx — it tracks the
-on-disk format and is bumped only when cx itself changes the
+The `v` field on the envelope is internal to attaform — it tracks the
+on-disk format and is bumped only when attaform itself changes the
 serialised shape. Consumers don't (and now can't) set it. Drafts
 saved against a stale envelope version are dropped with a one-time
 dev-warn on read.
@@ -298,7 +298,7 @@ The same orphan pass also wipes pre-fingerprint legacy entries
 written by older library versions, so upgrading from 0.11 to 0.12
 cleans up cleanly on the next mount.
 
-Malformed-shape entries (corrupted JSON, cx-internal envelope-version
+Malformed-shape entries (corrupted JSON, attaform-internal envelope-version
 mismatch, anything that doesn't match the expected payload contract)
 are wiped on read. "Truly absent" entries (the key was never set)
 are a no-op — the wipe only fires when there's actually something to
@@ -332,7 +332,7 @@ useForm({ schema, key: 'signup', persist: 'local' })
 useForm({ schema, key: 'signup', persist: encryptedStorage })
 ```
 
-Custom adapters can't be enumerated by the runtime, but cx still
+Custom adapters can't be enumerated by the runtime, but attaform still
 calls each custom adapter's `listKeys(prefix)` for orphan-suffix
 sweeping on the configured backend itself (see
 [Auto-invalidation on schema change](#auto-invalidation-on-schema-change)).

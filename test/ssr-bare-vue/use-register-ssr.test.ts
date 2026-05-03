@@ -33,7 +33,7 @@ import { fakeSchema } from '../utils/fake-schema'
 
 type Form = { email: string; password: string; color: string }
 
-function compileWithCxTransforms(template: string): (this: unknown, ctx: unknown) => unknown {
+function compileWithTransforms(template: string): (this: unknown, ctx: unknown) => unknown {
   // Full transform stack — `selectNodeTransform` is what injects
   // `:registerValue` on a `<MyChild v-register="...">` component vnode,
   // and that's the binding `useRegister` reads back via
@@ -51,10 +51,10 @@ function compileWithCxTransforms(template: string): (this: unknown, ctx: unknown
 
 function makeChildWithUseRegister() {
   return defineComponent({
-    name: 'CxRegisterChild',
+    name: 'RegisterChild',
     inheritAttrs: false,
     setup() {
-      // Match the attaform `SpikeCxStyledInput` shape: child reads
+      // Match the attaform `SpikeStyledInput` shape: child reads
       // the parent's binding via `useRegister` and re-binds onto an
       // inner native input. Reading `register.value` directly in
       // render mirrors the template auto-unwrap path
@@ -69,7 +69,7 @@ function makeChildWithUseRegister() {
           Vue.h('span', null, 'inner-label'),
           Vue.h('input', {
             type: 'text',
-            'data-cx-rv-bound': rv !== undefined ? '1' : '0',
+            'data-atta-rv-bound': rv !== undefined ? '1' : '0',
           }),
         ])
       }
@@ -80,8 +80,8 @@ function makeChildWithUseRegister() {
 function makeAppWithParentChildTemplate(parentTemplate: string) {
   const Child = makeChildWithUseRegister()
   const Parent = defineComponent({
-    name: 'CxRegisterParent',
-    components: { CxRegisterChild: Child },
+    name: 'RegisterParent',
+    components: { RegisterChild: Child },
     setup() {
       const form = useForm<Form>({
         schema: fakeSchema<Form>({ email: '', password: '', color: 'green' }),
@@ -89,7 +89,7 @@ function makeAppWithParentChildTemplate(parentTemplate: string) {
       })
       return { form }
     },
-    render: compileWithCxTransforms(parentTemplate),
+    render: compileWithTransforms(parentTemplate),
   })
   const app = createSSRApp(Parent)
   app.use(createAttaform({ override: true /* SSR */ }))
@@ -118,7 +118,7 @@ describe('useRegister — SSR (renderToString)', () => {
     // server.
     const app = makeAppWithParentChildTemplate(
       `<div>
-         <CxRegisterChild v-register="form.register('email')" />
+         <RegisterChild v-register="form.register('email')" />
        </div>`
     )
     const html = await renderToString(app)
@@ -128,7 +128,7 @@ describe('useRegister — SSR (renderToString)', () => {
     )
     expect(noParentRvWarns).toEqual([])
     // Positive proof: the child saw the parent's RV during SSR render.
-    expect(html).toContain('data-cx-rv-bound="1"')
+    expect(html).toContain('data-atta-rv-bound="1"')
   })
 
   it('strips bridge keys (`registerValue`, `value`) so the child root does not leak them as DOM attrs', async () => {
@@ -138,7 +138,7 @@ describe('useRegister — SSR (renderToString)', () => {
     // — ugly DOM, hydration mismatch on every paint.
     const app = makeAppWithParentChildTemplate(
       `<div>
-         <CxRegisterChild v-register="form.register('email')" />
+         <RegisterChild v-register="form.register('email')" />
        </div>`
     )
     const html = await renderToString(app)
@@ -155,9 +155,9 @@ describe('useRegister — SSR (renderToString)', () => {
     // dedup doesn't mask a real failure.
     const app = makeAppWithParentChildTemplate(
       `<div>
-         <CxRegisterChild v-register="form.register('email')" />
-         <CxRegisterChild v-register="form.register('password')" />
-         <CxRegisterChild v-register="form.register('color')" />
+         <RegisterChild v-register="form.register('email')" />
+         <RegisterChild v-register="form.register('password')" />
+         <RegisterChild v-register="form.register('color')" />
        </div>`
     )
     await renderToString(app)
@@ -177,7 +177,7 @@ describe('useRegister — SSR (renderToString)', () => {
     // registerValue → returns ComputedRef<undefined> + one-shot warn").
     const Child = makeChildWithUseRegister()
     const Parent = defineComponent({
-      components: { CxRegisterChild: Child },
+      components: { RegisterChild: Child },
       setup() {
         useForm<Form>({
           schema: fakeSchema<Form>({ email: '', password: '', color: '' }),

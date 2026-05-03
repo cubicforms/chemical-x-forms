@@ -1211,7 +1211,7 @@ export type RegisterFlatPath<Form, Key extends keyof Form = keyof Form> =
  *   typeof v === 'string' ? v.trim() : v
  * ```
  *
- * Type-safety at the call site is delegated to cx's slim-primitive
+ * Type-safety at the call site is delegated to attaform's slim-primitive
  * gate — a transform that produces a value the path's storage
  * doesn't accept gets rejected at write time with a standard
  * diagnostic.
@@ -1222,7 +1222,7 @@ export type RegisterFlatPath<Form, Key extends keyof Form = keyof Form> =
  * patterns; use sync transforms for fire-and-forget side effects
  * (`void doIt(value); return value`).
  *
- * Throws are caught and aborted: cx wraps each transform call in
+ * Throws are caught and aborted: attaform wraps each transform call in
  * try/catch so a buggy or defensive-throw transform doesn't crash
  * the host app. On throw the pipeline aborts (subsequent transforms
  * don't run), nothing is written to form state, and the assigner

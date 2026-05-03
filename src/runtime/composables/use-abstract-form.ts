@@ -174,7 +174,7 @@ export function useAbstractForm<
       const resolvedPersist = normalizePersistConfig(merged.persist)
       const persistenceBase = resolveStorageKeyBase(resolvedPersist, state.formKey)
       // Cross-store orphan cleanup: any standard backend not matching
-      // the configured one gets every cx-managed key under the base
+      // the configured one gets every attaform-managed key under the base
       // wiped (legacy pre-fingerprint AND stale fingerprints alike).
       // Ensures stale drafts can't survive in stores the dev migrated
       // AWAY from. Fire-and-forget; backend unavailability is silent.
@@ -190,7 +190,7 @@ export function useAbstractForm<
     } else {
       // Either the dev didn't configure `persist:` OR we just disabled
       // it via the anon-persist rule. Either way, sweep every
-      // cx-managed key under this form's base across all standard
+      // attaform-managed key under this form's base across all standard
       // backends so dropping (or refusing to wire) persistence
       // actually leaves storage clean.
       void sweepAllOrphansAcrossStandardStores(`${PERSISTENCE_KEY_PREFIX}${state.formKey}`)
@@ -400,7 +400,7 @@ let formInstanceCounter = 0
  * One entry per ANONYMOUS `useForm()` call that landed in a
  * component's ambient provide slot. Keyed forms aren't recorded —
  * they don't fill the ambient slot in the first place. `source` is
- * the best-effort user call site (first non-cx frame off
+ * the best-effort user call site (first non-attaform frame off
  * `new Error().stack`) — printed in the collision warning so the
  * author can navigate to each offending call site.
  */
@@ -609,7 +609,7 @@ function wirePersistence<F extends GenericForm>(
     // proxy's own-enumerable keys anyway.
     const rawForm = toRaw(state.form.value)
     const filteredForm = pluckPaths(rawForm, optedInPaths) as F
-    // Build the envelope with the cx-internal envelope version baked
+    // Build the envelope with the attaform-internal envelope version baked
     // in by `buildPersistedPayload`. Consumers no longer manage `v` —
     // schema-content invalidation lives at the storage-key level via
     // the fingerprint suffix.
@@ -673,7 +673,7 @@ function wirePersistence<F extends GenericForm>(
   void (async () => {
     const adapter = await adapterPromise
     if (disposed) return
-    // Orphan cleanup: delete any cx-managed key under the same base
+    // Orphan cleanup: delete any attaform-managed key under the same base
     // whose fingerprint suffix doesn't match the current schema. Runs
     // once per mount, fire-and-forget. Bounded cost: typically 0-1
     // orphans per form.
@@ -683,7 +683,7 @@ function wirePersistence<F extends GenericForm>(
       const payload = readPersistedPayload<F>(raw)
       if (payload === null) {
         // Truly-absent entries are a no-op. A non-null raw that didn't
-        // parse is a stale payload — wrong cx envelope version, or
+        // parse is a stale payload — wrong attaform envelope version, or
         // malformed shape — wipe so the next mount reads cleanly.
         if (raw !== null && raw !== undefined) {
           await adapter.removeItem(key)

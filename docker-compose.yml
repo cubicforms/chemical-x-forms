@@ -1,5 +1,5 @@
 services:
-  cx:
+  attaform:
     build: .
     container_name: attaform-dev
     # Use tini as PID 1 so detached background processes (e.g. the

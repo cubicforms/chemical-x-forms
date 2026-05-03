@@ -110,9 +110,9 @@ export function injectForm<Form extends GenericForm, GetValueFormType extends Ge
  * that null straight out to the consumer.
  *
  * Both miss modes log a dev-mode warning carrying the user's call-site
- * frame — a typo'd key reads as "[cx] injectForm: no form registered
+ * frame — a typo'd key reads as "[attaform] injectForm: no form registered
  * for key 'userz'. Returning null. (pages/profile.vue:42)" rather than
- * as a stack trace from inside cx internals.
+ * as a stack trace from inside attaform internals.
  */
 function resolveState<Form extends GenericForm>(
   key: FormKey | undefined,

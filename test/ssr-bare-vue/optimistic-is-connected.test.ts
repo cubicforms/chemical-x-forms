@@ -29,11 +29,11 @@ import { fakeSchema } from '../utils/fake-schema'
 
 type Form = { email: string; password: string }
 
-type CxTransformMode = 'none' | 'hint-only' | 'preamble+hint'
+type TransformMode = 'none' | 'hint-only' | 'preamble+hint'
 
 function compileTemplate(
   template: string,
-  mode: CxTransformMode
+  mode: TransformMode
 ): (this: unknown, ctx: unknown) => unknown {
   // baseCompile (compiler-core) is sufficient for our directive-only
   // templates — we don't need the DOM-specific transforms (class/style
@@ -56,7 +56,7 @@ function compileTemplate(
   return fn(Vue) as (this: unknown, ctx: unknown) => unknown
 }
 
-function makeAppWithTemplate(template: string, mode: CxTransformMode) {
+function makeAppWithTemplate(template: string, mode: TransformMode) {
   const render = compileTemplate(template, mode)
   const App = defineComponent({
     setup() {
@@ -212,7 +212,7 @@ describe('SSR isConnected — read-before-input (preamble) via both transforms',
     expect(containsFalse).toBe(true)
   })
 
-  it('the data-cx-pre-mark attribute is dropped from the output (undefined → no attr)', async () => {
+  it('the data-atta-pre-mark attribute is dropped from the output (undefined → no attr)', async () => {
     // The preamble's binding evaluates to undefined so Vue's SSR
     // renderer omits the attribute. The user-visible HTML is unchanged
     // — only the side effects of evaluating the binding (the marks)
@@ -220,7 +220,7 @@ describe('SSR isConnected — read-before-input (preamble) via both transforms',
     const template = `<div><input v-register="form.register('password')" /></div>`
     const app = makeAppWithTemplate(template, 'preamble+hint')
     const html = await renderToString(app)
-    expect(html).not.toContain('data-cx-pre-mark')
+    expect(html).not.toContain('data-atta-pre-mark')
   })
 })
 
@@ -259,7 +259,7 @@ describe('SSR isConnected — cross-component sync via shared form key', () => {
    * during the writer's render, and the reader's render — happening
    * later in template-traversal order — sees the marked state.
    *
-   * This is the proof that cx's by-key sharing semantics actually
+   * This is the proof that attaform's by-key sharing semantics actually
    * round-trip the optimistic mark correctly: the FormStore
    * registered under `key: 'shared'` is one object across every
    * `useForm` / `injectForm` consumer in the app, so any mark

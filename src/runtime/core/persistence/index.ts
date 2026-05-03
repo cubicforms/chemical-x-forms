@@ -139,7 +139,7 @@ export const PERSISTED_ENVELOPE_VERSION = 4
  * structured-cloned object). Returns `null` if the shape doesn't match
  * — the caller falls back to schema defaults.
  *
- * The cx-internal envelope `v` must match `PERSISTED_ENVELOPE_VERSION`;
+ * The attaform-internal envelope `v` must match `PERSISTED_ENVELOPE_VERSION`;
  * mismatches (older library versions' payloads) are dropped. Schema
  * change detection lives at the storage-key level via the fingerprint
  * suffix.
@@ -306,7 +306,7 @@ export function resolveStorageKey(
 }
 
 /**
- * Delete every cx-managed key under `base` that's not the current
+ * Delete every attaform-managed key under `base` that's not the current
  * fingerprint key. Includes:
  *   - Pre-fingerprint legacy keys (no `:` suffix at all) — left
  *     behind by older library versions.
@@ -374,7 +374,7 @@ export function normalizePersistConfig(input: PersistConfig): PersistConfigOptio
 }
 
 /**
- * Wipe every cx-managed key under `base` from every standard backend.
+ * Wipe every attaform-managed key under `base` from every standard backend.
  * Fire-and-forget. Used when no `persist:` is configured on the form:
  * a previous deployment may have written entries under this base
  * (any fingerprint), and the dev removing persistence should mean the
@@ -426,7 +426,7 @@ export async function sweepAllOrphansAcrossStandardStores(base: string): Promise
  * (Node, Safari private mode, IDB blocked) is also a silent skip.
  */
 /**
- * Cross-store orphan cleanup: wipe every cx-managed key under `base`
+ * Cross-store orphan cleanup: wipe every attaform-managed key under `base`
  * from each standard backend that's NOT the configured one. Symmetric
  * with `cleanupOrphanKeys` on the configured store: ensures stale
  * drafts don't survive in stores the dev migrated AWAY from. Includes

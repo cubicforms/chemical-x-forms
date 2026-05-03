@@ -328,7 +328,7 @@ intentionally generic-erased so a personal library of transforms
 plugs into any `register()` slot regardless of the path's value
 type — write defensive bodies that no-op on type mismatch and the
 same `trim` works for every string path. Type-safety at the call
-site is delegated to cx's slim-primitive gate at write time.
+site is delegated to attaform's slim-primitive gate at write time.
 
 **Pipeline ordering.** Transforms run AFTER directive modifier
 extraction (`.lazy` switches the listener from `input` to `change`;
@@ -360,7 +360,7 @@ A consumer who declared transforms intended "always normalize"; a
 silent bypass when an override is attached would be the surprise.
 If you want the raw extracted value, don't register transforms.
 
-**Failure mode.** Transforms must be sync. cx wraps each transform
+**Failure mode.** Transforms must be sync. attaform wraps each transform
 call in try/catch; on throw OR Promise return:
 
 - The pipeline aborts (subsequent transforms don't run).

@@ -73,6 +73,20 @@ function buildSchema(
       }
       return current
     },
+    arrayShapeAtPath(path: Path): number | null | undefined {
+      // Tuple keys configured via `options.tupleAt` resolve to that
+      // position's count; an `arr` key with `arrayElementDefault`
+      // configured is an unbounded array. Anything else falls back
+      // to the legacy probe in mergeStructural's resolver.
+      if (path.length === 1 && typeof path[0] === 'string') {
+        const key = path[0]
+        if (options?.tupleAt?.[key] !== undefined) {
+          return options.tupleAt[key].length
+        }
+        if (key === 'arr' && options?.arrayElementDefault !== undefined) return null
+      }
+      return undefined
+    },
   }
 }
 

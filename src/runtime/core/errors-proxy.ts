@@ -2,7 +2,13 @@ import type { ValidationError } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { getAtPath, hasAtPath } from './path-walker'
-import { canonicalizePath, type PathKey, type Path, type Segment } from './paths'
+import {
+  canonicalizePath,
+  segmentsForPathKey,
+  type PathKey,
+  type Path,
+  type Segment,
+} from './paths'
 import { buildSurfaceProxy, type SurfaceProxy } from './surface-proxy'
 
 /**
@@ -93,7 +99,11 @@ function materializeErrors<F extends GenericForm>(
   const collect = (store: ReadonlyMap<PathKey, ValidationError[]>): void => {
     entries: for (const [pathKey, errors] of store) {
       if (errors.length === 0) continue
-      const fullPath = JSON.parse(pathKey) as Segment[]
+      // Cache hit on every keystroke — the store's PathKeys are
+      // produced through `canonicalizePath`, which warms the inverse
+      // cache. Cold path (corrupt key) returns null and we skip.
+      const fullPath = segmentsForPathKey(pathKey)
+      if (fullPath === null) continue
       // Skip paths that aren't strict descendants of the container —
       // a path equal to or shorter than the container has no leaf-keyed
       // contribution at this view (errors at the exact container path

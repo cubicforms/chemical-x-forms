@@ -225,6 +225,29 @@ export type AbstractSchema<Form, GetValueFormType> = {
    */
   getDefaultAtPath(path: Path): unknown
   /**
+   * Distinguish a tuple (fixed-length, position-typed) from an
+   * unbounded array at `path`. The runtime calls this on every
+   * `mergeStructural` / `setAtPathWithSchemaFill` write that descends
+   * into an array branch — caching the answer at the schema level
+   * replaces the per-write 1M-index probe + sequential probe loop
+   * (up to 1024 schema lookups) the runtime previously used.
+   *
+   * Return values:
+   * - `number` → tuple of this structural length. The runtime pads
+   *   the consumer to this length and recurses position-by-position.
+   * - `null` → unbounded array. The runtime uses the consumer's
+   *   length and reuses one element default for every position.
+   * - `undefined` → the path doesn't resolve to an array OR the
+   *   adapter can't determine the shape. The runtime falls back to
+   *   the legacy probe loop in this case (defensive — every built-in
+   *   adapter returns `number` or `null`).
+   *
+   * Wrappers (optional / nullable / default / readonly / catch /
+   * pipe / lazy) are peeled transparently before the type check, so
+   * `optional(z.tuple([...]))` reports its tuple length.
+   */
+  arrayShapeAtPath(path: Path): number | null | undefined
+  /**
    * Return every sub-schema that could resolve at the given structured
    * path. Multiple results are only expected for discriminated / union
    * branches where the adapter can't decide a single winner until the

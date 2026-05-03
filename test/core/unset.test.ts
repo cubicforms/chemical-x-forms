@@ -4,7 +4,7 @@ import { isUnset, unset } from '../../src/runtime/core/unset'
 describe('unset symbol', () => {
   it('is a registry-keyed symbol so cross-realm equality holds', () => {
     expect(typeof unset).toBe('symbol')
-    expect(unset).toBe(Symbol.for('@chemical-x/forms/unset'))
+    expect(unset).toBe(Symbol.for('attaform/unset'))
   })
 
   it('is a stable reference — two reads return the same value', () => {

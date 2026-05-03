@@ -5,7 +5,7 @@ import { createApp, defineComponent, nextTick, type App } from 'vue'
 import * as VueRuntime from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import { inputTextAreaNodeTransform } from '../../src/runtime/lib/core/transforms/input-text-area-transform'
 import { selectNodeTransform } from '../../src/runtime/lib/core/transforms/select-transform'
 import { vRegisterHintTransform } from '../../src/runtime/lib/core/transforms/v-register-hint-transform'
@@ -94,7 +94,7 @@ describe('regression: 16b — `<input v-register.trim>` spacebar after content',
     })
 
     app = createApp(App)
-    app.use(createChemicalXForms({ override: false }))
+    app.use(createAttaform({ override: false }))
     app.mount(root)
     await flush()
 
@@ -143,7 +143,7 @@ describe('regression: 16b — `<input v-register.trim>` spacebar after content',
     })
 
     app = createApp(App)
-    app.use(createChemicalXForms({ override: false }))
+    app.use(createAttaform({ override: false }))
     app.mount(root)
     await flush()
 
@@ -198,7 +198,7 @@ describe('regression: 16e — `<input type="number">` backspace-to-empty', () =>
     })
 
     app = createApp(App)
-    app.use(createChemicalXForms({ override: false }))
+    app.use(createAttaform({ override: false }))
     app.mount(root)
     await flush()
 

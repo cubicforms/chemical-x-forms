@@ -7,7 +7,7 @@ import type {
   ValidationError,
   ValidationResponse,
 } from '../../types/types-api'
-import { CxErrorCode } from '../../core/error-codes'
+import { AttaformErrorCode } from '../../core/error-codes'
 import { canonicalizePath, type Path, type PathKey } from '../../core/paths'
 import type { DeepPartial, GenericForm } from '../../types/types-core'
 import { assertSupportedKinds } from './assert-supported'
@@ -24,6 +24,7 @@ import {
   getIntersectionRight,
   getLiteralValues,
   getObjectShape,
+  getTupleItems,
   getUnionOptions,
   kindOf,
   unwrapInner,
@@ -81,6 +82,43 @@ function unwrapStructuralWrappers(schema: z.ZodType): z.ZodType {
     const inner = unwrapInner(current)
     if (inner === undefined) return current
     if (!isStructuralKind(kindOf(inner))) break
+    current = inner
+  }
+  return current
+}
+
+/**
+ * Peel every transparent wrapper (optional / nullable / default /
+ * readonly / catch / pipe / lazy) off `schema`. Stops on the first
+ * non-wrapper kind. Used by `arrayShapeAtPath` for shape
+ * introspection where we want the inner kind regardless of what the
+ * default-value semantic is — different from
+ * `unwrapStructuralWrappers`, which preserves `.default()` so the
+ * runtime fill returns the explicit default.
+ *
+ * Bounded iteration cap as a runaway guard for pathological wrappers.
+ */
+function peelAllWrappers(schema: z.ZodType): z.ZodType {
+  let current: z.ZodType = schema
+  for (let i = 0; i < 64; i++) {
+    const k = kindOf(current)
+    let inner: z.ZodType | undefined
+    if (
+      k === 'optional' ||
+      k === 'nullable' ||
+      k === 'default' ||
+      k === 'readonly' ||
+      k === 'catch'
+    ) {
+      inner = unwrapInner(current)
+    } else if (k === 'pipe') {
+      inner = unwrapPipe(current)
+    } else if (k === 'lazy') {
+      inner = unwrapLazy(current)
+    } else {
+      return current
+    }
+    if (inner === undefined) return current
     current = inner
   }
   return current
@@ -184,7 +222,7 @@ function isLeafRequired(schema: z.ZodType, depth = 0): boolean {
  * Wrap a Zod v4 `ZodObject` schema in an `AbstractSchema` factory.
  *
  * Most consumers never call this directly — `useForm` from
- * `@chemical-x/forms/zod` does the wrapping automatically. Reach for
+ * `attaform/zod` does the wrapping automatically. Reach for
  * it when you need an adapter outside of `useForm` (e.g. validating
  * data with the same library used elsewhere in the form runtime, or
  * exposing the adapter to a custom integration).
@@ -283,6 +321,17 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         // and getDefaultValuesFromZodSchema's line-256 first-candidate
         // behavior.
         return deriveDefault(unwrapStructuralWrappers(first), true)
+      },
+
+      arrayShapeAtPath(path) {
+        if (path.length === 0) return undefined
+        const [first] = getNestedZodSchemasAtPath(rootSchema, path)
+        if (first === undefined) return undefined
+        const peeled = peelAllWrappers(first)
+        const kind = kindOf(peeled)
+        if (kind === 'tuple') return getTupleItems(peeled).length
+        if (kind === 'array') return null
+        return undefined
       },
 
       getSchemasAtPath(path) {
@@ -487,7 +536,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
                 message: `Path '${p.join(PATH_SEPARATOR)}' did not resolve to any schema`,
                 path: [...p],
                 formKey,
-                code: CxErrorCode.PathNotFound,
+                code: AttaformErrorCode.PathNotFound,
               },
             ],
             success: false,

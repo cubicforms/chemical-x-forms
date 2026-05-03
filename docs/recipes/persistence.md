@@ -1,7 +1,7 @@
 # Persist drafts across reloads
 
 Long forms — multi-step onboarding, checkout, surveys — should
-survive a navigation mistake or a browser refresh. Cx persists drafts
+survive a navigation mistake or a browser refresh. Attaform persists drafts
 to client-side storage with a per-field opt-in.
 
 ## The threat model
@@ -12,7 +12,7 @@ survives logouts. Persisting a benign field like a name or address
 is fine. Persisting a CVV, password, SSN, or API token is a
 compliance liability — HIPAA, PII, PCI-DSS, SOC2.
 
-The cx persistence model defaults to "nothing persists" and forces
+The attaform persistence model defaults to "nothing persists" and forces
 each persisted field to be announced explicitly at its `register()`
 call site. Adding a sensitive field later doesn't quietly extend an
 existing persistence config — its register call has to opt in, and
@@ -210,7 +210,7 @@ for the IndexedDB code.
 ```ts
 persist: {
   storage: 'local' | 'session' | 'indexeddb' | FormStorage,
-  key?: string,                     // default: chemical-x-forms:${formKey}
+  key?: string,                     // default: attaform:${formKey}
                                     // (the resolved storage key adds a :${fingerprint} suffix automatically)
   debounceMs?: number,              // default 300
   include?: 'form' | 'form+errors', // default 'form'
@@ -235,15 +235,15 @@ The persisted payload contains only opted-in paths:
 // register('phone', { persist: true })
 // register('cvv')                     ← no opt-in
 
-// Persisted payload, written under key chemical-x-forms:signup:${fingerprint}
+// Persisted payload, written under key attaform:signup:${fingerprint}
 {
-  v: 4,                                          // cx-internal envelope version
+  v: 4,                                          // attaform-internal envelope version
   data: { form: { email: '…', phone: '…' } }     // no `cvv`
 }
 ```
 
-The `v` field on the envelope is internal to cx — it tracks the
-on-disk format and is bumped only when cx itself changes the
+The `v` field on the envelope is internal to attaform — it tracks the
+on-disk format and is bumped only when attaform itself changes the
 serialised shape. Consumers don't (and now can't) set it. Drafts
 saved against a stale envelope version are dropped with a one-time
 dev-warn on read.
@@ -276,7 +276,7 @@ rehydration.
 Storage keys carry the schema's structural fingerprint:
 
 ```text
-chemical-x-forms:signup:7c3a0b   ← key on disk
+attaform:signup:7c3a0b   ← key on disk
                        └────┘
                        fingerprint of the current schema
 ```
@@ -284,11 +284,11 @@ chemical-x-forms:signup:7c3a0b   ← key on disk
 When the schema changes shape — adding / removing / renaming a
 field, changing a leaf type, restructuring nested objects — the
 fingerprint changes. New writes go to a new key
-(`chemical-x-forms:signup:9d2b1f`); the old key
-(`chemical-x-forms:signup:7c3a0b`) becomes unreachable.
+(`attaform:signup:9d2b1f`); the old key
+(`attaform:signup:7c3a0b`) becomes unreachable.
 
 On the next mount, the orphan-cleanup pass enumerates keys under
-`chemical-x-forms:signup` (via `FormStorage.listKeys`), keeps the
+`attaform:signup` (via `FormStorage.listKeys`), keeps the
 current-fingerprint entry, and removes the rest. No manual `version`
 bump, no possibility of forgetting it, no draft drops when only
 refinement logic changed (refinements collapse to opaque sentinels
@@ -298,7 +298,7 @@ The same orphan pass also wipes pre-fingerprint legacy entries
 written by older library versions, so upgrading from 0.11 to 0.12
 cleans up cleanly on the next mount.
 
-Malformed-shape entries (corrupted JSON, cx-internal envelope-version
+Malformed-shape entries (corrupted JSON, attaform-internal envelope-version
 mismatch, anything that doesn't match the expected payload contract)
 are wiped on read. "Truly absent" entries (the key was never set)
 are a no-op — the wipe only fires when there's actually something to
@@ -332,7 +332,7 @@ useForm({ schema, key: 'signup', persist: 'local' })
 useForm({ schema, key: 'signup', persist: encryptedStorage })
 ```
 
-Custom adapters can't be enumerated by the runtime, but cx still
+Custom adapters can't be enumerated by the runtime, but attaform still
 calls each custom adapter's `listKeys(prefix)` for orphan-suffix
 sweeping on the configured backend itself (see
 [Auto-invalidation on schema change](#auto-invalidation-on-schema-change)).
@@ -342,7 +342,7 @@ Configuring a custom adapter still sweeps all three standard
 backends — the dev might have migrated away from any of them.
 
 The cleanup runs once at mount, only touches the `key` prefix your
-form resolves to (default `chemical-x-forms:${formKey}`), and never
+form resolves to (default `attaform:${formKey}`), and never
 touches keys outside that prefix. Entries other forms wrote to the
 same backend under different keys are untouched. The exact-or-`:`-
 prefix match prevents collision with sibling forms whose keys share
@@ -351,12 +351,12 @@ a string prefix (e.g. custom keys `my-form` vs `my-form-2`).
 ### Removing `persist:` entirely
 
 Removing the `persist:` option from `useForm()` is the same hygiene
-problem one step further. Cx sweeps all three standard backends for
+problem one step further. Attaform sweeps all three standard backends for
 the form's default key whenever `useForm()` is called without a
 `persist:` option, so a deployment that disables persistence (for
 compliance, simplification, whatever) actually clears the on-disk
 artifact instead of leaving a stale entry under
-`chemical-x-forms:${formKey}` indefinitely.
+`attaform:${formKey}` indefinitely.
 
 Caveat: only the default key is reachable. If a previous deployment
 used a custom `persist.key`, that's an explicit migration on the
@@ -374,7 +374,7 @@ The escape hatch — implement the four-method contract and pass the
 object directly:
 
 ```ts
-import type { FormStorage } from '@chemical-x/forms'
+import type { FormStorage } from 'attaform'
 
 const encryptedStorage: FormStorage = {
   async getItem(key) {
@@ -549,7 +549,7 @@ child's setup and re-bind v-register onto an inner native element:
 ```vue
 <!-- StyledInput.vue -->
 <script setup lang="ts">
-  import { useRegister } from '@chemical-x/forms'
+  import { useRegister } from 'attaform'
   const register = useRegister()
 </script>
 
@@ -587,7 +587,7 @@ with its own `street`, `city`, `zip` inputs), use the existing
 ```vue
 <!-- AddressBlock.vue -->
 <script setup lang="ts">
-  import { injectForm } from '@chemical-x/forms'
+  import { injectForm } from 'attaform'
   type SignupForm = { address: { street: string; city: string; zip: string } }
   const ctx = injectForm<SignupForm>('signup')
 </script>
@@ -613,7 +613,7 @@ components) or unusual binding targets, install the assigner
 directly on the element:
 
 ```ts
-import { assignKey } from '@chemical-x/forms'
+import { assignKey } from 'attaform'
 elRef.value[assignKey] = (newValue) => emit('update:modelValue', newValue)
 ```
 

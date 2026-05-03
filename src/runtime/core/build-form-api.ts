@@ -17,7 +17,7 @@ import { buildFieldArrayApi } from './field-arrays'
 import { buildFieldStateProxy } from './field-state-proxy'
 import type { HistoryModule } from './history'
 import { getAtPath } from './path-walker'
-import { canonicalizePath, type Path, type PathKey } from './paths'
+import { canonicalizePath, segmentsForPathKey, type Path, type PathKey } from './paths'
 import { PERSISTENCE_MODULE_KEY, type PersistenceModule } from './persistence'
 import { enforceSensitiveCheck } from './persistence/sensitive-names'
 import { buildProcessForm } from './process-form'
@@ -135,7 +135,8 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       // have removed any prior blank entries for the paths
       // we just touched — re-add them now.
       for (const pathKey of walked.paths) {
-        const segments = JSON.parse(pathKey) as Path
+        const segments = segmentsForPathKey(pathKey)
+        if (segments === null) continue
         state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
           blank: true,
         })
@@ -372,7 +373,8 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       // here is safe.
       state.reset(walked.cleanedValues as DeepPartial<unknown> as Parameters<typeof state.reset>[0])
       for (const pathKey of walked.paths) {
-        const segments = JSON.parse(pathKey) as Path
+        const segments = segmentsForPathKey(pathKey)
+        if (segments === null) continue
         state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
           blank: true,
         })

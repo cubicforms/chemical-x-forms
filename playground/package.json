@@ -1,6 +1,6 @@
 {
   "private": true,
-  "name": "chemical-x-forms-playground",
+  "name": "attaform-playground",
   "type": "module",
   "scripts": {
     "dev": "nuxi dev",

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { useFormContext } from '@chemical-x/forms'
+  import { useFormContext } from 'attaform'
 
   const ctx = useFormContext()
   const value = ctx?.getValue()

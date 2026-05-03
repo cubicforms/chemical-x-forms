@@ -1,6 +1,6 @@
 import type { z } from 'zod'
 import { __DEV__ } from '../../core/dev'
-import { CxError } from '../../core/errors'
+import { AttaformError } from '../../core/errors'
 import type { FormKey, ValidationError } from '../../types/types-api'
 
 let warnedZodCodeMissing = false
@@ -29,7 +29,7 @@ export function zodIssuesToValidationErrors(
       if (__DEV__ && !warnedZodCodeMissing) {
         warnedZodCodeMissing = true
         console.warn(
-          '[@chemical-x/forms] zod-v4 adapter received an issue with no string `code`; ' +
+          '[attaform] zod-v4 adapter received an issue with no string `code`; ' +
             "stamping `'zod:unknown'`. This usually means a custom Zod plugin emitted " +
             'an issue without the standard code field.'
         )
@@ -52,4 +52,4 @@ export function zodIssuesToValidationErrors(
  * The error message includes the dotted path of the offending node
  * so you can locate it without traversing the whole schema.
  */
-export class UnsupportedSchemaError extends CxError {}
+export class UnsupportedSchemaError extends AttaformError {}

@@ -3,19 +3,19 @@
  * distinct misuse so calling code can branch on `instanceof` instead
  * of pattern-matching error messages.
  *
- * Every class extends `CxError`, so consumers can write a single
- * polymorphic catch (`catch (e) { if (e instanceof CxError) ... }`)
- * instead of OR-chaining checks for each subclass. `CxError` itself
+ * Every class extends `AttaformError`, so consumers can write a single
+ * polymorphic catch (`catch (e) { if (e instanceof AttaformError) ... }`)
+ * instead of OR-chaining checks for each subclass. `AttaformError` itself
  * extends the standard `Error`, so existing `instanceof Error` usage
  * keeps working.
  */
 
 /**
- * Base for every error class thrown by `@chemical-x/forms`. Sets
+ * Base for every error class thrown by `attaform`. Sets
  * `this.name` from the constructor's `new.target.name`, so subclasses
  * don't have to redeclare their own name override.
  */
-export class CxError extends Error {
+export class AttaformError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options)
     this.name = new.target.name
@@ -27,27 +27,25 @@ export class CxError extends Error {
  * with empty segments (e.g. `'a..b'`, leading or trailing dots).
  * Use array form (`['a', 'b']`) for keys that contain literal dots.
  */
-export class InvalidPathError extends CxError {}
+export class InvalidPathError extends AttaformError {}
 
 /**
  * Thrown when a `handleSubmit`-supplied `onError` callback itself
  * throws or rejects. Wraps the inner failure so both the original
  * cause (via `error.cause`) and the propagation site are visible.
  */
-export class SubmitErrorHandlerError extends CxError {}
+export class SubmitErrorHandlerError extends AttaformError {}
 
 /**
  * Thrown by `useForm` / `injectForm` when the form library's
  * plugin hasn't been installed on the current Vue app.
  *
- * Fix: add `app.use(createChemicalXForms())` to your app entry
- * (or `@chemical-x/forms/nuxt` for Nuxt projects).
+ * Fix: add `app.use(createAttaform())` to your app entry
+ * (or `attaform/nuxt` for Nuxt projects).
  */
-export class RegistryNotInstalledError extends CxError {
+export class RegistryNotInstalledError extends AttaformError {
   constructor() {
-    super(
-      '[@chemical-x/forms] Registry not found. Install the plugin via `app.use(createChemicalXForms())`.'
-    )
+    super('[attaform] Registry not found. Install the plugin via `app.use(createAttaform())`.')
   }
 }
 
@@ -59,10 +57,10 @@ export class RegistryNotInstalledError extends CxError {
  * Fix: move the call into `setup()`, or trigger it from a child
  * component whose `setup()` runs the composable.
  */
-export class OutsideSetupError extends CxError {
+export class OutsideSetupError extends AttaformError {
   constructor() {
     super(
-      '[@chemical-x/forms] useForm / injectForm called outside Vue setup(). ' +
+      '[attaform] useForm / injectForm called outside Vue setup(). ' +
         'Move into setup or mount a child component to trigger from an event.'
     )
   }
@@ -70,15 +68,15 @@ export class OutsideSetupError extends CxError {
 
 /**
  * Thrown when a `useForm({ key })` call uses a key starting with
- * `__cx:`. That prefix is reserved for keys the library generates
+ * `__atta:`. That prefix is reserved for keys the library generates
  * internally (e.g. for anonymous `useForm()` calls without an
  * explicit key). Pick a different prefix for your form.
  */
-export class ReservedFormKeyError extends CxError {
+export class ReservedFormKeyError extends AttaformError {
   constructor(key: string) {
     super(
-      `[@chemical-x/forms] Form key "${key}" uses the reserved "__cx:" namespace. ` +
-        `Use a different prefix — "__cx:" is for library-internal synthetic keys ` +
+      `[attaform] Form key "${key}" uses the reserved "__atta:" namespace. ` +
+        `Use a different prefix — "__atta:" is for library-internal synthetic keys ` +
         `(anonymous useForm() calls without an explicit key).`
     )
   }
@@ -86,7 +84,7 @@ export class ReservedFormKeyError extends CxError {
 
 /**
  * Thrown (in dev) when `useForm({ persist: ... })` is configured on
- * an anonymous form (no `key:` provided). The synthetic `__cx:anon:`
+ * an anonymous form (no `key:` provided). The synthetic `__atta:anon:`
  * identity isn't stable across remounts (Vue's `useId()` allocator
  * drifts under HMR, and any sibling `useId()` call shifts subsequent
  * IDs), so the persistence layer can't reliably find the previous
@@ -116,11 +114,11 @@ export class ReservedFormKeyError extends CxError {
  * Fix: pass `acknowledgeSensitive: true` to confirm the persistence
  * is intentional, or persist the data server-side instead.
  */
-export class SensitivePersistFieldError extends CxError {
+export class SensitivePersistFieldError extends AttaformError {
   constructor(path: ReadonlyArray<string | number> | string) {
     const display = Array.isArray(path) ? path.join('.') : String(path)
     super(
-      `[@chemical-x/forms] Refusing to persist "${display}" — this path matches a ` +
+      `[attaform] Refusing to persist "${display}" — this path matches a ` +
         `sensitive-name pattern (password / cvv / ssn / token / etc.). Storing sensitive ` +
         `data in client-side storage is a compliance risk (HIPAA / PII / PCI-DSS / SOC2). ` +
         `Fix: persist this server-side, OR pass \`acknowledgeSensitive: true\` to register() ` +
@@ -139,7 +137,7 @@ export class SensitivePersistFieldError extends CxError {
  * Two `cause` values, one error shape:
  *
  *   - `'no-key'` — `useForm({ persist: ... })` called without `key:`.
- *     Anonymous keys (`__cx:anon:*`) drift across mounts; persisting
+ *     Anonymous keys (`__atta:anon:*`) drift across mounts; persisting
  *     to a non-deterministic location is refused outright.
  *
  *   - `'register-without-config'` — `register(_, { persist: true })`
@@ -149,7 +147,7 @@ export class SensitivePersistFieldError extends CxError {
  * Fix: align the two layers — set `persist:` + `key:` on `useForm()`,
  * or remove `{ persist: true }` from the offending `register()` call.
  */
-export class AnonPersistError extends CxError {
+export class AnonPersistError extends AttaformError {
   readonly schemaFields: readonly string[] | undefined
   readonly callSite: string | undefined
   override readonly cause: 'no-key' | 'register-without-config'
@@ -172,7 +170,7 @@ function formatAnonPersistMessage(opts: {
 }): string {
   const head =
     opts.cause === 'no-key'
-      ? `useForm({ persist: ... }) requires an explicit \`key:\`. Anonymous synthetic keys (\`__cx:anon:*\`) drift across mounts and can collide between unrelated forms — refusing to persist to a non-deterministic location.`
+      ? `useForm({ persist: ... }) requires an explicit \`key:\`. Anonymous synthetic keys (\`__atta:anon:*\`) drift across mounts and can collide between unrelated forms — refusing to persist to a non-deterministic location.`
       : `register(_, { persist: true }) declared on a form whose useForm() options have no \`persist:\` configured. The opt-in is recorded but nothing would ever land in storage.`
   const fields =
     opts.schemaFields !== undefined && opts.schemaFields.length > 0
@@ -183,5 +181,5 @@ function formatAnonPersistMessage(opts: {
       ? ` Fix: add \`key: '<stable-id>'\` to useForm().`
       : ` Fix: add \`persist: 'session'\` (or 'local') and \`key:\` to useForm(), or remove \`{ persist: true }\` from this register() call.`
   const where = opts.callSite !== undefined ? ` ${opts.callSite}` : ''
-  return `[@chemical-x/forms] ${head}${fields}${fix}${where}`
+  return `[attaform] ${head}${fields}${fix}${where}`
 }

@@ -291,8 +291,8 @@ function inferOptionValueFromChildren(node: TemplateChildNode | RootNode): strin
  * `:registerValue` bridge bindings the runtime directive needs to
  * pre-mark selected options at SSR time.
  *
- * Wired automatically by `@chemical-x/forms/vite` and
- * `@chemical-x/forms/nuxt`. Use directly only when integrating with
+ * Wired automatically by `attaform/vite` and
+ * `attaform/nuxt`. Use directly only when integrating with
  * a custom bundler.
  */
 export const selectNodeTransform: NodeTransform = (node, context) => {
@@ -499,7 +499,7 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
         outputExp = processExpression(simpleExpression, { ...context, prefixIdentifiers: false })
       } catch (err) {
         console.error(
-          '[@chemical-x/forms] select transform: processExpression failed; falling back to the unprocessed expression.',
+          '[attaform] select transform: processExpression failed; falling back to the unprocessed expression.',
           err
         )
         outputExp = simpleExpression
@@ -571,6 +571,6 @@ export const selectNodeTransform: NodeTransform = (node, context) => {
       target.splice(0, target.length, ...snapshot)
     }
 
-    console.error('[@chemical-x/forms] select transform failed, skipping:', err)
+    console.error('[attaform] select transform failed, skipping:', err)
   }
 }

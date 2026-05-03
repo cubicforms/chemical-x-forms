@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Vue from 'vue'
 import { createSSRApp, defineComponent } from 'vue'
 import { injectForm } from '../../src'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import { vRegisterHintTransform } from '../../src/runtime/lib/core/transforms/v-register-hint-transform'
 import { vRegisterPreambleTransform } from '../../src/runtime/lib/core/transforms/v-register-preamble-transform'
 
@@ -12,7 +12,7 @@ import { vRegisterPreambleTransform } from '../../src/runtime/lib/core/transform
  * SSR null-safety for the v-register preamble.
  *
  * The preamble transform hoists every captured `v-register` expression
- * to a `:data-cx-pre-mark` directive on the first root element so the
+ * to a `:data-atta-pre-mark` directive on the first root element so the
  * mark fires before any descendant template expression evaluates.
  * That hoist runs unconditionally — a `v-if` guard on the input itself
  * fires LATER in render order, so a nullable `injectForm()`
@@ -52,7 +52,7 @@ describe('SSR preamble null-safety', () => {
   })
 
   it('SSR does not throw when an input is gated by v-if against a null injectForm', async () => {
-    // Mirror the spike pattern: <SpikeCxChild form-key="totally-fake" />
+    // Mirror the spike pattern: <SpikeChild form-key="totally-fake" />
     // resolves to null; the input is wrapped in v-if="ctx" so the v-if
     // branch never runs, but the preamble's hoisted call would still
     // try `ctx.register(...)` on null without the try/catch fix.
@@ -71,7 +71,7 @@ describe('SSR preamble null-safety', () => {
       render,
     })
     const app = createSSRApp(App)
-    app.use(createChemicalXForms({ override: true }))
+    app.use(createAttaform({ override: true }))
 
     // The catchable failure mode pre-fix was an unhandled rejection
     // bubbling out of `_sfc_ssrRender`. If that ever returns, this
@@ -118,7 +118,7 @@ describe('SSR preamble null-safety', () => {
       render,
     })
     const app = createSSRApp(App)
-    app.use(createChemicalXForms({ override: true }))
+    app.use(createAttaform({ override: true }))
 
     const html = await renderToString(app)
     expect(html).toContain('<input')

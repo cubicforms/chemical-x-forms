@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 import { useForm } from '../../src'
 import { injectForm } from '../../src/runtime/composables/use-form-context'
 import type { Path } from '../../src/runtime/core/paths'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import { fakeSchema } from '../utils/fake-schema'
 
 type Form = {
@@ -46,7 +46,7 @@ function mountWith(options: {
           message: `${k} is bad`,
           path: [k as string],
           formKey: 'focus-scroll-form',
-          code: 'cx:test-fixture',
+          code: 'atta:test-fixture',
         }))
         return {
           data: undefined,
@@ -93,7 +93,7 @@ function mountWith(options: {
     },
   })
 
-  const app = createApp(App).use(createChemicalXForms({ override: true }))
+  const app = createApp(App).use(createAttaform({ override: true }))
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -332,7 +332,7 @@ describe('focusFirstError — shared-key form isolation', () => {
           message: 'email is bad',
           path: ['email'],
           formKey: 'shared-form',
-          code: 'cx:test-fixture' as string,
+          code: 'atta:test-fixture' as string,
         },
       ],
       success: false as const,
@@ -379,7 +379,7 @@ describe('focusFirstError — shared-key form isolation', () => {
       setup: () => () => h('div', [h(SidebarForm), h(MainForm)]),
     })
 
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -430,7 +430,7 @@ describe('focusFirstError — shared-key form isolation', () => {
     const App = defineComponent({
       setup: () => () => h('div', [h(FormA), h(FormB)]),
     })
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -481,8 +481,8 @@ describe('focusFirstError — sort cache invalidation', () => {
     const validator = (_data: unknown, _path: Path | undefined) => ({
       data: undefined,
       errors: [
-        { message: 'email is bad', path: ['email'], formKey: 'cache-form', code: 'cx:t' },
-        { message: 'password is bad', path: ['password'], formKey: 'cache-form', code: 'cx:t' },
+        { message: 'email is bad', path: ['email'], formKey: 'cache-form', code: 'atta:t' },
+        { message: 'password is bad', path: ['password'], formKey: 'cache-form', code: 'atta:t' },
       ],
       success: false as const,
       formKey: 'cache-form',
@@ -521,7 +521,7 @@ describe('focusFirstError — sort cache invalidation', () => {
       },
     })
 
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -584,7 +584,7 @@ describe('focusFirstError — instanceId inheritance through injectForm', () => 
     const validator = (_data: unknown, _path: Path | undefined) => ({
       data: undefined,
       errors: [
-        { message: 'email is bad', path: ['email'], formKey: 'inject-inherit', code: 'cx:t' },
+        { message: 'email is bad', path: ['email'], formKey: 'inject-inherit', code: 'atta:t' },
       ],
       success: false as const,
       formKey: 'inject-inherit',
@@ -615,7 +615,7 @@ describe('focusFirstError — instanceId inheritance through injectForm', () => 
       },
     })
 
-    const app = createApp(Parent).use(createChemicalXForms({ override: true }))
+    const app = createApp(Parent).use(createAttaform({ override: true }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -659,7 +659,7 @@ describe('focusFirstError — instanceId inheritance through injectForm', () => 
     // which form the grandchild's input belongs to.
     const validatorFor = (kind: 'gp' | 'p') => (_data: unknown, _path: Path | undefined) => ({
       data: undefined,
-      errors: [{ message: 'bad', path: ['email'], formKey: kind, code: 'cx:t' }],
+      errors: [{ message: 'bad', path: ['email'], formKey: kind, code: 'atta:t' }],
       success: false as const,
       formKey: kind,
     })
@@ -693,7 +693,7 @@ describe('focusFirstError — instanceId inheritance through injectForm', () => 
       },
     })
 
-    const app = createApp(Grandparent).use(createChemicalXForms({ override: true }))
+    const app = createApp(Grandparent).use(createAttaform({ override: true }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

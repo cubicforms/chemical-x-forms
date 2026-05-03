@@ -34,7 +34,7 @@ const defaults: Form = {
 describe('FormStore — blank gate hook', () => {
   it('exposes both reactive and snapshot Sets, empty by default', () => {
     const state = createFormStore<Form>({
-      formKey: 'cx-1',
+      formKey: 'atta-1',
       schema: fakeSchema(defaults),
     })
     expect(state.blankPaths.size).toBe(0)
@@ -43,7 +43,7 @@ describe('FormStore — blank gate hook', () => {
 
   it('seeds the reactive Set + originals snapshot from initialBlankPaths', () => {
     const state = createFormStore<Form>({
-      formKey: 'cx-2',
+      formKey: 'atta-2',
       schema: fakeSchema(defaults),
       initialBlankPaths: [incomeKey, nameKey],
     })
@@ -55,7 +55,7 @@ describe('FormStore — blank gate hook', () => {
 
   it('hydration.blankPaths overrides initialBlankPaths', () => {
     const state = createFormStore<Form>({
-      formKey: 'cx-3',
+      formKey: 'atta-3',
       schema: fakeSchema(defaults),
       initialBlankPaths: [incomeKey],
       hydration: {
@@ -74,7 +74,7 @@ describe('FormStore — blank gate hook', () => {
 
   it('hydration without blankPaths leaves the set empty', () => {
     const state = createFormStore<Form>({
-      formKey: 'cx-4',
+      formKey: 'atta-4',
       schema: fakeSchema(defaults),
       hydration: { form: defaults, schemaErrors: [], userErrors: [], fields: [] },
     })
@@ -82,14 +82,14 @@ describe('FormStore — blank gate hook', () => {
   })
 
   it('setValueAtPath with blank: true adds the path', () => {
-    const state = createFormStore<Form>({ formKey: 'cx-5', schema: fakeSchema(defaults) })
+    const state = createFormStore<Form>({ formKey: 'atta-5', schema: fakeSchema(defaults) })
     const ok = state.setValueAtPath(['income'], 0, { blank: true })
     expect(ok).toBe(true)
     expect(state.blankPaths.has(incomeKey)).toBe(true)
   })
 
   it('subsequent write without blank meta removes the path (implicit unmark)', () => {
-    const state = createFormStore<Form>({ formKey: 'cx-6', schema: fakeSchema(defaults) })
+    const state = createFormStore<Form>({ formKey: 'atta-6', schema: fakeSchema(defaults) })
     state.setValueAtPath(['income'], 0, { blank: true })
     expect(state.blankPaths.has(incomeKey)).toBe(true)
 
@@ -99,7 +99,7 @@ describe('FormStore — blank gate hook', () => {
   })
 
   it('marks blank even when storage value is unchanged (typing 0 over slim-default 0)', () => {
-    const state = createFormStore<Form>({ formKey: 'cx-7', schema: fakeSchema(defaults) })
+    const state = createFormStore<Form>({ formKey: 'atta-7', schema: fakeSchema(defaults) })
     // Storage is 0 from defaults; mark with blank: true. The
     // identity short-circuit on Object.is(0, 0) would otherwise skip
     // the bookkeeping, but the gate-hook runs before that check.
@@ -108,7 +108,7 @@ describe('FormStore — blank gate hook', () => {
   })
 
   it('unmarks even when storage value is unchanged (typing 0 after marking)', () => {
-    const state = createFormStore<Form>({ formKey: 'cx-8', schema: fakeSchema(defaults) })
+    const state = createFormStore<Form>({ formKey: 'atta-8', schema: fakeSchema(defaults) })
     state.setValueAtPath(['income'], 0, { blank: true })
     expect(state.blankPaths.has(incomeKey)).toBe(true)
     // Same value, no blank meta — should unmark.
@@ -118,7 +118,7 @@ describe('FormStore — blank gate hook', () => {
 
   it('does not mutate originalBlankPaths on regular writes', () => {
     const state = createFormStore<Form>({
-      formKey: 'cx-9',
+      formKey: 'atta-9',
       schema: fakeSchema(defaults),
       initialBlankPaths: [incomeKey],
     })
@@ -132,7 +132,7 @@ describe('FormStore — blank gate hook', () => {
 describe('FormStore — reset', () => {
   it('reset() restores blankPaths from the originals snapshot', () => {
     const state = createFormStore<Form>({
-      formKey: 'cx-10',
+      formKey: 'atta-10',
       schema: fakeSchema(defaults),
       initialBlankPaths: [incomeKey],
     })
@@ -148,7 +148,7 @@ describe('FormStore — reset', () => {
 
   it('reset(args) clears both sets (commit 7 wires the unset walker)', () => {
     const state = createFormStore<Form>({
-      formKey: 'cx-11',
+      formKey: 'atta-11',
       schema: fakeSchema(defaults),
       initialBlankPaths: [incomeKey, nameKey],
     })
@@ -159,7 +159,7 @@ describe('FormStore — reset', () => {
 
   it('after reset(args) followed by reset(), the post-reset(args) baseline returns', () => {
     const state = createFormStore<Form>({
-      formKey: 'cx-12',
+      formKey: 'atta-12',
       schema: fakeSchema(defaults),
       initialBlankPaths: [incomeKey],
     })
@@ -173,7 +173,7 @@ describe('FormStore — reset', () => {
 
 describe('FormStore — reactive Set tracking', () => {
   it('Vue 3.5 reactive Set fires on .add() / .delete() / .has()', () => {
-    const state = createFormStore<Form>({ formKey: 'cx-13', schema: fakeSchema(defaults) })
+    const state = createFormStore<Form>({ formKey: 'atta-13', schema: fakeSchema(defaults) })
     // Smoke-check that the Set is reactive enough to drive a watcher.
     // Direct .has() returns track membership lookups in 3.5.
     let observed = 0

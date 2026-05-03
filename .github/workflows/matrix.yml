@@ -103,7 +103,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Stub @chemical-x/forms (Nuxt + playground types)
+      - name: Stub attaform (Nuxt + playground types)
         run: pnpm dev:prepare
 
       # `pnpm check` runs the full gate: lint → format:check → typecheck →
@@ -149,7 +149,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Stub @chemical-x/forms
+      - name: Stub attaform
         run: pnpm dev:prepare
 
       - name: Run coverage

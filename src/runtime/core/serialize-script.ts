@@ -5,8 +5,8 @@
  * break out of the script tag.
  *
  * ```ts
- * const payload = escapeForInlineScript(JSON.stringify(renderChemicalXState(app)))
- * // `<script>window.__CX_STATE__ = ${payload}</script>` is safe.
+ * const payload = escapeForInlineScript(JSON.stringify(renderAttaformState(app)))
+ * // `<script>window.__ATTAFORM_STATE__ = ${payload}</script>` is safe.
  * ```
  *
  * Output remains valid JSON — `JSON.parse` round-trips back to the

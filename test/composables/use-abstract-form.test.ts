@@ -4,7 +4,7 @@ import { createApp, createSSRApp, defineComponent, h, nextTick, ref } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { useForm } from '../../src'
 import { ANONYMOUS_FORM_KEY_PREFIX } from '../../src/runtime/core/defaults'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import { injectForm } from '../../src/runtime/composables/use-form-context'
 import { fakeSchema } from '../utils/fake-schema'
 
@@ -12,7 +12,7 @@ import { fakeSchema } from '../utils/fake-schema'
  * Coverage for `resolveFormKey` in use-abstract-form.ts.
  *
  * The post-0.8.3 contract treats `key` as optional: a missing /
- * nullish / empty-string key resolves to a synthetic `__cx:anon:<id>`
+ * nullish / empty-string key resolves to a synthetic `__atta:anon:<id>`
  * allocated via Vue's `useId()` (inside setup) or a module counter
  * (outside). These tests prove all four "anonymous" shapes produce a
  * working form and that an explicit key passes through unchanged.
@@ -37,7 +37,7 @@ function mountWith(config: { keyValue?: unknown; provideKey: boolean }): Promise
       },
     })
     const app = createSSRApp(App)
-    app.use(createChemicalXForms({ override: true }))
+    app.use(createAttaform({ override: true }))
     void renderToString(app)
   })
 }
@@ -112,7 +112,7 @@ describe('useForm — key is captured once at setup', () => {
       },
     })
     const app = createApp(App)
-    app.use(createChemicalXForms({ override: false }))
+    app.use(createAttaform({ override: false }))
     app.mount(root)
 
     if (captured === undefined) throw new Error('unreachable')
@@ -156,7 +156,7 @@ describe('useForm — key is captured once at setup', () => {
     })
 
     const app = createApp(Owner)
-    app.use(createChemicalXForms({ override: false }))
+    app.use(createAttaform({ override: false }))
     app.mount(root)
 
     // The owner's useForm bound to 'form-original'.
@@ -201,7 +201,7 @@ describe('useForm — key is captured once at setup', () => {
     })
 
     const app = createApp(Parent)
-    app.use(createChemicalXForms({ override: false }))
+    app.use(createAttaform({ override: false }))
     app.mount(root)
 
     expect(apiHistory).toEqual([{ key: 'form-a' }])

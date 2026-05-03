@@ -74,6 +74,14 @@ export function fakeSchema<F extends GenericForm>(
       }
       return current
     },
+    arrayShapeAtPath(path) {
+      // fakeSchema can't model element schemas — return `undefined` so
+      // the runtime falls back to the legacy probe loop, matching the
+      // old behaviour. Tests needing tuple/array shape semantics
+      // override this on the returned object.
+      void path
+      return undefined
+    },
     getSchemasAtPath(path) {
       void path
       return []

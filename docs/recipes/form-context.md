@@ -11,7 +11,7 @@ Parent owns the form:
 ```vue
 <!-- SignupForm.vue -->
 <script setup lang="ts">
-  import { useForm } from '@chemical-x/forms/zod'
+  import { useForm } from 'attaform/zod'
   import { z } from 'zod'
 
   interface Form {
@@ -46,7 +46,7 @@ Any descendant grabs the same form:
 ```vue
 <!-- EmailRow.vue -->
 <script setup lang="ts">
-  import { injectForm } from '@chemical-x/forms/zod'
+  import { injectForm } from 'attaform/zod'
 
   interface Form {
     email: string
@@ -78,7 +78,7 @@ different branch of the component tree:
 ```vue
 <!-- FloatingSaveButton.vue (anywhere in the app) -->
 <script setup lang="ts">
-  import { injectForm } from '@chemical-x/forms/zod'
+  import { injectForm } from 'attaform/zod'
 
   interface Form {
     /* … */

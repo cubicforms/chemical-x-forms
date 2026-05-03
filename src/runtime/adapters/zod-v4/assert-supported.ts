@@ -51,7 +51,7 @@ export function assertSupportedKinds(
 
   if (UNSUPPORTED.includes(kind)) {
     throw new UnsupportedSchemaError(
-      `[@chemical-x/forms/zod] unsupported kind '${kind}' at '${labelPath(path)}'`
+      `[attaform/zod] unsupported kind '${kind}' at '${labelPath(path)}'`
     )
   }
 
@@ -105,7 +105,7 @@ export function assertSupportedKinds(
       const getter = getLazyGetter(schema)
       if (getter !== undefined && lazyGetters.includes(getter)) {
         throw new UnsupportedSchemaError(
-          `[@chemical-x/forms/zod] Recursive z.lazy() at '${labelPath(path)}'`
+          `[attaform/zod] Recursive z.lazy() at '${labelPath(path)}'`
         )
       }
       const inner = unwrapLazy(schema)

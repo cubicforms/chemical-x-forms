@@ -17,7 +17,7 @@ import { renderToString } from '@vue/server-renderer'
 import { z } from 'zod'
 import { useForm } from '../src/runtime/adapters/zod-v4'
 import { parseApiErrors } from '../src/runtime/core/parse-api-errors'
-import { createChemicalXForms } from '../src/runtime/core/plugin'
+import { createAttaform } from '../src/runtime/core/plugin'
 
 const schema = z.object({
   email: z.string(),
@@ -42,7 +42,7 @@ function mount() {
     },
   })
   const app = createSSRApp(App)
-  app.use(createChemicalXForms({ override: true }))
+  app.use(createAttaform({ override: true }))
   void renderToString(app)
   if (captured === undefined) throw new Error('useForm setup did not run')
   return captured

@@ -1,15 +1,15 @@
 /**
- * `@chemical-x/forms/vite` — Vite plugin that registers the compile-time
+ * `attaform/vite` — Vite plugin that registers the compile-time
  * node transforms with @vitejs/plugin-vue.
  *
  * Usage (bare Vue 3 consumers):
  *
  *   // vite.config.ts
  *   import vue from '@vitejs/plugin-vue'
- *   import { chemicalXForms } from '@chemical-x/forms/vite'
+ *   import { attaform } from 'attaform/vite'
  *
  *   export default defineConfig({
- *     plugins: [vue(), chemicalXForms()],
+ *     plugins: [vue(), attaform()],
  *   })
  *
  * The transforms inject `:value`, `:checked`, and `:selected` bindings into
@@ -21,7 +21,7 @@
  * Implementation note: this plugin mutates @vitejs/plugin-vue's options via
  * the documented but somewhat informal `api.options` surface used by
  * VueUse, Vite PWA, and other Vue ecosystem plugins. If you're using a
- * custom Vue plugin wrapper, fall back to `@chemical-x/forms/transforms`
+ * custom Vue plugin wrapper, fall back to `attaform/transforms`
  * and wire them yourself.
  */
 import type { Plugin } from 'vite'
@@ -30,8 +30,8 @@ import { selectNodeTransform } from './runtime/lib/core/transforms/select-transf
 import { vRegisterHintTransform } from './runtime/lib/core/transforms/v-register-hint-transform'
 import { vRegisterPreambleTransform } from './runtime/lib/core/transforms/v-register-preamble-transform'
 
-/** Options for `chemicalXForms()`. Reserved for future use; pass `{}` or omit. */
-export type ChemicalXVitePluginOptions = Record<string, never>
+/** Options for `attaform()`. Reserved for future use; pass `{}` or omit. */
+export type AttaformVitePluginOptions = Record<string, never>
 
 interface VitePluginVueApi {
   options?: {
@@ -51,21 +51,21 @@ interface VitePluginVueApi {
  * ```ts
  * // vite.config.ts
  * import vue from '@vitejs/plugin-vue'
- * import { chemicalXForms } from '@chemical-x/forms/vite'
+ * import { attaform } from 'attaform/vite'
  *
  * export default defineConfig({
- *   plugins: [vue(), chemicalXForms()],
+ *   plugins: [vue(), attaform()],
  * })
  * ```
  *
  * Place the call after `vue()` in the plugins array. Nuxt projects
- * don't need this — `@chemical-x/forms/nuxt` handles it.
+ * don't need this — `attaform/nuxt` handles it.
  */
-export function chemicalXForms(_options: ChemicalXVitePluginOptions = {}): Plugin {
+export function attaform(_options: AttaformVitePluginOptions = {}): Plugin {
   // Unused-var suppression until options exist.
   void _options
   return {
-    name: 'chemical-x-forms',
+    name: 'attaform',
     enforce: 'pre',
     configResolved(resolved) {
       const vuePlugin = resolved.plugins.find((p) => p.name === 'vite:vue')
@@ -76,14 +76,14 @@ export function chemicalXForms(_options: ChemicalXVitePluginOptions = {}): Plugi
       //      version mismatch with @vitejs/plugin-vue
       if (vuePlugin === undefined) {
         throw new Error(
-          '[@chemical-x/forms/vite] @vitejs/plugin-vue is not installed (or not registered before chemicalXForms()). ' +
-            'Install @vitejs/plugin-vue and place `chemicalXForms()` after `vue()` in your plugins array.'
+          '[attaform/vite] @vitejs/plugin-vue is not installed (or not registered before attaform()). ' +
+            'Install @vitejs/plugin-vue and place `attaform()` after `vue()` in your plugins array.'
         )
       }
       const api = (vuePlugin as unknown as { api?: VitePluginVueApi }).api
       if (api?.options === undefined) {
         throw new Error(
-          '[@chemical-x/forms/vite] Found @vitejs/plugin-vue but it does not expose `api.options`. ' +
+          '[attaform/vite] Found @vitejs/plugin-vue but it does not expose `api.options`. ' +
             'This usually means a version-incompatible @vitejs/plugin-vue (or a wrapper plugin re-exporting it). ' +
             'Pin @vitejs/plugin-vue to a version compatible with the documented `api.options.template.compilerOptions.nodeTransforms` surface.'
         )
@@ -91,8 +91,8 @@ export function chemicalXForms(_options: ChemicalXVitePluginOptions = {}): Plugi
       api.options.template ??= {}
       api.options.template.compilerOptions ??= {}
       const existing = api.options.template.compilerOptions.nodeTransforms ?? []
-      // Idempotent install: if a previous chemicalXForms() invocation
-      // (vite + nuxt module + manual `plugins: [chemicalXForms()]`) has
+      // Idempotent install: if a previous attaform() invocation
+      // (vite + nuxt module + manual `plugins: [attaform()]`) has
       // already pushed our transforms, skip — re-pushing would double
       // every binding the AST emits, breaking the IIFE-wrapping
       // invariants downstream transforms depend on. We detect the

@@ -3,13 +3,13 @@ import { defineBuildConfig } from 'unbuild'
 
 export default defineBuildConfig({
   // Multiple published entry points. `module` is the Nuxt module (used via
-  // `@chemical-x/forms/nuxt`); `index` is the framework-agnostic core used
-  // by bare Vue consumers; the rest are narrow-purpose subpaths.
+  // `attaform/nuxt`); `index` is the framework-agnostic core used by bare
+  // Vue consumers; the rest are narrow-purpose subpaths.
   //
-  // `src/runtime/plugins/chemical-x` is a Nuxt-only plugin file that
+  // `src/runtime/plugins/attaform` is a Nuxt-only plugin file that
   // `src/nuxt.ts` registers via `addPlugin({ src: resolver.resolve(...) })`.
-  // It needs to exist on disk at `dist/runtime/plugins/chemical-x.mjs` in
-  // the published package (otherwise the resolver raises ENOENT and the
+  // It needs to exist on disk at `dist/runtime/plugins/attaform.mjs` in the
+  // published package (otherwise the resolver raises ENOENT and the
   // plugin never installs, leaving `useForm` to throw `Registry not
   // found`). Unbuild's shared-chunk splitter deduplicates `core/plugin` +
   // `core/serialize` across this entry and `src/zod` / `src/index`, so
@@ -21,7 +21,7 @@ export default defineBuildConfig({
     'src/transforms',
     'src/zod',
     'src/zod-v3',
-    'src/runtime/plugins/chemical-x',
+    'src/runtime/plugins/attaform',
   ],
   externals: [
     '@vue/compiler-core',
@@ -127,5 +127,5 @@ export default defineBuildConfig({
   },
   sourcemap: true,
   parallel: false,
-  name: '@chemical-x/forms',
+  name: 'attaform',
 })

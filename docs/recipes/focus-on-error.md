@@ -35,7 +35,7 @@ directly:
 
 ```vue
 <script setup lang="ts">
-  import { useForm, parseApiErrors } from '@chemical-x/forms'
+  import { useForm, parseApiErrors } from 'attaform'
 
   const form = useForm({ schema, key: 'signup' })
   const { handleSubmit, setFieldErrors, scrollToFirstError, focusFirstError } = form

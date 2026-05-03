@@ -74,7 +74,7 @@ describe('SSR behavior of useForm', async () => {
           const option = options[0]
           expect(option?.value).toBe('chess')
 
-          // this is false in the test fixture (Chemical X should set this to true)
+          // this is false in the test fixture (Attaform should set this to true)
           expect(option?.selected).toBe(true)
         })
         it('should find a match in an arbitrarily nested <option> within the <select> DOM tree', async () => {
@@ -94,7 +94,7 @@ describe('SSR behavior of useForm', async () => {
           expect(option?.value).toBe('chess')
           expect(option?.textContent).toBe('Chess Option Nested')
 
-          // Chemical X finds deeply nested options, even if the are NOT inside an <optgroup>
+          // Attaform finds deeply nested options, even if the are NOT inside an <optgroup>
           // This does not satisfy the HTML5 spec, but is more permissive so things don't feel broken
           expect(option?.selected).toBe(true)
         })

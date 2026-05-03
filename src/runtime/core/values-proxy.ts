@@ -111,7 +111,7 @@ export function buildValuesProxy<F extends GenericForm>(form: Ref<F>): ValuesPro
     set(_, key) {
       if (__DEV__) {
         console.warn(
-          `[@chemical-x/forms] form.values is read-only — write to "${String(key)}" was ignored. Use form.setValue / the directive / field-array helpers instead.`
+          `[attaform] form.values is read-only — write to "${String(key)}" was ignored. Use form.setValue / the directive / field-array helpers instead.`
         )
       }
       return true
@@ -119,7 +119,7 @@ export function buildValuesProxy<F extends GenericForm>(form: Ref<F>): ValuesPro
     deleteProperty(_, key) {
       if (__DEV__) {
         console.warn(
-          `[@chemical-x/forms] form.values is read-only — delete of "${String(key)}" was ignored.`
+          `[attaform] form.values is read-only — delete of "${String(key)}" was ignored.`
         )
       }
       return true

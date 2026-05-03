@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { useForm } from '@chemical-x/forms/zod'
+  import { useForm } from 'attaform/zod'
   import { z } from 'zod'
 
   const schema = z.object({ fruit: z.string() })

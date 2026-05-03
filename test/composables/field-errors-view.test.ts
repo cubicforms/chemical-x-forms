@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { useForm } from '../../src/zod'
 import { z } from 'zod'
 import { parseApiErrors } from '../../src/runtime/core/parse-api-errors'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
  * `form.errors` is a leaf-aware drillable callable Proxy. At leaf paths
@@ -36,7 +36,7 @@ function mount(): { app: App; api: Api } {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createChemicalXForms({ override: true }))
+  const app = createApp(App).use(createAttaform({ override: true }))
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -203,7 +203,7 @@ describe('form.errors — reactivity in render scope', () => {
         }
       },
     })
-    const app = createApp(Reader).use(createChemicalXForms({ override: true }))
+    const app = createApp(Reader).use(createAttaform({ override: true }))
     apps.push(app)
     const root = document.createElement('div')
     document.body.appendChild(root)

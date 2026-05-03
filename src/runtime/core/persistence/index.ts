@@ -9,7 +9,7 @@ import type {
 import { PERSISTENCE_KEY_PREFIX } from '../defaults'
 import { __DEV__ } from '../dev'
 import { isPlainRecord, setAtPath, getAtPath } from '../path-walker'
-import type { Path, PathKey, Segment } from '../paths'
+import { segmentsForPathKey, type Path, type PathKey, type Segment } from '../paths'
 
 /**
  * Public-ish handle returned by `wirePersistence`. Lives on
@@ -477,7 +477,11 @@ export async function sweepNonConfiguredStandardStoresForOrphans(
 export function pluckPaths(form: unknown, pathKeys: Iterable<PathKey>): unknown {
   let sparse: unknown = undefined
   for (const pathKey of pathKeys) {
-    const segments = parsePathKey(pathKey)
+    // PathKeys arrive from the opt-in registry (canonical) — cache hit
+    // every iteration. The null branch covers persistence payloads
+    // round-tripped from disk that were corrupted before reaching the
+    // restoration code.
+    const segments = segmentsForPathKey(pathKey)
     if (segments === null) continue
     const value = getAtPath(form, segments)
     if (value === undefined) continue
@@ -574,14 +578,4 @@ function mergeDeep(
     out[key] = mergeDeep(out[key], (source as Record<string, unknown>)[key], [...path, key], schema)
   }
   return out
-}
-
-function parsePathKey(pathKey: PathKey): readonly Segment[] | null {
-  try {
-    const parsed = JSON.parse(pathKey) as unknown
-    if (!Array.isArray(parsed)) return null
-    return parsed as readonly Segment[]
-  } catch {
-    return null
-  }
 }

@@ -339,6 +339,29 @@ export function zodAdapter<
         const peeled = unwrapStructuralLeafV3(leaf)
         return getDefaultValuesFromZodSchema(peeled as z.ZodSchema, true, _formKey)
       },
+      arrayShapeAtPath(path) {
+        if (path.length === 0) return undefined
+        const leaf = walkV3ToLeafSchema(_zodSchema, path)
+        if (!leaf) return undefined
+        // Peel transparent wrappers down to the underlying shape.
+        // peelV3Wrappers handles optional / nullable / default /
+        // effects / pipeline / readonly / branded. ZodCatch is left
+        // by that helper for default-value reasons — peel it here
+        // since arrayShapeAtPath only needs the structural kind.
+        let peeled = peelV3Wrappers(leaf)
+        for (let i = 0; i < MAX_UNWRAP_STEPS; i++) {
+          if (!isZodSchemaType(peeled, 'ZodCatch')) break
+          const inner = (peeled._def as { innerType?: z.ZodTypeAny }).innerType
+          if (!inner) break
+          peeled = peelV3Wrappers(inner)
+        }
+        if (isZodSchemaType(peeled, 'ZodTuple')) {
+          const items = (peeled._def as { items?: readonly z.ZodTypeAny[] }).items
+          return Array.isArray(items) ? items.length : undefined
+        }
+        if (isZodSchemaType(peeled, 'ZodArray')) return null
+        return undefined
+      },
       getSchemasAtPath(path) {
         const [strippedSchema] = stripRootSchema(_zodSchema, {
           stripDefaultValues: true,

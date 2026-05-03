@@ -1,6 +1,6 @@
 # Live field validation
 
-attaform validates as you type by default — `validateOn: 'change'` with
+Attaform validates as you type by default — `validateOn: 'change'` with
 `debounceMs: 0` is implicit. Errors at any path reflect the live
 `(value, schema)` continuously, so consumers can render inline
 feedback without reaching for a separate "is this field valid?"

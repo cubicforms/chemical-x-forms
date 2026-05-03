@@ -66,7 +66,7 @@ describe('diff-apply — properties', () => {
     'leaf replacement: diff(x, y) where y is a non-descendable, different leaf emits at most one patch',
     (x) => {
       // Replace the root with a fresh leaf that differs from x.
-      const replacement = typeof x === 'string' ? 'cx:sentinel' : 'cx:sentinel'
+      const replacement = typeof x === 'string' ? 'atta:sentinel' : 'atta:sentinel'
       if (Object.is(x, replacement)) return
       const patches = collect(x, replacement)
       // If x itself was a leaf, we expect exactly one patch at []; if x was a

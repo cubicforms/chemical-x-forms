@@ -94,7 +94,7 @@ const PREAMBLE_ATTR = 'data-cx-pre-mark'
  * correct value during the server's single-pass render.
  *
  * Must run before `vRegisterHintTransform`. Wired automatically
- * by `decant/vite` and `decant/nuxt`.
+ * by `attaform/vite` and `attaform/nuxt`.
  */
 export const vRegisterPreambleTransform: NodeTransform = (node, context) => {
   try {
@@ -159,7 +159,7 @@ export const vRegisterPreambleTransform: NodeTransform = (node, context) => {
     // entirely. The per-element vRegisterHintTransform still covers
     // the common case (read at-or-after the input). Failure here only
     // affects the read-before-input edge.
-    console.error('[decant] v-register preamble transform failed, skipping:', err)
+    console.error('[attaform] v-register preamble transform failed, skipping:', err)
     return
   }
 }

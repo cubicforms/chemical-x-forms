@@ -13,11 +13,11 @@ instead of repeating them at every `useForm` call.
 ```ts
 // main.ts
 import { createApp } from 'vue'
-import { createDecant } from 'decant'
+import { createAttaform } from 'attaform'
 
 createApp(App)
   .use(
-    createDecant({
+    createAttaform({
       defaults: {
         debounceMs: 100,
         onInvalidSubmit: 'focus-first-error',
@@ -32,8 +32,8 @@ createApp(App)
 ```ts
 // nuxt.config.ts
 export default defineNuxtConfig({
-  modules: ['decant/nuxt'],
-  decant: {
+  modules: ['attaform/nuxt'],
+  attaform: {
     defaults: {
       debounceMs: 100,
       onInvalidSubmit: 'focus-first-error',
@@ -47,7 +47,7 @@ export default defineNuxtConfig({
 For each option, the resolved value is the first defined among:
 
 ```
-useForm({ … })  >  createDecant({ defaults })  >  library default
+useForm({ … })  >  createAttaform({ defaults })  >  library default
 ```
 
 So a per-form value always wins, an app-level default fills in when
@@ -60,7 +60,7 @@ level, override anything per-form without losing the rest:
 
 ```ts
 // Plugin side
-createDecant({
+createAttaform({
   defaults: { validateOn: 'change', debounceMs: 100 },
 })
 
@@ -85,10 +85,10 @@ discriminated union enforces that `debounceMs` is only valid when
 
 ## What's supported
 
-`DecantDefaults` covers the form-shaping options:
+`AttaformDefaults` covers the form-shaping options:
 
 ```ts
-type DecantDefaults = {
+type AttaformDefaults = {
   strict?: boolean
   validateOn?: 'change' | 'blur' | 'submit'
   debounceMs?: number
@@ -117,7 +117,7 @@ call.
 Three patterns:
 
 ```ts
-import { unset } from 'decant/zod'
+import { unset } from 'attaform/zod'
 
 // 1. Plain values — explicit defaults flow into storage and the form
 //    is not blank for those leaves.
@@ -149,7 +149,7 @@ Auto-mark and explicit `unset` converge on the same state: the path
 lives in the form's `blankPaths` set, surfaced via
 `form.fields.<path>.blank` and `form.blankPaths.value` for bulk
 introspection. The merged `form.errors.<path>` reactively carries
-`'No value supplied'` (`code: 'cx:no-value-supplied'`) for required
+`'No value supplied'` (`code: 'atta:no-value-supplied'`) for required
 schemas; `.optional()` / `.nullable()` / `.default(N)` / `.catch(N)`
 schemas accept the empty case.
 
@@ -168,11 +168,11 @@ your project:
 
 ```ts
 // composables/useAppForm.ts
-import { useForm as cxUseForm } from 'decant/zod'
+import { useForm as attaformUseForm } from 'attaform/zod'
 import type { z } from 'zod'
 
-export function useAppForm<S extends z.ZodObject>(opts: Parameters<typeof cxUseForm<S>>[0]) {
-  return cxUseForm({
+export function useAppForm<S extends z.ZodObject>(opts: Parameters<typeof attaformUseForm<S>>[0]) {
+  return attaformUseForm({
     validateOn: 'change',
     debounceMs: 100,
     ...opts,

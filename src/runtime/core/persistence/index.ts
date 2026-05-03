@@ -173,7 +173,7 @@ function warnVersionMismatch(observedVersion: number): void {
   if (warnedVersions.has(observedVersion)) return
   warnedVersions.add(observedVersion)
   console.warn(
-    `[decant] Dropping persisted draft — envelope v=${observedVersion}, ` +
+    `[attaform] Dropping persisted draft — envelope v=${observedVersion}, ` +
       `but this version of the library expects v=${PERSISTED_ENVELOPE_VERSION}. ` +
       `The persisted shape changed across releases; older drafts can't be restored. ` +
       `New drafts saved this session will use the current envelope.`
@@ -277,7 +277,7 @@ export function createDebouncedWriter(
 
 /**
  * Resolve the per-form storage KEY BASE. Default is
- * `decant:${formKey}` — consumers who want a different
+ * `attaform:${formKey}` — consumers who want a different
  * namespace (multi-tenant app, per-user prefix) pass `persist.key`.
  *
  * The full storage key is `${base}:${fingerprint}` (see

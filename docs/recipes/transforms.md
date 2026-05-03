@@ -8,7 +8,7 @@ no matter how the user typed.
 ## Basic example
 
 ```ts
-import type { RegisterTransform } from 'decant'
+import type { RegisterTransform } from 'attaform'
 
 const trim: RegisterTransform = (v) => (typeof v === 'string' ? v.trim() : v)
 

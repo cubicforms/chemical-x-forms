@@ -99,7 +99,7 @@ jobs:
         # committed from this runner).
         run: pnpm install --no-frozen-lockfile
 
-      - name: Stub decant
+      - name: Stub attaform
         run: pnpm dev:prepare
 
       - name: Typecheck

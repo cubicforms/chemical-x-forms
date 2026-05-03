@@ -1,6 +1,6 @@
 import type { App, InjectionKey } from 'vue'
 import { getCurrentInstance, inject, shallowReactive } from 'vue'
-import type { DecantDefaults, FormKey } from '../types/types-api'
+import type { AttaformDefaults, FormKey } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { OutsideSetupError, RegistryNotInstalledError } from './errors'
@@ -8,7 +8,7 @@ import { detectSSR, type SSRDetectOptions } from './ssr'
 
 /**
  * Per-Vue-app container for all form state instances. Each
- * `app.use(createDecant())` call gets its own registry,
+ * `app.use(createAttaform())` call gets its own registry,
  * so the library runs under bare Vue 3 + SSR (via
  * `@vue/server-renderer`) and Nuxt with the same code path.
  *
@@ -20,8 +20,8 @@ import { detectSSR, type SSRDetectOptions } from './ssr'
 
 /**
  * Serialised snapshot of one form's state, captured by
- * `renderDecantState` for SSR and replayed by
- * `hydrateDecantState` on the client. Round-trips through
+ * `renderAttaformState` for SSR and replayed by
+ * `hydrateAttaformState` on the client. Round-trips through
  * JSON-safe tuples; field references are intentionally omitted
  * (DOM nodes don't survive serialisation).
  */
@@ -57,28 +57,28 @@ export type SerializedFormData = {
 export type PendingHydration = Map<FormKey, SerializedFormData>
 
 /**
- * The library's per-Vue-app container. One `DecantRegistry` is
- * created per `app.use(createDecant())` call.
+ * The library's per-Vue-app container. One `AttaformRegistry` is
+ * created per `app.use(createAttaform())` call.
  *
  * Most consumers never touch this directly — `useForm` and
  * `injectForm` reach the registry on your behalf. Access it
  * explicitly only when wiring SSR or a custom plugin integration.
  */
-export type DecantRegistry = {
+export type AttaformRegistry = {
   /**
    * Live forms keyed by `FormKey`.
    * @internal
    */
   readonly forms: Map<FormKey, FormStore<GenericForm>>
   /**
-   * Snapshots staged by `hydrateDecantState` waiting to be consumed by the next `useForm` call.
+   * Snapshots staged by `hydrateAttaformState` waiting to be consumed by the next `useForm` call.
    * @internal
    */
   readonly pendingHydration: PendingHydration
   /** `true` while running on the server during SSR; `false` on the client. */
   readonly isSSR: boolean
   /** App-level defaults applied to every `useForm` call. */
-  readonly defaults: DecantDefaults
+  readonly defaults: AttaformDefaults
   /**
    * Track a consumer of `key`. Returns a dispose function — call it
    * when the consumer unmounts. The form is evicted automatically
@@ -102,16 +102,16 @@ export type DecantRegistry = {
  * `injectForm` resolve the registry automatically.
  */
 // `Symbol.for(...)` so the key survives module duplication. If Vite's
-// dep optimizer ends up serving decant as two separate copies (one
+// dep optimizer ends up serving attaform as two separate copies (one
 // live-ESM, one pre-bundled — the standard hazard for linked-source
 // installs that opt into `optimizeDeps.include`), each copy still
 // resolves the same global symbol from the well-known string. Plugin
-// install's `app.provide(kDecantRegistry, ...)` and the page's
-// `inject(kDecantRegistry, null)` agree on the key, so `useForm`
+// install's `app.provide(kAttaformRegistry, ...)` and the page's
+// `inject(kAttaformRegistry, null)` agree on the key, so `useForm`
 // finds its registry regardless of which copy did the provide. The
-// `decant:` prefix namespaces the key safely. Same reasoning
+// `attaform:` prefix namespaces the key safely. Same reasoning
 // for `kFormContext` and `kFormInstanceId` below.
-export const kDecantRegistry: InjectionKey<DecantRegistry> = Symbol.for('decant:registry')
+export const kAttaformRegistry: InjectionKey<AttaformRegistry> = Symbol.for('attaform:registry')
 
 /**
  * Provides the current form's FormStore to descendants. Installed by
@@ -122,7 +122,8 @@ export const kDecantRegistry: InjectionKey<DecantRegistry> = Symbol.for('decant:
  * shape must supply its own `Form` generic, because Vue's InjectionKey
  * erases the generic at the provide/inject boundary.
  */
-export const kFormContext: InjectionKey<FormStore<GenericForm>> = Symbol.for('decant:form-context')
+export const kFormContext: InjectionKey<FormStore<GenericForm>> =
+  Symbol.for('attaform:form-context')
 
 /**
  * Provide / inject key for the per-`useForm()`-call instance ID. Provided
@@ -136,12 +137,12 @@ export const kFormContext: InjectionKey<FormStore<GenericForm>> = Symbol.for('de
  * ID; descendants of each branch inherit the branch's ID. Two ID spaces
  * stay isolated even when the underlying FormStore is shared.
  */
-export const kFormInstanceId: InjectionKey<string> = Symbol.for('decant:form-instance-id')
+export const kFormInstanceId: InjectionKey<string> = Symbol.for('attaform:form-instance-id')
 
 declare module 'vue' {
   interface App {
     /** @internal */
-    _decant?: DecantRegistry
+    _attaform?: AttaformRegistry
   }
 }
 
@@ -151,24 +152,24 @@ export type CreateRegistryOptions = SSRDetectOptions & {
    * App-level defaults applied to every `useForm` call. Per-form
    * options always win. Omitted is equivalent to `{}`.
    */
-  defaults?: DecantDefaults
+  defaults?: AttaformDefaults
 }
 
 /**
- * Create a fresh `DecantRegistry`. `createDecant()` calls
+ * Create a fresh `AttaformRegistry`. `createAttaform()` calls
  * this internally — most consumers never need to call it directly.
  * Use it when building a custom plugin that doesn't want the
- * `createDecant` plugin's auto-install behaviour (e.g. test
+ * `createAttaform` plugin's auto-install behaviour (e.g. test
  * harnesses, embedded apps).
  */
-export function createRegistry(options: CreateRegistryOptions = {}): DecantRegistry {
+export function createRegistry(options: CreateRegistryOptions = {}): AttaformRegistry {
   const isSSR = detectSSR(options)
   // Frozen so accidental writes downstream throw in dev. Public surface
-  // (`createDecant({ defaults })`) treats this as data, not as
+  // (`createAttaform({ defaults })`) treats this as data, not as
   // a mutation point — there's no public API to update defaults after
   // install, and adding one would invite race conditions with already-
   // mounted forms.
-  const defaults: DecantDefaults = Object.freeze({ ...(options.defaults ?? {}) })
+  const defaults: AttaformDefaults = Object.freeze({ ...(options.defaults ?? {}) })
   // The outer object is plain (it holds references we never rebind); inner
   // Maps are reactive via Vue's collection handlers so per-key reads track
   // per-key. `shallowReactive` avoids Vue's deep Ref-unwrapping, which would
@@ -249,14 +250,14 @@ export function createRegistry(options: CreateRegistryOptions = {}): DecantRegis
  *   into setup, or trigger it from a child component.
  * - `RegistryNotInstalledError` when called inside setup but the
  *   plugin wasn't installed. Add
- *   `app.use(createDecant())` to your app entry.
+ *   `app.use(createAttaform())` to your app entry.
  */
-export function useRegistry(): DecantRegistry {
+export function useRegistry(): AttaformRegistry {
   const instance = getCurrentInstance()
   if (instance === null) {
     throw new OutsideSetupError()
   }
-  const registry = inject(kDecantRegistry, null)
+  const registry = inject(kAttaformRegistry, null)
   if (registry === null) {
     throw new RegistryNotInstalledError()
   }
@@ -265,21 +266,21 @@ export function useRegistry(): DecantRegistry {
 
 /**
  * Look up a Vue app's registry by `App` reference. Used by
- * SSR helpers (`renderDecantState`, `hydrateDecantState`) that
+ * SSR helpers (`renderAttaformState`, `hydrateAttaformState`) that
  * run outside a component setup context.
  *
  * Throws `RegistryNotInstalledError` when the app hasn't been wired
- * with `createDecant()`.
+ * with `createAttaform()`.
  */
-export function getRegistryFromApp(app: App): DecantRegistry {
-  const registry = app._decant
+export function getRegistryFromApp(app: App): AttaformRegistry {
+  const registry = app._attaform
   if (registry === undefined) {
     throw new RegistryNotInstalledError()
   }
   return registry
 }
 
-export function attachRegistryToApp(app: App, registry: DecantRegistry): void {
-  app.provide(kDecantRegistry, registry)
-  app._decant = registry
+export function attachRegistryToApp(app: App, registry: AttaformRegistry): void {
+  app.provide(kAttaformRegistry, registry)
+  app._attaform = registry
 }

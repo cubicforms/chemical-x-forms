@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
-import { CxErrorCode } from '../../src/runtime/core/error-codes'
+import { AttaformErrorCode } from '../../src/runtime/core/error-codes'
 import { attachRegistryToApp, createRegistry } from '../../src/runtime/core/registry'
 import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 
@@ -78,12 +78,12 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
       code: string
       path: unknown[]
     }>
-    const requiredErr = errors.find((e) => e.code === CxErrorCode.NoValueSupplied)
+    const requiredErr = errors.find((e) => e.code === AttaformErrorCode.NoValueSupplied)
     expect(requiredErr).toBeDefined()
     expect(requiredErr?.path).toEqual(['income'])
     // Anchor the human-readable message once; downstream tests assert on `code`.
     expect(requiredErr?.message).toBe('No value supplied')
-    expect(form.errors['income']?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(form.errors['income']?.[0]?.code).toBe(AttaformErrorCode.NoValueSupplied)
   })
 
   it('does NOT raise for an optional path even when blank', async () => {
@@ -172,9 +172,9 @@ describe('handleSubmit — required-empty raises a synthesised error', () => {
       code: string
       path: unknown[]
     }>
-    expect(errors.some((e) => e.code === CxErrorCode.NoValueSupplied && e.path[0] === 'name')).toBe(
-      true
-    )
+    expect(
+      errors.some((e) => e.code === AttaformErrorCode.NoValueSupplied && e.path[0] === 'name')
+    ).toBe(true)
   })
 
   it('raises "Required" for required booleans', async () => {
@@ -219,7 +219,7 @@ describe('validateAsync — surfaces required-empty errors', () => {
     expect(result.success).toBe(false)
     const errors = result.errors ?? []
     expect(
-      errors.some((e) => e.code === CxErrorCode.NoValueSupplied && e.path[0] === 'income')
+      errors.some((e) => e.code === AttaformErrorCode.NoValueSupplied && e.path[0] === 'income')
     ).toBe(true)
   })
 
@@ -291,7 +291,7 @@ describe('public-housing scenario', () => {
     }>
     const incomeErrors = errors.filter((e) => e.path[0] === 'income')
     expect(incomeErrors.length).toBe(1)
-    expect(incomeErrors[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(incomeErrors[0]?.code).toBe(AttaformErrorCode.NoValueSupplied)
   })
 
   it('the same form with z.number().optional() submits cleanly with `undefined` storage', async () => {

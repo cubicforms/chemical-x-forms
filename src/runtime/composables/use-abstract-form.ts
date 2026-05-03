@@ -37,7 +37,7 @@ import { kFormContext, kFormInstanceId, useRegistry } from '../core/registry'
 import { walkUnsetSentinels } from '../core/unset-walker'
 import type {
   AbstractSchema,
-  DecantDefaults,
+  AttaformDefaults,
   FormKey,
   PersistConfigOptions,
   UseFormReturnType,
@@ -52,7 +52,7 @@ import type { DeepPartial, DefaultValuesShape, GenericForm, WriteShape } from '.
  * adapter or a third-party validation library.
  *
  * ```ts
- * import { useForm } from 'decant'
+ * import { useForm } from 'attaform'
  *
  * const form = useForm({
  *   schema: myCustomAdapter,
@@ -61,7 +61,7 @@ import type { DeepPartial, DefaultValuesShape, GenericForm, WriteShape } from '.
  * ```
  *
  * Most consumers prefer a typed entry point — e.g.
- * `decant/zod` (v4) or `decant/zod-v3` —
+ * `attaform/zod` (v4) or `attaform/zod-v3` —
  * which wrap the underlying library's schema with the matching
  * adapter automatically.
  *
@@ -90,7 +90,7 @@ export function useAbstractForm<
   const resolvedSchema = getComputedSchema(key, configuration.schema)
 
   // Eager throw: persistence configured without an explicit `key:`. An
-  // anonymous synthetic key (`__cx:anon:*`) drifts across mounts (HMR /
+  // anonymous synthetic key (`__atta:anon:*`) drifts across mounts (HMR /
   // route changes / SSR↔CSR) and can collide between unrelated forms —
   // refusing here keeps the namespace stable and forecloses on the
   // future encrypted-backend case where collision becomes a key-derivation
@@ -241,7 +241,7 @@ export function useAbstractForm<
   // fall back to a module-local counter — uniqueness is what matters,
   // and tests don't share form-instance state across mounts anyway.
   const formInstanceId =
-    getCurrentInstance() !== null ? useId() : `cx:form-instance:${formInstanceCounter++}`
+    getCurrentInstance() !== null ? useId() : `atta:form-instance:${formInstanceCounter++}`
   // Provided so descendants reaching via `injectForm()` inherit this ID
   // and their locally-registered elements tag against the same instance.
   // Sibling `useForm()` calls (different tree positions) provide their
@@ -266,7 +266,7 @@ export function useAbstractForm<
  * configuration. Per-form values always win for scalars; `validateOn`
  * and `debounceMs` resolve independently so a default like
  * `{ debounceMs: 100 }` carries through even when the per-form call
- * passes `{ validateOn: 'blur' }`. See `DecantDefaults` for the
+ * passes `{ validateOn: 'blur' }`. See `AttaformDefaults` for the
  * full merge contract.
  */
 function mergeWithDefaults<
@@ -275,7 +275,7 @@ function mergeWithDefaults<
   Schema extends AbstractSchema<Form, GetValueFormType>,
   Defaults extends DeepPartial<DefaultValuesShape<Form>>,
 >(
-  defaults: DecantDefaults,
+  defaults: AttaformDefaults,
   configuration: UseFormConfiguration<Form, GetValueFormType, Schema, Defaults>
 ): UseFormConfiguration<Form, GetValueFormType, Schema, Defaults> {
   // exactOptionalPropertyTypes rejects explicit `undefined` on optional
@@ -379,8 +379,8 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
 /**
  * Module-local counter for the "no Vue instance in scope" fallback
  * (tests, raw composable calls outside setup). Collisions with
- * user-supplied keys are avoided by the reserved `__cx:anon:` prefix
- * (consumer keys starting with `__cx:` are rejected at construction).
+ * user-supplied keys are avoided by the reserved `__atta:anon:` prefix
+ * (consumer keys starting with `__atta:` are rejected at construction).
  * Inside
  * setup — the common path — `useId()` produces a tree-position-stable
  * id that matches across SSR hydration, so two mounts of the same
@@ -433,7 +433,7 @@ function recordAmbientProvide(isSSR: boolean): void {
   const instanceKey = instance as unknown as object
   // Caller already gated on `configuration.key === undefined`, so every
   // recorded entry corresponds to an anonymous useForm() call. No need
-  // to carry a key — synthetic `__cx:anon:<id>` keys aren't addressable
+  // to carry a key — synthetic `__atta:anon:<id>` keys aren't addressable
   // by the author and would only add noise to the warning.
   const entry: AmbientProvideEntry = {
     source: captureUserCallSite(),
@@ -449,9 +449,9 @@ function recordAmbientProvide(isSSR: boolean): void {
 /**
  * Normalise `configuration.key` into a concrete FormKey. Explicit keys
  * pass through after a reserved-namespace check (anything starting
- * with `__cx:` is rejected with `ReservedFormKeyError`); empty /
+ * with `__atta:` is rejected with `ReservedFormKeyError`); empty /
  * nullish keys are treated as anonymous and allocated a unique id
- * under the `__cx:anon:` prefix. The reserved-prefix reject + the
+ * under the `__atta:anon:` prefix. The reserved-prefix reject + the
  * synthetic-prefix reservation together guarantee zero collision
  * between consumer-chosen keys and library-allocated synthetic ones.
  *
@@ -464,8 +464,8 @@ function recordAmbientProvide(isSSR: boolean): void {
  */
 function resolveFormKey(key: FormKey | undefined): FormKey {
   if (key !== undefined && key !== null && key !== '') {
-    // Reject any consumer-supplied key in the reserved `__cx:`
-    // namespace. Without this, a consumer key like `__cx:anon:0`
+    // Reject any consumer-supplied key in the reserved `__atta:`
+    // namespace. Without this, a consumer key like `__atta:anon:0`
     // could silently collide with the synthetic anonymous-key
     // allocation below — both would land on the same FormStore in
     // the registry, and the dev-mode schema-fingerprint warning
@@ -507,12 +507,15 @@ function warnOnSchemaFingerprintMismatch(
     existingFp = existing.fingerprint()
     incomingFp = incoming.fingerprint()
   } catch (error) {
-    console.error(`[decant] fingerprint() threw for key "${key}"; skipping mismatch check.`, error)
+    console.error(
+      `[attaform] fingerprint() threw for key "${key}"; skipping mismatch check.`,
+      error
+    )
     return
   }
   if (existingFp === incomingFp) return
   console.warn(
-    `[decant] useForm() calls with key "${key}" use different schemas; first wins, second is ignored. Use identical schemas or unique keys.\n  existing: ${existingFp}\n  incoming: ${incomingFp}`
+    `[attaform] useForm() calls with key "${key}" use different schemas; first wins, second is ignored. Use identical schemas or unique keys.\n  existing: ${existingFp}\n  incoming: ${incomingFp}`
   )
 }
 
@@ -937,7 +940,7 @@ const warnedAnonPersistKeys: Set<string> = new Set<string>()
 
 /**
  * Anonymous + `persist:` is unsafe by construction: the synthetic
- * `__cx:anon:<id>` identity drifts on every remount (Vue's `useId()`
+ * `__atta:anon:<id>` identity drifts on every remount (Vue's `useId()`
  * allocator is per-app and per-tree-position; HMR rebuilds the
  * instance) AND can collide between two unrelated anon forms that
  * happen to land on the same id. With matching schemas + backend,
@@ -969,7 +972,7 @@ function enforceAnonPersistRule(formKey: string, isSSR: boolean): boolean {
   if (!isSSR && !warnedAnonPersistKeys.has(formKey)) {
     warnedAnonPersistKeys.add(formKey)
     console.warn(
-      "[decant] persist: ignored — anonymous useForm() can't safely persist " +
+      "[attaform] persist: ignored — anonymous useForm() can't safely persist " +
         '(key drift + cross-form collision risk).\n' +
         '  Persistence is disabled for this form; the app keeps working.\n' +
         "  Fix: useForm({ schema, key: 'login', persist: '...' })"

@@ -51,7 +51,7 @@ second-guess the schema's accepted-empty verdict.
 ```
 form mounts (no defaults)
   → blankPaths.add('income')
-  → form.errors.income = [{ code: 'cx:no-value-supplied', … }]
+  → form.errors.income = [{ code: 'atta:no-value-supplied', … }]
   → form.fields.income.blank === true
 
 user types "5"
@@ -101,7 +101,7 @@ That's an explicit consumer signal, not runtime inference. Use the
 `unset` sentinel:
 
 ```ts
-import { unset, useForm } from 'decant/zod'
+import { unset, useForm } from 'attaform/zod'
 
 useForm({
   schema: z.object({ agreed: z.boolean(), note: z.string() }),
@@ -114,7 +114,7 @@ form.reset({ note: unset })
 ```
 
 `unset` works at any primitive leaf and adds the path to `blankPaths`.
-Combined with required schemas, it surfaces a `cx:no-value-supplied`
+Combined with required schemas, it surfaces a `atta:no-value-supplied`
 error reactively — same lifecycle as the numeric case, just driven by
 your intent rather than runtime inference.
 
@@ -150,7 +150,7 @@ pre-error indicators or progress meters.
 
 `handleSubmit`, `validate`, and `validateAsync` all consult the same
 reactive store. A required path that's blank produces a
-`cx:no-value-supplied` entry in their response, no separate API call
+`atta:no-value-supplied` entry in their response, no separate API call
 needed. Conversely, a successful submit means _both_ refinement
 validation passed _and_ every required path has a non-blank value.
 
@@ -160,14 +160,14 @@ Your `onError` callback gets the merged error list:
 const handler = form.handleSubmit(
   (values) => api.submit(values),
   (errors) => {
-    const blank = errors.filter((e) => e.code === 'cx:no-value-supplied')
-    const refinement = errors.filter((e) => e.code !== 'cx:no-value-supplied')
+    const blank = errors.filter((e) => e.code === 'atta:no-value-supplied')
+    const refinement = errors.filter((e) => e.code !== 'atta:no-value-supplied')
     // ... your UX
   }
 )
 ```
 
-The error code is stable (`cx:no-value-supplied`); filter on it when
+The error code is stable (`atta:no-value-supplied`); filter on it when
 you want to display blank-required cases differently from refinement
 failures.
 

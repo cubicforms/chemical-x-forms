@@ -4,9 +4,9 @@ import { describe, expect, it } from 'vitest'
 import * as Vue from 'vue'
 import { createSSRApp, defineComponent } from 'vue'
 import { useForm } from '../../src'
-import { createDecant } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import { getRegistryFromApp } from '../../src/runtime/core/registry'
-import { renderDecantState } from '../../src/runtime/core/serialize'
+import { renderAttaformState } from '../../src/runtime/core/serialize'
 import { vRegisterHintTransform } from '../../src/runtime/lib/core/transforms/v-register-hint-transform'
 import { vRegisterPreambleTransform } from '../../src/runtime/lib/core/transforms/v-register-preamble-transform'
 import { fakeSchema } from '../utils/fake-schema'
@@ -69,7 +69,7 @@ function makeAppWithTemplate(template: string, mode: CxTransformMode) {
     render,
   })
   const app = createSSRApp(App)
-  app.use(createDecant({ override: true /* SSR */ }))
+  app.use(createAttaform({ override: true /* SSR */ }))
   return app
 }
 
@@ -124,7 +124,7 @@ describe('SSR isConnected via vRegisterHintTransform', () => {
       },
     })
     const app = createSSRApp(App)
-    app.use(createDecant({ override: true }))
+    app.use(createAttaform({ override: true }))
     await renderToString(app)
     const registry = getRegistryFromApp(app)
     const state = registry.forms.get('setup-only')
@@ -140,7 +140,7 @@ describe('SSR isConnected via vRegisterHintTransform', () => {
       'hint-only'
     )
     await renderToString(app)
-    const payload = renderDecantState(app)
+    const payload = renderAttaformState(app)
     const serialised = JSON.parse(JSON.stringify(payload)) as typeof payload
     const formEntry = serialised.forms.find(([k]) => k === 'connected-test')
     expect(formEntry).toBeDefined()
@@ -320,7 +320,7 @@ describe('SSR isConnected — cross-component sync via shared form key', () => {
       render: compileTemplate(`<div><Writer /><Reader /></div>`, 'preamble+hint'),
     })
     const app = createSSRApp(Parent)
-    app.use(createDecant({ override: true }))
+    app.use(createAttaform({ override: true }))
 
     const html = await renderToString(app)
     // Reader's div serialises the email field state. Both forms are
@@ -412,7 +412,7 @@ describe('SSR isConnected — cross-component sync via shared form key', () => {
       render: compileTemplate(`<div><Binder /><SetupOnlyReader /></div>`, 'preamble+hint'),
     })
     const app = createSSRApp(Parent)
-    app.use(createDecant({ override: true }))
+    app.use(createAttaform({ override: true }))
 
     const html = await renderToString(app)
     const readerMatch = html.match(/<div class="setup-only-reader">([\s\S]*?)<\/div>/)
@@ -491,7 +491,7 @@ describe('SSR isConnected — cross-component sync via shared form key', () => {
       render: compileTemplate(`<div><SetupOnlyA /><SetupOnlyB /><Reader /></div>`, 'preamble+hint'),
     })
     const app = createSSRApp(Parent)
-    app.use(createDecant({ override: true }))
+    app.use(createAttaform({ override: true }))
 
     const html = await renderToString(app)
     const readerMatch = html.match(/<div class="case-b-reader">([\s\S]*?)<\/div>/)

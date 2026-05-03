@@ -3,7 +3,7 @@ import type { FormStorage } from '../../types/types-api'
 
 /**
  * Zero-dependency IndexedDB adapter. A single shared DB
- * (`decant`) with a single object store (`kv`). Entries are
+ * (`attaform`) with a single object store (`kv`). Entries are
  * structured-cloned on write, so `Date` / `Map` / `Set` / typed
  * arrays / nested arrays round-trip without JSON flattening.
  *
@@ -17,7 +17,7 @@ import type { FormStorage } from '../../types/types-api'
  * the degradation so the developer notices.
  */
 
-const DB_NAME = 'decant'
+const DB_NAME = 'attaform'
 const STORE_NAME = 'kv'
 const DB_VERSION = 1
 
@@ -51,7 +51,7 @@ function openDb(): Promise<IDBDatabase | null> {
       if (__DEV__ && !warnedOnOpenFailure) {
         warnedOnOpenFailure = true
         console.warn(
-          '[decant] IndexedDB open failed; persistence disabled. ' +
+          '[attaform] IndexedDB open failed; persistence disabled. ' +
             'Common causes: private-mode disabled IDB, browser quota policy.',
           request.error
         )
@@ -62,7 +62,7 @@ function openDb(): Promise<IDBDatabase | null> {
       if (__DEV__ && !warnedOnOpenFailure) {
         warnedOnOpenFailure = true
         console.warn(
-          '[decant] IndexedDB open blocked (another tab holds an older version); persistence disabled until the conflict resolves.'
+          '[attaform] IndexedDB open blocked (another tab holds an older version); persistence disabled until the conflict resolves.'
         )
       }
       // `onblocked` is transient — the holding tab can close at any
@@ -136,7 +136,7 @@ function runWriteOp(fn: (store: IDBObjectStore) => void): Promise<void> {
           if (__DEV__ && !warnedOnWriteFailure) {
             warnedOnWriteFailure = true
             console.warn(
-              '[decant] IndexedDB transaction aborted; subsequent writes will silently no-op. ' +
+              '[attaform] IndexedDB transaction aborted; subsequent writes will silently no-op. ' +
                 'Common cause: storage quota exceeded.',
               tx.error
             )

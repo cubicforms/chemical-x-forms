@@ -1,7 +1,7 @@
 /**
  * Dev-only call-site capture for warnings that want to point the
  * reader at the offending line of their code (not at a cx-internal
- * frame). Walks the stack past `decant` frames, picks the
+ * frame). Walks the stack past `attaform` frames, picks the
  * first frame that looks like user code, then strips the dev-server
  * scheme + host + Vite/Nuxt's `/_nuxt/` prefix so the warning doesn't
  * carry a wall of `https://localhost:3000/_nuxt/...` noise.
@@ -17,8 +17,8 @@
  * and short paths read better there than full URLs.
  *
  * The cx-frame regex matches both the published path
- * (`decant/...`) and the linked / source path
- * (`decant/...`) so local dev via `make link-cx` surfaces
+ * (`attaform/...`) and the linked / source path
+ * (`attaform/...`) so local dev via `make link-attaform` surfaces
  * the same trimmed frames.
  *
  * Dev-only; callers should gate on `__DEV__` before invoking.
@@ -31,7 +31,7 @@ export function captureUserCallSite(): string | undefined {
   for (let i = 1; i < lines.length; i++) {
     const frame = lines[i]
     if (frame === undefined) continue
-    if (/decant[/-]forms?/i.test(frame)) continue
+    if (/attaform[/-]forms?/i.test(frame)) continue
     if (/\bforms\.[A-Za-z0-9_-]+\.m?js\b/.test(frame)) continue
     const trimmed = frame.trim()
     if (trimmed.length === 0) continue
@@ -44,13 +44,13 @@ export function captureUserCallSite(): string | undefined {
  * Reduce a raw stack frame to `(<path>:<line>)`.
  *
  * Inputs we expect (V8, with or without `at fn (…)` wrapper):
- *   - `at setup (https://cubicforms.test/_nuxt/pages/spike-cx.vue:18:18)`
+ *   - `at setup (https://example.test/_nuxt/pages/spike.vue:18:18)`
  *   - `at https://example.com/foo.js:1:1`
  *   - `at file:///Users/x/proj/spike.vue:18:18`
  *   - `pages/foo.vue:18:18` (already path-like, no V8 wrapper)
  *
  * Outputs:
- *   - `(pages/spike-cx.vue:18)`
+ *   - `(pages/spike.vue:18)`
  *   - `(foo.js:1)`
  *   - `(Users/x/proj/spike.vue:18)`
  *   - `(pages/foo.vue:18)`

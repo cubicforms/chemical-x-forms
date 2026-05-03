@@ -112,7 +112,7 @@ function main() {
     log('no previous v-tag found — seeding first entry')
   }
 
-  const repo = process.env.GITHUB_REPOSITORY ?? 'decantjs/forms'
+  const repo = process.env.GITHUB_REPOSITORY ?? 'attaform/attaform'
   const args = [
     'api',
     `repos/${repo}/releases/generate-notes`,

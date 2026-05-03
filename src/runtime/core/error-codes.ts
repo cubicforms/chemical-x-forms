@@ -4,7 +4,7 @@
  * Convention: `<scope>:<kebab-case-identifier>`. Three scopes are
  * recognised by the library:
  *
- * - `cx:` — emitted by the framework-agnostic core (this map).
+ * - `atta:` — emitted by the framework-agnostic core (this map).
  * - `zod:` — emitted by the Zod adapter; computed inline from
  *   `issue.code` (e.g. `zod:too_small`). No enum here because
  *   Zod's code list evolves.
@@ -16,18 +16,18 @@
  * Use these constants in tests and error-routing UI:
  *
  * ```ts
- * if (error.code === CxErrorCode.NoValueSupplied) {
+ * if (error.code === AttaformErrorCode.NoValueSupplied) {
  *   // user hasn't filled this field
  * }
  * ```
  */
-export const CxErrorCode = {
+export const AttaformErrorCode = {
   /** A required field is in the blank set — user hasn't supplied a value. */
-  NoValueSupplied: 'cx:no-value-supplied',
+  NoValueSupplied: 'atta:no-value-supplied',
   /** The schema adapter's `validateAtPath` threw synchronously. */
-  AdapterThrew: 'cx:adapter-threw',
+  AdapterThrew: 'atta:adapter-threw',
   /** The supplied path didn't resolve to any node in the schema. */
-  PathNotFound: 'cx:path-not-found',
+  PathNotFound: 'atta:path-not-found',
 } as const
 
-export type CxErrorCode = (typeof CxErrorCode)[keyof typeof CxErrorCode]
+export type AttaformErrorCode = (typeof AttaformErrorCode)[keyof typeof AttaformErrorCode]

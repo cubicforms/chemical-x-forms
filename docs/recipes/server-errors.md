@@ -10,7 +10,7 @@ as `errors` via a two-step pattern: parse the payload with
 
 ```vue
 <script setup lang="ts">
-  import { useForm, parseApiErrors } from 'decant'
+  import { useForm, parseApiErrors } from 'attaform'
   import { z } from 'zod'
 
   const schema = z.object({
@@ -145,12 +145,12 @@ Legacy string entries (`{ email: 'taken' }`), entries missing
 ## Branching on `code`
 
 ```ts
-import { CxErrorCode } from 'decant'
+import { AttaformErrorCode } from 'attaform'
 
 for (const err of form.errors.email ?? []) {
   if (err.code === 'api:duplicate-email') {
     // server-side uniqueness failure
-  } else if (err.code === CxErrorCode.NoValueSupplied) {
+  } else if (err.code === AttaformErrorCode.NoValueSupplied) {
     // user opened the form and didn't fill the field
   } else if (err.code.startsWith('zod:')) {
     // schema-level validation failure
@@ -158,7 +158,7 @@ for (const err of form.errors.email ?? []) {
 }
 ```
 
-`CxErrorCode` exports the library-internal codes; the `zod:` prefix
+`AttaformErrorCode` exports the library-internal codes; the `zod:` prefix
 is computed inline from `issue.code`; consumer codes (`api:`,
 `auth:`, etc.) come from the wire payload or direct
 `setFieldErrors` calls.

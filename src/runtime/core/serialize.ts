@@ -4,12 +4,12 @@ import { getRegistryFromApp, type SerializedFormData } from './registry'
 
 /**
  * Serialised snapshot of every form in a Vue app, produced by
- * `renderDecantState` and consumed by `hydrateDecantState`.
+ * `renderAttaformState` and consumed by `hydrateAttaformState`.
  *
  * JSON-safe — pass to `JSON.stringify`, `devalue`, or any other
  * serialiser before embedding in your SSR payload.
  */
-export type SerializedDecantState = {
+export type SerializedAttaformState = {
   /** Tuples of `[formKey, snapshot]` for every form in the app. */
   readonly forms: ReadonlyArray<readonly [FormKey, SerializedFormData]>
 }
@@ -20,23 +20,23 @@ export type SerializedDecantState = {
  *
  * ```ts
  * import { renderToString } from '@vue/server-renderer'
- * import { renderDecantState, escapeForInlineScript } from 'decant'
+ * import { renderAttaformState, escapeForInlineScript } from 'attaform'
  *
  * const html = await renderToString(app)
- * const state = renderDecantState(app)
+ * const state = renderAttaformState(app)
  * const payload = escapeForInlineScript(JSON.stringify(state))
  *
  * return `
  *   ${html}
- *   <script>window.__CX_STATE__ = ${payload}</script>
+ *   <script>window.__ATTAFORM_STATE__ = ${payload}</script>
  * `
  * ```
  *
- * Pair with `hydrateDecantState` on the client to restore the
+ * Pair with `hydrateAttaformState` on the client to restore the
  * forms in their server-rendered state. Nuxt users don't need this —
- * `decant/nuxt` wires SSR automatically.
+ * `attaform/nuxt` wires SSR automatically.
  */
-export function renderDecantState(app: App): SerializedDecantState {
+export function renderAttaformState(app: App): SerializedAttaformState {
   const registry = getRegistryFromApp(app)
   const forms: Array<readonly [FormKey, SerializedFormData]> = []
   for (const [key, state] of registry.forms) {
@@ -65,17 +65,17 @@ export function renderDecantState(app: App): SerializedDecantState {
  *
  * ```ts
  * import { createApp } from 'vue'
- * import { createDecant, hydrateDecantState } from 'decant'
+ * import { createAttaform, hydrateAttaformState } from 'attaform'
  *
- * const app = createApp(App).use(createDecant())
- * hydrateDecantState(app, window.__CX_STATE__)
+ * const app = createApp(App).use(createAttaform())
+ * hydrateAttaformState(app, window.__ATTAFORM_STATE__)
  * app.mount('#app')
  * ```
  *
  * The next `useForm({ key })` call for each serialised form picks up
  * the snapshot transparently — no further action is required.
  */
-export function hydrateDecantState(app: App, payload: SerializedDecantState): void {
+export function hydrateAttaformState(app: App, payload: SerializedAttaformState): void {
   const registry = getRegistryFromApp(app)
   for (const [key, data] of payload.forms) {
     registry.pendingHydration.set(key, data)

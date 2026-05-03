@@ -1,10 +1,10 @@
 services:
   cx:
     build: .
-    container_name: cx-dev
+    container_name: attaform-dev
     # Use tini as PID 1 so detached background processes (e.g. the
-    # prepack:watch dist-rebuild watcher started via `make link-cx`
-    # from cubic-forms) get reaped properly instead of dying when their
+    # prepack:watch dist-rebuild watcher started via `make link-attaform`
+    # from attaform) get reaped properly instead of dying when their
     # parent shell exits.
     init: true
     volumes:
@@ -14,7 +14,7 @@ services:
       - /app/node_modules
       - /app/playground/node_modules
     ports:
-      - '3001:3000' # playground dev server (3001 to avoid clashing with cubic-forms frontend on 3000)
+      - '3001:3000' # playground dev server (3001 to avoid clashing with attaform frontend on 3000)
     environment:
       # pnpm needs HOME for its store
       HOME: /root

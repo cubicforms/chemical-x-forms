@@ -209,7 +209,7 @@ function warnNonPrimitiveLeaf(segments: Segment[], slim: unknown): void {
   warnedNonPrimitivePaths.add(dotted)
   const slimType = slim === null ? 'null' : slim instanceof Date ? 'Date' : typeof slim
   console.warn(
-    `[decant] \`unset\` at "${dotted || '<root>'}" is a no-op — ` +
+    `[attaform] \`unset\` at "${dotted || '<root>'}" is a no-op — ` +
       `unset only works at primitive leaves (string / number / boolean / bigint, ` +
       `plus their optional / nullable variants), got "${slimType}". ` +
       `The slim default was written but the path is NOT marked blank. ` +

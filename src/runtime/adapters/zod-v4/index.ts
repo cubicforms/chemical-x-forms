@@ -24,7 +24,7 @@ export type { ZodKind } from './introspect'
  * Create a form bound to a Zod v4 schema.
  *
  * ```ts
- * import { useForm } from 'decant/zod'
+ * import { useForm } from 'attaform/zod'
  * import { z } from 'zod'
  *
  * const form = useForm({
@@ -41,7 +41,7 @@ export type { ZodKind } from './introspect'
  * helpers, and more. See `UseFormReturnType` for the full
  * surface.
  *
- * For Zod v3, import from `decant/zod-v3` instead.
+ * For Zod v3, import from `attaform/zod-v3` instead.
  */
 export function useForm<Schema extends z.ZodObject>(
   configuration: Omit<

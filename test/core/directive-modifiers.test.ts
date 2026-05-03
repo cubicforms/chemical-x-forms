@@ -13,7 +13,7 @@ import type { RegisterValue } from '../../src/runtime/types/types-api'
  * Modifier coverage for `v-register` (`.lazy`, `.trim`, `.number`).
  * The runtime is ported from Vue's `vModelText` / `vModelSelect`;
  * Vue tests its own modifier semantics in its own suite, but the
- * port has additional decant guards (`shouldBailListener`, the
+ * port has additional attaform guards (`shouldBailListener`, the
  * slim-primitive gate, value-swap migration) that intersect with
  * the modifier paths and need direct coverage here.
  *
@@ -735,10 +735,10 @@ describe('vRegisterText.beforeUpdate — escape hatches under focus', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────
-// decant-specific interactions
+// attaform-specific interactions
 // ─────────────────────────────────────────────────────────────────
 
-describe('decant interactions: `.number` × slim-primitive gate', () => {
+describe('attaform interactions: `.number` × slim-primitive gate', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
   })
@@ -769,7 +769,7 @@ describe('decant interactions: `.number` × slim-primitive gate', () => {
   })
 })
 
-describe('decant interactions: `.lazy` × value-swap', () => {
+describe('attaform interactions: `.lazy` × value-swap', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
   })

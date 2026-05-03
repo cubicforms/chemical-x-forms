@@ -2,13 +2,13 @@ import { renderToString } from '@vue/server-renderer'
 import { describe, expect, it } from 'vitest'
 import { createSSRApp, defineComponent, h } from 'vue'
 import { useForm } from '../../src'
-import { createDecant } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import { getRegistryFromApp } from '../../src/runtime/core/registry'
-import { hydrateDecantState, renderDecantState } from '../../src/runtime/core/serialize'
+import { hydrateAttaformState, renderAttaformState } from '../../src/runtime/core/serialize'
 import { fakeSchema } from '../utils/fake-schema'
 
 /*
- * End-to-end proof that `decant` works under bare Vue 3 + SSR
+ * End-to-end proof that `attaform` works under bare Vue 3 + SSR
  * via `@vue/server-renderer` — no Nuxt involved. Exercises the full round
  * trip: server creates app, useForm sets some state, render HTML,
  * serialize, hydrate on a fresh "client" app, confirm the reconstructed
@@ -32,7 +32,7 @@ function makeApp(opts: { ssr: boolean; initialEmail?: string }) {
     },
   })
   const app = createSSRApp(App)
-  app.use(createDecant({ override: opts.ssr }))
+  app.use(createAttaform({ override: opts.ssr }))
   return app
 }
 
@@ -54,12 +54,15 @@ describe('bare-Vue SSR round-trip', () => {
     state.setValueAtPath(['email'], 'server-edited@x')
 
     // Serialize
-    const payload = renderDecantState(serverApp)
+    const payload = renderAttaformState(serverApp)
     const serialised = JSON.stringify(payload)
 
     // Client: fresh app, fresh registry, hydrate from payload
     const clientApp = makeApp({ ssr: false })
-    hydrateDecantState(clientApp, JSON.parse(serialised) as ReturnType<typeof renderDecantState>)
+    hydrateAttaformState(
+      clientApp,
+      JSON.parse(serialised) as ReturnType<typeof renderAttaformState>
+    )
 
     // Render the client app — during setup, useForm should pick up the
     // hydrated state rather than re-initialising from schema defaults.
@@ -82,7 +85,7 @@ describe('bare-Vue SSR round-trip', () => {
   it('serialization payload is JSON-safe for direct transport', async () => {
     const app = makeApp({ ssr: true, initialEmail: 'user@x' })
     await renderToString(app)
-    const payload = renderDecantState(app)
+    const payload = renderAttaformState(app)
     // Any attempt to stringify the full payload must succeed; nothing in
     // the structure should carry a symbol, function, or non-serialisable
     // reference.

@@ -16,7 +16,7 @@ import { createApp, defineComponent, h, nextTick, withDirectives, type App } fro
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister, isRegisterValue, assignKey } from '../../src/runtime/core/directive'
-import { createDecant } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import { defineCoercion, defaultCoercionRules } from '../../src/runtime/core/schema-coerce'
 
 async function flush(): Promise<void> {
@@ -38,7 +38,7 @@ function mount<S extends z.ZodObject>(
   schema: S,
   defaultValues: z.infer<S>,
   body: (api: ReturnType<typeof useForm<S>>) => unknown,
-  pluginOpts?: Parameters<typeof createDecant>[0]
+  pluginOpts?: Parameters<typeof createAttaform>[0]
 ): { api: ReturnType<typeof useForm<S>>; root: HTMLDivElement } {
   const handle: { api?: ReturnType<typeof useForm<S>> } = {}
   const Parent = defineComponent({
@@ -52,7 +52,7 @@ function mount<S extends z.ZodObject>(
       return () => body(api)
     },
   })
-  app = createApp(Parent).use(createDecant(pluginOpts))
+  app = createApp(Parent).use(createAttaform(pluginOpts))
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -318,7 +318,7 @@ describe('checkbox with true-value / false-value — composes with coerce', () =
   // Bound `:true-value` (non-string) is exercised via templates +
   // checkbox.test.ts directly — render-function `h()` doesn't reach
   // Vue's `_trueValue` slot the same way the compiled template
-  // path does. Verified end-to-end in spike-cx.vue scenarios.
+  // path does. Verified end-to-end in spike.vue scenarios.
 
   it('case-insensitive true-value="True" against z.boolean() schema → coerced to true', async () => {
     const schema = z.object({ accepted: z.boolean() })
@@ -504,7 +504,7 @@ describe('programmatic write bypass', () => {
 })
 
 describe('plugin-default off', () => {
-  it('createDecant({ defaults: { coerce: false } }) disables coerce globally', async () => {
+  it('createAttaform({ defaults: { coerce: false } }) disables coerce globally', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const schema = z.object({ age: z.number() })
     const { api, root } = mount(
@@ -548,7 +548,7 @@ describe('per-form override beats plugin default (both directions)', () => {
           ])
       },
     })
-    app = createApp(Parent).use(createDecant({ defaults: { coerce: false } }))
+    app = createApp(Parent).use(createAttaform({ defaults: { coerce: false } }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -581,7 +581,7 @@ describe('per-form override beats plugin default (both directions)', () => {
           ])
       },
     })
-    app = createApp(Parent).use(createDecant())
+    app = createApp(Parent).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -733,7 +733,7 @@ describe('consumer-extended registry — string->bigint', () => {
           ])
       },
     })
-    app = createApp(Parent).use(createDecant({ defaults: { coerce: customRules } }))
+    app = createApp(Parent).use(createAttaform({ defaults: { coerce: customRules } }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

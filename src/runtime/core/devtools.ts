@@ -1,14 +1,14 @@
 import type { App } from 'vue'
 import type { FormStore } from './create-form-store'
-import type { DecantRegistry } from './registry'
+import type { AttaformRegistry } from './registry'
 import type { GenericForm } from '../types/types-core'
 import type { FormKey } from '../types/types-api'
 import { canonicalizePath } from './paths'
 import { isSensitivePath, segmentMatchesSensitive } from './persistence/sensitive-names'
 
 /**
- * Vue DevTools plugin wiring for decant. Lazy-imported by
- * `createDecant` under dev-mode guards so the production
+ * Vue DevTools plugin wiring for attaform. Lazy-imported by
+ * `createAttaform` under dev-mode guards so the production
  * bundle tree-shakes it out entirely.
  *
  * Registers:
@@ -20,13 +20,13 @@ import { isSensitivePath, segmentMatchesSensitive } from './persistence/sensitiv
  *    pushes through `state.setValueAtPath`, mutating the form.
  *
  * Tolerant of missing `@vue/devtools-api` — the peer dep is marked
- * optional. If the import fails, `setupDecantDevtools` silently
+ * optional. If the import fails, `setupAttaformDevtools` silently
  * no-ops so production builds / users without DevTools installed
  * don't see errors.
  */
 
-const INSPECTOR_ID = 'decant'
-const TIMELINE_LAYER_ID = 'decant:events'
+const INSPECTOR_ID = 'attaform'
+const TIMELINE_LAYER_ID = 'attaform:events'
 
 const REDACTED = '[redacted]'
 
@@ -147,7 +147,10 @@ type SetupDevtoolsPluginFn = (
  * DevTools was wired successfully, `false` otherwise — useful for
  * tests.
  */
-export async function setupDecantDevtools(app: App, registry: DecantRegistry): Promise<boolean> {
+export async function setupAttaformDevtools(
+  app: App,
+  registry: AttaformRegistry
+): Promise<boolean> {
   let mod: { setupDevtoolsPlugin?: SetupDevtoolsPluginFn }
   try {
     mod = (await import('@vue/devtools-api')) as {
@@ -165,25 +168,25 @@ export async function setupDecantDevtools(app: App, registry: DecantRegistry): P
   setupDevtoolsPlugin(
     {
       id: INSPECTOR_ID,
-      label: 'Decant',
-      packageName: 'decant',
-      homepage: 'https://github.com/decantjs/forms',
+      label: 'Attaform',
+      packageName: 'attaform',
+      homepage: 'https://github.com/attaform/attaform',
       app,
-      componentStateTypes: ['Decant form'],
+      componentStateTypes: ['Attaform form'],
     },
     (api) => wire(api, app, registry)
   )
   return true
 }
 
-function wire(api: UnsafeDevtoolsApi, app: App, registry: DecantRegistry): void {
+function wire(api: UnsafeDevtoolsApi, app: App, registry: AttaformRegistry): void {
   // Per-form subscriber bookkeeping — we keep the unsubscribers so
   // the registry's eviction path can detach them when a form is
   // disposed. Using a Map keyed by FormKey mirrors the registry.
   const subscriberUnsubs = new Map<FormKey, () => void>()
 
-  api.addInspector({ id: INSPECTOR_ID, label: 'Decant', app })
-  api.addTimelineLayer({ id: TIMELINE_LAYER_ID, label: 'Decant', color: 0x5b8def })
+  api.addInspector({ id: INSPECTOR_ID, label: 'Attaform', app })
+  api.addTimelineLayer({ id: TIMELINE_LAYER_ID, label: 'Attaform', color: 0x5b8def })
 
   function refreshTree(): void {
     api.sendInspectorTree(INSPECTOR_ID)

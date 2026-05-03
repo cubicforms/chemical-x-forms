@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, nextTick, withDirectives, type App } fro
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
-import { createDecant } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
 import { hashStableString } from '../../src/runtime/core/hash'
 import type { UseFormReturnType } from '../../src/runtime/types/types-api'
@@ -148,7 +148,7 @@ function mount(persistKey: string): {
         ])
     },
   })
-  const app = createApp(App).use(createDecant())
+  const app = createApp(App).use(createAttaform())
   app.config.warnHandler = () => {}
   app.config.errorHandler = () => {}
   app.mount(document.createElement('div'))

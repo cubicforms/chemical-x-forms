@@ -14,7 +14,7 @@ import { createSSRApp, defineComponent, h } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { z } from 'zod'
 import { useForm } from '../src/runtime/adapters/zod-v4'
-import { createDecant } from '../src/runtime/core/plugin'
+import { createAttaform } from '../src/runtime/core/plugin'
 
 // 100 leaves via 10 groups of 10 fields each. Enough shape for the
 // originals / fields maps to have real data without making each bench
@@ -42,7 +42,7 @@ function mount() {
     },
   })
   const app = createSSRApp(App)
-  app.use(createDecant({ override: true }))
+  app.use(createAttaform({ override: true }))
   void renderToString(app)
   if (captured === undefined) throw new Error('useForm setup did not run')
   return captured

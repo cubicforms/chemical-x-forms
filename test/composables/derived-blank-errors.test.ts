@@ -4,8 +4,8 @@ import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { unset } from '../../src/zod'
 import { useForm } from '../../src/zod'
-import { CxErrorCode } from '../../src/runtime/core/error-codes'
-import { createDecant } from '../../src/runtime/core/plugin'
+import { AttaformErrorCode } from '../../src/runtime/core/error-codes'
+import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
  * Reactive `derivedBlankErrors` contract — `errors = f(schema, state)`.
@@ -45,7 +45,7 @@ function mountNumeric(): { app: App; api: NumericApi } {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createDecant({ override: true }))
+  const app = createApp(App).use(createAttaform({ override: true }))
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -65,10 +65,10 @@ describe('derivedBlankErrors — auto-mark fires for numeric primitives', () => 
     // `income` is `z.number()` (slim default `0`, DOM input `''`) —
     // storage / display diverge, blank auto-marks, derived error fires.
     expect(api.errors.income?.[0]?.message).toBe('No value supplied')
-    expect(api.errors.income?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(api.errors.income?.[0]?.code).toBe(AttaformErrorCode.NoValueSupplied)
     // `netWorth` is `z.bigint()` (slim default `0n`, DOM input `''`) —
     // same divergence, same auto-mark.
-    expect(api.errors.netWorth?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(api.errors.netWorth?.[0]?.code).toBe(AttaformErrorCode.NoValueSupplied)
   })
 
   it('isValid is false when derived blank errors exist', () => {
@@ -81,7 +81,7 @@ describe('derivedBlankErrors — auto-mark fires for numeric primitives', () => 
     const { app, api } = mountNumeric()
     apps.push(app)
 
-    expect(api.fields.income.errors[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(api.fields.income.errors[0]?.code).toBe(AttaformErrorCode.NoValueSupplied)
     expect(api.fields.income.blank).toBe(true)
   })
 
@@ -89,7 +89,7 @@ describe('derivedBlankErrors — auto-mark fires for numeric primitives', () => 
     const { app, api } = mountNumeric()
     apps.push(app)
 
-    expect(api.errors.income?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(api.errors.income?.[0]?.code).toBe(AttaformErrorCode.NoValueSupplied)
     api.setValue('income', 50_000)
     await nextTick()
     expect(api.errors.income).toBeUndefined()
@@ -105,7 +105,7 @@ describe('derivedBlankErrors — auto-mark fires for numeric primitives', () => 
 
     api.setValue('income', unset)
     await nextTick()
-    expect(api.errors.income?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(api.errors.income?.[0]?.code).toBe(AttaformErrorCode.NoValueSupplied)
   })
 
   it('isValid flips with the derived class', async () => {
@@ -140,7 +140,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -159,7 +159,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -178,7 +178,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -213,11 +213,11 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
-    expect(handle.api?.errors.note?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(handle.api?.errors.note?.[0]?.code).toBe(AttaformErrorCode.NoValueSupplied)
     expect(handle.api?.fields.note.blank).toBe(true)
   })
 
@@ -235,11 +235,11 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
-    expect(handle.api?.errors.agreed?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(handle.api?.errors.agreed?.[0]?.code).toBe(AttaformErrorCode.NoValueSupplied)
     expect(handle.api?.fields.agreed.blank).toBe(true)
   })
 
@@ -253,7 +253,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -261,7 +261,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
     // failure for `''`. blank stays false — the schema is the
     // authority on what "non-empty required" means.
     expect(handle.api?.errors.name?.[0]?.message).toBe('name required')
-    expect(handle.api?.errors.name?.[0]?.code).not.toBe(CxErrorCode.NoValueSupplied)
+    expect(handle.api?.errors.name?.[0]?.code).not.toBe(AttaformErrorCode.NoValueSupplied)
     expect(handle.api?.fields.name.blank).toBe(false)
   })
 })
@@ -282,7 +282,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -300,7 +300,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -318,7 +318,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -341,7 +341,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -361,13 +361,13 @@ describe('derivedBlankErrors — independent of imperative writers', () => {
     const { app, api } = mountNumeric()
     apps.push(app)
 
-    expect(api.errors.income?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(api.errors.income?.[0]?.code).toBe(AttaformErrorCode.NoValueSupplied)
     api.clearFieldErrors('income')
     await nextTick()
     // Derived class is a pure function of state — clearing the
     // imperative stores can't make it go away. Only changing the
     // underlying state (filling the field) does.
-    expect(api.errors.income?.[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(api.errors.income?.[0]?.code).toBe(AttaformErrorCode.NoValueSupplied)
   })
 
   it('setFieldErrors at the same path coexists with derived', async () => {
@@ -387,7 +387,7 @@ describe('derivedBlankErrors — independent of imperative writers', () => {
     const incomeErrors = api.errors.income ?? []
     // Order: schema → derived → user.
     expect(incomeErrors).toHaveLength(2)
-    expect(incomeErrors[0]?.code).toBe(CxErrorCode.NoValueSupplied)
+    expect(incomeErrors[0]?.code).toBe(AttaformErrorCode.NoValueSupplied)
     expect(incomeErrors[1]?.code).toBe('api:tooLow')
   })
 
@@ -410,7 +410,7 @@ describe('derivedBlankErrors — independent of imperative writers', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createDecant({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -418,7 +418,7 @@ describe('derivedBlankErrors — independent of imperative writers', () => {
     expect(incomeErrors.length).toBeGreaterThanOrEqual(2)
     // Schema (refinement) first, derived second.
     expect(incomeErrors.some((e) => e.message === 'must be > 1000')).toBe(true)
-    expect(incomeErrors.some((e) => e.code === CxErrorCode.NoValueSupplied)).toBe(true)
+    expect(incomeErrors.some((e) => e.code === AttaformErrorCode.NoValueSupplied)).toBe(true)
   })
 })
 
@@ -434,7 +434,7 @@ describe('derivedBlankErrors — lifecycle integration', () => {
 
     const result = await api.validateAsync()
     expect(result.success).toBe(false)
-    expect(result.errors?.some((e) => e.code === CxErrorCode.NoValueSupplied)).toBe(true)
+    expect(result.errors?.some((e) => e.code === AttaformErrorCode.NoValueSupplied)).toBe(true)
   })
 
   it('handleSubmit blocks when derived blank errors exist', async () => {
@@ -458,7 +458,7 @@ describe('derivedBlankErrors — lifecycle integration', () => {
     expect(submitted).toBe(false)
     expect(onErrorCalled).toBe(true)
     const errors = onErrorPayload as Array<{ code: string }>
-    expect(errors.some((e) => e.code === CxErrorCode.NoValueSupplied)).toBe(true)
+    expect(errors.some((e) => e.code === AttaformErrorCode.NoValueSupplied)).toBe(true)
   })
 
   it('handleSubmit succeeds once every blank-required path is filled', async () => {

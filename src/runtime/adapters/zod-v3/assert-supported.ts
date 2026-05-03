@@ -45,7 +45,7 @@ export function assertSupportedKinds(
   const typeName = getTypeName(schema)
   if (typeName !== undefined && UNSUPPORTED_TYPE_NAMES.has(typeName)) {
     throw new UnsupportedSchemaError(
-      `[decant/zod-v3] unsupported kind '${typeName}' at '${labelPath(path)}'`
+      `[attaform/zod-v3] unsupported kind '${typeName}' at '${labelPath(path)}'`
     )
   }
 
@@ -130,7 +130,9 @@ export function assertSupportedKinds(
   if (isZodSchemaType(schema, 'ZodLazy')) {
     const getter = (schema._def as { getter?: () => z.ZodTypeAny }).getter
     if (getter !== undefined && lazyGetters.includes(getter)) {
-      throw new UnsupportedSchemaError(`[decant/zod-v3] Recursive z.lazy() at '${labelPath(path)}'`)
+      throw new UnsupportedSchemaError(
+        `[attaform/zod-v3] Recursive z.lazy() at '${labelPath(path)}'`
+      )
     }
     const inner = getter?.()
     if (inner !== undefined) {

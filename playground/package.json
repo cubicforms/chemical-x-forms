@@ -1,6 +1,6 @@
 {
   "private": true,
-  "name": "decant-playground",
+  "name": "attaform-playground",
   "type": "module",
   "scripts": {
     "dev": "nuxi dev",

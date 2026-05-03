@@ -48,8 +48,8 @@ have to cast inside the body. Spread `defaultCoercionRules` to
 extend rather than replace:
 
 ```ts
-import { defineCoercion, defaultCoercionRules } from 'decant'
-import type { CoercionRegistry } from 'decant'
+import { defineCoercion, defaultCoercionRules } from 'attaform'
+import type { CoercionRegistry } from 'attaform'
 
 const stringToBigint = defineCoercion({
   input: 'string',
@@ -93,7 +93,7 @@ cx never merges past the array boundary — passing a registry is a
 Set once via the plugin (matches the per-form shape):
 
 ```ts
-createDecant({
+createAttaform({
   defaults: { coerce: [...defaultCoercionRules, stringToBigint] },
 })
 ```

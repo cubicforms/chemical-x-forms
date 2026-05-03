@@ -9,6 +9,13 @@ import type { Path, Segment } from './paths'
  */
 export type SchemaForFill = {
   getDefaultAtPath(path: Path): unknown
+  /**
+   * Distinguish tuple (number — structural length) from unbounded
+   * array (null) at `path`. `undefined` signals "fall back to the
+   * legacy index-probe loop" for adapters that can't introspect.
+   * See `AbstractSchema.arrayShapeAtPath` for the full contract.
+   */
+  arrayShapeAtPath(path: Path): number | null | undefined
 }
 
 /**
@@ -187,6 +194,41 @@ function deleteAtPathOffset(root: unknown, path: Path, offset: number): unknown 
  * relative to defaults the function returns `consumer` by reference,
  * so common-case writes (consumer already complete) allocate nothing.
  */
+/**
+ * Resolve the array shape at `scratch`. Returns the tuple's
+ * structural length, `null` for unbounded arrays, or `undefined`
+ * if the adapter doesn't support `arrayShapeAtPath` (signalling
+ * the legacy probe loop).
+ *
+ * The fallback path matches the pre-5.2 semantic: probe at index
+ * `1_000_000` (tuple → `undefined`; array → element default), then
+ * probe sequentially up to the cap to discover the tuple length.
+ * Built-in zod adapters return a definitive shape so this never
+ * fires for them; the fallback exists for third-party adapters
+ * that haven't implemented the new method.
+ */
+function resolveArrayShape(schema: SchemaForFill, scratch: Segment[]): number | null | undefined {
+  const shape = schema.arrayShapeAtPath(scratch)
+  if (shape !== undefined) return shape
+  // Legacy probe: high-index lookup distinguishes tuple from array.
+  const TUPLE_PROBE_INDEX = 1_000_000
+  scratch.push(TUPLE_PROBE_INDEX)
+  const probe = schema.getDefaultAtPath(scratch)
+  scratch.pop()
+  if (probe !== undefined) return null // unbounded array
+  // Tuple-like: walk forward to find the structural length. Cap at
+  // 1024 to protect against pathological recursive lazies.
+  let n = 0
+  while (n < 1024) {
+    scratch.push(n)
+    const v = schema.getDefaultAtPath(scratch)
+    scratch.pop()
+    if (v === undefined) break
+    n++
+  }
+  return n
+}
+
 export function mergeStructural(
   schema: SchemaForFill,
   path: Path,
@@ -221,34 +263,33 @@ function mergeStructuralImpl(
   if (consumer === null) return null
 
   // Array branch: distinguish tuple-like (fixed length) from array
-  // (unbounded). Probe at a high index — tuples return `undefined`,
-  // arrays return the element default. For tuple-like, pad consumer
-  // up to the structural length; for arrays, length tracks consumer.
+  // (unbounded) via `arrayShapeAtPath`. Tuples pad consumer to the
+  // structural length; unbounded arrays follow the consumer's length
+  // and reuse one element default across positions.
   if (Array.isArray(consumer)) {
-    const TUPLE_PROBE_INDEX = 1_000_000
-    scratch.push(TUPLE_PROBE_INDEX)
-    const probe = schema.getDefaultAtPath(scratch)
-    scratch.pop()
-    let targetLen = consumer.length
-    if (probe === undefined) {
-      // Tuple-like: find structural length via sequential probe. Cap
-      // protects against pathological recursive lazies.
-      let n = consumer.length
-      while (n < 1024) {
-        scratch.push(n)
-        const v = schema.getDefaultAtPath(scratch)
-        scratch.pop()
-        if (v === undefined) break
-        n++
-      }
-      targetLen = n
-    }
+    const shape = resolveArrayShape(schema, scratch)
+    const isTuple = typeof shape === 'number'
+    const targetLen = isTuple ? shape : consumer.length
+    // Unbounded array: every position resolves to the same element
+    // default — query once and reuse. Tuples query per-position
+    // since each slot carries its own default.
+    let cachedElementDefault: unknown
+    let cachedElementDefaultRead = false
     let mutated = targetLen > consumer.length
     const out = consumer.slice() as unknown[]
     while (out.length < targetLen) out.push(undefined)
     for (let i = 0; i < targetLen; i++) {
       scratch.push(i)
-      const elemDefault = schema.getDefaultAtPath(scratch)
+      let elemDefault: unknown
+      if (isTuple) {
+        elemDefault = schema.getDefaultAtPath(scratch)
+      } else {
+        if (!cachedElementDefaultRead) {
+          cachedElementDefault = schema.getDefaultAtPath(scratch)
+          cachedElementDefaultRead = true
+        }
+        elemDefault = cachedElementDefault
+      }
       const consumerElem = i < consumer.length ? consumer[i] : undefined
       const merged = mergeStructuralImpl(schema, scratch, consumerElem, elemDefault)
       scratch.pop()
@@ -357,16 +398,27 @@ function setAtPathWithSchemaFillImpl(
     // of objects (each call yields a fresh object, identity differs)
     // AND for tuples of identical primitives (Object.is(0, 0) === true).
     if (arr.length < head) {
-      const TUPLE_PROBE_INDEX = 1_000_000
-      const probe = schema.getDefaultAtPath([...prefix, TUPLE_PROBE_INDEX])
-      const tupleLike = probe === undefined
+      const scratch: Segment[] = prefix.slice() as Segment[]
+      const shape = resolveArrayShape(schema, scratch)
+      const tupleLike = typeof shape === 'number'
       // For unbounded arrays, every position resolves to the same
       // element default — cache the lookup once. For tuples, query
       // per-position so each slot's default lands at its own index.
-      const cachedArrayDefault = tupleLike ? undefined : schema.getDefaultAtPath([...prefix, 0])
+      let cachedArrayDefault: unknown
+      if (!tupleLike) {
+        scratch.push(0)
+        cachedArrayDefault = schema.getDefaultAtPath(scratch)
+        scratch.pop()
+      }
       while (arr.length < head) {
         const idx = arr.length
-        arr.push(tupleLike ? schema.getDefaultAtPath([...prefix, idx]) : cachedArrayDefault)
+        if (tupleLike) {
+          scratch.push(idx)
+          arr.push(schema.getDefaultAtPath(scratch))
+          scratch.pop()
+        } else {
+          arr.push(cachedArrayDefault)
+        }
       }
     }
 

@@ -1,5 +1,19 @@
 # Releases
 
+## v0.14.0-rc.0 — 2026-05-03
+
+## What's Changed
+* feat!: 0.14 rewrite — drillable surfaces, DU variant memory, schema coercion, v3/v4 parity, audit + test quality by @ozzyfromspace in https://github.com/attaform/attaform/pull/160
+* refactor!: rebrand @chemical-x/forms → decant by @ozzyfromspace in https://github.com/attaform/attaform/pull/163
+* perf: hot-path optimizations (S/A tier perf review findings) by @ozzyfromspace in https://github.com/attaform/attaform/pull/164
+* perf: drop LRU bump in canonicalizePath; FIFO at this cap by @ozzyfromspace in https://github.com/attaform/attaform/pull/165
+* refactor!: rebrand decant → attaform by @ozzyfromspace in https://github.com/attaform/attaform/pull/166
+
+
+**Full Changelog**: https://github.com/attaform/attaform/compare/v0.13.0...v0.14.0-rc.0
+
+---
+
 ## v0.13.0 — 2026-04-30
 
 ## What's Changed

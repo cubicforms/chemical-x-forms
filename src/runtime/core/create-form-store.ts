@@ -12,7 +12,13 @@ import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
 import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS } from './defaults'
 import { diffAndApply } from './diff-apply'
 import { CxErrorCode } from './error-codes'
-import { canonicalizePath, type Path, type PathKey, type Segment } from './paths'
+import {
+  canonicalizePath,
+  segmentsForPathKey,
+  type Path,
+  type PathKey,
+  type Segment,
+} from './paths'
 import {
   getAtPath,
   isPlainRecord,
@@ -560,12 +566,8 @@ export type CreateFormStoreOptions<F extends GenericForm, G extends GenericForm 
  * variant's effective shape.
  */
 function isPathKeyUnder(existingKey: PathKey, parentPath: Path): boolean {
-  let parsed: Segment[]
-  try {
-    parsed = JSON.parse(existingKey) as Segment[]
-  } catch {
-    return false
-  }
+  const parsed = segmentsForPathKey(existingKey)
+  if (parsed === null) return false
   if (parsed.length <= parentPath.length) return false
   for (let i = 0; i < parentPath.length; i++) {
     if (parsed[i] !== parentPath[i]) return false
@@ -755,7 +757,8 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     const result = new Map<PathKey, ValidationError[]>()
     if (blankPaths.size === 0) return result
     for (const pathKey of blankPaths) {
-      const segments = JSON.parse(pathKey) as Segment[]
+      const segments = segmentsForPathKey(pathKey)
+      if (segments === null) continue
       if (!schema.isRequiredAtPath(segments)) continue
       result.set(pathKey, [
         {
@@ -1719,12 +1722,8 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // is intentionally preserved — the snapshot self-corrects on the
     // next switch-out.
     for (const memKey of [...variantMemory.keys()]) {
-      let memSegments: Segment[]
-      try {
-        memSegments = JSON.parse(memKey) as Segment[]
-      } catch {
-        continue
-      }
+      const memSegments = segmentsForPathKey(memKey)
+      if (memSegments === null) continue
       if (isPathPrefix(targetSegments, memSegments)) {
         variantMemory.delete(memKey)
       }

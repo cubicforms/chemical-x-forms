@@ -75,7 +75,7 @@ transforms and read the first arg.
 
 ## Failure mode
 
-Transforms must be **sync**. attaform wraps each call in try/catch; on
+Transforms must be **sync**. Attaform wraps each call in try/catch; on
 throw OR Promise return:
 
 - The pipeline aborts (subsequent transforms don't run).

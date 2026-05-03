@@ -360,7 +360,7 @@ A consumer who declared transforms intended "always normalize"; a
 silent bypass when an override is attached would be the surprise.
 If you want the raw extracted value, don't register transforms.
 
-**Failure mode.** Transforms must be sync. attaform wraps each transform
+**Failure mode.** Transforms must be sync. Attaform wraps each transform
 call in try/catch; on throw OR Promise return:
 
 - The pipeline aborts (subsequent transforms don't run).

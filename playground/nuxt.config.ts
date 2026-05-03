@@ -4,16 +4,16 @@ export default defineNuxtConfig({
   modules: ['../src/nuxt'],
   devtools: { enabled: true },
   alias: {
-    '@chemical-x/forms/types': '../src/runtime/types/types-api.ts',
+    'attaform/types': '../src/runtime/types/types-api.ts',
     // Playground imports the zod-typed useForm directly so the form
     // composable picks up the zod-v4 schema types rather than the Nuxt
     // auto-imported abstract useForm.
-    '@chemical-x/forms/zod': '../src/zod.ts',
+    'attaform/zod': '../src/zod.ts',
     // Bare-path import for the schema-agnostic surface (parseApiErrors,
     // useFormContext, etc). Without this, vite-node fails to resolve
-    // `@chemical-x/forms` and the SSR worker crashes with
+    // `attaform` and the SSR worker crashes with
     // "IPC connection closed".
-    '@chemical-x/forms': '../src/index.ts',
+    attaform: '../src/index.ts',
   },
   compatibilityDate: '2025-01-28',
 }) as DefineNuxtConfig

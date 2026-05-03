@@ -30,13 +30,13 @@ import {
  * Fix: hoist the marks one level up. We walk the entire template AST,
  * collect every static `v-register` binding (skipping descendants of
  * `v-for`, since those reference loop locals not available at root
- * scope), and prepend a synthetic `:data-cx-pre-mark` directive on the
+ * scope), and prepend a synthetic `:data-atta-pre-mark` directive on the
  * first root element. Vue evaluates element prop bindings before
- * recursing into children, so the IIFE inside `:data-cx-pre-mark` fires
+ * recursing into children, so the IIFE inside `:data-atta-pre-mark` fires
  * every collected mark BEFORE any descendant template expression runs.
  *
  * The binding's expression resolves to `undefined`, which Vue's SSR
- * renderer drops (no `data-cx-pre-mark` attribute appears in the
+ * renderer drops (no `data-atta-pre-mark` attribute appears in the
  * rendered HTML). The side effect — flipping `isConnected: true` on
  * each field record — is the only output we want.
  *
@@ -84,7 +84,7 @@ type TraversalState = {
 }
 const stateByRoot: WeakMap<RootNode, TraversalState> = new WeakMap()
 
-const PREAMBLE_ATTR = 'data-cx-pre-mark'
+const PREAMBLE_ATTR = 'data-atta-pre-mark'
 
 /**
  * Vue compiler node transform that hoists `v-register`'s SSR
@@ -94,7 +94,7 @@ const PREAMBLE_ATTR = 'data-cx-pre-mark'
  * correct value during the server's single-pass render.
  *
  * Must run before `vRegisterHintTransform`. Wired automatically
- * by `@chemical-x/forms/vite` and `@chemical-x/forms/nuxt`.
+ * by `attaform/vite` and `attaform/nuxt`.
  */
 export const vRegisterPreambleTransform: NodeTransform = (node, context) => {
   try {
@@ -159,7 +159,7 @@ export const vRegisterPreambleTransform: NodeTransform = (node, context) => {
     // entirely. The per-element vRegisterHintTransform still covers
     // the common case (read at-or-after the input). Failure here only
     // affects the read-before-input edge.
-    console.error('[@chemical-x/forms] v-register preamble transform failed, skipping:', err)
+    console.error('[attaform] v-register preamble transform failed, skipping:', err)
     return
   }
 }
@@ -230,7 +230,7 @@ function flattenExpression(exp: ExpressionNode): string {
 }
 
 /**
- * Build and prepend the `:data-cx-pre-mark` directive to the element's
+ * Build and prepend the `:data-atta-pre-mark` directive to the element's
  * props. The expression is a comma-chain of
  * `(<expr>)?.markConnectedOptimistically?.()` calls, ending in
  * `undefined` so the attribute resolves to `undefined` and Vue's SSR

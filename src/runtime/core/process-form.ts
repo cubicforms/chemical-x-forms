@@ -13,9 +13,9 @@ import type {
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { __DEV__ } from './dev'
-import { CxErrorCode } from './error-codes'
+import { AttaformErrorCode } from './error-codes'
 import { SubmitErrorHandlerError } from './errors'
-import { canonicalizePath, type Path, type Segment } from './paths'
+import { canonicalizePath, segmentsForPathKey, type Path } from './paths'
 
 /**
  * Tracks FormStores for which we've already emitted the
@@ -101,7 +101,7 @@ export function buildProcessForm<F extends GenericForm>(
               message: adapterThrowMessage(err),
               path: [],
               formKey: state.formKey,
-              code: CxErrorCode.AdapterThrew,
+              code: AttaformErrorCode.AdapterThrew,
             },
           ],
           success: false,
@@ -139,7 +139,7 @@ export function buildProcessForm<F extends GenericForm>(
     ) {
       warnedNoScopeStores.add(state as FormStore<GenericForm>)
       console.warn(
-        '[@chemical-x/forms] validate() called outside a Vue effect scope; ' +
+        '[attaform] validate() called outside a Vue effect scope; ' +
           'its reactive watcher will leak until the form is garbage-collected. ' +
           'Fix: call validate() inside setup() / a child component, ' +
           'or wrap the call in `effectScope().run(...)`.'
@@ -396,12 +396,13 @@ function collectScopedBlankErrors<F extends GenericForm>(
   const errors: ValidationError[] = []
   for (const [pathKey, entries] of derived) {
     if (scope !== undefined) {
-      // PathKey is `JSON.stringify(segments)` per `canonicalizePath`, so
-      // recovering the structured segments is `JSON.parse(...)`. Don't
-      // round-trip through `canonicalizePath(pathKey)` — that would treat
-      // the JSON-encoded string as a NEW dotted path and produce a single
-      // segment containing the literal JSON.
-      const segments = JSON.parse(pathKey) as Segment[]
+      // Cache hit on canonical PathKeys; cold (corrupt) keys return
+      // null and we skip. Don't round-trip through
+      // `canonicalizePath(pathKey)` — that would treat the JSON-encoded
+      // string as a NEW dotted path and produce a single segment
+      // containing the literal JSON.
+      const segments = segmentsForPathKey(pathKey)
+      if (segments === null) continue
       if (!pathStartsWith(segments, scope)) continue
     }
     errors.push(...entries)

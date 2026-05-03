@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
  * End-to-end coverage for explicit `.default(customValue)` flowing
@@ -44,7 +44,7 @@ function harness<S extends z.ZodObject>(
     },
   })
   const app = createApp(Probe)
-  app.use(createChemicalXForms())
+  app.use(createAttaform())
   app.mount(document.createElement('div'))
   return { app, form: captured }
 }

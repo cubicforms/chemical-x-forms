@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, nextTick, withDirectives, type App } fro
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
  * `<select v-register>` against a `z.enum(...)` schema with an
@@ -15,7 +15,7 @@ import { createChemicalXForms } from '../../src/runtime/core/plugin'
  * `string`, so any string write is accepted — enum-membership is a
  * refinement-level concern, surfaced by field-level validation.
  *
- * The bug from cubic-forms spike-15d is therefore a
+ * The bug from attaform spike-15d is therefore a
  * refinement-validation visibility issue, NOT a write-acceptance
  * issue. The form correctly stores `'magenta'`; what's missing
  * (covered elsewhere) is the field error surfacing immediately.
@@ -71,7 +71,7 @@ describe('<select v-register> with out-of-enum option', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -109,7 +109,7 @@ describe('<select v-register> with out-of-enum option', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -151,7 +151,7 @@ describe('<select v-register> with out-of-enum option', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

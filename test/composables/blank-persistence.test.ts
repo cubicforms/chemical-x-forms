@@ -4,11 +4,11 @@ import { createApp, defineComponent, h, nextTick, withDirectives, type App } fro
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
-import { CxErrorCode } from '../../src/runtime/core/error-codes'
+import { AttaformErrorCode } from '../../src/runtime/core/error-codes'
 import { canonicalizePath } from '../../src/runtime/core/paths'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
 import { hashStableString } from '../../src/runtime/core/hash'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
  * Round-trip coverage for blank across `localStorage`
@@ -106,7 +106,7 @@ describe('persistence — v=2 envelope rejection emits a one-time dev-warn', () 
           ])
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createAttaform())
     apps.push(app)
     app.mount(document.createElement('div'))
 
@@ -164,7 +164,7 @@ describe('persistence — blank round-trips across mount', () => {
           )
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createAttaform())
     apps.push(app)
     app.mount(document.createElement('div'))
 
@@ -182,7 +182,7 @@ describe('persistence — blank round-trips across mount', () => {
     await handler()
     expect(onSubmit).not.toHaveBeenCalled()
     const errs = onError.mock.calls[0]?.[0] as Array<{ code: string }>
-    expect(errs?.some((e) => e.code === CxErrorCode.NoValueSupplied)).toBe(true)
+    expect(errs?.some((e) => e.code === AttaformErrorCode.NoValueSupplied)).toBe(true)
   })
 
   it('writes the blankPaths field after a numeric clear', async () => {
@@ -205,7 +205,7 @@ describe('persistence — blank round-trips across mount', () => {
           )
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createAttaform())
     apps.push(app)
     app.mount(root)
 
@@ -262,7 +262,7 @@ describe('persistence — blank round-trips across mount', () => {
           )
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createAttaform())
     apps.push(app)
     app.mount(document.createElement('div'))
 

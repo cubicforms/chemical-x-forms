@@ -1,8 +1,8 @@
 /**
  * Deterministic non-cryptographic string hash. Used to compact long
  * structural-fingerprint strings into bounded-size storage-key tokens
- * (`chemical-x-forms:formKey:<hash>` instead of
- * `chemical-x-forms:formKey:object{"a":string,"b":number,...}`).
+ * (`attaform:formKey:<hash>` instead of
+ * `attaform:formKey:object{"a":string,"b":number,...}`).
  *
  * Output: 11-char base36 string with leading zeros padded —
  * stable size regardless of input. ~53 bits of entropy (base of the

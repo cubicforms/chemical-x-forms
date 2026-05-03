@@ -1,14 +1,14 @@
 # Async validation
 
 Use `z.refine(async …)` anywhere in your schema — uniqueness checks,
-allow-lists, server availability. Chemical X awaits the result before
+allow-lists, server availability. Attaform awaits the result before
 dispatching your submit handler.
 
 ## Async refinements
 
 ```ts
 import { z } from 'zod'
-import { useForm } from '@chemical-x/forms/zod'
+import { useForm } from 'attaform/zod'
 
 const signupSchema = z.object({
   email: z.email().refine(async (value) => {
@@ -90,7 +90,7 @@ POST — parse them via `parseApiErrors` and write them with
 shape.
 
 ```ts
-import { parseApiErrors } from '@chemical-x/forms'
+import { parseApiErrors } from 'attaform'
 
 const onSubmit = handleSubmit(async (values) => {
   try {

@@ -12,7 +12,7 @@ import {
  * IIFE that calls `markConnectedOptimistically()` on the resulting
  * `RegisterValue` and returns the same object:
  *
- *   ((__cxRv) => (__cxRv?.markConnectedOptimistically?.(), __cxRv))(<expr>)
+ *   ((__attaRv) => (__attaRv?.markConnectedOptimistically?.(), __attaRv))(<expr>)
  *
  * Why this exists: Vue intentionally skips directive lifecycle hooks
  * during SSR (see `core/directive.ts`'s top comment). That means the
@@ -46,7 +46,7 @@ import {
  * and skips re-wrapping.
  */
 
-const HINT_MARKER = '__cxRv'
+const HINT_MARKER = '__attaRv'
 const HINT_PREFIX = `((${HINT_MARKER}) => (${HINT_MARKER}?.markConnectedOptimistically?.(), ${HINT_MARKER}))(`
 const HINT_SUFFIX = `)`
 
@@ -57,7 +57,7 @@ const HINT_SUFFIX = `)`
  * `getFieldState(path).isConnected` after hydration.
  *
  * Must run after `vRegisterPreambleTransform`. Wired automatically
- * by `@chemical-x/forms/vite` and `@chemical-x/forms/nuxt`.
+ * by `attaform/vite` and `attaform/nuxt`.
  */
 export const vRegisterHintTransform: NodeTransform = (node) => {
   try {
@@ -74,7 +74,7 @@ export const vRegisterHintTransform: NodeTransform = (node) => {
     // directive: skip this transform entirely. The runtime mark is
     // fail-safe — without the wrapper, we just get the existing
     // false→true flicker on first paint, never an incorrect render.
-    console.error('[@chemical-x/forms] v-register hint transform failed, skipping:', err)
+    console.error('[attaform] v-register hint transform failed, skipping:', err)
   }
 }
 

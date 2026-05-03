@@ -1,13 +1,13 @@
 /**
- * `@chemical-x/forms` — framework-agnostic core entry.
+ * `attaform` — framework-agnostic core entry.
  *
  * Consumers under bare Vue 3:
  *
  *   import { createApp } from 'vue'
- *   import { createChemicalXForms, useForm } from '@chemical-x/forms'
- *   import { chemicalXForms as chemicalXVite } from '@chemical-x/forms/vite'
+ *   import { createAttaform, useForm } from 'attaform'
+ *   import { attaform as attaformVite } from 'attaform/vite'
  *
- *   createApp(App).use(createChemicalXForms()).mount('#app')
+ *   createApp(App).use(createAttaform()).mount('#app')
  *
  * Consumers under Nuxt don't touch this file — the Nuxt module (`./nuxt`
  * subpath) installs everything automatically.
@@ -15,21 +15,21 @@
  * For schema-library integrations (Zod v3 today; Valibot / ArkType /
  * custom later), import from the matching subpath:
  *
- *   import { useForm, zodAdapter } from '@chemical-x/forms/zod-v3'
+ *   import { useForm, zodAdapter } from 'attaform/zod-v3'
  */
 
 // The plugin, registry, serialization helpers
-export { createChemicalXForms } from './runtime/core/plugin'
-export type { ChemicalXFormsPluginOptions } from './runtime/core/plugin'
+export { createAttaform } from './runtime/core/plugin'
+export type { AttaformPluginOptions } from './runtime/core/plugin'
 export {
   createRegistry,
   getRegistryFromApp,
-  kChemicalXRegistry,
+  kAttaformRegistry,
   useRegistry,
 } from './runtime/core/registry'
-export type { ChemicalXRegistry, SerializedFormData } from './runtime/core/registry'
-export { hydrateChemicalXState, renderChemicalXState } from './runtime/core/serialize'
-export type { SerializedChemicalXState } from './runtime/core/serialize'
+export type { AttaformRegistry, SerializedFormData } from './runtime/core/registry'
+export { hydrateAttaformState, renderAttaformState } from './runtime/core/serialize'
+export type { SerializedAttaformState } from './runtime/core/serialize'
 export { escapeForInlineScript } from './runtime/core/serialize-script'
 
 // The abstract useForm — works against any AbstractSchema implementation.
@@ -50,7 +50,7 @@ export { injectForm } from './runtime/composables/use-form-context'
 // `injectForm`.
 export { useRegister } from './runtime/composables/use-register'
 
-// The v-register directive (registered automatically by createChemicalXForms,
+// The v-register directive (registered automatically by createAttaform,
 // but exported for advanced consumers who install directives themselves).
 export { vRegister, isRegisterValue, assignKey } from './runtime/core/directive'
 export { defaultCoercionRules, defineCoercion } from './runtime/core/schema-coerce'
@@ -63,10 +63,10 @@ export type { Unset } from './runtime/core/unset'
 
 // Stable error-code identifiers for library-emitted ValidationErrors.
 // Use in tests and error-routing UI in place of brittle message-string
-// matching. `cx:` prefix denotes the framework-agnostic core; the Zod
+// matching. `atta:` prefix denotes the framework-agnostic core; the Zod
 // adapter emits `zod:` codes (computed from `issue.code`) and consumer
 // codes use whatever prefix the consumer picks (`api:`, `auth:`, etc.).
-export { CxErrorCode } from './runtime/core/error-codes'
+export { AttaformErrorCode } from './runtime/core/error-codes'
 
 // Public types
 export type {
@@ -74,7 +74,7 @@ export type {
   ApiErrorDetails,
   ApiErrorEntry,
   ApiErrorEnvelope,
-  ChemicalXFormsDefaults,
+  AttaformDefaults,
   CoercionEntry,
   CoercionRegistry,
   CoercionResult,
@@ -139,13 +139,13 @@ export type {
 export { canonicalizePath, parseDottedPath, ROOT_PATH, ROOT_PATH_KEY } from './runtime/core/paths'
 export type { Path, PathKey, Segment } from './runtime/core/paths'
 
-// Error classes — every library-emitted error extends `CxError`, so
+// Error classes — every library-emitted error extends `AttaformError`, so
 // consumers can write a single polymorphic catch (`catch (e) { if (e
-// instanceof CxError) ... }`) instead of OR-chaining instanceof
+// instanceof AttaformError) ... }`) instead of OR-chaining instanceof
 // checks for each subclass.
 export {
   AnonPersistError,
-  CxError,
+  AttaformError,
   InvalidPathError,
   OutsideSetupError,
   RegistryNotInstalledError,

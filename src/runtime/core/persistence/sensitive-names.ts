@@ -81,7 +81,15 @@ export const SENSITIVE_NAME_PATTERNS: readonly RegExp[] = [
   /backup[_\s-]?code/i,
 ] as const
 
-function segmentMatchesSensitive(segment: Segment): boolean {
+/**
+ * True iff `segment` itself matches a sensitive-name pattern. Numeric
+ * segments are never sensitive (array indices carry no semantic
+ * weight). Used by `isSensitivePath` AND by the devtools redact
+ * walk, which short-circuits whole subtrees the moment any ancestor
+ * segment matches — saving an O(leaves × ancestors) regex sweep
+ * per timeline event.
+ */
+export function segmentMatchesSensitive(segment: Segment): boolean {
   if (typeof segment !== 'string') return false
   for (const pattern of SENSITIVE_NAME_PATTERNS) {
     if (pattern.test(segment)) return true

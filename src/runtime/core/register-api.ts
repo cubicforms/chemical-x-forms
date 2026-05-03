@@ -39,13 +39,13 @@ const EMPTY_TRANSFORMS: ReadonlyArray<RegisterTransform> = Object.freeze([])
 
 const INTERACTIVE_TAG_NAMES = new Set(['INPUT', 'SELECT', 'TEXTAREA'])
 
-// `Symbol.for(...)` so duplicate copies of chemical-x agree on the
+// `Symbol.for(...)` so duplicate copies of attaform agree on the
 // element-property key for stashed focus/blur handlers — see
 // `assignKey` in core/directive.ts for the same reasoning.
-const cxListenersSymbol: unique symbol = Symbol.for('chemical-x-forms:focus-listeners')
+const attaformListenersSymbol: unique symbol = Symbol.for('attaform:focus-listeners')
 
 type ElementWithListeners = HTMLElement & {
-  [cxListenersSymbol]?: {
+  [attaformListenersSymbol]?: {
     handleFocus: (event: FocusEvent) => void
     handleBlur: (event: FocusEvent) => void
   }
@@ -57,21 +57,21 @@ function attachFocusListeners<F extends GenericForm>(
   element: HTMLElement
 ): void {
   const target = element as ElementWithListeners
-  if (target[cxListenersSymbol] !== undefined) return
+  if (target[attaformListenersSymbol] !== undefined) return
   const handleFocus = (): void => state.markFocused(segments, true)
   const handleBlur = (): void => state.markFocused(segments, false)
   element.addEventListener('focus', handleFocus)
   element.addEventListener('blur', handleBlur)
-  target[cxListenersSymbol] = { handleFocus, handleBlur }
+  target[attaformListenersSymbol] = { handleFocus, handleBlur }
 }
 
 function detachFocusListeners(element: HTMLElement): void {
   const target = element as ElementWithListeners
-  const listeners = target[cxListenersSymbol]
+  const listeners = target[attaformListenersSymbol]
   if (listeners === undefined) return
   element.removeEventListener('focus', listeners.handleFocus)
   element.removeEventListener('blur', listeners.handleBlur)
-  delete target[cxListenersSymbol]
+  delete target[attaformListenersSymbol]
 }
 
 export function buildRegister<F extends GenericForm>(state: FormStore<F>, formInstanceId: string) {

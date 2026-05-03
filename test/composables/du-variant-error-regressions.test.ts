@@ -3,11 +3,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { unset, useForm } from '../../src/zod'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
 
 /**
- * Regression coverage for failure modes observed in spike-cx.vue
+ * Regression coverage for failure modes observed in spike.vue
  * (`profileSchema`) when the user toggles the discriminated-union
  * channel back and forth (email → sms → email):
  *
@@ -88,7 +88,7 @@ function mount(
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createChemicalXForms({ override: true }))
+  const app = createApp(App).use(createAttaform({ override: true }))
   app.config.warnHandler = (msg: string) => {
     warnings.push(msg)
   }
@@ -221,7 +221,7 @@ describe('DU variant switch — error materialisation regressions', () => {
     const initial = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
       'notify.address'
     )
-    expect(initial?.some((e) => e.code === 'cx:no-value-supplied')).toBe(true)
+    expect(initial?.some((e) => e.code === 'atta:no-value-supplied')).toBe(true)
 
     // Switch to sms — address is no longer in the active variant.
     api.setValue('notify.channel', 'sms')
@@ -236,7 +236,7 @@ describe('DU variant switch — error materialisation regressions', () => {
     const restored = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
       'notify.address'
     )
-    expect(restored?.some((e) => e.code === 'cx:no-value-supplied')).toBe(true)
+    expect(restored?.some((e) => e.code === 'atta:no-value-supplied')).toBe(true)
 
     // Materialised tree: same expectation through JSON.stringify so a
     // template like `{{ JSON.stringify(form.errors) }}` shows the
@@ -244,6 +244,6 @@ describe('DU variant switch — error materialisation regressions', () => {
     const tree = JSON.parse(JSON.stringify(api.errors)) as {
       notify?: { address?: Array<{ code: string }> }
     }
-    expect(tree.notify?.address?.some((e) => e.code === 'cx:no-value-supplied')).toBe(true)
+    expect(tree.notify?.address?.some((e) => e.code === 'atta:no-value-supplied')).toBe(true)
   })
 })

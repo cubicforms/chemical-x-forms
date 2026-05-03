@@ -4,10 +4,10 @@ import { createApp, defineComponent, h } from 'vue'
 import { useForm } from '../../src'
 import { injectForm } from '../../src/runtime/composables/use-form-context'
 import { ANONYMOUS_FORM_KEY_PREFIX } from '../../src/runtime/core/defaults'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import { fakeSchema } from '../utils/fake-schema'
 
-const NULL_WARN_MARKER = '[@chemical-x/forms] injectForm'
+const NULL_WARN_MARKER = '[attaform] injectForm'
 
 type Form = {
   email: string
@@ -45,7 +45,7 @@ describe('injectForm — ambient provide/inject', () => {
       },
     })
 
-    const app = createApp(Parent).use(createChemicalXForms({ override: true }))
+    const app = createApp(Parent).use(createAttaform({ override: true }))
     const root = document.createElement('div')
     app.mount(root)
 
@@ -72,14 +72,14 @@ describe('injectForm — ambient provide/inject', () => {
     })
     const Parent = defineComponent({
       setup() {
-        // Anonymous form. The runtime allocates a `__cx:anon:<id>` key
+        // Anonymous form. The runtime allocates a `__atta:anon:<id>` key
         // via Vue's `useId()`; both handles must surface the SAME id.
         shared.parent = useForm<Form>({ schema: fakeSchema(defaults) }).key
         return () => h(Child)
       },
     })
 
-    const app = createApp(Parent).use(createChemicalXForms({ override: true }))
+    const app = createApp(Parent).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     expect(shared.parent).toBeDefined()
     expect(shared.parent?.startsWith(ANONYMOUS_FORM_KEY_PREFIX)).toBe(true)
@@ -114,7 +114,7 @@ describe('injectForm — ambient provide/inject', () => {
       // warnMiss in use-form-context.ts). JSDOM has `window`, so the
       // default detectSSR resolves to false and the warn fires as
       // intended for client-side coverage.
-      const app = createApp(Child).use(createChemicalXForms())
+      const app = createApp(Child).use(createAttaform())
       app.mount(document.createElement('div'))
       expect(captured).toBeNull()
       const calls = matchingWarnCalls()
@@ -141,7 +141,7 @@ describe('injectForm — ambient provide/inject', () => {
           return () => h(Child)
         },
       })
-      const app = createApp(Parent).use(createChemicalXForms())
+      const app = createApp(Parent).use(createAttaform())
       app.mount(document.createElement('div'))
       expect(captured).toBeNull()
       const calls = matchingWarnCalls()
@@ -158,7 +158,7 @@ describe('injectForm — ambient provide/inject', () => {
           return () => h('div')
         },
       })
-      const app = createApp(Orphan).use(createChemicalXForms())
+      const app = createApp(Orphan).use(createAttaform())
       app.mount(document.createElement('div'))
       expect(captured).toBeNull()
       const calls = matchingWarnCalls()
@@ -172,10 +172,10 @@ describe('injectForm — ambient provide/inject', () => {
     // The warn embeds a `(<path>:<line>)` user call-site frame via
     // `captureUserCallSite()`. We don't unit-test that here: the
     // capture's regex deliberately skips any frame matching
-    // `/chemical-x[/-]forms?/i`, which includes this very test file
+    // `/attaform[/-]forms?/i`, which includes this very test file
     // — there's no "user frame" outside the lib workspace to attach.
-    // End-to-end verification lives in the cubic-forms spike, where
-    // the warn renders as e.g. `(.../SpikeCxChild.vue:19)`.
+    // End-to-end verification lives in the attaform spike, where
+    // the warn renders as e.g. `(.../SpikeChild.vue:19)`.
   })
 
   it('mixed keyed + anonymous: ambient resolves to the (only) anonymous form', () => {
@@ -197,7 +197,7 @@ describe('injectForm — ambient provide/inject', () => {
         return () => h(Child)
       },
     })
-    const app = createApp(Parent).use(createChemicalXForms({ override: true }))
+    const app = createApp(Parent).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
     expect(shared.childKey).toBeDefined()
     expect(shared.childKey?.startsWith(ANONYMOUS_FORM_KEY_PREFIX)).toBe(true)
@@ -238,7 +238,7 @@ describe('injectForm — ambient provide/inject', () => {
       },
     })
 
-    const app = createApp(Grandparent).use(createChemicalXForms({ override: true }))
+    const app = createApp(Grandparent).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
 
     // Grandchild resolves to the PARENT (closer), not the grandparent.
@@ -294,7 +294,7 @@ describe('injectForm — ambient provide/inject', () => {
       },
     })
 
-    const app = createApp(Grandparent).use(createChemicalXForms({ override: true }))
+    const app = createApp(Grandparent).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
 
     expect(shared.grandparent).toBeDefined()
@@ -351,7 +351,7 @@ describe('injectForm — ambient provide/inject', () => {
       setup: () => () => h('div', [h(LeftBranch), h(RightBranch)]),
     })
 
-    const app = createApp(Root).use(createChemicalXForms({ override: true }))
+    const app = createApp(Root).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
 
     expect(shared.leftParent?.key).not.toBe(shared.rightParent?.key)
@@ -393,7 +393,7 @@ describe('injectForm — explicit key resolution', () => {
       },
     })
 
-    const app = createApp(Root).use(createChemicalXForms({ override: true }))
+    const app = createApp(Root).use(createAttaform({ override: true }))
     app.mount(document.createElement('div'))
 
     expect(shared.sibling).toBeDefined()
@@ -415,7 +415,7 @@ describe('injectForm — explicit key resolution', () => {
         return () => h('div')
       },
     })
-    const app = createApp(Orphan).use(createChemicalXForms())
+    const app = createApp(Orphan).use(createAttaform())
     app.mount(document.createElement('div'))
     expect(captured).toBeNull()
     const matching = warnSpy.mock.calls.filter((args: readonly unknown[]) =>
@@ -452,16 +452,16 @@ describe('injectForm — consumer ref-counting', () => {
       },
     })
 
-    const app = createApp(Parent).use(createChemicalXForms({ override: true }))
+    const app = createApp(Parent).use(createAttaform({ override: true }))
     const root = document.createElement('div')
     app.mount(root)
 
     // While mounted: the form is in the registry.
-    const registryApp = app as unknown as { _chemicalX: { forms: Map<string, unknown> } }
-    expect(registryApp._chemicalX.forms.has('lifetime-form')).toBe(true)
+    const registryApp = app as unknown as { _attaform: { forms: Map<string, unknown> } }
+    expect(registryApp._attaform.forms.has('lifetime-form')).toBe(true)
 
     app.unmount()
     // After unmount: eviction has run.
-    expect(registryApp._chemicalX.forms.has('lifetime-form')).toBe(false)
+    expect(registryApp._attaform.forms.has('lifetime-form')).toBe(false)
   })
 })

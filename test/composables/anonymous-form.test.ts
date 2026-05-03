@@ -5,18 +5,18 @@ import { renderToString } from '@vue/server-renderer'
 import { useForm, injectForm } from '../../src'
 import { ANONYMOUS_FORM_KEY_PREFIX, RESERVED_KEY_PREFIX } from '../../src/runtime/core/defaults'
 import { ReservedFormKeyError } from '../../src/runtime/core/errors'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 import { fakeSchema } from '../utils/fake-schema'
 
 /**
  * Semantic coverage for anonymous (key-less) forms.
  *
  * The post-0.8.3 contract treats `key` as optional and allocates a
- * synthetic `__cx:anon:<id>` id via Vue's `useId()` when absent. That
+ * synthetic `__atta:anon:<id>` id via Vue's `useId()` when absent. That
  * shifts two behaviours relative to the old "key required" contract:
  *
  *   1. Two sibling `useForm({ schema })` calls no longer share
- *      state. Each call resolves to its own `__cx:anon:` id and
+ *      state. Each call resolves to its own `__atta:anon:` id and
  *      therefore its own FormStore.
  *   2. Descendant-only access still works via ambient
  *      `injectForm<F>()`, which resolves through `provide`/
@@ -52,7 +52,7 @@ describe('anonymous useForm — independent state per setup call', () => {
       },
     })
 
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -89,7 +89,7 @@ describe('anonymous useForm — ambient injectForm access', () => {
       },
     })
 
-    const app = createApp(Parent).use(createChemicalXForms())
+    const app = createApp(Parent).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -135,7 +135,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -159,7 +159,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
         return () => h('div', [h(Child)])
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -172,8 +172,8 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     app.unmount()
   })
 
-  it('lists source frames rather than synthetic cx:anon keys', () => {
-    // The synthetic `__cx:anon:<id>` keys carry no signal for authors —
+  it('lists source frames rather than synthetic atta:anon keys', () => {
+    // The synthetic `__atta:anon:<id>` keys carry no signal for authors —
     // they never typed them. The warning should show call sites (click-
     // through in DevTools) and stay silent about the anon-key space.
     const Child = defineComponent({
@@ -190,7 +190,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
         return () => h('div', [h(Child)])
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -232,7 +232,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
         return () => h('div', [h(Child)])
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -268,7 +268,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
         return () => h('div', [h(Child)])
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -293,7 +293,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
         return () => h('div', [h(Child)])
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -321,7 +321,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
         return () => h('div', [h(ChildA), h(ChildB)])
       },
     })
-    const app = createApp(App).use(createChemicalXForms())
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -351,12 +351,12 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     })
 
     const serverApp = createSSRApp(App)
-    serverApp.use(createChemicalXForms({ override: true }))
+    serverApp.use(createAttaform({ override: true }))
     await renderToString(serverApp)
 
     expect(warnSpy).not.toHaveBeenCalled()
 
-    const clientApp = createApp(App).use(createChemicalXForms())
+    const clientApp = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     clientApp.mount(root)
@@ -384,7 +384,7 @@ describe('anonymous useForm — SSR determinism', () => {
 
     // Server-side render — useId() draws from Vue's SSR id allocator.
     const serverApp = createSSRApp(App((api) => (serverApi = api)))
-    serverApp.use(createChemicalXForms({ override: true }))
+    serverApp.use(createAttaform({ override: true }))
     await renderToString(serverApp)
 
     // Client-side mount of the same tree shape — useId() must match
@@ -392,7 +392,7 @@ describe('anonymous useForm — SSR determinism', () => {
     // entry. We simulate the client by creating a fresh app (new
     // registry, fresh id allocator) and confirming the same position
     // resolves to the same id.
-    const clientApp = createApp(App((api) => (clientApi = api))).use(createChemicalXForms())
+    const clientApp = createApp(App((api) => (clientApi = api))).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     clientApp.mount(root)
@@ -406,10 +406,10 @@ describe('anonymous useForm — SSR determinism', () => {
 
 /**
  * Reserved-namespace reject: any consumer-supplied key starting with
- * `__cx:` (the library's reserved internal-key namespace) throws
+ * `__atta:` (the library's reserved internal-key namespace) throws
  * `ReservedFormKeyError` at construction time. This makes it
  * impossible by construction for a consumer key to collide with the
- * synthetic anonymous-form keys allocated under `__cx:anon:`.
+ * synthetic anonymous-form keys allocated under `__atta:anon:`.
  */
 describe('reserved key namespace', () => {
   function mountWithKey(key: string): void {
@@ -419,7 +419,7 @@ describe('reserved key namespace', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createChemicalXForms({ override: true }))
+    const app = createApp(App).use(createAttaform({ override: true }))
     // The throw IS the test's signal — vitest captures it via
     // `.toThrow(...)`. Vue still emits a `[Vue warn]: Unhandled error
     // during execution of setup function` to stderr before re-throwing,
@@ -440,8 +440,8 @@ describe('reserved key namespace', () => {
     expect(() => mountWithKey(`${ANONYMOUS_FORM_KEY_PREFIX}my-form`)).toThrow(ReservedFormKeyError)
   })
 
-  it('throws on any consumer key in the broader __cx: namespace, not just __cx:anon:', () => {
-    // Reserves the full __cx: prefix so future internal-key uses
+  it('throws on any consumer key in the broader __atta: namespace, not just __atta:anon:', () => {
+    // Reserves the full __atta: prefix so future internal-key uses
     // (devtools-injected forms, alternative anon-key shapes, etc.)
     // can land without breaking consumers a second time.
     expect(() => mountWithKey(`${RESERVED_KEY_PREFIX}future-internal-thing`)).toThrow(
@@ -449,7 +449,7 @@ describe('reserved key namespace', () => {
     )
   })
 
-  it('does NOT throw when __cx: appears mid-key (only the prefix is reserved)', () => {
+  it('does NOT throw when __atta: appears mid-key (only the prefix is reserved)', () => {
     expect(() => mountWithKey(`user-form-${RESERVED_KEY_PREFIX}should-be-fine`)).not.toThrow()
   })
 

@@ -51,7 +51,7 @@ export default [
     //     expanded SENSITIVE_NAME_PATTERNS) for the timeline + inspector
     //   - one-shot adapter dev warnings (localStorage / sessionStorage /
     //     IDB) on quota / open / abort failures
-    //   - createChemicalXForms idempotent install dev-warn
+    //   - createAttaform idempotent install dev-warn
     //   - v-register unsupported-element dev-warn (vRegisterDynamic)
     //   - validate() outside-effect-scope dev-warn (process-form)
     //   - schema-error gen-check on the submit success/failure paths

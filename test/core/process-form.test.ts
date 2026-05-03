@@ -39,7 +39,12 @@ describe('buildProcessForm', () => {
     const validator = (_data: unknown, _path: Path | undefined): ValidationResponse<Signup> => ({
       data: undefined,
       errors: [
-        { message: 'Enter a valid email', path: ['email'], formKey: 'pf', code: 'cx:test-fixture' },
+        {
+          message: 'Enter a valid email',
+          path: ['email'],
+          formKey: 'pf',
+          code: 'atta:test-fixture',
+        },
       ],
       success: false,
       formKey: 'pf',
@@ -75,7 +80,12 @@ describe('buildProcessForm', () => {
       if (r.value.pending) throw new Error('unreachable')
       expect(r.value.success).toBe(false)
       expect(r.value.errors).toEqual([
-        { message: 'Enter a valid email', path: ['email'], formKey: 'pf', code: 'cx:test-fixture' },
+        {
+          message: 'Enter a valid email',
+          path: ['email'],
+          formKey: 'pf',
+          code: 'atta:test-fixture',
+        },
       ])
     })
 
@@ -111,7 +121,12 @@ describe('buildProcessForm', () => {
       const response = await validateAsync()
       expect(response.success).toBe(false)
       expect(response.errors).toEqual([
-        { message: 'Enter a valid email', path: ['email'], formKey: 'pf', code: 'cx:test-fixture' },
+        {
+          message: 'Enter a valid email',
+          path: ['email'],
+          formKey: 'pf',
+          code: 'atta:test-fixture',
+        },
       ])
     })
 
@@ -149,7 +164,7 @@ describe('buildProcessForm', () => {
       const { handleSubmit } = buildProcessForm(state, 'test:inst')
       state.setSchemaErrorsForPath(
         ['email'],
-        [{ message: 'stale', path: ['email'], formKey: 'pf', code: 'cx:test-fixture' }]
+        [{ message: 'stale', path: ['email'], formKey: 'pf', code: 'atta:test-fixture' }]
       )
 
       await handleSubmit(async () => {})()
@@ -455,7 +470,7 @@ describe('buildProcessForm', () => {
       // overwrite reset's empty schemaErrors.
       releaseValidate({
         data: undefined,
-        errors: [{ message: 'Invalid', path: ['email'], formKey: 'pf', code: 'cx:test-fixture' }],
+        errors: [{ message: 'Invalid', path: ['email'], formKey: 'pf', code: 'atta:test-fixture' }],
         success: false,
         formKey: 'pf',
       })

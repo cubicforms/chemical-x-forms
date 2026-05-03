@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Repro for spike-cx 16h: `<select multiple v-register>` Cmd+click flow.
+// Repro for spike 16h: `<select multiple v-register>` Cmd+click flow.
 //
 // Scenario:
 //   - Default value `['red', 'blue']` — red and blue selected on mount.
@@ -18,7 +18,7 @@ import { createApp, defineComponent, h, nextTick, withDirectives, type App } fro
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
-import { createChemicalXForms } from '../../src/runtime/core/plugin'
+import { createAttaform } from '../../src/runtime/core/plugin'
 
 const schema = z.object({
   colors: z.array(z.string()),
@@ -78,7 +78,7 @@ describe('<select multiple v-register> — Cmd+click adds selection', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -137,7 +137,7 @@ describe('<select multiple v-register> — Cmd+click adds selection', () => {
   })
 
   it('a sibling re-render between mousedown and change MUST NOT clobber the user-selected option', async () => {
-    // Real-world repro for spike-cx 16h. When the user Cmd+clicks an
+    // Real-world repro for spike 16h. When the user Cmd+clicks an
     // option in `<select multiple>`, the browser sets the new
     // `option.selected = true` on mousedown but waits until after the
     // click sequence to fire `change`. If anything else on the page
@@ -190,7 +190,7 @@ describe('<select multiple v-register> — Cmd+click adds selection', () => {
       },
     })
 
-    app = createApp(Parent).use(createChemicalXForms())
+    app = createApp(Parent).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

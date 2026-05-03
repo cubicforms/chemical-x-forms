@@ -1,14 +1,14 @@
 import type { App } from 'vue'
 import type { FormStore } from './create-form-store'
-import type { ChemicalXRegistry } from './registry'
+import type { AttaformRegistry } from './registry'
 import type { GenericForm } from '../types/types-core'
 import type { FormKey } from '../types/types-api'
 import { canonicalizePath } from './paths'
-import { isSensitivePath } from './persistence/sensitive-names'
+import { isSensitivePath, segmentMatchesSensitive } from './persistence/sensitive-names'
 
 /**
- * Vue DevTools plugin wiring for @chemical-x/forms. Lazy-imported by
- * `createChemicalXForms` under dev-mode guards so the production
+ * Vue DevTools plugin wiring for attaform. Lazy-imported by
+ * `createAttaform` under dev-mode guards so the production
  * bundle tree-shakes it out entirely.
  *
  * Registers:
@@ -20,13 +20,13 @@ import { isSensitivePath } from './persistence/sensitive-names'
  *    pushes through `state.setValueAtPath`, mutating the form.
  *
  * Tolerant of missing `@vue/devtools-api` — the peer dep is marked
- * optional. If the import fails, `setupChemicalXDevtools` silently
+ * optional. If the import fails, `setupAttaformDevtools` silently
  * no-ops so production builds / users without DevTools installed
  * don't see errors.
  */
 
-const INSPECTOR_ID = 'chemical-x-forms'
-const TIMELINE_LAYER_ID = 'chemical-x-forms:events'
+const INSPECTOR_ID = 'attaform'
+const TIMELINE_LAYER_ID = 'attaform:events'
 
 const REDACTED = '[redacted]'
 
@@ -46,27 +46,43 @@ const REDACTED = '[redacted]'
  * `acknowledgeSensitive: true` on persistence does NOT bypass this —
  * if the consumer opted into persisting the value, they still
  * shouldn't see it in DevTools timelines that grow unbounded.
+ *
+ * Implementation note: tracks an `inSensitiveSubtree` flag through
+ * the recursion instead of allocating a fresh path array per node
+ * + calling `isSensitivePath` per leaf. Once any ancestor segment
+ * matches the heuristic, the flag stays set for every descendant —
+ * the leaf simply returns `REDACTED` without re-scanning the path.
+ * For a 100-leaf form: ~100 path allocations + ~100 full-path regex
+ * sweeps → 0 path allocations + ~100 single-segment regex sweeps,
+ * with whole-subtree short-circuit when sensitive ancestors are
+ * found early.
  */
-function redactSensitiveLeaves(
-  value: unknown,
-  pathSoFar: ReadonlyArray<string | number> = []
-): unknown {
+function redactSensitiveLeaves(value: unknown): unknown {
+  return redactImpl(value, false)
+}
+
+function redactImpl(value: unknown, inSensitiveSubtree: boolean): unknown {
   if (value === null || value === undefined) return value
   if (typeof value !== 'object') {
-    // Primitive leaf — redact if the enclosing path is sensitive.
-    return isSensitivePath([...pathSoFar]) ? REDACTED : value
+    return inSensitiveSubtree ? REDACTED : value
   }
   if (Array.isArray(value)) {
-    return value.map((item, idx) => redactSensitiveLeaves(item, [...pathSoFar, idx]))
+    // Numeric segments never match the sensitive-name heuristic
+    // (segmentMatchesSensitive rejects non-string segments), so the
+    // flag passes through unchanged when descending into arrays.
+    return value.map((item) => redactImpl(item, inSensitiveSubtree))
   }
-  // Plain object (Map / Set / Date / etc. fall through to "treat as
-  // primitive" — DevTools rendering of those is already heuristic).
+  // Non-plain object (Map / Set / Date / class instance) — redact
+  // wholesale if we're already in a sensitive subtree; otherwise pass
+  // through. DevTools rendering of these is already heuristic, so we
+  // don't try to descend into them.
   if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
-    return isSensitivePath([...pathSoFar]) ? REDACTED : value
+    return inSensitiveSubtree ? REDACTED : value
   }
   const out: Record<string, unknown> = {}
   for (const key of Object.keys(value as Record<string, unknown>)) {
-    out[key] = redactSensitiveLeaves((value as Record<string, unknown>)[key], [...pathSoFar, key])
+    const childSensitive = inSensitiveSubtree || segmentMatchesSensitive(key)
+    out[key] = redactImpl((value as Record<string, unknown>)[key], childSensitive)
   }
   return out
 }
@@ -131,9 +147,9 @@ type SetupDevtoolsPluginFn = (
  * DevTools was wired successfully, `false` otherwise — useful for
  * tests.
  */
-export async function setupChemicalXDevtools(
+export async function setupAttaformDevtools(
   app: App,
-  registry: ChemicalXRegistry
+  registry: AttaformRegistry
 ): Promise<boolean> {
   let mod: { setupDevtoolsPlugin?: SetupDevtoolsPluginFn }
   try {
@@ -152,25 +168,25 @@ export async function setupChemicalXDevtools(
   setupDevtoolsPlugin(
     {
       id: INSPECTOR_ID,
-      label: 'Chemical X Forms',
-      packageName: '@chemical-x/forms',
-      homepage: 'https://github.com/cubicforms/chemical-x-forms',
+      label: 'Attaform',
+      packageName: 'attaform',
+      homepage: 'https://github.com/attaform/attaform',
       app,
-      componentStateTypes: ['Chemical X form'],
+      componentStateTypes: ['Attaform form'],
     },
     (api) => wire(api, app, registry)
   )
   return true
 }
 
-function wire(api: UnsafeDevtoolsApi, app: App, registry: ChemicalXRegistry): void {
+function wire(api: UnsafeDevtoolsApi, app: App, registry: AttaformRegistry): void {
   // Per-form subscriber bookkeeping — we keep the unsubscribers so
   // the registry's eviction path can detach them when a form is
   // disposed. Using a Map keyed by FormKey mirrors the registry.
   const subscriberUnsubs = new Map<FormKey, () => void>()
 
-  api.addInspector({ id: INSPECTOR_ID, label: 'Chemical X Forms', app })
-  api.addTimelineLayer({ id: TIMELINE_LAYER_ID, label: 'Chemical X Forms', color: 0x5b8def })
+  api.addInspector({ id: INSPECTOR_ID, label: 'Attaform', app })
+  api.addTimelineLayer({ id: TIMELINE_LAYER_ID, label: 'Attaform', color: 0x5b8def })
 
   function refreshTree(): void {
     api.sendInspectorTree(INSPECTOR_ID)

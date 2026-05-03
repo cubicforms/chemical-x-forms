@@ -47,7 +47,7 @@ describe('buildFieldStateAccessor', () => {
     const { state, getFieldState } = makeAccessor()
     state.setSchemaErrorsForPath(
       ['email'],
-      [{ message: 'bad', path: ['email'], formKey: 'fs', code: 'cx:test-fixture' }]
+      [{ message: 'bad', path: ['email'], formKey: 'fs', code: 'atta:test-fixture' }]
     )
     expect(getFieldState(['email']).value.errors).toHaveLength(1)
   })

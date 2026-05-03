@@ -19,7 +19,7 @@ import { createSSRApp, defineComponent, h } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { z } from 'zod'
 import { useForm } from '../src/runtime/adapters/zod-v4'
-import { createChemicalXForms } from '../src/runtime/core/plugin'
+import { createAttaform } from '../src/runtime/core/plugin'
 
 type Post = { title: string; body: string; tags: string[] }
 const schema = z.object({
@@ -52,7 +52,7 @@ function mountAndCaptureForm(seedCount: number) {
     },
   })
   const app = createSSRApp(App)
-  app.use(createChemicalXForms({ override: true }))
+  app.use(createAttaform({ override: true }))
   // renderToString drives setup(); we don't care about the HTML itself.
   void renderToString(app)
   if (captured === undefined) throw new Error('useForm setup did not run')

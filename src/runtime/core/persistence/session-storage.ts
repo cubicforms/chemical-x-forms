@@ -32,7 +32,7 @@ export function createSessionStorageAdapter(): FormStorage {
         if (__DEV__ && !warnedOnFailure) {
           warnedOnFailure = true
           console.warn(
-            '[@chemical-x/forms] sessionStorage write failed; subsequent writes will silently no-op for this form. ' +
+            '[attaform] sessionStorage write failed; subsequent writes will silently no-op for this form. ' +
               'Common causes: quota exceeded, private-mode storage lock.',
             err
           )

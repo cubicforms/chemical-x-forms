@@ -1,9 +1,9 @@
 /**
- * `@chemical-x/forms/transforms` — raw node-transform functions for
+ * `attaform/transforms` — raw node-transform functions for
  * advanced bundler integrations.
  *
- * The Vite plugin at `@chemical-x/forms/vite` handles @vitejs/plugin-vue
- * automatically; the Nuxt module at `@chemical-x/forms/nuxt` pushes these
+ * The Vite plugin at `attaform/vite` handles @vitejs/plugin-vue
+ * automatically; the Nuxt module at `attaform/nuxt` pushes these
  * into `nuxt.options.vue.compilerOptions.nodeTransforms` for you.
  *
  * Use this subpath only when rolling your own bundler config (esbuild,
@@ -15,7 +15,7 @@
  *     inputTextAreaNodeTransform,
  *     vRegisterPreambleTransform,
  *     vRegisterHintTransform,
- *   } from '@chemical-x/forms/transforms'
+ *   } from 'attaform/transforms'
  *
  * Order matters: `vRegisterPreambleTransform` MUST run before
  * `vRegisterHintTransform`. The preamble's pre-order captures each

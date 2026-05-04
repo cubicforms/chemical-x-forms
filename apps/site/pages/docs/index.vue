@@ -1,20 +1,20 @@
 <script setup lang="ts">
-  import { Rocket, Code, BookOpen, Wrench, GitBranch, Zap, ArrowRight } from 'lucide-vue-next'
+  import { Rocket, Code, BookOpen, Wrench, Zap, ArrowRight } from 'lucide-vue-next'
 
   // Each section gets a lucide icon plus a tinted-chip color via the
   // brand-soft pair. Sticking to the brand palette (rather than
   // varying per-section) keeps the index reading as one product
-  // surface rather than six unrelated tiles.
+  // surface rather than unrelated tiles.
   const sections = [
     {
-      title: 'Getting started',
-      body: 'Install, schema, render, submit. The shortest path to a typed form.',
-      to: '/docs/api',
+      title: 'Quick start',
+      body: 'Install, wire up, ship a working form in under five minutes.',
+      to: '/docs/quickstart',
       icon: Rocket,
     },
     {
       title: 'API reference',
-      body: 'Every public export with signatures and return shapes.',
+      body: 'Every public export with signatures and return shapes, grouped by import path.',
       to: '/docs/api',
       icon: Code,
     },
@@ -29,12 +29,6 @@
       body: 'Common gotchas, hydration mismatches, slim-primitive write errors.',
       to: '/docs/troubleshooting',
       icon: Wrench,
-    },
-    {
-      title: 'Migration guides',
-      body: 'Per-release upgrade notes. Latest: 0.13 → 0.14.',
-      to: '/docs/migration/13-to-0.14',
-      icon: GitBranch,
     },
     {
       title: 'Performance',
@@ -60,6 +54,13 @@
         Type-safe, schema-driven forms for Vue 3 — values, errors, validation, persistence,
         undo/redo, all from one source of truth.
       </p>
+
+      <!-- Install card — first action a reader can take. Self-
+           contained: title + manager picker + copy + quick-start
+           link all live inside the component. -->
+      <div class="mt-10">
+        <UiInstallCommand />
+      </div>
 
       <!-- Card grid. Each card lifts on hover (1px translate + shadow
            bump from xs → md), the title color shifts to accent, and

@@ -18,7 +18,21 @@ export const docsNavigation: DocsSection[] = [
     heading: 'Getting started',
     links: [
       { title: 'Documentation home', to: '/docs' },
-      { title: 'API reference', to: '/docs/api' },
+      { title: 'Quick start', to: '/docs/quickstart' },
+    ],
+  },
+  {
+    heading: 'API reference',
+    links: [
+      { title: 'Overview', to: '/docs/api' },
+      { title: 'attaform', to: '/docs/api/core' },
+      { title: 'useForm return value', to: '/docs/api/use-form-return' },
+      { title: 'attaform/zod', to: '/docs/api/zod' },
+      { title: 'attaform/zod-v3', to: '/docs/api/zod-v3' },
+      { title: 'attaform/nuxt', to: '/docs/api/nuxt' },
+      { title: 'attaform/vite', to: '/docs/api/vite' },
+      { title: 'attaform/transforms', to: '/docs/api/transforms' },
+      { title: 'Shared types', to: '/docs/api/shared-types' },
     ],
   },
   {
@@ -35,6 +49,9 @@ export const docsNavigation: DocsSection[] = [
       { title: 'Focus on error', to: '/docs/recipes/focus-on-error' },
       { title: 'Form context', to: '/docs/recipes/form-context' },
       { title: 'Persistence', to: '/docs/recipes/persistence' },
+      { title: 'Persistence: policy', to: '/docs/recipes/persistence-policy' },
+      { title: 'Persistence: backends', to: '/docs/recipes/persistence-backends' },
+      { title: 'Persistence: edge cases', to: '/docs/recipes/persistence-edge-cases' },
       { title: 'Server errors', to: '/docs/recipes/server-errors' },
       { title: 'SSR hydration', to: '/docs/recipes/ssr-hydration' },
       { title: 'Transforms', to: '/docs/recipes/transforms' },
@@ -46,27 +63,6 @@ export const docsNavigation: DocsSection[] = [
     links: [
       { title: 'Troubleshooting', to: '/docs/troubleshooting' },
       { title: 'Performance', to: '/docs/perf' },
-    ],
-  },
-  {
-    heading: 'Migration',
-    // Newest-first reading order — most users coming to migration
-    // are upgrading from the most recent prior version.
-    //
-    // The URL paths drop the leading "0." from each filename
-    // because Nuxt Content treats `^\d+\.` as an ordering prefix
-    // and strips it. e.g., `0.13-to-0.14.md` → `/13-to-0.14`. The
-    // user-facing labels still read "0.13 → 0.14"; only the URL
-    // bears the quirk. Renaming the source files to not start with
-    // "0." would un-quirk the URLs but is a docs-corpus change for
-    // a follow-up commit.
-    links: [
-      { title: '0.13 → 0.14', to: '/docs/migration/13-to-0.14' },
-      { title: '0.12 → 0.13', to: '/docs/migration/12-to-0.13' },
-      { title: '0.11 → 0.12', to: '/docs/migration/11-to-0.12' },
-      { title: '0.10 → 0.11', to: '/docs/migration/10-to-0.11' },
-      { title: '0.7 → 0.8', to: '/docs/migration/7-to-0.8' },
-      { title: '0.6 → 0.7', to: '/docs/migration/6-to-0.7' },
     ],
   },
 ]

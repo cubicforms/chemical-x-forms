@@ -1,15 +1,28 @@
 FROM node:22-alpine
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Corepack reads `packageManager` from package.json and pins pnpm to
+# that version automatically — keeps the dev container in lockstep
+# with whatever CI / release tooling is exercising.
+RUN corepack enable
 
 WORKDIR /app
 
-# Install deps first for layer caching
-COPY package.json pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+# Copy lockfile + every package.json that contributes to workspace
+# resolution before any source. With these in place pnpm install's
+# frozen-lockfile mode can resolve the entire workspace graph without
+# seeing any source, so source-only changes don't bust this layer.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/site/package.json ./apps/site/
+
+# --frozen-lockfile fails loudly if package.json drifted from the
+# lockfile; that's a feature — surfaces lockfile-out-of-sync issues at
+# build time rather than at first dev session.
+RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-# Long-running container so dev sessions can attach a shell.
-# Source is volume-mounted at runtime; this is just to keep the container up.
+# Long-running idle container; `make up` runs the dev server via
+# `docker compose exec`. Source is bind-mounted at runtime, the
+# node_modules paths are anonymous volumes seeded from this image's
+# install above.
 CMD ["sh", "-c", "tail -f /dev/null"]

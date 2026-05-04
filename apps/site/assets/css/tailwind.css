@@ -1,0 +1,495 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/typography';
+
+@variant dark (&:where(.dark, .dark *));
+
+/* ──────────────────────────────────────────────────────────────────
+   Design tokens — Untitled UI vocabulary
+   ──────────────────────────────────────────────────────────────────
+   Two layers:
+
+   1. Primitive ramps (`--color-gray-*`, `--color-brand-*`,
+      `--color-success-*`, `--color-warning-*`, `--color-error-*`).
+      These are the source-of-truth color steps. Everything that's
+      "the right neutral 600" or "brand 50 for a chip background"
+      pulls from here. Mirrors Untitled UI's library so visual
+      regressions tell you immediately when you've drifted off-brand.
+
+   2. Semantic aliases (`--color-bg`, `--color-fg`, `--color-fg-muted`,
+      `--color-surface`, `--color-accent`, …). These are what
+      components consume. They're swapped wholesale in `.dark` so
+      every component reads correct mode-ramp without per-class
+      `dark:` overrides. Add new aliases when a component
+      needs a *new role*, not when it needs a different shade —
+      reach into the primitive ramp for that.
+
+   Token names match what the existing components already consume so
+   no component-level changes are required when this file lands. The
+   subsequent migration to named-utility syntax (`bg-accent` vs
+   `bg-(--color-accent)`) is a separate, file-by-file pass. */
+
+@theme {
+  /* ─── Gray ramp — Untitled UI's "Gray" ───
+     A slightly cool gray (hint of blue, very small chroma). Reads
+     "professional/dev tool" rather than "warm/marketing". The 25 step
+     is unusual — useful for hairline-tinted hero backgrounds where
+     #FFFFFF would feel like a void. */
+  --color-gray-25: #fcfcfd;
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f2f4f7;
+  --color-gray-200: #eaecf0;
+  --color-gray-300: #d0d5dd;
+  --color-gray-400: #98a2b3;
+  --color-gray-500: #667085;
+  --color-gray-600: #475467;
+  --color-gray-700: #344054;
+  --color-gray-800: #1d2939;
+  --color-gray-900: #101828;
+  --color-gray-950: #0c111d;
+
+  /* ─── Brand ramp — Untitled UI's "Brand: Violet" ───
+     Picked over their "Indigo" because Vue 3's ecosystem leans
+     green/teal; violet differentiates without clashing. Untitled UI
+     ships these as the canonical brand-violet steps; we use 600 as
+     the standard brand surface (light mode) and 500 for dark mode
+     (where 600 reads too saturated against gray-950). */
+  --color-brand-25: #fcfaff;
+  --color-brand-50: #f4f3ff;
+  --color-brand-100: #ebe9fe;
+  --color-brand-200: #d9d6fe;
+  --color-brand-300: #bdb4fe;
+  --color-brand-400: #9b8afb;
+  --color-brand-500: #7a5af8;
+  --color-brand-600: #6938ef;
+  --color-brand-700: #5925dc;
+  --color-brand-800: #4a1fb8;
+  --color-brand-900: #3e1c96;
+  --color-brand-950: #27115f;
+
+  /* ─── Status ramps — Untitled UI's "Success / Warning / Error" ───
+     Each ramp has the full Untitled UI vocabulary; semantic aliases
+     below pick the steps we use. Keeping the ramp accessible by
+     name lets callouts compose `bg-success-50 text-success-700
+     border-success-200` without arbitrary values. */
+  --color-success-25: #f6fef9;
+  --color-success-50: #ecfdf3;
+  --color-success-100: #dcfae6;
+  --color-success-200: #abefc6;
+  --color-success-300: #75e0a7;
+  --color-success-400: #47cd89;
+  --color-success-500: #17b26a;
+  --color-success-600: #079455;
+  --color-success-700: #067647;
+  --color-success-800: #085d3a;
+  --color-success-900: #074d31;
+
+  --color-warning-25: #fffcf5;
+  --color-warning-50: #fffaeb;
+  --color-warning-100: #fef0c7;
+  --color-warning-200: #fedf89;
+  --color-warning-300: #fec84b;
+  --color-warning-400: #fdb022;
+  --color-warning-500: #f79009;
+  --color-warning-600: #dc6803;
+  --color-warning-700: #b54708;
+  --color-warning-800: #93370d;
+  --color-warning-900: #7a2e0e;
+
+  --color-error-25: #fffbfa;
+  --color-error-50: #fef3f2;
+  --color-error-100: #fee4e2;
+  --color-error-200: #fecdca;
+  --color-error-300: #fda29b;
+  --color-error-400: #f97066;
+  --color-error-500: #f04438;
+  --color-error-600: #d92d20;
+  --color-error-700: #b42318;
+  --color-error-800: #912018;
+  --color-error-900: #7a271a;
+
+  /* ─── Semantic aliases (light mode) ───
+     Component code only ever references these. The `.dark` block
+     re-points them to the dark equivalents, so every consumer flips
+     in one place. Names match the existing codebase so this
+     re-token is non-breaking. */
+  --color-bg: #ffffff;
+  --color-bg-elevated: var(--color-gray-25);
+  --color-fg: var(--color-gray-900);
+  --color-fg-muted: var(--color-gray-600);
+  --color-fg-subtle: var(--color-gray-500);
+  --color-surface: var(--color-gray-50);
+  --color-surface-2: var(--color-gray-100);
+  --color-surface-3: var(--color-gray-200);
+  --color-border: var(--color-gray-200);
+  --color-border-strong: var(--color-gray-300);
+
+  --color-accent: var(--color-brand-600);
+  --color-accent-hover: var(--color-brand-700);
+  --color-accent-fg: #ffffff;
+  --color-accent-soft: var(--color-brand-50);
+  --color-accent-soft-fg: var(--color-brand-700);
+  --color-accent-ring: var(--color-brand-100);
+
+  --color-success: var(--color-success-500);
+  --color-success-soft: var(--color-success-50);
+  --color-warning: var(--color-warning-500);
+  --color-warning-soft: var(--color-warning-50);
+  --color-danger: var(--color-error-500);
+  --color-danger-soft: var(--color-error-50);
+
+  /* ─── Typography ───
+     `@nuxt/fonts` discovers `Inter` and `JetBrains Mono` from these
+     stacks at build time, downloads the variable woff2 files from
+     Google Fonts, emits them into the build output, and serves them
+     from our own origin. No runtime third-party dependency; visitors
+     never reach out to Google. The canonical short name (no "Variable"
+     suffix) lets the module's provider resolution find Google's
+     entries directly. */
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    'JetBrains Mono', ui-monospace, SFMono-Regular, 'Fira Code', Menlo, Consolas, monospace;
+
+  /* Display type scale — Untitled UI canonical. Each size carries its
+     own line-height and letter-spacing because the right value at
+     90px is not the right value at 32px (display-2xl is set tight,
+     display-sm sits at default tracking). */
+  --text-display-xs: 1.5rem; /* 24px */
+  --text-display-xs--line-height: 2rem; /* 32px */
+  --text-display-xs--letter-spacing: -0.004em;
+  --text-display-sm: 1.875rem; /* 30px */
+  --text-display-sm--line-height: 2.375rem; /* 38px */
+  --text-display-sm--letter-spacing: 0;
+  --text-display-md: 2.25rem; /* 36px */
+  --text-display-md--line-height: 2.75rem; /* 44px */
+  --text-display-md--letter-spacing: -0.02em;
+  --text-display-lg: 3rem; /* 48px */
+  --text-display-lg--line-height: 3.75rem; /* 60px */
+  --text-display-lg--letter-spacing: -0.02em;
+  --text-display-xl: 3.75rem; /* 60px */
+  --text-display-xl--line-height: 4.5rem; /* 72px */
+  --text-display-xl--letter-spacing: -0.02em;
+  --text-display-2xl: 4.5rem; /* 72px */
+  --text-display-2xl--line-height: 5.625rem; /* 90px */
+  --text-display-2xl--letter-spacing: -0.02em;
+
+  /* ─── Radii — Untitled UI scale ───
+     Each step is ~25% larger than Tailwind's default. Buttons feel
+     right at md (8px) rather than 6px; cards at xl (12px) feel
+     proportional next to the larger button radii. */
+  --radius-xs: 0.25rem; /* 4px  — chips */
+  --radius-sm: 0.375rem; /* 6px  — small inputs */
+  --radius-md: 0.5rem; /* 8px  — buttons, default */
+  --radius-lg: 0.625rem; /* 10px — large inputs */
+  --radius-xl: 0.75rem; /* 12px — cards */
+  --radius-2xl: 1rem; /* 16px — large cards, modals */
+  --radius-3xl: 1.25rem; /* 20px */
+  --radius-4xl: 1.5rem; /* 24px — hero panels */
+
+  /* ─── Shadows — Untitled UI canonical ───
+     The base color is #101828 (gray-900) at low opacity, not pure
+     black. This gives the elevation a slight cool tint instead of
+     reading muddy. Two-layer shadows (closer + farther) on md and up
+     mimic real diffusion better than a single flat shadow.
+     All offsets / blurs / spreads are in rem (1rem = 16px at the user's
+     default root size) so the elevation scales with their browser
+     font-size preference instead of staying pinned to device pixels. */
+  --shadow-xs: 0 0.0625rem 0.125rem 0 rgb(16 24 40 / 0.05);
+  --shadow-sm:
+    0 0.0625rem 0.1875rem 0 rgb(16 24 40 / 0.1),
+    0 0.0625rem 0.125rem -0.0625rem rgb(16 24 40 / 0.06);
+  --shadow-md:
+    0 0.25rem 0.5rem -0.125rem rgb(16 24 40 / 0.1),
+    0 0.125rem 0.25rem -0.125rem rgb(16 24 40 / 0.06);
+  --shadow-lg:
+    0 0.75rem 1rem -0.25rem rgb(16 24 40 / 0.08), 0 0.25rem 0.375rem -0.125rem rgb(16 24 40 / 0.03);
+  --shadow-xl:
+    0 1.25rem 1.5rem -0.25rem rgb(16 24 40 / 0.08), 0 0.5rem 0.5rem -0.25rem rgb(16 24 40 / 0.03);
+  --shadow-2xl: 0 1.5rem 3rem -0.75rem rgb(16 24 40 / 0.18);
+  --shadow-3xl: 0 2rem 4rem -0.75rem rgb(16 24 40 / 0.14);
+
+  /* Focus ring — used as a colored box-shadow rather than outline so
+     it composes with the surface shadow on focused inputs. The
+     `--shadow-ring-error` variant is the danger-state companion. */
+  --shadow-ring: 0 0 0 0.25rem var(--color-accent-ring);
+  --shadow-ring-error: 0 0 0 0.25rem var(--color-error-200);
+
+  /* ─── Motion ───
+     out-quart is the workhorse ramp (sharp into a smooth tail) used
+     by every default transition; out-expo (steeper finish) reads as
+     more "decisive" — reserved for state-change indicators (sidebar,
+     TOC) where the user just *did* something; spring overshoots
+     gently and is reserved for tactile micro-interactions (logo
+     hover, modal entrance) where the bounce sells the press. The
+     duration scale spans 80ms (sub-perception ack — hover bumps,
+     icon swaps) up through 480ms (page-section reveals). Keep
+     additions to this set rare; vocabulary creep undoes the
+     coherence. */
+  --ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-snappy: 80ms;
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --duration-deliberate: 480ms;
+
+  /* ─── Warmth pair ───
+     Reserved for "highlight" affordances (release chip, version chip,
+     "what's new" markers) — never the default brand surface. Pulls
+     from the existing warning ramp so it shares the Untitled UI
+     vocabulary; amber pairs with violet on the color wheel and adds
+     the small bit of warmth that keeps the page from reading
+     clinical-cool. The naming is `warm-*` rather than `warning-*` so
+     callers don't accidentally adopt warning semantics for a purely
+     visual highlight. */
+  --color-warm: var(--color-warning-600);
+  --color-warm-soft: var(--color-warning-50);
+  --color-warm-soft-fg: var(--color-warning-700);
+
+  /* ─── Background gradients ───
+     Exposed as `--bg-image-*` so Tailwind v4 derives `bg-glow-hero`,
+     `bg-glow-warm`, and `bg-dot-grid` utilities from them. The hero
+     glow is a top-anchored radial of accent-soft fading to
+     transparent — applied behind the hero copy it adds depth without
+     being a "feature." The dot grid is an old-school 1px-dot lattice
+     scaled to 1.5rem; mask the edges from the calling element with
+     a radial gradient so it never extends past the copy column. */
+  --bg-image-glow-hero: radial-gradient(
+    60% 60% at 50% 0%,
+    var(--color-accent-soft) 0%,
+    transparent 70%
+  );
+  --bg-image-glow-warm: radial-gradient(
+    50% 80% at 50% 0%,
+    var(--color-warm-soft) 0%,
+    transparent 70%
+  );
+  --bg-image-dot-grid: radial-gradient(
+    circle at 0.0625rem 0.0625rem,
+    var(--color-border) 0.0625rem,
+    transparent 0
+  );
+}
+
+/* ─── Dark-mode semantic re-pointing ───
+   Only the aliases flip. Primitive ramps stay shared between modes —
+   gray-200 is gray-200 regardless of theme; what changes is *which
+   step the page calls "border"*. */
+.dark {
+  --color-bg: var(--color-gray-950);
+  --color-bg-elevated: var(--color-gray-900);
+  --color-fg: var(--color-gray-50);
+  --color-fg-muted: var(--color-gray-400);
+  --color-fg-subtle: var(--color-gray-500);
+  --color-surface: var(--color-gray-900);
+  --color-surface-2: var(--color-gray-800);
+  --color-surface-3: var(--color-gray-700);
+  --color-border: var(--color-gray-800);
+  --color-border-strong: var(--color-gray-700);
+
+  /* brand-500 is the dark-mode default — brand-600 reads too
+     saturated against gray-950. The soft pair flips to a tinted dark
+     bg with a bright fg so chips remain readable. */
+  --color-accent: var(--color-brand-500);
+  --color-accent-hover: var(--color-brand-400);
+  --color-accent-fg: var(--color-gray-950);
+  --color-accent-soft: var(--color-brand-950);
+  --color-accent-soft-fg: var(--color-brand-300);
+  --color-accent-ring: var(--color-brand-900);
+
+  --color-success: var(--color-success-400);
+  --color-success-soft: var(--color-success-900);
+  --color-warning: var(--color-warning-400);
+  --color-warning-soft: var(--color-warning-900);
+  --color-danger: var(--color-error-400);
+  --color-danger-soft: var(--color-error-900);
+
+  /* Warmth pair flips with the rest of the palette. warning-400 reads
+     correctly against gray-950; the soft surface drops to warning-900
+     so the chip bg doesn't blow out on a dark page. */
+  --color-warm: var(--color-warning-400);
+  --color-warm-soft: var(--color-warning-900);
+  --color-warm-soft-fg: var(--color-warning-300);
+
+  /* Shadows on dark surfaces need a much darker base to register —
+     light-mode's gray-900 base would vanish against gray-950. Pure
+     black at higher opacity reads correctly. */
+  --shadow-xs: 0 0.0625rem 0.125rem 0 rgb(0 0 0 / 0.4);
+  --shadow-sm:
+    0 0.0625rem 0.1875rem 0 rgb(0 0 0 / 0.4), 0 0.0625rem 0.125rem -0.0625rem rgb(0 0 0 / 0.3);
+  --shadow-md:
+    0 0.25rem 0.5rem -0.125rem rgb(0 0 0 / 0.4), 0 0.125rem 0.25rem -0.125rem rgb(0 0 0 / 0.3);
+  --shadow-lg:
+    0 0.75rem 1rem -0.25rem rgb(0 0 0 / 0.4), 0 0.25rem 0.375rem -0.125rem rgb(0 0 0 / 0.2);
+  --shadow-xl:
+    0 1.25rem 1.5rem -0.25rem rgb(0 0 0 / 0.4), 0 0.5rem 0.5rem -0.25rem rgb(0 0 0 / 0.2);
+  --shadow-2xl: 0 1.5rem 3rem -0.75rem rgb(0 0 0 / 0.5);
+  --shadow-3xl: 0 2rem 4rem -0.75rem rgb(0 0 0 / 0.45);
+}
+
+/* Page baseline — typography + body chrome. Done in raw CSS rather
+   than a body utility so it's always applied regardless of which
+   layout / page is rendered. */
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-feature-settings:
+    'cv11', 'ss01', 'ss03'; /* Inter's stylistic alternates: straight-sided 1, single-storey a, slashed 0 — reads more "modern dev tool" */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Default border color for any element that uses a `border-*` width
+   utility without an explicit color. Matches the existing codebase
+   convention; spares us writing `border-border` everywhere. */
+* {
+  border-color: var(--color-border);
+}
+
+/* Custom scrollbar — only honored on systems that paint inline
+   scrollbars (mac overlay scrollbars ignore these properties, which
+   is the intended behavior there). */
+@supports (scrollbar-width: thin) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+}
+
+/* Selection color uses the brand soft-tint pair so highlights read as
+   "of the design system" rather than the OS default blue. */
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-soft-fg);
+}
+
+/* ─── Shared keyframes ───
+   Every animation across the site sources from this set. Keeping them
+   here (rather than scoped to component <style> blocks) means a single
+   place to audit motion vocabulary, and the reduced-motion media query
+   below catches them automatically. New keyframes only get added when
+   an existing one genuinely doesn't fit; component-specific motion
+   (hero stagger, theme toggle wheel) can compose these via animation-
+   delay and -direction without redefining frames. */
+@keyframes reveal-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes reveal-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes hash-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-0.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes indicator-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* Reveal-on-scroll baseline. `useReveal` flips `data-revealed` to true
+   when the IntersectionObserver fires; the keyframe runs once and
+   leaves the element in its final state via `both`. The pre-reveal
+   state is set here (not on the `data-revealed='false'` selector) so
+   SSR-rendered HTML carries the hidden-state styles directly — the
+   page never flashes the final state during hydration. */
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(0.5rem);
+}
+[data-reveal][data-revealed='true'] {
+  animation: reveal-fade-up var(--duration-deliberate) var(--ease-out-quart) both;
+}
+
+/* ─── Page transitions ───
+   Lightweight cross-fade between routes. Vue's <Transition> applies
+   `*-enter-active` while the entering element animates in and
+   `*-leave-active` while the leaving element animates out. mode="out-in"
+   in app.vue means the leaver finishes before the enterer starts, so
+   these never overlap and we don't need absolute-positioning gymnastics
+   to prevent layout flash. Anything heavier than fade-and-tiny-lift
+   reads as gimmicky on a docs site — slides imply directionality the
+   user didn't ask for. */
+.page-enter-active,
+.page-leave-active {
+  transition:
+    opacity var(--duration-base) var(--ease-out-quart),
+    transform var(--duration-base) var(--ease-out-quart);
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(0.25rem);
+}
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-0.125rem);
+}
+
+/* Theme-toggle wheel — the leaving icon rotates clockwise off-stage
+   while the entering icon arrives from the opposite side. The two
+   halves chain into a single 90° wheel-turn rather than a swap. */
+.theme-spin-enter-active,
+.theme-spin-leave-active {
+  transition:
+    opacity var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quart);
+}
+.theme-spin-enter-from {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.85);
+}
+.theme-spin-leave-to {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.85);
+}
+
+/* Reduced-motion override — kills our token-driven transitions and
+   any animations the components register. The universal selector is
+   intentionally heavy-handed; users who set this preference are
+   asking for "no animation, anywhere." */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Reveals normally start at opacity 0 and fade in via animation. With
+     the universal animation kill above, the keyframe collapses to
+     zero-duration which would leave them stuck at the from-frame. The
+     animation still applies (in `both` mode), so the to-frame paints
+     immediately — but if a user's environment never fires the reveal
+     observer (no JS, very narrow viewport, etc.), force the visible
+     state directly so they're not stuck behind opacity:0 forever. */
+  [data-reveal] {
+    opacity: 1;
+    transform: none;
+  }
+}

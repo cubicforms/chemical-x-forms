@@ -129,8 +129,7 @@ useForm({ schema, validateOn: 'change', debounceMs: 500 })
 
 `debounceMs: 0` is the off switch — when set, validation runs
 synchronously after each committed write with no `setTimeout`
-indirection (see `docs/migration/0.13-to-0.14.md` for the timing
-shift).
+indirection.
 
 ## Storage commit timing vs. validation timing
 

@@ -1,4 +1,4 @@
-.PHONY: help build up down restart logs shell install dev test test-watch lint format check prepare typecheck publish-prep watch watch-bg unwatch
+.PHONY: help build up down restart logs shell install test test-watch lint format check prepare typecheck publish-prep watch watch-bg unwatch
 .DEFAULT_GOAL := help
 
 CONTAINER := attaform-dev
@@ -11,8 +11,10 @@ help:  ## Show this help
 build:  ## Build the dev image
 	docker compose build
 
-up:  ## Start the dev container (idle, ready for shell/exec)
+up:  ## Start the dev container, install deps, and boot the docs site (visit http://localhost:3000)
 	docker compose up -d
+	docker compose exec attaform pnpm install
+	docker compose exec attaform pnpm dev
 
 down:  ## Stop and remove the dev container
 	docker compose down
@@ -33,11 +35,8 @@ shell:  ## Drop into an interactive shell inside the container
 install:  ## Install dependencies
 	docker compose exec attaform pnpm install
 
-prepare:  ## Prepare the module for development (build stub + prepare playground)
+prepare:  ## Prepare the module for development (build stub + prepare apps/site)
 	docker compose exec attaform pnpm dev:prepare
-
-dev:  ## Run the playground dev server (visit http://localhost:3001)
-	docker compose exec attaform pnpm dev
 
 test:  ## Run the test suite once
 	docker compose exec attaform pnpm test

@@ -53,7 +53,7 @@ export default defineConfig({
         '**/*.d.ts',
         // directive.ts is a port of Vue's v-model runtime; it's tested via
         // the SSR fixture (test/ssr.test.ts with the Nuxt integration app)
-        // and the playground manual QA. v8 can't instrument directive hooks
+        // and manual QA in apps/site. v8 can't instrument directive hooks
         // that fire through Vue's compile-time bindings, so including this
         // file would understate coverage by ~400 lines without a
         // corresponding loss in test rigour. The file is small, stable, and

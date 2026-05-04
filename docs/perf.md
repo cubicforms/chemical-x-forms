@@ -3,12 +3,12 @@
 Notes on the hot paths — keystrokes, submits, validation, reset —
 and what to look at if a form starts feeling slow. CI runs the
 benchmark suite under `bench/` on every PR with thresholds tracked
-in [`bench/`](../bench).
+in [`bench/`](https://github.com/attaform/attaform/tree/main/bench).
 
 ## Hot-path characteristics
 
 - **Keystrokes** — the `register` → form-state path runs against a
-  per-PR threshold; see [`bench/keystroke.bench.ts`](../bench/keystroke.bench.ts)
+  per-PR threshold; see [`bench/keystroke.bench.ts`](https://github.com/attaform/attaform/blob/main/bench/keystroke.bench.ts)
   for the measured scenarios (100-leaf and 500-leaf forms,
   single-leaf mutation).
 - **`state.isDirty`** — iterates the tracked leaves with no

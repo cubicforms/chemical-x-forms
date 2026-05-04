@@ -12,11 +12,17 @@ services:
       - .:/app
       # Anonymous volume preserves the container's node_modules (host's may differ)
       - /app/node_modules
-      - /app/playground/node_modules
+      - /app/apps/site/node_modules
     ports:
-      - '3001:3000' # playground dev server (3001 to avoid clashing with attaform frontend on 3000)
+      - '3000:3000' # docs site dev server
+      # @nuxt/devtools 4.x's @vitejs/devtools serves its RPC websocket
+      # on a separate port (default 7812). Without exposing it, the
+      # devtools panel works degraded: in-page shortcut still toggles,
+      # but server-side RPC features (component tree, store, etc.) fail
+      # with "WebSocket connection to ws://localhost:7812 failed".
+      - '7812:7812'
     environment:
       # pnpm needs HOME for its store
       HOME: /root
-    # Long-running idle container; use `make shell` or `make dev` to interact
+    # Long-running idle container; use `make up` (boots dev server) or `make shell` to interact
     command: ['sh', '-c', 'tail -f /dev/null']

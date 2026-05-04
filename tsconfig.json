@@ -48,7 +48,6 @@
     "bench",
     "build.config.ts",
     "vitest.config.ts",
-    "playground",
     "eslint-plugin-nuxt.d.ts"
   ],
   "exclude": ["dist", "node_modules", ".nuxt"]

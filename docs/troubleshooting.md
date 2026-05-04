@@ -97,9 +97,6 @@ The schema generic couldn't be inferred. Two likely causes:
   entry) but passed a zod schema directly. Import from
   `attaform/zod` or `/zod-v3` instead.
 
-See the [0.7 → 0.8 migration](./migration/0.7-to-0.8.md) for the
-subpath split and required-`key` contract.
-
 ## "`handleSubmit` doesn't run when I submit the form"
 
 As of 0.7, `handleSubmit(onSubmit)` returns the **handler function**,
@@ -116,8 +113,6 @@ not a Promise. Bind the returned value:
   <form @submit.prevent="submit">...</form>
 </template>
 ```
-
-See [0.6 → 0.7 migration](./migration/0.6-to-0.7.md).
 
 ## "v-register on my component does nothing (typing doesn't update the form)"
 
@@ -146,7 +141,7 @@ v-register onto an inner native element:
 ```
 
 The dev-mode console warning `v-register on <div> is a no-op …`
-points here. See the [components recipe](./recipes/persistence.md#component-support)
+points here. See the [components recipe](/docs/recipes/persistence-edge-cases#component-support)
 for the four supported patterns (native root, useRegister,
 injectForm for compound components, and the `assignKey`
 escape hatch).
@@ -233,7 +228,7 @@ on tuples, not a runtime case.
 Try enabling `noUncheckedIndexedAccess: true` in your tsconfig — it
 makes `arr[N]` reads return `T | undefined` so the type system
 catches stale indices. See
-[README → Recommended tsconfig](../README.md#recommended-tsconfig).
+[README → Recommended tsconfig](https://github.com/attaform/attaform/blob/main/README.md#recommended-tsconfig).
 
 ## "Focus jumped to a field I didn't expect on submit"
 

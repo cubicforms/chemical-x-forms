@@ -122,13 +122,16 @@ export default [
   // routes (`index.vue`, `play.vue`, `[...slug].vue`); layouts use the
   // layout name (`default.vue`, `docs.vue`); component primitives in
   // `components/ui/` rely on Nuxt's pathPrefix auto-import to expose
-  // them as multi-word tags (`Button.vue` → `<UiButton>`). The rule's
-  // filename heuristic doesn't see the prefix, so we scope it off.
+  // them as multi-word tags (`Button.vue` → `<UiButton>`). Root-level
+  // `error.vue` is the framework's catch-all error page (the name is
+  // mandatory). The rule's filename heuristic doesn't see any of this,
+  // so we scope it off.
   {
     files: [
       'apps/site/pages/**/*.vue',
       'apps/site/layouts/**/*.vue',
       'apps/site/components/**/*.vue',
+      'apps/site/error.vue',
     ],
     rules: {
       'vue/multi-word-component-names': 'off',

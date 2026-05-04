@@ -6,15 +6,24 @@
 
   const colorMode = useColorMode()
 
-  const current = computed<Pref>(() => (colorMode.preference as Pref) ?? 'system')
+  // Server doesn't know the user's stored preference, so render a
+  // neutral default (system / Monitor) and swap to the real value
+  // post-mount. Ships the button frame in SSR HTML; only icon and
+  // label change on hydration. Avoids the hydration mismatch a naive
+  // `colorMode.preference`-bound render would produce.
+  const mounted = ref(false)
+  onMounted(() => {
+    mounted.value = true
+  })
 
-  const next = computed<Pref>(() => {
-    const i = ORDER.indexOf(current.value)
-    return ORDER[(i + 1) % ORDER.length] ?? 'system'
+  const current = computed<Pref>(() => {
+    if (!mounted.value) return 'system'
+    return (colorMode.preference as Pref) ?? 'system'
   })
 
   function cycle() {
-    colorMode.preference = next.value
+    const i = ORDER.indexOf(current.value)
+    colorMode.preference = ORDER[(i + 1) % ORDER.length] ?? 'system'
   }
 
   const icon = computed(() => {
@@ -24,6 +33,7 @@
   })
 
   const label = computed(() => {
+    if (!mounted.value) return 'Toggle theme'
     if (current.value === 'system') return 'Theme: system. Switch to light.'
     if (current.value === 'light') return 'Theme: light. Switch to dark.'
     return 'Theme: dark. Switch to system.'

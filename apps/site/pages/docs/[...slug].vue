@@ -146,8 +146,8 @@
     font-size: 0.875em;
     background: var(--color-surface);
     padding: 0.1em 0.4em;
-    border-radius: 4px;
-    border: 1px solid var(--color-border);
+    border-radius: 0.25rem;
+    border: 0.0625rem solid var(--color-border);
     font-weight: 500;
   }
   /* Strip the typography plugin's default backtick quotes around
@@ -168,8 +168,8 @@
      article column gives it (without this, a long unbroken code line
      could push past max-w-3xl and create a page-level scrollbar). */
   .docs-prose pre {
-    border-radius: 12px;
-    border: 1px solid var(--color-border-strong);
+    border-radius: 0.75rem;
+    border: 0.0625rem solid var(--color-border-strong);
     padding: 1.25rem 1.5rem;
     font-size: 0.875rem;
     line-height: 1.6;
@@ -182,11 +182,11 @@
      accent-soft tint pair. Strips the default italic font-style;
      callouts read as "this is important", not "this is a quote". */
   .docs-prose blockquote {
-    border-left: 3px solid var(--color-accent);
+    border-left: 0.1875rem solid var(--color-accent);
     background: var(--color-accent-soft);
     padding: 1rem 1.25rem;
     margin: 1.5rem 0;
-    border-radius: 0 8px 8px 0;
+    border-radius: 0 0.5rem 0.5rem 0;
     font-style: normal;
     quotes: none;
   }

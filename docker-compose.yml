@@ -18,5 +18,5 @@ services:
     environment:
       # pnpm needs HOME for its store
       HOME: /root
-    # Long-running idle container; use `make shell` or `make dev` to interact
+    # Long-running idle container; use `make up` (boots dev server) or `make shell` to interact
     command: ['sh', '-c', 'tail -f /dev/null']

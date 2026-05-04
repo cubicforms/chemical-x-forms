@@ -1,4 +1,4 @@
-.PHONY: help build up down restart logs shell install dev test test-watch lint format check prepare typecheck publish-prep watch watch-bg unwatch
+.PHONY: help build up down restart logs shell install test test-watch lint format check prepare typecheck publish-prep watch watch-bg unwatch
 .DEFAULT_GOAL := help
 
 CONTAINER := attaform-dev
@@ -36,9 +36,6 @@ install:  ## Install dependencies
 
 prepare:  ## Prepare the module for development (build stub + prepare apps/site)
 	docker compose exec attaform pnpm dev:prepare
-
-dev:  ## Run the docs site dev server (visit http://localhost:3000)
-	docker compose exec attaform pnpm dev
 
 test:  ## Run the test suite once
 	docker compose exec attaform pnpm test

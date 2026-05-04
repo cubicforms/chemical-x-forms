@@ -11,9 +11,9 @@ help:  ## Show this help
 build:  ## Build the dev image
 	docker compose build
 
-up:  ## Start the dev container, install deps if stale, and boot the docs site (visit http://localhost:3000)
+up:  ## Start the dev container, install deps, and boot the docs site (visit http://localhost:3000)
 	docker compose up -d
-	docker compose exec -T attaform sh -c 'if [ ! -e node_modules/.modules.yaml ] || [ pnpm-lock.yaml -nt node_modules/.modules.yaml ]; then pnpm install; fi'
+	docker compose exec attaform pnpm install
 	docker compose exec attaform pnpm dev
 
 down:  ## Stop and remove the dev container

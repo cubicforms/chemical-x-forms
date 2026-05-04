@@ -99,12 +99,13 @@
             class="reveal-step text-display-lg font-semibold tracking-tight text-fg md:text-display-xl"
             style="--reveal-step-delay: 60ms"
           >
-            Type-safe forms for Vue&nbsp;3, <span class="text-accent">schema-first.</span>
+            A type-safe, schema-driven form library for Vue&nbsp;3 and Nuxt with
+            <span class="text-accent">first-class Zod support.</span>
           </h1>
 
           <p class="reveal-step max-w-2xl text-xl text-fg-muted" style="--reveal-step-delay: 120ms">
-            Attaform turns your Zod schema into a fully reactive form surface — values, errors,
-            validation, persistence, undo/redo — all inferred from a single source of truth.
+            Point a Zod schema at <code class="font-mono">useForm</code> — get fully-typed values,
+            errors, validation, persistence, and undo/redo back.
           </p>
 
           <div class="reveal-step flex flex-wrap gap-3" style="--reveal-step-delay: 180ms">

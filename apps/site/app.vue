@@ -9,7 +9,7 @@
   useHead({
     htmlAttrs: { lang: 'en' },
     titleTemplate: (title) =>
-      title ? `${title} · Attaform` : 'Attaform — Type-safe forms for Vue 3',
+      title ? `${title} · Attaform` : 'Attaform — Type-safe forms for Vue 3 and Nuxt',
     link: [
       // SVG favicon — modern evergreen browsers render it crisply at
       // every tab size and adapt to high-DPI without a fallback PNG.
@@ -27,16 +27,16 @@
 
   useSeoMeta({
     description:
-      'Schema-driven, type-safe forms for Vue 3 — values, errors, validation, persistence, undo/redo, all inferred from a Zod schema.',
-    ogTitle: 'Attaform — Type-safe forms for Vue 3',
+      'A type-safe, schema-driven form library for Vue 3 and Nuxt with first-class Zod support.',
+    ogTitle: 'Attaform — Type-safe forms for Vue 3 and Nuxt',
     ogDescription:
-      'Schema-driven, type-safe forms for Vue 3 — values, errors, validation, persistence, undo/redo, all inferred from a Zod schema.',
+      'A type-safe, schema-driven form library for Vue 3 and Nuxt with first-class Zod support.',
     ogType: 'website',
     ogSiteName: 'Attaform',
     twitterCard: 'summary_large_image',
-    twitterTitle: 'Attaform — Type-safe forms for Vue 3',
+    twitterTitle: 'Attaform — Type-safe forms for Vue 3 and Nuxt',
     twitterDescription:
-      'Schema-driven, type-safe forms for Vue 3 — values, errors, validation, persistence, undo/redo, all inferred from a Zod schema.',
+      'A type-safe, schema-driven form library for Vue 3 and Nuxt with first-class Zod support.',
   })
 </script>
 

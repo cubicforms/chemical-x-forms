@@ -65,8 +65,7 @@
             <span>Attaform</span>
           </NuxtLink>
           <p class="text-sm text-fg-muted">
-            Type-safe, schema-driven forms for Vue 3 — values, errors, validation, persistence,
-            undo/redo, all from one source of truth.
+            A type-safe, schema-driven form library for Vue 3 and Nuxt with first-class Zod support.
           </p>
           <!-- Version chip — warm-soft pair on a small inline pill so
                it ties to the hero release chip without competing with

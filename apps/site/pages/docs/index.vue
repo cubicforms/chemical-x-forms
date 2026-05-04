@@ -51,8 +51,7 @@
         Everything you need to use Attaform.
       </h1>
       <p class="mt-4 max-w-2xl text-lg text-fg-muted">
-        Type-safe, schema-driven forms for Vue 3 — values, errors, validation, persistence,
-        undo/redo, all from one source of truth.
+        A type-safe, schema-driven form library for Vue 3 and Nuxt with first-class Zod support.
       </p>
 
       <!-- Install card — first action a reader can take. Self-

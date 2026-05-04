@@ -2,12 +2,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineNuxtConfig({
   modules: ['@nuxt/content', '@nuxtjs/color-mode'],
-  // The bundled @nuxt/devtools 3.2.4 in Nuxt 4.4.4 ships an RPC client
-  // that fails its websocket handshake on boot — "Failed to retrieve
-  // the current RPC session" — without affecting the site, just
-  // spamming the console. Disable the in-browser panel; the Vue
-  // DevTools extension is the better debugging surface anyway.
-  devtools: { enabled: false },
+  devtools: { enabled: true },
   compatibilityDate: '2025-01-28',
   // Bind to all interfaces so the docker-compose port mapping
   // (3001:3000) reaches the dev server. Local-only dev still works —

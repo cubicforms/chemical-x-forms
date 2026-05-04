@@ -109,6 +109,11 @@
     "./apps/site/**/*.{ts,vue}": "eslint",
     "./test/**/*.{ts,vue}": "eslint"
   },
+  "pnpm": {
+    "overrides": {
+      "@nuxt/devtools": "4.0.0-alpha.4"
+    }
+  },
   "devDependencies": {
     "@commitlint/cli": "^20.5.0",
     "@commitlint/config-conventional": "^20.5.0",

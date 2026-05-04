@@ -191,24 +191,31 @@
      The base color is #101828 (gray-900) at low opacity, not pure
      black. This gives the elevation a slight cool tint instead of
      reading muddy. Two-layer shadows (closer + farther) on md and up
-     mimic real diffusion better than a single flat shadow. */
-  --shadow-xs: 0 1px 2px 0 rgb(16 24 40 / 0.05);
+     mimic real diffusion better than a single flat shadow.
+     All offsets / blurs / spreads are in rem (1rem = 16px at the user's
+     default root size) so the elevation scales with their browser
+     font-size preference instead of staying pinned to device pixels. */
+  --shadow-xs: 0 0.0625rem 0.125rem 0 rgb(16 24 40 / 0.05);
   --shadow-sm:
-    0 1px 3px 0 rgb(16 24 40 / 0.1), 0 1px 2px -1px rgb(16 24 40 / 0.06);
+    0 0.0625rem 0.1875rem 0 rgb(16 24 40 / 0.1),
+    0 0.0625rem 0.125rem -0.0625rem rgb(16 24 40 / 0.06);
   --shadow-md:
-    0 4px 8px -2px rgb(16 24 40 / 0.1), 0 2px 4px -2px rgb(16 24 40 / 0.06);
+    0 0.25rem 0.5rem -0.125rem rgb(16 24 40 / 0.1),
+    0 0.125rem 0.25rem -0.125rem rgb(16 24 40 / 0.06);
   --shadow-lg:
-    0 12px 16px -4px rgb(16 24 40 / 0.08), 0 4px 6px -2px rgb(16 24 40 / 0.03);
+    0 0.75rem 1rem -0.25rem rgb(16 24 40 / 0.08),
+    0 0.25rem 0.375rem -0.125rem rgb(16 24 40 / 0.03);
   --shadow-xl:
-    0 20px 24px -4px rgb(16 24 40 / 0.08), 0 8px 8px -4px rgb(16 24 40 / 0.03);
-  --shadow-2xl: 0 24px 48px -12px rgb(16 24 40 / 0.18);
-  --shadow-3xl: 0 32px 64px -12px rgb(16 24 40 / 0.14);
+    0 1.25rem 1.5rem -0.25rem rgb(16 24 40 / 0.08),
+    0 0.5rem 0.5rem -0.25rem rgb(16 24 40 / 0.03);
+  --shadow-2xl: 0 1.5rem 3rem -0.75rem rgb(16 24 40 / 0.18);
+  --shadow-3xl: 0 2rem 4rem -0.75rem rgb(16 24 40 / 0.14);
 
   /* Focus ring — used as a colored box-shadow rather than outline so
      it composes with the surface shadow on focused inputs. The
      `--shadow-ring-error` variant is the danger-state companion. */
-  --shadow-ring: 0 0 0 4px var(--color-accent-ring);
-  --shadow-ring-error: 0 0 0 4px var(--color-error-200);
+  --shadow-ring: 0 0 0 0.25rem var(--color-accent-ring);
+  --shadow-ring-error: 0 0 0 0.25rem var(--color-error-200);
 
   /* ─── Motion ───
      Single ease for UI transitions (out-quart — sharp ramp into a
@@ -257,17 +264,21 @@
   /* Shadows on dark surfaces need a much darker base to register —
      light-mode's gray-900 base would vanish against gray-950. Pure
      black at higher opacity reads correctly. */
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-xs: 0 0.0625rem 0.125rem 0 rgb(0 0 0 / 0.4);
   --shadow-sm:
-    0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+    0 0.0625rem 0.1875rem 0 rgb(0 0 0 / 0.4),
+    0 0.0625rem 0.125rem -0.0625rem rgb(0 0 0 / 0.3);
   --shadow-md:
-    0 4px 8px -2px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+    0 0.25rem 0.5rem -0.125rem rgb(0 0 0 / 0.4),
+    0 0.125rem 0.25rem -0.125rem rgb(0 0 0 / 0.3);
   --shadow-lg:
-    0 12px 16px -4px rgb(0 0 0 / 0.4), 0 4px 6px -2px rgb(0 0 0 / 0.2);
+    0 0.75rem 1rem -0.25rem rgb(0 0 0 / 0.4),
+    0 0.25rem 0.375rem -0.125rem rgb(0 0 0 / 0.2);
   --shadow-xl:
-    0 20px 24px -4px rgb(0 0 0 / 0.4), 0 8px 8px -4px rgb(0 0 0 / 0.2);
-  --shadow-2xl: 0 24px 48px -12px rgb(0 0 0 / 0.5);
-  --shadow-3xl: 0 32px 64px -12px rgb(0 0 0 / 0.45);
+    0 1.25rem 1.5rem -0.25rem rgb(0 0 0 / 0.4),
+    0 0.5rem 0.5rem -0.25rem rgb(0 0 0 / 0.2);
+  --shadow-2xl: 0 1.5rem 3rem -0.75rem rgb(0 0 0 / 0.5);
+  --shadow-3xl: 0 2rem 4rem -0.75rem rgb(0 0 0 / 0.45);
 }
 
 /* Page baseline — typography + body chrome. Done in raw CSS rather

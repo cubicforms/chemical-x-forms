@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm bundle:repl && nuxi dev",
-    "build": "pnpm bundle:repl && nuxi build",
-    "generate": "pnpm bundle:repl && nuxi generate",
+    "build": "pnpm bundle:repl && nuxi build && pnpm index:search",
+    "generate": "pnpm bundle:repl && nuxi generate && pnpm index:search",
     "preview": "nuxi preview",
     "bundle:repl": "node scripts/bundle-repl-deps.mjs",
     "bundle:repl:watch": "node scripts/bundle-repl-deps.mjs --watch",
+    "index:search": "pagefind --site .output/public --output-path .output/public/_pagefind",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
@@ -27,6 +28,7 @@
     "@tailwindcss/vite": "^4.2.4",
     "esbuild": "^0.28.0",
     "nuxt": "^4.4.2",
+    "pagefind": "^1.5.0",
     "tailwindcss": "^4.2.4",
     "vue": "^3.5.33",
     "vue-tsc": "^3.2.7"

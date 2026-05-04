@@ -14,11 +14,17 @@
 
   // Active anchor for scrollspy. IntersectionObserver fires when a
   // heading enters the "active band" defined by rootMargin — top
-  // -80px clears the sticky header (h-16 = 64px) plus a 16px gutter,
+  // offset clears the sticky header (h-16 = 4rem) + a 1rem gutter,
   // bottom -70% means a heading reads as "active" only when it's in
   // the upper third of the viewport, not as it leaves the bottom.
   // This matches the usual "heading I'm reading is near the top of
   // the screen" intuition.
+  //
+  // The IntersectionObserver API only accepts `px` and `%` for
+  // rootMargin (no `rem` / no CSS values), so we compute the px
+  // equivalent from the document root font-size at observer setup.
+  // That keeps the active band proportional to the user's root size
+  // even though the value handed to the API is a px literal.
   const activeId = ref('')
   let observer: IntersectionObserver | undefined
 
@@ -36,6 +42,9 @@
       .filter((el): el is HTMLElement => el !== null)
     if (elements.length === 0) return
 
+    const rootFontPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+    const topOffsetPx = Math.round(5 * rootFontPx)
+
     observer = new IntersectionObserver(
       (entries) => {
         // Pick the topmost currently-intersecting heading. Without
@@ -50,7 +59,7 @@
           activeId.value = visible[0].target.id
         }
       },
-      { rootMargin: '-80px 0px -70% 0px', threshold: 0 }
+      { rootMargin: `-${topOffsetPx}px 0px -70% 0px`, threshold: 0 }
     )
     elements.forEach((el) => observer!.observe(el))
   }

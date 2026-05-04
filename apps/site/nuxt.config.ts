@@ -1,4 +1,5 @@
 import tailwindcss from '@tailwindcss/vite'
+import { transformerTwoslash } from '@shikijs/twoslash'
 
 export default defineNuxtConfig({
   modules: ['@nuxt/content', '@nuxt/fonts', '@nuxtjs/color-mode'],
@@ -30,6 +31,19 @@ export default defineNuxtConfig({
             'yaml',
             'md',
             'diff',
+          ],
+          // Twoslash adds inline TS type information to opt-in code
+          // blocks (` ```ts twoslash` or ` ```vue twoslash`). With
+          // explicitTrigger true, every other code block renders
+          // unchanged — Twoslash only kicks in when a doc page asks
+          // for it. The rich renderer gives popovers (the standard
+          // Twoslash UI) instead of inline annotations.
+          transformers: [
+            transformerTwoslash({
+              explicitTrigger: true,
+              renderer: 'rich',
+              throws: false,
+            }),
           ],
         },
       },
@@ -126,5 +140,5 @@ export default defineNuxtConfig({
       include: ['@vue/repl', '@vue/repl/codemirror-editor', 'lucide-vue-next'],
     },
   },
-  css: ['~/assets/css/tailwind.css'],
+  css: ['@shikijs/twoslash/style-rich.css', '~/assets/css/tailwind.css'],
 })

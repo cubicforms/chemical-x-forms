@@ -1,6 +1,6 @@
 <script setup lang="ts">
   import { Repl, useStore } from '@vue/repl'
-  import CodeMirrorEditor from '@vue/repl/codemirror-editor'
+  import MonacoEditor from '@vue/repl/monaco-editor'
   import '@vue/repl/style.css'
 
   const props = withDefaults(
@@ -28,7 +28,17 @@
   // block at the end of the example — the template uses semantic
   // class names (form, field, submit, …) so a reader can see the
   // form structure without parsing inline declarations.
-  const appCode = `<script setup lang="ts">
+  //
+  // The top-of-file comment is intentional: it invites the visitor
+  // to hover the highlighted symbols once Monaco loads, surfacing
+  // the typed shapes that schema-first forms produce. That's the
+  // marquee demonstration of the library — types you can see, not
+  // types you have to take on faith.
+  const appCode = `<${'script'} setup lang="ts">
+// 👇 Hover \`useForm\`, \`form.register\`, or \`form.errors\` to see
+//    the inferred types — every path and value below is derived
+//    from the schema, no manual type plumbing.
+
 import { z } from 'zod'
 import { useForm } from 'attaform/zod'
 
@@ -258,8 +268,54 @@ ${'</'}style>`
     },
   }
 
+  // Route the four packages we self-host through their /lib/types/ URLs.
+  // Volar (via @vue/repl's Monaco bundle) calls `pkgFileTextUrl(pkgName,
+  // pkgVersion, pkgPath)` whenever the language service needs a file
+  // from a package — package.json, the entry .d.ts, or any deeply-
+  // imported sibling. We answer with our own origin so the editor never
+  // hits a CDN.
+  //
+  // Anything outside our four-package allowlist falls through to
+  // @vue/repl's default jsdelivr resolver. That happens occasionally
+  // for type-only deps Volar wants to peek at (e.g. transitive @types/*
+  // packages); we accept the CDN fetch there because shipping the long
+  // tail ourselves isn't worth the build complexity.
+  const SELF_HOSTED_PKGS = new Set(['attaform', 'vue', 'zod'])
+  // useStore types `resourceLinks` as a Ref so consumers can swap the
+  // resolver at runtime (e.g. on a "load my own types" toggle). We
+  // never reassign it, but the type still demands a Ref wrapper.
+  const resourceLinks = ref({
+    pkgFileTextUrl(pkgName: string, _pkgVersion: string | undefined, pkgPath: string) {
+      if (SELF_HOSTED_PKGS.has(pkgName)) {
+        return `/lib/types/${pkgName}/${pkgPath}`
+      }
+      return `https://cdn.jsdelivr.net/npm/${pkgName}/${pkgPath}`
+    },
+  })
+
+  // Monaco theme follows the site's color mode. We expose the computed
+  // value via `editorOptions.monacoOptions.theme`; the stock `vs` /
+  // `vs-dark` themes are close enough to our Untitled UI palette that
+  // a custom theme isn't worth the maintenance.
+  const colorMode = useColorMode()
+  const monacoOptions = computed(() => ({
+    theme: colorMode.value === 'dark' ? 'vs-dark' : 'vs',
+    fontSize: 13,
+    fontFamily:
+      "'JetBrains Mono', ui-monospace, SFMono-Regular, 'Fira Code', Menlo, Consolas, monospace",
+    fontLigatures: true,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    renderLineHighlight: 'gutter' as const,
+    smoothScrolling: true,
+  }))
+  const editorOptions = computed(() => ({
+    monacoOptions: monacoOptions.value,
+  }))
+
   const store = useStore({
     builtinImportMap: ref(importMap),
+    resourceLinks,
   })
 
   store.setFiles({ 'src/App.vue': appCode }, 'src/App.vue')
@@ -272,8 +328,9 @@ ${'</'}style>`
   >
     <Repl
       :store="store"
-      :editor="CodeMirrorEditor"
+      :editor="MonacoEditor"
       :preview-options="previewOptions"
+      :editor-options="editorOptions"
       :show-compile-output="false"
     />
   </div>

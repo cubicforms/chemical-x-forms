@@ -191,7 +191,16 @@ export default defineNuxtConfig({
     // declaring the heavy site-only deps here makes the boot crawl
     // comprehensive, so first-paint requests resolve cleanly.
     optimizeDeps: {
-      include: ['@vue/repl', '@vue/repl/codemirror-editor', 'lucide-vue-next'],
+      include: [
+        '@vue/repl',
+        // Monaco preset bundles `monaco-editor-core` + `@volar/monaco` +
+        // `@volar/typescript` inline; pre-declaring the entry stops Vite
+        // from re-optimizing mid-session when DemoRepl first mounts.
+        // The 504 "Outdated Optimize Dep" otherwise breaks the first
+        // navigation into a page that hosts the live editor.
+        '@vue/repl/monaco-editor',
+        'lucide-vue-next',
+      ],
     },
   },
   css: ['@shikijs/twoslash/style-rich.css', '~/assets/css/tailwind.css'],

@@ -1,13 +1,8 @@
 <script setup lang="ts">
-  useHead({
-    title: 'Playground · Attaform',
-    meta: [
-      {
-        name: 'description',
-        content:
-          'Edit a real Attaform form in your browser — values, errors, validation, all live.',
-      },
-    ],
+  useHead({ title: 'Playground' })
+  useSeoMeta({
+    description:
+      'Edit a real Attaform form in your browser — values, errors, validation, all live.',
   })
 </script>
 

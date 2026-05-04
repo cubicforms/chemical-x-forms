@@ -10,6 +10,19 @@
     htmlAttrs: { lang: 'en' },
     titleTemplate: (title) =>
       title ? `${title} · Attaform` : 'Attaform — Type-safe forms for Vue 3',
+    link: [
+      // SVG favicon — modern evergreen browsers render it crisply at
+      // every tab size and adapt to high-DPI without a fallback PNG.
+      // Hardcoded accent fill (#6938ef) + white "A" strokes so the
+      // mark reads cleanly on both light and dark browser chrome.
+      { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+    ],
+    meta: [
+      // Tints mobile-browser chrome (Safari status bar on iOS, the
+      // Chrome address bar on Android) to the brand accent so the
+      // app surface bleeds into the system surface.
+      { name: 'theme-color', content: '#6938ef' },
+    ],
   })
 
   useSeoMeta({

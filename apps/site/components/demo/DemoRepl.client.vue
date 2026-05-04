@@ -293,13 +293,16 @@ ${'</'}style>`
     },
   })
 
-  // Monaco theme follows the site's color mode. We expose the computed
-  // value via `editorOptions.monacoOptions.theme`; the stock `vs` /
-  // `vs-dark` themes are close enough to our Untitled UI palette that
-  // a custom theme isn't worth the maintenance.
+  // Monaco theme follows the site's color mode. @vue/repl's Monaco
+  // preset uses Shiki for highlighting, so theme names are Shiki's
+  // (`dark-plus` / `light-plus`, the VSCode Dark+/Light+ defaults
+  // bundled into the @vue/repl Monaco preset). Passing Monaco's stock
+  // `vs` / `vs-dark` here throws `ShikiError: Theme not found` at
+  // editor mount because Shiki has nothing registered under those
+  // names.
   const colorMode = useColorMode()
   const monacoOptions = computed(() => ({
-    theme: colorMode.value === 'dark' ? 'vs-dark' : 'vs',
+    theme: colorMode.value === 'dark' ? 'dark-plus' : 'light-plus',
     fontSize: 13,
     fontFamily:
       "'JetBrains Mono', ui-monospace, SFMono-Regular, 'Fira Code', Menlo, Consolas, monospace",

@@ -4,31 +4,113 @@
 @variant dark (&:where(.dark, .dark *));
 
 @theme {
+  /* Neutral ramp.
+     `bg`/`fg` are the page surface; `surface-*` are nested elevations
+     (cards, sub-headers, code blocks). `fg-subtle` is for tertiary text
+     where `fg-muted` is still too prominent — footer copyright lines,
+     "last updated" stamps, etc. `border-strong` is for dividers that
+     need to read against `surface-2` where the default `border` would
+     wash out. */
   --color-bg: oklch(1 0 0);
-  --color-fg: oklch(0.15 0 0);
-  --color-fg-muted: oklch(0.45 0 0);
-  --color-surface: oklch(0.98 0 0);
+  --color-fg: oklch(0.18 0 0);
+  --color-fg-muted: oklch(0.46 0 0);
+  --color-fg-subtle: oklch(0.6 0 0);
+  --color-surface: oklch(0.985 0 0);
   --color-surface-2: oklch(0.96 0 0);
+  --color-surface-3: oklch(0.93 0 0);
   --color-border: oklch(0.92 0 0);
-  --color-accent: oklch(0.55 0.2 250);
-  --color-accent-fg: oklch(1 0 0);
+  --color-border-strong: oklch(0.85 0 0);
 
+  /* Brand accent. The hue is nudged from 250 → 262 (cooler indigo →
+     warmer blue-violet) which reads more "modern dev tool" than the
+     stock blue. `accent-soft` is the tinted-background companion for
+     chips/highlights; `accent-soft-fg` is the matching foreground that
+     keeps WCAG AA against the soft bg. */
+  --color-accent: oklch(0.55 0.2 262);
+  --color-accent-hover: oklch(0.5 0.21 262);
+  --color-accent-fg: oklch(1 0 0);
+  --color-accent-soft: oklch(0.96 0.03 262);
+  --color-accent-soft-fg: oklch(0.42 0.18 262);
+
+  /* Status palettes — used in callouts (info / warn / danger). Each
+     has a soft companion for the callout body so the strip doesn't
+     scream against the page bg. */
+  --color-success: oklch(0.6 0.16 152);
+  --color-success-soft: oklch(0.96 0.04 152);
+  --color-warning: oklch(0.7 0.16 70);
+  --color-warning-soft: oklch(0.97 0.05 70);
+  --color-danger: oklch(0.6 0.22 25);
+  --color-danger-soft: oklch(0.97 0.04 25);
+
+  /* Inter is loaded as the body face; it also handles the display
+     scale at heavier weights — saves a font load and keeps the visual
+     family consistent. JetBrains Mono in the stack lets it render
+     naturally where users have it installed (devs often do); we don't
+     ship it, so we degrade gracefully to platform monos. */
   --font-sans:
     'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
   --font-mono:
     ui-monospace, SFMono-Regular, 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+
+  /* Display type scale. Tailwind's default `text-*` covers body/UI
+     comfortably; these add Untitled-UI-style display sizes for hero
+     and section headlines. Each size carries its own line-height and
+     letter-spacing because tracking-tight at 5rem reads very different
+     from tracking-tight at 2.5rem. */
+  --text-display-sm: 2rem;
+  --text-display-sm--line-height: 1.2;
+  --text-display-sm--letter-spacing: -0.018em;
+  --text-display-md: 2.5rem;
+  --text-display-md--line-height: 1.15;
+  --text-display-md--letter-spacing: -0.022em;
+  --text-display-lg: 3.5rem;
+  --text-display-lg--line-height: 1.05;
+  --text-display-lg--letter-spacing: -0.028em;
+  --text-display-xl: 4.5rem;
+  --text-display-xl--line-height: 1;
+  --text-display-xl--letter-spacing: -0.034em;
+
+  /* Motion — exposed via tokens so layout/component animations share
+     a vocabulary instead of every file inventing its own bezier.
+     `ease-out-quart` is the standard "feels right for UI" curve
+     (sharp ramp into ease-out tail). */
+  --ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
 }
 
 .dark {
+  /* Dark surfaces nudge slightly between bg → surface-3 so cards have
+     visible elevation without bumping borders. The default 0.13 → 0.18
+     ramp from before was too tight to read as layered. */
   --color-bg: oklch(0.13 0 0);
   --color-fg: oklch(0.98 0 0);
-  --color-fg-muted: oklch(0.6 0 0);
-  --color-surface: oklch(0.18 0 0);
+  --color-fg-muted: oklch(0.66 0 0);
+  --color-fg-subtle: oklch(0.5 0 0);
+  --color-surface: oklch(0.17 0 0);
   --color-surface-2: oklch(0.21 0 0);
-  --color-border: oklch(0.25 0 0);
-  --color-accent: oklch(0.7 0.18 250);
+  --color-surface-3: oklch(0.25 0 0);
+  --color-border: oklch(0.26 0 0);
+  --color-border-strong: oklch(0.34 0 0);
+
+  /* Bumped lightness on the accent for dark; the saturated indigo of
+     light mode reads muddy on dark surfaces, so we lighten and slightly
+     desaturate. soft/soft-fg are inverted: tinted dark bg with a
+     bright fg. */
+  --color-accent: oklch(0.72 0.17 262);
+  --color-accent-hover: oklch(0.78 0.16 262);
   --color-accent-fg: oklch(0.13 0 0);
+  --color-accent-soft: oklch(0.25 0.06 262);
+  --color-accent-soft-fg: oklch(0.85 0.13 262);
+
+  --color-success: oklch(0.72 0.16 152);
+  --color-success-soft: oklch(0.25 0.05 152);
+  --color-warning: oklch(0.78 0.15 70);
+  --color-warning-soft: oklch(0.27 0.06 70);
+  --color-danger: oklch(0.72 0.18 25);
+  --color-danger-soft: oklch(0.27 0.07 25);
 }
 
 html,
@@ -37,8 +119,41 @@ body {
   color: var(--color-fg);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 * {
   border-color: var(--color-border);
+}
+
+/* Custom scrollbar — only on systems that paint over scrollbars
+   (mac-style overlay scrollbars don't honor these properties). The
+   thumb is mid-gray on both themes so it doesn't fight the page. */
+@supports (scrollbar-width: thin) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+}
+
+/* Selection color — themed accent rather than the OS blue, which
+   clashes with our indigo. */
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-soft-fg);
+}
+
+/* Reduced-motion override — kills our token-driven transitions and any
+   animations the components register. The `* { transition: none }`
+   is heavy-handed but appropriate; users who set this preference are
+   asking for "no animation, anywhere." */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

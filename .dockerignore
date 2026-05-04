@@ -1,8 +1,24 @@
+# Source tree → image; mirror .gitignore's "machine-local artifacts"
+# entries plus the dev-only directories that don't belong in the
+# build context. Smaller context = faster `docker build`.
+
 node_modules
+**/node_modules
+
 dist
 .nuxt
 .output
-.DS_Store
+.data
+**/.data
+apps/site/public/lib
+
+coverage
+.nyc_output
+
 .husky
 .vscode
 .git
+.DS_Store
+
+# Plan / memory state — per-developer, not container-relevant
+.claude

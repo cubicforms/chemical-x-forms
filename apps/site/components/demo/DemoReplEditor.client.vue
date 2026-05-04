@@ -3,12 +3,12 @@
   import MonacoEditor from '@vue/repl/monaco-editor'
   import '@vue/repl/style.css'
 
-  const props = withDefaults(
-    defineProps<{
-      height?: string
-    }>(),
-    { height: '37.5rem' }
-  )
+  // Sizing + lifecycle (SSR skeleton, deferred mount, route-leave
+  // guard) live on the parent `<DemoRepl>` shell. This component is
+  // pure editor: it expects to be mounted only when the host wrapper
+  // is in the DOM and the page transition has settled, so the
+  // Sandbox-iframe race documented at the top of `<DemoRepl>` can't
+  // fire here.
 
   // Worker URL override — runs once at module load on the client.
   //
@@ -66,30 +66,20 @@
   // block at the end of the example — the template uses semantic
   // class names (form, field, submit, …) so a reader can see the
   // form structure without parsing inline declarations.
-  //
-  // The top-of-file comment is intentional: it invites the visitor
-  // to hover the highlighted symbols once Monaco loads, surfacing
-  // the typed shapes that schema-first forms produce. That's the
-  // marquee demonstration of the library — types you can see, not
-  // types you have to take on faith.
   const appCode = `<${'script'} setup lang="ts">
-// 👇 Hover \`useForm\`, \`form.register\`, or \`form.errors\` to see
-//    the inferred types — every path and value below is derived
-//    from the schema, no manual type plumbing.
+  import { z } from 'zod'
+  import { useForm } from 'attaform/zod'
 
-import { z } from 'zod'
-import { useForm } from 'attaform/zod'
+  const schema = z.object({
+    email: z.email(),
+    password: z.string().min(8, 'At least 8 characters'),
+  })
 
-const schema = z.object({
-  email: z.email(),
-  password: z.string().min(8, 'At least 8 characters'),
-})
+  const form = useForm({ schema, key: 'signup' })
 
-const form = useForm({ schema, key: 'signup' })
-
-const onSubmit = form.handleSubmit(async (values) => {
-  alert('Submitted: ' + JSON.stringify(values, null, 2))
-})
+  const onSubmit = form.handleSubmit(async (values) => {
+    alert('Submitted: ' + JSON.stringify(values, null, 2))
+  })
 ${'</'}script>
 
 <template>
@@ -100,7 +90,7 @@ ${'</'}script>
         <p>Free forever · No credit card required</p>
       </header>
 
-      <div class="field" :class="{ invalid: form.errors.email?.[0] }">
+      <div class="field" :class="{ invalid: form.fields.email.touched && form.errors.email?.[0] }">
         <label for="email">Email</label>
         <input
           v-register="form.register('email')"
@@ -109,12 +99,12 @@ ${'</'}script>
           autocomplete="email"
           placeholder="you@company.com"
         />
-        <small v-if="form.errors.email?.[0]" class="error">
-          {{ form.errors.email[0].message }}
+        <small class="error">
+          {{ (form.fields.email.touched && form.errors.email?.[0]?.message) || '' }}
         </small>
       </div>
 
-      <div class="field" :class="{ invalid: form.errors.password?.[0] }">
+      <div class="field" :class="{ invalid: form.fields.password.touched && form.errors.password?.[0] }">
         <label for="password">Password</label>
         <input
           v-register="form.register('password')"
@@ -123,12 +113,16 @@ ${'</'}script>
           autocomplete="new-password"
           placeholder="At least 8 characters"
         />
-        <small v-if="form.errors.password?.[0]" class="error">
-          {{ form.errors.password[0].message }}
+        <small class="error">
+          {{ (form.fields.password.touched && form.errors.password?.[0]?.message) || '' }}
         </small>
       </div>
 
-      <button class="submit" type="submit" :disabled="form.meta.isSubmitting">
+      <button
+        class="submit"
+        type="submit"
+        :disabled="form.meta.isSubmitting || !form.meta.isValid"
+      >
         {{ form.meta.isSubmitting ? 'Creating account…' : 'Create account' }}
       </button>
     </form>
@@ -250,7 +244,10 @@ body {
 }
 
 .field .error {
-  font-size: 0.875rem;
+  display: block;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  min-height: 1.125rem;
   color: #B42318;
 }
 
@@ -380,16 +377,17 @@ ${'</'}style>`
   const { replDependencyVersion } = useRuntimeConfig().public
   const dependencyVersion = ref(replDependencyVersion)
 
-  // Monaco theme follows the site's color mode. @vue/repl's Monaco
-  // preset uses Shiki for highlighting, so theme names are Shiki's
-  // (`dark-plus` / `light-plus`, the VSCode Dark+/Light+ defaults
-  // bundled into the @vue/repl Monaco preset). Passing Monaco's stock
-  // `vs` / `vs-dark` here throws `ShikiError: Theme not found` at
-  // editor mount because Shiki has nothing registered under those
-  // names.
+  // Monaco theme follows the site's color mode via the `<Repl>`
+  // component's reactive `theme` prop ('light' | 'dark'). The
+  // Monaco preset internally maps that to Shiki's bundled
+  // `light-plus` / `dark-plus` and re-applies on change via
+  // `editor.updateOptions`. Don't set `theme` in `monacoOptions`
+  // here — it spreads AFTER the prop-derived default at construct
+  // time and would never change again because the preset's watcher
+  // only listens on the `<Repl>` prop.
   const colorMode = useColorMode()
-  const monacoOptions = computed(() => ({
-    theme: colorMode.value === 'dark' ? 'dark-plus' : 'light-plus',
+  const replTheme = computed(() => (colorMode.value === 'dark' ? 'dark' : 'light'))
+  const monacoOptions = {
     fontSize: 13,
     fontFamily:
       "'JetBrains Mono', ui-monospace, SFMono-Regular, 'Fira Code', Menlo, Consolas, monospace",
@@ -398,10 +396,20 @@ ${'</'}style>`
     scrollBeyondLastLine: false,
     renderLineHighlight: 'gutter' as const,
     smoothScrolling: true,
-  }))
-  const editorOptions = computed(() => ({
-    monacoOptions: monacoOptions.value,
-  }))
+  }
+  // `showErrorText: false` and `autoSaveText: false` opt out of the
+  // "Show Error" / "Auto Save" toggle buttons @vue/repl floats in the
+  // bottom-right of the editor pane (`.editor-floating` strip in
+  // EditorContainer.vue). The toggles are gated on
+  // `editorOptions.showErrorText !== false` / `autoSaveText !== false`,
+  // so passing literal `false` short-circuits both renders. Auto-save
+  // stays on by default for the underlying store, so the editor still
+  // commits on each keystroke; we just don't surface the toggle.
+  const editorOptions = {
+    monacoOptions,
+    showErrorText: false as const,
+    autoSaveText: false as const,
+  }
 
   const store = useStore({
     builtinImportMap: ref(importMap),
@@ -413,50 +421,19 @@ ${'</'}style>`
 </script>
 
 <template>
-  <div
-    class="demo-repl overflow-hidden rounded-xl border bg-bg shadow-sm"
-    :style="{ height: props.height }"
-  >
-    <Repl
-      :store="store"
-      :editor="MonacoEditor"
-      :preview-options="previewOptions"
-      :editor-options="editorOptions"
-      :show-compile-output="false"
-    />
-  </div>
+  <Repl
+    :store="store"
+    :editor="MonacoEditor"
+    :theme="replTheme"
+    :preview-options="previewOptions"
+    :editor-options="editorOptions"
+    :show-compile-output="false"
+    :show-import-map="false"
+    :show-tsconfig="false"
+  />
 </template>
 
-<style>
-  /* @vue/repl's default compile-error overlay (.msg.err) is alarm-red
-     and instant — every keystroke that lands on incomplete TS flashes
-     a giant red panel across the bottom of the iframe. For a demo on a
-     marketing page that's hostile UX. Two changes:
-
-     1. Defer fade-in to ~600ms so transient mid-keystroke errors don't
-        get a chance to flash before the next character makes it valid
-        again. Genuine "I left it broken" errors still surface, just
-        without the strobe effect.
-     2. Tone the palette down — a small bottom strip with a left
-        accent bar instead of the full-width alarmscape, so when it
-        does show it reads as feedback rather than failure. */
-  .demo-repl .msg.err {
-    --color: var(--color-fg-muted);
-    --bg-color: color-mix(in oklch, var(--color-surface), transparent 10%);
-    border-width: 0 0 0 0.1875rem;
-    border-radius: 0.25rem;
-    backdrop-filter: blur(0.375rem);
-    font-size: 0.8125rem;
-    max-height: 6rem;
-    overflow: auto;
-  }
-  .demo-repl .msg.err pre {
-    padding: 0.5rem 0.75rem;
-  }
-  .demo-repl .fade-enter-active {
-    transition-delay: 600ms;
-  }
-  .demo-repl .fade-leave-active {
-    transition-delay: 0ms;
-  }
-</style>
+<!-- Visual overrides for the rendered Repl (error overlay tone, hidden
+     "+" file-add button, "preview" → "Preview" tab label) live on the
+     SSR-rendered parent `<DemoRepl>` so they're in the page stylesheet
+     before this client-only component hydrates and renders. -->

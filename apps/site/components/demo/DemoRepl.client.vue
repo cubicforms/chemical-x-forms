@@ -10,6 +10,44 @@
     { height: '37.5rem' }
   )
 
+  // Worker URL override — runs once at module load on the client.
+  //
+  // The Monaco preset bundles its workers and spawns them via
+  // `new Worker(new URL("assets/<chunk>.js", import.meta.url), { type: 'module' })`.
+  // In dev, Vite injects its `@vite/client` HMR bootstrap into those
+  // worker files — and @vite/client's module-level WebSocket setup
+  // fails to handshake from a worker context, killing every worker
+  // at startup. The `bundle-repl-deps.mjs` script copies clean
+  // copies of those worker chunks to `/lib/repl-workers/`, served
+  // by Nitro as static files (no Vite injection).
+  //
+  // We can't replace `MonacoEnvironment.getWorker` directly: the
+  // @vue/repl bundle's getWorker does a non-trivial init handshake
+  // for the Vue worker (postMessage of resourceLinks, tsVersion,
+  // etc.) that our override would have to reimplement against the
+  // store. Instead, monkey-patch the `Worker` constructor itself —
+  // intercept only the `assets/(editor|vue).worker-*.js` URLs and
+  // rewrite them to the static copies, leaving every other Worker
+  // construction alone. The init handshake then runs unchanged
+  // because @vue/repl doesn't care which URL the worker came from.
+  if (import.meta.client && !('__attaformReplWorkerPatched' in self)) {
+    Object.defineProperty(self, '__attaformReplWorkerPatched', { value: true })
+    const Original = self.Worker
+    const REPL_WORKER_RE = /assets\/(editor|vue)\.worker-[^/]+\.js(?:[?#]|$)/
+    self.Worker = new Proxy(Original, {
+      construct(target, args: ConstructorParameters<typeof Worker>) {
+        const [src, options] = args
+        const href = src instanceof URL ? src.href : String(src)
+        const match = REPL_WORKER_RE.exec(href)
+        if (match) {
+          const label = match[1]
+          return new target(`/lib/repl-workers/${label}.worker.js`, options)
+        }
+        return new target(src, options)
+      },
+    })
+  }
+
   const importMap = {
     imports: {
       vue: '/lib/vue.esm-browser.prod.js',

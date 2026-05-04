@@ -1,7 +1,7 @@
 import esbuild from 'esbuild'
 import { rollup } from 'rollup'
 import dts from 'rollup-plugin-dts'
-import { copyFile, mkdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -92,6 +92,42 @@ await copyFile(
   resolve(repoRoot, 'node_modules/vue/dist/vue.esm-browser.prod.js'),
   resolve(outDir, 'vue.esm-browser.prod.js')
 )
+
+// ─── REPL worker assets ────────────────────────────────────────────
+//
+// @vue/repl's Monaco preset spawns workers via
+// `new Worker(new URL("assets/<chunk>.js", import.meta.url), { type: 'module' })`.
+// In dev, Vite serves those worker chunks but injects its `@vite/client`
+// HMR bootstrap into them — and `@vite/client`'s module-level WebSocket
+// setup fails to handshake from a worker context, killing the worker
+// at startup ("Could not create web worker(s)" + "Uncaught Event …
+// target: Worker"). Monaco then falls back to running the language
+// service on the main thread, freezing the UI.
+//
+// Workaround: copy the worker chunks to `public/lib/repl-workers/`
+// where Nitro's static file server emits them as-is (no Vite touch).
+// DemoRepl overrides `self.MonacoEnvironment.getWorker` to construct
+// workers from these clean URLs, sidestepping both the @vite/client
+// injection and the path-fragility of `import.meta.url` in dev.
+//
+// Filenames are renamed to stable names — `editor.worker.js` and
+// `vue.worker.js` — so DemoRepl doesn't have to track @vue/repl's
+// content-hash names. The hash will rotate when @vue/repl publishes
+// new versions; we just keep walking the assets/ directory by glob.
+const workerOutDir = resolve(outDir, 'repl-workers')
+await mkdir(workerOutDir, { recursive: true })
+const replAssetsDir = resolve(
+  repoRoot,
+  `node_modules/.pnpm/@vue+repl@4.7.2/node_modules/@vue/repl/dist/assets`
+)
+const workerEntries = await readdir(replAssetsDir)
+for (const entry of workerEntries) {
+  if (entry.startsWith('editor.worker')) {
+    await copyFile(resolve(replAssetsDir, entry), resolve(workerOutDir, 'editor.worker.js'))
+  } else if (entry.startsWith('vue.worker')) {
+    await copyFile(resolve(replAssetsDir, entry), resolve(workerOutDir, 'vue.worker.js'))
+  }
+}
 
 // ─── Type bundles (.d.ts) ──────────────────────────────────────────
 //

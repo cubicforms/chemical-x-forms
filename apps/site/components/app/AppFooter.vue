@@ -2,6 +2,7 @@
   import { Heart } from 'lucide-vue-next'
 
   const year = new Date().getFullYear()
+  const { attaformVersion } = useRuntimeConfig().public
 
   // Three categorical link groups + the brand block. Each link
   // declares either `to` (internal — NuxtLink, no target swap) or
@@ -78,7 +79,7 @@
             class="mt-1 inline-flex items-center gap-2 self-start rounded-full bg-warm-soft px-2.5 py-1 text-xs font-medium text-warm-soft-fg transition-colors duration-(--duration-fast) hover:bg-warm-soft/80"
           >
             <span class="h-1 w-1 rounded-full bg-warm" aria-hidden="true" />
-            v0.14.0-rc.0 · MIT
+            v{{ attaformVersion }} · MIT
           </a>
         </div>
         <div v-for="group in groups" :key="group.heading">

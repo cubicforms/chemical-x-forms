@@ -7,6 +7,8 @@
   // The icons map to the four-line value prop in the lede; a reader
   // who skims the heading + bullet titles should still get "what
   // does Attaform do" in 5 seconds.
+  const { attaformVersion } = useRuntimeConfig().public
+
   const features = [
     {
       icon: ShieldCheck,
@@ -89,7 +91,7 @@
                 class="relative inline-flex h-1.5 w-1.5 rounded-full bg-warm group-hover:bg-success"
               />
             </span>
-            <span>v0.14.0-rc.0 — what's new</span>
+            <span>v{{ attaformVersion }} — what's new</span>
             <ArrowRight
               class="h-4 w-4 text-fg-subtle transition-transform duration-(--duration-fast) group-hover:translate-x-0.5"
               :stroke-width="2.25"

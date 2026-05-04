@@ -82,15 +82,19 @@ export default defineNuxtConfig({
   },
   devtools: { enabled: true },
   compatibilityDate: '2025-01-28',
-  // Expose the versions of the three packages whose types we self-host
-  // for the in-page REPL. DemoRepl reads these via useRuntimeConfig()
-  // and pins them on the @vue/repl store's `dependencyVersion`, so
-  // Volar's worker skips the (slow + unpkg-bound) latest-version
-  // lookup. Reading from the actual package.json files at config time
-  // means a `pnpm version` bump is the single source of truth — the
-  // numbers can't drift from what the rest of the site ships.
+  // Public runtimeConfig values are read at build time from the actual
+  // package.json files and surfaced to the client via
+  // useRuntimeConfig(). One source of truth per concern — `pnpm
+  // version` is the only place to bump.
+  //
+  //   - attaformVersion: shown in the homepage release pill and the
+  //     footer brand block. Reads from attaform's root package.json.
+  //   - replDependencyVersion: pinned on the @vue/repl store's
+  //     dependencyVersion so Volar skips the (slow + unpkg-bound)
+  //     latest-version lookup. Reads from each package's package.json.
   runtimeConfig: {
     public: {
+      attaformVersion: attaformPkg.version,
       replDependencyVersion: {
         attaform: attaformPkg.version,
         vue: vuePkg.version,

@@ -322,14 +322,3 @@ body {
   }
 }
 
-/* Shiki dual-theme bridge. With @nuxt/content's `theme: { default, dark }`
-   config, Shiki emits each token with the light color as a direct
-   `color:` and the dark color as `--shiki-dark`. We then swap on
-   `.dark` — but the inline style on each `<span>` outranks our
-   class selector, so `!important` is the only mechanism that wins.
-   Same pattern Nuxt's own docs site uses. */
-html.dark .shiki,
-html.dark .shiki span {
-  background-color: var(--shiki-dark-bg) !important;
-  color: var(--shiki-dark) !important;
-}

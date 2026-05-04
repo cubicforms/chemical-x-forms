@@ -90,10 +90,22 @@
     --tw-prose-quote-borders: var(--color-accent);
     --tw-prose-captions: var(--color-fg-subtle);
     --tw-prose-code: var(--color-fg);
-    --tw-prose-pre-code: var(--color-gray-50);
-    --tw-prose-pre-bg: var(--color-gray-950);
+    /* Code-block bg + base color flip with theme. Light mode uses
+       gray-50 (matches github-light's #F9FAFB) so the block sits as
+       a subtle plate against the page; dark mode uses gray-950 so it
+       blends into the page bg with just the border-strong outline
+       defining its edge. The actual token colors come from Shiki's
+       per-span CSS classes (which @nuxt/content emits with both
+       light + dark theme values), so the pre-code base only matters
+       for the rare case where Shiki misses a token. */
+    --tw-prose-pre-bg: var(--color-gray-50);
+    --tw-prose-pre-code: var(--color-fg);
     --tw-prose-th-borders: var(--color-border);
     --tw-prose-td-borders: var(--color-border);
+  }
+  .dark .docs-prose {
+    --tw-prose-pre-bg: var(--color-gray-950);
+    --tw-prose-pre-code: var(--color-gray-50);
   }
 
   /* Anchor jumps need a top offset to clear the sticky header

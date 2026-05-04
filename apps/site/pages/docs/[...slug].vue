@@ -137,6 +137,37 @@
     margin-bottom: 1rem;
   }
 
+  /* Heading permalinks. Nuxt Content already wraps each heading's
+     content in an `<a href="#slug">` (you can see it in the rendered
+     HTML), so we don't have to inject a separate link node — we just
+     style the existing anchor's ::after with a hash glyph that fades
+     in on heading hover. The whole heading is clickable; the hash is
+     the visible affordance signaling "you can grab a deep link
+     here". h1 omitted because it's the article title — the URL
+     already addresses it. */
+  .docs-prose :where(h2, h3, h4) > a[href^='#'] {
+    color: inherit;
+    text-decoration: none;
+  }
+  .docs-prose :where(h2, h3, h4) > a[href^='#']::after {
+    content: '#';
+    display: inline-block;
+    margin-left: 0.5rem;
+    color: var(--color-fg-subtle);
+    font-weight: 400;
+    opacity: 0;
+    transition:
+      opacity var(--duration-fast) var(--ease-out-quart),
+      color var(--duration-fast) var(--ease-out-quart);
+  }
+  .docs-prose :where(h2, h3, h4):hover > a[href^='#']::after,
+  .docs-prose :where(h2, h3, h4) > a[href^='#']:focus-visible::after {
+    opacity: 1;
+  }
+  .docs-prose :where(h2, h3, h4) > a[href^='#']:hover::after {
+    color: var(--color-accent);
+  }
+
   /* Inline code chip — the typography plugin's default leans muted
      gray-on-gray, which doesn't read as "code" to the eye when
      surrounded by prose. Tinted bg + monospace + thin border makes

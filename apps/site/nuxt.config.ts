@@ -1,5 +1,5 @@
 import tailwindcss from '@tailwindcss/vite'
-import { transformerTwoslash } from '@shikijs/twoslash'
+import { rendererRich, transformerTwoslash } from '@shikijs/twoslash'
 
 export default defineNuxtConfig({
   modules: ['@nuxt/content', '@nuxt/fonts', '@nuxtjs/color-mode'],
@@ -36,12 +36,21 @@ export default defineNuxtConfig({
           // blocks (` ```ts twoslash` or ` ```vue twoslash`). With
           // explicitTrigger true, every other code block renders
           // unchanged — Twoslash only kicks in when a doc page asks
-          // for it. The rich renderer gives popovers (the standard
-          // Twoslash UI) instead of inline annotations.
+          // for it. `rendererRich()` returns the standard Twoslash
+          // popover UI; passing the string `'rich'` (an older API
+          // shape) silently breaks at runtime because the transformer
+          // expects a renderer object.
+          //
+          // @ts-expect-error @nuxt/content v3.13's highlight type
+          // omits `transformers` even though the runtime forwards
+          // the array straight to Shiki, which does accept it. The
+          // upstream type fix is tracked at
+          // https://github.com/nuxt/content/issues — when @nuxt/content
+          // tightens this, drop the directive.
           transformers: [
             transformerTwoslash({
               explicitTrigger: true,
-              renderer: 'rich',
+              renderer: rendererRich(),
               throws: false,
             }),
           ],
@@ -99,6 +108,24 @@ export default defineNuxtConfig({
   // response) to the real VFS handler that runs after it. Dev-only via
   // devHandlers.
   nitro: {
+    // Prerender every reachable route at build time so the production
+    // output ships static HTML alongside the SSR runtime. The Pagefind
+    // step (`pnpm index:search` after `nuxi build`) walks `.output/public`
+    // for HTML files; without prerendering the directory holds only
+    // assets and `_payload.json`, and Pagefind exits with "did not find
+    // any html files."
+    //
+    // `crawlLinks: true` follows internal `<a href>` and NuxtLink
+    // targets from the seed routes, so we only have to list the entry
+    // points. `/docs` is the index page that links into every doc;
+    // `/play` and `/` round out the rest of the public surface.
+    // failOnError: false keeps a single broken anchor in markdown
+    // from failing the whole build — Nuxt logs the misses to stderr.
+    prerender: {
+      crawlLinks: true,
+      routes: ['/', '/docs', '/play'],
+      failOnError: false,
+    },
     devHandlers: [
       {
         route: '/_vfs',
@@ -149,7 +176,11 @@ export default defineNuxtConfig({
     // directly when picking its WebSocket bind) lands on 0.0.0.0
     // instead of localhost. Without this, devtools' RPC server binds
     // to ::1 inside the container and the docker port forward can't
-    // reach it.
+    // reach it. Nuxt's typing of `vite.server` Omits `host` (it
+    // expects you to use the top-level `devServer.host`), but Vite
+    // itself accepts the value and devtools needs it set on Vite's
+    // own config, so we suppress the type error.
+    // @ts-expect-error see comment above — Nuxt-typed Omit, Vite-accepted runtime field
     server: { host: '0.0.0.0' },
     // Vite's startup crawl scans index.html + statically discoverable
     // imports; it misses imports inside `.client.vue` components (which

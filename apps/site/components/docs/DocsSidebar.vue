@@ -1,7 +1,11 @@
 <script setup lang="ts">
   // The nav structure is hand-curated in `composables/useDocsNavigation.ts`
   // so the sidebar, pager, and breadcrumb all walk the same source.
-  // Auto-imported by Nuxt; no explicit import here.
+  // Auto-imported by Nuxt — re-aliased onto a script-local const so
+  // vue-tsc resolves it from the component instance type when checking
+  // the template (it doesn't see Nuxt's global auto-import declarations
+  // through the template compiler at type time).
+  const sections = docsNavigation
 </script>
 
 <template>
@@ -12,7 +16,7 @@
          lets long sections scroll independently of the page when
          the docs nav is taller than the viewport. -->
     <nav class="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pr-3 pb-8">
-      <div v-for="section in docsNavigation" :key="section.heading" class="mb-7 last:mb-0">
+      <div v-for="section in sections" :key="section.heading" class="mb-7 last:mb-0">
         <h3 class="mb-3 text-sm font-semibold text-fg">{{ section.heading }}</h3>
         <ul>
           <li v-for="link in section.links" :key="link.to">

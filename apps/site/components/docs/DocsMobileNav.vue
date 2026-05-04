@@ -9,6 +9,11 @@
 
   const open = ref(false)
   const route = useRoute()
+  // Re-alias the auto-imported `docsNavigation` onto a script-local const
+  // so vue-tsc resolves it through the component instance type when
+  // checking the template (it doesn't see Nuxt's global auto-imports
+  // through the template compiler at type time).
+  const sections = docsNavigation
 
   // Close when route changes — the drawer's whole job is to be a
   // route picker, so once a link is clicked we want the drawer
@@ -105,7 +110,7 @@
             </button>
           </div>
           <nav class="flex-1 overflow-y-auto px-4 py-6">
-            <div v-for="section in docsNavigation" :key="section.heading" class="mb-7 last:mb-0">
+            <div v-for="section in sections" :key="section.heading" class="mb-7 last:mb-0">
               <h3 class="mb-3 text-sm font-semibold text-fg">{{ section.heading }}</h3>
               <ul>
                 <li v-for="link in section.links" :key="link.to">

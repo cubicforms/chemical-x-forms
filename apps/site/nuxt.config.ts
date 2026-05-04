@@ -276,11 +276,24 @@ export default defineNuxtConfig({
       // same resolver (single vue copy across the @vue/repl tree).
       exclude: ['@vue/repl', '@vue/repl/monaco-editor'],
     },
-    // Production sourcemaps are pure overhead for a docs site —
-    // every chunk would ship a .map sidecar, and several plugins in
-    // the build chain (Tailwind v4's vite plugin, the
-    // module-preload-polyfill) don't emit accurate maps anyway.
-    build: { sourcemap: false },
+    build: {
+      // Production sourcemaps are pure overhead for a docs site —
+      // every chunk would ship a .map sidecar, and several plugins
+      // in the build chain (Tailwind v4's vite plugin, the
+      // module-preload-polyfill) don't emit accurate maps anyway.
+      sourcemap: false,
+      // The @vue/repl Monaco preset bundles Monaco + the Vue/TS
+      // language services into one chunk weighing ~5.4 MB minified
+      // (~1.3 MB gzipped). Vite's default 500 KB threshold flags it
+      // every build with no actionable remediation — the chunk is
+      // already dynamically loaded behind `<DemoReplEditor>` (a
+      // `.client.vue` component) so it never blocks first paint, and
+      // splitting it further isn't possible without forking
+      // @vue/repl. Bumping the threshold to 6000 (6 MB) silences
+      // the existing warning while still catching any unrelated
+      // chunk that grows past Monaco's size.
+      chunkSizeWarningLimit: 6000,
+    },
   },
   hooks: {
     // Strip the Shiki/Twoslash transformers from public runtimeConfig

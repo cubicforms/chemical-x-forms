@@ -38,10 +38,14 @@
     <!-- Article — capped at max-w-3xl (768px) for comfortable reading
          line length. min-w-0 prevents overflow from wide code blocks
          pushing the TOC off-screen. flex-1 lets it grow into available
-         space when the TOC is hidden (lg-xl viewports). -->
+         space when the TOC is hidden (lg-xl viewports).
+         The whole article fades in on first paint (`docs-article-enter`
+         class — keyframe just below `docs-prose`) so the prose lands
+         deliberately rather than popping. The breadcrumb is excluded
+         from this since it has its own segment-stagger animation. -->
     <article class="min-w-0 max-w-3xl flex-1">
       <DocsBreadcrumb class="mb-8" />
-      <div class="docs-prose prose prose-neutral max-w-none dark:prose-invert">
+      <div class="docs-article-enter docs-prose prose prose-neutral max-w-none dark:prose-invert">
         <ContentRenderer v-if="page" :value="page" />
       </div>
 
@@ -156,16 +160,29 @@
     color: var(--color-fg-subtle);
     font-weight: 400;
     opacity: 0;
+    transform: translateX(-0.25rem);
     transition:
       opacity var(--duration-fast) var(--ease-out-quart),
+      transform var(--duration-fast) var(--ease-out-quart),
       color var(--duration-fast) var(--ease-out-quart);
   }
   .docs-prose :where(h2, h3, h4):hover > a[href^='#']::after,
   .docs-prose :where(h2, h3, h4) > a[href^='#']:focus-visible::after {
     opacity: 1;
+    transform: none;
   }
   .docs-prose :where(h2, h3, h4) > a[href^='#']:hover::after {
     color: var(--color-accent);
+  }
+
+  /* Article-level fade-in. The keyframe lives in tailwind.css
+     (reveal-fade); applying it to the prose wrapper at this layer
+     keeps the docs-prose CSS free of stagger choreography (which
+     belongs at the page layer). 480ms is just slow enough that the
+     reader feels the prose "land" but not so slow the page feels
+     gummy on fast nav. */
+  .docs-article-enter {
+    animation: reveal-fade var(--duration-deliberate) var(--ease-out-quart) both;
   }
 
   /* Inline code chip — the typography plugin's default leans muted

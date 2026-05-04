@@ -16,16 +16,16 @@
         <h3 class="mb-3 text-sm font-semibold text-fg">{{ section.heading }}</h3>
         <ul>
           <li v-for="link in section.links" :key="link.to">
-            <!-- exact-active-class so /docs's "Documentation home"
-                 entry only highlights when *exactly* on /docs, not
-                 on every /docs/* descendant. The accent border-left
-                 reads as the section indicator; the inactive border
-                 carries the same width so links don't shift 1px when
-                 their state flips. -->
+            <!-- exact-active-class flips the link to the active state.
+                 The `.docs-nav-item` styles below replace the simple
+                 `border-l` with a pseudo-element that scales in from
+                 the center on activate — state changes feel intentional
+                 rather than instant. Inactive width is preserved (0.0625rem)
+                 so the link doesn't reflow when the indicator appears. -->
             <NuxtLink
               :to="link.to"
-              exact-active-class="border-accent text-accent font-medium"
-              class="block border-l border-border py-1.5 pr-2 pl-4 text-sm text-fg-muted transition-colors duration-(--duration-fast) hover:border-fg-subtle hover:text-fg"
+              exact-active-class="docs-nav-item--active"
+              class="docs-nav-item relative block py-1.5 pr-2 pl-4 text-sm text-fg-muted transition-colors duration-(--duration-fast) hover:text-fg"
             >
               {{ link.title }}
             </NuxtLink>
@@ -35,3 +35,39 @@
     </nav>
   </aside>
 </template>
+
+<style scoped>
+  /* Pseudo-element border so we can transform it independently of the
+     link's hit-area. `transform-origin: center` means the bar grows
+     out of its midpoint when activating, which feels more deliberate
+     than growing from top-down or bottom-up. */
+  .docs-nav-item::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 0.0625rem;
+    background: var(--color-border);
+    transform: scaleY(1);
+    transform-origin: center;
+    transition:
+      background-color var(--duration-fast) var(--ease-out-quart),
+      transform var(--duration-base) var(--ease-out-expo);
+  }
+  .docs-nav-item:hover::before {
+    background: var(--color-fg-subtle);
+  }
+  .docs-nav-item--active {
+    color: var(--color-accent);
+    font-weight: 500;
+  }
+  .docs-nav-item--active::before {
+    background: var(--color-accent);
+    /* The transform makes the bar visibly "bloom" out of center on
+       activate. ScaleY 1.001 (effectively 1) so the bar matches the
+       link height exactly while still triggering the transform-based
+       transition. The transform-origin keeps the growth centered. */
+    animation: indicator-grow var(--duration-base) var(--ease-out-expo) both;
+  }
+</style>

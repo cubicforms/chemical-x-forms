@@ -23,7 +23,7 @@
         class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-fg-subtle uppercase"
       >
         <ArrowLeft
-          class="h-3.5 w-3.5 transition-transform duration-(--duration-fast) group-hover:-translate-x-0.5"
+          class="h-3.5 w-3.5 transition-transform duration-(--duration-fast) ease-(--ease-out-quart) group-hover:-translate-x-0.5 group-hover:scale-110"
           :stroke-width="2.25"
         />
         Previous
@@ -48,7 +48,7 @@
       >
         Next
         <ArrowRight
-          class="h-3.5 w-3.5 transition-transform duration-(--duration-fast) group-hover:translate-x-0.5"
+          class="h-3.5 w-3.5 transition-transform duration-(--duration-fast) ease-(--ease-out-quart) group-hover:translate-x-0.5 group-hover:scale-110"
           :stroke-width="2.25"
         />
       </span>

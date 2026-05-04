@@ -92,11 +92,11 @@
         <li v-for="link in links" :key="link.id">
           <a
             :href="`#${link.id}`"
-            class="block border-l py-1 pl-3 text-sm transition-colors duration-(--duration-fast)"
+            class="toc-item relative block py-1 pl-3 text-sm transition-[color,padding-left] duration-(--duration-fast) ease-(--ease-out-quart)"
             :class="
               isActive(link.id)
-                ? 'border-accent font-medium text-accent'
-                : 'border-border text-fg-muted hover:text-fg'
+                ? 'toc-item--active font-medium text-accent'
+                : 'text-fg-muted hover:text-fg'
             "
           >
             {{ link.text }}
@@ -105,11 +105,11 @@
             <li v-for="sub in link.children" :key="sub.id">
               <a
                 :href="`#${sub.id}`"
-                class="block border-l py-1 pr-2 pl-6 text-sm transition-colors duration-(--duration-fast)"
+                class="toc-item relative block py-1 pr-2 pl-6 text-sm transition-[color,padding-left] duration-(--duration-fast) ease-(--ease-out-quart)"
                 :class="
                   isActive(sub.id)
-                    ? 'border-accent font-medium text-accent'
-                    : 'border-border text-fg-subtle hover:text-fg'
+                    ? 'toc-item--active font-medium text-accent'
+                    : 'text-fg-subtle hover:text-fg'
                 "
               >
                 {{ sub.text }}
@@ -121,3 +121,38 @@
     </nav>
   </aside>
 </template>
+
+<style scoped>
+  /* Same animated indicator pattern as the sidebar — a pseudo-element
+     bar that scales in from center on activate. The TOC also nudges
+     active links 0.125rem to the right so the scrollspy firing reads
+     as a small visual cue (the link "steps forward" as the heading
+     reaches the top of the viewport). */
+  .toc-item::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 0.0625rem;
+    background: var(--color-border);
+    transform: scaleY(1);
+    transform-origin: center;
+    transition:
+      background-color var(--duration-fast) var(--ease-out-quart),
+      transform var(--duration-base) var(--ease-out-expo);
+  }
+  .toc-item--active {
+    padding-left: calc(0.75rem + 0.125rem);
+  }
+  /* The h3-depth (nested) link uses pl-6 in the template; preserve the
+     +0.125rem step for the nested form too. The selector targets the
+     nested rule because Vue scopes both class hashes together. */
+  ul ul .toc-item--active {
+    padding-left: calc(1.5rem + 0.125rem);
+  }
+  .toc-item--active::before {
+    background: var(--color-accent);
+    animation: indicator-grow var(--duration-base) var(--ease-out-expo) both;
+  }
+</style>

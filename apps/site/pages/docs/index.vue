@@ -20,13 +20,13 @@
     },
     {
       title: 'Recipes',
-      body: 'Task-oriented walkthroughs: persistence, transforms, async validation, focus-on-error.',
-      to: '/docs/recipes/transforms',
+      body: 'Task-oriented walkthroughs: persistence, dynamic field arrays, async validation, focus-on-error.',
+      to: '/docs/recipes/persistence',
       icon: BookOpen,
     },
     {
       title: 'Troubleshooting',
-      body: 'Common gotchas, hydration mismatches, slim-primitive write errors.',
+      body: 'Common gotchas: type-inference failures, SSR hydration mismatches, v-register on the wrong root.',
       to: '/docs/troubleshooting',
       icon: Wrench,
     },

@@ -194,7 +194,10 @@
             </h2>
             <p class="mt-4 text-lg text-fg-muted">
               Edit the schema, edit the template, watch it run. No backend, no build step — every
-              change re-renders live.
+              change re-renders live. Inputs stay native —
+              <code class="font-mono">v-register</code> is a Vue directive, not a wrapper component,
+              so there's no field-component overhead between your
+              <code class="font-mono">&lt;input&gt;</code> and the form.
             </p>
           </div>
           <UiButton to="/play" variant="link">

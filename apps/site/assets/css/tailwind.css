@@ -218,14 +218,61 @@
   --shadow-ring-error: 0 0 0 0.25rem var(--color-error-200);
 
   /* ─── Motion ───
-     Single ease for UI transitions (out-quart — sharp ramp into a
-     smooth tail, the standard "feels right" curve). Three durations
-     so micro-interactions (hover) and macro-interactions (page enter)
-     read as belonging to the same system. */
+     out-quart is the workhorse ramp (sharp into a smooth tail) used
+     by every default transition; out-expo (steeper finish) reads as
+     more "decisive" — reserved for state-change indicators (sidebar,
+     TOC) where the user just *did* something; spring overshoots
+     gently and is reserved for tactile micro-interactions (logo
+     hover, modal entrance) where the bounce sells the press. The
+     duration scale spans 80ms (sub-perception ack — hover bumps,
+     icon swaps) up through 480ms (page-section reveals). Keep
+     additions to this set rare; vocabulary creep undoes the
+     coherence. */
   --ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-snappy: 80ms;
   --duration-fast: 120ms;
   --duration-base: 200ms;
   --duration-slow: 320ms;
+  --duration-deliberate: 480ms;
+
+  /* ─── Warmth pair ───
+     Reserved for "highlight" affordances (release chip, version chip,
+     "what's new" markers) — never the default brand surface. Pulls
+     from the existing warning ramp so it shares the Untitled UI
+     vocabulary; amber pairs with violet on the color wheel and adds
+     the small bit of warmth that keeps the page from reading
+     clinical-cool. The naming is `warm-*` rather than `warning-*` so
+     callers don't accidentally adopt warning semantics for a purely
+     visual highlight. */
+  --color-warm: var(--color-warning-600);
+  --color-warm-soft: var(--color-warning-50);
+  --color-warm-soft-fg: var(--color-warning-700);
+
+  /* ─── Background gradients ───
+     Exposed as `--bg-image-*` so Tailwind v4 derives `bg-glow-hero`,
+     `bg-glow-warm`, and `bg-dot-grid` utilities from them. The hero
+     glow is a top-anchored radial of accent-soft fading to
+     transparent — applied behind the hero copy it adds depth without
+     being a "feature." The dot grid is an old-school 1px-dot lattice
+     scaled to 1.5rem; mask the edges from the calling element with
+     a radial gradient so it never extends past the copy column. */
+  --bg-image-glow-hero: radial-gradient(
+    60% 60% at 50% 0%,
+    var(--color-accent-soft) 0%,
+    transparent 70%
+  );
+  --bg-image-glow-warm: radial-gradient(
+    50% 80% at 50% 0%,
+    var(--color-warm-soft) 0%,
+    transparent 70%
+  );
+  --bg-image-dot-grid: radial-gradient(
+    circle at 0.0625rem 0.0625rem,
+    var(--color-border) 0.0625rem,
+    transparent 0
+  );
 }
 
 /* ─── Dark-mode semantic re-pointing ───
@@ -260,6 +307,13 @@
   --color-warning-soft: var(--color-warning-900);
   --color-danger: var(--color-error-400);
   --color-danger-soft: var(--color-error-900);
+
+  /* Warmth pair flips with the rest of the palette. warning-400 reads
+     correctly against gray-950; the soft surface drops to warning-900
+     so the chip bg doesn't blow out on a dark page. */
+  --color-warm: var(--color-warning-400);
+  --color-warm-soft: var(--color-warning-900);
+  --color-warm-soft-fg: var(--color-warning-300);
 
   /* Shadows on dark surfaces need a much darker base to register —
      light-mode's gray-900 base would vanish against gray-950. Pure
@@ -318,6 +372,107 @@ body {
   color: var(--color-accent-soft-fg);
 }
 
+/* ─── Shared keyframes ───
+   Every animation across the site sources from this set. Keeping them
+   here (rather than scoped to component <style> blocks) means a single
+   place to audit motion vocabulary, and the reduced-motion media query
+   below catches them automatically. New keyframes only get added when
+   an existing one genuinely doesn't fit; component-specific motion
+   (hero stagger, theme toggle wheel) can compose these via animation-
+   delay and -direction without redefining frames. */
+@keyframes reveal-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes reveal-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes hash-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-0.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes indicator-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* Reveal-on-scroll baseline. `useReveal` flips `data-revealed` to true
+   when the IntersectionObserver fires; the keyframe runs once and
+   leaves the element in its final state via `both`. The pre-reveal
+   state is set here (not on the `data-revealed='false'` selector) so
+   SSR-rendered HTML carries the hidden-state styles directly — the
+   page never flashes the final state during hydration. */
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(0.5rem);
+}
+[data-reveal][data-revealed='true'] {
+  animation: reveal-fade-up var(--duration-deliberate) var(--ease-out-quart) both;
+}
+
+/* ─── Page transitions ───
+   Lightweight cross-fade between routes. Vue's <Transition> applies
+   `*-enter-active` while the entering element animates in and
+   `*-leave-active` while the leaving element animates out. mode="out-in"
+   in app.vue means the leaver finishes before the enterer starts, so
+   these never overlap and we don't need absolute-positioning gymnastics
+   to prevent layout flash. Anything heavier than fade-and-tiny-lift
+   reads as gimmicky on a docs site — slides imply directionality the
+   user didn't ask for. */
+.page-enter-active,
+.page-leave-active {
+  transition:
+    opacity var(--duration-base) var(--ease-out-quart),
+    transform var(--duration-base) var(--ease-out-quart);
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(0.25rem);
+}
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-0.125rem);
+}
+
+/* Theme-toggle wheel — the leaving icon rotates clockwise off-stage
+   while the entering icon arrives from the opposite side. The two
+   halves chain into a single 90° wheel-turn rather than a swap. */
+.theme-spin-enter-active,
+.theme-spin-leave-active {
+  transition:
+    opacity var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quart);
+}
+.theme-spin-enter-from {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.85);
+}
+.theme-spin-leave-to {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.85);
+}
+
 /* Reduced-motion override — kills our token-driven transitions and
    any animations the components register. The universal selector is
    intentionally heavy-handed; users who set this preference are
@@ -330,6 +485,17 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  /* Reveals normally start at opacity 0 and fade in via animation. With
+     the universal animation kill above, the keyframe collapses to
+     zero-duration which would leave them stuck at the from-frame. The
+     animation still applies (in `both` mode), so the to-frame paints
+     immediately — but if a user's environment never fires the reveal
+     observer (no JS, very narrow viewport, etc.), force the visible
+     state directly so they're not stuck behind opacity:0 forever. */
+  [data-reveal] {
+    opacity: 1;
+    transform: none;
   }
 }
 

@@ -31,19 +31,6 @@
       body: 'Nuxt round-trips payload automatically. Per-field opt-in drafts to localStorage / sessionStorage / IndexedDB.',
     },
   ]
-
-  // Section reveals are wired through the shared useReveal singleton.
-  // We collect refs on each scroll-revealed root and ask the composable
-  // to observe their `[data-reveal]` children at mount. Pre-reveal
-  // styles ship in SSR HTML, so the page never flashes the final state
-  // during hydration.
-  const reveal = useReveal()
-  const featuresRoot = ref<HTMLElement | null>(null)
-  const ctaRoot = ref<HTMLElement | null>(null)
-  onMounted(() => {
-    reveal.observeAll(featuresRoot.value)
-    reveal.observeAll(ctaRoot.value)
-  })
 </script>
 
 <template>
@@ -111,8 +98,8 @@
           </p>
 
           <div class="reveal-step flex flex-wrap gap-3" style="--reveal-step-delay: 180ms">
-            <UiButton to="/docs" size="xl">
-              <span>Read the docs</span>
+            <UiButton to="/docs/quickstart" size="xl">
+              <span>Quick start</span>
               <ArrowRight class="h-5 w-5" :stroke-width="2.25" />
             </UiButton>
             <UiButton to="/play" size="xl" variant="secondary">Try it live</UiButton>
@@ -147,12 +134,11 @@
          and /play), then a 2-column feature grid. Each row is icon
          chip + title + body — denser than the homepage's prior flat
          paragraph list, and the icon chips give the eye anchors as
-         it scrolls. The whole grid is reveal-on-scroll: cards fade
-         up only as they cross 15% of the viewport, with a small
-         stagger so the eye reads them left-to-right. -->
-    <section ref="featuresRoot" class="border-b border-border py-24">
+         it scrolls. No on-scroll reveal here: the section renders
+         in its final state on first paint. -->
+    <section class="border-b border-border py-24">
       <UiContainer size="xl">
-        <div class="max-w-2xl" data-reveal>
+        <div class="max-w-2xl">
           <p class="text-sm font-semibold tracking-wide text-accent uppercase">Why Attaform</p>
           <h2 class="mt-3 text-display-md font-semibold tracking-tight text-fg">
             Forms shouldn't fight you.
@@ -164,13 +150,7 @@
         </div>
 
         <div class="mt-16 grid gap-x-12 gap-y-10 md:grid-cols-2">
-          <div
-            v-for="(feature, i) in features"
-            :key="feature.title"
-            data-reveal
-            :style="`animation-delay: ${i * 80}ms`"
-            class="flex gap-4"
-          >
+          <div v-for="feature in features" :key="feature.title" class="flex gap-4">
             <div
               class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent-soft-fg"
             >
@@ -228,23 +208,23 @@
 
     <!-- ─── Bottom CTA ───────────────────────────────────────────
          Centered close — gives the page a definite "end" rather
-         than dribbling into the footer. Repeats the primary CTA so
-         a reader who scrolled the whole page doesn't have to scroll
-         back to the hero to act on it. The card itself reveals on
-         scroll so it lands as the reader arrives. -->
-    <section ref="ctaRoot" class="border-t border-border bg-surface/50 py-24">
+         than dribbling into the footer. Leads with the install
+         command itself so a reader who scrolled the whole page can
+         act in one click without scrolling back to find a docs
+         link. -->
+    <section class="border-t border-border bg-surface/50 py-24">
       <UiContainer size="lg">
-        <div data-reveal class="flex flex-col items-center gap-6 text-center">
+        <div class="flex flex-col items-center gap-6 text-center">
           <h2 class="max-w-2xl text-display-md font-semibold tracking-tight text-fg">
             Get started in 30 seconds.
           </h2>
           <p class="max-w-xl text-lg text-fg-muted">
-            One install, one schema, one composable. Read the docs or jump straight into the
+            One install, one schema, one composable. Read the quick start or jump straight into the
             playground.
           </p>
           <div class="flex flex-wrap justify-center gap-3">
-            <UiButton to="/docs" size="xl">
-              <span>Read the docs</span>
+            <UiButton to="/docs/quickstart" size="xl">
+              <span>Quick start</span>
               <ArrowRight class="h-5 w-5" :stroke-width="2.25" />
             </UiButton>
             <UiButton to="/play" size="xl" variant="secondary">Try it live</UiButton>

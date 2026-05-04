@@ -1,5 +1,19 @@
 # Releases
 
+## v0.14.0 — 2026-05-04
+
+## What's Changed
+* docs: capitalize Attaform as a proper noun in narrative prose by @ozzyfromspace in https://github.com/attaform/Attaform/pull/167
+* chore(deps-dev): bump the dev-dependencies group with 12 updates by @dependabot[bot] in https://github.com/attaform/Attaform/pull/161
+* chore(deps-dev): bump vite-plugin-dts from 4.5.4 to 5.0.0 by @dependabot[bot] in https://github.com/attaform/Attaform/pull/162
+* feat(site): launch attaform.com — docs site phase 1 by @ozzyfromspace in https://github.com/attaform/Attaform/pull/168
+* fix(site): ship REPL types in prod + clean up build noise by @ozzyfromspace in https://github.com/attaform/Attaform/pull/169
+
+
+**Full Changelog**: https://github.com/attaform/Attaform/compare/v0.14.0-rc.0...v0.14.0
+
+---
+
 ## v0.14.0-rc.0 — 2026-05-03
 
 ## What's Changed

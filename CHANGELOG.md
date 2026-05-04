@@ -4,6 +4,9 @@
 
 _No unreleased changes yet._
 
+## v0.14.0
+_No unreleased changes yet._
+
 ## v0.14.0-rc.0
 - **Breaking — `useForm` validation config flattens.** The nested
   `fieldValidation: { on, debounceMs }` object is gone; both fields

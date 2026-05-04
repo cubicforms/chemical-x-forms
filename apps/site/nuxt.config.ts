@@ -79,6 +79,23 @@ export default defineNuxtConfig({
   },
   devtools: { enabled: true },
   compatibilityDate: '2025-01-28',
+  // Disable runtime payload extraction in dev only. Background:
+  // Nitro's `payloadCache` (mounted under `cache:nuxt:payload` with
+  // an fs base of `.nuxt/cache/nuxt/payload`) writes one cache entry
+  // per rendered route. For the root route `/`, unstorage normalizes
+  // the key down to an empty string, which the fs driver writes as
+  // a bare `payload` *file* at the cache base — collision with the
+  // directory it's supposed to be. Every subsequent route then 500s
+  // with `ENOTDIR: ... payload/docs-<hash>` when its payload tries
+  // to write to `payload/<safe-key>`.
+  //
+  // Production keeps payload extraction on: prerendering writes
+  // `_payload.json` files directly to `.output/public/<route>/` via
+  // a different code path that doesn't go through the dev cache, so
+  // SPA-style hydration on the static build is unaffected.
+  experimental: {
+    payloadExtraction: process.env.NODE_ENV === 'production',
+  },
   // Bind to all interfaces so the docker-compose port mapping
   // (3000:3000) reaches the dev server. Local-only dev still works —
   // 0.0.0.0 includes localhost.

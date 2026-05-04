@@ -188,28 +188,43 @@ async function bundleDts({ input, output, name, respectExternal = false, include
 
 // Each package gets a virtual install at /lib/types/<pkg>/. The
 // minimal package.json carries only the fields Volar's language
-// service reads: name, version, types entry, and (for attaform)
-// the `exports` map that resolves the `attaform/zod` subpath.
+// service reads: name, version, types entry, main entry, and (for
+// attaform) the `exports` map that resolves the `attaform/zod`
+// subpath.
 //
 // We don't read these package.json values from the real lockfile —
 // the REPL pins to the bundled-at-build-time version, and version
 // drift in the type bundle is its own follow-up problem.
+//
+// Two non-obvious points about the manifest shape:
+//
+//   1. `exports` entries declare BOTH `types` and a runtime condition
+//      (`import`). The @vue/repl Monaco preset uses TypeScript with
+//      `moduleResolution: "Bundler"`, which under `exports` requires
+//      a runtime resolution to consider the subpath valid — `types`
+//      alone produces `Cannot find module 'attaform/zod'` (ts(2307))
+//      even though the .d.ts is right there. We point `import` at a
+//      stub `.js` (written below) just to satisfy the existence check;
+//      the actual runtime code resolves through the iframe import map.
+//
+//   2. `typesVersions` is kept as belt-and-braces for resolvers that
+//      run in legacy 'node' mode and ignore `exports` outright.
 const packageManifests = {
   attaform: {
     name: 'attaform',
     version: '0.14.0-rc.0',
     types: './index.d.ts',
+    main: './index.js',
     exports: {
-      '.': { types: './index.d.ts' },
-      './zod': { types: './zod.d.ts' },
+      '.': {
+        types: './index.d.ts',
+        import: './index.js',
+      },
+      './zod': {
+        types: './zod.d.ts',
+        import: './zod.js',
+      },
     },
-    // Belt-and-braces subpath resolution. The `exports` field above is
-    // the modern way (moduleResolution: 'bundler' / 'node16'), but the
-    // @vue/repl Monaco preset's TypeScript config defaults to legacy
-    // 'node' resolution, which silently ignores `exports` and instead
-    // looks up subpaths via `typesVersions`. Without this entry,
-    // `import 'attaform/zod'` shows ts(2307) "Cannot find module"
-    // even though the .d.ts ships at the right path.
     typesVersions: {
       '*': {
         zod: ['./zod.d.ts'],
@@ -220,11 +235,13 @@ const packageManifests = {
     name: 'vue',
     version: '3.5.0',
     types: './index.d.ts',
+    main: './index.js',
   },
   zod: {
     name: 'zod',
     version: '4.4.2',
     types: './index.d.ts',
+    main: './index.js',
   },
 }
 
@@ -269,6 +286,18 @@ async function emitTypeBundles() {
       )
     )
   )
+  // Stub runtime entries. Volar 404s harmlessly when these are missing,
+  // but the LSP also performs a "module exists" probe on the `import`
+  // path declared in `exports`/`main` before it accepts the package as
+  // resolvable. An empty file is enough — the actual code that runs in
+  // the preview iframe comes from the `/lib/<pkg>.js` esbuild bundles
+  // mapped via the import map, not from these stubs.
+  await Promise.all([
+    writeFile(resolve(typesDir, 'attaform/index.js'), ''),
+    writeFile(resolve(typesDir, 'attaform/zod.js'), ''),
+    writeFile(resolve(typesDir, 'vue/index.js'), ''),
+    writeFile(resolve(typesDir, 'zod/index.js'), ''),
+  ])
 }
 
 await emitTypeBundles()

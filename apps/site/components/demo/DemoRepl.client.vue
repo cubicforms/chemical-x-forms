@@ -105,36 +105,36 @@ body {
   align-items: flex-start;
   justify-content: center;
   min-height: 100vh;
-  padding: 32px 16px;
+  padding: 2rem 1rem;
 }
 
 /* ─── Card ─── */
 
 .form {
   width: 100%;
-  max-width: 400px;
+  max-width: 25rem;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 32px;
+  gap: 1.25rem;
+  padding: 2rem;
   background: #FFFFFF;
-  border: 1px solid #EAECF0;
-  border-radius: 12px;
+  border: 0.0625rem solid #EAECF0;
+  border-radius: 0.75rem;
   box-shadow:
-    0 1px 3px 0 rgb(16 24 40 / 0.10),
-    0 1px 2px -1px rgb(16 24 40 / 0.06);
+    0 0.0625rem 0.1875rem 0 rgb(16 24 40 / 0.10),
+    0 0.0625rem 0.125rem -0.0625rem rgb(16 24 40 / 0.06);
 }
 
 .form-header {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 4px;
+  gap: 0.25rem;
+  margin-bottom: 0.25rem;
 }
 
 .form-header h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: 1.5rem;
   font-weight: 600;
   letter-spacing: -0.012em;
   color: #101828;
@@ -142,7 +142,7 @@ body {
 
 .form-header p {
   margin: 0;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: #667085;
 }
 
@@ -151,26 +151,26 @@ body {
 .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.375rem;
 }
 
 .field label {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 500;
   color: #344054;
 }
 
 .field input {
-  height: 40px;
-  padding: 0 14px;
-  border: 1px solid #D0D5DD;
-  border-radius: 8px;
+  height: 2.5rem;
+  padding: 0 0.875rem;
+  border: 0.0625rem solid #D0D5DD;
+  border-radius: 0.5rem;
   background: #FFFFFF;
   color: #101828;
   font: inherit;
-  font-size: 16px;
+  font-size: 1rem;
   outline: none;
-  box-shadow: 0 1px 2px 0 rgb(16 24 40 / 0.05);
+  box-shadow: 0 0.0625rem 0.125rem 0 rgb(16 24 40 / 0.05);
   transition:
     border-color 120ms cubic-bezier(0.165, 0.84, 0.44, 1),
     box-shadow 120ms cubic-bezier(0.165, 0.84, 0.44, 1);
@@ -187,8 +187,8 @@ body {
 .field input:focus {
   border-color: #BDB4FE;
   box-shadow:
-    0 0 0 4px #EBE9FE,
-    0 1px 2px 0 rgb(16 24 40 / 0.05);
+    0 0 0 0.25rem #EBE9FE,
+    0 0.0625rem 0.125rem 0 rgb(16 24 40 / 0.05);
 }
 
 .field.invalid input {
@@ -197,30 +197,30 @@ body {
 
 .field.invalid input:focus {
   box-shadow:
-    0 0 0 4px #FEE4E2,
-    0 1px 2px 0 rgb(16 24 40 / 0.05);
+    0 0 0 0.25rem #FEE4E2,
+    0 0.0625rem 0.125rem 0 rgb(16 24 40 / 0.05);
 }
 
 .field .error {
-  font-size: 14px;
+  font-size: 0.875rem;
   color: #B42318;
 }
 
 /* ─── Submit button ─── */
 
 .submit {
-  height: 40px;
-  margin-top: 4px;
-  padding: 0 18px;
+  height: 2.5rem;
+  margin-top: 0.25rem;
+  padding: 0 1.125rem;
   border: none;
-  border-radius: 8px;
+  border-radius: 0.5rem;
   background: #6938EF;
   color: #FFFFFF;
   font: inherit;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 1px 2px 0 rgb(16 24 40 / 0.05);
+  box-shadow: 0 0.0625rem 0.125rem 0 rgb(16 24 40 / 0.05);
   transition:
     background-color 120ms cubic-bezier(0.165, 0.84, 0.44, 1),
     box-shadow 120ms cubic-bezier(0.165, 0.84, 0.44, 1);
@@ -233,8 +233,8 @@ body {
 .submit:focus-visible {
   outline: none;
   box-shadow:
-    0 0 0 4px #EBE9FE,
-    0 1px 2px 0 rgb(16 24 40 / 0.05);
+    0 0 0 0.25rem #EBE9FE,
+    0 0.0625rem 0.125rem 0 rgb(16 24 40 / 0.05);
 }
 
 .submit:disabled {
@@ -295,15 +295,15 @@ ${'</'}style>`
   .demo-repl .msg.err {
     --color: var(--color-fg-muted);
     --bg-color: color-mix(in oklch, var(--color-surface), transparent 10%);
-    border-width: 0 0 0 3px;
-    border-radius: 4px;
-    backdrop-filter: blur(6px);
+    border-width: 0 0 0 0.1875rem;
+    border-radius: 0.25rem;
+    backdrop-filter: blur(0.375rem);
     font-size: 0.8125rem;
     max-height: 6rem;
     overflow: auto;
   }
   .demo-repl .msg.err pre {
-    padding: 8px 12px;
+    padding: 0.5rem 0.75rem;
   }
   .demo-repl .fade-enter-active {
     transition-delay: 600ms;

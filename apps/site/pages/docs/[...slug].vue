@@ -102,6 +102,17 @@
     --tw-prose-pre-code: var(--color-fg);
     --tw-prose-th-borders: var(--color-border);
     --tw-prose-td-borders: var(--color-border);
+
+    /* Drop body text from the typography plugin's 16px default to
+       15px — one notch above the 14px sidebar / nav scale, so the
+       hierarchy reads "controls (14) → content (15) → headings
+       (display)" rather than "controls (14) → wall of 16". The
+       typography plugin sizes most prose elements (headings, lists,
+       code, blockquotes) in `em`, so they all scale proportionally
+       from this base. h1's `text-display-md` override is in `rem`,
+       so it stays at 36px regardless. */
+    font-size: 0.9375rem;
+    line-height: 1.65;
   }
   .dark .docs-prose {
     --tw-prose-pre-bg: var(--color-gray-950);

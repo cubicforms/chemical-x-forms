@@ -60,6 +60,15 @@ await mkdir(typesDir, { recursive: true })
 
 const watch = process.argv.includes('--watch')
 
+// `tsconfig` is set explicitly to the workspace-root config. Without
+// this, esbuild auto-discovers `apps/site/tsconfig.json` (the cwd this
+// script runs in), which extends `./.nuxt/tsconfig.json` — and `.nuxt/`
+// hasn't been generated yet at this point in the build pipeline
+// (bundle:repl runs BEFORE nuxi build). The auto-discovery path then
+// emits "Cannot find base config file './.nuxt/tsconfig.json'" three
+// times per build. Pointing at the library's own tsconfig sidesteps
+// the unresolved extends and gives esbuild the right `paths` aliases
+// for `attaform` / `attaform/zod` resolution against `src/`.
 const sharedEsbuildOpts = {
   bundle: true,
   format: 'esm',
@@ -67,6 +76,7 @@ const sharedEsbuildOpts = {
   target: 'es2020',
   sourcemap: 'linked',
   outdir: outDir,
+  tsconfig: resolve(repoRoot, 'tsconfig.json'),
 }
 
 const ctxs = await Promise.all([

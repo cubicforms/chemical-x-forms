@@ -1,8 +1,43 @@
 import tailwindcss from '@tailwindcss/vite'
 import { rendererRich, transformerTwoslash } from '@shikijs/twoslash'
+import type { Logger, LogOptions } from 'vite'
 import attaformPkg from '../../package.json'
 import vuePkg from 'vue/package.json'
 import zodPkg from 'zod/package.json'
+
+// Two warning families fire on every build, are not ours to fix,
+// and add nothing actionable for a maintainer reading the logs:
+//
+//   1. "Sourcemap is likely to be incorrect: a plugin (…) was used
+//      to transform files, but didn't generate a sourcemap for the
+//      transformation."
+//      — Tailwind v4's vite plugin and Nuxt's module-preload-polyfill
+//      transform without emitting sourcemaps. Rollup walks the chain
+//      and warns ~17×/build that the resulting maps would be lossy.
+//      We've disabled sourcemap output anyway (vite.build.sourcemap
+//      = false), so the maps don't ship — the warnings are stale.
+//
+//   2. "new URL(\"assets/(editor|vue).worker-…\", import.meta.url)
+//      doesn't exist at build time, it will remain unchanged to be
+//      resolved at runtime."
+//      — @vue/repl's Monaco preset constructs its worker URLs via
+//      dynamic strings; Vite's static analyser can't resolve them
+//      and warns. That warning is exactly the trigger condition for
+//      the Worker-constructor Proxy in DemoReplEditor.client.vue,
+//      which intercepts the runtime resolution and reroutes to
+//      /lib/repl-workers/* (the static copies bundle:repl emits).
+//      Filtered narrowly to the editor + vue worker filenames; any
+//      other "URL doesn't exist at build time" warning still surfaces.
+function isFilteredBuildWarning(msg: string): boolean {
+  if (msg.includes('Sourcemap is likely to be incorrect')) return true
+  if (
+    msg.includes("doesn't exist at build time") &&
+    /\bassets\/(editor|vue)\.worker-[A-Za-z0-9_-]+\.js\b/.test(msg)
+  ) {
+    return true
+  }
+  return false
+}
 
 export default defineNuxtConfig({
   modules: ['@nuxt/content', '@nuxt/fonts', '@nuxtjs/color-mode'],
@@ -195,29 +230,6 @@ export default defineNuxtConfig({
       },
     ],
   },
-  hooks: {
-    // Strip the Shiki transformers from public runtimeConfig before
-    // Nitro's serializer runs over it. @nuxt/content copies the whole
-    // `content.build.markdown.highlight` block into
-    // `runtimeConfig.public.mdc` so client-side MDC rendering can read
-    // it — but our Twoslash transformer carries function callbacks
-    // (`preprocess`, `tokens`, `pre`, `code`) that don't survive JSON
-    // serialization, producing four "may not be able to be serialized"
-    // warnings on every dev start.
-    //
-    // Build-time markdown parsing reads transformers directly from
-    // `nuxt.options.content` (not from runtimeConfig), so removing
-    // them here doesn't affect the rendered output — it just keeps
-    // the functions out of the client-bound config payload, where
-    // they'd be useless anyway since Twoslash runs only at parse time.
-    'nitro:config'(nitroConfig) {
-      const mdc = (nitroConfig.runtimeConfig as { public?: { mdc?: unknown } } | undefined)?.public
-        ?.mdc as { highlight?: { transformers?: unknown[] } } | undefined
-      if (mdc?.highlight?.transformers) {
-        delete mdc.highlight.transformers
-      }
-    },
-  },
   vite: {
     plugins: [tailwindcss()],
     // Mirror Nuxt's devServer.host into Vite's server.host so
@@ -263,6 +275,90 @@ export default defineNuxtConfig({
       // node_modules paths (assets/ neighbors resolve) and through the
       // same resolver (single vue copy across the @vue/repl tree).
       exclude: ['@vue/repl', '@vue/repl/monaco-editor'],
+    },
+    build: {
+      // Production sourcemaps are pure overhead for a docs site —
+      // every chunk would ship a .map sidecar, and several plugins
+      // in the build chain (Tailwind v4's vite plugin, the
+      // module-preload-polyfill) don't emit accurate maps anyway.
+      sourcemap: false,
+      // The @vue/repl Monaco preset bundles Monaco + the Vue/TS
+      // language services into one chunk weighing ~5.4 MB minified
+      // (~1.3 MB gzipped). Vite's default 500 KB threshold flags it
+      // every build with no actionable remediation — the chunk is
+      // already dynamically loaded behind `<DemoReplEditor>` (a
+      // `.client.vue` component) so it never blocks first paint, and
+      // splitting it further isn't possible without forking
+      // @vue/repl. Bumping the threshold to 6000 (6 MB) silences
+      // the existing warning while still catching any unrelated
+      // chunk that grows past Monaco's size.
+      chunkSizeWarningLimit: 6000,
+    },
+  },
+  hooks: {
+    // Strip the Shiki/Twoslash transformers from public runtimeConfig
+    // before Nitro's serializer runs. @nuxt/content copies the whole
+    // `content.build.markdown.highlight` block into
+    // `runtimeConfig.public.mdc` so client-side MDC rendering can
+    // read it — but the Twoslash transformer carries function
+    // callbacks (`preprocess`, `tokens`, `pre`, `code`) that don't
+    // survive JSON serialization, producing "may not be able to be
+    // serialized" warnings during build. Build-time markdown parsing
+    // reads transformers directly from `nuxt.options.content` (not
+    // from runtimeConfig), so removing them here is harmless — the
+    // functions only run during prerender anyway.
+    'nitro:config'(nitroConfig) {
+      const mdc = (nitroConfig.runtimeConfig as { public?: { mdc?: unknown } } | undefined)?.public
+        ?.mdc as { highlight?: { transformers?: unknown[] } } | undefined
+      if (mdc?.highlight?.transformers) {
+        delete mdc.highlight.transformers
+      }
+
+      // Allow `.d.ts` / `.d.cts` / `.d.mts` files in public/ to ship
+      // in the static output. Nuxt's `@nuxt/schema` ships
+      // `**/*.d.{cts,mts,ts}` in the default `ignore` array on the
+      // assumption that declaration files aren't meant for the
+      // browser; Nitro inherits this and applies it to the
+      // public-assets globby pass, stripping our REPL type bundles
+      // from `.output/public/lib/types/`. Without those files, Volar
+      // (via @vue/repl's `pkgFileTextUrl` callback) 404s on
+      // `attaform`/`attaform/zod`/`vue`/`zod` declaration fetches and
+      // intellisense degrades to "any" in production.
+      //
+      // We strip the .d.ts ignore pattern from Nitro's options only.
+      // Nuxt's own component / layout scanners read from
+      // `nuxt.options.ignore` directly (not `nitroConfig.ignore`), so
+      // their behaviour is unaffected — they keep skipping ambient
+      // `.d.ts` files outside `public/` exactly as before.
+      const declRe = /\bd\.\{?(cts|mts|ts|c|m)/
+      if (Array.isArray(nitroConfig.ignore)) {
+        nitroConfig.ignore = nitroConfig.ignore.filter(
+          (p): p is string => typeof p === 'string' && !declRe.test(p)
+        )
+      }
+    },
+    // Wrap Vite's logger to filter the two warning families documented
+    // at the top of the file. Nuxt's vite-builder installs its own
+    // `customLogger` (which forwards to Consola); user-supplied
+    // `vite.customLogger` gets clobbered during the Nuxt config
+    // merge. By the time `vite:configResolved` fires, Nuxt's logger
+    // is on the resolved config as `customLogger` — wrap its `warn` /
+    // `warnOnce` in place so every Vite-emitted warning passes
+    // through our filter before reaching Consola. Fires twice (once
+    // per Vite build: client + server); both loggers get wrapped.
+    'vite:configResolved'(config) {
+      const lg = (config as { customLogger?: Logger }).customLogger
+      if (!lg) return
+      const origWarn = lg.warn.bind(lg)
+      const origWarnOnce = lg.warnOnce.bind(lg)
+      lg.warn = (msg: string, opts?: LogOptions) => {
+        if (isFilteredBuildWarning(msg)) return
+        origWarn(msg, opts)
+      }
+      lg.warnOnce = (msg: string, opts?: LogOptions) => {
+        if (isFilteredBuildWarning(msg)) return
+        origWarnOnce(msg, opts)
+      }
     },
   },
   css: ['@shikijs/twoslash/style-rich.css', '~/assets/css/tailwind.css'],

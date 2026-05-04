@@ -45,9 +45,19 @@
     type="button"
     :aria-label="label"
     :title="label"
-    class="inline-flex h-9 w-9 items-center justify-center rounded-md text-fg-muted transition-colors duration-(--duration-fast) ease-(--ease-out-quart) hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent-ring"
+    class="relative inline-flex h-9 w-9 items-center justify-center overflow-hidden rounded-md text-fg-muted transition-colors duration-(--duration-fast) ease-(--ease-out-quart) hover:bg-surface hover:text-fg focus-visible:ring-4 focus-visible:ring-accent-ring focus-visible:outline-none"
     @click="cycle"
   >
-    <component :is="icon" class="h-4 w-4" aria-hidden="true" />
+    <!-- Vue's <Transition> with mode="out-in" runs the leaver fully
+         before the enterer starts. The `theme-spin` keyframes (in
+         tailwind.css) rotate the leaving icon 90° clockwise off-stage
+         while the entering icon arrives from -90°, meeting the eye
+         at 0°. Result: the cycle reads as a single wheel turn rather
+         than a swap. `:key="current"` forces Vue to swap component
+         instances on each cycle so the transition fires; without it,
+         Vue would just patch the icon's `is` and skip the choreography. -->
+    <Transition name="theme-spin" mode="out-in">
+      <component :is="icon" :key="current" class="h-4 w-4" aria-hidden="true" />
+    </Transition>
   </button>
 </template>

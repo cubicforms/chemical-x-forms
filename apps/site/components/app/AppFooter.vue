@@ -1,4 +1,6 @@
 <script setup lang="ts">
+  import { Heart } from 'lucide-vue-next'
+
   const year = new Date().getFullYear()
 
   // Three categorical link groups + the brand block. Each link
@@ -45,7 +47,11 @@
 </script>
 
 <template>
-  <footer class="mt-24 border-t border-border">
+  <!-- The footer's top edge gets a hairline gradient instead of a flat
+       border — it visually "hands off" the page rather than slamming
+       into a hard line. The .footer-divider rule below paints it via
+       a 1px-tall pseudo-element so we can fade in from both sides. -->
+  <footer class="footer-divider relative mt-24">
     <UiContainer size="xl">
       <!-- Top region: brand block + three link groups. Brand block
            takes 2fr so its tagline can breathe; each link group is
@@ -61,6 +67,19 @@
             Type-safe, schema-driven forms for Vue 3 — values, errors, validation, persistence,
             undo/redo, all from one source of truth.
           </p>
+          <!-- Version chip — warm-soft pair on a small inline pill so
+               it ties to the hero release chip without competing with
+               the brand block heading. The dot is the same warm hue
+               (no animate-ping here — that's the hero's job). -->
+          <a
+            href="https://github.com/attaform/attaform/releases"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="mt-1 inline-flex items-center gap-2 self-start rounded-full bg-warm-soft px-2.5 py-1 text-xs font-medium text-warm-soft-fg transition-colors duration-(--duration-fast) hover:bg-warm-soft/80"
+          >
+            <span class="h-1 w-1 rounded-full bg-warm" aria-hidden="true" />
+            v0.14.0-rc.0 · MIT
+          </a>
         </div>
         <div v-for="group in groups" :key="group.heading">
           <h2 class="text-sm font-semibold text-fg">{{ group.heading }}</h2>
@@ -93,22 +112,34 @@
       <div
         class="flex flex-col items-center justify-between gap-3 border-t border-border py-6 sm:flex-row"
       >
-        <p class="text-sm text-fg-subtle">© {{ year }} Oswald Chisala · MIT License</p>
-        <p class="text-sm text-fg-subtle">
-          Built with
+        <p class="flex items-center gap-1.5 text-sm text-fg-subtle">
+          <span>© {{ year }} Oswald Chisala · MIT License</span>
+        </p>
+        <p class="flex items-center gap-1.5 text-sm text-fg-subtle">
+          <span class="heart-host inline-flex items-center gap-1.5">
+            <span>Made with</span>
+            <Heart
+              class="heart-pulse h-3 w-3 text-accent"
+              fill="currentColor"
+              :stroke-width="0"
+              aria-label="care"
+            />
+          </span>
+          <span class="mx-1 hidden text-fg-subtle/50 sm:inline" aria-hidden="true">·</span>
+          <span class="hidden sm:inline">Built with</span>
           <a
             href="https://vuejs.org"
             target="_blank"
             rel="noopener noreferrer"
-            class="font-medium text-fg-muted transition-colors hover:text-fg"
+            class="hidden font-medium text-fg-muted transition-colors hover:text-fg sm:inline"
             >Vue</a
           >
-          +
+          <span class="hidden sm:inline">+</span>
           <a
             href="https://nuxt.com"
             target="_blank"
             rel="noopener noreferrer"
-            class="font-medium text-fg-muted transition-colors hover:text-fg"
+            class="hidden font-medium text-fg-muted transition-colors hover:text-fg sm:inline"
             >Nuxt</a
           >
         </p>
@@ -116,3 +147,41 @@
     </UiContainer>
   </footer>
 </template>
+
+<style scoped>
+  /* Stripe-style hairline at the top edge — fades in from both sides
+     instead of running edge-to-edge. Pseudo-element rather than a
+     `border-top` so the gradient mask works without `mask-border-*`
+     gymnastics. */
+  .footer-divider::before {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    height: 0.0625rem;
+    background: linear-gradient(
+      to right,
+      transparent 0%,
+      var(--color-border-strong) 50%,
+      transparent 100%
+    );
+  }
+
+  /* The heart picks up a one-time soft pulse on hover of its host span.
+     Scoped so it only fires when the user is hovering specifically the
+     "Made with ❤" cluster, not anywhere else in the footer row. */
+  .heart-host:hover .heart-pulse {
+    animation: heart-pulse 320ms var(--ease-spring) 1;
+  }
+  @keyframes heart-pulse {
+    0% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.25);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+</style>

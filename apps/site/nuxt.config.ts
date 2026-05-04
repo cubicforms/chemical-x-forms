@@ -19,6 +19,11 @@ export default defineNuxtConfig({
     fallback: 'light',
     storageKey: 'attaform-color-mode',
   },
+  // Mount components/content/ without a path prefix so files in there
+  // (e.g. ProseA.vue overriding the default <a> renderer in MDC content)
+  // resolve under their bare names — the convention Nuxt Content's
+  // prose-override system expects.
+  components: [{ path: '~/components/content', pathPrefix: false, global: true }, '~/components'],
   vite: {
     plugins: [tailwindcss()],
   },

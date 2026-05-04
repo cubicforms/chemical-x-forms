@@ -1,7 +1,18 @@
 <script setup lang="ts">
+  import { PencilLine, ArrowUpRight } from 'lucide-vue-next'
+
   definePageMeta({ layout: 'docs' })
 
   const route = useRoute()
+
+  // Maps `/docs/recipes/transforms` → repo path `docs/recipes/transforms.md`
+  // → GitHub edit URL on `main`. The /edit/main/ link drops the
+  // visitor straight into the in-browser editor with the right file
+  // open (anonymous viewers see a "fork to edit" prompt; signed-in
+  // contributors get the editor immediately).
+  const editUrl = computed(
+    () => `https://github.com/attaform/attaform/edit/main${route.path.replace('/docs', '/docs')}.md`
+  )
 
   const { data: page } = await useAsyncData(`content-${route.path}`, () =>
     queryCollection('docs').path(route.path).first()
@@ -33,7 +44,25 @@
       <div class="docs-prose prose prose-neutral max-w-none dark:prose-invert">
         <ContentRenderer v-if="page" :value="page" />
       </div>
-      <DocsPager class="mt-16" />
+
+      <!-- Edit link sits between prose and pager — same visual weight
+           as a footer note (text-sm, fg-muted) so it doesn't compete
+           with the article body but stays discoverable for someone
+           who'd file a PR. -->
+      <div class="mt-12 flex justify-end border-t border-border pt-6">
+        <a
+          :href="editUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-1.5 text-sm text-fg-muted transition-colors duration-(--duration-fast) hover:text-fg"
+        >
+          <PencilLine class="h-3.5 w-3.5" :stroke-width="2" />
+          <span>Edit this page on GitHub</span>
+          <ArrowUpRight class="h-3.5 w-3.5" :stroke-width="2" />
+        </a>
+      </div>
+
+      <DocsPager class="mt-10" />
     </article>
     <DocsTOC :links="page?.body?.toc?.links" />
   </div>

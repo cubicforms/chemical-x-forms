@@ -32,6 +32,12 @@
           >
             GitHub
           </a>
+          <ClientOnly>
+            <ThemeToggle />
+            <template #fallback>
+              <div class="h-9 w-9" aria-hidden="true" />
+            </template>
+          </ClientOnly>
         </nav>
       </div>
     </UiContainer>

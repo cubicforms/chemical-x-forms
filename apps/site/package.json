@@ -19,7 +19,8 @@
     "@tailwindcss/typography": "^0.5.19",
     "@vue/repl": "^4.7.2",
     "attaform": "workspace:*",
-    "better-sqlite3": "^12.9.0"
+    "better-sqlite3": "^12.9.0",
+    "lucide-vue-next": "^1.0.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.4",

@@ -203,6 +203,18 @@ const packageManifests = {
       '.': { types: './index.d.ts' },
       './zod': { types: './zod.d.ts' },
     },
+    // Belt-and-braces subpath resolution. The `exports` field above is
+    // the modern way (moduleResolution: 'bundler' / 'node16'), but the
+    // @vue/repl Monaco preset's TypeScript config defaults to legacy
+    // 'node' resolution, which silently ignores `exports` and instead
+    // looks up subpaths via `typesVersions`. Without this entry,
+    // `import 'attaform/zod'` shows ts(2307) "Cannot find module"
+    // even though the .d.ts ships at the right path.
+    typesVersions: {
+      '*': {
+        zod: ['./zod.d.ts'],
+      },
+    },
   },
   vue: {
     name: 'vue',

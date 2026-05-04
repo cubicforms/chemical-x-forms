@@ -148,19 +148,28 @@ export default defineNuxtConfig({
   // response) to the real VFS handler that runs after it. Dev-only via
   // devHandlers.
   nitro: {
-    // Prerender every reachable route at build time so the production
-    // output ships static HTML alongside the SSR runtime. The Pagefind
-    // step (`pnpm index:search` after `nuxi build`) walks `.output/public`
-    // for HTML files; without prerendering the directory holds only
-    // assets and `_payload.json`, and Pagefind exits with "did not find
-    // any html files."
+    // Pure SSG. The `static` preset tells Nitro to emit only
+    // prerendered HTML + assets — no serverless runtime, no Node
+    // server. Vercel deploys the result as a CDN-only site (zero
+    // serverless function quota used). Same effect as `nuxi
+    // generate`; declaring it here means `nuxi build`, `nuxi
+    // generate`, and Vercel's auto-detected build path all produce
+    // the same static output.
+    //
+    // The Pagefind step (`pnpm index:search` after build) walks
+    // `.output/public` for HTML files; without prerendering the
+    // directory holds only assets and `_payload.json`, and
+    // Pagefind exits with "did not find any html files." With the
+    // static preset, every reachable route lands as HTML.
     //
     // `crawlLinks: true` follows internal `<a href>` and NuxtLink
-    // targets from the seed routes, so we only have to list the entry
-    // points. `/docs` is the index page that links into every doc;
-    // `/play` and `/` round out the rest of the public surface.
-    // failOnError: false keeps a single broken anchor in markdown
-    // from failing the whole build — Nuxt logs the misses to stderr.
+    // targets from the seed routes, so we only have to list the
+    // entry points. `/docs` is the index page that links into every
+    // doc; `/play` and `/` round out the rest of the public
+    // surface. failOnError: false keeps a single broken anchor in
+    // markdown from failing the whole build — Nuxt logs the misses
+    // to stderr.
+    preset: 'static',
     prerender: {
       crawlLinks: true,
       routes: ['/', '/docs', '/play'],

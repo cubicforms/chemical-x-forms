@@ -119,6 +119,29 @@ export default defineNuxtConfig({
       },
     ],
   },
+  hooks: {
+    // Strip the Shiki transformers from public runtimeConfig before
+    // Nitro's serializer runs over it. @nuxt/content copies the whole
+    // `content.build.markdown.highlight` block into
+    // `runtimeConfig.public.mdc` so client-side MDC rendering can read
+    // it — but our Twoslash transformer carries function callbacks
+    // (`preprocess`, `tokens`, `pre`, `code`) that don't survive JSON
+    // serialization, producing four "may not be able to be serialized"
+    // warnings on every dev start.
+    //
+    // Build-time markdown parsing reads transformers directly from
+    // `nuxt.options.content` (not from runtimeConfig), so removing
+    // them here doesn't affect the rendered output — it just keeps
+    // the functions out of the client-bound config payload, where
+    // they'd be useless anyway since Twoslash runs only at parse time.
+    'nitro:config'(nitroConfig) {
+      const mdc = (nitroConfig.runtimeConfig as { public?: { mdc?: unknown } } | undefined)?.public
+        ?.mdc as { highlight?: { transformers?: unknown[] } } | undefined
+      if (mdc?.highlight?.transformers) {
+        delete mdc.highlight.transformers
+      }
+    },
+  },
   vite: {
     plugins: [tailwindcss()],
     // Mirror Nuxt's devServer.host into Vite's server.host so

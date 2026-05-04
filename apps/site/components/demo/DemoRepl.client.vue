@@ -306,25 +306,37 @@ ${'</'}style>`
     },
   }
 
-  // Route the four packages we self-host through their /lib/types/ URLs.
+  // Route the three packages we self-host through their /lib/types/ URLs.
   // Volar (via @vue/repl's Monaco bundle) calls `pkgFileTextUrl(pkgName,
   // pkgVersion, pkgPath)` whenever the language service needs a file
   // from a package — package.json, the entry .d.ts, or any deeply-
   // imported sibling. We answer with our own origin so the editor never
   // hits a CDN.
   //
-  // Anything outside our four-package allowlist falls through to
-  // @vue/repl's default jsdelivr resolver. That happens occasionally
-  // for type-only deps Volar wants to peek at (e.g. transitive @types/*
-  // packages); we accept the CDN fetch there because shipping the long
-  // tail ourselves isn't worth the build complexity.
-  const SELF_HOSTED_PKGS = new Set(['attaform', 'vue', 'zod'])
+  // Anything outside our allowlist falls through to @vue/repl's default
+  // jsdelivr resolver. That happens occasionally for type-only deps
+  // Volar wants to peek at (e.g. transitive @types/* packages); we
+  // accept the CDN fetch there because shipping the long tail ourselves
+  // isn't worth the build complexity.
+  //
+  // Two non-obvious constraints, both imposed by @vue/repl shipping
+  // the resolver string-serialized to the type-checking worker:
+  //
+  //   1. Must be an arrow function (or function expression). The worker
+  //      reconstructs via `Function('return ' + str)()` (vue.worker.js
+  //      `createFunc`). Method-shorthand `pkgFileTextUrl(...) { ... }`
+  //      gives `return pkgFileTextUrl(...) { ... }` — a syntax error.
+  //   2. No closure over outer scope. The reconstructed function runs
+  //      in the worker's global scope; references to module-scoped
+  //      consts (e.g. `SELF_HOSTED_PKGS`) become ReferenceErrors.
+  //      Inline the package allowlist into the function body.
+  //
   // useStore types `resourceLinks` as a Ref so consumers can swap the
   // resolver at runtime (e.g. on a "load my own types" toggle). We
   // never reassign it, but the type still demands a Ref wrapper.
   const resourceLinks = ref({
-    pkgFileTextUrl(pkgName: string, _pkgVersion: string | undefined, pkgPath: string) {
-      if (SELF_HOSTED_PKGS.has(pkgName)) {
+    pkgFileTextUrl: (pkgName: string, _pkgVersion: string | undefined, pkgPath: string) => {
+      if (pkgName === 'attaform' || pkgName === 'vue' || pkgName === 'zod') {
         return `/lib/types/${pkgName}/${pkgPath}`
       }
       return `https://cdn.jsdelivr.net/npm/${pkgName}/${pkgPath}`

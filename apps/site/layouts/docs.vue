@@ -11,6 +11,11 @@
       <div class="flex gap-12 pt-10 pb-20">
         <DocsSidebar />
         <div class="min-w-0 flex-1">
+          <!-- Visible only below lg (the component's own root carries
+               `lg:hidden`); the trigger lives at the top of the
+               content column so a mobile reader can open the docs
+               nav without scrolling for it. -->
+          <DocsMobileNav class="mb-8" />
           <slot />
         </div>
       </div>

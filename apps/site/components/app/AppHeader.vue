@@ -29,7 +29,7 @@
     :class="scrolled ? 'shadow-xs' : 'shadow-none'"
   >
     <UiContainer size="xl">
-      <div class="flex h-16 items-center justify-between gap-6">
+      <div class="flex h-16 items-center justify-between gap-4">
         <NuxtLink
           to="/"
           class="flex items-center gap-2.5 font-semibold tracking-tight transition-opacity duration-(--duration-fast) hover:opacity-80"
@@ -38,27 +38,30 @@
           <span class="text-base">Attaform</span>
         </NuxtLink>
 
-        <nav class="flex items-center gap-1">
-          <NuxtLink
-            v-for="link in navLinks"
-            :key="link.to"
-            :to="link.to"
-            active-class="text-fg bg-surface"
-            class="rounded-md px-3 py-2 text-sm font-medium text-fg-muted transition-colors duration-(--duration-fast) ease-(--ease-out-quart) hover:bg-surface hover:text-fg"
-          >
-            {{ link.label }}
-          </NuxtLink>
-          <a
-            href="https://github.com/attaform/attaform"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="rounded-md px-3 py-2 text-sm font-medium text-fg-muted transition-colors duration-(--duration-fast) ease-(--ease-out-quart) hover:bg-surface hover:text-fg"
-          >
-            GitHub
-          </a>
-          <span class="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-          <AppThemeToggle />
-        </nav>
+        <div class="flex items-center gap-3">
+          <DocsSearch />
+          <nav class="flex items-center gap-1">
+            <NuxtLink
+              v-for="link in navLinks"
+              :key="link.to"
+              :to="link.to"
+              active-class="text-fg bg-surface"
+              class="rounded-md px-3 py-2 text-sm font-medium text-fg-muted transition-colors duration-(--duration-fast) ease-(--ease-out-quart) hover:bg-surface hover:text-fg"
+            >
+              {{ link.label }}
+            </NuxtLink>
+            <a
+              href="https://github.com/attaform/attaform"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="rounded-md px-3 py-2 text-sm font-medium text-fg-muted transition-colors duration-(--duration-fast) ease-(--ease-out-quart) hover:bg-surface hover:text-fg"
+            >
+              GitHub
+            </a>
+            <span class="mx-1 h-5 w-px bg-border" aria-hidden="true" />
+            <AppThemeToggle />
+          </nav>
+        </div>
       </div>
     </UiContainer>
   </header>

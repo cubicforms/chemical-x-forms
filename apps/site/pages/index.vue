@@ -96,7 +96,7 @@
           </a>
 
           <h1
-            class="reveal-step text-display-lg font-semibold tracking-tight text-fg md:text-display-xl"
+            class="reveal-step text-display-md font-semibold tracking-tight text-fg sm:text-display-lg md:text-display-xl"
             style="--reveal-step-delay: 60ms"
           >
             A type-safe, schema-driven form library for Vue&nbsp;3 and Nuxt with

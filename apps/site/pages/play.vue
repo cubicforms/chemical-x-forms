@@ -13,15 +13,17 @@
 
 <template>
   <UiContainer size="xl">
-    <div class="py-10">
-      <div class="mb-6">
-        <h1 class="text-3xl font-semibold tracking-tight">Playground</h1>
-        <p class="mt-2 text-(--color-fg-muted)">
-          A real Attaform form, running on the live `attaform` source. Edit the schema, watch the
-          form re-render. Errors update synchronously by default.
+    <div class="py-12">
+      <div class="mb-8 max-w-3xl">
+        <p class="text-sm font-semibold tracking-wide text-accent uppercase">Live editor</p>
+        <h1 class="mt-3 text-display-md font-semibold text-fg">Playground</h1>
+        <p class="mt-4 text-lg text-fg-muted">
+          A real Attaform form, running on the live
+          <code class="rounded bg-surface px-1.5 py-0.5 font-mono text-base">attaform</code>
+          source. Edit the schema, watch the form re-render. Errors update synchronously by default.
         </p>
       </div>
-      <DemoRepl height="calc(100vh - 280px)" />
+      <DemoRepl height="calc(100vh - 320px)" />
     </div>
   </UiContainer>
 </template>

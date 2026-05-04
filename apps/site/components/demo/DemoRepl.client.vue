@@ -307,29 +307,39 @@ ${'</'}style>`
   }
 
   // Route the three packages we self-host through their /lib/types/ URLs.
-  // Volar (via @vue/repl's Monaco bundle) calls `pkgFileTextUrl(pkgName,
-  // pkgVersion, pkgPath)` whenever the language service needs a file
-  // from a package — package.json, the entry .d.ts, or any deeply-
-  // imported sibling. We answer with our own origin so the editor never
-  // hits a CDN.
+  // Volar (via @vue/repl's Monaco bundle) needs THREE callbacks wired up
+  // on `resourceLinks` for self-hosted type bundles to work. Missing any
+  // one of them silently falls back to unpkg, which doesn't have our
+  // pre-release attaform — so symbols resolve to nothing.
+  //
+  //   - pkgFileTextUrl: returns the URL for a single file inside the
+  //     package (`<pkg>/<path>`). The LSP fetches package.json, .d.ts
+  //     entries, and stub runtime entries through this.
+  //   - pkgDirUrl: returns the URL for a JSON directory listing of the
+  //     package (the file is `meta.json`, format `{ files: [...] }`,
+  //     mimicking unpkg's `?meta` endpoint). Volar's worker uses this
+  //     for EVERY file-existence check via _stat — without it, the LSP
+  //     can't confirm `attaform/zod.d.ts` exists and resolution fails.
+  //   - pkgLatestVersionUrl: returns a URL whose JSON exposes a
+  //     `version` field. Defaults to unpkg's "@latest/package.json".
+  //     We point it at our package.json. Strictly speaking this gets
+  //     skipped when `dependencyVersion` (below) pins the version, but
+  //     leaving it in keeps the fallback path local-only.
   //
   // Anything outside our allowlist falls through to @vue/repl's default
-  // jsdelivr resolver. That happens occasionally for type-only deps
-  // Volar wants to peek at (e.g. transitive @types/* packages); we
-  // accept the CDN fetch there because shipping the long tail ourselves
-  // isn't worth the build complexity.
+  // unpkg resolver. That happens occasionally for transitive type-only
+  // deps; we accept the CDN fetch there.
   //
   // Two non-obvious constraints, both imposed by @vue/repl shipping
-  // the resolver string-serialized to the type-checking worker:
+  // these resolvers string-serialized to the type-checking worker:
   //
   //   1. Must be an arrow function (or function expression). The worker
   //      reconstructs via `Function('return ' + str)()` (vue.worker.js
-  //      `createFunc`). Method-shorthand `pkgFileTextUrl(...) { ... }`
-  //      gives `return pkgFileTextUrl(...) { ... }` — a syntax error.
+  //      `createFunc`). Method-shorthand `name(...) { ... }` gives
+  //      `return name(...) { ... }` — a syntax error.
   //   2. No closure over outer scope. The reconstructed function runs
-  //      in the worker's global scope; references to module-scoped
-  //      consts (e.g. `SELF_HOSTED_PKGS`) become ReferenceErrors.
-  //      Inline the package allowlist into the function body.
+  //      in the worker's global scope; module-scoped consts become
+  //      ReferenceErrors. Inline the package allowlist in each body.
   //
   // useStore types `resourceLinks` as a Ref so consumers can swap the
   // resolver at runtime (e.g. on a "load my own types" toggle). We
@@ -341,6 +351,32 @@ ${'</'}style>`
       }
       return `https://cdn.jsdelivr.net/npm/${pkgName}/${pkgPath}`
     },
+    pkgDirUrl: (pkgName: string, _pkgVersion: string | undefined, _pkgPath: string) => {
+      if (pkgName === 'attaform' || pkgName === 'vue' || pkgName === 'zod') {
+        return `/lib/types/${pkgName}/meta.json`
+      }
+      return `https://unpkg.com/${pkgName}@${_pkgVersion || 'latest'}/${_pkgPath}/?meta`
+    },
+    pkgLatestVersionUrl: (pkgName: string) => {
+      if (pkgName === 'attaform' || pkgName === 'vue' || pkgName === 'zod') {
+        return `/lib/types/${pkgName}/package.json`
+      }
+      return `https://unpkg.com/${pkgName}@latest/package.json`
+    },
+  })
+
+  // Pin the versions Volar uses when constructing CDN-style URLs. Without
+  // this, the worker treats every package as "latest" and round-trips
+  // through pkgLatestVersionUrl (slow, and unpkg doesn't have our
+  // pre-release attaform). The values flow into the worker's
+  // `dependencies` map and short-circuit the latest-version lookup.
+  // Numbers must match what `bundle-repl-deps.mjs` writes into each
+  // virtual package.json — drift here just causes a wasted round trip
+  // through pkgLatestVersionUrl, not a hard failure.
+  const dependencyVersion = ref({
+    attaform: '0.14.0-rc.0',
+    vue: '3.5.0',
+    zod: '4.4.2',
   })
 
   // Monaco theme follows the site's color mode. @vue/repl's Monaco
@@ -369,6 +405,7 @@ ${'</'}style>`
   const store = useStore({
     builtinImportMap: ref(importMap),
     resourceLinks,
+    dependencyVersion,
   })
 
   store.setFiles({ 'src/App.vue': appCode }, 'src/App.vue')

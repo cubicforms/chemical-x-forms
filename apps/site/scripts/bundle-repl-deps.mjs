@@ -298,6 +298,45 @@ async function emitTypeBundles() {
     writeFile(resolve(typesDir, 'vue/index.js'), ''),
     writeFile(resolve(typesDir, 'zod/index.js'), ''),
   ])
+  // Directory listing JSON per package, mimicking unpkg's `?meta`
+  // endpoint shape: `{ files: [{ path, type }] }`. Volar's worker
+  // (`createNpmFileSystem` in @vue/repl's vue.worker) calls our
+  // pkgDirUrl callback for *every* file existence check — `_stat`
+  // for `<pkg>/<file>` doesn't fetch the file directly, it lists the
+  // package directory and looks for the entry by name. Without this
+  // listing the LSP can't confirm that `attaform/zod.d.ts` exists,
+  // so module resolution returns "Cannot find module" even though
+  // the file is right there. Default behaviour is to query
+  // unpkg.com — which doesn't have our pre-release `attaform@0.14`,
+  // so the listing comes back empty.
+  //
+  // Volar filters this list against the requested pkgPath (root vs.
+  // subdir), so we can serve the same flat list for any pkgPath:
+  // entries with leading slash are skipped when pkgPath is non-empty,
+  // which is what we want for our flat type bundles.
+  const dirMeta = (entries) => ({
+    type: 'directory',
+    path: '/',
+    files: entries.map((e) => ({ type: 'file', path: `/${e}` })),
+  })
+  await Promise.all([
+    writeFile(
+      resolve(typesDir, 'attaform/meta.json'),
+      JSON.stringify(
+        dirMeta(['package.json', 'index.d.ts', 'index.js', 'zod.d.ts', 'zod.js']),
+        null,
+        2
+      )
+    ),
+    writeFile(
+      resolve(typesDir, 'vue/meta.json'),
+      JSON.stringify(dirMeta(['package.json', 'index.d.ts', 'index.js']), null, 2)
+    ),
+    writeFile(
+      resolve(typesDir, 'zod/meta.json'),
+      JSON.stringify(dirMeta(['package.json', 'index.d.ts', 'index.js']), null, 2)
+    ),
+  ])
 }
 
 await emitTypeBundles()

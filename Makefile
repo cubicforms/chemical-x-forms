@@ -36,7 +36,7 @@ install:  ## Install dependencies
 prepare:  ## Prepare the module for development (build stub + prepare apps/site)
 	docker compose exec attaform pnpm dev:prepare
 
-dev:  ## Run the docs site dev server (visit http://localhost:3001)
+dev:  ## Run the docs site dev server (visit http://localhost:3000)
 	docker compose exec attaform pnpm dev
 
 test:  ## Run the test suite once

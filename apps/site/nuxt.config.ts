@@ -5,7 +5,7 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   compatibilityDate: '2025-01-28',
   // Bind to all interfaces so the docker-compose port mapping
-  // (3001:3000) reaches the dev server. Local-only dev still works —
+  // (3000:3000) reaches the dev server. Local-only dev still works —
   // 0.0.0.0 includes localhost.
   devServer: { host: '0.0.0.0' },
   // The module emits a blocking inline <script> in <head> that resolves

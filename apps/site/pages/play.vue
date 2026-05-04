@@ -18,7 +18,7 @@
           source. Edit the schema, watch the form re-render. Errors update synchronously by default.
         </p>
       </div>
-      <DemoRepl height="calc(100vh - 320px)" />
+      <DemoRepl height="calc(100vh - 20rem)" />
     </div>
   </UiContainer>
 </template>

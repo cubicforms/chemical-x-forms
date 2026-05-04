@@ -165,7 +165,7 @@
             <ArrowRight class="h-4 w-4" :stroke-width="2.25" />
           </UiButton>
         </div>
-        <DemoRepl height="600px" />
+        <DemoRepl height="37.5rem" />
       </UiContainer>
     </section>
 
@@ -209,7 +209,7 @@
   @keyframes hero-enter {
     from {
       opacity: 0;
-      transform: translateY(12px);
+      transform: translateY(0.75rem);
     }
     to {
       opacity: 1;

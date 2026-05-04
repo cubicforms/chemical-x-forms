@@ -7,7 +7,7 @@
     defineProps<{
       height?: string
     }>(),
-    { height: '600px' }
+    { height: '37.5rem' }
   )
 
   const importMap = {

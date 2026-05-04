@@ -45,7 +45,7 @@
     type="button"
     :aria-label="label"
     :title="label"
-    class="inline-flex h-9 w-9 items-center justify-center rounded-md text-(--color-fg-muted) transition-colors hover:bg-(--color-surface) hover:text-(--color-fg) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
+    class="inline-flex h-9 w-9 items-center justify-center rounded-md text-fg-muted transition-colors duration-(--duration-fast) ease-(--ease-out-quart) hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent-ring"
     @click="cycle"
   >
     <component :is="icon" class="h-4 w-4" aria-hidden="true" />

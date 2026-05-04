@@ -1,7 +1,26 @@
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineNuxtConfig({
-  modules: ['@nuxt/content', '@nuxtjs/color-mode'],
+  modules: ['@nuxt/content', '@nuxt/fonts', '@nuxtjs/color-mode'],
+  // Webfonts are downloaded from Google Fonts at build time and emitted
+  // into the build output as woff2 + an inline @font-face block; pages
+  // reference local URLs only, so visitors never reach out to Google.
+  // We pin the families here (rather than relying on auto-detection
+  // from `--font-sans` / `--font-mono` in tailwind.css) for two
+  // reasons: 1) the auto-detector occasionally misses tokens behind
+  // CSS variables in @theme blocks, 2) explicit weights keep the
+  // bundle deterministic — Inter ships at 400/500/600/700 because
+  // those are the only weights the design system actually uses.
+  fonts: {
+    families: [
+      { name: 'Inter', provider: 'google', weights: [400, 500, 600, 700] },
+      { name: 'JetBrains Mono', provider: 'google', weights: [400, 500, 600] },
+    ],
+    defaults: {
+      subsets: ['latin', 'latin-ext'],
+      styles: ['normal'],
+    },
+  },
   devtools: { enabled: true },
   compatibilityDate: '2025-01-28',
   // Bind to all interfaces so the docker-compose port mapping

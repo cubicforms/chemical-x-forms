@@ -191,18 +191,29 @@ export default defineNuxtConfig({
     // declaring the heavy site-only deps here makes the boot crawl
     // comprehensive, so first-paint requests resolve cleanly.
     optimizeDeps: {
-      include: ['@vue/repl', 'lucide-vue-next'],
-      // `@vue/repl/monaco-editor` references its bundled web workers
-      // via `new URL("assets/<worker>.js", import.meta.url)`. Those
-      // worker chunks live next to the entry under
-      // `node_modules/@vue/repl/dist/assets/`. If Vite prebundles the
-      // entry, it relocates to `node_modules/.cache/vite/...` but
-      // *doesn't* copy the assets siblings, so the worker URL 404s
-      // and Monaco falls back to running the language service on the
-      // main thread (UI freezes, ShikiError surfaces in the console).
-      // Excluding here keeps the entry served from its real
-      // node_modules path where the assets/ neighbors resolve.
-      exclude: ['@vue/repl/monaco-editor'],
+      include: ['lucide-vue-next'],
+      // Both @vue/repl entries are excluded from prebundling for two
+      // reasons that interlock:
+      //
+      // 1. `@vue/repl/monaco-editor` references its bundled web
+      //    workers via `new URL("assets/<worker>.js", import.meta.url)`.
+      //    The worker chunks ship under
+      //    `node_modules/@vue/repl/dist/assets/`. Prebundling
+      //    relocates the entry to `node_modules/.cache/vite/...` but
+      //    doesn't copy the assets siblings, so the worker URL 404s.
+      //
+      // 2. If we prebundle `@vue/repl` but not `@vue/repl/monaco-editor`,
+      //    they end up resolving `vue` through different module graphs
+      //    (Vite's prebundled vue chunk vs. raw node_modules vue) — the
+      //    EditorContainer's `provide(propsKey, …)` and Monaco's
+      //    `inject(propsKey)` then use different InjectionKey symbols,
+      //    so Monaco's setup throws "injection Symbol(props) not
+      //    found" and falls back to a render-less component.
+      //
+      // Excluding both keeps both entries served from their real
+      // node_modules paths (assets/ neighbors resolve) and through the
+      // same resolver (single vue copy across the @vue/repl tree).
+      exclude: ['@vue/repl', '@vue/repl/monaco-editor'],
     },
   },
   css: ['@shikijs/twoslash/style-rich.css', '~/assets/css/tailwind.css'],

@@ -11,8 +11,9 @@ help:  ## Show this help
 build:  ## Build the dev image
 	docker compose build
 
-up:  ## Start the dev container (idle, ready for shell/exec)
+up:  ## Start the dev container and boot the docs site (visit http://localhost:3000)
 	docker compose up -d
+	docker compose exec attaform pnpm dev
 
 down:  ## Stop and remove the dev container
 	docker compose down

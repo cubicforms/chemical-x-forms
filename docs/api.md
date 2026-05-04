@@ -6,12 +6,12 @@ minimal example you need to wire it up.
 
 ## Contents
 
-- [`attaform/zod`](#attaformformszod) — recommended entry
-- [`attaform/zod-v3`](#attaformformszod-v3) — legacy
-- [`attaform`](#attaformforms) — framework-agnostic core
-- [`attaform/nuxt`](#attaformformsnuxt) — Nuxt module
-- [`attaform/vite`](#attaformformsvite) — Vite plugin
-- [`attaform/transforms`](#attaformformstransforms) — raw transforms
+- [`attaform/zod`](#attaformzod) — recommended entry
+- [`attaform/zod-v3`](#attaformzod-v3) — legacy
+- [`attaform`](#attaform) — framework-agnostic core
+- [`attaform/nuxt`](#attaformnuxt) — Nuxt module
+- [`attaform/vite`](#attaformvite) — Vite plugin
+- [`attaform/transforms`](#attaformtransforms) — raw transforms
 - [The useForm return value](#the-useform-return-value)
 - [Types](#types)
 

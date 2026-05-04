@@ -81,7 +81,7 @@ ${'</'}script>
 
 <template>
   <div
-    class="demo-repl overflow-hidden rounded-lg border border-(--color-border)"
+    class="demo-repl overflow-hidden rounded-xl border bg-bg shadow-sm"
     :style="{ height: props.height }"
   >
     <Repl

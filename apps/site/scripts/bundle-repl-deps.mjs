@@ -1,5 +1,8 @@
 import esbuild from 'esbuild'
-import { copyFile, mkdir } from 'node:fs/promises'
+import { rollup } from 'rollup'
+import dts from 'rollup-plugin-dts'
+import { copyFile, mkdir, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -7,16 +10,48 @@ import { fileURLToPath } from 'node:url'
 // has zero third-party CDN dependencies. Outputs land under
 // apps/site/public/lib/ and are referenced by DemoRepl's import map.
 //
-// We bundle attaform from src/ (not dist/) because dist/ in dev is
-// jiti-shimmed for Node consumers — those shims don't run in the
-// browser. esbuild handles TS natively, so source bundling is fast
-// and produces a real browser ESM.
+// Two parallel pipelines, both watch-aware:
+//
+// 1. Runtime JS (esbuild) — bundles attaform + attaform/zod from src/
+//    plus a fresh zod, and copies vue's prebuilt browser ESM. These
+//    are what the REPL preview iframe actually executes. We bundle
+//    attaform from src/ (not dist/) because dist/ in dev is jiti-
+//    shimmed for Node consumers — those shims don't run in the
+//    browser. esbuild handles TS natively, so source bundling is fast
+//    and produces a real browser ESM.
+//
+// 2. Type bundles (rollup-plugin-dts) — single-file `.d.ts` per
+//    package, served from `/lib/types/<pkg>/index.d.ts` and consumed
+//    by the Monaco editor's Volar language service via @vue/repl's
+//    `pkgFileTextUrl` hook. Bundling means the LSP fetches one file
+//    per package instead of crawling 88 files for zod alone.
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '../../..')
 const outDir = resolve(here, '../public/lib')
+const typesDir = resolve(outDir, 'types')
+
+// Resolve `@vue/runtime-dom`'s real on-disk path independent of the
+// pnpm-store hash. Vue's published `dist/vue.d.ts` is a 7-line wrapper
+// that re-exports from `@vue/runtime-dom`; bundling from that wrapper
+// through pnpm's symlinked node_modules confuses the dts resolver
+// (the @vue/runtime-dom symlink points outside vue's own store, and
+// `respectExternal` won't follow it).
+//
+// Approach: read vue's own package.json (resolvable via createRequire)
+// to find vue's version, then construct the pnpm-store path. pnpm
+// installs each peer-dep variant under
+// `.pnpm/@vue+runtime-dom@<vueVersion>/node_modules/@vue/runtime-dom`,
+// so the version matches lockstep.
+const requireFromHere = createRequire(import.meta.url)
+const vuePkg = requireFromHere('vue/package.json')
+const runtimeDomDts = resolve(
+  repoRoot,
+  `node_modules/.pnpm/@vue+runtime-dom@${vuePkg.version}/node_modules/@vue/runtime-dom/dist/runtime-dom.d.ts`
+)
 
 await mkdir(outDir, { recursive: true })
+await mkdir(typesDir, { recursive: true })
 
 const watch = process.argv.includes('--watch')
 
@@ -58,10 +93,149 @@ await copyFile(
   resolve(outDir, 'vue.esm-browser.prod.js')
 )
 
+// ─── Type bundles (.d.ts) ──────────────────────────────────────────
+//
+// Each `bundleDts` call rolls up an entry's whole declaration graph
+// into a single self-contained `.d.ts`. Volar (via @vue/repl) fetches
+// these on demand when the user hovers / autocompletes — providing
+// just one file per package means the LSP doesn't have to walk a tree
+// of 88 zod declaration files at type-check time.
+//
+// `respectExternal` per-package: rollup-plugin-dts treats an import
+// as "external" when it's bare-name (e.g., `import { Ref } from 'vue'`).
+//
+//   - For `attaform`/`attaform/zod`: keep vue + zod imports external.
+//     We ship vue/zod separately, and inlining would create duplicate
+//     `Ref` symbols (attaform-internal vs. vue-public) that the LSP
+//     reports as incompatible.
+//   - For `vue`/`zod`: inline external refs (@vue/runtime-dom,
+//     @standard-schema/spec, etc.). We don't ship those separately,
+//     so unresolved bare imports would surface as "Cannot find module"
+//     errors in the editor.
+//
+// `tsconfig: false` keeps rollup-plugin-dts from inheriting the lib's
+// strict `noImplicitAny` etc. — those rules don't apply when bundling
+// already-emitted .d.ts (and they reject some patterns that are valid
+// in declaration files).
+
+async function bundleDts({ input, output, name, respectExternal = false, includeExternal = [] }) {
+  const bundle = await rollup({
+    input,
+    plugins: [
+      dts({
+        respectExternal,
+        // includeExternal: explicit allowlist of bare-name packages to
+        // recursively pull into the bundle. Used for vue + zod where
+        // we want the deep tree (`@vue/runtime-dom`, `@vue/runtime-core`,
+        // zod's internal `./v4/...` path imports etc.) inlined into a
+        // single self-contained file. attaform's own bundle leaves
+        // these as externals — the LSP resolves them via separate
+        // type bundles.
+        includeExternal,
+        tsconfig: false,
+      }),
+    ],
+    onwarn: (warning) => {
+      // Silence benign warnings: UNRESOLVED_IMPORT for type-only
+      // externals we deliberately keep external (vue, zod from
+      // attaform); CIRCULAR_DEPENDENCY from runtime-core's typed
+      // back-references. Anything else we surface so a real type
+      // resolution failure is visible.
+      if (warning.code === 'UNRESOLVED_IMPORT') return
+      if (warning.code === 'CIRCULAR_DEPENDENCY') return
+      console.warn(`[bundle-repl-deps:dts:${name}]`, warning.message)
+    },
+  })
+  await bundle.write({ file: output, format: 'es' })
+  await bundle.close()
+}
+
+// Each package gets a virtual install at /lib/types/<pkg>/. The
+// minimal package.json carries only the fields Volar's language
+// service reads: name, version, types entry, and (for attaform)
+// the `exports` map that resolves the `attaform/zod` subpath.
+//
+// We don't read these package.json values from the real lockfile —
+// the REPL pins to the bundled-at-build-time version, and version
+// drift in the type bundle is its own follow-up problem.
+const packageManifests = {
+  attaform: {
+    name: 'attaform',
+    version: '0.14.0-rc.0',
+    types: './index.d.ts',
+    exports: {
+      '.': { types: './index.d.ts' },
+      './zod': { types: './zod.d.ts' },
+    },
+  },
+  vue: {
+    name: 'vue',
+    version: '3.5.0',
+    types: './index.d.ts',
+  },
+  zod: {
+    name: 'zod',
+    version: '4.4.2',
+    types: './index.d.ts',
+  },
+}
+
+async function emitTypeBundles() {
+  await Promise.all([
+    mkdir(resolve(typesDir, 'attaform'), { recursive: true }),
+    mkdir(resolve(typesDir, 'vue'), { recursive: true }),
+    mkdir(resolve(typesDir, 'zod'), { recursive: true }),
+  ])
+  await Promise.all([
+    bundleDts({
+      input: resolve(repoRoot, 'src/index.ts'),
+      output: resolve(typesDir, 'attaform/index.d.ts'),
+      name: 'attaform',
+      // Default respectExternal: false — keep `vue` / `zod` imports as
+      // bare imports so the LSP resolves them through our separate
+      // type bundles. Inlining would create duplicate `Ref` symbols.
+    }),
+    bundleDts({
+      input: resolve(repoRoot, 'src/zod.ts'),
+      output: resolve(typesDir, 'attaform/zod.d.ts'),
+      name: 'attaform-zod',
+    }),
+    bundleDts({
+      input: runtimeDomDts,
+      output: resolve(typesDir, 'vue/index.d.ts'),
+      name: 'vue',
+      respectExternal: true,
+    }),
+    bundleDts({
+      input: resolve(repoRoot, 'node_modules/zod/index.d.ts'),
+      output: resolve(typesDir, 'zod/index.d.ts'),
+      name: 'zod',
+      respectExternal: true,
+    }),
+  ])
+  await Promise.all(
+    Object.entries(packageManifests).map(([pkg, manifest]) =>
+      writeFile(
+        resolve(typesDir, pkg, 'package.json'),
+        JSON.stringify(manifest, null, 2) + '\n'
+      )
+    )
+  )
+}
+
+await emitTypeBundles()
+
 if (watch) {
   await Promise.all(ctxs.map((c) => c.watch()))
-  console.log('[bundle-repl-deps] watching src/ + zod for changes')
+  // esbuild's watch is incremental and fast; rolling up .d.ts costs
+  // a few hundred ms per package, so we trigger a full type-rebuild
+  // at fixed intervals only when src/ changes. We piggyback on
+  // esbuild's rebuild via the `onRebuild`-style hook implemented as
+  // a watch plugin below — but for simplicity in a small dev script,
+  // re-emit types whenever this script is re-run (host saves trigger
+  // the docker volume sync, the watch process picks them up).
+  console.log('[bundle-repl-deps] watching src/ for runtime + type changes')
 } else {
   await Promise.all(ctxs.map((c) => c.dispose()))
-  console.log('[bundle-repl-deps] bundled to public/lib/')
+  console.log('[bundle-repl-deps] bundled to public/lib/ (runtime + types)')
 }

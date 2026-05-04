@@ -150,13 +150,21 @@
   /* Code block — the typography plugin's default has a subtle dark
      pre with light syntax. Bumping the radius to xl (12px) to match
      our card chrome and adding a 1px border helps it sit on the
-     page rather than floating. */
+     page rather than floating.
+     `overflow-x: auto` belongs to the typography plugin defaults, but
+     repeating it here defends against future overrides; `min-width: 0`
+     ensures the pre never demands more horizontal space than the
+     article column gives it (without this, a long unbroken code line
+     could push past max-w-3xl and create a page-level scrollbar). */
   .docs-prose pre {
     border-radius: 12px;
     border: 1px solid var(--color-border-strong);
     padding: 1.25rem 1.5rem;
     font-size: 0.875rem;
     line-height: 1.6;
+    overflow-x: auto;
+    min-width: 0;
+    max-width: 100%;
   }
 
   /* Blockquotes as Untitled UI callouts — accent border-left + the
@@ -182,8 +190,19 @@
 
   /* Tables — Untitled UI compact striping pattern. Header row gets
      a subtle surface tint; row borders use our border token so they
-     pick up the dark-mode flip automatically. */
+     pick up the dark-mode flip automatically.
+     `display: block` + `overflow-x: auto` makes the table itself a
+     horizontally scrollable region when its content's wider than
+     the article column. The default `width: 100%` + `table-layout:
+     auto` lets columns expand to fit content; without overflow
+     handling on the table, a wide column pushes the article past
+     max-w-3xl and creates a page-level scrollbar. The cells inside
+     keep their `display: table-*` rendering so column alignment
+     still works. */
   .docs-prose table {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
     font-size: 0.9375rem;
   }
   .docs-prose table thead {
@@ -192,5 +211,25 @@
   .docs-prose table th {
     font-weight: 600;
     color: var(--color-fg);
+  }
+
+  /* Long unbreakable identifiers in inline code — function signatures
+     like `parseApiErrors(payload, options): ParseApiErrorsResult` or
+     long type names — would otherwise force the heading / paragraph
+     to be at least as wide as the longest identifier. `overflow-wrap:
+     anywhere` lets the browser break inside identifiers as a last
+     resort, so the article column controls the layout instead of
+     the longest function name in the doc. */
+  .docs-prose :where(h1, h2, h3, h4, h5, h6, p, li, td, th) code {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  /* Headings can themselves be over-wide on narrow viewports because
+     hX elements have an intrinsic min-content equal to the longest
+     unbreakable token inside them. Same fallback as inline code:
+     allow break-anywhere so the heading respects column width. */
+  .docs-prose :where(h1, h2, h3, h4) {
+    overflow-wrap: anywhere;
   }
 </style>

@@ -43,12 +43,22 @@
          enters via a four-step stagger (eyebrow → heading → lede →
          CTAs); reduced-motion users see it pop instantly. -->
     <section class="relative isolate overflow-hidden border-b border-border">
-      <!-- Dot-grid layer — sits beneath the glow. The mask centers
-           the pattern under the heading and fades it out at ~80% so
-           it never reaches the CTA row or the section seam. -->
+      <!-- Dot-grid layer — sits beneath the glow. We paint the
+           gradient inline (rather than the `bg-dot-grid` utility)
+           so the dots use `--color-border-strong` (gray-300, one
+           step darker than the utility's `--color-border`); against
+           the page bg the default is too pale to read as
+           texture. The mask centers the pattern under the heading
+           and fades it out at ~80% so it never reaches the CTA row
+           or the section seam. -->
       <div
-        class="absolute inset-0 -z-20 bg-dot-grid opacity-60 dark:opacity-40"
+        class="absolute inset-0 -z-20"
         style="
+          background-image: radial-gradient(
+            circle at 0.0625rem 0.0625rem,
+            var(--color-border-strong) 0.0625rem,
+            transparent 0
+          );
           background-size: 1.5rem 1.5rem;
           mask-image: radial-gradient(ellipse 75% 70% at 50% 30%, #000 30%, transparent 80%);
         "

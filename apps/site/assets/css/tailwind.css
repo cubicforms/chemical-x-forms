@@ -3,132 +3,294 @@
 
 @variant dark (&:where(.dark, .dark *));
 
+/* ──────────────────────────────────────────────────────────────────
+   Design tokens — Untitled UI vocabulary
+   ──────────────────────────────────────────────────────────────────
+   Two layers:
+
+   1. Primitive ramps (`--color-gray-*`, `--color-brand-*`,
+      `--color-success-*`, `--color-warning-*`, `--color-error-*`).
+      These are the source-of-truth color steps. Everything that's
+      "the right neutral 600" or "brand 50 for a chip background"
+      pulls from here. Mirrors Untitled UI's library so visual
+      regressions tell you immediately when you've drifted off-brand.
+
+   2. Semantic aliases (`--color-bg`, `--color-fg`, `--color-fg-muted`,
+      `--color-surface`, `--color-accent`, …). These are what
+      components consume. They're swapped wholesale in `.dark` so
+      every component reads correct mode-ramp without per-class
+      `dark:` overrides. Add new aliases when a component
+      needs a *new role*, not when it needs a different shade —
+      reach into the primitive ramp for that.
+
+   Token names match what the existing components already consume so
+   no component-level changes are required when this file lands. The
+   subsequent migration to named-utility syntax (`bg-accent` vs
+   `bg-(--color-accent)`) is a separate, file-by-file pass. */
+
 @theme {
-  /* Neutral ramp.
-     `bg`/`fg` are the page surface; `surface-*` are nested elevations
-     (cards, sub-headers, code blocks). `fg-subtle` is for tertiary text
-     where `fg-muted` is still too prominent — footer copyright lines,
-     "last updated" stamps, etc. `border-strong` is for dividers that
-     need to read against `surface-2` where the default `border` would
-     wash out. */
-  --color-bg: oklch(1 0 0);
-  --color-fg: oklch(0.18 0 0);
-  --color-fg-muted: oklch(0.46 0 0);
-  --color-fg-subtle: oklch(0.6 0 0);
-  --color-surface: oklch(0.985 0 0);
-  --color-surface-2: oklch(0.96 0 0);
-  --color-surface-3: oklch(0.93 0 0);
-  --color-border: oklch(0.92 0 0);
-  --color-border-strong: oklch(0.85 0 0);
+  /* ─── Gray ramp — Untitled UI's "Gray" ───
+     A slightly cool gray (hint of blue, very small chroma). Reads
+     "professional/dev tool" rather than "warm/marketing". The 25 step
+     is unusual — useful for hairline-tinted hero backgrounds where
+     #FFFFFF would feel like a void. */
+  --color-gray-25: #fcfcfd;
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f2f4f7;
+  --color-gray-200: #eaecf0;
+  --color-gray-300: #d0d5dd;
+  --color-gray-400: #98a2b3;
+  --color-gray-500: #667085;
+  --color-gray-600: #475467;
+  --color-gray-700: #344054;
+  --color-gray-800: #1d2939;
+  --color-gray-900: #101828;
+  --color-gray-950: #0c111d;
 
-  /* Brand accent. The hue is nudged from 250 → 262 (cooler indigo →
-     warmer blue-violet) which reads more "modern dev tool" than the
-     stock blue. `accent-soft` is the tinted-background companion for
-     chips/highlights; `accent-soft-fg` is the matching foreground that
-     keeps WCAG AA against the soft bg. */
-  --color-accent: oklch(0.55 0.2 262);
-  --color-accent-hover: oklch(0.5 0.21 262);
-  --color-accent-fg: oklch(1 0 0);
-  --color-accent-soft: oklch(0.96 0.03 262);
-  --color-accent-soft-fg: oklch(0.42 0.18 262);
+  /* ─── Brand ramp — Untitled UI's "Brand: Violet" ───
+     Picked over their "Indigo" because Vue 3's ecosystem leans
+     green/teal; violet differentiates without clashing. Untitled UI
+     ships these as the canonical brand-violet steps; we use 600 as
+     the standard brand surface (light mode) and 500 for dark mode
+     (where 600 reads too saturated against gray-950). */
+  --color-brand-25: #fcfaff;
+  --color-brand-50: #f4f3ff;
+  --color-brand-100: #ebe9fe;
+  --color-brand-200: #d9d6fe;
+  --color-brand-300: #bdb4fe;
+  --color-brand-400: #9b8afb;
+  --color-brand-500: #7a5af8;
+  --color-brand-600: #6938ef;
+  --color-brand-700: #5925dc;
+  --color-brand-800: #4a1fb8;
+  --color-brand-900: #3e1c96;
+  --color-brand-950: #27115f;
 
-  /* Status palettes — used in callouts (info / warn / danger). Each
-     has a soft companion for the callout body so the strip doesn't
-     scream against the page bg. */
-  --color-success: oklch(0.6 0.16 152);
-  --color-success-soft: oklch(0.96 0.04 152);
-  --color-warning: oklch(0.7 0.16 70);
-  --color-warning-soft: oklch(0.97 0.05 70);
-  --color-danger: oklch(0.6 0.22 25);
-  --color-danger-soft: oklch(0.97 0.04 25);
+  /* ─── Status ramps — Untitled UI's "Success / Warning / Error" ───
+     Each ramp has the full Untitled UI vocabulary; semantic aliases
+     below pick the steps we use. Keeping the ramp accessible by
+     name lets callouts compose `bg-success-50 text-success-700
+     border-success-200` without arbitrary values. */
+  --color-success-25: #f6fef9;
+  --color-success-50: #ecfdf3;
+  --color-success-100: #dcfae6;
+  --color-success-200: #abefc6;
+  --color-success-300: #75e0a7;
+  --color-success-400: #47cd89;
+  --color-success-500: #17b26a;
+  --color-success-600: #079455;
+  --color-success-700: #067647;
+  --color-success-800: #085d3a;
+  --color-success-900: #074d31;
 
-  /* Inter is loaded as the body face; it also handles the display
-     scale at heavier weights — saves a font load and keeps the visual
-     family consistent. JetBrains Mono in the stack lets it render
-     naturally where users have it installed (devs often do); we don't
-     ship it, so we degrade gracefully to platform monos. */
+  --color-warning-25: #fffcf5;
+  --color-warning-50: #fffaeb;
+  --color-warning-100: #fef0c7;
+  --color-warning-200: #fedf89;
+  --color-warning-300: #fec84b;
+  --color-warning-400: #fdb022;
+  --color-warning-500: #f79009;
+  --color-warning-600: #dc6803;
+  --color-warning-700: #b54708;
+  --color-warning-800: #93370d;
+  --color-warning-900: #7a2e0e;
+
+  --color-error-25: #fffbfa;
+  --color-error-50: #fef3f2;
+  --color-error-100: #fee4e2;
+  --color-error-200: #fecdca;
+  --color-error-300: #fda29b;
+  --color-error-400: #f97066;
+  --color-error-500: #f04438;
+  --color-error-600: #d92d20;
+  --color-error-700: #b42318;
+  --color-error-800: #912018;
+  --color-error-900: #7a271a;
+
+  /* ─── Semantic aliases (light mode) ───
+     Component code only ever references these. The `.dark` block
+     re-points them to the dark equivalents, so every consumer flips
+     in one place. Names match the existing codebase so this
+     re-token is non-breaking. */
+  --color-bg: #ffffff;
+  --color-bg-elevated: var(--color-gray-25);
+  --color-fg: var(--color-gray-900);
+  --color-fg-muted: var(--color-gray-600);
+  --color-fg-subtle: var(--color-gray-500);
+  --color-surface: var(--color-gray-50);
+  --color-surface-2: var(--color-gray-100);
+  --color-surface-3: var(--color-gray-200);
+  --color-border: var(--color-gray-200);
+  --color-border-strong: var(--color-gray-300);
+
+  --color-accent: var(--color-brand-600);
+  --color-accent-hover: var(--color-brand-700);
+  --color-accent-fg: #ffffff;
+  --color-accent-soft: var(--color-brand-50);
+  --color-accent-soft-fg: var(--color-brand-700);
+  --color-accent-ring: var(--color-brand-100);
+
+  --color-success: var(--color-success-500);
+  --color-success-soft: var(--color-success-50);
+  --color-warning: var(--color-warning-500);
+  --color-warning-soft: var(--color-warning-50);
+  --color-danger: var(--color-error-500);
+  --color-danger-soft: var(--color-error-50);
+
+  /* ─── Typography ───
+     Inter ships in the stack so consumers that have it installed
+     locally render with the intended geometry. We'll self-host the
+     variable file via @fontsource in a follow-up so all visitors get
+     the same look without third-party CDN dependencies. */
   --font-sans:
-    'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, sans-serif;
+    'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono:
-    ui-monospace, SFMono-Regular, 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+    'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, SFMono-Regular, 'Fira Code', Menlo,
+    Consolas, monospace;
 
-  /* Display type scale. Tailwind's default `text-*` covers body/UI
-     comfortably; these add Untitled-UI-style display sizes for hero
-     and section headlines. Each size carries its own line-height and
-     letter-spacing because tracking-tight at 5rem reads very different
-     from tracking-tight at 2.5rem. */
-  --text-display-sm: 2rem;
-  --text-display-sm--line-height: 1.2;
-  --text-display-sm--letter-spacing: -0.018em;
-  --text-display-md: 2.5rem;
-  --text-display-md--line-height: 1.15;
-  --text-display-md--letter-spacing: -0.022em;
-  --text-display-lg: 3.5rem;
-  --text-display-lg--line-height: 1.05;
-  --text-display-lg--letter-spacing: -0.028em;
-  --text-display-xl: 4.5rem;
-  --text-display-xl--line-height: 1;
-  --text-display-xl--letter-spacing: -0.034em;
+  /* Display type scale — Untitled UI canonical. Each size carries its
+     own line-height and letter-spacing because the right value at
+     90px is not the right value at 32px (display-2xl is set tight,
+     display-sm sits at default tracking). */
+  --text-display-xs: 1.5rem; /* 24px */
+  --text-display-xs--line-height: 2rem; /* 32px */
+  --text-display-xs--letter-spacing: -0.004em;
+  --text-display-sm: 1.875rem; /* 30px */
+  --text-display-sm--line-height: 2.375rem; /* 38px */
+  --text-display-sm--letter-spacing: 0;
+  --text-display-md: 2.25rem; /* 36px */
+  --text-display-md--line-height: 2.75rem; /* 44px */
+  --text-display-md--letter-spacing: -0.02em;
+  --text-display-lg: 3rem; /* 48px */
+  --text-display-lg--line-height: 3.75rem; /* 60px */
+  --text-display-lg--letter-spacing: -0.02em;
+  --text-display-xl: 3.75rem; /* 60px */
+  --text-display-xl--line-height: 4.5rem; /* 72px */
+  --text-display-xl--letter-spacing: -0.02em;
+  --text-display-2xl: 4.5rem; /* 72px */
+  --text-display-2xl--line-height: 5.625rem; /* 90px */
+  --text-display-2xl--letter-spacing: -0.02em;
 
-  /* Motion — exposed via tokens so layout/component animations share
-     a vocabulary instead of every file inventing its own bezier.
-     `ease-out-quart` is the standard "feels right for UI" curve
-     (sharp ramp into ease-out tail). */
+  /* ─── Radii — Untitled UI scale ───
+     Each step is ~25% larger than Tailwind's default. Buttons feel
+     right at md (8px) rather than 6px; cards at xl (12px) feel
+     proportional next to the larger button radii. */
+  --radius-xs: 0.25rem; /* 4px  — chips */
+  --radius-sm: 0.375rem; /* 6px  — small inputs */
+  --radius-md: 0.5rem; /* 8px  — buttons, default */
+  --radius-lg: 0.625rem; /* 10px — large inputs */
+  --radius-xl: 0.75rem; /* 12px — cards */
+  --radius-2xl: 1rem; /* 16px — large cards, modals */
+  --radius-3xl: 1.25rem; /* 20px */
+  --radius-4xl: 1.5rem; /* 24px — hero panels */
+
+  /* ─── Shadows — Untitled UI canonical ───
+     The base color is #101828 (gray-900) at low opacity, not pure
+     black. This gives the elevation a slight cool tint instead of
+     reading muddy. Two-layer shadows (closer + farther) on md and up
+     mimic real diffusion better than a single flat shadow. */
+  --shadow-xs: 0 1px 2px 0 rgb(16 24 40 / 0.05);
+  --shadow-sm:
+    0 1px 3px 0 rgb(16 24 40 / 0.1), 0 1px 2px -1px rgb(16 24 40 / 0.06);
+  --shadow-md:
+    0 4px 8px -2px rgb(16 24 40 / 0.1), 0 2px 4px -2px rgb(16 24 40 / 0.06);
+  --shadow-lg:
+    0 12px 16px -4px rgb(16 24 40 / 0.08), 0 4px 6px -2px rgb(16 24 40 / 0.03);
+  --shadow-xl:
+    0 20px 24px -4px rgb(16 24 40 / 0.08), 0 8px 8px -4px rgb(16 24 40 / 0.03);
+  --shadow-2xl: 0 24px 48px -12px rgb(16 24 40 / 0.18);
+  --shadow-3xl: 0 32px 64px -12px rgb(16 24 40 / 0.14);
+
+  /* Focus ring — used as a colored box-shadow rather than outline so
+     it composes with the surface shadow on focused inputs. The
+     `--shadow-ring-error` variant is the danger-state companion. */
+  --shadow-ring: 0 0 0 4px var(--color-accent-ring);
+  --shadow-ring-error: 0 0 0 4px var(--color-error-200);
+
+  /* ─── Motion ───
+     Single ease for UI transitions (out-quart — sharp ramp into a
+     smooth tail, the standard "feels right" curve). Three durations
+     so micro-interactions (hover) and macro-interactions (page enter)
+     read as belonging to the same system. */
   --ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
   --duration-fast: 120ms;
   --duration-base: 200ms;
   --duration-slow: 320ms;
 }
 
+/* ─── Dark-mode semantic re-pointing ───
+   Only the aliases flip. Primitive ramps stay shared between modes —
+   gray-200 is gray-200 regardless of theme; what changes is *which
+   step the page calls "border"*. */
 .dark {
-  /* Dark surfaces nudge slightly between bg → surface-3 so cards have
-     visible elevation without bumping borders. The default 0.13 → 0.18
-     ramp from before was too tight to read as layered. */
-  --color-bg: oklch(0.13 0 0);
-  --color-fg: oklch(0.98 0 0);
-  --color-fg-muted: oklch(0.66 0 0);
-  --color-fg-subtle: oklch(0.5 0 0);
-  --color-surface: oklch(0.17 0 0);
-  --color-surface-2: oklch(0.21 0 0);
-  --color-surface-3: oklch(0.25 0 0);
-  --color-border: oklch(0.26 0 0);
-  --color-border-strong: oklch(0.34 0 0);
+  --color-bg: var(--color-gray-950);
+  --color-bg-elevated: var(--color-gray-900);
+  --color-fg: var(--color-gray-50);
+  --color-fg-muted: var(--color-gray-400);
+  --color-fg-subtle: var(--color-gray-500);
+  --color-surface: var(--color-gray-900);
+  --color-surface-2: var(--color-gray-800);
+  --color-surface-3: var(--color-gray-700);
+  --color-border: var(--color-gray-800);
+  --color-border-strong: var(--color-gray-700);
 
-  /* Bumped lightness on the accent for dark; the saturated indigo of
-     light mode reads muddy on dark surfaces, so we lighten and slightly
-     desaturate. soft/soft-fg are inverted: tinted dark bg with a
-     bright fg. */
-  --color-accent: oklch(0.72 0.17 262);
-  --color-accent-hover: oklch(0.78 0.16 262);
-  --color-accent-fg: oklch(0.13 0 0);
-  --color-accent-soft: oklch(0.25 0.06 262);
-  --color-accent-soft-fg: oklch(0.85 0.13 262);
+  /* brand-500 is the dark-mode default — brand-600 reads too
+     saturated against gray-950. The soft pair flips to a tinted dark
+     bg with a bright fg so chips remain readable. */
+  --color-accent: var(--color-brand-500);
+  --color-accent-hover: var(--color-brand-400);
+  --color-accent-fg: var(--color-gray-950);
+  --color-accent-soft: var(--color-brand-950);
+  --color-accent-soft-fg: var(--color-brand-300);
+  --color-accent-ring: var(--color-brand-900);
 
-  --color-success: oklch(0.72 0.16 152);
-  --color-success-soft: oklch(0.25 0.05 152);
-  --color-warning: oklch(0.78 0.15 70);
-  --color-warning-soft: oklch(0.27 0.06 70);
-  --color-danger: oklch(0.72 0.18 25);
-  --color-danger-soft: oklch(0.27 0.07 25);
+  --color-success: var(--color-success-400);
+  --color-success-soft: var(--color-success-900);
+  --color-warning: var(--color-warning-400);
+  --color-warning-soft: var(--color-warning-900);
+  --color-danger: var(--color-error-400);
+  --color-danger-soft: var(--color-error-900);
+
+  /* Shadows on dark surfaces need a much darker base to register —
+     light-mode's gray-900 base would vanish against gray-950. Pure
+     black at higher opacity reads correctly. */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-sm:
+    0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+  --shadow-md:
+    0 4px 8px -2px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --shadow-lg:
+    0 12px 16px -4px rgb(0 0 0 / 0.4), 0 4px 6px -2px rgb(0 0 0 / 0.2);
+  --shadow-xl:
+    0 20px 24px -4px rgb(0 0 0 / 0.4), 0 8px 8px -4px rgb(0 0 0 / 0.2);
+  --shadow-2xl: 0 24px 48px -12px rgb(0 0 0 / 0.5);
+  --shadow-3xl: 0 32px 64px -12px rgb(0 0 0 / 0.45);
 }
 
+/* Page baseline — typography + body chrome. Done in raw CSS rather
+   than a body utility so it's always applied regardless of which
+   layout / page is rendered. */
 html,
 body {
   background: var(--color-bg);
   color: var(--color-fg);
   font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01', 'ss03'; /* Inter's stylistic alternates: straight-sided 1, single-storey a, slashed 0 — reads more "modern dev tool" */
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
+/* Default border color for any element that uses a `border-*` width
+   utility without an explicit color. Matches the existing codebase
+   convention; spares us writing `border-border` everywhere. */
 * {
   border-color: var(--color-border);
 }
 
-/* Custom scrollbar — only on systems that paint over scrollbars
-   (mac-style overlay scrollbars don't honor these properties). The
-   thumb is mid-gray on both themes so it doesn't fight the page. */
+/* Custom scrollbar — only honored on systems that paint inline
+   scrollbars (mac overlay scrollbars ignore these properties, which
+   is the intended behavior there). */
 @supports (scrollbar-width: thin) {
   * {
     scrollbar-width: thin;
@@ -136,16 +298,16 @@ body {
   }
 }
 
-/* Selection color — themed accent rather than the OS blue, which
-   clashes with our indigo. */
+/* Selection color uses the brand soft-tint pair so highlights read as
+   "of the design system" rather than the OS default blue. */
 ::selection {
   background: var(--color-accent-soft);
   color: var(--color-accent-soft-fg);
 }
 
-/* Reduced-motion override — kills our token-driven transitions and any
-   animations the components register. The `* { transition: none }`
-   is heavy-handed but appropriate; users who set this preference are
+/* Reduced-motion override — kills our token-driven transitions and
+   any animations the components register. The universal selector is
+   intentionally heavy-handed; users who set this preference are
    asking for "no animation, anywhere." */
 @media (prefers-reduced-motion: reduce) {
   *,

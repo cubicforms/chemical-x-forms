@@ -59,23 +59,24 @@ ${'</'}script>
   </form>
 </template>`
 
-  const mainCode = `import { createApp } from 'vue'
-import { createAttaform } from 'attaform'
-import App from './App.vue'
-
-createApp(App).use(createAttaform()).mount('#app')`
+  // @vue/repl auto-creates the Vue app and mounts it from `mainFile`. To
+  // install our plugin we use previewOptions.customCode — `importCode`
+  // appends to the iframe's import block, `useCode` runs after
+  // `const app = createApp(AppComponent)` and before `app.mount('#app')`.
+  // Without this the REPL boots a bare Vue app and `useForm()` throws
+  // "Registry not found" because createAttaform()'s plugin never runs.
+  const previewOptions = {
+    customCode: {
+      importCode: `import { createAttaform } from 'attaform'`,
+      useCode: `app.use(createAttaform())`,
+    },
+  }
 
   const store = useStore({
     builtinImportMap: ref(importMap),
   })
 
-  store.setFiles(
-    {
-      'src/App.vue': appCode,
-      'src/main.ts': mainCode,
-    },
-    'src/App.vue'
-  )
+  store.setFiles({ 'src/App.vue': appCode }, 'src/App.vue')
 </script>
 
 <template>
@@ -83,6 +84,11 @@ createApp(App).use(createAttaform()).mount('#app')`
     class="overflow-hidden rounded-lg border border-(--color-border)"
     :style="{ height: props.height }"
   >
-    <Repl :store="store" :editor="CodeMirrorEditor" :show-compile-output="false" />
+    <Repl
+      :store="store"
+      :editor="CodeMirrorEditor"
+      :preview-options="previewOptions"
+      :show-compile-output="false"
+    />
   </div>
 </template>

@@ -21,6 +21,7 @@
     "type": "git",
     "url": "https://github.com/attaform/attaform"
   },
+  "homepage": "https://attaform.com",
   "scripts": {
     "dev": "pnpm dev:prepare && pnpm --filter attaform-site dev",
     "dev:prepare": "unbuild --stub && nuxi prepare apps/site",

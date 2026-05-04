@@ -182,10 +182,13 @@
     font-weight: 500;
   }
   /* Strip the typography plugin's default backtick quotes around
-     inline code — we already chip-style the code, the quotes are
-     redundant noise. */
-  .docs-prose :where(p, li, td, th) > code::before,
-  .docs-prose :where(p, li, td, th) > code::after {
+     inline code — they're added via ::before / ::after pseudo-element
+     content so the rule has to explicitly clear it everywhere code
+     can appear, not just in the chip-styled p/li/td/th contexts.
+     Without the heading branch (h1–h6), every inline-code span inside
+     a heading rendered with literal `` quotes around it. */
+  .docs-prose :where(p, li, td, th, h1, h2, h3, h4, h5, h6) code::before,
+  .docs-prose :where(p, li, td, th, h1, h2, h3, h4, h5, h6) code::after {
     content: '';
   }
 

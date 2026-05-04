@@ -22,9 +22,10 @@
     "url": "https://github.com/attaform/attaform"
   },
   "scripts": {
-    "dev": "nuxi dev playground",
-    "dev:build": "nuxi build playground",
-    "dev:prepare": "unbuild --stub && nuxi prepare playground",
+    "dev": "pnpm dev:prepare && pnpm --filter attaform-site dev",
+    "dev:prepare": "unbuild --stub && nuxi prepare apps/site",
+    "dev:site": "pnpm --filter attaform-site dev",
+    "build:site": "pnpm --filter attaform-site build",
     "lint": "eslint --ext .ts,.js,.vue . && pnpm format:check",
     "lint:fix": "eslint --ext .ts,.js,.vue . --fix && pnpm format",
     "format": "prettier --write '**/*.{ts,js,vue,css,scss,md,json,yml,yaml}'",
@@ -36,7 +37,7 @@
     "prepack:watch": "chokidar 'src/**/*' -c 'pnpm prepack' --initial",
     "release": "pnpm check && pnpm version patch && pnpm prepack && pnpm publish && git push --follow-tags",
     "test": "vitest run",
-    "test:types": "pnpm dev:prepare && vue-tsc --noEmit && cd playground && vue-tsc --noEmit",
+    "test:types": "pnpm dev:prepare && vue-tsc --noEmit && cd apps/site && vue-tsc --noEmit",
     "test:watch": "vitest watch",
     "bench": "vitest bench --run",
     "check:size": "pnpm prepack && size-limit",
@@ -105,7 +106,7 @@
   "type": "module",
   "lint-staged": {
     "./src/**/*.{ts,vue}": "eslint",
-    "./playground/**/*.{ts,vue}": "eslint",
+    "./apps/site/**/*.{ts,vue}": "eslint",
     "./test/**/*.{ts,vue}": "eslint"
   },
   "devDependencies": {

@@ -15,7 +15,8 @@ pnpm dev:prepare
 ```
 
 `dev:prepare` stubs the library with `unbuild --stub` and prepares the
-Nuxt playground. Run it once after install.
+Nuxt docs site under `apps/site/`. Run it once after install. To boot
+the docs site locally for manual QA, `pnpm dev` after that.
 
 ## The check that matters
 

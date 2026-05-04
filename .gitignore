@@ -25,6 +25,7 @@ pnpm-debug.log*
 
 # Generated dirs
 dist
+apps/site/public/lib
 
 # TypeScript
 /*.tsbuildinfo
@@ -34,6 +35,7 @@ dist
 .nuxt
 .output
 .data
+**/.data
 .vercel_build_output
 .build-*
 .netlify

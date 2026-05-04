@@ -12,9 +12,9 @@ services:
       - .:/app
       # Anonymous volume preserves the container's node_modules (host's may differ)
       - /app/node_modules
-      - /app/playground/node_modules
+      - /app/apps/site/node_modules
     ports:
-      - '3001:3000' # playground dev server (3001 to avoid clashing with attaform frontend on 3000)
+      - '3001:3000' # docs site dev server (3001 to avoid clashing with consumer app on 3000)
     environment:
       # pnpm needs HOME for its store
       HOME: /root

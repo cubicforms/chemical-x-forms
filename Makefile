@@ -33,10 +33,10 @@ shell:  ## Drop into an interactive shell inside the container
 install:  ## Install dependencies
 	docker compose exec attaform pnpm install
 
-prepare:  ## Prepare the module for development (build stub + prepare playground)
+prepare:  ## Prepare the module for development (build stub + prepare apps/site)
 	docker compose exec attaform pnpm dev:prepare
 
-dev:  ## Run the playground dev server (visit http://localhost:3001)
+dev:  ## Run the docs site dev server (visit http://localhost:3001)
 	docker compose exec attaform pnpm dev
 
 test:  ## Run the test suite once

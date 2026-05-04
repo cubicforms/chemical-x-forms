@@ -1,7 +1,7 @@
 import esbuild from 'esbuild'
 import { rollup } from 'rollup'
 import dts from 'rollup-plugin-dts'
-import { copyFile, mkdir, readdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -45,6 +45,11 @@ const typesDir = resolve(outDir, 'types')
 // so the version matches lockstep.
 const requireFromHere = createRequire(import.meta.url)
 const vuePkg = requireFromHere('vue/package.json')
+const zodPkg = requireFromHere('zod/package.json')
+// attaform's package.json sits at the monorepo root, not in
+// node_modules — resolve it by absolute path so we don't rely on a
+// hoisting layout that the workspace might restructure later.
+const attaformPkg = JSON.parse(await readFile(resolve(repoRoot, 'package.json'), 'utf8'))
 const runtimeDomDts = resolve(
   repoRoot,
   `node_modules/.pnpm/@vue+runtime-dom@${vuePkg.version}/node_modules/@vue/runtime-dom/dist/runtime-dom.d.ts`
@@ -212,7 +217,7 @@ async function bundleDts({ input, output, name, respectExternal = false, include
 const packageManifests = {
   attaform: {
     name: 'attaform',
-    version: '0.14.0-rc.0',
+    version: attaformPkg.version,
     types: './index.d.ts',
     main: './index.js',
     exports: {
@@ -233,13 +238,13 @@ const packageManifests = {
   },
   vue: {
     name: 'vue',
-    version: '3.5.0',
+    version: vuePkg.version,
     types: './index.d.ts',
     main: './index.js',
   },
   zod: {
     name: 'zod',
-    version: '4.4.2',
+    version: zodPkg.version,
     types: './index.d.ts',
     main: './index.js',
   },

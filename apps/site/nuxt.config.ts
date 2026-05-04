@@ -1,5 +1,8 @@
 import tailwindcss from '@tailwindcss/vite'
 import { rendererRich, transformerTwoslash } from '@shikijs/twoslash'
+import attaformPkg from '../../package.json'
+import vuePkg from 'vue/package.json'
+import zodPkg from 'zod/package.json'
 
 export default defineNuxtConfig({
   modules: ['@nuxt/content', '@nuxt/fonts', '@nuxtjs/color-mode'],
@@ -79,6 +82,22 @@ export default defineNuxtConfig({
   },
   devtools: { enabled: true },
   compatibilityDate: '2025-01-28',
+  // Expose the versions of the three packages whose types we self-host
+  // for the in-page REPL. DemoRepl reads these via useRuntimeConfig()
+  // and pins them on the @vue/repl store's `dependencyVersion`, so
+  // Volar's worker skips the (slow + unpkg-bound) latest-version
+  // lookup. Reading from the actual package.json files at config time
+  // means a `pnpm version` bump is the single source of truth — the
+  // numbers can't drift from what the rest of the site ships.
+  runtimeConfig: {
+    public: {
+      replDependencyVersion: {
+        attaform: attaformPkg.version,
+        vue: vuePkg.version,
+        zod: zodPkg.version,
+      },
+    },
+  },
   // Disable runtime payload extraction in dev only. Background:
   // Nitro's `payloadCache` (mounted under `cache:nuxt:payload` with
   // an fs base of `.nuxt/cache/nuxt/payload`) writes one cache entry

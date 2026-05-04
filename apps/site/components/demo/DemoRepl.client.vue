@@ -370,14 +370,15 @@ ${'</'}style>`
   // through pkgLatestVersionUrl (slow, and unpkg doesn't have our
   // pre-release attaform). The values flow into the worker's
   // `dependencies` map and short-circuit the latest-version lookup.
-  // Numbers must match what `bundle-repl-deps.mjs` writes into each
-  // virtual package.json — drift here just causes a wasted round trip
-  // through pkgLatestVersionUrl, not a hard failure.
-  const dependencyVersion = ref({
-    attaform: '0.14.0-rc.0',
-    vue: '3.5.0',
-    zod: '4.4.2',
-  })
+  //
+  // Versions come from `runtimeConfig.public.replDependencyVersion`,
+  // populated in nuxt.config.ts by reading attaform's, vue's, and
+  // zod's actual package.json files. That way a `pnpm version` bump
+  // updates everything in lockstep, including what `bundle-repl-deps.mjs`
+  // writes into each virtual package.json — no hard-coded literal
+  // here to forget about when the lib promotes from -rc.x to stable.
+  const { replDependencyVersion } = useRuntimeConfig().public
+  const dependencyVersion = ref(replDependencyVersion)
 
   // Monaco theme follows the site's color mode. @vue/repl's Monaco
   // preset uses Shiki for highlighting, so theme names are Shiki's

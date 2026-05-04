@@ -49,7 +49,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      # Generate playground/.nuxt/imports.d.ts so the eslint config can
+      # Generate apps/site/.nuxt/imports.d.ts so the eslint config can
       # parse Nuxt's auto-imports (`computed`, `useState`, etc.) and
       # `no-undef` doesn't false-fail on auto-imported names. The full
       # `test` job below also runs this before `pnpm check`; mirroring
@@ -103,7 +103,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Stub attaform (Nuxt + playground types)
+      - name: Stub attaform (Nuxt + site types)
         run: pnpm dev:prepare
 
       # `pnpm check` runs the full gate: lint → format:check → typecheck →
@@ -113,6 +113,13 @@ jobs:
       # than on release.
       - name: Full pnpm check
         run: pnpm check
+
+      # Build the docs site so a regression in apps/site (broken link in
+      # markdown, malformed Vue template, REPL bundler choke on src/ change)
+      # fails the PR. Runs after pnpm check so the lib gate signal isn't
+      # masked by site issues.
+      - name: Build docs site
+        run: pnpm build:site
 
   coverage-artifact:
     name: Publish coverage HTML artifact

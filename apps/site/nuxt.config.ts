@@ -24,6 +24,35 @@ export default defineNuxtConfig({
   // resolve under their bare names — the convention Nuxt Content's
   // prose-override system expects.
   components: [{ path: '~/components/content', pathPrefix: false, global: true }, '~/components'],
+  // Nitropack's built-in /_vfs dev handler (powering Nuxt DevTools'
+  // Virtual Files panel) hard-checks the request IP against ::1 / 127.*
+  // and 403s anything else as "Forbidden IP". In Docker our requests
+  // arrive from the bridge IP, so the panel breaks. There's no config
+  // knob — register a dev pre-handler on the same /_vfs prefix that
+  // shadows socket.remoteAddress to 127.0.0.1 and falls through (no
+  // response) to the real VFS handler that runs after it. Dev-only via
+  // devHandlers.
+  nitro: {
+    devHandlers: [
+      {
+        route: '/_vfs',
+        handler: (event: { node?: { req?: { socket?: unknown } } }) => {
+          const socket = event?.node?.req?.socket as { remoteAddress?: string } | undefined
+          if (socket && socket.remoteAddress !== '127.0.0.1') {
+            try {
+              Object.defineProperty(socket, 'remoteAddress', {
+                value: '127.0.0.1',
+                configurable: true,
+              })
+            } catch {
+              // Some Node versions expose remoteAddress as a non-configurable
+              // getter; nothing we can do at this layer.
+            }
+          }
+        },
+      },
+    ],
+  },
   vite: {
     plugins: [tailwindcss()],
     // Mirror Nuxt's devServer.host into Vite's server.host so

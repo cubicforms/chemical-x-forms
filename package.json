@@ -111,7 +111,7 @@
   },
   "pnpm": {
     "overrides": {
-      "@nuxt/devtools": "4.0.0-alpha.4"
+      "@nuxt/devtools": "3.2.4"
     }
   },
   "devDependencies": {
@@ -119,7 +119,6 @@
     "@commitlint/config-conventional": "^20.5.0",
     "@eslint/js": "^10.0.1",
     "@fast-check/vitest": "^0.4.0",
-    "@nuxt/devtools": "4.0.0-alpha.4",
     "@nuxt/eslint-config": "^1.15.2",
     "@nuxt/kit": "^4.4.2",
     "@nuxt/module-builder": "^1.0.2",

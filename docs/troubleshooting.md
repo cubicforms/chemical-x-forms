@@ -233,7 +233,7 @@ on tuples, not a runtime case.
 Try enabling `noUncheckedIndexedAccess: true` in your tsconfig — it
 makes `arr[N]` reads return `T | undefined` so the type system
 catches stale indices. See
-[README → Recommended tsconfig](../README.md#recommended-tsconfig).
+[README → Recommended tsconfig](https://github.com/attaform/attaform/blob/main/README.md#recommended-tsconfig).
 
 ## "Focus jumped to a field I didn't expect on submit"
 

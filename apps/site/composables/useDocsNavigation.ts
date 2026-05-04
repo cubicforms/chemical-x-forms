@@ -52,13 +52,21 @@ export const docsNavigation: DocsSection[] = [
     heading: 'Migration',
     // Newest-first reading order — most users coming to migration
     // are upgrading from the most recent prior version.
+    //
+    // The URL paths drop the leading "0." from each filename
+    // because Nuxt Content treats `^\d+\.` as an ordering prefix
+    // and strips it. e.g., `0.13-to-0.14.md` → `/13-to-0.14`. The
+    // user-facing labels still read "0.13 → 0.14"; only the URL
+    // bears the quirk. Renaming the source files to not start with
+    // "0." would un-quirk the URLs but is a docs-corpus change for
+    // a follow-up commit.
     links: [
-      { title: '0.13 → 0.14', to: '/docs/migration/0.13-to-0.14' },
-      { title: '0.12 → 0.13', to: '/docs/migration/0.12-to-0.13' },
-      { title: '0.11 → 0.12', to: '/docs/migration/0.11-to-0.12' },
-      { title: '0.10 → 0.11', to: '/docs/migration/0.10-to-0.11' },
-      { title: '0.7 → 0.8', to: '/docs/migration/0.7-to-0.8' },
-      { title: '0.6 → 0.7', to: '/docs/migration/0.6-to-0.7' },
+      { title: '0.13 → 0.14', to: '/docs/migration/13-to-0.14' },
+      { title: '0.12 → 0.13', to: '/docs/migration/12-to-0.13' },
+      { title: '0.11 → 0.12', to: '/docs/migration/11-to-0.12' },
+      { title: '0.10 → 0.11', to: '/docs/migration/10-to-0.11' },
+      { title: '0.7 → 0.8', to: '/docs/migration/7-to-0.8' },
+      { title: '0.6 → 0.7', to: '/docs/migration/6-to-0.7' },
     ],
   },
 ]

@@ -33,7 +33,7 @@
     {
       title: 'Migration guides',
       body: 'Per-release upgrade notes. Latest: 0.13 → 0.14.',
-      to: '/docs/migration/0.13-to-0.14',
+      to: '/docs/migration/13-to-0.14',
       icon: GitBranch,
     },
     {

@@ -81,7 +81,7 @@ ${'</'}script>
 
 <template>
   <div
-    class="overflow-hidden rounded-lg border border-(--color-border)"
+    class="demo-repl overflow-hidden rounded-lg border border-(--color-border)"
     :style="{ height: props.height }"
   >
     <Repl
@@ -92,3 +92,37 @@ ${'</'}script>
     />
   </div>
 </template>
+
+<style>
+  /* @vue/repl's default compile-error overlay (.msg.err) is alarm-red
+     and instant — every keystroke that lands on incomplete TS flashes
+     a giant red panel across the bottom of the iframe. For a demo on a
+     marketing page that's hostile UX. Two changes:
+
+     1. Defer fade-in to ~600ms so transient mid-keystroke errors don't
+        get a chance to flash before the next character makes it valid
+        again. Genuine "I left it broken" errors still surface, just
+        without the strobe effect.
+     2. Tone the palette down — a small bottom strip with a left
+        accent bar instead of the full-width alarmscape, so when it
+        does show it reads as feedback rather than failure. */
+  .demo-repl .msg.err {
+    --color: var(--color-fg-muted);
+    --bg-color: color-mix(in oklch, var(--color-surface), transparent 10%);
+    border-width: 0 0 0 3px;
+    border-radius: 4px;
+    backdrop-filter: blur(6px);
+    font-size: 0.8125rem;
+    max-height: 6rem;
+    overflow: auto;
+  }
+  .demo-repl .msg.err pre {
+    padding: 8px 12px;
+  }
+  .demo-repl .fade-enter-active {
+    transition-delay: 600ms;
+  }
+  .demo-repl .fade-leave-active {
+    transition-delay: 0ms;
+  }
+</style>

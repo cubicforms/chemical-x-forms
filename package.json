@@ -108,7 +108,8 @@
   "lint-staged": {
     "./src/**/*.{ts,vue}": "eslint",
     "./apps/site/**/*.{ts,vue}": "eslint",
-    "./test/**/*.{ts,vue}": "eslint"
+    "./test/**/*.{ts,vue}": "eslint",
+    "**/*.{ts,js,vue,css,scss,md,json,yml,yaml}": "prettier --write"
   },
   "pnpm": {
     "overrides": {

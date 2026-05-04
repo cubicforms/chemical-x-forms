@@ -29,6 +29,15 @@
 
 <template>
   <NuxtLayout>
-    <NuxtPage />
+    <!-- Lightweight cross-fade between routes. The `page` transition
+         classes live in `tailwind.css` (`.page-enter-active`,
+         `.page-leave-active`, etc.) so the styling reads from the
+         same motion vocabulary as the rest of the site. mode="out-in"
+         means the leaving page completes its fade before the entering
+         page starts — no overlap, no layout flash from absolutely-
+         positioned siblings. Anything heavier than this (slides,
+         scales) implies directionality the user didn't ask for and
+         gets in the way of dense docs reading. -->
+    <NuxtPage :transition="{ name: 'page', mode: 'out-in' }" />
   </NuxtLayout>
 </template>

@@ -2,6 +2,39 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineNuxtConfig({
   modules: ['@nuxt/content', '@nuxt/fonts', '@nuxtjs/color-mode'],
+  // @nuxt/content's Shiki integration. Pinning the themes and lang
+  // set here is intentional — the default theme set is broad and
+  // bundles ~50 grammars we don't need; whitelisting brings the
+  // build smaller and faster. Light / dark theme pair flips with the
+  // `.dark` selector through Shiki's css-variables theme mode.
+  content: {
+    build: {
+      markdown: {
+        highlight: {
+          theme: {
+            default: 'github-light',
+            dark: 'github-dark',
+          },
+          langs: [
+            'ts',
+            'tsx',
+            'js',
+            'jsx',
+            'json',
+            'vue',
+            'vue-html',
+            'html',
+            'css',
+            'bash',
+            'sh',
+            'yaml',
+            'md',
+            'diff',
+          ],
+        },
+      },
+    },
+  },
   // Webfonts are downloaded from Google Fonts at build time and emitted
   // into the build output as woff2 + an inline @font-face block; pages
   // reference local URLs only, so visitors never reach out to Google.

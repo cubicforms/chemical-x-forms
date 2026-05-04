@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@nuxt/content": "^3.13.0",
+    "@nuxtjs/color-mode": "^4.0.0",
     "@shikijs/twoslash": "^4.0.2",
     "@tailwindcss/typography": "^0.5.19",
     "@vue/repl": "^4.7.2",

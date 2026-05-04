@@ -191,16 +191,18 @@ export default defineNuxtConfig({
     // declaring the heavy site-only deps here makes the boot crawl
     // comprehensive, so first-paint requests resolve cleanly.
     optimizeDeps: {
-      include: [
-        '@vue/repl',
-        // Monaco preset bundles `monaco-editor-core` + `@volar/monaco` +
-        // `@volar/typescript` inline; pre-declaring the entry stops Vite
-        // from re-optimizing mid-session when DemoRepl first mounts.
-        // The 504 "Outdated Optimize Dep" otherwise breaks the first
-        // navigation into a page that hosts the live editor.
-        '@vue/repl/monaco-editor',
-        'lucide-vue-next',
-      ],
+      include: ['@vue/repl', 'lucide-vue-next'],
+      // `@vue/repl/monaco-editor` references its bundled web workers
+      // via `new URL("assets/<worker>.js", import.meta.url)`. Those
+      // worker chunks live next to the entry under
+      // `node_modules/@vue/repl/dist/assets/`. If Vite prebundles the
+      // entry, it relocates to `node_modules/.cache/vite/...` but
+      // *doesn't* copy the assets siblings, so the worker URL 404s
+      // and Monaco falls back to running the language service on the
+      // main thread (UI freezes, ShikiError surfaces in the console).
+      // Excluding here keeps the entry served from its real
+      // node_modules path where the assets/ neighbors resolve.
+      exclude: ['@vue/repl/monaco-editor'],
     },
   },
   css: ['@shikijs/twoslash/style-rich.css', '~/assets/css/tailwind.css'],

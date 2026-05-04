@@ -110,13 +110,13 @@ leaving the browser.
 
 ## 4. Where to next
 
-| If you want to…                                    | Read                                                                                                                                |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| See every option `useForm` accepts                 | [`attaform/zod`](/docs/api/zod)                                                                                                     |
-| Understand `form.values` / `form.errors` / `meta`  | [The useForm return value](/docs/api/use-form-return)                                                                               |
-| Persist drafts across reloads                      | [Persistence](/docs/recipes/persistence)                                                                                            |
-| Validate on `blur` instead of `change`             | [Field-level validation](/docs/recipes/field-level-validation)                                                                      |
-| Handle server-side validation errors               | [Server errors](/docs/recipes/server-errors)                                                                                        |
-| Add undo / redo                                    | [Undo / redo](/docs/recipes/undo-redo)                                                                                              |
-| Build dynamic field arrays (`append`/`remove`/…)   | [Dynamic field arrays](/docs/recipes/dynamic-field-arrays)                                                                          |
-| Hit a problem                                      | [Troubleshooting](/docs/troubleshooting)                                                                                            |
+| If you want to…                                   | Read                                                           |
+| ------------------------------------------------- | -------------------------------------------------------------- |
+| See every option `useForm` accepts                | [`attaform/zod`](/docs/api/zod)                                |
+| Understand `form.values` / `form.errors` / `meta` | [The useForm return value](/docs/api/use-form-return)          |
+| Persist drafts across reloads                     | [Persistence](/docs/recipes/persistence)                       |
+| Validate on `blur` instead of `change`            | [Field-level validation](/docs/recipes/field-level-validation) |
+| Handle server-side validation errors              | [Server errors](/docs/recipes/server-errors)                   |
+| Add undo / redo                                   | [Undo / redo](/docs/recipes/undo-redo)                         |
+| Build dynamic field arrays (`append`/`remove`/…)  | [Dynamic field arrays](/docs/recipes/dynamic-field-arrays)     |
+| Hit a problem                                     | [Troubleshooting](/docs/troubleshooting)                       |

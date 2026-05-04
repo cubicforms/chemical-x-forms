@@ -203,11 +203,9 @@
     0 0.25rem 0.5rem -0.125rem rgb(16 24 40 / 0.1),
     0 0.125rem 0.25rem -0.125rem rgb(16 24 40 / 0.06);
   --shadow-lg:
-    0 0.75rem 1rem -0.25rem rgb(16 24 40 / 0.08),
-    0 0.25rem 0.375rem -0.125rem rgb(16 24 40 / 0.03);
+    0 0.75rem 1rem -0.25rem rgb(16 24 40 / 0.08), 0 0.25rem 0.375rem -0.125rem rgb(16 24 40 / 0.03);
   --shadow-xl:
-    0 1.25rem 1.5rem -0.25rem rgb(16 24 40 / 0.08),
-    0 0.5rem 0.5rem -0.25rem rgb(16 24 40 / 0.03);
+    0 1.25rem 1.5rem -0.25rem rgb(16 24 40 / 0.08), 0 0.5rem 0.5rem -0.25rem rgb(16 24 40 / 0.03);
   --shadow-2xl: 0 1.5rem 3rem -0.75rem rgb(16 24 40 / 0.18);
   --shadow-3xl: 0 2rem 4rem -0.75rem rgb(16 24 40 / 0.14);
 
@@ -320,17 +318,13 @@
      black at higher opacity reads correctly. */
   --shadow-xs: 0 0.0625rem 0.125rem 0 rgb(0 0 0 / 0.4);
   --shadow-sm:
-    0 0.0625rem 0.1875rem 0 rgb(0 0 0 / 0.4),
-    0 0.0625rem 0.125rem -0.0625rem rgb(0 0 0 / 0.3);
+    0 0.0625rem 0.1875rem 0 rgb(0 0 0 / 0.4), 0 0.0625rem 0.125rem -0.0625rem rgb(0 0 0 / 0.3);
   --shadow-md:
-    0 0.25rem 0.5rem -0.125rem rgb(0 0 0 / 0.4),
-    0 0.125rem 0.25rem -0.125rem rgb(0 0 0 / 0.3);
+    0 0.25rem 0.5rem -0.125rem rgb(0 0 0 / 0.4), 0 0.125rem 0.25rem -0.125rem rgb(0 0 0 / 0.3);
   --shadow-lg:
-    0 0.75rem 1rem -0.25rem rgb(0 0 0 / 0.4),
-    0 0.25rem 0.375rem -0.125rem rgb(0 0 0 / 0.2);
+    0 0.75rem 1rem -0.25rem rgb(0 0 0 / 0.4), 0 0.25rem 0.375rem -0.125rem rgb(0 0 0 / 0.2);
   --shadow-xl:
-    0 1.25rem 1.5rem -0.25rem rgb(0 0 0 / 0.4),
-    0 0.5rem 0.5rem -0.25rem rgb(0 0 0 / 0.2);
+    0 1.25rem 1.5rem -0.25rem rgb(0 0 0 / 0.4), 0 0.5rem 0.5rem -0.25rem rgb(0 0 0 / 0.2);
   --shadow-2xl: 0 1.5rem 3rem -0.75rem rgb(0 0 0 / 0.5);
   --shadow-3xl: 0 2rem 4rem -0.75rem rgb(0 0 0 / 0.45);
 }
@@ -343,7 +337,8 @@ body {
   background: var(--color-bg);
   color: var(--color-fg);
   font-family: var(--font-sans);
-  font-feature-settings: 'cv11', 'ss01', 'ss03'; /* Inter's stylistic alternates: straight-sided 1, single-storey a, slashed 0 — reads more "modern dev tool" */
+  font-feature-settings:
+    'cv11', 'ss01', 'ss03'; /* Inter's stylistic alternates: straight-sided 1, single-storey a, slashed 0 — reads more "modern dev tool" */
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -498,4 +493,3 @@ body {
     transform: none;
   }
 }
-

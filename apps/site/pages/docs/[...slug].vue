@@ -11,10 +11,15 @@
     throw createError({ statusCode: 404, statusMessage: 'Page not found', fatal: true })
   }
 
-  useHead(() => ({
-    title: page.value?.title ? `${page.value.title} · Attaform` : 'Documentation · Attaform',
-    meta: page.value?.description ? [{ name: 'description', content: page.value.description }] : [],
-  }))
+  // Title is the bare page name; the site-wide titleTemplate in
+  // app.vue appends " · Attaform". Description gets handled
+  // separately because useSeoMeta accepts it as a top-level key
+  // and it propagates to og:description / twitter:description for
+  // free.
+  useHead(() => ({ title: page.value?.title ?? 'Documentation' }))
+  useSeoMeta({
+    description: () => page.value?.description ?? '',
+  })
 </script>
 
 <template>

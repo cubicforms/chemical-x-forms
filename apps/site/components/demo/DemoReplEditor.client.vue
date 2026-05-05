@@ -1141,14 +1141,25 @@ button.ghost.danger:hover { color: #B42318; background: #FEF3F2; }
   /* All multi-column grids collapse to one. */
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
 
-  /* Stepper: tighter padding, hide titles for inactive steps. The
-     active step keeps its title so the user always knows where they
-     are. Numbers stay visible for orientation. */
-  .stepper { gap: 0.25rem; padding: 0.5rem; }
-  .step { padding: 0.5rem 0.5rem; font-size: 0.75rem; gap: 0.375rem; }
+  /* Stepper: switch from a 4-column grid to a flex-wrap row so steps
+     wrap onto multiple lines on narrow viewports rather than crushing
+     into a single row with hidden labels. flex: 1 1 auto lets each
+     step take its natural width but share extra space evenly when
+     they fit on one line. */
+  .stepper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    padding: 0.5rem;
+  }
+  .step {
+    flex: 1 1 auto;
+    padding: 0.5rem 0.625rem;
+    font-size: 0.8125rem;
+    gap: 0.375rem;
+  }
   .step-num { width: 1.375rem; height: 1.375rem; font-size: 0.6875rem; }
-  .step .step-title { display: none; }
-  .step.active .step-title { display: inline; }
+  .step-title { white-space: normal; }
 
   /* Address fieldset: trim padding so input gutters don't squeeze. */
   .address { padding: 0.75rem; gap: 0.625rem; }
@@ -1197,9 +1208,8 @@ button.ghost.danger:hover { color: #B42318; background: #FEF3F2; }
 /* ─── Tiny phones (< 22.5rem ≈ 360px) ─── */
 @media (max-width: 22.5rem) {
   .form { padding: 1rem; }
-  /* Drop step numbers if even tighter — leaves a 4-dot pill row. */
-  .stepper { padding: 0.375rem; }
-  .step { padding: 0.375rem; }
+  .stepper { padding: 0.375rem; gap: 0.25rem; }
+  .step { padding: 0.375rem 0.5rem; font-size: 0.75rem; }
   /* Line items: full single column so SKU has room for its async
      "Checking…" hint. */
   .li-grid {

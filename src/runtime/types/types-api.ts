@@ -55,6 +55,22 @@ export type ValidationError = {
   code: string
 }
 
+/**
+ * Caller-side input shape for `form.setFormErrors`. Only `message`
+ * is required; the library fills in `path: []`, `formKey`, and a
+ * default `code` of `'atta:form-error'`.
+ */
+export type FormErrorInput = {
+  /** Human-readable message describing the failure. */
+  message: string
+  /**
+   * Optional override for the entry's `code`. Defaults to
+   * `'atta:form-error'`. Pick a stable prefix when you set this so
+   * error renderers can branch on `code` rather than message text.
+   */
+  code?: string
+}
+
 /** Settled validation result when the form (or subtree) parsed successfully. */
 export type ValidationResponseSuccess<TData> = {
   /** The parsed value at the validated subtree (whole form when `validate()` was called without a path). */
@@ -2583,6 +2599,38 @@ export type UseFormReturnType<
    * ```
    */
   clearFieldErrors: (path?: string | (string | number)[]) => void
+
+  /**
+   * Replace the form-level errors — the entries at the empty path
+   * (`path: []`) — without disturbing any field-level errors. Pass an
+   * empty array to clear them all.
+   *
+   * ```ts
+   * form.setFormErrors([{ message: 'Capacity exceeded' }])
+   * form.setFormErrors([
+   *   { message: 'Capacity exceeded', code: 'capacity:exceeded' },
+   *   { message: 'Pickup window full' },
+   * ])
+   * form.setFormErrors([])  // clear
+   * ```
+   *
+   * The library fills in `path: []`, `formKey`, and a default
+   * `code: 'atta:form-error'` per entry; pass `code` per entry to
+   * override.
+   *
+   * Form-level errors surface in `form.meta.errors` (alongside field
+   * errors) but are intentionally excluded from the path-keyed
+   * `form.errors` proxy (no key represents `[]` in a nested object) —
+   * read them via `meta.errors.filter(e => e.path.length === 0)` or
+   * `errorsAt('')`.
+   */
+  setFormErrors: (errors: ReadonlyArray<FormErrorInput>) => void
+
+  /**
+   * Clear every form-level error. Equivalent to `setFormErrors([])`;
+   * field errors are untouched.
+   */
+  clearFormErrors: () => void
 
   // --- Form-level meta ---
 

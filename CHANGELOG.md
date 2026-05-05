@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **`form.setFormErrors` / `form.clearFormErrors`.** First-class
+  shortcut for the form-level error case (entries at `path: []`).
+  Replaces just the form-level slot — field errors are untouched —
+  with the library filling in `path: []`, `formKey`, and a default
+  `code: 'atta:form-error'` per entry. Pass an empty array (or call
+  `clearFormErrors()`) to clear. Form-level errors continue to
+  surface in `meta.errors` only; the path-keyed `form.errors` proxy
+  intentionally excludes them.
+
 - **Per-field `validating` and `valid`.** `form.fields.<path>.validating`
   is the per-field analogue of `form.meta.validating` — `true` while a
   field-level run is in flight at this path (debounced

@@ -1,5 +1,6 @@
 import { computed, reactive, readonly, type Ref } from 'vue'
 import type {
+  FormErrorInput,
   FormErrorsSurface,
   FormMeta,
   OnInvalidSubmitPolicy,
@@ -17,7 +18,13 @@ import { buildFieldArrayApi } from './field-arrays'
 import { buildFieldStateProxy } from './field-state-proxy'
 import type { HistoryModule } from './history'
 import { getAtPath } from './path-walker'
-import { canonicalizePath, segmentsForPathKey, type Path, type PathKey } from './paths'
+import {
+  canonicalizePath,
+  ROOT_PATH_KEY,
+  segmentsForPathKey,
+  type Path,
+  type PathKey,
+} from './paths'
 import { PERSISTENCE_MODULE_KEY, type PersistenceModule } from './persistence'
 import { enforceSensitiveCheck } from './persistence/sensitive-names'
 import { buildProcessForm } from './process-form'
@@ -227,6 +234,30 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     const segments = canonicalizePath(path as string | Path).segments
     state.clearSchemaErrors(segments)
     state.clearUserErrors(segments)
+  }
+
+  function setFormErrors(errors: ReadonlyArray<FormErrorInput>): void {
+    // Surgically replace just the form-level (path: []) entry. Going
+    // through `setAllUserErrors` / `setFieldErrors` would clobber every
+    // field error too — wrong for "set this top-of-form message
+    // without disturbing field validation."
+    if (errors.length === 0) {
+      state.userErrors.delete(ROOT_PATH_KEY)
+      return
+    }
+    state.userErrors.set(
+      ROOT_PATH_KEY,
+      errors.map((e) => ({
+        path: [],
+        message: e.message,
+        formKey: state.formKey,
+        code: e.code ?? 'atta:form-error',
+      }))
+    )
+  }
+
+  function clearFormErrors(): void {
+    state.userErrors.delete(ROOT_PATH_KEY)
   }
 
   // --- Form-level aggregates ---
@@ -498,6 +529,8 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     setFieldErrors,
     addFieldErrors,
     clearFieldErrors,
+    setFormErrors,
+    clearFormErrors,
     meta: formMeta,
     reset: reset as UseFormReturnType<Form, GetValueFormType>['reset'],
     resetField: resetField as UseFormReturnType<Form, GetValueFormType>['resetField'],

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **`form.errorsAt(path)`.** Read-side aggregate that returns every
+  error whose path **is** the given path **or descends from it**.
+  Aggregates schema, blank-derived, and user-injected errors in the
+  same order as `meta.errors`. Accepts both dotted-string
+  (`errorsAt('cargo.items.0')`) and segment-array
+  (`errorsAt(['cargo', 'items', 0])`) paths. Root prefix
+  (`errorsAt('')` / `errorsAt([])`) matches every error including
+  form-level. Useful for step-validity gating in multi-step forms:
+  `STEP_PATHS[step].every(p => form.errorsAt(p).length === 0)`.
+  New `isPathPrefix` helper exported from the path primitives.
+
 - **`form.setFormErrors` / `form.clearFormErrors`.** First-class
   shortcut for the form-level error case (entries at `path: []`).
   Replaces just the form-level slot — field errors are untouched —

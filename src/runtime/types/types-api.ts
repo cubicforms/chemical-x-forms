@@ -2624,6 +2624,36 @@ export type UseFormReturnType<
    */
   clearFormErrors: () => void
 
+  /**
+   * Returns every error whose path **is** the given path **or
+   * descends from it**. Aggregates schema, blank-derived, and
+   * user-injected errors in the same order as `meta.errors`. Empty
+   * array when nothing matches.
+   *
+   * ```ts
+   * form.errorsAt('cargo')
+   *   // → errors at 'cargo', 'cargo.items', 'cargo.items.0.sku', …
+   * form.errorsAt('cargo.items.0')
+   *   // → just that line item's leaves
+   * form.errorsAt('')          // root prefix matches everything,
+   * form.errorsAt([])          //   including form-level (path: [])
+   * ```
+   *
+   * Useful for step-validity gating in multi-step forms:
+   *
+   * ```ts
+   * const stepValid = computed(
+   *   () => form.errorsAt('cargo').length === 0
+   * )
+   * ```
+   *
+   * Wrap in your own `computed` to make the call reactive — read-
+   * through hits `meta.errors`, so dep tracking flows through.
+   */
+  errorsAt: (
+    path: FlatPath<Form> | '' | ReadonlyArray<string | number>
+  ) => readonly ValidationError[]
+
   // --- Form-level meta ---
 
   /**

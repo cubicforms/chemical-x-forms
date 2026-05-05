@@ -19,6 +19,7 @@ import type { HistoryModule } from './history'
 import { getAtPath } from './path-walker'
 import {
   canonicalizePath,
+  isPathPrefix,
   ROOT_PATH_KEY,
   segmentsForPathKey,
   type Path,
@@ -265,6 +266,18 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
 
   function clearFormErrors(): void {
     state.userErrors.delete(ROOT_PATH_KEY)
+  }
+
+  function errorsAt(input: string | ReadonlyArray<string | number>): readonly ValidationError[] {
+    const { segments: prefix } = canonicalizePath(input as string | Path)
+    const out: ValidationError[] = []
+    // Read through `metaErrors.value` so callers wrapping the call in a
+    // `computed(() => form.errorsAt('cargo'))` participate in dep
+    // tracking via the underlying meta computed.
+    for (const err of metaErrors.value) {
+      if (isPathPrefix(prefix, err.path)) out.push(err)
+    }
+    return out
   }
 
   // --- Form-level aggregates ---
@@ -538,6 +551,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     clearFieldErrors,
     setFormErrors,
     clearFormErrors,
+    errorsAt,
     meta: formMeta,
     reset: reset as UseFormReturnType<Form, GetValueFormType>['reset'],
     resetField: resetField as UseFormReturnType<Form, GetValueFormType>['resetField'],

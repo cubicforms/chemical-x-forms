@@ -205,3 +205,25 @@ export function canonicalizePath(input: string | Path): {
 export const ROOT_PATH: Path = Object.freeze([])
 /** Stable string key for the root path. */
 export const ROOT_PATH_KEY = '[]' as PathKey
+
+/**
+ * `true` when `path` starts with every segment of `prefix` (in order).
+ * The empty `prefix` matches every path — ROOT prefix is universal.
+ *
+ * Walks segments rather than `PathKey` strings because the data this
+ * helper operates on (e.g. `meta.errors[].path`) carries segment
+ * arrays directly.
+ *
+ * ```ts
+ * isPathPrefix(['cargo'], ['cargo', 'items', 0, 'sku'])  // true
+ * isPathPrefix(['cargo', 'items'], ['cargo'])             // false (path shorter)
+ * isPathPrefix([], ['anything'])                          // true (root prefix)
+ * ```
+ */
+export function isPathPrefix(prefix: readonly Segment[], path: readonly Segment[]): boolean {
+  if (path.length < prefix.length) return false
+  for (let i = 0; i < prefix.length; i++) {
+    if (path[i] !== prefix[i]) return false
+  }
+  return true
+}

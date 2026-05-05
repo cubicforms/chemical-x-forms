@@ -271,18 +271,10 @@
   ] as const
   const step = ref<1 | 2 | 3 | 4>(1)
 
-  // A step is "valid" if no error sits at one of its top-level paths
-  // AND no validation is currently in flight form-wide. We aggregate
-  // via meta.errors instead of walking each leaf — meta.errors is the
-  // canonical flat aggregate.
-  function stepHasErrors(prefixes: readonly string[]): boolean {
-    for (const err of form.meta.errors) {
-      const head = err.path[0]
-      if (typeof head === 'string' && prefixes.includes(head)) return true
-    }
-    return false
-  }
-
+  // A step is "valid" if no error sits under any of its top-level
+  // paths AND no validation is currently in flight form-wide.
+  // form.errorsAt(prefix) returns errors at the prefix and every
+  // descendant in one call.
   const STEP_PATHS: Record<1 | 2 | 3 | 4, readonly string[]> = {
     1: ['reference', 'pickup', 'delivery'],
     2: ['cargo'],
@@ -290,7 +282,9 @@
     4: [],
   }
   const currentStepValid = computed(
-    () => !stepHasErrors(STEP_PATHS[step.value]) && !form.meta.validating
+    () =>
+      !form.meta.validating &&
+      STEP_PATHS[step.value].every((p) => form.errorsAt(p).length === 0)
   )
 
   function goNext() {

@@ -11,7 +11,7 @@ help:  ## Show this help
 build:  ## Build the dev image
 	docker compose build
 
-up:  ## Start the dev container, install deps, and boot the docs site (visit http://localhost:3000)
+up: down  ## Stop any prior stack, start the dev container, install deps, and boot the docs site (http://localhost:3000)
 	docker compose up -d
 	docker compose exec attaform pnpm install
 	docker compose exec attaform pnpm dev
@@ -32,8 +32,18 @@ shell:  ## Drop into an interactive shell inside the container
 
 # --- pnpm scripts (run inside the container) ---
 
-install:  ## Install dependencies
-	docker compose exec attaform pnpm install
+# `node_modules/` is intentionally split between two filesystems
+# (anonymous volumes in docker-compose.yml): the container has Linux
+# binaries for the dev server, the host has macOS binaries for editor
+# LSP tooling (vtsls, ESLint, Volar, etc.). Both must be kept in
+# lockstep so a host-side LSP can resolve workspace deps that the
+# container-side install registered. The single `pnpm-lock.yaml` is
+# bind-mounted, so the host install picks up whatever the container's
+# `--force` install resolved — no drift.
+install:  ## Force-refresh deps (container + host) and run dev:prepare (lib stub + Nuxt types)
+	docker compose exec attaform pnpm install --force
+	pnpm install
+	docker compose exec attaform pnpm dev:prepare
 
 prepare:  ## Prepare the module for development (build stub + prepare apps/site)
 	docker compose exec attaform pnpm dev:prepare

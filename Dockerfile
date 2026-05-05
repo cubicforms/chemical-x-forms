@@ -5,6 +5,13 @@ FROM node:22-alpine
 # with whatever CI / release tooling is exercising.
 RUN corepack enable
 
+# Disable husky inside the container. The image is git-less (alpine
+# slim) and commits happen on the host anyway, so husky's `prepare`
+# hook would emit `git command not found` on every `pnpm install` for
+# no benefit. Husky honours this env var by short-circuiting its CLI
+# to a no-op.
+ENV HUSKY=0
+
 WORKDIR /app
 
 # Copy lockfile + every package.json that contributes to workspace

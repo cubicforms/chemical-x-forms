@@ -1112,7 +1112,7 @@ button.primary, button.secondary, button.ghost {
   font: inherit; font-size: 0.875rem; font-weight: 600;
   cursor: pointer;
   transition: background-color 120ms, border-color 120ms;
-  display: inline-flex; align-items: center; gap: 0.375rem;
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.375rem;
 }
 button.primary { background: #6938EF; color: #FFF; border: none; }
 button.primary:hover:not(:disabled) { background: #5925DC; }

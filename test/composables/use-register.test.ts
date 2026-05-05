@@ -1,6 +1,17 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, isRef, nextTick, ref, withDirectives, type App } from 'vue'
+import {
+  computed,
+  createApp,
+  defineComponent,
+  h,
+  isRef,
+  nextTick,
+  ref,
+  watchEffect,
+  withDirectives,
+  type App,
+} from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { useRegister } from '../../src/runtime/composables/use-register'
@@ -348,6 +359,119 @@ describe('useRegister — inside child setup', () => {
     expect(rv.formKey).toBe('wrapper-derivation-test')
     expect(typeof rv.formInstanceId).toBe('string')
     expect(rv.formInstanceId.length).toBeGreaterThan(0)
+  })
+
+  it('rv.path / rv.segments / rv.formKey are REACTIVE: a tracked read re-runs on parent rebind', async () => {
+    // Sidequest to the `RegisterValue` proxy work: the existing rotation
+    // tests assert post-rotation VALUES (`expect(rotated?.path).toBe(...)`),
+    // which only proves the read returns the right answer at one point
+    // in time. This test exercises reactive TRACKING: a `computed()` and
+    // a `watchEffect()` reading `rv.path` (and its siblings) must re-run
+    // when the parent rotates the binding. That confirms the proxy's
+    // `get` participates in dep collection — which is the whole point
+    // of the `shallowReadonly(shallowReactive(...))` factory.
+    const captured: { childRegister?: ReturnType<typeof useRegister> } = {}
+    const fieldName = ref<'email' | 'name'>('email')
+
+    const reads: { path: string[]; segments: string[][]; formKey: string[] } = {
+      path: [],
+      segments: [],
+      formKey: [],
+    }
+    const pathComputedSamples: (string | undefined)[] = []
+
+    const Child = defineComponent({
+      name: 'Child',
+      inheritAttrs: false,
+      setup() {
+        const rv = useRegister()
+        captured.childRegister = rv
+        // `computed` route: read `.value.path` so we go through the
+        // hybrid proxy's `value` getter (auto-unwrap shape) AND the
+        // `path` proxy field. Both must track.
+        const pathComputed = computed(() => rv.value?.path)
+        // Eagerly sample the computed so it joins the reactive graph,
+        // and re-sample after every Vue tick to capture each rotation.
+        pathComputedSamples.push(pathComputed.value)
+        // `watchEffect` route: read each leaf separately so a regression
+        // that drops tracking on JUST ONE field surfaces here. The
+        // effect runs once at setup and then again on each invalidation.
+        watchEffect(() => {
+          if (rv.value !== undefined) {
+            reads.path.push(rv.value.path)
+            // Snapshot the array so a later in-place mutation can't
+            // poison earlier captures (segments is `readonly Segment[]`
+            // already, but Array.from is the cheap insurance policy).
+            reads.segments.push(Array.from(rv.value.segments) as string[])
+            reads.formKey.push(rv.value.formKey)
+          }
+        })
+        // Re-sample the computed on each tick so we observe the
+        // post-rotation value in addition to the initial one.
+        watchEffect(() => {
+          pathComputedSamples.push(pathComputed.value)
+        })
+        return () => h('input', { type: 'text' })
+      },
+    })
+
+    const Parent = defineComponent({
+      setup() {
+        const form = useForm({ schema, key: 'rv-reactive-tracking-test' })
+        return () => {
+          const rv = form.register(fieldName.value)
+          return withDirectives(h(Child, { registerValue: rv, value: rv.innerRef.value }), [
+            [vRegister, rv],
+          ])
+        }
+      },
+    })
+
+    app = createApp(Parent).use(createAttaform())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+
+    // Initial reads: at least one `path` capture for `email`. The
+    // exact count depends on Vue's flush pipeline — both watchEffects
+    // run at setup, then re-run when the parent's render commits the
+    // first non-undefined RV. We assert the LAST entry (the one that
+    // matters for "what's the current path?") and that all reads so
+    // far point at email.
+    expect(reads.path.length).toBeGreaterThan(0)
+    expect(reads.path[reads.path.length - 1]).toBe(JSON.stringify(['email']))
+    expect(reads.segments[reads.segments.length - 1]).toEqual(['email'])
+    expect(reads.formKey[reads.formKey.length - 1]).toBe('rv-reactive-tracking-test')
+    for (const p of reads.path) expect(p).toBe(JSON.stringify(['email']))
+    // Computed sampled at setup AND after the first flush: every entry
+    // captured so far should be email (or undefined for the pre-bind
+    // setup tick).
+    for (const p of pathComputedSamples) {
+      if (p !== undefined) expect(p).toBe(JSON.stringify(['email']))
+    }
+
+    // Capture lengths before rotation so we can assert the watchers
+    // FIRED AGAIN (not just that the latest value is correct).
+    const pathReadsBeforeRotation = reads.path.length
+    const computedSamplesBeforeRotation = pathComputedSamples.length
+
+    fieldName.value = 'name'
+    await flush()
+
+    // The watchEffects must have re-fired with the new value, and the
+    // computed must have re-sampled to `["name"]`.
+    expect(reads.path.length).toBeGreaterThan(pathReadsBeforeRotation)
+    expect(reads.path[reads.path.length - 1]).toBe(JSON.stringify(['name']))
+    expect(reads.segments[reads.segments.length - 1]).toEqual(['name'])
+    // formKey is constant across the rotation (same form), but the
+    // watchEffect still re-runs; assert the captured value.
+    expect(reads.formKey[reads.formKey.length - 1]).toBe('rv-reactive-tracking-test')
+
+    expect(pathComputedSamples.length).toBeGreaterThan(computedSamplesBeforeRotation)
+    expect(pathComputedSamples[pathComputedSamples.length - 1]).toBe(JSON.stringify(['name']))
+
+    expect(captured.childRegister?.value?.path).toBe(JSON.stringify(['name']))
   })
 
   it('wrapper-component pattern: rv.segments + rv.formKey rotate when the parent rebinds to a different path', async () => {

@@ -135,12 +135,38 @@ const replAssetsDir = resolve(
   repoRoot,
   `node_modules/.pnpm/@vue+repl@4.7.2/node_modules/@vue/repl/dist/assets`
 )
+// Volar's web build emits two `console.warn` notices on startup:
+//   [service-emmet] this module is not yet supported for web.
+//   [volar-service-pug] this module is not yet supported for web.
+// They're advisory-only — neither service is meaningful in our REPL
+// (no Emmet expansion, no Pug compile path) — and they pollute every
+// page load with two yellow rows. Worker console output isn't
+// reachable from the main thread, so we patch each worker at copy
+// time: prepend a tiny `console.warn` shim that swallows messages
+// containing the shared "not yet supported for web" phrase.
+const SUPPRESS_PRELUDE =
+  ';(function(){var w=console.warn;' +
+  'console.warn=function(){' +
+  'var a=arguments[0];' +
+  'if(typeof a==="string"&&a.indexOf("not yet supported for web")!==-1)return;' +
+  'return w.apply(console,arguments)' +
+  '};})();\n'
+async function copyWorkerWithSuppressedWarnings(srcPath, destPath) {
+  const original = await readFile(srcPath, 'utf8')
+  await writeFile(destPath, SUPPRESS_PRELUDE + original)
+}
 const workerEntries = await readdir(replAssetsDir)
 for (const entry of workerEntries) {
   if (entry.startsWith('editor.worker')) {
-    await copyFile(resolve(replAssetsDir, entry), resolve(workerOutDir, 'editor.worker.js'))
+    await copyWorkerWithSuppressedWarnings(
+      resolve(replAssetsDir, entry),
+      resolve(workerOutDir, 'editor.worker.js')
+    )
   } else if (entry.startsWith('vue.worker')) {
-    await copyFile(resolve(replAssetsDir, entry), resolve(workerOutDir, 'vue.worker.js'))
+    await copyWorkerWithSuppressedWarnings(
+      resolve(replAssetsDir, entry),
+      resolve(workerOutDir, 'vue.worker.js')
+    )
   }
 }
 

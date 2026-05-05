@@ -301,6 +301,104 @@ describe('useRegister — inside child setup', () => {
     expect(rotated?.path).toBe(JSON.stringify(['name']))
     expect(rotated).not.toBe(initial)
   })
+
+  it('wrapper-component pattern: child derives field state from rv.segments without a path prop', async () => {
+    // Generic wrapper components built on `useRegister()` should be
+    // able to look up `form.fields(...)` (and any other path-keyed
+    // surface) from the bound RV alone — no separate `path` prop
+    // re-threaded from the parent. `rv.segments` is the consumer-
+    // friendly path array; `rv.path` is the canonical PathKey for
+    // diagnostics / equality. Both should land on the child's RV.
+    const captured: { childRegister?: ReturnType<typeof useRegister> } = {}
+
+    const Child = defineComponent({
+      name: 'Child',
+      inheritAttrs: false,
+      setup() {
+        captured.childRegister = useRegister()
+        return () => h('input', { type: 'text' })
+      },
+    })
+
+    const Parent = defineComponent({
+      setup() {
+        const form = useForm({ schema, key: 'wrapper-derivation-test' })
+        const rv = form.register('email')
+        return () =>
+          withDirectives(h(Child, { registerValue: rv, value: rv.innerRef.value }), [
+            [vRegister, rv],
+          ])
+      },
+    })
+
+    app = createApp(Parent).use(createAttaform())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+
+    expect(captured.childRegister).toBeDefined()
+    if (captured.childRegister === undefined) throw new Error('unreachable')
+    const rv = captured.childRegister.value
+    expect(rv).toBeDefined()
+    if (rv === undefined) throw new Error('unreachable')
+
+    expect(rv.path).toBe(JSON.stringify(['email']))
+    expect(rv.segments).toEqual(['email'])
+    expect(rv.formKey).toBe('wrapper-derivation-test')
+    expect(typeof rv.formInstanceId).toBe('string')
+    expect(rv.formInstanceId.length).toBeGreaterThan(0)
+  })
+
+  it('wrapper-component pattern: rv.segments + rv.formKey rotate when the parent rebinds to a different path', async () => {
+    // The directive variant tests already cover same-form path rotation;
+    // this one exercises the consumer view: when the parent calls
+    // `form.register(<other path>)`, the child's `useRegister().value`
+    // surfaces a fresh RV whose `segments` and `path` reflect the
+    // new binding. `formKey` stays stable because it's the same form.
+    const captured: { childRegister?: ReturnType<typeof useRegister> } = {}
+    const fieldName = ref<'email' | 'name'>('email')
+
+    const Child = defineComponent({
+      name: 'Child',
+      inheritAttrs: false,
+      setup() {
+        captured.childRegister = useRegister()
+        return () => h('input', { type: 'text' })
+      },
+    })
+
+    const Parent = defineComponent({
+      setup() {
+        const form = useForm({ schema, key: 'wrapper-rotation-test' })
+        return () => {
+          const rv = form.register(fieldName.value)
+          return withDirectives(h(Child, { registerValue: rv, value: rv.innerRef.value }), [
+            [vRegister, rv],
+          ])
+        }
+      },
+    })
+
+    app = createApp(Parent).use(createAttaform())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    await flush()
+
+    expect(captured.childRegister?.value?.segments).toEqual(['email'])
+    expect(captured.childRegister?.value?.formKey).toBe('wrapper-rotation-test')
+    const initialFormInstanceId = captured.childRegister?.value?.formInstanceId
+
+    fieldName.value = 'name'
+    await flush()
+
+    expect(captured.childRegister?.value?.segments).toEqual(['name'])
+    expect(captured.childRegister?.value?.formKey).toBe('wrapper-rotation-test')
+    // formInstanceId is per-mount, so the same form instance keeps the
+    // same id across path rebinds.
+    expect(captured.childRegister?.value?.formInstanceId).toBe(initialFormInstanceId)
+  })
 })
 
 describe('useRegister — sentinel suppresses parent-directive warn', () => {

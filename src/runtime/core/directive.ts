@@ -30,6 +30,7 @@ import { REGISTER_OWNER_MARKER } from '../composables/use-register'
 import { __DEV__ } from './dev'
 import type {
   CustomDirectiveRegisterAssignerFn,
+  InternalRegisterValue,
   RegisterCheckboxCustomDirective,
   RegisterModelDynamicCustomDirective,
   RegisterRadioCustomDirective,
@@ -133,6 +134,19 @@ function removeTrackedListeners(el: Element): void {
     el.removeEventListener(event, handler, options)
   }
   delete carrier[listenersKey]
+}
+
+/**
+ * Write the directive-private `lastTypedForm` ref. Lives on the
+ * `InternalRegisterValue` extension of `RegisterValue` (it's not part
+ * of the public type), but every RV constructed by `register-api.ts`
+ * carries it — so the cast captures a runtime invariant the type
+ * system can't otherwise express. Used by the numeric-text listener
+ * to surface the user's typed form (`'1e2'`) to `displayValue`
+ * mid-typing without yanking the caret on the next render.
+ */
+function writeLastTypedForm(rv: RegisterValue, next: string | null): void {
+  ;(rv as InternalRegisterValue).lastTypedForm.value = next
 }
 
 /**
@@ -601,7 +615,7 @@ const vRegisterText: RegisterTextCustomDirective = {
             return
           }
           if (isRegisterValue(value)) {
-            value.lastTypedForm.value = null
+            writeLastTypedForm(value, null)
             value.markBlank()
           }
           return
@@ -616,7 +630,7 @@ const vRegisterText: RegisterTextCustomDirective = {
           // doesn't surface a dev warning for a transient mid-edit
           // state.
           if (isRegisterValue(value)) {
-            value.lastTypedForm.value = null
+            writeLastTypedForm(value, null)
             value.markBlank()
           }
           return
@@ -644,7 +658,7 @@ const vRegisterText: RegisterTextCustomDirective = {
         // DOM and yank the user away from the `1e2` they're typing.
         // The blur normalizer clears `lastTypedForm` so the post-blur
         // DOM matches storage exactly.
-        if (isRegisterValue(value)) value.lastTypedForm.value = typedString
+        if (isRegisterValue(value)) writeLastTypedForm(value, typedString)
       }
       el[assignKey]?.(domValue)
       // After the default assigner runs, force-sync the DOM when
@@ -678,7 +692,7 @@ const vRegisterText: RegisterTextCustomDirective = {
         if (storage !== domValue) {
           const display = storage == null ? '' : String(storage)
           if (el.value !== display) el.value = display
-          if (castToNumber) value.lastTypedForm.value = null
+          if (castToNumber) writeLastTypedForm(value, null)
         }
       }
     })
@@ -702,7 +716,7 @@ const vRegisterText: RegisterTextCustomDirective = {
             // is gated on `lazy !== true` because the lazy listener
             // already wrote on the same change event ahead of this
             // handler.
-            if (isRegisterValue(value)) value.lastTypedForm.value = null
+            if (isRegisterValue(value)) writeLastTypedForm(value, null)
             el.value = String(cast)
             if (lazy !== true) el[assignKey]?.(cast)
           } else {
@@ -715,7 +729,7 @@ const vRegisterText: RegisterTextCustomDirective = {
             // pasted directly via the change event) this is the first
             // chance, so re-mark defensively.
             if (isRegisterValue(value)) {
-              value.lastTypedForm.value = null
+              writeLastTypedForm(value, null)
               value.markBlank()
             }
             el.value = ''

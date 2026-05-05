@@ -7,7 +7,7 @@ import { ref, type Ref } from 'vue'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createPersistOptInRegistry } from '../../src/runtime/core/persistence/opt-in-registry'
 import type { PathKey } from '../../src/runtime/core/paths'
-import type { RegisterValue } from '../../src/runtime/types/types-api'
+import type { InternalRegisterValue, RegisterValue } from '../../src/runtime/types/types-api'
 
 /**
  * Modifier coverage for `v-register` (`.lazy`, `.trim`, `.number`).
@@ -24,8 +24,20 @@ import type { RegisterValue } from '../../src/runtime/types/types-api'
 
 type Spy = ReturnType<typeof vi.fn>
 
+// `MutableMockRv` is the test-only mutable view of `InternalRegisterValue`.
+// Production RVs are `shallowReadonly`-frozen; the older test fixtures
+// in this file post-hoc swap fields like `markBlank` / `innerRef` to
+// install spies for specific assertions, which the readonly typing
+// rightly forbids on the public type. Strip the `readonly` modifiers
+// only inside this file so those swaps still type-check; tests that
+// don't mutate keep getting the read-only contract via
+// `InternalRegisterValue<T>` returned from `makeRegisterValue`.
+type MutableMockRv<T> = {
+  -readonly [K in keyof InternalRegisterValue<T>]: InternalRegisterValue<T>[K]
+}
+
 function makeRegisterValue<T>(initial: T): {
-  value: RegisterValue<T>
+  value: MutableMockRv<T>
   register: Spy
   deregister: Spy
   setValue: Spy
@@ -43,8 +55,8 @@ function makeRegisterValue<T>(initial: T): {
     innerRef.value = v as T
     return true
   })
-  const value: RegisterValue<T> = {
-    innerRef: innerRef as RegisterValue<T>['innerRef'],
+  const value: MutableMockRv<T> = {
+    innerRef: innerRef as InternalRegisterValue<T>['innerRef'],
     displayValue: ref('') as Readonly<Ref<string>>,
     markBlank: () => true,
     lastTypedForm: ref<string | null>(null),
@@ -53,6 +65,9 @@ function makeRegisterValue<T>(initial: T): {
     setValueWithInternalPath: setValue,
     markConnectedOptimistically: () => undefined,
     path: 'mock' as PathKey,
+    segments: Object.freeze(['mock']),
+    formKey: 'mock-form',
+    formInstanceId: 'mock-inst',
     persist: false,
     acknowledgeSensitive: false,
     persistOptIns: createPersistOptInRegistry(),

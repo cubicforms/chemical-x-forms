@@ -1,5 +1,6 @@
-import { computed, ref, type Ref } from 'vue'
+import { computed, ref, shallowReadonly, type Ref } from 'vue'
 import type {
+  InternalRegisterValue,
   RegisterOptions,
   RegisterTransform,
   RegisterValue,
@@ -189,7 +190,14 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
       })
     }
 
-    return {
+    // `shallowReadonly` is what makes `rv.path`, `rv.formKey`, and the
+    // other top-level string fields feel like reactive state in
+    // wrapper components: property reads track in computeds /
+    // watchEffects, mutations are blocked at runtime + type level, and
+    // inner refs (`innerRef`, `displayValue`, `lastTypedForm`) keep
+    // their `Ref` shape so the directive's `.value` reads/writes
+    // continue to work unchanged.
+    const internalRv: InternalRegisterValue = {
       innerRef,
       displayValue,
       lastTypedForm,
@@ -237,9 +245,17 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
         state.markConnectedOptimistically(segments)
       },
 
+      path: pathKey,
+      // Frozen so a wrapper component can pass `rv.segments` directly
+      // to `form.fields(...)` without defensive copying — and so test
+      // fixtures or downstream code can't mutate the canonical
+      // segment list out from under the directive.
+      segments: Object.freeze(segments.slice()),
+      formKey: state.formKey,
+      formInstanceId,
+
       // --- Persistence opt-in (internal; the directive is the only
       // legitimate consumer) ---
-      path: pathKey,
       persist,
       acknowledgeSensitive,
       persistOptIns: state.persistOptIns,
@@ -247,5 +263,6 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
       coerce,
       ...(coerceElement !== undefined ? { coerceElement } : {}),
     }
+    return shallowReadonly(internalRv) as RegisterValue
   }
 }

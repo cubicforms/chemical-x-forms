@@ -1384,11 +1384,17 @@ export type RegisterOptions = {
  *
  * Or read `innerRef` directly when integrating with custom components.
  *
- * The remaining fields support advanced bindings (custom assigners,
- * SSR optimistic marking, persistence opt-ins). Most consumers only
- * touch `innerRef`.
+ * The returned value is a `shallowReadonly` reactive proxy: top-level
+ * reads (`rv.path`, `rv.formKey`, `rv.persist`, …) track in reactive
+ * scopes, mutations are blocked, and inner refs (`innerRef`,
+ * `displayValue`) keep their `Ref` shape.
+ *
+ * `path`, `formKey`, and `formInstanceId` are the wrapper-component
+ * primitives — a generic component using `useRegister()` can derive
+ * field state and form identity from them without re-threading props
+ * from the parent.
  */
-export type RegisterValue<Value = unknown> = {
+export type RegisterValue<Value = unknown> = Readonly<{
   /**
    * Live, read-only reactive value at this path. Watch it to drive
    * UI that depends on the field's current value.
@@ -1421,10 +1427,43 @@ export type RegisterValue<Value = unknown> = {
    */
   markConnectedOptimistically: () => void
   /**
-   * Canonical path key. Used by directive integrations.
-   * @internal
+   * Canonical, JSON-encoded path key for this binding (e.g.
+   * `'["items",0,"name"]'`). Useful for stable Map / Set keys, log
+   * messages, and equality checks against another `RegisterValue`'s
+   * path. Treat as opaque — for `form.fields(...)` / `form.values(...)`
+   * lookups inside wrapper components, use `segments` instead.
    */
   path: PathKey
+  /**
+   * Structured path segments for this binding (e.g.
+   * `['items', 0, 'name']`). The consumer-friendly form for
+   * `form.fields(...)` / `form.values(...)` lookups in generic
+   * wrapper components:
+   *
+   * ```ts
+   * const rv = useRegister()
+   * const form = injectForm()
+   * const field = computed(() => form.fields(rv.value?.segments ?? []))
+   * ```
+   *
+   * Frozen at runtime so wrapper components can read it without
+   * defensive copying.
+   */
+  segments: Path
+  /**
+   * The form's user-supplied (or auto-allocated) `key`, mirroring
+   * `form.key` on the public form API. Useful in wrapper components
+   * that target a specific form by key without prop-drilling.
+   */
+  formKey: string
+  /**
+   * Per-mount runtime identifier for the form instance. Stable across
+   * the form's lifetime. Used by the directive to scope element
+   * registrations to a single mount and exposed here for wrapper
+   * components that need to disambiguate sibling forms with the same
+   * `key`.
+   */
+  formInstanceId: string
   /**
    * Whether this binding opted into persistence via `register(path, { persist: true })`.
    * @internal
@@ -1500,29 +1539,35 @@ export type RegisterValue<Value = unknown> = {
    * @internal
    */
   markBlank: () => boolean
-  /**
-   * The user's most recently typed string form for this field while
-   * mid-typing, or `null` once the field has been blurred / cleared.
-   * The directive populates this on every committable input event
-   * and clears it on the change (blur) event so:
-   *
-   *   - Mid-typing: `displayValue` returns the typed form (e.g.
-   *     `'1e2'`) when it parses back to current storage. Vue's
-   *     `:value` patch then targets the typed form, which already
-   *     equals the DOM — idempotent, no cursor reset.
-   *   - On blur: `displayValue` falls back to `String(storage)`
-   *     (`'100'`), Vue patches the DOM to match. The user sees
-   *     exactly what's stored.
-   *
-   * Why a separate field: JavaScript's Number carries no
-   * representation info — `1e2 === 100`, so `String(parseFloat('1e2'))`
-   * yields `'100'`. Tracking the typed form lets us avoid Vue's
-   * mid-typing DOM yank without lying about storage.
-   *
-   * Only meaningful for `.number` text inputs and `<input type="number">`;
-   * other bindings ignore it.
-   * @internal
-   */
+}>
+
+/**
+ * Internal extension of `RegisterValue` that includes directive-private
+ * coordination state. Imported by the directive runtime; not part of
+ * the public surface.
+ *
+ * `lastTypedForm` is the user's most recently typed string form for a
+ * numeric field while mid-typing, or `null` once the field has been
+ * blurred / cleared. The directive populates it on every committable
+ * input event and clears it on the change (blur) event so:
+ *
+ *   - Mid-typing: `displayValue` returns the typed form (e.g.
+ *     `'1e2'`) when it parses back to current storage. Vue's
+ *     `:value` patch then targets the typed form, which already
+ *     equals the DOM — idempotent, no cursor reset.
+ *   - On blur: `displayValue` falls back to `String(storage)`
+ *     (`'100'`), Vue patches the DOM to match. The user sees
+ *     exactly what's stored.
+ *
+ * Why a separate field: JavaScript's Number carries no representation
+ * info — `1e2 === 100`, so `String(parseFloat('1e2'))` yields `'100'`.
+ * Tracking the typed form lets us avoid Vue's mid-typing DOM yank
+ * without lying about storage. Only meaningful for `.number` text
+ * inputs and `<input type="number">`; other bindings ignore it.
+ *
+ * @internal
+ */
+export type InternalRegisterValue<Value = unknown> = RegisterValue<Value> & {
   lastTypedForm: Ref<string | null>
 }
 

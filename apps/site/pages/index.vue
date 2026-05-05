@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { ShieldCheck, Zap, Layers, Server, ArrowRight, Github } from 'lucide-vue-next'
+  import { ShieldCheck, Zap, Layers, Server, ArrowRight } from 'lucide-vue-next'
 
   // Feature cards on the homepage. Same single-color icon-chip
   // discipline as the docs landing — every chip on this page uses
@@ -115,7 +115,7 @@
             </UiButton>
             <UiButton to="/play" size="xl" variant="secondary">Try it live</UiButton>
             <UiButton href="https://github.com/attaform/attaform" size="xl" variant="ghost">
-              <Github class="h-5 w-5" :stroke-width="2" />
+              <UiBrandGithub class="h-5 w-5" />
               <span>GitHub</span>
             </UiButton>
           </div>
@@ -212,7 +212,7 @@
                as a real card but more "this is the marquee piece" than
                the standard border. -->
           <div
-            class="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent to-transparent"
+            class="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-accent to-transparent"
             aria-hidden="true"
           />
           <DemoRepl height="37.5rem" />

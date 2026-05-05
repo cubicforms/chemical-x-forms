@@ -1974,7 +1974,21 @@ export type FieldStateMap<Form extends GenericForm> = {
   readonly [K in keyof Form]: FieldStateMapEntry<Form[K]>
 } & {
   (path: string): unknown
-  (path: ReadonlyArray<string | number>): unknown
+  /**
+   * Tuple-segment form. Returns the typed `FieldStateMapEntry` for
+   * the resolved path when the tuple resolves to a known path.
+   * Equivalent to `form.fields[a][b][...]` but useful when the path
+   * is built from variables.
+   */
+  <const S extends ReadonlyArray<string | number>>(
+    segments: S & ([JoinSegments<S>] extends [FlatPath<Form>] ? unknown : never)
+  ): FieldStateMapEntry<NestedType<Form, JoinSegments<S>>>
+  /**
+   * Untyped fallback for callers passing `Path`-typed (dynamic)
+   * segment arrays — e.g. forwarding `RegisterValue.segments` to
+   * resolve a field view.
+   */
+  (segments: ReadonlyArray<string | number>): unknown
   (): FieldStateMap<Form>
 }
 
@@ -2027,7 +2041,15 @@ export type FormErrorStore = Map<FormKey, FormErrorRecord>
  */
 export type FormErrorsSurface<Form> = ErrorsProxyShape<Form> & {
   (path: string): readonly ValidationError[] | undefined
-  (path: ReadonlyArray<string | number>): readonly ValidationError[] | undefined
+  /**
+   * Tuple-segment form. Validated against `FlatPath<Form>` so literal
+   * tuples that don't resolve to a known path fail at the call site.
+   * Dynamic `Path`-typed inputs hit the untyped fallback overload below.
+   */
+  <const S extends ReadonlyArray<string | number>>(
+    segments: S & ([JoinSegments<S>] extends [FlatPath<Form>] ? unknown : never)
+  ): readonly ValidationError[] | undefined
+  (segments: ReadonlyArray<string | number>): readonly ValidationError[] | undefined
   (): FormErrorsSurface<Form>
 }
 
@@ -2690,9 +2712,12 @@ export type UseFormReturnType<
    * Wrap in your own `computed` to make the call reactive — read-
    * through hits `meta.errors`, so dep tracking flows through.
    */
-  errorsAt: (
-    path: FlatPath<Form> | '' | ReadonlyArray<string | number>
-  ) => readonly ValidationError[]
+  errorsAt: {
+    (path: FlatPath<Form> | ''): readonly ValidationError[]
+    <const S extends ReadonlyArray<string | number>>(
+      segments: S & ([JoinSegments<S>] extends [FlatPath<Form> | ''] ? unknown : never)
+    ): readonly ValidationError[]
+  }
 
   // --- Form-level meta ---
 

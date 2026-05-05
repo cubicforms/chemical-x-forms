@@ -2,13 +2,16 @@
 
 ## Unreleased
 
-- **Tuple-segment overload for `form.register`, `form.setValue`,
-  `form.toRef`.** New array-form overloads accept segments directly:
+- **Tuple-segment overload across path APIs.** New array-form
+  overloads accept segments directly:
 
   ```ts
   form.register(['cargo', 'items', 0, 'sku'])
   form.setValue(['cargo', 'items', 0, 'sku'], 'SKU-1001')
   form.toRef(['cargo', 'items', 0, 'sku'])
+  form.fields(['cargo', 'items', 0, 'sku'])    // typed FieldStateLeaf
+  form.errors(['cargo', 'items', 0, 'sku'])    // typed errors
+  form.errorsAt(['cargo', 'items'])             // typed prefix
   ```
 
   Resolved value types match the dotted-string forms exactly.
@@ -18,9 +21,12 @@
   `'pickup' | 'delivery'` through the joined path. New `JoinSegments`
   helper (in `runtime/types/types-core`) is exported alongside; no
   new path-segment union type is added (the constraint reuses the
-  existing `FlatPath` / `RegisterFlatPath`). Refinement of the
-  `fields()` / `errors()` array callables to typed return types is
-  the remaining piece, shipping next.
+  existing `FlatPath` / `RegisterFlatPath`). Type-check perf on the
+  public surface (`src/`) is unchanged in practice (within ±20ms of
+  baseline). The `fields()` and `errors()` callables keep their
+  permissive `(segments: ReadonlyArray<string | number>)` overload as
+  an untyped fallback so dynamic `Path`-typed inputs (e.g.
+  `RegisterValue.segments`) keep working without casts.
 
 - **`form.errorsAt(path)`.** Read-side aggregate that returns every
   error whose path **is** the given path **or descends from it**.

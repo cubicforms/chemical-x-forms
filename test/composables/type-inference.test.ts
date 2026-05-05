@@ -315,6 +315,58 @@ describe('useForm type inference — setValue tuple-segment overload', () => {
   })
 })
 
+describe('useForm type inference — fields() callable tuple form', () => {
+  it('literal tuple resolves to a typed FieldStateLeaf', () => {
+    const f = form.fields(['email'])
+    expectTypeOf(f.value).toEqualTypeOf<string>()
+  })
+
+  it('literal tuple drilling into nested object', () => {
+    const f = form.fields(['profile', 'name'])
+    expectTypeOf(f.value).toEqualTypeOf<string>()
+  })
+
+  it('dynamic Path-typed segments hit the untyped fallback', () => {
+    // Forwarding `RegisterValue.segments` (typed as Path) preserves
+    // back-compat: JoinSegments<Path> resolves to plain `string`, which
+    // doesn't fit FlatPath<Form>'s literal union, so the typed overload
+    // is skipped and the permissive fallback returns `unknown`.
+    const dynamic: ReadonlyArray<string | number> = ['email']
+    const result = form.fields(dynamic)
+    expectTypeOf(result).toEqualTypeOf<unknown>()
+  })
+})
+
+describe('useForm type inference — errors() callable tuple form', () => {
+  it('literal tuple returns ValidationError[] | undefined', () => {
+    const errs = form.errors(['email'])
+    // Match shape (the public ValidationError type is exported, but
+    // accessing the imported alias here would couple the test to its
+    // import path — toMatchTypeOf is enough).
+    expectTypeOf(errs).toMatchTypeOf<readonly { message: string }[] | undefined>()
+  })
+
+  it('dynamic Path-typed segments hit the untyped fallback', () => {
+    const dynamic: ReadonlyArray<string | number> = ['email']
+    const result = form.errors(dynamic)
+    expectTypeOf(result).toMatchTypeOf<readonly { message: string }[] | undefined>()
+  })
+})
+
+describe('useForm type inference — errorsAt tuple form', () => {
+  it('accepts dotted-string and literal tuple', () => {
+    form.errorsAt('profile.name')
+    form.errorsAt(['profile', 'name'])
+    form.errorsAt('') // root
+    form.errorsAt([]) // root tuple
+  })
+
+  it('rejects an invalid literal tuple', () => {
+    // @ts-expect-error - 'nonexistent' isn't a top-level key.
+    form.errorsAt(['nonexistent'])
+  })
+})
+
 describe('useForm type inference — toRef tuple-segment overload', () => {
   it('segment-array form returns a Readonly<Ref<T>> matching the dotted form', () => {
     expectTypeOf(form.toRef(['email']).value).toEqualTypeOf<string>()

@@ -11,26 +11,42 @@
  * <!-- MyInput.vue -->
  * <script setup lang="ts">
  *   import { useRegister } from 'attaform'
- *   const register = useRegister()
+ *   const rv = useRegister()
+ *   // rv.path / rv.segments / rv.formKey / rv.formInstanceId / rv.innerRef
+ *   // are all reachable directly — no `.value` unwrap.
  * </script>
  *
  * <template>
  *   <label class="field">
  *     <span>Email</span>
- *     <input v-register="register" />
+ *     <input v-register="rv" />
  *   </label>
  * </template>
  * ```
  *
- * Returns a `ComputedRef<RegisterValue | undefined>`. The directive
- * handles `undefined` gracefully (silent no-op assigner, no listener
- * attachment), so always pass the result to `v-register` directly.
+ * Returns a hybrid Proxy: it answers `__v_isRef` / `.value` like a
+ * Vue `Ref<RegisterValue | undefined>` (so templates auto-unwrap
+ * correctly and `v-register="rv"` feeds the underlying RV to the
+ * directive — preserving the directive's path-migration diff across
+ * renders), AND every other property read pierces to the captured
+ * RV's field (so `rv.path` works directly in script setup). Reads
+ * inside reactive scopes (`computed` / `watchEffect`) track the
+ * underlying `shallowRef`, so `rv.path` re-runs when the parent
+ * rebinds to a different path.
+ *
+ * Unbound state: when the parent didn't pass `v-register`, every
+ * piercing read returns `undefined` at runtime even though the type
+ * says otherwise. The composable's `onMounted` warn fires once per
+ * instance to flag this misuse — the type "lies" because the bound
+ * case is the only correct one, and forcing every consumer through
+ * a `T | undefined` narrow at every property access is a worse
+ * trade than the runtime warn.
  *
  * Diagnostic: in dev mode, a single `console.warn` fires per instance
  * at `onMounted` if the captured value is still `undefined` — by then
  * the parent has had its full mount lifecycle to bind, so a missing
  * binding is conclusive misuse. The warn does NOT fire on every read
- * of the computed, and is intentionally silent under SSR
+ * of the proxy, and is intentionally silent under SSR
  * (`renderToString` skips `onMounted`); the CSR hydration pass
  * surfaces the same diagnostic without double-counting through Nuxt's
  * `dev:ssr-logs` channel.
@@ -41,17 +57,31 @@
  * `injectForm<Form>(key?)` and call `ctx.register(...)` directly.
  */
 import {
-  computed,
   getCurrentInstance,
   onBeforeMount,
   onBeforeUpdate,
   onMounted,
   shallowRef,
-  type ComputedRef,
+  type Ref,
 } from 'vue'
 import { __DEV__ } from '../core/dev'
 import { captureUserCallSite } from '../core/dev-stack-trace'
 import type { RegisterValue } from '../types/types-api'
+
+/**
+ * Return type of `useRegister()`. Hybrid of `RegisterValue<V>` (so
+ * `rv.path` / `rv.segments` / `rv.formKey` etc. work directly in
+ * script setup) and `Ref<RegisterValue<V> | undefined>` (so Vue's
+ * template auto-unwrap surfaces the underlying RV to `v-register`
+ * and the directive's path-migration diff sees the real RV across
+ * renders).
+ *
+ * The two surfaces don't clash at the type level: `RegisterValue`
+ * doesn't carry a `value` field, and `Ref<T>`'s `value: T` becomes
+ * the hybrid's only `.value`. Older code that read `rv.value?.path`
+ * keeps working; new code can write `rv.path` directly.
+ */
+export type UseRegisterReturn<V = unknown> = RegisterValue<V> & Ref<RegisterValue<V> | undefined>
 
 /**
  * Marker on the rendered root DOM element. Set by `useRegister`'s
@@ -72,11 +102,67 @@ export const REGISTER_OWNER_MARKER: unique symbol = Symbol.for('attaform:registe
 const warnedNoParentRV: WeakSet<object> | null = __DEV__ ? new WeakSet<object>() : null
 let warnedOutsideSetup = false
 
-export function useRegister(): ComputedRef<RegisterValue | undefined> {
+/**
+ * Build the hybrid Proxy. The `__v_isRef` field makes Vue's `unref`
+ * / template auto-unwrap treat the proxy as a `Ref<RegisterValue |
+ * undefined>` and surface `value` (the captured RV) to consumers
+ * that go through that path — including `v-register="rv"` in a
+ * template, which is what feeds the directive its `binding.value`.
+ *
+ * Every other property read pierces to `capturedRegisterValue.value`,
+ * so `rv.path` / `rv.segments` / `rv.formKey` work in script setup.
+ *
+ * Methods don't need `this` rebinding: every method on a real
+ * `RegisterValue` is an arrow-function closure built in
+ * `register-api.ts`, capturing `state` / `segments` lexically. So
+ * `rv.registerElement(el)` works through the proxy without a
+ * `bind` pass. The `has` / `ownKeys` traps cooperate with
+ * `'innerRef' in rv` / `Object.keys(rv)` — including the
+ * `isRegisterValue` type guard the directive uses.
+ */
+function makeRegisterValueProxy<V>(
+  capturedRegisterValue: Ref<RegisterValue<V> | undefined>
+): UseRegisterReturn<V> {
+  return new Proxy({} as object, {
+    get(_target, prop) {
+      if (prop === '__v_isRef') return true
+      if (prop === 'value') return capturedRegisterValue.value
+      const v = capturedRegisterValue.value
+      if (v === undefined) return undefined
+      return Reflect.get(v as object, prop)
+    },
+    has(_target, prop) {
+      if (prop === '__v_isRef' || prop === 'value') return true
+      const v = capturedRegisterValue.value
+      if (v === undefined) return false
+      return Reflect.has(v as object, prop)
+    },
+    ownKeys(_target) {
+      const v = capturedRegisterValue.value
+      if (v === undefined) return []
+      return Reflect.ownKeys(v as object)
+    },
+    getOwnPropertyDescriptor(_target, prop) {
+      const v = capturedRegisterValue.value
+      if (v === undefined) return undefined
+      const desc = Reflect.getOwnPropertyDescriptor(v as object, prop)
+      if (desc !== undefined) {
+        // Proxy invariant: any property reported via ownKeys must be
+        // configurable on the target OR match a non-configurable
+        // descriptor on the target. Empty target has no own props,
+        // so we MUST return descriptors with `configurable: true`.
+        desc.configurable = true
+      }
+      return desc
+    },
+  }) as unknown as UseRegisterReturn<V>
+}
+
+export function useRegister<V = unknown>(): UseRegisterReturn<V> {
   const instance = getCurrentInstance()
   if (instance === null) {
     warnOutsideSetup()
-    return computed(() => undefined)
+    return makeRegisterValueProxy<V>(shallowRef<RegisterValue<V> | undefined>(undefined))
   }
 
   // Capture the bridge `registerValue` from instance.attrs into a
@@ -96,18 +182,17 @@ export function useRegister(): ComputedRef<RegisterValue | undefined> {
   // (which calls setFullProps) and before `renderComponentRoot`
   // (which reads attrs for fallthrough), giving us a clean window.
   //
-  // We don't read from `useAttrs()` proxy in the computed because
-  // the proxy reads off the same target we're mutating — after the
-  // strip, the proxy returns undefined for the bridge keys. The
-  // captured ref is the source of truth instead, refreshed in lockstep
-  // with attrs.
+  // We don't read from `useAttrs()` proxy because the proxy reads
+  // off the same target we're mutating — after the strip, the proxy
+  // returns undefined for the bridge keys. The captured ref is the
+  // source of truth instead, refreshed in lockstep with attrs.
   //
   // `shallowRef` (not `ref`) — `ref` calls `reactive()` on object
   // values, which would wrap the parent's RV in a reactive proxy and
   // break referential equality. The directive hooks downstream rely
   // on the rv being the same reference the parent holds, so we keep
   // it raw.
-  const capturedRegisterValue = shallowRef<RegisterValue | undefined>(undefined)
+  const capturedRegisterValue = shallowRef<RegisterValue<V> | undefined>(undefined)
 
   const refreshAndStripBridgeAttrs = (): void => {
     const rawAttrs = instance.attrs as Record<string, unknown>
@@ -119,7 +204,7 @@ export function useRegister(): ComputedRef<RegisterValue | undefined> {
     // so the `onBeforeUpdate` invocation correctly sees the key again
     // and re-captures.
     if ('registerValue' in rawAttrs) {
-      capturedRegisterValue.value = rawAttrs['registerValue'] as RegisterValue | undefined
+      capturedRegisterValue.value = rawAttrs['registerValue'] as RegisterValue<V> | undefined
       delete rawAttrs['registerValue']
     }
     if ('value' in rawAttrs) delete rawAttrs['value']
@@ -150,12 +235,12 @@ export function useRegister(): ComputedRef<RegisterValue | undefined> {
   // no-parent-RV diagnostic exactly once per instance if the captured
   // value is still `undefined` by mount time — by then the parent has
   // had its full lifecycle to bind, so still-undefined is conclusive
-  // misuse. The computed factory below stays pure: reads don't trigger
-  // diagnostics, so a consumer that conditionally consumes the value
-  // (or reads it many times) gets exactly the right behaviour. SSR is
-  // intentionally silent — `onMounted` doesn't fire on the server, and
-  // the CSR hydration pass surfaces the diagnostic on the only surface
-  // a developer can act on without double-counting through the Nuxt
+  // misuse. The proxy stays pure: reads don't trigger diagnostics, so
+  // a consumer that conditionally consumes the value (or reads it many
+  // times) gets exactly the right behaviour. SSR is intentionally
+  // silent — `onMounted` doesn't fire on the server, and the CSR
+  // hydration pass surfaces the diagnostic on the only surface a
+  // developer can act on without double-counting through the Nuxt
   // `dev:ssr-logs` channel.
   onMounted(() => {
     const el = instance.vnode.el
@@ -167,7 +252,7 @@ export function useRegister(): ComputedRef<RegisterValue | undefined> {
     }
   })
 
-  return computed(() => capturedRegisterValue.value)
+  return makeRegisterValueProxy(capturedRegisterValue)
 }
 
 function warnOutsideSetup(): void {
@@ -176,7 +261,7 @@ function warnOutsideSetup(): void {
   warnedOutsideSetup = true
   const frame = captureUserCallSite()
   console.warn(
-    `[attaform] useRegister() called outside a component setup; returning ComputedRef<undefined>. ` +
+    `[attaform] useRegister() called outside a component setup; returning an unbound RegisterValue proxy. ` +
       `Fix: call it inside <script setup> or a setup() function — not from an event handler ` +
       `or async callback.` +
       (frame !== undefined ? ` ${frame}` : '')
@@ -189,7 +274,7 @@ function warnNoParentRV(instance: object): void {
   warnedNoParentRV.add(instance)
   const frame = captureUserCallSite()
   console.warn(
-    `[attaform] useRegister: no parent registerValue prop; returning ComputedRef<undefined>. ` +
+    `[attaform] useRegister: no parent registerValue prop; RegisterValue fields will read as undefined. ` +
       `Pass v-register on the parent: \`<YourComponent v-register="form.register('field')" />\`.` +
       (frame !== undefined ? ` ${frame}` : '')
   )

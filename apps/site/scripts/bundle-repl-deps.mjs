@@ -313,6 +313,25 @@ async function emitTypeBundles() {
     writeFile(resolve(typesDir, 'vue/index.js'), ''),
     writeFile(resolve(typesDir, 'zod/index.js'), ''),
   ])
+  // Sidecar `.d.ts` next to each `.js` runtime bundle so Nuxt/IDE
+  // tooling (vue-tsc, Volar, vtsls) sees types when resolving an
+  // import like `~/public/lib/attaform-zod` from a Vue component
+  // file. Without these, the import resolves to the JS bundle alone
+  // and TypeScript falls back to JS-inference (which sees the
+  // exported function returning a `Proxy({}, …)` and types it as
+  // `() => {}`). The shim re-exports from the rolled-up type bundle
+  // so both surfaces (in-page Volar and host-side IDE) share one
+  // source of truth.
+  await Promise.all([
+    writeFile(
+      resolve(outDir, 'attaform.d.ts'),
+      `export * from './types/attaform/index'\n`
+    ),
+    writeFile(
+      resolve(outDir, 'attaform-zod.d.ts'),
+      `export * from './types/attaform/zod'\n`
+    ),
+  ])
   // Directory listing JSON per package, mimicking unpkg's `?meta`
   // endpoint shape: `{ files: [{ path, type }] }`. Volar's worker
   // (`createNpmFileSystem` in @vue/repl's vue.worker) calls our

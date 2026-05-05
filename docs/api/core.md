@@ -125,6 +125,53 @@ handles it and `useRegister` is unnecessary.
 </template>
 ```
 
+### Wrapper-component primitives
+
+The `RegisterValue` returned by `register(...)` is a `shallowReadonly`
+reactive proxy. Top-level reads track in `computed` / `watchEffect`,
+mutations are blocked, and inner refs (`innerRef`, `displayValue`)
+keep their `Ref` shape. A generic wrapper using `useRegister()` can
+derive field state from the captured RV alone — no separate `path`
+prop:
+
+| Field            | Type                 | Use                                                                          |
+| ---------------- | -------------------- | ---------------------------------------------------------------------------- |
+| `path`           | `PathKey`            | Canonical, JSON-encoded path (`'["items",0,"name"]'`). Stable Map / Set key. |
+| `segments`       | `readonly Segment[]` | Frozen path array (`['items', 0, 'name']`). Pass to `form.fields(...)`.      |
+| `formKey`        | `string`             | Mirrors `form.key` so wrappers can target a specific form by key.            |
+| `formInstanceId` | `string`             | Per-mount runtime id — disambiguates sibling forms with the same `key`.      |
+
+`useRegister()` itself returns a hybrid Proxy: it answers like a
+`Ref<RegisterValue | undefined>` to Vue's template auto-unwrap (so
+`v-register="rv"` keeps feeding the directive the underlying RV and
+its path-migration diff stays sound across renders), AND every other
+property read pierces to the captured RV — so `rv.path`,
+`rv.segments`, `rv.formKey` work directly in `<script setup>` without
+a `.value` step. Reads inside reactive scopes still track the
+underlying `shallowRef`, so derived state re-runs when the parent
+rebinds.
+
+```vue
+<!-- ErrorRow.vue — wraps any v-register binding, shows the first error -->
+<script setup lang="ts">
+  import { computed } from 'vue'
+  import { injectForm, useRegister } from 'attaform'
+
+  const rv = useRegister()
+  const form = injectForm()
+  const field = computed(() => (form !== null ? form.fields(rv.segments) : undefined))
+</script>
+
+<template>
+  <div class="row">
+    <slot />
+    <small v-if="field?.errors[0]">{{ field.errors[0].message }}</small>
+    <!-- Or read the path directly in the template — auto-unwrap pierces:
+         <small>bound to {{ rv.path }}</small> -->
+  </div>
+</template>
+```
+
 ### Modifiers
 
 `v-register` mirrors Vue's `v-model` modifier semantics, scoped per

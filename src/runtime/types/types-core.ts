@@ -93,6 +93,34 @@ export type FlatPath<
 > = ForceFullPath extends true ? CompleteFlatPath<Form, Key> : PartialFlatPath<Form, Key>
 
 /**
+ * Convert a tuple of path segments to its dotted-string equivalent.
+ *
+ *   `JoinSegments<['cargo', 'items', 0, 'sku']>` → `'cargo.items.0.sku'`
+ *
+ * Recursion depth is bounded by the tuple length (typically 3–4),
+ * not by form depth — the cost does not scale with `FlatPath<Form>`.
+ * Template literal types distribute over union members, so segments
+ * containing unions like `'pickup' | 'delivery'` propagate through
+ * to the joined path's union: `JoinSegments<['pickup' | 'delivery', 'line1']>`
+ * → `'pickup.line1' | 'delivery.line1'`. This is what makes
+ * tuple-form path APIs work cleanly inside `v-for` over a prefix
+ * variable: the joined result is checked against `FlatPath<Form>` /
+ * `RegisterFlatPath<Form>` (which already exist), so we don't
+ * enumerate a separate tuple-path union.
+ */
+export type JoinSegments<
+  S extends ReadonlyArray<string | number>,
+  Acc extends string = '',
+> = S extends readonly [
+  infer Head extends string | number,
+  ...infer Rest extends ReadonlyArray<string | number>,
+]
+  ? Acc extends ''
+    ? JoinSegments<Rest, `${Head}`>
+    : JoinSegments<Rest, `${Acc}.${Head}`>
+  : Acc
+
+/**
  * Recursive `Partial` — every property at every depth is optional.
  * Used as the parameter type of `defaultValues` and `reset()` so
  * partial overrides at any nesting level are valid.

@@ -9,6 +9,7 @@ import type {
   FlatPath,
   GenericForm,
   IsObjectOrArray,
+  JoinSegments,
   NestedReadType,
   NestedType,
   WriteShape,
@@ -2486,14 +2487,32 @@ export type UseFormReturnType<
    * />
    * ```
    *
+   * Also accepts a segment-array form for callers building paths
+   * dynamically — particularly inside a `v-for` over a prefix variable
+   * where dotted-string concatenation widens the prefix's literal
+   * union to plain `string`:
+   *
+   * ```vue
+   * <fieldset v-for="block in [{ prefix: 'pickup' }, { prefix: 'delivery' }] as const">
+   *   <input v-register="form.register([block.prefix, 'line1'])" />
+   * </fieldset>
+   * ```
+   *
    * Pass `options.persist` to opt into the form's persistence
    * pipeline. Persistence requires `useForm({ persist })` configured
    * for storage activity to actually happen.
    */
-  register: <Path extends RegisterFlatPath<Form, keyof Form>>(
-    path: Path,
-    options?: RegisterOptions
-  ) => RegisterValue<NestedReadType<WriteShape<Form>, Path>>
+  register: {
+    <Path extends RegisterFlatPath<Form, keyof Form>>(
+      path: Path,
+      options?: RegisterOptions
+    ): RegisterValue<NestedReadType<WriteShape<Form>, Path>>
+    <const S extends ReadonlyArray<string | number>>(
+      segments: S &
+        ([JoinSegments<S>] extends [RegisterFlatPath<Form, keyof Form>] ? unknown : never),
+      options?: RegisterOptions
+    ): RegisterValue<NestedReadType<WriteShape<Form>, JoinSegments<S>>>
+  }
   /**
    * The form's identifier — either the explicit `key` passed to
    * `useForm` or an auto-generated unique id when `key` was omitted.

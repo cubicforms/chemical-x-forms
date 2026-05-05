@@ -297,6 +297,37 @@ describe('useForm type inference — primitive-array register paths', () => {
   })
 })
 
+describe('useForm type inference — register tuple-segment overload', () => {
+  it('segment-array form resolves to the same value type as dotted-string', () => {
+    expectTypeOf(form.register(['email']).innerRef.value).toEqualTypeOf<string>()
+    expectTypeOf(form.register(['profile', 'name']).innerRef.value).toEqualTypeOf<string>()
+    expectTypeOf(form.register(['posts', 0, 'title']).innerRef.value).toEqualTypeOf<
+      string | undefined
+    >()
+    expectTypeOf(form.register(['tags', 0]).innerRef.value).toEqualTypeOf<string | undefined>()
+  })
+
+  it('rejects an invalid tuple', () => {
+    // @ts-expect-error - 'nonexistent' isn't a top-level key on Form.
+    form.register(['nonexistent'])
+    // @ts-expect-error - 'wrong' isn't a member of profile.
+    form.register(['profile', 'wrong'])
+  })
+
+  it('preserves a literal-union prefix through the tuple form', () => {
+    // The v-for case: a prefix variable typed as a literal union must
+    // distribute through the tuple to the joined path's union, so the
+    // resolved RegisterValue.innerRef.value is the union of leaves.
+    const prefix = 'profile' as const
+    expectTypeOf(form.register([prefix, 'name']).innerRef.value).toEqualTypeOf<string>()
+  })
+
+  it('passes options through on both forms', () => {
+    expectTypeOf(form.register('email', { persist: true }).innerRef.value).toEqualTypeOf<string>()
+    expectTypeOf(form.register(['email'], { persist: true }).innerRef.value).toEqualTypeOf<string>()
+  })
+})
+
 describe('useForm type inference — handleSubmit', () => {
   it('callback `values` parameter is the fully inferred Form', () => {
     form.handleSubmit((values) => {

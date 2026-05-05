@@ -130,6 +130,7 @@ export type {
   FlatPath,
   GenericForm,
   IsTuple,
+  JoinSegments,
   NestedReadType,
   NestedType,
 } from './runtime/types/types-core'

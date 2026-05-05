@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Tuple-segment overload for `form.register`.** A new array-form
+  overload accepts segments directly:
+  `form.register(['cargo', 'items', 0, 'sku'])`. The resolved value
+  type matches the dotted-string form exactly. Particularly useful
+  inside a `v-for` over a prefix variable, where dotted concatenation
+  widens a literal union to plain `string`:
+  `form.register([block.prefix, 'line1'])` preserves
+  `'pickup' | 'delivery'` through the joined path. New `JoinSegments`
+  helper (in `runtime/types/types-core`) is exported alongside; no
+  new path-segment union type is added (the constraint reuses the
+  existing `RegisterFlatPath`). Equivalent overloads for `setValue`,
+  `toRef`, `getValue`, and the `fields()` / `errors()` callables are
+  staged behind a perf gate; ship next.
+
 - **`form.errorsAt(path)`.** Read-side aggregate that returns every
   error whose path **is** the given path **or descends from it**.
   Aggregates schema, blank-derived, and user-injected errors in the

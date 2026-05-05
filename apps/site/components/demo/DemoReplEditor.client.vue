@@ -1131,6 +1131,83 @@ button.ghost.danger:hover { color: #B42318; background: #FEF3F2; }
   border-radius: 0.25rem;
   font-size: 0.75rem;
 }
+
+/* ─── Mobile (< 40rem ≈ 640px) ─── */
+@media (max-width: 40rem) {
+  .page { padding: 1rem 0.75rem; }
+  .form { padding: 1.25rem; gap: 1rem; }
+  .form-header h1 { font-size: 1.25rem; }
+
+  /* All multi-column grids collapse to one. */
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+
+  /* Stepper: tighter padding, hide titles for inactive steps. The
+     active step keeps its title so the user always knows where they
+     are. Numbers stay visible for orientation. */
+  .stepper { gap: 0.25rem; padding: 0.5rem; }
+  .step { padding: 0.5rem 0.5rem; font-size: 0.75rem; gap: 0.375rem; }
+  .step-num { width: 1.375rem; height: 1.375rem; font-size: 0.6875rem; }
+  .step .step-title { display: none; }
+  .step.active .step-title { display: inline; }
+
+  /* Address fieldset: trim padding so input gutters don't squeeze. */
+  .address { padding: 0.75rem; gap: 0.625rem; }
+
+  /* Line items: 2-column layout — SKU + description full width on
+     their own rows, qty + wt side-by-side, remove button on its own
+     trailing row, right-aligned. Bigger tap target via grid stretch. */
+  .li-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+  .li-grid > :nth-child(1),
+  .li-grid > :nth-child(2) { grid-column: 1 / -1; }
+  .li-grid > :nth-child(3) { grid-column: 1 / 2; }
+  .li-grid > :nth-child(4) { grid-column: 2 / 3; }
+  .li-grid > .icon-btn {
+    grid-column: 1 / -1;
+    justify-self: end;
+    width: auto;
+    padding: 0 0.875rem;
+  }
+
+  /* Nav row: stack with primary (Next / Submit) above secondary
+     (Undo / Redo / Reset). column-reverse keeps the primary group on
+     top because it's the first child in DOM order. */
+  .nav {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 0.625rem;
+    padding-top: 0.75rem;
+  }
+  .nav-right { justify-content: stretch; }
+  .nav-right > button { flex: 1; }
+  .nav-left { justify-content: space-between; }
+  .nav-left > button { flex: 1; }
+
+  /* Review pre: smaller font + lower max-height so the review JSON
+     doesn't dominate the viewport. */
+  .review pre { font-size: 0.75rem; max-height: 12rem; }
+
+  /* Variant chips: full-width row when there are 4+ chips so they
+     wrap evenly rather than stair-stepping. */
+  .chip-row .chip { flex: 1 1 calc(50% - 0.25rem); justify-content: center; }
+}
+
+/* ─── Tiny phones (< 22.5rem ≈ 360px) ─── */
+@media (max-width: 22.5rem) {
+  .form { padding: 1rem; }
+  /* Drop step numbers if even tighter — leaves a 4-dot pill row. */
+  .stepper { padding: 0.375rem; }
+  .step { padding: 0.375rem; }
+  /* Line items: full single column so SKU has room for its async
+     "Checking…" hint. */
+  .li-grid {
+    grid-template-columns: 1fr;
+  }
+  .li-grid > :nth-child(3),
+  .li-grid > :nth-child(4) { grid-column: 1 / -1; }
+}
 ${'</'}style>`
 
   // @vue/repl auto-creates the Vue app and mounts it from `mainFile`. To

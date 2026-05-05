@@ -55,22 +55,6 @@ export type ValidationError = {
   code: string
 }
 
-/**
- * Caller-side input shape for `form.setFormErrors`. Only `message`
- * is required; the library fills in `path: []`, `formKey`, and a
- * default `code` of `'atta:form-error'`.
- */
-export type FormErrorInput = {
-  /** Human-readable message describing the failure. */
-  message: string
-  /**
-   * Optional override for the entry's `code`. Defaults to
-   * `'atta:form-error'`. Pick a stable prefix when you set this so
-   * error renderers can branch on `code` rather than message text.
-   */
-  code?: string
-}
-
 /** Settled validation result when the form (or subtree) parsed successfully. */
 export type ValidationResponseSuccess<TData> = {
   /** The parsed value at the validated subtree (whole form when `validate()` was called without a path). */
@@ -2614,9 +2598,17 @@ export type UseFormReturnType<
    * form.setFormErrors([])  // clear
    * ```
    *
-   * The library fills in `path: []`, `formKey`, and a default
-   * `code: 'atta:form-error'` per entry; pass `code` per entry to
-   * override.
+   * Only `message` is required. `code` defaults to `'atta:form-error'`.
+   * Any caller-provided `path` or `formKey` is ignored — `path` is
+   * always forced to `[]` (this API is form-level-only by definition)
+   * and `formKey` is filled in from the form instance. The lenient
+   * input shape lets you pipe `parseApiErrors` output (or any
+   * `ValidationError[]`) straight in:
+   *
+   * ```ts
+   * const result = parseApiErrors(payload, { formKey: form.key })
+   * if (result.ok) form.setFormErrors(result.errors)
+   * ```
    *
    * Form-level errors surface in `form.meta.errors` (alongside field
    * errors) but are intentionally excluded from the path-keyed
@@ -2624,7 +2616,7 @@ export type UseFormReturnType<
    * read them via `meta.errors.filter(e => e.path.length === 0)` or
    * `errorsAt('')`.
    */
-  setFormErrors: (errors: ReadonlyArray<FormErrorInput>) => void
+  setFormErrors: (errors: ReadonlyArray<Partial<ValidationError> & { message: string }>) => void
 
   /**
    * Clear every form-level error. Equivalent to `setFormErrors([])`;

@@ -1,6 +1,5 @@
 import { computed, reactive, readonly, type Ref } from 'vue'
 import type {
-  FormErrorInput,
   FormErrorsSurface,
   FormMeta,
   OnInvalidSubmitPolicy,
@@ -236,11 +235,19 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     state.clearUserErrors(segments)
   }
 
-  function setFormErrors(errors: ReadonlyArray<FormErrorInput>): void {
+  function setFormErrors(
+    errors: ReadonlyArray<Partial<ValidationError> & { message: string }>
+  ): void {
     // Surgically replace just the form-level (path: []) entry. Going
     // through `setAllUserErrors` / `setFieldErrors` would clobber every
     // field error too — wrong for "set this top-of-form message
     // without disturbing field validation."
+    //
+    // Caller-provided `path` and `formKey` are intentionally ignored:
+    // this API is form-level-only by definition (path is always [])
+    // and the form knows its own key. The lenient input shape lets
+    // callers pipe `ValidationError[]` (e.g. from `parseApiErrors`)
+    // straight in without having to map first.
     if (errors.length === 0) {
       state.userErrors.delete(ROOT_PATH_KEY)
       return

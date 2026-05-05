@@ -4,6 +4,7 @@ import { createApp, defineComponent, h, type App } from 'vue'
 import { useForm } from '../../src/zod'
 import { z } from 'zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import type { ValidationError } from '../../src/runtime/types/types-api'
 
 /**
  * `form.setFormErrors` / `form.clearFormErrors` write and clear the
@@ -35,7 +36,7 @@ function mount(): { app: App; api: Api } {
   return { app, api: handle.api as Api }
 }
 
-const formLevel = (errors: readonly { path: readonly (string | number)[] }[]) =>
+const formLevel = (errors: readonly ValidationError[]): readonly ValidationError[] =>
   errors.filter((e) => e.path.length === 0)
 
 describe('form.setFormErrors / clearFormErrors', () => {
@@ -156,5 +157,31 @@ describe('form.setFormErrors / clearFormErrors', () => {
     const tree = JSON.parse(JSON.stringify(api.errors))
     expect(tree).toEqual({})
     expect(api.meta.errors).toHaveLength(1)
+  })
+
+  it('accepts full ValidationError[] (e.g. from parseApiErrors)', () => {
+    const { app, api } = mount()
+    apps.push(app)
+
+    // Caller-provided path / formKey are ignored — `setFormErrors`
+    // forces path: [] and the owning formKey, so `parseApiErrors`
+    // output pipes in without mapping.
+    api.setFormErrors([
+      {
+        path: ['ignored', 'on', 'purpose'],
+        formKey: 'wrong-key',
+        message: 'Capacity exceeded',
+        code: 'api:capacity',
+      },
+    ])
+
+    const entries = formLevel(api.meta.errors)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({
+      message: 'Capacity exceeded',
+      path: [],
+      formKey: api.key,
+      code: 'api:capacity',
+    })
   })
 })

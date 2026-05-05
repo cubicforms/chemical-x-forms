@@ -118,7 +118,6 @@ export type {
   ValidateOnConfig,
   UseFormReturnType,
   UseFormConfiguration,
-  FormErrorInput,
   ValidationError,
   ValidationResponse,
   ValidationResponseWithoutValue,

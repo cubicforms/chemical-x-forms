@@ -176,9 +176,9 @@ describe('persistence hydration — validation runs against the rehydrated value
     expect(api.values.email).toBe('taken@example.com')
     const errorMessage = await waitUntil(() => api.errors.email?.[0]?.message ?? null)
     expect(errorMessage).toBe('That email is already registered.')
-    expect(api.meta.isValid).toBe(false)
-    await waitUntil(() => (api.meta.isValidating === false ? true : null))
-    expect(api.meta.isValidating).toBe(false)
+    expect(api.meta.valid).toBe(false)
+    await waitUntil(() => (api.meta.validating === false ? true : null))
+    expect(api.meta.validating).toBe(false)
   })
 
   it('lax + async refine: same behavior — hydration triggers refine validation', async () => {
@@ -193,7 +193,7 @@ describe('persistence hydration — validation runs against the rehydrated value
     await waitUntil(() => (api.values.email === 'taken@example.com' ? true : null))
     const errorMessage = await waitUntil(() => api.errors.email?.[0]?.message ?? null)
     expect(errorMessage).toBe('That email is already registered.')
-    expect(api.meta.isValid).toBe(false)
+    expect(api.meta.valid).toBe(false)
   })
 
   it('strict + sync schema: persisted sync-failing value gets flagged after hydration', async () => {
@@ -210,7 +210,7 @@ describe('persistence hydration — validation runs against the rehydrated value
     await waitUntil(() => (api.values.email === 'not-an-email' ? true : null))
     const errorMessage = await waitUntil(() => api.errors.email?.[0]?.message ?? null)
     expect(errorMessage).toBe('Invalid email')
-    expect(api.meta.isValid).toBe(false)
+    expect(api.meta.valid).toBe(false)
   })
 
   it('strict + async refine: persisted valid value clears stale construction-time errors', async () => {
@@ -225,16 +225,16 @@ describe('persistence hydration — validation runs against the rehydrated value
     const { app, api } = mountAsyncForm('test-async-hydrate-valid', true)
     apps.push(app)
     await waitUntil(() => (api.values.email === 'fresh@example.com' ? true : null))
-    await waitUntil(() => (api.meta.isValidating === false ? true : null))
+    await waitUntil(() => (api.meta.validating === false ? true : null))
     await nextTick()
     expect(api.errors.email).toBeUndefined()
-    expect(api.meta.isValid).toBe(true)
+    expect(api.meta.valid).toBe(true)
   })
 
-  it('flips isValidating during the post-hydration validation pass', async () => {
+  it('flips validating during the post-hydration validation pass', async () => {
     // The 50 ms refine delay leaves a comfortable window to observe
-    // `isValidating: true`. Pre-fix no validation ran on hydration;
-    // `isValidating` never flipped true.
+    // `validating: true`. Pre-fix no validation ran on hydration;
+    // `validating` never flipped true.
     localStorage.setItem(
       `test-async-hydrate-flag:${ASYNC_FP}`,
       JSON.stringify({ v: 4, data: { form: { email: 'taken@example.com' } } })
@@ -242,9 +242,9 @@ describe('persistence hydration — validation runs against the rehydrated value
     const { app, api } = mountAsyncForm('test-async-hydrate-flag', true)
     apps.push(app)
     await waitUntil(() => (api.values.email === 'taken@example.com' ? true : null))
-    const sawValidating = await waitUntil(() => (api.meta.isValidating === true ? true : null), 500)
+    const sawValidating = await waitUntil(() => (api.meta.validating === true ? true : null), 500)
     expect(sawValidating).toBe(true)
-    await waitUntil(() => (api.meta.isValidating === false ? true : null))
-    expect(api.meta.isValidating).toBe(false)
+    await waitUntil(() => (api.meta.validating === false ? true : null))
+    expect(api.meta.validating).toBe(false)
   })
 })

@@ -2,7 +2,49 @@
 
 ## Unreleased
 
-_No unreleased changes yet._
+- **Per-field `validating` and `valid`.** `form.fields.<path>.validating`
+  is the per-field analogue of `form.meta.validating` — `true` while a
+  field-level run is in flight at this path (debounced
+  `validate-on-change` runs and cross-field re-validations targeting
+  the path). Whole-form `validate()` / `validateAsync()` calls drive
+  `meta.validating` only and don't flip per-field flags.
+  `form.fields.<path>.valid` is the composite signal: `true` iff
+  `errors` is empty AND `validating` is `false`. Same shape as
+  `meta.valid`. Reactive Map under the hood (`fieldValidationCounts`
+  on `FormStore`); `> 0` semantics so a brief abort/restart overlap
+  doesn't flicker `validating` off mid-flight.
+
+- **Breaking — `is`-prefix dropped from state-boolean property names.**
+  `form.meta` and `FieldStateLeaf` now use bare adjectives for state
+  flags, reserving the `is` prefix for type-predicate functions
+  (`isPlainRecord(x)`, `isUnset(x)`). Renames:
+
+  | Before                          | After                         |
+  | ------------------------------- | ----------------------------- |
+  | `form.meta.isDirty`             | `form.meta.dirty`             |
+  | `form.meta.isValid`             | `form.meta.valid` (see below) |
+  | `form.meta.isSubmitting`        | `form.meta.submitting`        |
+  | `form.meta.isValidating`        | `form.meta.validating`        |
+  | `form.fields.<path>.isConnected`| `form.fields.<path>.connected`|
+
+  `meta.valid` ALSO gets a stricter semantic: it now requires both
+  empty error stores AND `!validating`, so the value can't read `true`
+  during the brief window between an async refinement starting and
+  resolving. The looser "errors-only" check is gone.
+
+  Internal renames mirror the public ones: `state.isSubmitting` →
+  `state.submitting`, `state.isSSR` → `state.ssr`, `FieldRecord.isConnected`
+  → `FieldRecord.connected`, `FormStoreOptions.isSSR` → `ssr`,
+  `AttaformRegistry.isSSR` → `ssr`. The DOM API `Element.isConnected`
+  is untouched (W3C standard).
+
+- **Reactive `RegisterValue.path` proxy.** `register('email').path`
+  now tracks under `computed` / `watchEffect` reads — rotating the
+  parent's path binding re-runs dependents in the child without a
+  manual `.value` step. `formKey`, `formInstanceId`, and `segments`
+  added alongside; `path` keeps its canonical JSON-encoded `PathKey`
+  form, `segments` is the consumer-friendly array. `RegisterValue` is
+  now `shallowReadonly(shallowReactive(...))`.
 
 ## v0.14.0
 _No unreleased changes yet._

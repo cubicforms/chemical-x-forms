@@ -182,7 +182,7 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
     // `register({ persist: true })`. The client-side hydration pass
     // re-checks against a freshly-wired module and throws correctly if
     // the misuse is real.
-    if (persist && !state.isSSR && !state.modules.has(PERSISTENCE_MODULE_KEY)) {
+    if (persist && !state.ssr && !state.modules.has(PERSISTENCE_MODULE_KEY)) {
       throw new AnonPersistError({
         cause: 'register-without-config',
         schemaFields: extractSchemaFields(state.schema),
@@ -235,10 +235,10 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
 
       // Called by the `vRegisterHint` compile-time transform's wrapping
       // IIFE on every server-side render of `<element v-register="…">`.
-      // Without it, every SSR'd FieldState serialises `isConnected: false`
+      // Without it, every SSR'd FieldState serialises `connected: false`
       // (because Vue skips directive lifecycle during SSR) and the client
       // briefly shows that stale flag until hydration runs the directive's
-      // `created` hook. The mark only takes effect when `state.isSSR` is
+      // `created` hook. The mark only takes effect when `state.ssr` is
       // true; on the client this is a no-op so the directive lifecycle
       // remains the source of truth.
       markConnectedOptimistically: (): void => {

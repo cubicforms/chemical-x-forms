@@ -447,7 +447,7 @@ function syncPersistOptIn(el: HTMLElement, value: unknown, oldValue: unknown): v
  * transitions. Symmetric with `syncPersistOptIn` for the
  * persistence opt-in dimension; this one tracks element-to-path
  * registration the form's element map relies on for
- * `getFieldState(path).meta.isConnected`, `focusFirstError`, and
+ * `getFieldState(path).meta.connected`, `focusFirstError`, and
  * `scrollToFirstError`.
  *
  * Cases:
@@ -459,7 +459,7 @@ function syncPersistOptIn(el: HTMLElement, value: unknown, oldValue: unknown): v
  *   - RV → RV (same path + same form): no-op. `register('foo')`
  *     returns a fresh closure on every parent re-render; without
  *     the early-out, every tick would deregister-and-re-register
- *     the element, thrashing the `isConnected` flag.
+ *     the element, thrashing the `connected` flag.
  *   - RV → RV (different path or different form): deregister old,
  *     register new. Covers dynamic-path templates
  *     (`v-register="form.register(\`item.${i}\`)"`) and the

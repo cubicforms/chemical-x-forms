@@ -8,11 +8,11 @@ import { fakeSchema } from '../utils/fake-schema'
 
 type F = { email: string; note: string }
 
-function makeRegister(opts?: { isSSR?: boolean; formKey?: string; instanceId?: string }) {
+function makeRegister(opts?: { ssr?: boolean; formKey?: string; instanceId?: string }) {
   const state = createFormStore<F>({
     formKey: opts?.formKey ?? `r-${Math.random().toString(36).slice(2)}`,
     schema: fakeSchema<F>({ email: '', note: '' }),
-    ...(opts?.isSSR === true ? { isSSR: true } : {}),
+    ...(opts?.ssr === true ? { ssr: true } : {}),
   })
   return { state, register: buildRegister(state, opts?.instanceId ?? 'test:inst') }
 }
@@ -125,7 +125,7 @@ describe('buildRegister', () => {
       const rv = register(['email'])
       const input = document.createElement('input')
       rv.registerElement(input)
-      expect(state.getFieldRecord(['email'])?.isConnected).toBe(true)
+      expect(state.getFieldRecord(['email'])?.connected).toBe(true)
     })
 
     it('skips non-interactive elements silently', () => {
@@ -134,7 +134,7 @@ describe('buildRegister', () => {
       const div = document.createElement('div')
       rv.registerElement(div)
       // The field record exists (from init) but was not connected via this call.
-      expect(state.getFieldRecord(['email'])?.isConnected).toBe(false)
+      expect(state.getFieldRecord(['email'])?.connected).toBe(false)
     })
 
     it('attaches focus/blur listeners that drive markFocused', () => {
@@ -170,7 +170,7 @@ describe('buildRegister', () => {
       // markFocused isn't called post-deregister — the record still reflects
       // the last value before deregister.
       expect(state.getFieldRecord(['email'])?.focused).toBe(true)
-      expect(state.getFieldRecord(['email'])?.isConnected).toBe(false)
+      expect(state.getFieldRecord(['email'])?.connected).toBe(false)
       document.body.removeChild(input)
     })
   })
@@ -195,8 +195,8 @@ describe('buildRegister', () => {
       document.body.appendChild(input)
       rvA.registerElement(input)
 
-      expect(stateA.getFieldRecord(['email'])?.isConnected).toBe(true)
-      expect(stateB.getFieldRecord(['email'])?.isConnected).toBe(false)
+      expect(stateA.getFieldRecord(['email'])?.connected).toBe(true)
+      expect(stateB.getFieldRecord(['email'])?.connected).toBe(false)
 
       // Writing to A's registerValue doesn't touch B.
       rvA.setValueWithInternalPath('only-in-A')
@@ -218,7 +218,7 @@ describe('buildRegister', () => {
       // server render of `register({ persist: true })` would falsely
       // throw. The client-side hydration pass re-checks against a
       // freshly-wired module and throws correctly if the misuse is real.
-      const { register } = makeRegister({ isSSR: true })
+      const { register } = makeRegister({ ssr: true })
       expect(() => register('email', { persist: true })).not.toThrow()
     })
 

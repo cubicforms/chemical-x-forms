@@ -30,7 +30,7 @@ Options:
 
 | Field      | Type               | Description                                                                                          |
 | ---------- | ------------------ | ---------------------------------------------------------------------------------------------------- |
-| `override` | `boolean`          | Force `isSSR` to `true` / `false`. Auto-detected otherwise.                                          |
+| `override` | `boolean`          | Force `ssr` to `true` / `false`. Auto-detected otherwise.                                            |
 | `devtools` | `boolean`          | Enable the Vue DevTools plugin. Default `true`. See [recipe](/docs/recipes/devtools).                |
 | `defaults` | `AttaformDefaults` | App-level option defaults applied to every `useForm` call. See [recipe](/docs/recipes/app-defaults). |
 
@@ -165,12 +165,20 @@ rebinds.
 <template>
   <div class="row">
     <slot />
-    <small v-if="field?.errors[0]">{{ field.errors[0].message }}</small>
+    <small v-if="field?.validating">Checking…</small>
+    <small v-else-if="field?.errors[0]">{{ field.errors[0].message }}</small>
     <!-- Or read the path directly in the template — auto-unwrap pierces:
          <small>bound to {{ rv.path }}</small> -->
   </div>
 </template>
 ```
+
+`field.validating` is the per-field analogue of
+`form.meta.validating`: it's `true` while a field-level validation
+run (debounced or cross-field) is in flight at this path. Whole-form
+`validate()` / `validateAsync()` calls drive `form.meta.validating`
+only — they don't flip per-field flags. See [field-level validation
+recipe](/docs/recipes/field-level-validation#per-field--formfieldspathvalidating).
 
 ### Modifiers
 

@@ -408,7 +408,7 @@ describe('v-register directive — undefined binding (inert)', () => {
  * 2. Element registration must mirror the binding's lifecycle:
  *    transitioning to a real RV calls `registerElement` (so the
  *    field becomes connected for `focusFirstError` and the
- *    `isConnected` field-state flag); transitioning away calls
+ *    `connected` field-state flag); transitioning away calls
  *    `deregisterElement` on the prior RV (so a stale opt-in
  *    doesn't keep the element pinned in the form's element map).
  */
@@ -563,7 +563,7 @@ describe('v-register directive — runtime value swap', () => {
     // `<input v-register="form.register(`item.${i}`)" />` — the path
     // is dynamic and changes when `i` updates. The element must
     // migrate its registration entry from the old path to the new
-    // one so `getFieldState`'s `isConnected` flag and
+    // one so `getFieldState`'s `connected` flag and
     // `focusFirstError`'s element lookup track the active path.
     const input = document.createElement('input')
     document.body.appendChild(input)

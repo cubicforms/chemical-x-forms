@@ -52,7 +52,7 @@ describe('createFormStore', () => {
       const emailField = state.getFieldRecord(['email'])
       expect(emailField).toBeDefined()
       expect(emailField?.updatedAt).toBeTypeOf('string')
-      expect(emailField?.isConnected).toBe(false)
+      expect(emailField?.connected).toBe(false)
       expect(emailField?.focused).toBe(null)
       expect(emailField?.blurred).toBe(null)
       expect(emailField?.touched).toBe(null)
@@ -296,7 +296,7 @@ describe('createFormStore', () => {
       const el: HTMLElement = document.createElement('input')
       const registered = state.registerElement(['email'], el, 'test:inst')
       expect(registered).toBe(true)
-      expect(state.getFieldRecord(['email'])?.isConnected).toBe(true)
+      expect(state.getFieldRecord(['email'])?.connected).toBe(true)
     })
 
     it('registering the same element twice is a no-op', () => {
@@ -313,9 +313,9 @@ describe('createFormStore', () => {
       state.registerElement(['email'], el1, 'test:inst')
       state.registerElement(['email'], el2, 'test:inst')
       expect(state.deregisterElement(['email'], el1)).toBe(1)
-      expect(state.getFieldRecord(['email'])?.isConnected).toBe(true)
+      expect(state.getFieldRecord(['email'])?.connected).toBe(true)
       expect(state.deregisterElement(['email'], el2)).toBe(0)
-      expect(state.getFieldRecord(['email'])?.isConnected).toBe(false)
+      expect(state.getFieldRecord(['email'])?.connected).toBe(false)
     })
   })
 

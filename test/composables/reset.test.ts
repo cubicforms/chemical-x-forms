@@ -11,7 +11,7 @@ import { fakeSchema } from '../utils/fake-schema'
  *
  * Reset is the odd one out in the public API: it has to coordinate a
  * whole-form replacement, a rebuild of the originals baseline (so
- * isDirty re-computes from the new baseline), a clear of the errors
+ * dirty re-computes from the new baseline), a clear of the errors
  * map, a clear of the per-field touched/focused/blurred flags, and a
  * clear of the submission lifecycle refs. These tests pin each piece
  * independently so a future change that forgets one surface is caught.
@@ -85,34 +85,34 @@ describe('useForm — reset()', () => {
     form.setFieldErrors([
       { path: ['email'], message: 'taken', formKey: form.key, code: 'api:validation' },
     ])
-    expect(form.meta.isValid).toBe(false)
+    expect(form.meta.valid).toBe(false)
 
     form.reset()
-    expect(form.meta.isValid).toBe(true)
+    expect(form.meta.valid).toBe(true)
     expect(form.errors.email).toBeUndefined()
     expect(form.errors.password).toBeUndefined()
   })
 
-  it('flips isDirty back to false after a mutation + reset', () => {
+  it('flips dirty back to false after a mutation + reset', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setValue('email', 'dirty@example.com')
-    expect(form.meta.isDirty).toBe(true)
+    expect(form.meta.dirty).toBe(true)
 
     form.reset()
-    expect(form.meta.isDirty).toBe(false)
+    expect(form.meta.dirty).toBe(false)
   })
 
-  it('rebaselines originals so a post-reset mutation flips isDirty', () => {
+  it('rebaselines originals so a post-reset mutation flips dirty', () => {
     const { app, form } = harness()
     apps.push(app)
     // Reset with a new baseline.
     form.reset({ email: 'baseline@example.com' })
-    expect(form.meta.isDirty).toBe(false)
+    expect(form.meta.dirty).toBe(false)
     // Mutating back to the schema default is now a dirtying move — the
     // new baseline is the constrained value, not the original schema default.
     form.setValue('email', '')
-    expect(form.meta.isDirty).toBe(true)
+    expect(form.meta.dirty).toBe(true)
   })
 
   it('clears submission lifecycle (count, error, in-flight)', async () => {
@@ -129,7 +129,7 @@ describe('useForm — reset()', () => {
     form.reset()
     expect(form.meta.submitCount).toBe(0)
     expect(form.meta.submitError).toBeNull()
-    expect(form.meta.isSubmitting).toBe(false)
+    expect(form.meta.submitting).toBe(false)
   })
 })
 

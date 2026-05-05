@@ -217,7 +217,7 @@ export function buildProcessForm<F extends GenericForm>(
    * into a console.error, which masked real bugs.
    *
    * Drives the submission-lifecycle refs on FormStore:
-   *   - `isSubmitting` flips true at entry, false in `finally`.
+   *   - `submitting` flips true at entry, false in `finally`.
    *   - `submitCount` increments once per call, regardless of outcome —
    *     "how many times did the user click submit" is the consumer-facing
    *     question, independent of whether anything awaited.
@@ -229,7 +229,7 @@ export function buildProcessForm<F extends GenericForm>(
    *
    * Phase 5.6: the pre-dispatch validation is now async, so the handler
    * awaits `runValidation` before branching on success/failure. The
-   * `isValidating` ref (backed by `state.activeValidations`) is true
+   * `validating` ref (backed by `state.activeValidations`) is true
    * for the validation window.
    */
   const handleSubmit: HandleSubmit<F> = (onSubmit: OnSubmit<F>, onError?: OnError) => {
@@ -243,13 +243,13 @@ export function buildProcessForm<F extends GenericForm>(
       }
       // Use the in-flight counter on FormStore so two overlapping submit
       // handlers don't clobber each other: the first completion only
-      // flips isSubmitting to false when the counter reaches zero, not
+      // flips submitting to false when the counter reaches zero, not
       // unconditionally. submitError is shared across runs by design — a
       // later run's success / failure replaces the earlier capture,
       // UNLESS a `reset()` fired between entry and throw (see below).
       const genAtEntry = state.submissionGeneration.value
       state.activeSubmissions.value += 1
-      state.isSubmitting.value = true
+      state.submitting.value = true
       state.submitError.value = null
       // Abort any in-flight per-field validation runs so their late
       // writes can't clobber the authoritative submit result. Also
@@ -328,20 +328,20 @@ export function buildProcessForm<F extends GenericForm>(
         throw err
       } finally {
         // If validation threw before we decremented, drop the counter now
-        // so `isValidating` doesn't hang true after a failed submit.
+        // so `validating` doesn't hang true after a failed submit.
         if (!validationSettled) {
           state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
         }
         state.activeSubmissions.value = Math.max(0, state.activeSubmissions.value - 1)
         // `activeSubmissions` always decrements (the submission is done),
-        // but the *visible* lifecycle counters — `isSubmitting` and
+        // but the *visible* lifecycle counters — `submitting` and
         // `submitCount` — only update when the submission's generation
         // still matches. A post-reset completion is a no-op from the
-        // consumer's point of view: reset already flipped `isSubmitting`
+        // consumer's point of view: reset already flipped `submitting`
         // to false and zeroed `submitCount`, and the finished submission
         // belongs to the prior generation.
         if (state.submissionGeneration.value === genAtEntry) {
-          state.isSubmitting.value = state.activeSubmissions.value > 0
+          state.submitting.value = state.activeSubmissions.value > 0
           state.submitCount.value += 1
         }
       }

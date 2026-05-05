@@ -66,7 +66,7 @@ Not wired by default — do it in a line:
 
 What's NOT snapshotted:
 
-- **Field records** (touched / focused / blurred / isConnected) —
+- **Field records** (touched / focused / blurred / connected) —
   UI interaction history, it shouldn't rewind. A field that was
   touched stays touched.
 - **Submission lifecycle** (`meta.submitCount`, `meta.submitError`).

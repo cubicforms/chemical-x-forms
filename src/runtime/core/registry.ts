@@ -76,7 +76,7 @@ export type AttaformRegistry = {
    */
   readonly pendingHydration: PendingHydration
   /** `true` while running on the server during SSR; `false` on the client. */
-  readonly isSSR: boolean
+  readonly ssr: boolean
   /** App-level defaults applied to every `useForm` call. */
   readonly defaults: AttaformDefaults
   /**
@@ -163,7 +163,7 @@ export type CreateRegistryOptions = SSRDetectOptions & {
  * harnesses, embedded apps).
  */
 export function createRegistry(options: CreateRegistryOptions = {}): AttaformRegistry {
-  const isSSR = detectSSR(options)
+  const ssr = detectSSR(options)
   // Frozen so accidental writes downstream throw in dev. Public surface
   // (`createAttaform({ defaults })`) treats this as data, not as
   // a mutation point — there's no public API to update defaults after
@@ -233,7 +233,7 @@ export function createRegistry(options: CreateRegistryOptions = {}): AttaformReg
     await Promise.allSettled(states.map((state) => state.awaitPendingWrites()))
   }
 
-  return { forms, pendingHydration, isSSR, defaults, trackConsumer, shutdown }
+  return { forms, pendingHydration, ssr, defaults, trackConsumer, shutdown }
 }
 
 /**

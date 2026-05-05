@@ -330,7 +330,7 @@ export type AbstractSchema<Form, GetValueFormType> = {
    *
    * The leaf-aware branching is what kills the FIELD_STATE_KEYS
    * shadowing problem: reserved leaf-prop names (`dirty`, `errors`,
-   * `isValid`, …) inject only at the FieldStateView terminal, not at
+   * `valid`, …) inject only at the FieldStateView terminal, not at
    * every depth. A schema field literally named `dirty` at depth ≥ 2
    * stays reachable as a sub-proxy or leaf in its own right.
    *
@@ -1117,7 +1117,7 @@ export type HandleSubmit<Form extends GenericForm> = (
  *   or `null` if the field has never been written.
  * - `rawValue` — the value as it arrived (before any transform);
  *   useful for distinguishing parse-coerced reads from raw user input.
- * - `isConnected` — whether at least one DOM element bound to this
+ * - `connected` — whether at least one DOM element bound to this
  *   path is currently mounted. Flips to `false` when every binding
  *   unmounts.
  * - `formKey` — identifier of the form this metadata belongs to.
@@ -1129,7 +1129,7 @@ export type MetaTrackerValue = {
   /** Value as it arrived, before any transforms. */
   rawValue: unknown
   /** `true` while at least one binding to this path is currently mounted. */
-  isConnected: boolean
+  connected: boolean
   /** Form this metadata belongs to. */
   formKey: FormKey
   /** Dotted-string path to this leaf. */
@@ -1420,7 +1420,7 @@ export type RegisterValue<Value = unknown> = Readonly<{
   setValueWithInternalPath: (value: unknown, meta?: WriteMeta) => boolean
   /**
    * Mark this field as DOM-connected during SSR so a server-rendered
-   * template that reads `form.fields.<path>.isConnected` doesn't
+   * template that reads `form.fields.<path>.connected` doesn't
    * flicker on hydration. The `v-register` directive calls this for
    * you; no-op on the client.
    * @internal
@@ -1887,9 +1887,28 @@ export type FieldStateLeaf<Value = unknown> = {
   readonly focused: boolean | null
   readonly blurred: boolean | null
   readonly touched: boolean | null
-  readonly isConnected: boolean
+  readonly connected: boolean
   readonly updatedAt: string | null
   readonly errors: readonly ValidationError[]
+  /**
+   * `true` while a per-field validation run is in flight at this path.
+   * Reflects field-level debounced runs (`validate-on-change`) and
+   * cross-field re-validations targeting this path. Whole-form
+   * `validate()` / `validateAsync()` calls drive `form.meta.validating`
+   * only — they don't flip per-field flags.
+   *
+   * Per-field analogue of `form.meta.validating`. Use for a tight
+   * "Checking…" indicator next to a single async-validated input
+   * without commandeering the whole-form spinner.
+   */
+  readonly validating: boolean
+  /**
+   * `true` when this field has no errors AND no per-field validation
+   * is in flight (`errors.length === 0 && !validating`). Confidence
+   * that "we've checked, and we have no problems right now." Use for
+   * green-checkmark / `aria-invalid` UX.
+   */
+  readonly valid: boolean
   readonly path: ReadonlyArray<string | number>
   readonly blank: boolean
 }
@@ -2126,13 +2145,13 @@ export type ApiErrorEnvelope = {
  * the reactive object:
  *
  * ```vue
- * <button :disabled="form.meta.isSubmitting">Save</button>
+ * <button :disabled="form.meta.submitting">Save</button>
  * ```
  *
  * Watch a single field via the getter form:
  *
  * ```ts
- * watch(() => form.meta.isSubmitting, (value) => …)
+ * watch(() => form.meta.submitting, (value) => …)
  * ```
  *
  * Per-field state (touched, dirty, errors) lives behind
@@ -2152,27 +2171,31 @@ export interface FormMeta {
    * Note: object/array leaves are compared by reference, so replacing
    * an array with an equal copy still reads as dirty.
    */
-  readonly isDirty: boolean
+  readonly dirty: boolean
 
   /**
-   * `true` when the form currently has no validation errors. Flips
-   * with every `validate()` / `handleSubmit` outcome.
+   * `true` when the form has no errors AND no validation run is in
+   * flight (`error stores empty && !validating`). A `true` here means
+   * "we've checked, and we're clean right now" — distinct from the
+   * brief window between an async refinement starting and resolving,
+   * where a looser signal would flicker `true` ahead of the verdict.
+   * Use for the enable-submit-when-clean pattern.
    */
-  readonly isValid: boolean
+  readonly valid: boolean
 
   /**
    * `true` while a `handleSubmit`-produced submit handler is running.
    * Covers both the validation phase and your async submit callback.
    * Useful for disabling the submit button.
    */
-  readonly isSubmitting: boolean
+  readonly submitting: boolean
 
   /**
    * `true` while any validation run is in flight (the reactive
    * `validate()` re-run, an imperative `validateAsync()`, or the
    * pre-submit validation inside `handleSubmit`).
    */
-  readonly isValidating: boolean
+  readonly validating: boolean
 
   /**
    * How many times the submit handler has been invoked, regardless of
@@ -2270,7 +2293,7 @@ export interface FormMeta {
  * form.errors.email             // ValidationError[] | undefined
  * form.setValue('email', 'a@b.c')
  * form.handleSubmit(onSubmit)   // returns a submit handler
- * form.meta.isSubmitting        // form-level reactive flag
+ * form.meta.submitting        // form-level reactive flag
  * ```
  */
 export type UseFormReturnType<
@@ -2342,7 +2365,7 @@ export type UseFormReturnType<
    *
    * Shadowing: at depth 2+, FieldStateLeaf keys (`dirty`, `touched`,
    * `errors`, `blank`, `focused`, `blurred`, `value`,
-   * `original`, `pristine`, `isConnected`, `updatedAt`, `path`) win
+   * `original`, `pristine`, `connected`, `updatedAt`, `path`) win
    * over schema field names. Top-level fields are NOT shadowed.
    * Document edge case; rename the offending schema field if the
    * collision matters.
@@ -2446,7 +2469,7 @@ export type UseFormReturnType<
    * if (!result.success) showErrors(result.errors)
    * ```
    *
-   * Pass a path to validate a subtree. `state.isValidating` flips
+   * Pass a path to validate a subtree. `state.validating` flips
    * `true` while the promise is in flight.
    */
   validateAsync: (path?: FlatPath<Form>) => Promise<ValidationResponseWithoutValue<Form>>
@@ -2564,8 +2587,8 @@ export type UseFormReturnType<
   // --- Form-level meta ---
 
   /**
-   * Form-level reactive flags, counters, and aggregates (`isDirty`,
-   * `isValid`, `isSubmitting`, `submitCount`, `canUndo`,
+   * Form-level reactive flags, counters, and aggregates (`dirty`,
+   * `valid`, `submitting`, `submitCount`, `canUndo`,
    * `historySize`, and the flat `errors` array). See `FormMeta` for
    * the full shape. Read leaves directly with no `.value`.
    *
@@ -2584,10 +2607,10 @@ export type UseFormReturnType<
    *
    * Resets:
    *   - the form value back to defaults;
-   *   - the dirty baseline (so the next edit flips `isDirty` correctly);
+   *   - the dirty baseline (so the next edit flips `dirty` correctly);
    *   - field errors;
    *   - touched / focused / blurred per-field flags;
-   *   - submission state (`isSubmitting` / `submitCount` / `submitError`);
+   *   - submission state (`submitting` / `submitCount` / `submitError`);
    *   - the persisted draft, if persistence is configured.
    *
    * The next edit on a still-mounted opted-in input will start

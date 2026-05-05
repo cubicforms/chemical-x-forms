@@ -347,10 +347,10 @@ describe('useForm type inference — form-level state bundle', () => {
     // `Readonly<ComputedRef<X>>`. Inside reactive() they auto-unwrap
     // on access — so the template footgun (binding to the wrapper
     // object instead of its .value) is gone at the type level too.
-    expectTypeOf(form.meta.isDirty).toEqualTypeOf<boolean>()
-    expectTypeOf(form.meta.isValid).toEqualTypeOf<boolean>()
-    expectTypeOf(form.meta.isSubmitting).toEqualTypeOf<boolean>()
-    expectTypeOf(form.meta.isValidating).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.dirty).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.valid).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.submitting).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.validating).toEqualTypeOf<boolean>()
     expectTypeOf(form.meta.submitCount).toEqualTypeOf<number>()
     expectTypeOf(form.meta.submitError).toEqualTypeOf<unknown>()
     expectTypeOf(form.meta.canUndo).toEqualTypeOf<boolean>()
@@ -360,7 +360,7 @@ describe('useForm type inference — form-level state bundle', () => {
 
   it('rejects writes (state is readonly at the type level)', () => {
     // @ts-expect-error — state is readonly; prefer setValue / handleSubmit
-    form.meta.isSubmitting = true
+    form.meta.submitting = true
     // @ts-expect-error — same for counters
     form.meta.submitCount = 5
   })

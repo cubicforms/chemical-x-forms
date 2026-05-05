@@ -153,7 +153,7 @@ describe('hydration shape guard', () => {
     const validRecord = {
       path: ['email'],
       updatedAt: '2025-01-01T00:00:00.000Z',
-      isConnected: true,
+      connected: true,
       focused: null,
       blurred: null,
       touched: null,
@@ -164,8 +164,8 @@ describe('hydration shape guard', () => {
         ['malformed-null', null],
         ['malformed-string', 'not an object'],
         ['malformed-empty-obj', {}],
-        ['malformed-wrong-types', { path: 'not-array', isConnected: 'true' }],
-        ['malformed-missing-flags', { path: ['x'], updatedAt: null, isConnected: true }],
+        ['malformed-wrong-types', { path: 'not-array', connected: 'true' }],
+        ['malformed-missing-flags', { path: ['x'], updatedAt: null, connected: true }],
       ],
     })
 
@@ -176,7 +176,7 @@ describe('hydration shape guard', () => {
     })
 
     expect(state.fields.has(emailKey)).toBe(true)
-    expect(state.fields.get(emailKey)?.isConnected).toBe(true)
+    expect(state.fields.get(emailKey)?.connected).toBe(true)
     // Only the valid entry survived; five malformed entries were skipped.
     expect(state.fields.size).toBe(1)
   })

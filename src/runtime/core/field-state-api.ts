@@ -32,11 +32,30 @@ export type FieldStateView = {
   /** Flips to `true` on the first blur AFTER a focus and stays there; `null` until then. */
   readonly touched: boolean | null
   /** `true` while at least one DOM input is registered to this path. */
-  readonly isConnected: boolean
+  readonly connected: boolean
   /** ISO timestamp of the most recent write; `null` until the first write. */
   readonly updatedAt: string | null
   /** Validation errors at this path (schema + user errors merged). Empty when valid. */
   readonly errors: ValidationError[]
+  /**
+   * `true` while a per-field validation run is in flight at this path.
+   * Reflects field-level debounced runs (`validate-on-change`) and
+   * cross-field re-validations targeting this path. Whole-form
+   * `validate()` / `validateAsync()` calls drive `form.meta.validating`
+   * only — they don't flip per-field flags.
+   *
+   * Per-field analogue of `form.meta.validating`: useful for a tiny
+   * "Checking…" indicator next to a single async-validated input
+   * without commandeering the whole-form spinner.
+   */
+  readonly validating: boolean
+  /**
+   * `true` when this field has no errors AND no per-field validation
+   * is in flight (`errors.length === 0 && !validating`). Confidence
+   * that "we've checked, and we have no problems right now." Use for
+   * green-checkmark / `aria-invalid` UX.
+   */
+  readonly valid: boolean
   /** Canonical path segments — same shape as the input to `getFieldState`. */
   readonly path: Path
   /**
@@ -76,6 +95,10 @@ export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<
       if (schemaForKey !== undefined) errors.push(...schemaForKey)
       if (blankForKey !== undefined) errors.push(...blankForKey)
       if (userForKey !== undefined) errors.push(...userForKey)
+      // Reactive Map `.get(key)` participates in dep tracking — this
+      // computed re-runs only when the count for THIS key changes.
+      const validating = (state.fieldValidationCounts.get(key) ?? 0) > 0
+      const valid = errors.length === 0 && !validating
       return {
         value,
         original,
@@ -84,9 +107,11 @@ export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<
         focused: record?.focused ?? null,
         blurred: record?.blurred ?? null,
         touched: record?.touched ?? null,
-        isConnected: record?.isConnected ?? false,
+        connected: record?.connected ?? false,
         updatedAt: record?.updatedAt ?? null,
         errors,
+        validating,
+        valid,
         path: segments,
         blank: state.blankPaths.has(key),
       }

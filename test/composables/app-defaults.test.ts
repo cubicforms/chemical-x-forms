@@ -102,7 +102,7 @@ describe('app-level defaults — strict', () => {
     apps.push(app)
     expect(api.errors.email).toBeUndefined()
     expect(api.errors.password).toBeUndefined()
-    expect(api.meta.isValid).toBe(true)
+    expect(api.meta.valid).toBe(true)
   })
 
   it('per-form strict wins over the registry default', () => {
@@ -112,7 +112,7 @@ describe('app-level defaults — strict', () => {
     apps.push(app)
     expect(api.errors.email?.[0]?.message).toBe('bad email')
     expect(api.errors.password?.[0]?.message).toBe('min 8 chars')
-    expect(api.meta.isValid).toBe(false)
+    expect(api.meta.valid).toBe(false)
   })
 
   it('falls back to library default (strict) when neither registry nor per-form sets it', () => {
@@ -121,7 +121,7 @@ describe('app-level defaults — strict', () => {
     const { app, api } = mountWithDefaults({}, {})
     apps.push(app)
     expect(api.errors.email?.[0]?.message).toBe('bad email')
-    expect(api.meta.isValid).toBe(false)
+    expect(api.meta.valid).toBe(false)
   })
 })
 

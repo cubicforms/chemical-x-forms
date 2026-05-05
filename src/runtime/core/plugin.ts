@@ -78,7 +78,7 @@ export function createAttaform(options: AttaformPluginOptions = {}): Plugin {
       attachRegistryToApp(app, registry)
       app.directive('register', vRegister)
 
-      if (options.devtools !== false && !registry.isSSR) {
+      if (options.devtools !== false && !registry.ssr) {
         void (async () => {
           try {
             const { setupAttaformDevtools } = await import('./devtools')

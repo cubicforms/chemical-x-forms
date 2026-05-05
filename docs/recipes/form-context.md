@@ -88,9 +88,7 @@ different branch of the component tree:
 </script>
 
 <template>
-  <button :disabled="!meta.isDirty || meta.isSubmitting" @click="handleSubmit(onSave)()">
-    Save
-  </button>
+  <button :disabled="!meta.dirty || meta.submitting" @click="handleSubmit(onSave)()"> Save </button>
 </template>
 ```
 
@@ -184,5 +182,5 @@ directly. `injectForm` is a small reactive overhead you don't
 need when there's nothing to share.
 
 Reach for it when field components are reusable across forms, or
-when a distant component needs read-only status (`meta.isDirty`,
-`meta.isSubmitting`, `errors`) of a form it doesn't own.
+when a distant component needs read-only status (`meta.dirty`,
+`meta.submitting`, `errors`) of a form it doesn't own.

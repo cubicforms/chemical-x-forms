@@ -121,14 +121,14 @@ function resolveState<Form extends GenericForm>(
   if (key !== undefined) {
     const stored = registry.forms.get(key) as FormStore<Form> | undefined
     if (stored === undefined) {
-      warnMiss(`no form registered for key '${key}'`, registry.isSSR)
+      warnMiss(`no form registered for key '${key}'`, registry.ssr)
       return null
     }
     return stored
   }
   const ambient = inject(kFormContext, null) as FormStore<Form> | null
   if (ambient === null) {
-    warnMiss('no ambient form context', registry.isSSR)
+    warnMiss('no ambient form context', registry.ssr)
     return null
   }
   warnIfAmbientProviderHadDuplicates()
@@ -143,8 +143,8 @@ function resolveState<Form extends GenericForm>(
  * deterministic across SSR/client), so emitting only on the client is
  * lossless and halves dev-mode noise. Production stays silent on both.
  */
-function warnMiss(detail: string, isSSR: boolean): void {
-  if (!__DEV__ || isSSR) return
+function warnMiss(detail: string, ssr: boolean): void {
+  if (!__DEV__ || ssr) return
   const frame = captureUserCallSite()
   console.warn(
     `[attaform] injectForm: ${detail}. Returning null.` + (frame !== undefined ? ` ${frame}` : '')

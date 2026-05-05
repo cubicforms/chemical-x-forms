@@ -71,12 +71,12 @@ validates the whole form.
 
 ## Disabling buttons during validation
 
-`form.meta.isValidating` is a reactive boolean that's `true` while
+`form.meta.validating` is a reactive boolean that's `true` while
 ANY validation run is in flight — submit, reactive `validate()`, or
 `validateAsync`. Gate UI off it:
 
 ```vue
-<button :disabled="form.meta.isValidating || form.meta.isSubmitting">Continue</button>
+<button :disabled="form.meta.validating || form.meta.submitting">Continue</button>
 ```
 
 ## Combining with server errors
@@ -107,7 +107,7 @@ const onSubmit = handleSubmit(async (values) => {
 })
 ```
 
-`form.meta.isSubmitting` stays `true` across the full handler
+`form.meta.submitting` stays `true` across the full handler
 (validation + server round-trip), so UI gated on it works without
 extra wiring.
 

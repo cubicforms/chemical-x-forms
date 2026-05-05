@@ -108,15 +108,31 @@ sneaked in afterwards".
 `reset()` does the same — field-level state is cancelled before the
 fresh form lands.
 
-## `meta.isValidating` for UI
+## `meta.validating` for UI
 
-`form.meta.isValidating` is `true` while any validation is in flight
+`form.meta.validating` is `true` while any validation is in flight
 — submit, reactive `validate()`, one-shot `validateAsync`, or a
 field-level run. Gate UI:
 
 ```vue
-<button :disabled="form.meta.isValidating">Submit</button>
+<button :disabled="form.meta.validating">Submit</button>
 ```
+
+### Per-field — `form.fields.<path>.validating`
+
+For a tighter signal next to a single async-validated input, read the
+per-field flag instead of the form-wide one:
+
+```vue
+<input v-register="form.register('email')" />
+<small v-if="form.fields.email.validating">Checking email…</small>
+```
+
+Per-field semantics: `true` while a field-level run is in flight at
+this path (debounced `validate-on-change` runs and cross-field
+re-validations targeting this path). Whole-form `validate()` /
+`validateAsync()` calls drive `form.meta.validating` only — they
+don't flip per-field flags.
 
 ## Tuning `debounceMs`
 

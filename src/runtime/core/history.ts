@@ -25,7 +25,7 @@ import type { PathKey } from './paths'
  *    preserves the lifecycle distinction (schema errors are validation
  *    output; user errors are consumer-owned).
  *
- * Field record state (touched / focused / blurred / isConnected) is
+ * Field record state (touched / focused / blurred / connected) is
  * deliberately NOT snapshotted. Those flags represent UI
  * interaction history and shouldn't rewind when the user hits
  * undo — a field that was touched stays touched.

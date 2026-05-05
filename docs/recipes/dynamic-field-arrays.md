@@ -120,7 +120,7 @@ are OK.
   Tuple positions stay strict (their length is static).
 - `form.fields.posts[0].title` → reactive per-field state at the
   path. Leaf props: `value`, `dirty`, `errors`, `touched`, `focused`,
-  `blurred`, `blank`, `isConnected`, `path`. Same `| undefined`
+  `blurred`, `blank`, `connected`, `path`. Same `| undefined`
   taint on `value` once an array index is crossed.
 
 ```vue

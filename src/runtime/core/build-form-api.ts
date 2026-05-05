@@ -233,7 +233,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // Each entry in `state.originals` stores its canonical `segments`
   // alongside the recorded `value`, so this loop skips `JSON.parse` per
   // iteration. See phase 5.1 notes.
-  const isDirty = computed<boolean>(() => {
+  const dirty = computed<boolean>(() => {
     for (const [, { segments, value: original }] of state.originals) {
       if (!Object.is(getAtPath(state.form.value, segments), original)) return true
     }
@@ -248,20 +248,26 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     return false
   })
 
-  const isValid = computed<boolean>(
-    () =>
-      state.schemaErrors.size === 0 &&
-      state.userErrors.size === 0 &&
-      state.derivedBlankErrors.value.size === 0
-  )
-
   // --- Submission lifecycle ---
-  const isSubmitting = computed<boolean>(() => state.isSubmitting.value)
+  const submitting = computed<boolean>(() => state.submitting.value)
   const submitCount = computed<number>(() => state.submitCount.value)
   const submitError = computed<unknown>(() => state.submitError.value)
 
   // --- Validation lifecycle ---
-  const isValidating = computed<boolean>(() => state.activeValidations.value > 0)
+  const validating = computed<boolean>(() => state.activeValidations.value > 0)
+  // `valid` is "no errors AND not currently validating." The
+  // `!validating.value` guard distinguishes a genuinely-clean form
+  // from one in the brief window between an async refinement starting
+  // and resolving (where errors haven't been written yet, but the
+  // verdict is pending). Submit-button gates and per-form clean
+  // indicators use this.
+  const valid = computed<boolean>(
+    () =>
+      state.schemaErrors.size === 0 &&
+      state.userErrors.size === 0 &&
+      state.derivedBlankErrors.value.size === 0 &&
+      !validating.value
+  )
 
   // --- History (undo/redo) ---
   // When the consumer doesn't configure history, fall back to inert
@@ -321,10 +327,10 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // param this function receives; exposed as `meta` on the public return.
   const formMeta = readonly(
     reactive({
-      isDirty,
-      isValid,
-      isSubmitting,
-      isValidating,
+      dirty,
+      valid,
+      submitting,
+      validating,
       submitCount,
       submitError,
       canUndo,

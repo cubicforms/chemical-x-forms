@@ -121,9 +121,9 @@ ${'</'}script>
       <button
         class="submit"
         type="submit"
-        :disabled="form.meta.isSubmitting || !form.meta.isValid"
+        :disabled="form.meta.submitting || !form.meta.valid"
       >
-        {{ form.meta.isSubmitting ? 'Creating account…' : 'Create account' }}
+        {{ form.meta.submitting ? 'Creating account…' : 'Create account' }}
       </button>
     </form>
   </div>

@@ -29,9 +29,11 @@ const FIELD_STATE_KEYS: ReadonlySet<string> = new Set<keyof FieldStateView>([
   'focused',
   'blurred',
   'touched',
-  'isConnected',
+  'connected',
   'updatedAt',
   'errors',
+  'validating',
+  'valid',
   'path',
   'blank',
 ])

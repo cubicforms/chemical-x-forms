@@ -483,35 +483,35 @@ ${'</'}script>
           <div class="grid-2">
             <div class="field" :class="fieldClasses(form.fields[block.prefix].line1)">
               <label>Line 1</label>
-              <input v-register="form.register(block.prefix + '.line1')" placeholder="Street address" />
+              <input v-register="form.register(\`\${block.prefix}.line1\`)" placeholder="Street address" />
               <small class="error">{{ visibleError(form.fields[block.prefix].line1) }}</small>
             </div>
             <div class="field">
               <label>Line 2 <span class="muted">(optional)</span></label>
-              <input v-register="form.register(block.prefix + '.line2')" placeholder="Suite, unit, etc." />
+              <input v-register="form.register(\`\${block.prefix}.line2\`)" placeholder="Suite, unit, etc." />
             </div>
           </div>
           <div class="grid-3">
             <div class="field" :class="fieldClasses(form.fields[block.prefix].city)">
               <label>City</label>
-              <input v-register="form.register(block.prefix + '.city')" />
+              <input v-register="form.register(\`\${block.prefix}.city\`)" />
               <small class="error">{{ visibleError(form.fields[block.prefix].city) }}</small>
             </div>
             <div class="field" :class="fieldClasses(form.fields[block.prefix].region)">
               <label>Region</label>
-              <input v-register="form.register(block.prefix + '.region')" placeholder="CA / ON" />
+              <input v-register="form.register(\`\${block.prefix}.region\`)" placeholder="CA / ON" />
               <small class="error">{{ visibleError(form.fields[block.prefix].region) }}</small>
             </div>
             <div class="field" :class="fieldClasses(form.fields[block.prefix].country)">
               <label>Country</label>
-              <select v-register="form.register(block.prefix + '.country')">
+              <select v-register="form.register(\`\${block.prefix}.country\`)">
                 <option v-for="c in COUNTRIES" :key="c" :value="c">{{ c }}</option>
               </select>
             </div>
           </div>
           <div class="field" :class="fieldClasses(form.fields[block.prefix].postalCode)">
             <label>Postal code</label>
-            <input v-register="form.register(block.prefix + '.postalCode')" placeholder="Try 10xxx, M5xxx, SWxxx…" />
+            <input v-register="form.register(\`\${block.prefix}.postalCode\`)" placeholder="Try 10xxx, M5xxx, SWxxx…" />
             <small class="hint" v-if="form.fields[block.prefix].postalCode.validating">
               Looking up postal code…
             </small>

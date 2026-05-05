@@ -104,3 +104,42 @@ describe('register — tuple-segment runtime equivalence', () => {
     expect(tuple.persist).toBe(dotted.persist)
   })
 })
+
+describe('setValue / toRef — tuple-segment runtime equivalence', () => {
+  const apps: App[] = []
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+  })
+
+  it('setValue tuple form writes the same value as the dotted form', () => {
+    const { app, api } = mount()
+    apps.push(app)
+
+    api.setValue('profile.name', 'first')
+    expect(api.values.profile.name).toBe('first')
+
+    api.setValue(['profile', 'name'], 'second')
+    expect(api.values.profile.name).toBe('second')
+  })
+
+  it('setValue tuple form handles array indices', () => {
+    const { app, api } = mount()
+    apps.push(app)
+
+    api.setValue(['posts', 0, 'title'], 'updated-zero')
+    expect(api.values.posts[0]?.title).toBe('updated-zero')
+  })
+
+  it('toRef tuple form tracks the same value as the dotted form', () => {
+    const { app, api } = mount()
+    apps.push(app)
+
+    const dotted = api.toRef('email')
+    const tuple = api.toRef(['email'])
+    expect(tuple.value).toBe(dotted.value)
+
+    api.setValue('email', 'changed@b.c')
+    expect(tuple.value).toBe('changed@b.c')
+    expect(dotted.value).toBe('changed@b.c')
+  })
+})

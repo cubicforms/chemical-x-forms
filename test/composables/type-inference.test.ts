@@ -297,6 +297,37 @@ describe('useForm type inference — primitive-array register paths', () => {
   })
 })
 
+describe('useForm type inference — setValue tuple-segment overload', () => {
+  it('segment-array form accepts the same value as the dotted-string form', () => {
+    form.setValue(['email'], 'a@b.c')
+    form.setValue(['profile', 'name'], 'alice')
+    form.setValue(['posts', 0, 'title'], 'hi')
+  })
+
+  it('rejects an invalid tuple', () => {
+    // @ts-expect-error - 'nonexistent' isn't a top-level key on Form.
+    form.setValue(['nonexistent'], 'x')
+  })
+
+  it('rejects a value whose type does not match the resolved leaf', () => {
+    // @ts-expect-error - email is string, not number.
+    form.setValue(['email'], 123)
+  })
+})
+
+describe('useForm type inference — toRef tuple-segment overload', () => {
+  it('segment-array form returns a Readonly<Ref<T>> matching the dotted form', () => {
+    expectTypeOf(form.toRef(['email']).value).toEqualTypeOf<string>()
+    expectTypeOf(form.toRef(['profile', 'name']).value).toEqualTypeOf<string>()
+    expectTypeOf(form.toRef(['posts', 0, 'title']).value).toEqualTypeOf<string | undefined>()
+  })
+
+  it('rejects an invalid tuple', () => {
+    // @ts-expect-error - 'nonexistent' isn't a top-level key on Form.
+    form.toRef(['nonexistent'])
+  })
+})
+
 describe('useForm type inference — register tuple-segment overload', () => {
   it('segment-array form resolves to the same value type as dotted-string', () => {
     expectTypeOf(form.register(['email']).innerRef.value).toEqualTypeOf<string>()

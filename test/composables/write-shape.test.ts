@@ -111,16 +111,18 @@ describe('WriteShape — applied to setValue', () => {
     // Pre-WriteShape: this would be a TS error because 'magenta' isn't
     // in the enum. Post-WriteShape: the slim type is `string`, so any
     // string is accepted at the type level. Runtime validates at the
-    // refinement level via field validation.
-    expectTypeOf(form.setValue<'color', string>)
-      .parameter(1)
-      .toEqualTypeOf<string>()
+    // refinement level via field validation. The test asserts that the
+    // call type-checks — if WriteShape ever stopped widening, this
+    // would be a hard TS error.
+    form.setValue('color', 'magenta')
   })
 
   it('setValue accepts any number at an int-typed path', () => {
-    expectTypeOf(form.setValue<'age', number>)
-      .parameter(1)
-      .toEqualTypeOf<number>()
+    // Slim-widening on a numeric refinement: WriteShape collapses
+    // `z.number().int()` to plain `number`, so non-integer numbers are
+    // accepted at the type level (refinement check still runs at
+    // runtime).
+    form.setValue('age', 3.14)
   })
 
   it('setValue rejects a number at a string-typed path (compile error)', () => {

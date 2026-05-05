@@ -2440,6 +2440,22 @@ export type UseFormReturnType<
       path: Path,
       value: Value
     ): boolean
+    /**
+     * Tuple-segment form. Equivalent to the dotted-string overload —
+     * useful when paths are built from variables or arrays:
+     * `form.setValue([prefix, 'line1'], 'value')`. The resolved leaf
+     * type is exact, matching the dotted-string form.
+     */
+    <
+      const S extends ReadonlyArray<string | number>,
+      Value extends SetValuePayload<
+        DefaultValuesShape<NestedType<Form, JoinSegments<S>>>,
+        NonNullable<WriteShape<NestedType<Form, JoinSegments<S>>>>
+      >,
+    >(
+      segments: S & ([JoinSegments<S>] extends [FlatPath<Form>] ? unknown : never),
+      value: Value
+    ): boolean
   }
 
   /**
@@ -2569,9 +2585,14 @@ export type UseFormReturnType<
    * Prefer `form.values.email` for direct reads in templates +
    * scripts; `toRef` is for ref-shaped interop only.
    */
-  toRef: <Path extends FlatPath<Form>>(
-    path: Path
-  ) => Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
+  toRef: {
+    <Path extends FlatPath<Form>>(
+      path: Path
+    ): Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
+    <const S extends ReadonlyArray<string | number>>(
+      segments: S & ([JoinSegments<S>] extends [FlatPath<Form>] ? unknown : never)
+    ): Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, JoinSegments<S>>>>
+  }
 
   /**
    * Replace every field error for this form with the provided list.

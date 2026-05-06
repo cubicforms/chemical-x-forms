@@ -289,6 +289,37 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     return out
   }
 
+  // `true` when no error AND no in-flight field-level validation sits
+  // at-or-under any of the supplied prefixes. Sugar over `errorsAt`
+  // for the multi-path case, scoped to per-prefix in-flight work
+  // (the per-field analogue of `meta.validating`) so a caller asking
+  // "is the cargo subtree valid?" doesn't get gated on an unrelated
+  // service-field debounce. Whole-form `validate()` /
+  // `validateAsync()` runs increment `meta.validating` only —
+  // compose with that flag when the caller wants to also gate on
+  // form-wide async work that doesn't have a single path.
+  function isValid(paths: ReadonlyArray<string | ReadonlyArray<string | number>>): boolean {
+    for (const p of paths) {
+      const { segments: prefix } = canonicalizePath(p as string | Path)
+      // Errors under prefix? Read through `metaErrors.value` so callers
+      // wrapping `isValid` in a `computed(...)` get dep tracking via
+      // the same channel `errorsAt` uses.
+      for (const err of metaErrors.value) {
+        if (isPathPrefix(prefix, err.path)) return false
+      }
+      // Field-level validation under prefix? Iterating the reactive
+      // counts Map subscribes the surrounding effect to per-key
+      // changes, so the computed re-evaluates when a debounced
+      // run finishes.
+      for (const [key, count] of state.fieldValidationCounts) {
+        if (count <= 0) continue
+        const fieldSegments = segmentsForPathKey(key)
+        if (fieldSegments && isPathPrefix(prefix, fieldSegments)) return false
+      }
+    }
+    return true
+  }
+
   // --- Form-level aggregates ---
   // Each entry in `state.originals` stores its canonical `segments`
   // alongside the recorded `value`, so this loop skips `JSON.parse` per
@@ -561,6 +592,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     setFormErrors,
     clearFormErrors,
     errorsAt,
+    isValid,
     meta: formMeta,
     reset: reset as UseFormReturnType<Form, GetValueFormType>['reset'],
     resetField: resetField as UseFormReturnType<Form, GetValueFormType>['resetField'],

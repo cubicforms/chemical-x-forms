@@ -2739,6 +2739,47 @@ export type UseFormReturnType<
     ): readonly ValidationError[]
   }
 
+  /**
+   * `true` when **none** of the supplied prefixes (or their
+   * descendants):
+   *
+   *   1. carry an error in `meta.errors`, AND
+   *   2. have a field-level validation currently in flight.
+   *
+   * (1) is sugar over `errorsAt(p).length === 0` summed across all
+   * supplied paths. (2) is the per-prefix analogue of
+   * `meta.validating` — answers "is anything inside these subtrees
+   * still resolving?" without conflating with whole-form
+   * `validate()` / `validateAsync()` calls happening elsewhere.
+   *
+   * Composable with `meta.validating` when the caller wants to also
+   * gate on form-wide async work that doesn't have a single path
+   * (whole-form `validate` / `validateAsync`, the submit pre-check):
+   *
+   * ```ts
+   * const STEP_PATHS = {
+   *   1: ['reference', 'pickup', 'delivery'],
+   *   2: ['cargo'],
+   *   3: ['service', 'insurance', 'desiredPickupDate', 'notes'],
+   * } as const
+   *
+   * const stepValid = computed(
+   *   () => !form.meta.validating && form.isValid(STEP_PATHS[step.value])
+   * )
+   * ```
+   *
+   * Each path can be a dotted-string `FlatPath` or the empty string
+   * (root prefix, matches every error including `path: []`). Wrap
+   * the call in a `computed` to make it reactive — read-through hits
+   * `meta.errors` and the per-field validation counters, so dep
+   * tracking flows through both channels automatically.
+   *
+   * For a single path, prefer
+   * `errorsAt(path).length === 0 && !fields.<path>.validating`;
+   * reach for `isValid` when checking two or more.
+   */
+  isValid: (paths: ReadonlyArray<FlatPath<Form> | ''>) => boolean
+
   // --- Form-level meta ---
 
   /**

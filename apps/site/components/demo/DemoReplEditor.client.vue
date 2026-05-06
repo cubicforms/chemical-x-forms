@@ -328,27 +328,112 @@
   ] as const
   const step = ref<1 | 2 | 3 | 4>(1)
 
-  // A step is "valid" if no error sits under any of its top-level
-  // paths AND no validation is currently in flight form-wide.
-  // form.errorsAt(prefix) returns errors at the prefix and every
-  // descendant in one call.
+  // A step is "done" when none of its top-level paths carry an error
+  // AND none of those paths' subtrees have a validation in flight.
+  // form.isValid(paths) handles both checks natively: scoped to the
+  // step's prefixes, so an unrelated debounce in another step
+  // doesn't block this step's green state. Step 4 owns no fields
+  // (it's the review/submit summary), so it's never independently
+  // "done" — its completion is the submit, not a validity check.
   const STEP_PATHS = {
     1: ['reference', 'pickup', 'delivery'],
     2: ['cargo'],
     3: ['service', 'insurance', 'desiredPickupDate', 'desiredDeliveryDate', 'notes'],
     4: [],
   } as const
-  const currentStepValid = computed(
-    () =>
-      !form.meta.validating &&
-      STEP_PATHS[step.value].every((p) => form.errorsAt(p).length === 0)
-  )
+  function isStepValid(id: 1 | 2 | 3 | 4): boolean {
+    const paths = STEP_PATHS[id]
+    if (paths.length === 0) return false
+    return form.isValid(paths)
+  }
+  const currentStepValid = computed(() => isStepValid(step.value))
 
   function goNext() {
     if (step.value < 4) step.value = (step.value + 1) as 1 | 2 | 3 | 4
   }
   function goBack() {
     if (step.value > 1) step.value = (step.value - 1) as 1 | 2 | 3 | 4
+  }
+
+  // ─── Error summary (review step) ────────────────────────────────
+  // Group form.meta.errors by their top-level segment so the Review
+  // step renders one panel per logical section (Pickup address /
+  // Cargo / Service / …) instead of a flat list of dotted paths.
+  // Each row is clickable — switches \`step.value\` to the step that
+  // owns the path so the user lands on the right page in one tap.
+  // (No focus-on-field yet: would need a registry hook on v-register
+  // to map path → bound element. Worth adding to the library; for
+  // now the visual error state on the field is enough of a target.)
+  const ROOT_LABELS: Record<string, string> = {
+    reference: 'Reference',
+    pickup: 'Pickup address',
+    delivery: 'Delivery address',
+    cargo: 'Cargo',
+    service: 'Service',
+    insurance: 'Insurance',
+    desiredPickupDate: 'Pickup date',
+    desiredDeliveryDate: 'Delivery date',
+    notes: 'Notes',
+  }
+  const LEAF_LABELS: Record<string, string> = {
+    line1: 'Line 1',
+    line2: 'Line 2',
+    city: 'City',
+    region: 'Region',
+    postalCode: 'Postal code',
+    country: 'Country',
+    declaredValueUSD: 'Declared value',
+    coverage: 'Coverage',
+    carrier: 'Carrier',
+    mode: 'Mode',
+    items: 'Line items',
+    fragile: 'Fragile',
+    tempMinC: 'Min temperature',
+    tempMaxC: 'Max temperature',
+    unNumber: 'UN number',
+    hazardClass: 'Hazard class',
+    acknowledged: 'Hazmat acknowledgement',
+    lengthCm: 'Length',
+    widthCm: 'Width',
+    heightCm: 'Height',
+    permitNumber: 'Permit number',
+    sku: 'SKU',
+    description: 'Description',
+    quantity: 'Quantity',
+    type: 'Type',
+  }
+  type ErrorGroup = {
+    rootKey: string
+    rootLabel: string
+    items: { leafLabel: string | null; message: string; path: ReadonlyArray<string | number> }[]
+  }
+  const groupedErrors = computed<ErrorGroup[]>(() => {
+    const groups = new Map<string, ErrorGroup>()
+    for (const e of form.meta.errors) {
+      const root = String(e.path[0] ?? '(root)')
+      let group = groups.get(root)
+      if (!group) {
+        group = { rootKey: root, rootLabel: ROOT_LABELS[root] ?? root, items: [] }
+        groups.set(root, group)
+      }
+      let leaf: string | null = null
+      if (e.path.length > 1) {
+        const leafKey = String(e.path[e.path.length - 1])
+        leaf = LEAF_LABELS[leafKey] ?? leafKey
+      }
+      group.items.push({ leafLabel: leaf, message: e.message, path: e.path })
+    }
+    return [...groups.values()]
+  })
+  function pathToStep(path: ReadonlyArray<string | number>): 1 | 2 | 3 | 4 {
+    const root = String(path[0] ?? '')
+    for (const id of [1, 2, 3] as const) {
+      if ((STEP_PATHS[id] as ReadonlyArray<string>).includes(root)) return id
+    }
+    return 4
+  }
+  function goToError(path: ReadonlyArray<string | number>) {
+    step.value = pathToStep(path)
   }
 
   // ─── Cargo / service variant switching ───────────────────────────
@@ -502,7 +587,7 @@ ${'</'}script>
           class="step"
           :class="{
             active: step === s.id,
-            done: step > s.id,
+            done: isStepValid(s.id),
           }"
           :aria-current="step === s.id ? 'step' : undefined"
           @click="step = s.id"
@@ -898,14 +983,37 @@ ${'</'}script>
       <section v-show="step === 4" class="step-body review">
         <h3>Review</h3>
         <pre>{{ JSON.stringify(form.values(), null, 2) }}</pre>
-        <p class="muted" v-if="!form.meta.valid">
-          Resolve {{ form.meta.errors.length }} error{{ form.meta.errors.length === 1 ? '' : 's' }} before submitting.
-        </p>
-        <ul v-if="!form.meta.valid" class="error-list">
-          <li v-for="(e, i) in form.meta.errors" :key="i">
-            <code>{{ e.path.join('.') || '(root)' }}</code> — {{ e.message }}
-          </li>
-        </ul>
+        <aside v-if="!form.meta.valid" class="errors-summary" aria-live="polite">
+          <header class="errors-summary-head">
+            <span class="errors-summary-icon" aria-hidden="true">⚠</span>
+            <div>
+              <h3 class="errors-summary-title">
+                {{ form.meta.errors.length }}
+                {{ form.meta.errors.length === 1 ? 'item' : 'items' }} on the manifest before it
+                ships.
+              </h3>
+              <p class="errors-summary-hint">Tap any line to jump to the field.</p>
+            </div>
+          </header>
+          <ol class="errors-summary-groups">
+            <li v-for="group in groupedErrors" :key="group.rootKey">
+              <h4 class="errors-summary-group-head">{{ group.rootLabel }}</h4>
+              <ul class="errors-summary-items">
+                <li v-for="(item, i) in group.items" :key="i">
+                  <button
+                    type="button"
+                    class="errors-summary-row"
+                    @click="goToError(item.path)"
+                  >
+                    <span v-if="item.leafLabel" class="errors-summary-leaf">{{ item.leafLabel }}</span>
+                    <span class="errors-summary-msg">{{ item.message }}</span>
+                    <span class="errors-summary-arrow" aria-hidden="true">→</span>
+                  </button>
+                </li>
+              </ul>
+            </li>
+          </ol>
+        </aside>
       </section>
 
       <!-- ─── Submit-row error (form-level) ─── -->
@@ -1013,6 +1121,12 @@ body {
   padding: 0.75rem;
   background: #F9FAFB;
   border-radius: 0.5rem;
+  /* Sticky so the four-step nav stays in reach while the user
+     scrolls through a long step body. \`top\` matches \`.form\`'s
+     padding so the chip doesn't jam against the iframe top edge. */
+  position: sticky;
+  top: 0.5rem;
+  z-index: 10;
 }
 .step {
   display: flex;
@@ -1181,8 +1295,85 @@ body {
   overflow: auto;
   max-height: 16rem;
 }
-.error-list { margin: 0; padding-left: 1.25rem; font-size: 0.875rem; color: #B42318; }
-.error-list code { background: #FEE4E2; padding: 0 0.25rem; border-radius: 0.25rem; }
+/* ─── Errors summary (review step) ─── */
+.errors-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 1rem 1.125rem 1.125rem;
+  background: #FEF3F2;
+  border: 0.0625rem solid #FECDCA;
+  border-radius: 0.625rem;
+}
+.errors-summary-head { display: flex; gap: 0.75rem; align-items: flex-start; }
+.errors-summary-icon { font-size: 1.125rem; line-height: 1.25; color: #B42318; }
+.errors-summary-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: #7A271A;
+}
+.errors-summary-hint { margin: 0.125rem 0 0 0; color: #B42318; font-size: 0.8125rem; }
+.errors-summary-groups {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+.errors-summary-group-head {
+  margin: 0 0 0.3125rem 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #B42318;
+}
+.errors-summary-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.errors-summary-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4375rem 0.625rem;
+  background: #FFFFFF;
+  border: 0.0625rem solid #FEE4E2;
+  border-radius: 0.375rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: #7A271A;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+.errors-summary-row:hover {
+  border-color: #FDA29B;
+  background: #FFFCFC;
+}
+.errors-summary-row:focus-visible {
+  outline: 0.125rem solid #F97066;
+  outline-offset: 0.0625rem;
+}
+.errors-summary-leaf { font-weight: 600; }
+.errors-summary-msg { color: #B42318; }
+.errors-summary-arrow {
+  margin-left: auto;
+  color: #B42318;
+  opacity: 0.5;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+.errors-summary-row:hover .errors-summary-arrow { transform: translateX(0.125rem); opacity: 1; }
 
 /* ─── Banner ─── */
 .banner-error {

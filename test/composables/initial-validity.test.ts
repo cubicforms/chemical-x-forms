@@ -108,10 +108,15 @@ describe('initial validity gating — async-refinement schema (the demo case)', 
     expect(api.isValid([''])).toBe(false)
   })
 
-  it('isValid on a clean prefix is also false until the first validation completes', () => {
+  it('isValid on a sync-only prefix is true even before first validation completes (per-path gate)', () => {
     const { app, api } = mountAsync()
     apps.push(app)
-    expect(api.isValid(['reference'])).toBe(false)
+    // The async refine in `asyncSchema` is at the root (no `path:`
+    // config), so its sub-schema at ['reference'] is just z.string()
+    // — no async work, no gate, no playing dumb. Per-path
+    // resolution lets us answer the obvious question for sync
+    // subtrees without waiting on an unrelated async pass.
+    expect(api.isValid(['reference'])).toBe(true)
   })
 
   it('flips to true after a manual validateAsync resolves with no errors', async () => {
@@ -178,5 +183,130 @@ describe('initial validity gating — sync-refinement schema', () => {
     // because nothing validated would defeat the opt-out.
     expect(api.meta.valid).toBe(true)
     expect(api.isValid([''])).toBe(true)
+  })
+})
+
+// Pin the documented asymmetry between `isValid(paths)` and
+// `field.valid`: scoped `isValid` honours the form-wide gate
+// (cross-field refines can surface errors at any path, so
+// "have we verified?" is a form-wide question), while
+// per-leaf `field.valid` does not (it answers a tighter
+// "based on what we have at this path, has anything failed?"
+// question used by green-checkmark UX patterns).
+describe('initial validity gating — asymmetry between isValid and field.valid', () => {
+  // Schema with a plain `z.string()` leaf living alongside a leaf
+  // that does carry an async refine directly. Slim parse strips
+  // the refine → construction sees no errors. The form-wide gate
+  // is active because the schema declares async work, but the
+  // per-path resolver lets us split the answer: `word` resolves
+  // synchronously (its sub-schema has no async), `asyncField`
+  // gates (its sub-schema does).
+  const mixedSchema = z.object({
+    word: z.string(),
+    asyncField: z.string().refine(async (v) => v === 'OK', {
+      message: 'asyncField must be OK',
+    }),
+  })
+
+  type MixedApi = ReturnType<typeof useForm<typeof mixedSchema>>
+  const apps: App[] = []
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+  })
+
+  function mountMixed(): { app: App; api: MixedApi } {
+    const handle: { api?: MixedApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: mixedSchema,
+          key: `initial-validity-mixed-${Math.random().toString(36).slice(2)}`,
+          defaultValues: { word: 'hello', asyncField: '' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform({ override: true }))
+    app.mount(document.createElement('div'))
+    return { app, api: handle.api as MixedApi }
+  }
+
+  it('isValid([leafPath]) returns true at frame 1 for a sync leaf, matching field.valid', () => {
+    const { app, api } = mountMixed()
+    apps.push(app)
+    // Per-path gating: the `word` leaf has no async work in its
+    // subtree (`pathHasAsyncValidation(['word']) === false`), so
+    // the form-wide `firstValidationDone` gate is skipped. Both
+    // surfaces converge on the truth: a structurally-valid
+    // `z.string()` leaf with no errors and nothing in flight is
+    // valid, full stop.
+    expect(api.isValid(['word'])).toBe(true)
+    expect(api.fields.word.valid).toBe(true)
+  })
+
+  it('isValid([asyncLeafPath]) is gated false at frame 1 — the path has async work pending', () => {
+    const { app, api } = mountMixed()
+    apps.push(app)
+    // `asyncField`'s subtree DOES contain async work, so
+    // `pathHasAsyncValidation(['asyncField']) === true`. The gate
+    // applies and `isValid` returns false until the construction-
+    // time microtask completes.
+    expect(api.isValid(['asyncField'])).toBe(false)
+  })
+
+  it('asyncField gates at frame 1, then surfaces a real verdict after handleSubmit', async () => {
+    const { app, api } = mountMixed()
+    apps.push(app)
+    // Gate active for the async-bearing leaf — same answer as
+    // `meta.valid`: "we haven't checked yet."
+    expect(api.isValid(['asyncField'])).toBe(false)
+    // The sync sibling answers honestly throughout.
+    expect(api.isValid(['word'])).toBe(true)
+
+    // Trigger a real validation pass; the refine fails on the empty
+    // default and writes an error at ['asyncField'].
+    await api.handleSubmit(() => {})()
+
+    // After validation: gate flipped, errors are real.
+    expect(api.isValid(['asyncField'])).toBe(false) // refinement violated
+    expect(api.isValid(['word'])).toBe(true) // still clean
+  })
+
+  it('field.valid mirrors isValid: per-path async gate, no clamping for sync leaves', () => {
+    const { app, api } = mountMixed()
+    apps.push(app)
+    // Sync leaf: no gate, answers honestly at frame 1.
+    expect(api.fields.word.valid).toBe(true)
+    expect(api.isValid(['word'])).toBe(true)
+    // Async leaf: gated until first validation completes.
+    expect(api.fields.asyncField.valid).toBe(false)
+    expect(api.isValid(['asyncField'])).toBe(false)
+  })
+
+  it('field.valid for an async leaf flips after the gate completes (handleSubmit on a clean default)', async () => {
+    // Mount with a default that satisfies the refine — once
+    // validation completes, no errors remain at the async leaf.
+    const handle: { api?: MixedApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: mixedSchema,
+          key: `initial-validity-mixed-clean-${Math.random().toString(36).slice(2)}`,
+          defaultValues: { word: 'hello', asyncField: 'OK' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform({ override: true }))
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    const api = handle.api as MixedApi
+
+    // Gate active at frame 1 for asyncField.
+    expect(api.fields.asyncField.valid).toBe(false)
+    // Trigger validation; refine passes ('OK' === 'OK').
+    await api.handleSubmit(() => {})()
+    // Gate flipped, no errors → field.valid mirrors the truth.
+    expect(api.fields.asyncField.valid).toBe(true)
   })
 })

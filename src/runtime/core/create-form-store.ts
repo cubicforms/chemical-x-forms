@@ -264,6 +264,19 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    */
   readonly firstValidationDone: Ref<boolean>
   /**
+   * `true` when the sub-schema rooted at `path` (or any of its
+   * descendants) declares async work — composes
+   * `schema.getSchemasAtPath(path)` with each candidate's
+   * `needsAsyncValidation()`, memoised per canonical path key for
+   * the lifetime of the FormStore. Used by `meta.valid` /
+   * `field.valid` / `isValid(paths)` to skip the
+   * `firstValidationDone` gate on subtrees that are fully
+   * synchronous: their verdict resolves at construction (or on the
+   * next per-field run) without waiting on a microtask, so honouring
+   * the form-wide gate would just play dumb about a known answer.
+   */
+  pathHasAsyncValidation(path: Path): boolean
+  /**
    * Per-path counter of in-flight field-level validation runs.
    * `field.validating` on `FieldStateView` mirrors
    * `(fieldValidationCounts.get(key) ?? 0) > 0`.
@@ -866,6 +879,28 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       firstValidationDone.value = true
     }
   })
+  // Per-path async-need cache. Keyed by canonical PathKey;
+  // populated lazily so a form whose consumers only ever ask about
+  // a few prefixes doesn't pay for a full schema walk. The cache is
+  // safe to grow unboundedly across the FormStore's lifetime — paths
+  // are bounded by the schema, and the FormStore itself is GC'd
+  // when its last consumer disposes.
+  const pathAsyncCache = new Map<PathKey, boolean>()
+  function pathHasAsyncValidation(path: Path): boolean {
+    const { key } = canonicalizePath(path)
+    const cached = pathAsyncCache.get(key)
+    if (cached !== undefined) return cached
+    // `getSchemasAtPath` returns every candidate sub-schema (DU
+    // variants, intersections all surface here). Async work in any
+    // candidate means the prefix is "could be async" — be
+    // conservative and gate. Adapters that don't expose
+    // `needsAsyncValidation` are treated as `false`, matching the
+    // optional-method contract on AbstractSchema.
+    const candidates = schema.getSchemasAtPath(path)
+    const hasAsync = candidates.some((sub) => sub.needsAsyncValidation?.() === true)
+    pathAsyncCache.set(key, hasAsync)
+    return hasAsync
+  }
   // Reactive per-path counter for `field.validating`. See JSDoc on
   // `FormStore.fieldValidationCounts` for semantics.
   const fieldValidationCounts: Map<PathKey, number> = reactive(new Map<PathKey, number>())
@@ -2052,6 +2087,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     submissionGeneration,
     activeValidations,
     firstValidationDone,
+    pathHasAsyncValidation,
     fieldValidationCounts,
 
     applyFormReplacement,

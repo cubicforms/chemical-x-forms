@@ -450,6 +450,12 @@ export type AbstractSchema<Form, GetValueFormType> = {
    * don't yet support detection — can omit it; async-only errors
    * then fall back to firing on first user mutation, matching the
    * pre-detection behavior. Detection is best-effort.
+   *
+   * For per-path queries, compose with `getSchemasAtPath(path)`:
+   * each candidate sub-schema exposes its own
+   * `needsAsyncValidation`, so a caller asking "does the cargo
+   * subtree contain async work?" can union the per-candidate
+   * answers without a separate top-level overload.
    */
   needsAsyncValidation?(): boolean
 }

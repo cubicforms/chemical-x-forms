@@ -289,23 +289,34 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     return out
   }
 
-  // `true` when the form has been validated at least once AND no
-  // error AND no in-flight field-level validation sits at-or-under
-  // any of the supplied prefixes. Sugar over `errorsAt` for the
-  // multi-path case, scoped to per-prefix in-flight work (the
-  // per-field analogue of `meta.validating`) so a caller asking
-  // "is the cargo subtree valid?" doesn't get gated on an unrelated
-  // service-field debounce. The `firstValidationDone` gate matches
-  // the `meta.valid` semantic — the absence of errors at frame 1 is
-  // "we haven't checked yet," not "we checked and it's clean."
+  // `true` when no error AND no in-flight field-level validation
+  // sits at-or-under any of the supplied prefixes. Sugar over
+  // `errorsAt` for the multi-path case, scoped to per-prefix
+  // in-flight work (the per-field analogue of `meta.validating`).
+  //
+  // The `firstValidationDone` gate is applied **per prefix** — only
+  // for prefixes whose sub-schema declares async work. A purely
+  // synchronous subtree resolves its verdict at construction (or
+  // the next per-field run) without waiting on a microtask, so
+  // honouring the form-wide gate there would just play dumb about
+  // a known answer. The asymmetry kept the demo's stepper from
+  // flashing green for async-validating subtrees while leaving
+  // sync-only paths with the "valid by structure" answer they
+  // honestly hold.
+  //
   // Whole-form `validate()` / `validateAsync()` runs increment
   // `meta.validating` only — compose with that flag when the caller
   // wants to also gate on form-wide async work that doesn't have a
   // single path.
   function isValid(paths: ReadonlyArray<string | ReadonlyArray<string | number>>): boolean {
-    if (!state.firstValidationDone.value) return false
     for (const p of paths) {
       const { segments: prefix } = canonicalizePath(p as string | Path)
+      // Per-prefix gate: only apply `firstValidationDone` when the
+      // sub-schema at this prefix actually declares async work. For
+      // a purely synchronous subtree the verdict is settled by the
+      // construction-time pass (or the next per-field run); the
+      // form-wide gate is irrelevant.
+      if (state.pathHasAsyncValidation(prefix) && !state.firstValidationDone.value) return false
       // Errors under prefix? Read through `metaErrors.value` so callers
       // wrapping `isValid` in a `computed(...)` get dep tracking via
       // the same channel `errorsAt` uses.

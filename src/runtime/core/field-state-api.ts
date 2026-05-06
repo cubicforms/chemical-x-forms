@@ -131,7 +131,16 @@ export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<
       // Reactive Map `.get(key)` participates in dep tracking — this
       // computed re-runs only when the count for THIS key changes.
       const validating = (state.fieldValidationCounts.get(key) ?? 0) > 0
-      const valid = errors.length === 0 && !validating
+      // `valid` mirrors `meta.valid` / `isValid(paths)` per-path:
+      // when the sub-schema at this path declares async work, gate
+      // the answer on the form-wide `firstValidationDone` so the
+      // surface doesn't lie about a yet-to-arrive verdict.
+      // Sync-only sub-schemas (e.g. a bare `z.string()` leaf) skip
+      // the gate — there's nothing to wait on, and clamping every
+      // such field to `false` at mount would defeat the green-
+      // checkmark UX pattern that `field.valid` is built for.
+      const gated = state.pathHasAsyncValidation(segments) && !state.firstValidationDone.value
+      const valid = !gated && errors.length === 0 && !validating
       // Element-set read goes through the reactive elements Map;
       // iteration over the inner reactive Set tracks per-membership
       // changes so consumers re-evaluate on register / deregister.

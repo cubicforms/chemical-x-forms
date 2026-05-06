@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node scripts/clean-stale-cache.mjs && pnpm bundle:repl && pnpm index:search:dev && nuxi dev",
+    "dev": "node scripts/clean-stale-cache.mjs && pnpm bundle:repl && pnpm index:search:dev && (pnpm bundle:repl:watch & nuxi dev)",
     "build": "pnpm bundle:repl && nuxi build && pnpm index:search",
     "generate": "pnpm bundle:repl && nuxi generate && pnpm index:search",
     "preview": "nuxi preview",

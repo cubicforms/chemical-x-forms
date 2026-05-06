@@ -18,10 +18,9 @@ up: down  ## Stop any prior stack, start the dev container, and boot the docs si
 down:  ## Stop and remove the dev container
 	docker compose down
 
-restart:  ## Rebuild and restart
-	docker compose down
+restart:  ## Rebuild image and bring the dev server back up
 	docker compose build
-	docker compose up -d
+	$(MAKE) up
 
 logs:  ## Tail container logs
 	docker compose logs -f

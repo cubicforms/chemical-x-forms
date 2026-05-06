@@ -79,15 +79,47 @@ const sharedEsbuildOpts = {
   tsconfig: resolve(repoRoot, 'tsconfig.json'),
 }
 
+// Triggers an attaform .d.ts re-emit after every esbuild rebuild
+// (post-initial). esbuild's watch mode keeps the runtime JS bundles
+// fresh; without this hook the rolled-up declaration bundles would
+// stay stuck at whatever shape src/ had when the script started, so
+// the REPL's Volar serves stale types until the dev server is
+// manually restarted. Fire-and-forget — we don't want a slow
+// rollup-plugin-dts pass to stall esbuild's pipeline.
+function attaformTypeWatchPlugin() {
+  let initial = true
+  return {
+    name: 'attaform-type-watch',
+    setup(build) {
+      build.onEnd(() => {
+        if (!watch) return
+        if (initial) {
+          initial = false
+          return
+        }
+        emitAttaformTypeBundles()
+          .then(() => console.log('[bundle-repl-deps] attaform .d.ts re-emitted'))
+          .catch((err) => {
+            console.error('[bundle-repl-deps] attaform .d.ts re-emit failed:', err)
+          })
+      })
+    },
+  }
+}
+
 const ctxs = await Promise.all([
   // attaform core — externalize vue + zod (loaded separately via import map)
   esbuild.context({
     ...sharedEsbuildOpts,
     entryPoints: { attaform: resolve(repoRoot, 'src/index.ts') },
     external: ['vue', 'zod'],
+    plugins: [attaformTypeWatchPlugin()],
   }),
   // attaform/zod adapter — also externalize attaform itself so the import
-  // map cross-resolves to the core bundle (single registry instance)
+  // map cross-resolves to the core bundle (single registry instance).
+  // Only the core context owns the type-re-emit hook — both attaform
+  // entries are bundled in a single emitAttaformTypeBundles() call,
+  // so duplicating the trigger here would just double the work.
   esbuild.context({
     ...sharedEsbuildOpts,
     entryPoints: { 'attaform-zod': resolve(repoRoot, 'src/zod.ts') },
@@ -286,12 +318,12 @@ const packageManifests = {
   },
 }
 
-async function emitTypeBundles() {
-  await Promise.all([
-    mkdir(resolve(typesDir, 'attaform'), { recursive: true }),
-    mkdir(resolve(typesDir, 'vue'), { recursive: true }),
-    mkdir(resolve(typesDir, 'zod'), { recursive: true }),
-  ])
+// Just attaform's two .d.ts entry points. Re-run on every src/ change
+// during watch mode so the REPL's Volar always sees the latest types.
+// vue + zod aren't included here because they come from node_modules
+// and don't change while the dev server is running.
+async function emitAttaformTypeBundles() {
+  await mkdir(resolve(typesDir, 'attaform'), { recursive: true })
   await Promise.all([
     bundleDts({
       input: resolve(repoRoot, 'src/index.ts'),
@@ -306,6 +338,17 @@ async function emitTypeBundles() {
       output: resolve(typesDir, 'attaform/zod.d.ts'),
       name: 'attaform-zod',
     }),
+  ])
+}
+
+async function emitTypeBundles() {
+  await Promise.all([
+    mkdir(resolve(typesDir, 'attaform'), { recursive: true }),
+    mkdir(resolve(typesDir, 'vue'), { recursive: true }),
+    mkdir(resolve(typesDir, 'zod'), { recursive: true }),
+  ])
+  await Promise.all([
+    emitAttaformTypeBundles(),
     bundleDts({
       input: runtimeDomDts,
       output: resolve(typesDir, 'vue/index.d.ts'),
@@ -403,13 +446,12 @@ await emitTypeBundles()
 
 if (watch) {
   await Promise.all(ctxs.map((c) => c.watch()))
-  // esbuild's watch is incremental and fast; rolling up .d.ts costs
-  // a few hundred ms per package, so we trigger a full type-rebuild
-  // at fixed intervals only when src/ changes. We piggyback on
-  // esbuild's rebuild via the `onRebuild`-style hook implemented as
-  // a watch plugin below — but for simplicity in a small dev script,
-  // re-emit types whenever this script is re-run (host saves trigger
-  // the docker volume sync, the watch process picks them up).
+  // esbuild's watch keeps the runtime JS bundles fresh incrementally;
+  // the attaform .d.ts re-emit fires from the `attaform-type-watch`
+  // esbuild plugin (above) on each post-initial rebuild. vue + zod
+  // type bundles are static — they come from node_modules and only
+  // need to rebuild when this script is re-run (e.g. after a deps
+  // upgrade).
   console.log('[bundle-repl-deps] watching src/ for runtime + type changes')
 } else {
   await Promise.all(ctxs.map((c) => c.dispose()))

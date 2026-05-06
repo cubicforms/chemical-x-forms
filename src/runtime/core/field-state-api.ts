@@ -33,6 +33,39 @@ export type FieldStateView = {
   readonly touched: boolean | null
   /** `true` while at least one DOM input is registered to this path. */
   readonly connected: boolean
+  /**
+   * The first DOM element bound to this path via `v-register`, or
+   * `null` when none is registered (initial mount, post-unmount,
+   * SSR). "First" means first by registration order — stable across
+   * re-renders as long as the directives stay attached. Use for the
+   * dominant single-binding case:
+   *
+   * ```ts
+   * form.fields.email.element?.focus()
+   * form.fields.email.element?.scrollIntoView({ block: 'center' })
+   * ```
+   *
+   * For paths with multiple bindings (e.g. an input mirrored
+   * elsewhere), prefer `elements` and pick the right target
+   * yourself. The accessor is reactive — register / deregister
+   * triggers re-evaluation.
+   */
+  readonly element: HTMLElement | null
+  /**
+   * Every DOM element currently bound to this path via `v-register`,
+   * in registration order. Empty array when none is registered.
+   *
+   * Two bindings to the same path is intentional (input syncing,
+   * shadow inputs, etc.). When operating on the set:
+   *
+   * ```ts
+   * for (const el of form.fields.email.elements) el.blur()
+   * ```
+   *
+   * For the common single-binding case, reach for `element` — it's
+   * sugar over `elements[0] ?? null`.
+   */
+  readonly elements: readonly HTMLElement[]
   /** ISO timestamp of the most recent write; `null` until the first write. */
   readonly updatedAt: string | null
   /** Validation errors at this path (schema + user errors merged). Empty when valid. */
@@ -99,6 +132,16 @@ export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<
       // computed re-runs only when the count for THIS key changes.
       const validating = (state.fieldValidationCounts.get(key) ?? 0) > 0
       const valid = errors.length === 0 && !validating
+      // Element-set read goes through the reactive elements Map;
+      // iteration over the inner reactive Set tracks per-membership
+      // changes so consumers re-evaluate on register / deregister.
+      // Empty array (and `null` for `.element`) until a directive
+      // first binds to this path; same on the server (no DOM).
+      const elementRecord = state.elements.get(key)
+      const elementsArr: readonly HTMLElement[] = elementRecord
+        ? Object.freeze([...elementRecord.elements])
+        : EMPTY_ELEMENTS
+      const firstElement: HTMLElement | null = elementsArr[0] ?? null
       return {
         value,
         original,
@@ -108,6 +151,8 @@ export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<
         blurred: record?.blurred ?? null,
         touched: record?.touched ?? null,
         connected: record?.connected ?? false,
+        element: firstElement,
+        elements: elementsArr,
         updatedAt: record?.updatedAt ?? null,
         errors,
         validating,
@@ -118,3 +163,9 @@ export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<
     })
   }
 }
+
+// Frozen empty array shared across "no elements bound" reads so
+// consumers can `===`-compare against a stable reference and the
+// computed doesn't allocate a new array on every re-evaluation when
+// the path has no registered elements.
+const EMPTY_ELEMENTS: readonly HTMLElement[] = Object.freeze([])

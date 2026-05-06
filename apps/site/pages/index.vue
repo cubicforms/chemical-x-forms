@@ -108,7 +108,7 @@
           >
             Attaform is a <span class="font-medium text-accent">type-safe, schema-driven</span> form
             library for Vue&nbsp;3 and Nuxt, with first-class Zod support. Point a schema at
-            <UiInlineCode>useForm</UiInlineCode> — the form <em>basically</em> writes itself.
+            <UiInlineCode>useForm</UiInlineCode> and live your best life.
           </p>
 
           <div class="reveal-step flex flex-wrap gap-3" style="--reveal-step-delay: 180ms">

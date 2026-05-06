@@ -1893,6 +1893,39 @@ export type FieldStateLeaf<Value = unknown> = {
   readonly blurred: boolean | null
   readonly touched: boolean | null
   readonly connected: boolean
+  /**
+   * The first DOM element bound to this path via `v-register`, or
+   * `null` when none is registered (initial mount, post-unmount,
+   * SSR). "First" means first by registration order. Reach for it
+   * when you need to call a native DOM method on a field's input —
+   * `focus()`, `scrollIntoView()`, `select()`, `setSelectionRange()`,
+   * etc. — without the library having to verb every imperative:
+   *
+   * ```ts
+   * form.fields.email.element?.focus()
+   * form.fields.email.element?.scrollIntoView({ block: 'center' })
+   * ```
+   *
+   * For paths with multiple bindings (input syncing, mirrored
+   * shadow inputs), prefer `elements` and pick the right target
+   * yourself. Reactive: register / deregister triggers
+   * re-evaluation.
+   */
+  readonly element: HTMLElement | null
+  /**
+   * Every DOM element currently bound to this path via `v-register`,
+   * in registration order. Empty array when none is registered.
+   * Two bindings to the same path are intentional — input syncing,
+   * mirrored shadow inputs:
+   *
+   * ```ts
+   * for (const el of form.fields.email.elements) el.blur()
+   * ```
+   *
+   * For the common single-binding case, reach for `element` — sugar
+   * over `elements[0] ?? null`.
+   */
+  readonly elements: readonly HTMLElement[]
   readonly updatedAt: string | null
   readonly errors: readonly ValidationError[]
   /**

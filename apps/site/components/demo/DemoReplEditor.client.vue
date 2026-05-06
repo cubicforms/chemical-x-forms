@@ -85,7 +85,7 @@
   //   - Touched-aware error display (no error spam pre-blur)
   // ─────────────────────────────────────────────────────────────────
 
-  import { computed, ref, watch } from 'vue'
+  import { computed, nextTick, ref, watch } from 'vue'
   import { z } from 'zod'
   import { useForm, unset, isUnset } from 'attaform/zod'
   import type { FieldStateLeaf } from 'attaform'
@@ -434,6 +434,19 @@
   }
   function goToError(path: ReadonlyArray<string | number>) {
     step.value = pathToStep(path)
+    // Walk the fields proxy with the dynamic path and focus the
+    // first registered element. nextTick lets v-show paint the
+    // newly-active step body so the input is in the document tree
+    // by the time we focus.
+    nextTick(() => {
+      let view: unknown = form.fields
+      for (const seg of path) {
+        if (view == null) break
+        view = (view as Record<string | number, unknown>)[seg]
+      }
+      const el = (view as { element?: HTMLElement | null } | undefined)?.element
+      el?.focus()
+    })
   }
 
   // ─── Cargo / service variant switching ───────────────────────────

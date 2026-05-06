@@ -1,4 +1,4 @@
-import { computed, reactive, ref, type ComputedRef, type Ref } from 'vue'
+import { computed, markRaw, reactive, ref, type ComputedRef, type Ref } from 'vue'
 import type {
   AbstractSchema,
   CoercionRegistry,
@@ -1624,11 +1624,18 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   function registerElement(path: Path, element: HTMLElement, formInstanceId: string): boolean {
     const { key } = canonicalizePath(path)
     const record = elements.get(key)
+    // `markRaw` keeps HTMLElement out of Vue's auto-proxy machinery
+    // (DOM nodes have circular refs and external state that fight
+    // reactivity, and consumers comparing `===` against the original
+    // ref expect to get back what they registered). The Set itself
+    // is reactive so add/delete on an existing record fires
+    // FieldStateView's `element` / `elements` accessors.
+    const raw = markRaw(element)
     if (record === undefined) {
-      elements.set(key, { path, elements: new Set([element]) })
+      elements.set(key, { path, elements: reactive(new Set([raw])) })
     } else {
-      if (record.elements.has(element)) return false
-      record.elements.add(element)
+      if (record.elements.has(raw)) return false
+      record.elements.add(raw)
     }
     elementToFormInstance.set(element, formInstanceId)
     sortedRegistrationsCache = null

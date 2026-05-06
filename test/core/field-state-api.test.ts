@@ -164,4 +164,70 @@ describe('buildFieldStateAccessor', () => {
       expect(s.value.validating).toBe(false)
     })
   })
+
+  // `element` / `elements` expose the live registered DOM bindings so
+  // consumers can call native methods (`focus()`, `scrollIntoView()`)
+  // without the library having to verb every imperative. Reactivity
+  // comes from the FormStore's reactive elements Map (per-key) and
+  // its inner reactive Set (per-membership inside one path).
+  describe('element / elements', () => {
+    it('default to null and [] when nothing is registered', () => {
+      const { getFieldState } = makeAccessor()
+      const s = getFieldState(['email'])
+      expect(s.value.element).toBe(null)
+      expect(s.value.elements).toEqual([])
+    })
+
+    it('first registration populates both — element is the first by registration order', () => {
+      const { state, getFieldState } = makeAccessor()
+      const s = getFieldState(['email'])
+      const a = { nodeType: 1, tagName: 'INPUT' } as unknown as HTMLElement
+      state.registerElement(['email'], a, 'inst')
+      expect(s.value.element).toBe(a)
+      expect(s.value.elements).toEqual([a])
+    })
+
+    it('multiple registrations to the same path preserve insertion order; element stays first', () => {
+      const { state, getFieldState } = makeAccessor()
+      const s = getFieldState(['email'])
+      const a = { nodeType: 1, tagName: 'INPUT' } as unknown as HTMLElement
+      const b = { nodeType: 1, tagName: 'INPUT' } as unknown as HTMLElement
+      state.registerElement(['email'], a, 'inst')
+      state.registerElement(['email'], b, 'inst')
+      expect(s.value.elements).toEqual([a, b])
+      expect(s.value.element).toBe(a)
+    })
+
+    it('deregistering the first element promotes the second to element', () => {
+      const { state, getFieldState } = makeAccessor()
+      const s = getFieldState(['email'])
+      const a = { nodeType: 1, tagName: 'INPUT' } as unknown as HTMLElement
+      const b = { nodeType: 1, tagName: 'INPUT' } as unknown as HTMLElement
+      state.registerElement(['email'], a, 'inst')
+      state.registerElement(['email'], b, 'inst')
+      state.deregisterElement(['email'], a)
+      expect(s.value.elements).toEqual([b])
+      expect(s.value.element).toBe(b)
+    })
+
+    it('deregistering all elements returns the accessors to null / []', () => {
+      const { state, getFieldState } = makeAccessor()
+      const s = getFieldState(['email'])
+      const a = { nodeType: 1, tagName: 'INPUT' } as unknown as HTMLElement
+      state.registerElement(['email'], a, 'inst')
+      state.deregisterElement(['email'], a)
+      expect(s.value.element).toBe(null)
+      expect(s.value.elements).toEqual([])
+    })
+
+    it('per-path isolation — sibling registrations stay scoped', () => {
+      const { state, getFieldState } = makeAccessor()
+      const email = getFieldState(['email'])
+      const name = getFieldState('profile.name')
+      const a = { nodeType: 1, tagName: 'INPUT' } as unknown as HTMLElement
+      state.registerElement(['email'], a, 'inst')
+      expect(email.value.elements).toEqual([a])
+      expect(name.value.elements).toEqual([])
+    })
+  })
 })

@@ -1,4 +1,4 @@
-import { computed, markRaw, reactive, ref, type ComputedRef, type Ref } from 'vue'
+import { computed, markRaw, reactive, ref, watch, type ComputedRef, type Ref } from 'vue'
 import type {
   AbstractSchema,
   CoercionRegistry,
@@ -241,6 +241,28 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    * the union of both surfaces.
    */
   readonly activeValidations: Ref<number>
+  /**
+   * `true` once the form has completed at least one validation pass
+   * — flips when `activeValidations` returns to 0 from any positive
+   * value. Until that happens, `meta.valid` and `isValid(paths)`
+   * report `false` even when `schemaErrors.size === 0`, because the
+   * absence of errors at frame 1 is just "we haven't checked yet,"
+   * not "we checked and it's clean."
+   *
+   * This closes the brief flash window for schemas where the slim
+   * default-derivation parse strips refinements (`.refine`,
+   * `.superRefine`, async validators): the slim parse passes, no
+   * construction-time errors land, and the queued microtask hasn't
+   * run yet — so without the gate, frame 1 paints the form as
+   * "valid" before the real verdict arrives a tick later.
+   *
+   * Initialized to `!strict`: non-strict consumers opt out of the
+   * validation pipeline by design, so locking them on
+   * `firstValidationDone === false` would defeat the opt-out.
+   * Reset is left untouched — the post-reset validation flips it
+   * back true on completion, same as the construction-time path.
+   */
+  readonly firstValidationDone: Ref<boolean>
   /**
    * Per-path counter of in-flight field-level validation runs.
    * `field.validating` on `FieldStateView` mirrors
@@ -824,6 +846,26 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   const submitError = ref<unknown>(null)
   const submissionGeneration = ref(0)
   const activeValidations = ref(0)
+  // Initial-validity gate. See `FormStore.firstValidationDone` JSDoc.
+  // Only ASYNC-validating strict schemas need the gate: sync schemas
+  // either surface refinement errors at construction (slim parse
+  // catches checks-style issues) or have nothing for the gate to
+  // wait on, so locking them at `false` would just deadlock
+  // `meta.valid` until the user touches a field. Async schemas are
+  // the genuine flash case — slim parse strips the async refine,
+  // construction sees no errors, the queued microtask runs a tick
+  // later. The watch flips the gate when `activeValidations`
+  // returns to 0 from a positive value (i.e. the construction-time
+  // queued validation completes).
+  const firstValidationDone = ref(!strict || schema.needsAsyncValidation?.() !== true)
+  // `watch(source, cb)` only fires when the source CHANGES (no
+  // immediate first-invocation), so `prev` is always the value
+  // before the transition — typed as `number`, never `undefined`.
+  watch(activeValidations, (now, prev) => {
+    if (prev > 0 && now === 0) {
+      firstValidationDone.value = true
+    }
+  })
   // Reactive per-path counter for `field.validating`. See JSDoc on
   // `FormStore.fieldValidationCounts` for semantics.
   const fieldValidationCounts: Map<PathKey, number> = reactive(new Map<PathKey, number>())
@@ -2009,6 +2051,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     submitError,
     submissionGeneration,
     activeValidations,
+    firstValidationDone,
     fieldValidationCounts,
 
     applyFormReplacement,

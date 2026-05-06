@@ -289,16 +289,21 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     return out
   }
 
-  // `true` when no error AND no in-flight field-level validation sits
-  // at-or-under any of the supplied prefixes. Sugar over `errorsAt`
-  // for the multi-path case, scoped to per-prefix in-flight work
-  // (the per-field analogue of `meta.validating`) so a caller asking
+  // `true` when the form has been validated at least once AND no
+  // error AND no in-flight field-level validation sits at-or-under
+  // any of the supplied prefixes. Sugar over `errorsAt` for the
+  // multi-path case, scoped to per-prefix in-flight work (the
+  // per-field analogue of `meta.validating`) so a caller asking
   // "is the cargo subtree valid?" doesn't get gated on an unrelated
-  // service-field debounce. Whole-form `validate()` /
-  // `validateAsync()` runs increment `meta.validating` only —
-  // compose with that flag when the caller wants to also gate on
-  // form-wide async work that doesn't have a single path.
+  // service-field debounce. The `firstValidationDone` gate matches
+  // the `meta.valid` semantic — the absence of errors at frame 1 is
+  // "we haven't checked yet," not "we checked and it's clean."
+  // Whole-form `validate()` / `validateAsync()` runs increment
+  // `meta.validating` only — compose with that flag when the caller
+  // wants to also gate on form-wide async work that doesn't have a
+  // single path.
   function isValid(paths: ReadonlyArray<string | ReadonlyArray<string | number>>): boolean {
+    if (!state.firstValidationDone.value) return false
     for (const p of paths) {
       const { segments: prefix } = canonicalizePath(p as string | Path)
       // Errors under prefix? Read through `metaErrors.value` so callers
@@ -346,14 +351,20 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
 
   // --- Validation lifecycle ---
   const validating = computed<boolean>(() => state.activeValidations.value > 0)
-  // `valid` is "no errors AND not currently validating." The
-  // `!validating.value` guard distinguishes a genuinely-clean form
-  // from one in the brief window between an async refinement starting
-  // and resolving (where errors haven't been written yet, but the
-  // verdict is pending). Submit-button gates and per-form clean
-  // indicators use this.
+  // `valid` is "we've validated at least once AND no errors AND not
+  // currently validating." The `firstValidationDone` gate closes the
+  // brief flash window at mount time when the slim default-derivation
+  // parse strips refinements (`.refine`, `.superRefine`, async
+  // validators) and the queued construction-time microtask hasn't
+  // run yet. Without it, frame 1 paints the form as "valid" before
+  // the real verdict arrives. The `!validating.value` guard
+  // distinguishes a genuinely-clean form from one in the window
+  // between an async refinement starting and resolving (where errors
+  // haven't been written yet, but the verdict is pending).
+  // Submit-button gates and per-form clean indicators use this.
   const valid = computed<boolean>(
     () =>
+      state.firstValidationDone.value &&
       state.schemaErrors.size === 0 &&
       state.userErrors.size === 0 &&
       state.derivedBlankErrors.value.size === 0 &&

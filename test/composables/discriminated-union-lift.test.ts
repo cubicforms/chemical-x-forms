@@ -184,25 +184,22 @@ describe('useForm — chained access on form.errors with cargo schema', () => {
   })
 })
 
-describe('value-shape regression guard (WriteShape NOT lifted)', () => {
-  // If `WriteShape` were accidentally lifted, `form.values.cargo`
-  // would become a single merged object instead of a union of
-  // variants. Pattern-matching on the runtime variant would lose
-  // its structural distinction. These assertions guard against that.
-  //
-  // Note: `WriteShape` widens literal discriminators (`'dry'` →
-  // `string`), so TS's literal-narrowing on `if (cargo.type === 'X')`
-  // doesn't engage here — but the union STRUCTURE must still be
-  // present (each variant's per-variant keys still tied to that
-  // member only). We assert that by reading a per-variant key on
-  // the union directly: it must be `T | undefined` if the lift
-  // happened, but must STAY a type error if WriteShape stays
-  // distributive.
-  it('form.values.cargo retains its discriminated-union structure', () => {
-    // @ts-expect-error tempMinC is variant-specific; reading it on the
-    // un-lifted union (without narrowing) is still a type error.
-    void form.values.cargo?.tempMinC
-    // @ts-expect-error fragile is variant-specific; same as above.
-    void form.values.cargo?.fragile
+describe('form.values discriminated-union lift (LiftedValueShape)', () => {
+  // form.values uses LiftedValueShape so per-variant keys are
+  // reachable through chained access — matching the runtime, where
+  // plain JS object access on a missing variant key returns
+  // `undefined` rather than throwing. WriteShape (the underlying
+  // shape used by setValue / defaultValues) stays distributive so
+  // those write-side APIs still require a complete variant.
+  it('form.values.cargo exposes per-variant keys as `T | undefined`', () => {
+    expectTypeOf(form.values.cargo?.tempMinC).toEqualTypeOf<number | undefined>()
+    expectTypeOf(form.values.cargo?.tempMaxC).toEqualTypeOf<number | undefined>()
+    expectTypeOf(form.values.cargo?.fragile).toEqualTypeOf<boolean | undefined>()
+    expectTypeOf(form.values.cargo?.unNumber).toEqualTypeOf<string | undefined>()
+    expectTypeOf(form.values.cargo?.lengthCm).toEqualTypeOf<number | undefined>()
+  })
+
+  it('top-level form.values keys remain typed', () => {
+    expectTypeOf(form.values.reference).toEqualTypeOf<string>()
   })
 })

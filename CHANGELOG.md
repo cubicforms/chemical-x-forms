@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Discriminated-union access extends to `form.values` and to
+  every path-resolver type.** `form.values.cargo.permitNumber`
+  (oversized-only) now types as `string | undefined` regardless of
+  active variant — the same merged-view treatment we applied to
+  `form.fields` and `form.errors`. Implementation lifts `ValuesSurface`
+  via a new `LiftedValueShape<T>` helper. In addition, `NestedType`
+  and `NestedReadType` switched to `KeyofUnion` / `ValueOfUnion` so
+  path lookups on a union descent agree with `FlatPath`: every path
+  `FlatPath` says is reachable now resolves to a useful value type
+  (variant-specific paths previously collapsed to `never` because
+  `keyof (A|B|C)` is the intersection of variant keys, not the
+  union). Net: `setValue('cargo.tempMinC', 4)`, `toRef('cargo.tempMinC')`,
+  `register('cargo.tempMinC')` etc. now typecheck on schemas where
+  `tempMinC` is variant-only. Strict-variant write-side input still
+  required by `setValue` and `defaultValues` whole-cargo writes —
+  `WriteShape` itself stays distributive.
+
 - **Discriminated-union forms expose merged metadata proxies.**
   `form.fields.X.Y` and `form.errors.X.Y` chained access now resolves
   for variant-only keys regardless of which discriminant is active.

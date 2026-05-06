@@ -133,6 +133,7 @@ export type {
   IsUnion,
   JoinSegments,
   KeyofUnion,
+  LiftedValueShape,
   NestedReadType,
   NestedType,
   ValueOfUnion,

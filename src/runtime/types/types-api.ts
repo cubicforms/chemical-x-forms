@@ -12,6 +12,7 @@ import type {
   IsUnion,
   JoinSegments,
   KeyofUnion,
+  LiftedValueShape,
   NestedReadType,
   NestedType,
   ValueOfUnion,
@@ -2099,8 +2100,18 @@ type ErrorsProxyShape<T> = [T] extends [
  * intentionally NOT supported — JS object semantics treat the dotted
  * string as a single key. Use chained dot/bracket or the callable
  * form.
+ *
+ * The chained shape applies the discriminated-union lift via
+ * `LiftedValueShape<F>` so per-variant keys are reachable without
+ * narrowing first (e.g. `form.values.cargo.permitNumber` types as
+ * `string | undefined` regardless of which cargo variant is active —
+ * matching the runtime, where plain JS object access on a missing
+ * variant key returns `undefined`). The strict-variant shape is
+ * still required at the WRITE side: `setValue` and `defaultValues`
+ * use the un-lifted `WriteShape` so consumers can't accidentally
+ * hand the form a partial / cross-variant object.
  */
-export type ValuesSurface<F> = Readonly<F> & {
+export type ValuesSurface<F> = Readonly<LiftedValueShape<F>> & {
   (path: string): unknown
   (path: ReadonlyArray<string | number>): unknown
   (): Readonly<F>

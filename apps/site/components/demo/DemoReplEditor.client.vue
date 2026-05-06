@@ -650,7 +650,7 @@ ${'</'}script>
               Permit # <span class="muted">(optional, leave blank if none)</span>
             </label>
             <input v-register="form.register('cargo.permitNumber')" />
-            <small class="muted" v-if="isUnset(form.fields.cargo.permitNumber.value)">
+            <small class="muted" v-if="isUnset(form.values.cargo?.permitNumber)">
               No permit on file — start typing to add one.
             </small>
           </div>

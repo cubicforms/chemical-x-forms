@@ -85,7 +85,7 @@
   //   - Touched-aware error display (no error spam pre-blur)
   // ─────────────────────────────────────────────────────────────────
 
-  import { computed, ref } from 'vue'
+  import { computed, ref, watch } from 'vue'
   import { z } from 'zod'
   import { useForm, unset, isUnset } from 'attaform/zod'
   import type { FieldStateLeaf } from 'attaform'
@@ -296,17 +296,23 @@
     },
   })
 
-  // ─── Pickup → delivery one-shot copy ─────────────────────────────
-  // Fired on the "Same as pickup" checkbox @change: when the user
-  // ticks the box, snapshot pickup into delivery via the WHOLE-FORM
-  // callback variant of setValue — the callback receives the entire
-  // previous form value and returns the next, so cross-subform
-  // moves like this read naturally as one expression.
-  function onSameAsPickupChange() {
-    if (form.values.useSameDeliveryAddress) {
+  // ─── Pickup → delivery live mirror ───────────────────────────────
+  // The "Same as pickup" checkbox just flips a schema-modeled flag
+  // (form.register('useSameDeliveryAddress') below). This watch is
+  // the engine: while the flag is on, it copies pickup → delivery
+  // via the WHOLE-FORM callback variant of setValue. Cross-subform
+  // moves read naturally as one expression: receive the previous
+  // form value, return the next with delivery overridden. Pickup
+  // edits propagate live; un-ticking stops the sync without
+  // touching delivery, leaving the snapshot for the user to edit.
+  watch(
+    [() => form.values.useSameDeliveryAddress, () => form.values.pickup],
+    ([same]) => {
+      if (!same) return
       form.setValue((v) => ({ ...v, delivery: v.pickup }))
-    }
-  }
+    },
+    { deep: true, immediate: true }
+  )
 
   // SKU transform: uppercase + collapse spaces, applied per keystroke.
   const skuTransforms = [
@@ -532,7 +538,6 @@ ${'</'}script>
             <input
               v-register="form.register('useSameDeliveryAddress')"
               type="checkbox"
-              @change="onSameAsPickupChange"
             />
             Same as pickup address
           </label>

@@ -178,7 +178,7 @@ rebinds.
 run (debounced or cross-field) is in flight at this path. Whole-form
 `validate()` / `validateAsync()` calls drive `form.meta.validating`
 only — they don't flip per-field flags. See [field-level validation
-recipe](/docs/recipes/field-level-validation#per-field--formfieldspathvalidating).
+recipe](/docs/recipes/field-level-validation#per-field).
 
 ### Modifiers
 
@@ -203,7 +203,7 @@ directive's listener completes silently and the DOM keeps the user's
 input. The form state stays at its previous value. Field-level
 validation will surface a refinement error on the next render.
 
-### Custom assigners — `@update:registerValue`
+### Custom assigners
 
 Replaces the directive's default "DOM event → extract value →
 `rv.setValueWithInternalPath(value)`" bridge. The handler receives
@@ -247,7 +247,7 @@ The handler can be a top-level function outside `setup()` since
 `rv` is supplied by the directive. Multiple listeners on the same
 element receive `(value, rv)` in registration order.
 
-### Transforms — `register(path, { transforms: [...] })`
+### Transforms
 
 A pipeline of pure functions for normalizing user input. Composed
 left-to-right; runs inside the directive's assigner across every
@@ -449,7 +449,7 @@ brand.
 ## Other exports
 
 - `parseDottedPath(s)` — string → `Segment[]`
-- `assignKey` — `unique symbol` used to install a custom assigner on a v-register-bound element. For most cases prefer the `@update:registerValue` listener (see [Custom assigners](#custom-assigners--updateregistervalue)); reach for `assignKey` only when you need pre-mount installation (typically Web Components).
+- `assignKey` — `unique symbol` used to install a custom assigner on a v-register-bound element. For most cases prefer the `@update:registerValue` listener (see [Custom assigners](#custom-assigners)); reach for `assignKey` only when you need pre-mount installation (typically Web Components).
 - `isRegisterValue(x)` — type guard for the object `register` returns
 - `RegisterTransform` — `(value: unknown) => unknown` — type alias for entries in `register(path, { transforms: [...] })`. Generic-erased so a personal library of transforms works across any path type; see [Transforms](#transforms--registerpath--transforms-).
 - `ROOT_PATH` / `ROOT_PATH_KEY` — the empty path and its key

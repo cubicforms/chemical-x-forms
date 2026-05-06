@@ -12,6 +12,53 @@
 
   const props = defineProps<{ links?: TocLink[] }>()
 
+  // The TOC's job is navigation, not signature documentation. Heading
+  // text on API pages reads as `useForm<Form>({ schema, key, ... })` —
+  // useful as the page heading itself, but enough nested punctuation
+  // to render the sidebar unscannable. Strip the parameter
+  // parentheses (iteratively, so nested groups collapse cleanly) and
+  // the return-type annotation; the page heading below still shows
+  // the full signature for readers who landed via the link.
+  type TocDisplay = { readonly text: string; readonly isCode: boolean }
+
+  function tocDisplay(raw: string): TocDisplay {
+    let out = raw.replace(/\s*→.*$/, '')
+    let prev: string
+    do {
+      prev = out
+      out = out.replace(/\s*\([^()]*\)/g, '')
+    } while (out !== prev)
+    // Strip generic-parameter brackets too — `injectForm<Form>` reads
+    // as `injectForm` in the sidebar. Iterative for nested generics
+    // like `Foo<Bar<Baz>>`. The page heading still carries the
+    // generic for readers who landed via the link.
+    do {
+      prev = out
+      out = out.replace(/<[^<>]*>/g, '')
+    } while (out !== prev)
+    out = out.trim()
+    // Bare identifiers (post-strip names like `createAttaform`,
+    // `useForm`, `vRegister`) render in mono so the sidebar visually
+    // separates API references from section headings
+    // (`Wrapper-component primitives`, `Error codes`).
+    return { text: out, isCode: /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(out) }
+  }
+
+  type DecoratedTocLink = TocLink & {
+    readonly display: TocDisplay
+    readonly children?: DecoratedTocLink[]
+  }
+
+  function decorate(list: TocLink[] | undefined): DecoratedTocLink[] {
+    return (list ?? []).map((l) => ({
+      ...l,
+      display: tocDisplay(l.text),
+      children: l.children ? decorate(l.children) : undefined,
+    }))
+  }
+
+  const decoratedLinks = computed<DecoratedTocLink[]>(() => decorate(props.links))
+
   // Active anchor for scrollspy. IntersectionObserver fires when a
   // heading enters the "active band" defined by rootMargin — top
   // offset clears the sticky header (h-16 = 4rem) + a 1rem gutter,
@@ -85,11 +132,11 @@
 </script>
 
 <template>
-  <aside v-if="links && links.length" class="hidden shrink-0 xl:block xl:w-56">
+  <aside v-if="decoratedLinks.length" class="hidden shrink-0 xl:block xl:w-56">
     <nav class="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pb-8 pl-6">
       <h3 class="mb-3 text-sm font-semibold text-fg">On this page</h3>
       <ul>
-        <li v-for="link in links" :key="link.id">
+        <li v-for="link in decoratedLinks" :key="link.id">
           <a
             :href="`#${link.id}`"
             class="toc-item relative block py-1 pl-3 text-sm transition-[color,padding-left] duration-(--duration-fast) ease-(--ease-out-quart)"
@@ -99,7 +146,8 @@
                 : 'text-fg-muted hover:text-fg'
             "
           >
-            {{ link.text }}
+            <code v-if="link.display.isCode" class="font-mono">{{ link.display.text }}</code>
+            <template v-else>{{ link.display.text }}</template>
           </a>
           <ul v-if="link.children && link.children.length">
             <li v-for="sub in link.children" :key="sub.id">
@@ -112,7 +160,8 @@
                     : 'text-fg-subtle hover:text-fg'
                 "
               >
-                {{ sub.text }}
+                <code v-if="sub.display.isCode" class="font-mono">{{ sub.display.text }}</code>
+                <template v-else>{{ sub.display.text }}</template>
               </a>
             </li>
           </ul>

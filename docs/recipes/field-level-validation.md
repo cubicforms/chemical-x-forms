@@ -118,7 +118,7 @@ field-level run. Gate UI:
 <button :disabled="form.meta.validating">Submit</button>
 ```
 
-### Per-field — `form.fields.<path>.validating`
+### Per-field
 
 For a tighter signal next to a single async-validated input, read the
 per-field flag instead of the form-wide one:

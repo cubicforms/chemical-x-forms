@@ -275,12 +275,12 @@
   // paths AND no validation is currently in flight form-wide.
   // form.errorsAt(prefix) returns errors at the prefix and every
   // descendant in one call.
-  const STEP_PATHS: Record<1 | 2 | 3 | 4, readonly string[]> = {
+  const STEP_PATHS = {
     1: ['reference', 'pickup', 'delivery'],
     2: ['cargo'],
     3: ['service', 'insurance', 'desiredPickupDate', 'desiredDeliveryDate', 'notes'],
     4: [],
-  }
+  } as const
   const currentStepValid = computed(
     () =>
       !form.meta.validating &&
@@ -299,7 +299,11 @@
   // reshapes the entire cargo subtree to the variant defaults. Attaform
   // remembers per-variant state so flipping back restores prior values.
 
-  function setCargoType(type: 'dry' | 'refrigerated' | 'hazmat' | 'oversized') {
+  const CARGO_TYPES = ['dry', 'refrigerated', 'hazmat', 'oversized'] as const
+  const HAZARD_CLASSES = ['1', '2', '3', '4', '5', '6', '7', '8', '9'] as const
+  const SERVICE_MODES = ['truck', 'air', 'ocean'] as const
+
+  function setCargoType(type: (typeof CARGO_TYPES)[number]) {
     if (type === 'dry') form.setValue('cargo', { type, items: [], fragile: false })
     else if (type === 'refrigerated')
       form.setValue('cargo', { type, items: [], tempMinC: 2, tempMaxC: 8 })
@@ -321,7 +325,7 @@
       })
   }
 
-  function setServiceMode(mode: 'truck' | 'air' | 'ocean') {
+  function setServiceMode(mode: (typeof SERVICE_MODES)[number]) {
     if (mode === 'truck')
       form.setValue('service', { mode, truckType: 'box', liftgate: false })
     else if (mode === 'air')
@@ -364,11 +368,9 @@
       submitError.value = null
       const ok = await checkCapacity(totalKg.value)
       if (!ok) {
-        form.setFieldErrors([
+        form.setFormErrors([
           {
-            path: [],
             message: \`Today's capacity is exhausted (\${totalKg.value} kg). Try a smaller shipment or schedule for tomorrow.\`,
-            formKey: 'shipment',
             code: 'capacity-exceeded',
           },
         ])
@@ -522,12 +524,12 @@ ${'</'}script>
           <label>Cargo class</label>
           <div class="chip-row">
             <button
-              v-for="t in ['dry', 'refrigerated', 'hazmat', 'oversized']"
+              v-for="t in CARGO_TYPES"
               :key="t"
               type="button"
               class="chip"
               :class="{ active: form.values.cargo?.type === t }"
-              @click="setCargoType(t as any)"
+              @click="setCargoType(t)"
             >
               {{ t === 'dry' ? 'Dry goods'
                  : t === 'refrigerated' ? 'Refrigerated'
@@ -579,7 +581,7 @@ ${'</'}script>
             <div class="field" :class="fieldClasses(form.fields.cargo.hazardClass)">
               <label>Hazard class</label>
               <select v-register="form.register('cargo.hazardClass')">
-                <option v-for="c in ['1','2','3','4','5','6','7','8','9']" :key="c" :value="c">
+                <option v-for="c in HAZARD_CLASSES" :key="c" :value="c">
                   Class {{ c }}
                 </option>
               </select>
@@ -692,12 +694,12 @@ ${'</'}script>
           <label>Service mode</label>
           <div class="chip-row">
             <button
-              v-for="m in ['truck', 'air', 'ocean']"
+              v-for="m in SERVICE_MODES"
               :key="m"
               type="button"
               class="chip"
               :class="{ active: form.values.service?.mode === m }"
-              @click="setServiceMode(m as any)"
+              @click="setServiceMode(m)"
             >
               {{ m === 'truck' ? '🚚 Truck' : m === 'air' ? '✈️ Air' : '🚢 Ocean' }}
             </button>

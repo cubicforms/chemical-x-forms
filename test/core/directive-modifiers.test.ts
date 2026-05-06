@@ -3,7 +3,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DirectiveBinding } from 'vue'
-import { ref, type Ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createPersistOptInRegistry } from '../../src/runtime/core/persistence/opt-in-registry'
 import type { PathKey } from '../../src/runtime/core/paths'
@@ -57,7 +57,15 @@ function makeRegisterValue<T>(initial: T): {
   })
   const value: MutableMockRv<T> = {
     innerRef: innerRef as InternalRegisterValue<T>['innerRef'],
-    displayValue: ref('') as Readonly<Ref<string>>,
+    // Derive displayValue from innerRef so the mock matches the real
+    // RegisterValue's contract (the directive's beforeUpdate reads
+    // through displayValue). Doesn't model the blank/unset rule or
+    // lastTypedForm preference — tests that need those override
+    // displayValue explicitly.
+    displayValue: computed(() => {
+      const v = innerRef.value
+      return v == null ? '' : String(v)
+    }) as Readonly<Ref<string>>,
     markBlank: () => true,
     lastTypedForm: ref<string | null>(null),
     registerElement: register,

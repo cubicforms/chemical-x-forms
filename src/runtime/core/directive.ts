@@ -795,23 +795,33 @@ const vRegisterText: RegisterTextCustomDirective = {
   mounted(el, { value }) {
     if (!isRegisterValue(value)) return
 
-    const _val = value.innerRef.value
-    el.value = typeof _val === 'string' || typeof _val === 'number' ? `${_val}` : ''
+    // Read through `displayValue` rather than `innerRef`: it's the
+    // string projection that already honours `blankPaths` (returns
+    // `''` for a numeric leaf marked blank, even though storage
+    // holds the slim default `0`). Without this, the storage `0`
+    // round-trips to `'0'` here and the change handler at blur
+    // sees `el.value === '0'`, casts to 0, and writes-back through
+    // the assigner — wiping the blank flag and locking the user
+    // out of the empty display state.
+    el.value = value.displayValue.value
   },
-  beforeUpdate(el, { value, oldValue, modifiers: { lazy, trim, number } }, vnode) {
+  beforeUpdate(el, { value, oldValue, modifiers: { lazy, trim } }, vnode) {
     setAssignFunction(el, vnode, value)
     // Skip the el.value sync while the user is mid-IME-composition;
     // overwriting `el.value` would clobber the unresolved input.
     if ((el as { composing?: boolean }).composing === true) return
     if (!isRegisterValue(value)) return
 
-    const elValue =
-      (number === true || el.type === 'number') && !/^0\d/.test(el.value)
-        ? looseToNumber(el.value)
-        : el.value
-    const newValue = value.innerRef.value === null ? '' : value.innerRef.value
-
-    if (elValue === newValue) {
+    // `displayValue` is the canonical string view: it folds in the
+    // blank/unset rule (returns `''` for blank-marked numeric
+    // leaves) AND the typed-form preference (`lastTypedForm` so
+    // mid-typing `'1e2'` doesn't get clobbered by a sibling
+    // re-render). String comparison against the live DOM is honest:
+    // pre-fix this branch parsed `el.value` through `looseToNumber`
+    // and compared against raw storage, which paints `'0'` over a
+    // blank-empty DOM on every reactive update.
+    const target = value.displayValue.value
+    if (el.value === target) {
       return
     }
 
@@ -833,20 +843,12 @@ const vRegisterText: RegisterTextCustomDirective = {
       // Trim escape: same rationale — the trimmed-but-otherwise-equal
       // value is what we'd land on at blur anyway, so don't fight the
       // user's whitespace mid-typing.
-      if (trim === true && el.value.trim() === newValue) {
+      if (trim === true && el.value.trim() === target) {
         return
       }
     }
 
-    // Mirror Vue's `vModelText.beforeUpdate`: rely on the browser's
-    // implicit string coercion via the `el.value` setter, with a
-    // null/undefined → '' guard. Pre-fix this was
-    // `typeof newValue === 'string' ? newValue : ''`, which cleared
-    // the input whenever the post-coerce model was a number (e.g.
-    // a plain `<input type="text">` against `z.number()` with
-    // schema-driven coerce on). The defensive type-guard predates
-    // coerce and is now too narrow.
-    el.value = newValue == null ? '' : String(newValue)
+    el.value = target
   },
 }
 

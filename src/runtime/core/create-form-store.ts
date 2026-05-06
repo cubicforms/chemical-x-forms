@@ -10,7 +10,7 @@ import type {
 } from '../types/types-api'
 import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
 import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS } from './defaults'
-import { diffAndApply } from './diff-apply'
+import { applyChangedKeys, diffAndApply, structuralSnapshot, type Patch } from './diff-apply'
 import { AttaformErrorCode } from './error-codes'
 import {
   canonicalizePath,
@@ -660,7 +660,13 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   })
   const schemaInitialData = schemaResponse.data
 
-  const initialData: F = hydration !== undefined ? (hydration.form as F) : schemaInitialData
+  // Clone per instance so two forms sharing a schema (or one form
+  // re-mounted from the same schema cache) don't alias the same
+  // initial-data object. Without the clone, the in-place merge that
+  // `applyFormReplacement` runs on every setValue would reach across
+  // the alias and mutate sibling forms' state.
+  const initialData: F =
+    hydration !== undefined ? (hydration.form as F) : (structuralSnapshot(schemaInitialData) as F)
 
   const form = ref(initialData) as Ref<F>
 
@@ -715,7 +721,18 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // Value is a {segments, value} record so consumers iterating this Map
   // (dirty, resetField's container loop) don't need to `JSON.parse(key)`
   // to recover the canonical Path.
-  const originals = new Map<PathKey, OriginalsRecord>()
+  // Reactive: the dirty computed iterates this map AND accesses
+  // `form.value` per entry. With `applyFormReplacement` mutating
+  // `form.value` in place (so deep watches fire only for genuinely-
+  // changed paths), the form Ref's value-setter dep no longer fires
+  // for every write — so a plain Map here would leave the dirty
+  // computed stuck on stale deps when new originals are added (e.g.
+  // `append` introduces a new array index and seeds an originals
+  // entry for it). Wrapping in `reactive(new Map(...))` makes the
+  // Map's iteration / set / delete fire Vue's collection deps,
+  // picking up exactly the change that prompted the originals
+  // mutation.
+  const originals = reactive(new Map<PathKey, OriginalsRecord>()) as Map<PathKey, OriginalsRecord>
 
   // Blank bookkeeping. The reactive Set tracks paths whose
   // displayed state should be EMPTY even though storage holds a real
@@ -937,20 +954,39 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   function applyFormReplacement(next: F, meta?: WriteMeta): void {
     const prev = form.value
     if (Object.is(prev, next)) return
-    form.value = next
+    // Capture the diff before any mutation lands — bookkeeping below
+    // needs the per-leaf patches against the OLD shape.
     const now = new Date().toISOString()
+    const patches: Patch[] = []
     diffAndApply(prev, next, [], (patch) => {
+      patches.push(patch)
+    })
+    // Mutate `form.value` in place so Vue's deep-reactivity dependencies
+    // fire ONLY for paths that genuinely changed. A wholesale
+    // `form.value = next` would fire every deep watch (including
+    // watches on sub-trees that didn't change), which deadlocks the
+    // browser when a watcher reacts by writing back to the form (the
+    // canonical "same as pickup address" mirror pattern).
+    //
+    // On a top-level shape mismatch (object → array, etc.) fall back
+    // to wholesale replacement — that's the only case where in-place
+    // merging can't preserve existing reactive proxies anyway.
+    if (!applyChangedKeys(prev, next)) {
+      form.value = next
+    }
+    // Bookkeeping: per-leaf metadata bumped from the captured patches.
+    // Runtime-added paths (e.g. `append('posts', {...})` introducing a
+    // new array index) must compare against `undefined` for `dirty` —
+    // appearing IS a mutation. Only `reset()` rebaselines the originals
+    // map; this branch records absence-as-original so the first
+    // appearance is correctly seen as dirty.
+    for (const patch of patches) {
       const { key } = canonicalizePath(patch.path)
-      // Runtime-added paths (e.g. `append('posts', {...})` introducing a
-      // new array index) must compare against `undefined` for `dirty`
-      // — appearing IS a mutation. Only `reset()` rebaselines the
-      // originals map; this branch records absence-as-original so the
-      // first appearance is correctly seen as dirty.
       if (patch.kind === 'added' && !originals.has(key)) {
         originals.set(key, { segments: patch.path, value: undefined })
       }
       touchFieldRecord(key, patch.path, { updatedAt: now })
-    })
+    }
     // Notify any subscribed modules (persistence, undo/redo) — fire
     // after field bookkeeping so listeners see a fully-updated form.
     // Listener throws are isolated so one misbehaving subscriber
@@ -958,7 +994,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // intent (e.g. persist: true) to subscribers that filter on it.
     for (const listener of formChangeListeners) {
       try {
-        listener(next, meta)
+        listener(form.value, meta)
       } catch (err) {
         console.error('[attaform] onFormChange threw:', err)
       }

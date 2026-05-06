@@ -104,12 +104,24 @@ function walk(
   ) {
     return input
   }
+  // Reference stability: when an array's elements all walk to themselves
+  // (no unset substitutions, no schema-only keys synthesized), return the
+  // ORIGINAL `input` reference. Without this, a whole-form setValue with
+  // a structurally-unchanged subtree (e.g., the `pickup` half of
+  // `({ ...prev, delivery: prev.pickup })`) still produces a new clone of
+  // pickup, which then re-fires any deep watch on `form.values.pickup` —
+  // and a watcher that reacts by writing back to the form loops forever.
+  // Returning the original reference for unchanged subtrees keeps Vue's
+  // reactivity quiet on identity-equal slots.
   if (Array.isArray(input)) {
     const out = new Array(input.length)
+    let mutated = false
     for (let i = 0; i < input.length; i++) {
-      out[i] = walk(input[i], [...segments, i], schema, paths)
+      const walked = walk(input[i], [...segments, i], schema, paths)
+      out[i] = walked
+      if (walked !== input[i]) mutated = true
     }
-    return out
+    return mutated ? out : input
   }
   if (typeof input === 'object') {
     // Walk both user-supplied keys AND schema-only keys so unspecified
@@ -117,7 +129,8 @@ function walk(
     // object (e.g., `defaultValues: { user: { name: 'a' } }` against a
     // schema with `user.{name, age}` marks `user.age`).
     const slim = schema.getDefaultAtPath(segments)
-    const allKeys = new Set<string>(Object.keys(input as object))
+    const inputKeys = Object.keys(input as object)
+    const allKeys = new Set<string>(inputKeys)
     if (
       slim !== null &&
       slim !== undefined &&
@@ -131,10 +144,14 @@ function walk(
       for (const k of Object.keys(slim as object)) allKeys.add(k)
     }
     const out: Record<string, unknown> = {}
+    let mutated = allKeys.size !== inputKeys.length
     for (const key of allKeys) {
-      out[key] = walk((input as Record<string, unknown>)[key], [...segments, key], schema, paths)
+      const orig = (input as Record<string, unknown>)[key]
+      const walked = walk(orig, [...segments, key], schema, paths)
+      out[key] = walked
+      if (walked !== orig) mutated = true
     }
-    return out
+    return mutated ? out : input
   }
   return input
 }

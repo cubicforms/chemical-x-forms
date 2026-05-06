@@ -3,6 +3,7 @@ import type { HistoryConfig, ValidationError } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { DEFAULT_HISTORY_MAX_SNAPSHOTS } from './defaults'
+import { structuralSnapshot } from './diff-apply'
 import type { PathKey } from './paths'
 
 /**
@@ -75,12 +76,19 @@ export function createHistoryModule<F extends GenericForm>(
   let suppressNext = false
 
   function captureSnapshot(): HistorySnapshot<F> {
+    // Clone `form.value` so the snapshot is frozen at this moment.
+    // `applyFormReplacement` mutates `form.value` in place on every
+    // setValue (so deep-watch dependencies fire only for paths that
+    // genuinely changed); without the clone, every entry on the
+    // undo stack would alias the live form ref and silently follow
+    // subsequent mutations.
+    //
     // Vue's Ref<F> unwraps via UnwrapRef<F>; at runtime this is just F
     // for all plain object shapes, but the compile-time types differ.
     // Cast through unknown to reassure TS the snapshot shape matches
     // the generic parameter the caller bound.
     return {
-      form: state.form.value as unknown as F,
+      form: structuralSnapshot(state.form.value) as unknown as F,
       blankPaths: [...state.blankPaths],
       schemaErrors: [...state.schemaErrors.entries()].map(([k, v]) => [k, [...v]] as const),
       userErrors: [...state.userErrors.entries()].map(([k, v]) => [k, [...v]] as const),

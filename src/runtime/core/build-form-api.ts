@@ -12,6 +12,7 @@ import type {
 import type { DeepPartial, DefaultValuesShape, GenericForm } from '../types/types-core'
 import { __DEV__ } from './dev'
 import type { FormStore } from './create-form-store'
+import { structuralSnapshot } from './diff-apply'
 import { buildErrorsProxy } from './errors-proxy'
 import { buildFieldArrayApi } from './field-arrays'
 import { buildFieldStateProxy } from './field-state-proxy'
@@ -117,13 +118,18 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
 
   function setValueImpl(pathOrValue: unknown, maybeValue?: unknown): boolean {
     if (arguments.length === 1) {
-      // Whole-form: prev is the live form (already structurally
-      // complete under the runtime invariant). The consumer's RETURN
-      // value passes through mergeStructural so any gaps the consumer
-      // introduced (partial replacement) are filled from defaults.
+      // Whole-form: hand the consumer's callback a STABLE structural
+      // snapshot of the form, not the live reactive value. The form
+      // store mutates `form.value` in place on commit (so deep-watch
+      // dependencies fire only for paths that actually changed), so
+      // a callback that closes over `prev` would otherwise see its
+      // `prev` reference silently follow the post-commit state. The
+      // consumer's RETURN value passes through mergeStructural so any
+      // gaps the consumer introduced (partial replacement) are filled
+      // from defaults.
       const next =
         typeof pathOrValue === 'function'
-          ? (pathOrValue as (prev: unknown) => unknown)(state.form.value)
+          ? (pathOrValue as (prev: unknown) => unknown)(structuralSnapshot(state.form.value))
           : pathOrValue
       // Whole-form `unset` sentinels (consumer wrote `setValue(unset)`
       // or returned `unset` for some leaf in a function form) flow
@@ -163,8 +169,11 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     // Path-form callback: when the slot at `segments` is unpopulated,
     // hand the consumer the schema's default at that path instead of
     // `undefined` so `(prev) => prev.first.toUpperCase()` is safe.
-    // For populated slots, prev is the live value (consumer's intent
-    // is to update existing data, not reset to defaults).
+    // For populated slots, prev is the live value — and stable: the
+    // form store reassigns the changed first-segment of `form.value`
+    // on commit (so the OLD subtree, which `prev` may close over, is
+    // orphaned but unmutated). Consumers caching `prev` see frozen
+    // pre-commit state.
     let resolvedValue: unknown
     if (typeof maybeValue === 'function') {
       const current = state.getValueAtPath(segments)

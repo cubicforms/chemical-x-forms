@@ -9,9 +9,12 @@ import type {
   FlatPath,
   GenericForm,
   IsObjectOrArray,
+  IsUnion,
   JoinSegments,
+  KeyofUnion,
   NestedReadType,
   NestedType,
+  ValueOfUnion,
   WriteShape,
 } from './types-core'
 
@@ -1933,21 +1936,27 @@ export type FieldStateLeaf<Value = unknown> = {
  * "T extends primitive". The two stay in sync for typical schemas;
  * exotic adapter-defined leaf kinds (custom `Date`-like) may need
  * a runtime check (the runtime is authoritative).
+ *
+ * For discriminated-union containers the object branch uses
+ * `[T] extends [object]` (non-distributive) plus
+ * `KeyofUnion`/`ValueOfUnion` to merge variant key sets — so
+ * `form.fields.cargo.tempMinC` (refrigerated-only) is reachable
+ * regardless of the active variant, with the leaf typed as
+ * `FieldStateLeaf<number | undefined>`. Matches the runtime's stub
+ * `FieldStateView` for inactive-variant paths.
  */
-export type FieldStateMapEntry<T> = T extends
-  | string
-  | number
-  | boolean
-  | bigint
-  | symbol
-  | null
-  | undefined
-  | Date
+export type FieldStateMapEntry<T> = [T] extends [
+  string | number | boolean | bigint | symbol | null | undefined | Date,
+]
   ? FieldStateLeaf<T>
-  : T extends ReadonlyArray<infer U>
+  : [T] extends [ReadonlyArray<infer U>]
     ? { readonly [K: number]: FieldStateMapEntry<U> }
-    : T extends object
-      ? { readonly [K in keyof T]: FieldStateMapEntry<T[K]> }
+    : [T] extends [object]
+      ? [IsUnion<T>] extends [true]
+        ? {
+            readonly [K in KeyofUnion<T>]: FieldStateMapEntry<ValueOfUnion<T, K>>
+          }
+        : { readonly [K in keyof T]: FieldStateMapEntry<T[K]> }
       : FieldStateLeaf<T>
 
 /**
@@ -1970,9 +1979,11 @@ export type FieldStateMapEntry<T> = T extends
  * string as a single key. Use chained dot/bracket or the callable
  * form.
  */
-export type FieldStateMap<Form extends GenericForm> = {
-  readonly [K in keyof Form]: FieldStateMapEntry<Form[K]>
-} & {
+export type FieldStateMap<Form extends GenericForm> = ([IsUnion<Form>] extends [true]
+  ? {
+      readonly [K in KeyofUnion<Form>]: FieldStateMapEntry<ValueOfUnion<Form, K>>
+    }
+  : { readonly [K in keyof Form]: FieldStateMapEntry<Form[K]> }) & {
   (path: string): unknown
   /**
    * Tuple-segment form. Returns the typed `FieldStateMapEntry` for
@@ -2053,20 +2064,18 @@ export type FormErrorsSurface<Form> = ErrorsProxyShape<Form> & {
   (): FormErrorsSurface<Form>
 }
 
-type ErrorsProxyShape<T> = T extends
-  | string
-  | number
-  | boolean
-  | bigint
-  | symbol
-  | null
-  | undefined
-  | Date
+type ErrorsProxyShape<T> = [T] extends [
+  string | number | boolean | bigint | symbol | null | undefined | Date,
+]
   ? readonly ValidationError[] | undefined
-  : T extends ReadonlyArray<infer U>
+  : [T] extends [ReadonlyArray<infer U>]
     ? { readonly [K: number]: ErrorsProxyShape<U> }
-    : T extends object
-      ? { readonly [K in keyof T]: ErrorsProxyShape<T[K]> }
+    : [T] extends [object]
+      ? [IsUnion<T>] extends [true]
+        ? {
+            readonly [K in KeyofUnion<T>]: ErrorsProxyShape<ValueOfUnion<T, K>>
+          }
+        : { readonly [K in keyof T]: ErrorsProxyShape<T[K]> }
       : readonly ValidationError[] | undefined
 
 /**

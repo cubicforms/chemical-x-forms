@@ -1496,3 +1496,113 @@ describe('inactive-variant errors — filtered from form.errors, schemaErrors re
     expect(api.errors('notify.address')).toBeUndefined()
   })
 })
+
+/**
+ * Cargo 4-variant fixture for the discriminated-union "lift" — runtime
+ * smoke that the lifted types match the runtime's stub semantics for
+ * inactive-variant chained access. Mirrors the demo schema's shape
+ * (`type` discriminator with `dry | refrigerated | hazmat | oversized`)
+ * so a regression here would break the canonical demo flow.
+ */
+const cargoLiftSchema = z.object({
+  reference: z.string(),
+  cargo: z.discriminatedUnion('type', [
+    z.object({
+      type: z.literal('dry'),
+      items: z.array(z.object({ sku: z.string() })),
+      fragile: z.boolean(),
+    }),
+    z.object({
+      type: z.literal('refrigerated'),
+      items: z.array(z.object({ sku: z.string() })),
+      tempMinC: z.number().min(-30).max(20),
+      tempMaxC: z.number().min(-30).max(20),
+    }),
+  ]),
+})
+
+type CargoLiftApi = ReturnType<typeof useForm<typeof cargoLiftSchema>>
+
+function mountCargoLift(): { app: App; api: CargoLiftApi } {
+  const handle: { api?: CargoLiftApi } = {}
+  const App = defineComponent({
+    setup() {
+      handle.api = useForm({
+        schema: cargoLiftSchema,
+        key: 'cargo-lift',
+        defaultValues: {
+          reference: 'SHP-1',
+          cargo: { type: 'dry', items: [], fragile: false },
+        },
+      })
+      return () => h('div')
+    },
+  })
+  const app = createApp(App).use(createAttaform({ override: true }))
+  app.mount(document.createElement('div'))
+  return { app, api: handle.api as CargoLiftApi }
+}
+
+describe('discriminated-union lift — chained metadata-proxy access', () => {
+  const apps: App[] = []
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+  })
+
+  it('api.fields.cargo.tempMinC returns a stable stub on the inactive (dry) variant', () => {
+    const { app, api } = mountCargoLift()
+    apps.push(app)
+
+    // Active variant is `dry`; `tempMinC` lives only on `refrigerated`.
+    // The lifted FieldStateMapEntry makes this access type-safe; the
+    // runtime returns a stable FieldStateView stub so consumers don't
+    // need a guard before reading metadata.
+    const tempMin = api.fields.cargo.tempMinC
+    expect(tempMin.value).toBeUndefined()
+    expect(tempMin.errors).toEqual([])
+    expect(tempMin.valid).toBe(true)
+    expect(tempMin.validating).toBe(false)
+  })
+
+  it('api.fields.cargo.tempMinC.value re-evaluates after a variant switch', async () => {
+    const { app, api } = mountCargoLift()
+    apps.push(app)
+
+    api.setValue('cargo', { type: 'refrigerated', items: [], tempMinC: 4, tempMaxC: 8 })
+    await nextTick()
+    expect(api.fields.cargo.tempMinC.value).toBe(4)
+    expect(api.fields.cargo.tempMaxC.value).toBe(8)
+
+    // Switch back to dry — the lifted leaf collapses to the stub.
+    api.setValue('cargo', { type: 'dry', items: [], fragile: false })
+    await nextTick()
+    expect(api.fields.cargo.tempMinC.value).toBeUndefined()
+    expect(api.fields.cargo.fragile.value).toBe(false)
+  })
+
+  it('api.errors.cargo.tempMinC chain yields undefined when no errors are present', () => {
+    const { app, api } = mountCargoLift()
+    apps.push(app)
+    expect(api.errors.cargo.tempMinC).toBeUndefined()
+    expect(api.errors.cargo.fragile).toBeUndefined()
+  })
+
+  it('api.errors.cargo.tempMinC populates after a schema-violating write on the refrigerated variant', async () => {
+    const { app, api } = mountCargoLift()
+    apps.push(app)
+
+    api.setValue('cargo', { type: 'refrigerated', items: [], tempMinC: 4, tempMaxC: 8 })
+    await nextTick()
+
+    // -100 violates min(-30); drive validation explicitly so the leaf
+    // lights up regardless of debounce timing.
+    api.setValue('cargo.tempMinC', -100)
+    const result = await api.validateAsync()
+    expect(result.success).toBe(false)
+    await nextTick()
+
+    const errs = api.errors.cargo.tempMinC
+    expect(errs).toBeDefined()
+    expect(errs).toHaveLength(1)
+  })
+})

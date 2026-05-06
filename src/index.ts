@@ -130,9 +130,12 @@ export type {
   FlatPath,
   GenericForm,
   IsTuple,
+  IsUnion,
   JoinSegments,
+  KeyofUnion,
   NestedReadType,
   NestedType,
+  ValueOfUnion,
 } from './runtime/types/types-core'
 
 // Path primitives — exposed for consumers writing custom adapters that

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **Discriminated-union forms expose merged metadata proxies.**
+  `form.fields.X.Y` and `form.errors.X.Y` chained access now resolves
+  for variant-only keys regardless of which discriminant is active.
+  Reading `form.fields.cargo.tempMinC` (refrigerated-only) when the
+  active variant is `dry` types as `FieldStateLeaf<number | undefined>`
+  and resolves to a stable stub `FieldStateView` at runtime
+  (`value: undefined`, `errors: []`, `valid: true`). Reading
+  `form.errors.cargo.tempMinC` types as
+  `readonly ValidationError[] | undefined` and yields `undefined` when
+  no error is present at that path. Implementation: a "lift" in
+  `FieldStateMapEntry`, `FieldStateMap`, and `ErrorsProxyShape` that
+  merges variant key sets via two new utility types
+  (`KeyofUnion`, `ValueOfUnion`), gated by `IsUnion<T>` so single-
+  object schemas skip the merge entirely (zero perf cost on the
+  common case). Value-shape types (`form.values`, `defaultValues`,
+  `setValue` parameters) intentionally keep their existing
+  discriminated-union distribution so consumers can still pattern-
+  match on the runtime variant; the merged view of values is
+  available through `form.fields.X.Y.value` or `form.values('X.Y')`.
+
 - **Tuple-segment overload across path APIs.** New array-form
   overloads accept segments directly:
 

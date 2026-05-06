@@ -121,6 +121,43 @@ export type JoinSegments<
   : Acc
 
 /**
+ * `true` when `T` is a union (multiple members), `false` when it's a
+ * single type. Used to gate non-homomorphic mapped-type forms so
+ * single-object types retain their homomorphic `[K in keyof T]`
+ * lookup (preserving literal keys instead of widening to an index
+ * signature).
+ */
+export type IsUnion<T, U = T> = T extends T ? ([U] extends [T] ? false : true) : never
+
+/**
+ * Union of all keys across all members of `T`. For a single object
+ * type this equals `keyof T`; for a discriminated union `A | B`, it
+ * produces `keyof A | keyof B` (whereas naked `keyof (A | B)` would
+ * intersect to common keys only).
+ *
+ * Paired with `ValueOfUnion` to merge variant key sets in chained
+ * metadata proxies (`form.fields`, `form.errors`) so per-variant
+ * leaves are addressable through one chained-access shape, regardless
+ * of which discriminant is currently active.
+ */
+export type KeyofUnion<T> = T extends unknown ? keyof T : never
+
+/**
+ * Value at key `K` across union members of `T`. Members containing
+ * `K` contribute `T[K]`; members lacking `K` contribute `undefined`.
+ *
+ * The resulting union mirrors the runtime semantics of metadata
+ * proxies: chained access works at every union member, with the leaf
+ * carrying `T | undefined` to reflect that the key is absent in some
+ * variants and the runtime returns a stable stub there.
+ */
+export type ValueOfUnion<T, K extends PropertyKey> = T extends unknown
+  ? K extends keyof T
+    ? T[K]
+    : undefined
+  : never
+
+/**
  * Recursive `Partial` — every property at every depth is optional.
  * Used as the parameter type of `defaultValues` and `reset()` so
  * partial overrides at any nesting level are valid.

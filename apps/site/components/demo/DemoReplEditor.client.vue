@@ -465,7 +465,7 @@ ${'</'}script>
     <form class="form" @submit.prevent="onSubmit">
       <header class="form-header">
         <h1>Cargo shipment booking</h1>
-        <p>4 steps · drafts auto-save to this browser</p>
+        <p>4 steps · your manifest waits at the dock</p>
       </header>
 
       <!-- ─── Stepper ─── -->

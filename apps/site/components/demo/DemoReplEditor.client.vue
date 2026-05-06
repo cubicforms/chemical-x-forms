@@ -75,9 +75,8 @@
   //   - Enums (country, hazard class, container size, coverage)
   //   - Field arrays with min/max, undo/redo across mutations
   //   - Async field-level validation (postal-code lookup, SKU lookup)
-  //   - Async form-level refinement (capacity check on submit)
+  //   - Async aggregate validation (capacity check on cargo.items)
   //   - Transforms (SKU uppercase normalisation)
-  //   - Unset values (optional notes / permit number)
   //   - Persistence (drafts auto-saved to localStorage)
   //   - Multi-step navigation gated on per-step validity
   //   - meta.valid / field.valid for green/red field state
@@ -87,7 +86,8 @@
 
   import { computed, ref } from 'vue'
   import { z } from 'zod'
-  import { useForm, unset, isUnset } from 'attaform/zod'
+  import { useForm } from 'attaform/zod'
+  import type { FieldStateLeaf } from 'attaform'
 
   // ─── Mock async services ─────────────────────────────────────────
   // Real apps would hit a backend; here we fake out latency + a
@@ -119,8 +119,8 @@
     })
   }
 
-  // Form-level capacity check fired at submit. Pretends an over-3000
-  // total weight exceeds today's capacity.
+  // Aggregate capacity check, attached to cargo.items via .superRefine
+  // below. Pretends an over-3000 total weight exceeds today's capacity.
   function checkCapacity(totalKg: number): Promise<boolean> {
     return new Promise((resolve) => {
       setTimeout(() => resolve(totalKg <= 3000), 800)
@@ -153,16 +153,38 @@
     unitWeightKg: z.number().positive('Must be positive'),
   })
 
+  // Items array shared across cargo variants. The async .superRefine
+  // is the capacity check — runs whenever items change (debounced by
+  // the form's debounceMs), and handleSubmit awaits it before firing
+  // the success callback. The error attaches at this array's path
+  // (cargo.items), surfacing through cargoItemsArrayError below.
+  const lineItemArraySchema = z
+    .array(lineItemSchema)
+    .min(1, 'Add at least one line item')
+    .superRefine(async (items, ctx) => {
+      const totalKg = items.reduce(
+        (sum, it) => sum + it.quantity * it.unitWeightKg,
+        0
+      )
+      const ok = await checkCapacity(totalKg)
+      if (!ok) {
+        ctx.addIssue({
+          code: 'custom',
+          message: \`Today's capacity is exhausted (\${totalKg} kg). Try a smaller shipment or schedule for tomorrow.\`,
+        })
+      }
+    })
+
   const dryGoodsSchema = z.object({
     type: z.literal('dry'),
-    items: z.array(lineItemSchema).min(1, 'Add at least one line item'),
+    items: lineItemArraySchema,
     fragile: z.boolean(),
   })
 
   const refrigeratedSchema = z
     .object({
       type: z.literal('refrigerated'),
-      items: z.array(lineItemSchema).min(1, 'Add at least one line item'),
+      items: lineItemArraySchema,
       tempMinC: z.number().min(-30, 'Min -30°C').max(20, 'Max 20°C'),
       tempMaxC: z.number().min(-30, 'Min -30°C').max(20, 'Max 20°C'),
     })
@@ -173,7 +195,7 @@
 
   const hazmatSchema = z.object({
     type: z.literal('hazmat'),
-    items: z.array(lineItemSchema).min(1, 'Add at least one line item'),
+    items: lineItemArraySchema,
     unNumber: z.string().regex(/^UN\\d{4}$/, 'Format: UN1234'),
     hazardClass: z.enum(['1', '2', '3', '4', '5', '6', '7', '8', '9']),
     acknowledged: z.literal(true, { message: 'Acknowledge handling rules to continue' }),
@@ -181,7 +203,7 @@
 
   const oversizedSchema = z.object({
     type: z.literal('oversized'),
-    items: z.array(lineItemSchema).min(1, 'Add at least one line item'),
+    items: lineItemArraySchema,
     lengthCm: z.number().positive(),
     widthCm: z.number().positive(),
     heightCm: z.number().positive(),
@@ -358,25 +380,16 @@
   })
 
   // ─── Submit ──────────────────────────────────────────────────────
-  // handleSubmit awaits async refinements before invoking the callback
-  // — so we can pre-flight a capacity check, write a form-level error
-  // if it fails, and only fire onSubmit on success.
+  // handleSubmit awaits every async refinement (postal lookups, SKU
+  // checks, cargo capacity) before deciding success vs failure. The
+  // success callback is the victory lap — by the time it fires, the
+  // schema (including the async capacity check on cargo.items) has
+  // signed off on every value.
 
   const submitError = ref<string | null>(null)
   const onSubmit = form.handleSubmit(
-    async (values) => {
+    (values) => {
       submitError.value = null
-      const ok = await checkCapacity(totalKg.value)
-      if (!ok) {
-        form.setFormErrors([
-          {
-            message: \`Today's capacity is exhausted (\${totalKg.value} kg). Try a smaller shipment or schedule for tomorrow.\`,
-            code: 'capacity-exceeded',
-          },
-        ])
-        submitError.value = 'Capacity check failed.'
-        return
-      }
       alert('Booked!\\n\\n' + JSON.stringify(values, null, 2))
       form.reset()
       step.value = 1
@@ -397,7 +410,9 @@
   //   it's currently valid, red on visible errors, yellow while async.
   // - visibleError: only surface a leaf's first error after blur, so
   //   the user isn't yelled at mid-typing.
-  function fieldClasses(field: any) {
+  // FieldStateLeaf<unknown> accepts every leaf shape via covariance —
+  // the helpers only read metadata flags / errors, never .value.
+  function fieldClasses(field: FieldStateLeaf<unknown> | undefined) {
     if (!field) return {}
     return {
       valid: field.valid && (field.dirty || field.touched),
@@ -405,16 +420,17 @@
       validating: field.validating,
     }
   }
-  function visibleError(field: any): string {
+  function visibleError(field: FieldStateLeaf<unknown> | undefined): string {
     if (!field || !field.touched) return ''
     return field.errors[0]?.message ?? ''
   }
-  // Cargo.items ARRAY-level error (e.g. "Add at least one"). Lives at
-  // the container path, not a leaf — read via meta.errors filter.
+  // Cargo.items ARRAY-level error. Lives at the container path, not a
+  // leaf — read via the form.meta.errors filter. Covers both the synch
+  // min(1) "Add at least one line item" and the async capacity check
+  // attached via .superRefine on lineItemArraySchema above.
   const cargoItemsArrayError = computed<string>(() => {
     const e = form.meta.errors.find(
-      (e: any) =>
-        e.path.length === 2 && e.path[0] === 'cargo' && e.path[1] === 'items'
+      (e) => e.path.length === 2 && e.path[0] === 'cargo' && e.path[1] === 'items'
     )
     return e?.message ?? ''
   })

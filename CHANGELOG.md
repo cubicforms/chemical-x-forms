@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Sync-refinement errors seed at construction even when an async
+  sibling is present (zod-v4 adapter).** When a strict-mode form's
+  schema mixes sync and async refinements, sync-refinement
+  violations on the supplied `defaultValues` now seed into
+  `state.schemaErrors` immediately at construction. Pre-fix, the
+  presence of any async refine caused `safeParse` to throw, and
+  the catch swallowed every sync-refinement error along with the
+  async ones — sync verdicts only landed after the post-mount
+  async pass, so UI bound to construction-time errors ("fix N
+  errors" badges, the demo REPL stepper) flickered for a frame.
+  The catch now retries against a sync-only variant of the schema
+  via a new `stripAsyncChecks` helper that filters async refines
+  while preserving every sync refine (`.refine`, `.superRefine`,
+  built-in checks). Async-only verdicts stay deferred to the
+  post-mount async pass — that contract is unchanged. The zod-v3
+  adapter carries the same conceptual gap; lifting v3 to parity
+  requires a probe-and-parse detection scheme or a slim-schema
+  redesign and is tracked as a follow-up.
+
 - **Discriminated-union access extends to `form.values` and to
   every path-resolver type.** `form.values.cargo.permitNumber`
   (oversized-only) now types as `string | undefined` regardless of

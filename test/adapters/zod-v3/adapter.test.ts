@@ -186,6 +186,35 @@ describe('zod v3 adapter — getDefaultValues', () => {
     expect((result.data as { tags: unknown }).tags).toBeInstanceOf(Set)
     expect((result.data as { tags: Set<string> }).tags.size).toBe(0)
   })
+
+  it('async-refine schema regression: form mounts cleanly via lax fallback', () => {
+    // Pin: schemas containing async refines must not crash the
+    // adapter at construction. The sync `safeParse` throws on the
+    // async refine; the catch returns lax success so the form
+    // mounts. Async refinement verdicts surface from the post-mount
+    // async pass scheduled in `create-form-store` when
+    // `needsAsyncValidation()` returns true.
+    //
+    // (Parity note with v4: the v4 adapter additionally seeds
+    // sync-refinement errors at construction via
+    // `stripAsyncChecks`. v3's slim-schema strategy and runtime
+    // wrapper for `.refine` predicates make that lift a separate
+    // piece of work — see comment in `getDefaultValues`.)
+    const schema = z.object({
+      email: z
+        .string()
+        .email()
+        .refine(async () => Promise.resolve(true), 'taken'),
+    })
+    const adapter = zodAdapter(schema)('f')
+    const result = adapter.getDefaultValues({
+      useDefaultSchemaValues: false,
+      constraints: { email: 'a@b.com' },
+      strict: true,
+    })
+    expect(result.success).toBe(true)
+    expect(result.errors).toBeUndefined()
+  })
 })
 
 describe('zod v3 adapter — validateAtPath', () => {

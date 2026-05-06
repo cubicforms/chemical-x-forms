@@ -15,13 +15,23 @@ import {
   getTupleItems,
   getUnionOptions,
   hasChecks,
+  isAsyncCheck,
   kindOf,
   unwrapInner,
   unwrapLazy,
   unwrapPipe,
 } from './introspect'
 
-type StripConfigInternal = Pick<StripConfig, 'stripRefinements'>
+type StripConfigInternal = Pick<StripConfig, 'stripRefinements'> & {
+  /**
+   * Optional per-check predicate. When provided, only checks for which
+   * `shouldKeepCheck` returns `true` are re-applied to the rebuilt
+   * schema. `stripAsyncChecks` uses this to filter async refines while
+   * preserving every sync check verbatim. Absent → keep all checks
+   * (existing behaviour for `getSlimSchema` callers).
+   */
+  shouldKeepCheck?: (check: unknown) => boolean
+}
 
 /**
  * Re-apply the container-level checks from `original` to `rebuilt`.
@@ -45,7 +55,10 @@ function carryChecks<Rebuilt extends z.ZodType>(
 ): Rebuilt {
   if (stripConfig.stripRefinements === true) return rebuilt
   if (!hasChecks(original)) return rebuilt
-  const checks = getChecks(original)
+  const all = getChecks(original)
+  const checks =
+    stripConfig.shouldKeepCheck === undefined ? all : all.filter(stripConfig.shouldKeepCheck)
+  if (checks.length === 0) return rebuilt
   // `.check` on a concrete ZodType accepts instances of `$ZodCheck`
   // in Zod v4; the introspection helper returns exactly that shape,
   // so the cast is the boundary between adapter-internal typing and
@@ -169,6 +182,172 @@ export function stripRefinements(schema: z.ZodType): z.ZodType {
       throw new Error(`stripRefinements: unhandled ZodKind '${_exhaustive as string}'`)
     }
   }
+}
+
+/**
+ * Walk the schema tree and rebuild each node with async refinement
+ * checks removed. Sync `.refine` / `.superRefine` / built-in checks
+ * (`min`, `max`, `email`, etc.) are preserved; wrappers (`.optional()`,
+ * `.nullable()`, `.default(v)`, `.readonly()`, `.catch(v)`) are
+ * preserved structurally and recursed into.
+ *
+ * Used by the construction-time `getDefaultValues` fallback in the
+ * adapter: when `rootSchema.safeParse(data)` throws because the
+ * schema contains an async refine, retrying against
+ * `stripAsyncChecks(rootSchema)` surfaces every sync-refinement
+ * violation that the original parse would have collected if the
+ * async sibling weren't poisoning the sync entry point.
+ *
+ * Conceptually distinct from `stripRefinements` (drop-all, leaf
+ * operation) and `getSlimSchema` (configurable peeling for default
+ * derivation): this is a tree-walk that filters by sync/async at
+ * every check site.
+ */
+export function stripAsyncChecks(schema: z.ZodType): z.ZodType {
+  const config: StripConfigInternal = {
+    stripRefinements: false,
+    shouldKeepCheck: (c) => !isAsyncCheck(c),
+  }
+  // Cycle-detection set scoped to one strip pass. Mirrors the
+  // pattern in `containsAsyncRefine` (introspect.ts) — pathological
+  // `z.lazy(() => self)` schemas would otherwise infinite-recurse.
+  const seen = new WeakSet<object>()
+
+  function recurse(s: z.ZodType): z.ZodType {
+    // ZodType instances are always objects — the WeakSet add/check
+    // is unconditional once we're inside this function.
+    if (seen.has(s)) return s
+    seen.add(s)
+
+    const kind = kindOf(s)
+    switch (kind) {
+      case 'string':
+        return hasChecks(s) ? carryChecks(z.string(), s, config) : s
+      case 'number':
+        return hasChecks(s) ? carryChecks(z.number(), s, config) : s
+      case 'bigint':
+        return hasChecks(s) ? carryChecks(z.bigint(), s, config) : s
+
+      case 'array': {
+        const element = getArrayElement(s as z.ZodArray)
+        return carryChecks(z.array(recurse(element)), s, config)
+      }
+      case 'set': {
+        const valueType = getSetValueType(s)
+        return carryChecks(z.set(recurse(valueType)), s, config)
+      }
+      case 'tuple': {
+        const items = getTupleItems(s).map(recurse)
+        const rebuilt = z.tuple(
+          items as unknown as [z.ZodType, ...z.ZodType[]]
+        ) as unknown as z.ZodType
+        return carryChecks(rebuilt, s, config)
+      }
+      case 'object': {
+        const shape = getObjectShape(s as z.ZodObject)
+        const next: Record<string, z.ZodType> = {}
+        for (const [k, v] of Object.entries(shape)) {
+          next[k] = recurse(v as z.ZodType)
+        }
+        return carryChecks(z.object(next), s, config)
+      }
+      case 'record': {
+        const keyType = getRecordKeyType(s)
+        const valueType = recurse(getRecordValueType(s))
+        const rebuilt = z.record(keyType as z.ZodType<string | number | symbol>, valueType)
+        return carryChecks(rebuilt, s, config)
+      }
+      case 'union': {
+        const options = getUnionOptions(s).map(recurse)
+        const rebuilt = z.union(
+          options as unknown as readonly [z.ZodType, z.ZodType, ...z.ZodType[]]
+        )
+        return carryChecks(rebuilt, s, config)
+      }
+      case 'discriminated-union': {
+        const options = getDiscriminatedOptions(s).map((opt) => recurse(opt) as z.ZodObject)
+        const discriminator = getDiscriminator(s)
+        if (discriminator === undefined) return s
+        return z.discriminatedUnion(
+          discriminator,
+          options as unknown as readonly [z.ZodObject, ...z.ZodObject[]]
+        )
+      }
+
+      case 'optional': {
+        const inner = unwrapInner(s)
+        if (inner === undefined) return s
+        return (recurse(inner) as z.ZodType).optional()
+      }
+      case 'nullable': {
+        const inner = unwrapInner(s)
+        if (inner === undefined) return s
+        return (recurse(inner) as z.ZodType).nullable()
+      }
+      case 'default': {
+        const inner = unwrapInner(s)
+        if (inner === undefined) return s
+        return (recurse(inner) as z.ZodType).default(getDefaultValue(s) as never)
+      }
+      case 'readonly': {
+        const inner = unwrapInner(s)
+        if (inner === undefined) return s
+        return (recurse(inner) as z.ZodType).readonly()
+      }
+
+      case 'pipe':
+        // Pipes carry transforms whose output shape would change if
+        // we rebuilt them blindly; recursing through both halves of a
+        // pipe also requires both halves to be addressable, which
+        // `unwrapPipe` doesn't expose. If an async refine lives
+        // inside a pipe, its throw surfaces from the inner
+        // defensive catch in `getDefaultValues` — same observable
+        // behaviour as today's pre-fix catch path. Common-case sync
+        // siblings on flat object schemas are unaffected.
+        return s
+
+      case 'lazy': {
+        const inner = unwrapLazy(s)
+        if (inner === undefined) return s
+        const stripped = recurse(inner)
+        return z.lazy(() => stripped)
+      }
+      case 'intersection': {
+        const left = getIntersectionLeft(s)
+        const right = getIntersectionRight(s)
+        if (left === undefined || right === undefined) return s
+        return z.intersection(recurse(left), recurse(right))
+      }
+      case 'catch': {
+        const inner = unwrapInner(s)
+        if (inner === undefined) return s
+        return (recurse(inner) as z.ZodType).catch(getCatchDefault(s) as never)
+      }
+
+      // Leaves with no checks — pass through unchanged.
+      case 'boolean':
+      case 'date':
+      case 'enum':
+      case 'literal':
+      case 'null':
+      case 'undefined':
+      case 'any':
+      case 'unknown':
+      case 'nan':
+      case 'void':
+      case 'never':
+      case 'promise':
+      case 'custom':
+      case 'template-literal':
+        return s
+      default: {
+        const _exhaustive: never = kind
+        throw new Error(`stripAsyncChecks: unhandled ZodKind '${_exhaustive as string}'`)
+      }
+    }
+  }
+
+  return recurse(schema)
 }
 
 export type StripConfig = {

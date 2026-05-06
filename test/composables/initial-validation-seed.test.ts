@@ -314,6 +314,140 @@ describe('initial validation seed — async-refine schema', () => {
     expect(api.errors.email?.[0]?.message).toBe('taken')
   })
 
+  it('mixed sync+async refines: sync error seeds synchronously, async lands on next microtask', async () => {
+    // Regression: when a schema mixes sync and async refines and the
+    // SYNC refine fails on the supplied default, the sync error must
+    // seed at construction. Pre-fix, the construction-time
+    // `safeParse` threw on the async sibling and the catch swallowed
+    // both classes of error — sync verdicts only landed after the
+    // post-mount async pass. UI bound to construction-time errors
+    // ("fix N errors" badges, demo REPL stepper) missed the count
+    // for one frame.
+    //
+    // Fix: when sync `safeParse` throws on async refines, the adapter
+    // retries against a sync-only variant of the schema
+    // (`stripAsyncChecks`) so sync verdicts seed synchronously.
+    // Async-only verdicts stay deferred to the post-mount pass.
+    const mixedSchema = z.object({
+      word: z.string().refine((v) => v.length > 0, 'word required'),
+      email: z
+        .email()
+        .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
+    })
+    type MixedApi = ReturnType<typeof useForm<typeof mixedSchema>>
+    const handle: { api?: MixedApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: mixedSchema,
+          key: 'init-seed-mixed',
+          defaultValues: { word: '', email: 'taken@example.com' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    const api = handle.api
+    if (api === undefined) throw new Error('unreachable')
+
+    // Frame 1, no `await`: sync refine seeded directly. Async sibling's
+    // verdict is still in flight.
+    expect(api.errors.word?.[0]?.message).toBe('word required')
+    expect(api.errors.email).toBeUndefined()
+    expect(api.meta.valid).toBe(false)
+    expect(api.meta.errors.length).toBeGreaterThan(0)
+
+    // After microtasks settle: async refine error lands too. Sync
+    // error stays put.
+    const emailMessage = await waitFor(() => api.errors.email?.[0]?.message ?? null)
+    expect(emailMessage).toBe('That email is already registered.')
+    expect(api.errors.word?.[0]?.message).toBe('word required')
+    expect(api.meta.valid).toBe(false)
+  })
+
+  it('mixed sync+async refines: clean sync default does not seed, async still deferred', async () => {
+    // Symmetry with the failing-sync case: when the sync sibling's
+    // default is clean, no error seeds synchronously. The async
+    // sibling's verdict still lands on the post-mount pass — the
+    // sync-only retry just succeeded, so the catch path returns lax
+    // success (matching today's behaviour for pure-async schemas).
+    const mixedSchema = z.object({
+      word: z.string().refine((v) => v.length > 0, 'word required'),
+      email: z
+        .email()
+        .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
+    })
+    type MixedApi = ReturnType<typeof useForm<typeof mixedSchema>>
+    const handle: { api?: MixedApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: mixedSchema,
+          key: 'init-seed-mixed-clean',
+          defaultValues: { word: 'hello', email: 'taken@example.com' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    const api = handle.api
+    if (api === undefined) throw new Error('unreachable')
+
+    // Frame 1: sync portion is clean.
+    expect(api.errors.word).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
+
+    // Async sibling lands its verdict after microtasks.
+    const emailMessage = await waitFor(() => api.errors.email?.[0]?.message ?? null)
+    expect(emailMessage).toBe('That email is already registered.')
+    expect(api.errors.word).toBeUndefined()
+  })
+
+  it('mixed sync+async refines + lax mode: no construction-time seed at all', () => {
+    // Lax explicitly opts out of construction-time validation. The
+    // sync-only retry path is gated to strict mode (same gate as the
+    // existing strict parse branch), so lax forms continue to mount
+    // with a clean error state regardless of whether the sync sibling
+    // would have failed.
+    const mixedSchema = z.object({
+      word: z.string().refine((v) => v.length > 0, 'word required'),
+      email: z
+        .email()
+        .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
+    })
+    type MixedApi = ReturnType<typeof useForm<typeof mixedSchema>>
+    const handle: { api?: MixedApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: mixedSchema,
+          key: 'init-seed-mixed-lax',
+          strict: false,
+          defaultValues: { word: '', email: 'taken@example.com' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    const api = handle.api
+    if (api === undefined) throw new Error('unreachable')
+    expect(api.errors.word).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
+    expect(api.meta.valid).toBe(true)
+  })
+
   it('sync schema in strict mode lands errors synchronously and validating stays false', () => {
     // Detection's load-bearing invariant: sync schemas don't pay a
     // construction-time async pass. Errors don't flicker either way

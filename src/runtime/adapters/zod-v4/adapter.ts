@@ -33,6 +33,7 @@ import {
 } from './introspect'
 import { getNestedZodSchemasAtPath } from './path-walker'
 import { slimPrimitivesOf } from './slim-primitives'
+import { stripAsyncChecks } from './strip'
 
 /**
  * Zod v4 adapter — implements `AbstractSchema` against Zod v4's public
@@ -288,10 +289,41 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
               formKey,
             }
           } catch {
-            // Async-refine throw — fall through to the lax-mode return.
-            // The form mounts cleanly; the user can call `validateAsync()`
-            // after mount to surface async-refinement errors.
-            return { data, errors: undefined, success: true, formKey }
+            // Async-refine threw the sync parser. Retry against a
+            // sync-only variant of the schema so sync-refinement
+            // errors on the supplied defaults still seed at
+            // construction. Async-only errors stay deferred to the
+            // post-mount one-shot async validation that
+            // `create-form-store` schedules when
+            // `needsAsyncValidation()` is true (the contract here is
+            // sync, so async verdicts cannot land in this code path
+            // regardless).
+            try {
+              const syncOnly = stripAsyncChecks(rootSchema)
+              const syncResult = syncOnly.safeParse(data) as z.ZodSafeParseResult<Form>
+              if (syncResult.success) {
+                // Sync portion is clean; only async refines could
+                // fail. Mount cleanly and let the post-mount async
+                // pass surface those — same observable behaviour as
+                // the pre-fix catch path for schemas with no sync
+                // refines on their defaults.
+                return { data, errors: undefined, success: true, formKey }
+              }
+              return {
+                data,
+                errors: zodIssuesToValidationErrors(syncResult.error.issues, formKey),
+                success: false,
+                formKey,
+              }
+            } catch {
+              // Defensive floor — same as the pre-fix behaviour. The
+              // strip walker covers every ZodKind, but a future zod
+              // construct or a user-defined sync refine that itself
+              // throws would land here. Mount cleanly; the post-mount
+              // async pass is still the source of truth for any
+              // verdict the construction-time parse can't surface.
+              return { data, errors: undefined, success: true, formKey }
+            }
           }
         }
 

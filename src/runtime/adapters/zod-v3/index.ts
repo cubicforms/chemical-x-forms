@@ -144,6 +144,22 @@ export function zodAdapter<
         // Degrade gracefully: treat the schema as if it parsed cleanly,
         // so the form mounts. The first user mutation kicks off
         // `validateAtPath`, which uses `safeParseAsync`.
+        //
+        // Note on parity with the v4 adapter: v4 ships a sync-only
+        // retry path (`stripAsyncChecks`) so sync refinement errors
+        // on `defaultValues` still seed at construction even when an
+        // async sibling poisons the sync entry point. v3 carries the
+        // same conceptual bug, but its slim-schema strategy strips
+        // ALL `ZodEffects` wrappers at construction time and v3
+        // stores refinements in a wrapper whose sync-vs-async
+        // character can only be observed at parse time (not via
+        // static introspection — the wrapper itself is a regular
+        // function regardless of the user's predicate). Lifting v3
+        // to v4's seeding contract requires either a probe-and-parse
+        // detection scheme (with user-predicate side-effect risk) or
+        // a slim-schema redesign that preserves effects in strict
+        // mode. Both are larger work items than this fix targets and
+        // are tracked for follow-up.
         let parseResult: ReturnType<typeof slimSchema.safeParse>
         try {
           parseResult = slimSchema.safeParse(rawDefaultValues)

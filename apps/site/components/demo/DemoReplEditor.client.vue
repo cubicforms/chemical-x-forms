@@ -95,7 +95,7 @@
   // hardcoded valid set so the validation behaviour is observable.
 
   const KNOWN_POSTAL_PREFIXES = new Set([
-    '10', '11', '90', '94', '60', '20',           // US
+    '10', '11', '90', '94', '60', '20',            // US
     'M5', 'V6', 'H3',                              // CA (alphanumeric)
     '01', '20', '75',                              // EU-style
     'SW', 'EC', 'W1',                              // UK

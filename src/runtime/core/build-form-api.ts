@@ -31,7 +31,7 @@ import { enforceSensitiveCheck } from './persistence/sensitive-names'
 import { buildProcessForm } from './process-form'
 import { buildRegister } from './register-api'
 import { isUnset } from './unset'
-import { walkUnsetSentinels } from './unset-walker'
+import { substituteUnsetSentinels, walkUnsetSentinels } from './unset-walker'
 import { buildValuesProxy } from './values-proxy'
 
 export type BuildFormApiOptions = {
@@ -189,7 +189,37 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     } else {
       resolvedValue = maybeValue
     }
-    return state.setValueAtPath(segments, resolvedValue)
+    // Nested-unset pass. The leaf-level cases above (`maybeValue ===
+    // unset`, callback returned `unset`) are already done; what
+    // remains is values like `{ type: 'oversized', lengthCm: unset, … }`
+    // — the homepage REPL's discriminated-union Case B write. Without
+    // this scrub, the symbols flow into the slim-primitive gate, fail
+    // the kind check at the numeric leaf, and the whole write is
+    // rejected — leaving the form on the prior variant.
+    //
+    // The walker is reference-stable on subtrees with no substitutions,
+    // so the common case (no nested unsets) returns the same `resolvedValue`
+    // identity and produces an empty `paths` list — no extra writes.
+    const walked = substituteUnsetSentinels(
+      resolvedValue,
+      segments,
+      state.schema as unknown as Parameters<typeof substituteUnsetSentinels>[2]
+    )
+    const ok = state.setValueAtPath(segments, walked.cleanedValues)
+    if (!ok) return false
+    // Mark each substituted leaf blank. Re-write the slim default
+    // explicitly with `blank: true` so the gate hook adds the path
+    // to `blankPaths` (the variant reshape's `walkUnspecified` only
+    // auto-marks numeric leaves; this loop catches the
+    // string / boolean / bigint cases the consumer flagged blank).
+    for (const pathKey of walked.paths) {
+      const blankSegments = segmentsForPathKey(pathKey)
+      if (blankSegments === null) continue
+      state.setValueAtPath(blankSegments, state.schema.getDefaultAtPath(blankSegments), {
+        blank: true,
+      })
+    }
+    return true
   }
 
   // --- Error store API — leaf-aware drillable callable Proxy ---

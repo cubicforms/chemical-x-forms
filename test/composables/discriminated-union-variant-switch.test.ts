@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { z as zV3 } from 'zod-v3'
-import { useForm } from '../../src/zod'
+import { isUnset, unset, useForm } from '../../src/zod'
 import { useForm as useFormV3 } from '../../src/zod-v3'
 import { AttaformErrorCode } from '../../src/runtime/core/error-codes'
 import { createAttaform } from '../../src/runtime/core/plugin'
@@ -1604,5 +1604,138 @@ describe('discriminated-union lift — chained metadata-proxy access', () => {
     const errs = api.errors.cargo.tempMinC
     expect(errs).toBeDefined()
     expect(errs).toHaveLength(1)
+  })
+})
+
+/**
+ * Whole-union Case B writes carrying `unset` sentinels in the
+ * consumer-supplied object — the homepage REPL flow. The demo's
+ * `setCargoType('oversized')` calls
+ *
+ *   form.setValue('cargo', {
+ *     type: 'oversized',
+ *     items: [],
+ *     lengthCm: unset, widthCm: unset, heightCm: unset,
+ *     permitNumber: unset,
+ *   })
+ *
+ * after a prior switch into a different variant. The construction-
+ * time `walkUnsetSentinels` only scrubs `defaultValues`; later
+ * setValue path-form writes were forwarded straight into the
+ * variant reshape, so the symbols spread into `finalValue` next to
+ * the discriminator and reached storage. Once the next read tried
+ * to operate on a Symbol-valued leaf, the active-variant branch in
+ * the template stopped resolving and the UI froze on the previous
+ * variant's body.
+ */
+describe('discriminated-union variant switch — whole-union write with unset sentinels', () => {
+  const cargoSchema = z.object({
+    cargo: z.discriminatedUnion('type', [
+      z.object({
+        type: z.literal('dry'),
+        fragile: z.boolean(),
+      }),
+      z.object({
+        type: z.literal('hazmat'),
+        unNumber: z.string(),
+        acknowledged: z.boolean(),
+      }),
+      z.object({
+        type: z.literal('oversized'),
+        lengthCm: z.number().positive(),
+        widthCm: z.number().positive(),
+        heightCm: z.number().positive(),
+        permitNumber: z.string().optional(),
+      }),
+    ]),
+  })
+  type CargoApi = Omit<UseFormReturnType<z.output<typeof cargoSchema>>, 'setValue'> & {
+    setValue: (path: string, value: unknown) => boolean
+    values: { cargo: { type: string } & Record<string, unknown> }
+  }
+
+  const apps: App[] = []
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+  })
+
+  function mountCargo(): CargoApi {
+    const handle: { api?: CargoApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: cargoSchema,
+          key: `du-unset-case-b-${Math.random().toString(36).slice(2)}`,
+          defaultValues: { cargo: { type: 'dry', fragile: false } },
+        }) as unknown as CargoApi
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform({ override: true }))
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    return handle.api as CargoApi
+  }
+
+  it('switches dry → hazmat → oversized when the oversized write carries unset sentinels', async () => {
+    const api = mountCargo()
+
+    api.setValue('cargo', { type: 'hazmat', unNumber: 'UN0000', acknowledged: false })
+    await nextTick()
+    expect(api.values.cargo.type).toBe('hazmat')
+
+    api.setValue('cargo', {
+      type: 'oversized',
+      lengthCm: unset,
+      widthCm: unset,
+      heightCm: unset,
+      permitNumber: unset,
+    })
+    await nextTick()
+
+    expect(api.values.cargo.type).toBe('oversized')
+  })
+
+  it('scrubs unset sentinels out of storage on a Case B write', async () => {
+    const api = mountCargo()
+
+    api.setValue('cargo', {
+      type: 'oversized',
+      lengthCm: unset,
+      widthCm: unset,
+      heightCm: unset,
+      permitNumber: unset,
+    })
+    await nextTick()
+
+    // Storage holds the schema's slim defaults — never raw symbols.
+    // Without this gate, `JSON.stringify(form.values())` (the demo's
+    // review pane) would silently drop these leaves and persistence
+    // would fail to round-trip.
+    expect(isUnset(api.values.cargo.lengthCm)).toBe(false)
+    expect(isUnset(api.values.cargo.widthCm)).toBe(false)
+    expect(isUnset(api.values.cargo.heightCm)).toBe(false)
+    expect(isUnset(api.values.cargo.permitNumber)).toBe(false)
+    expect(typeof api.values.cargo.lengthCm).toBe('number')
+    expect(typeof api.values.cargo.widthCm).toBe('number')
+    expect(typeof api.values.cargo.heightCm).toBe('number')
+  })
+
+  it('marks the unset-flagged leaves blank so display stays empty', async () => {
+    const api = mountCargo()
+
+    api.setValue('cargo', {
+      type: 'oversized',
+      lengthCm: unset,
+      widthCm: unset,
+      heightCm: unset,
+      permitNumber: unset,
+    })
+    await nextTick()
+
+    expect(api.fields.cargo.lengthCm.blank).toBe(true)
+    expect(api.fields.cargo.widthCm.blank).toBe(true)
+    expect(api.fields.cargo.heightCm.blank).toBe(true)
+    expect(api.fields.cargo.permitNumber.blank).toBe(true)
   })
 })

@@ -68,21 +68,11 @@
   // form structure without parsing inline declarations.
   const appCode = `<${'script'} setup lang="ts">
   // ─────────────────────────────────────────────────────────────────
-  // Cargo shipment booking — a stress test for Attaform.
-  //
-  // Exercises (in roughly this order):
-  //   - Discriminated unions (cargo class, service mode)
-  //   - Enums (country, hazard class, container size, coverage)
-  //   - Field arrays with min/max, undo/redo across mutations
-  //   - Async field-level validation (postal-code lookup, SKU lookup)
-  //   - Async aggregate validation (capacity check on cargo.items)
-  //   - Transforms (SKU uppercase normalisation)
-  //   - Unset sentinel for optional fields (notes, permit number)
-  //   - Persistence (drafts auto-saved to localStorage)
-  //   - Multi-step navigation gated on per-step validity
-  //   - meta.valid / field.valid for green/red field state
-  //   - meta.validating / field.validating for per-field "Checking…"
-  //   - Touched-aware error display (no error spam pre-blur)
+  // Cargo shipment booking — a stress test for Attaform. Exercises:
+  // discriminated unions, enums, field arrays, async field + aggregate
+  // validation, transforms, the unset sentinel, persistence, multi-step
+  // navigation, meta + field valid/validating flags, and touched-aware
+  // error display.
   // ─────────────────────────────────────────────────────────────────
 
   import { computed, nextTick, ref, watch } from 'vue'
@@ -91,9 +81,6 @@
   import type { FieldStateLeaf } from 'attaform'
 
   // ─── Mock async services ─────────────────────────────────────────
-  // Real apps would hit a backend; here we fake out latency + a
-  // hardcoded valid set so the validation behaviour is observable.
-
   const KNOWN_POSTAL_PREFIXES = new Set([
     '10', '11', '90', '94', '60', '20',            // US
     'M5', 'V6', 'H3',                              // CA (alphanumeric)
@@ -120,8 +107,7 @@
     })
   }
 
-  // Aggregate capacity check, attached to cargo.items via .superRefine
-  // below. Pretends an over-3000 total weight exceeds today's capacity.
+  // Aggregate capacity check — wired to cargo.items via .superRefine.
   function checkCapacity(totalKg: number): Promise<boolean> {
     return new Promise((resolve) => {
       setTimeout(() => resolve(totalKg <= 3000), 800)
@@ -129,8 +115,11 @@
   }
 
   // ─── Schemas ─────────────────────────────────────────────────────
-
   const COUNTRIES = ['US', 'CA', 'MX', 'GB', 'DE', 'FR', 'JP', 'CN', 'AU'] as const
+  const HAZARD_CLASSES = ['1', '2', '3', '4', '5', '6', '7', '8', '9'] as const
+  const TRUCK_TYPES = ['box', 'flatbed', 'reefer', 'tanker'] as const
+  const CONTAINER_SIZES = ['20FT', '40FT', '40FTHC', '45FTHC'] as const
+  const COVERAGES = ['none', 'basic', 'full'] as const
 
   const addressSchema = z.object({
     line1: z.string().min(1, 'Required'),
@@ -154,15 +143,11 @@
     unitWeightKg: z.number().positive('Must be positive'),
   })
 
-  // Manifest array, one per shipment. Lifted out of the cargo
-  // discriminated union so a "dry → hazmat" reclassification keeps
-  // whatever the user already typed; if items lived inside each
-  // variant, the variant reshape would reset items: [] every time
-  // the cargo class changed. The async .superRefine is the capacity
-  // check — runs whenever items change (debounced by the form's
-  // debounceMs), and handleSubmit awaits it before firing the
-  // success callback. The error attaches at this array's path
-  // (cargo.items), surfacing through cargoItemsArrayError below.
+  // Manifest array — lifted out of the cargo discriminated union so
+  // "dry → hazmat" reclassification keeps whatever items the user
+  // already typed instead of resetting items: [] on each variant
+  // reshape. The async .superRefine attaches the capacity error at
+  // this array's path (cargo.items), surfaced via cargoItemsArrayError.
   const lineItemArraySchema = z
     .array(lineItemSchema)
     .min(1, 'Add at least one line item')
@@ -180,9 +165,6 @@
       }
     })
 
-  // Variant-detail schemas hold ONLY the fields that differ by cargo
-  // class (the union's payload). Shared fields (items) live one level
-  // up at cargo.items so they aren't part of the variant reshape.
   const dryDetailsSchema = z.object({
     type: z.literal('dry'),
     fragile: z.boolean(),
@@ -202,7 +184,7 @@
   const hazmatDetailsSchema = z.object({
     type: z.literal('hazmat'),
     unNumber: z.string().regex(/^UN\\d{4}$/, 'Format: UN1234'),
-    hazardClass: z.enum(['1', '2', '3', '4', '5', '6', '7', '8', '9']),
+    hazardClass: z.enum(HAZARD_CLASSES),
     acknowledged: z.literal(true, { message: 'Acknowledge handling rules to continue' }),
   })
 
@@ -226,7 +208,7 @@
 
   const truckServiceSchema = z.object({
     mode: z.literal('truck'),
-    truckType: z.enum(['box', 'flatbed', 'reefer', 'tanker']),
+    truckType: z.enum(TRUCK_TYPES),
     liftgate: z.boolean(),
   })
 
@@ -239,7 +221,7 @@
   const oceanServiceSchema = z.object({
     mode: z.literal('ocean'),
     vessel: z.string().min(2, 'Required'),
-    containerSize: z.enum(['20FT', '40FT', '40FTHC', '45FTHC']),
+    containerSize: z.enum(CONTAINER_SIZES),
   })
 
   const serviceSchema = z.discriminatedUnion('mode', [
@@ -252,11 +234,9 @@
     reference: z.string().regex(/^SHP-\\d{6}$/, 'Format: SHP-123456'),
     pickup: addressSchema,
     delivery: addressSchema,
-    // When true, delivery mirrors pickup — see the watch below that
-    // calls form.setValue('delivery', () => ({ ...form.values.pickup }))
-    // to keep the two subforms in sync. Modeling the toggle in the
-    // schema (instead of a component-local ref) means it's persisted
-    // via the form's autosave and restored on reload.
+    // Schema-modeled toggle so the flag is persisted + restored
+    // alongside the rest of the draft. The watch below keeps
+    // delivery in sync with pickup whenever it's true.
     useSameDeliveryAddress: z.boolean(),
     cargo: cargoSchema,
     service: serviceSchema,
@@ -264,17 +244,12 @@
     desiredDeliveryDate: z.string().min(1, 'Required'),
     insurance: z.object({
       declaredValueUSD: z.number().min(0, 'Cannot be negative'),
-      coverage: z.enum(['none', 'basic', 'full']),
+      coverage: z.enum(COVERAGES),
     }),
     notes: z.string().max(500, 'Max 500 chars').optional(),
   })
 
-  // ─── Form composable ─────────────────────────────────────────────
-  // - persist: 'local' → drafts survive a page refresh.
-  // - history → undo / redo across cargo / service mutations.
-  // - debounceMs: 200 → coalesces rapid keystrokes into one async run.
-  // - validateOn: 'change' (default) → live errors as the user types.
-
+  // ─── Form ────────────────────────────────────────────────────────
   const form = useForm({
     schema,
     key: 'shipment',
@@ -286,31 +261,23 @@
       reference: 'SHP-100001',
       cargo: { items: [], details: { type: 'dry', fragile: false } },
       service: { mode: 'truck', truckType: 'box', liftgate: false },
-      // declaredValueUSD starts unset rather than 0 — declaring $0
-      // explicitly is a meaningful choice ("self-insured / no coverage
-      // value"), so the input shows empty until the user commits.
+      // unset = "show empty until the user commits a value". $0
+      // declared insurance is a meaningful choice, so we don't paint
+      // it until they type it.
       insurance: { declaredValueUSD: unset, coverage: 'basic' },
       pickup: { country: 'US' },
       delivery: { country: 'US' },
       useSameDeliveryAddress: false,
-      // Optional fields start displayed-empty AND marked-blank: the
-      // unset sentinel distinguishes "the user deliberately left this
-      // empty" from "the user hasn't touched it yet". Live blank state
-      // shows up under form.fields.notes.blank — typing into the field
-      // clears the unset marker automatically.
+      // unset on an optional string keeps "untouched" distinguishable
+      // from "intentionally empty". Watch form.fields.notes.blank.
       notes: unset,
     },
   })
 
   // ─── Pickup → delivery live mirror ───────────────────────────────
-  // The "Same as pickup" checkbox just flips a schema-modeled flag
-  // (form.register('useSameDeliveryAddress') below). This watch is
-  // the engine: while the flag is on, it copies pickup → delivery
-  // via the WHOLE-FORM callback variant of setValue. Cross-subform
-  // moves read naturally as one expression: receive the previous
-  // form value, return the next with delivery overridden. Pickup
-  // edits propagate live; un-ticking stops the sync without
-  // touching delivery, leaving the snapshot for the user to edit.
+  // While the flag is on, copy pickup → delivery via the whole-form
+  // callback variant of setValue. Un-ticking leaves the snapshot in
+  // place for the user to edit.
   watch(
     [() => form.values.useSameDeliveryAddress, () => form.values.pickup],
     ([same]) => {
@@ -320,7 +287,6 @@
     { deep: true, immediate: true }
   )
 
-  // SKU transform: uppercase + collapse spaces, applied per keystroke.
   const skuTransforms = [
     (raw: unknown) => (typeof raw === 'string' ? raw.toUpperCase().replace(/\\s+/g, '') : raw),
   ]
@@ -332,22 +298,18 @@
     { id: 3, title: 'Service & insurance' },
     { id: 4, title: 'Review & submit' },
   ] as const
-  const step = ref<1 | 2 | 3 | 4>(1)
+  type StepId = (typeof STEPS)[number]['id']
+  const step = ref<StepId>(1)
 
-  // A step is "done" when none of its top-level paths carry an error
-  // AND none of those paths' subtrees have a validation in flight.
-  // form.isValid(paths) handles both checks natively: scoped to the
-  // step's prefixes, so an unrelated debounce in another step
-  // doesn't block this step's green state. Step 4 owns no fields
-  // (it's the review/submit summary), so it's never independently
-  // "done" — its completion is the submit, not a validity check.
+  // Step 4 owns no fields, so it's never independently "done" — its
+  // completion is the submit itself, not a validity check.
   const STEP_PATHS = {
     1: ['reference', 'pickup', 'delivery'],
     2: ['cargo'],
     3: ['service', 'insurance', 'desiredPickupDate', 'desiredDeliveryDate', 'notes'],
     4: [],
   } as const
-  function isStepValid(id: 1 | 2 | 3 | 4): boolean {
+  function isStepValid(id: StepId) {
     const paths = STEP_PATHS[id]
     if (paths.length === 0) return false
     return form.isValid(paths)
@@ -355,83 +317,77 @@
   const currentStepValid = computed(() => isStepValid(step.value))
 
   function goNext() {
-    if (step.value < 4) step.value = (step.value + 1) as 1 | 2 | 3 | 4
+    if (step.value < 4) step.value = (step.value + 1) as StepId
   }
   function goBack() {
-    if (step.value > 1) step.value = (step.value - 1) as 1 | 2 | 3 | 4
+    if (step.value > 1) step.value = (step.value - 1) as StepId
   }
 
   // ─── Error summary (review step) ────────────────────────────────
-  // Group form.meta.errors by their top-level segment so the Review
-  // step renders one panel per logical section (Pickup address /
-  // Cargo / Service / …) instead of a flat list of dotted paths.
-  // Each row is clickable — switches \`step.value\` to the step that
-  // owns the path so the user lands on the right page in one tap.
-  // (No focus-on-field yet: would need a registry hook on v-register
-  // to map path → bound element. Worth adding to the library; for
-  // now the visual error state on the field is enough of a target.)
-  const ROOT_LABELS: Record<string, string> = {
-    reference: 'Reference',
-    pickup: 'Pickup address',
-    delivery: 'Delivery address',
-    cargo: 'Cargo',
-    service: 'Service',
-    insurance: 'Insurance',
-    desiredPickupDate: 'Pickup date',
-    desiredDeliveryDate: 'Delivery date',
-    notes: 'Notes',
-  }
-  const LEAF_LABELS: Record<string, string> = {
-    line1: 'Line 1',
-    line2: 'Line 2',
-    city: 'City',
-    region: 'Region',
-    postalCode: 'Postal code',
-    country: 'Country',
-    declaredValueUSD: 'Declared value',
-    coverage: 'Coverage',
-    carrier: 'Carrier',
-    mode: 'Mode',
-    items: 'Line items',
-    fragile: 'Fragile',
-    tempMinC: 'Min temperature',
-    tempMaxC: 'Max temperature',
-    unNumber: 'UN number',
-    hazardClass: 'Hazard class',
-    acknowledged: 'Hazmat acknowledgement',
-    lengthCm: 'Length',
-    widthCm: 'Width',
-    heightCm: 'Height',
-    permitNumber: 'Permit number',
-    sku: 'SKU',
-    description: 'Description',
-    quantity: 'Quantity',
-    type: 'Type',
-  }
+  // Group form.meta.errors by top-level segment so the Review step
+  // renders one panel per section. Each row jumps to the owning step.
+  const ROOT_LABELS = new Map([
+    ['reference', 'Reference'],
+    ['pickup', 'Pickup address'],
+    ['delivery', 'Delivery address'],
+    ['cargo', 'Cargo'],
+    ['service', 'Service'],
+    ['insurance', 'Insurance'],
+    ['desiredPickupDate', 'Pickup date'],
+    ['desiredDeliveryDate', 'Delivery date'],
+    ['notes', 'Notes'],
+  ])
+  const LEAF_LABELS = new Map([
+    ['line1', 'Line 1'],
+    ['line2', 'Line 2'],
+    ['city', 'City'],
+    ['region', 'Region'],
+    ['postalCode', 'Postal code'],
+    ['country', 'Country'],
+    ['declaredValueUSD', 'Declared value'],
+    ['coverage', 'Coverage'],
+    ['carrier', 'Carrier'],
+    ['mode', 'Mode'],
+    ['items', 'Line items'],
+    ['fragile', 'Fragile'],
+    ['tempMinC', 'Min temperature'],
+    ['tempMaxC', 'Max temperature'],
+    ['unNumber', 'UN number'],
+    ['hazardClass', 'Hazard class'],
+    ['acknowledged', 'Hazmat acknowledgement'],
+    ['lengthCm', 'Length'],
+    ['widthCm', 'Width'],
+    ['heightCm', 'Height'],
+    ['permitNumber', 'Permit number'],
+    ['sku', 'SKU'],
+    ['description', 'Description'],
+    ['quantity', 'Quantity'],
+    ['type', 'Type'],
+  ])
   type ErrorGroup = {
     rootKey: string
     rootLabel: string
     items: { leafLabel: string | null; message: string; path: ReadonlyArray<string | number> }[]
   }
-  const groupedErrors = computed<ErrorGroup[]>(() => {
+  const groupedErrors = computed(() => {
     const groups = new Map<string, ErrorGroup>()
     for (const e of form.meta.errors) {
       const root = String(e.path[0] ?? '(root)')
       let group = groups.get(root)
       if (!group) {
-        group = { rootKey: root, rootLabel: ROOT_LABELS[root] ?? root, items: [] }
+        group = { rootKey: root, rootLabel: ROOT_LABELS.get(root) ?? root, items: [] }
         groups.set(root, group)
       }
       let leaf: string | null = null
       if (e.path.length > 1) {
         const leafKey = String(e.path[e.path.length - 1])
-        leaf = LEAF_LABELS[leafKey] ?? leafKey
+        leaf = LEAF_LABELS.get(leafKey) ?? leafKey
       }
       group.items.push({ leafLabel: leaf, message: e.message, path: e.path })
     }
     return [...groups.values()]
   })
-  function pathToStep(path: ReadonlyArray<string | number>): 1 | 2 | 3 | 4 {
+  function pathToStep(path: ReadonlyArray<string | number>) {
     const root = String(path[0] ?? '')
     for (const id of [1, 2, 3] as const) {
       if ((STEP_PATHS[id] as ReadonlyArray<string>).includes(root)) return id
@@ -440,10 +396,7 @@
   }
   function goToError(path: ReadonlyArray<string | number>) {
     step.value = pathToStep(path)
-    // Walk the fields proxy with the dynamic path and focus the
-    // first registered element. nextTick lets v-show paint the
-    // newly-active step body so the input is in the document tree
-    // by the time we focus.
+    // nextTick so v-show paints the active step body before we focus.
     nextTick(() => {
       let view: unknown = form.fields
       for (const seg of path) {
@@ -456,17 +409,43 @@
   }
 
   // ─── Cargo / service variant switching ───────────────────────────
-  // Write the discriminator and let attaform reshape. Each switch
-  // snapshots the outgoing variant's typed state into per-form
-  // variant memory (rememberVariants is on by default), so flipping
-  // back restores what the user had typed — not a freshly-defaulted
-  // shell. Numeric leaves of the activated variant auto-mark blank
-  // (storage / display divergence rule), so dimension inputs render
-  // empty until the user types.
-
+  // Write the discriminator; attaform reshapes. rememberVariants
+  // (on by default) restores the prior variant's typed state on
+  // switch-back instead of a freshly-defaulted shell.
   const CARGO_TYPES = ['dry', 'refrigerated', 'hazmat', 'oversized'] as const
-  const HAZARD_CLASSES = ['1', '2', '3', '4', '5', '6', '7', '8', '9'] as const
   const SERVICE_MODES = ['truck', 'air', 'ocean'] as const
+
+  const CARGO_LABELS = {
+    dry: 'Dry goods',
+    refrigerated: 'Refrigerated',
+    hazmat: 'Hazmat',
+    oversized: 'Oversized',
+  }
+  const SERVICE_LABELS = {
+    truck: '🚚 Truck',
+    air: '✈️ Air',
+    ocean: '🚢 Ocean',
+  }
+  const TRUCK_TYPE_LABELS = {
+    box: 'Box',
+    flatbed: 'Flatbed',
+    reefer: 'Reefer',
+    tanker: 'Tanker',
+  }
+  const CONTAINER_SIZE_LABELS = {
+    '20FT': '20 ft',
+    '40FT': '40 ft',
+    '40FTHC': '40 ft high-cube',
+    '45FTHC': '45 ft high-cube',
+  }
+  const COVERAGE_LABELS = {
+    none: 'None',
+    basic: 'Basic',
+    full: 'Full',
+  }
+
+  const cargoType = computed(() => form.values.cargo.details.type)
+  const serviceMode = computed(() => form.values.service.mode)
 
   function setCargoType(type: (typeof CARGO_TYPES)[number]) {
     form.setValue('cargo.details.type', type)
@@ -489,24 +468,16 @@
     form.remove('cargo.items', idx)
   }
 
-  const totalKg = computed(() => {
-    const items = form.values.cargo?.items ?? []
-    let sum = 0
-    for (const it of items) {
-      const qty = typeof it.quantity === 'number' ? it.quantity : 0
-      const w = typeof it.unitWeightKg === 'number' ? it.unitWeightKg : 0
-      sum += qty * w
-    }
-    return sum
-  })
+  const totalKg = computed(() =>
+    form.values.cargo.items.reduce(
+      (sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.unitWeightKg) || 0),
+      0
+    )
+  )
 
   // ─── Submit ──────────────────────────────────────────────────────
   // handleSubmit awaits every async refinement (postal lookups, SKU
-  // checks, cargo capacity) before deciding success vs failure. The
-  // success callback is the victory lap — by the time it fires, the
-  // schema (including the async capacity check on cargo.items) has
-  // signed off on every value.
-
+  // checks, capacity) before deciding success vs failure.
   const submitError = ref<string | null>(null)
   const onSubmit = form.handleSubmit(
     (values) => {
@@ -527,12 +498,6 @@
   }
 
   // ─── Template helpers ────────────────────────────────────────────
-  // - fieldClasses: green when the user has touched/dirtied a leaf and
-  //   it's currently valid, red on visible errors, yellow while async.
-  // - visibleError: only surface a leaf's first error after blur, so
-  //   the user isn't yelled at mid-typing.
-  // FieldStateLeaf<unknown> accepts every leaf shape via covariance —
-  // the helpers only read metadata flags / errors, never .value.
   function fieldClasses(field: FieldStateLeaf<unknown> | undefined) {
     if (!field) return {}
     return {
@@ -541,28 +506,20 @@
       validating: field.validating,
     }
   }
-  function visibleError(field: FieldStateLeaf<unknown> | undefined): string {
+  function visibleError(field: FieldStateLeaf<unknown> | undefined) {
     if (!field || !field.touched) return ''
     return field.errors[0]?.message ?? ''
   }
-  // Cargo.items ARRAY-level error. Lives at the container path, not a
-  // leaf — read via the form.meta.errors filter. Covers both the synch
-  // min(1) "Add at least one line item" and the async capacity check
-  // attached via .superRefine on lineItemArraySchema above.
-  const cargoItemsArrayError = computed<string>(() => {
-    const e = form.meta.errors.find(
-      (e) => e.path.length === 2 && e.path[0] === 'cargo' && e.path[1] === 'items'
-    )
-    return e?.message ?? ''
-  })
 
-  // Address blocks driven by v-for so pickup + delivery share one
-  // fieldset template — the prefix passes through into path strings
-  // and proxy descents alike.
-  const addressBlocks = [
-    { prefix: 'pickup', label: 'Pickup' },
-    { prefix: 'delivery', label: 'Delivery' },
-  ] as const
+  // Array-level error at cargo.items (min(1) + async capacity refine).
+  const cargoItemsArrayError = computed(() =>
+    form.errorsAt('cargo.items').find((e) => e.path.length === 2)?.message ?? ''
+  )
+
+  const addressBlocks = computed(() => [
+    { prefix: 'pickup' as const, label: 'Pickup', mirrored: false },
+    { prefix: 'delivery' as const, label: 'Delivery', mirrored: form.values.useSameDeliveryAddress },
+  ])
 ${'</'}script>
 
 <template>
@@ -611,7 +568,7 @@ ${'</'}script>
           v-for="block in addressBlocks"
           :key="block.prefix"
           class="address"
-          :class="{ mirrored: block.prefix === 'delivery' && form.values.useSameDeliveryAddress }"
+          :class="{ mirrored: block.mirrored }"
         >
           <legend>{{ block.label }}</legend>
           <label v-if="block.prefix === 'delivery'" class="checkbox">
@@ -627,7 +584,7 @@ ${'</'}script>
               <input
                 v-register="form.register([block.prefix, 'line1'])"
                 placeholder="Street address"
-                :disabled="block.prefix === 'delivery' && form.values.useSameDeliveryAddress"
+                :disabled="block.mirrored"
               />
               <small class="error">{{ visibleError(form.fields[block.prefix].line1) }}</small>
             </div>
@@ -636,7 +593,7 @@ ${'</'}script>
               <input
                 v-register="form.register([block.prefix, 'line2'])"
                 placeholder="Suite, unit, etc."
-                :disabled="block.prefix === 'delivery' && form.values.useSameDeliveryAddress"
+                :disabled="block.mirrored"
               />
             </div>
           </div>
@@ -645,7 +602,7 @@ ${'</'}script>
               <label>City</label>
               <input
                 v-register="form.register([block.prefix, 'city'])"
-                :disabled="block.prefix === 'delivery' && form.values.useSameDeliveryAddress"
+                :disabled="block.mirrored"
               />
               <small class="error">{{ visibleError(form.fields[block.prefix].city) }}</small>
             </div>
@@ -654,7 +611,7 @@ ${'</'}script>
               <input
                 v-register="form.register([block.prefix, 'region'])"
                 placeholder="CA / ON"
-                :disabled="block.prefix === 'delivery' && form.values.useSameDeliveryAddress"
+                :disabled="block.mirrored"
               />
               <small class="error">{{ visibleError(form.fields[block.prefix].region) }}</small>
             </div>
@@ -662,7 +619,7 @@ ${'</'}script>
               <label>Country</label>
               <select
                 v-register="form.register([block.prefix, 'country'])"
-                :disabled="block.prefix === 'delivery' && form.values.useSameDeliveryAddress"
+                :disabled="block.mirrored"
               >
                 <option v-for="c in COUNTRIES" :key="c" :value="c">{{ c }}</option>
               </select>
@@ -673,7 +630,7 @@ ${'</'}script>
             <input
               v-register="form.register([block.prefix, 'postalCode'])"
               placeholder="Try 10xxx, M5xxx, SWxxx…"
-              :disabled="block.prefix === 'delivery' && form.values.useSameDeliveryAddress"
+              :disabled="block.mirrored"
             />
             <small class="hint" v-if="form.fields[block.prefix].postalCode.validating">
               Looking up postal code…
@@ -695,26 +652,23 @@ ${'</'}script>
               :key="t"
               type="button"
               class="chip"
-              :class="{ active: form.values.cargo?.details?.type === t }"
+              :class="{ active: cargoType === t }"
               @click="setCargoType(t)"
             >
-              {{ t === 'dry' ? 'Dry goods'
-                 : t === 'refrigerated' ? 'Refrigerated'
-                 : t === 'hazmat' ? 'Hazmat'
-                 : 'Oversized' }}
+              {{ CARGO_LABELS[t] }}
             </button>
           </div>
         </div>
 
         <!-- Per-variant fields -->
-        <div v-if="form.values.cargo?.details?.type === 'dry'" class="row">
+        <div v-if="cargoType === 'dry'" class="row">
           <label class="checkbox">
             <input v-register="form.register('cargo.details.fragile')" type="checkbox" />
             Mark as fragile
           </label>
         </div>
 
-        <div v-else-if="form.values.cargo?.details?.type === 'refrigerated'" class="grid-2">
+        <div v-else-if="cargoType === 'refrigerated'" class="grid-2">
           <div class="field" :class="fieldClasses(form.fields.cargo.details.tempMinC)">
             <label>Min temp (°C)</label>
             <input
@@ -735,7 +689,7 @@ ${'</'}script>
           </div>
         </div>
 
-        <div v-else-if="form.values.cargo?.details?.type === 'hazmat'" class="hazmat">
+        <div v-else-if="cargoType === 'hazmat'" class="hazmat">
           <div class="grid-2">
             <div class="field" :class="fieldClasses(form.fields.cargo.details.unNumber)">
               <label>UN number</label>
@@ -762,7 +716,7 @@ ${'</'}script>
           <small class="error">{{ visibleError(form.fields.cargo.details.acknowledged) }}</small>
         </div>
 
-        <div v-else-if="form.values.cargo?.details?.type === 'oversized'" class="oversized">
+        <div v-else-if="cargoType === 'oversized'" class="oversized">
           <div class="grid-3">
             <div class="field" :class="fieldClasses(form.fields.cargo.details.lengthCm)">
               <label>Length (cm)</label>
@@ -785,7 +739,7 @@ ${'</'}script>
               Permit # <span class="muted">(optional, leave blank if none)</span>
             </label>
             <input v-register="form.register('cargo.details.permitNumber')" />
-            <small class="muted" v-if="!form.values.cargo?.details?.permitNumber">
+            <small class="muted" v-if="!form.values.cargo.details.permitNumber">
               No permit on file — start typing to add one.
             </small>
           </div>
@@ -797,12 +751,12 @@ ${'</'}script>
             <h3>Line items <span class="muted">({{ totalKg }} kg total)</span></h3>
             <button type="button" class="ghost" @click="addLineItem">+ Add item</button>
           </div>
-          <div v-if="(form.values.cargo?.items ?? []).length === 0" class="empty">
+          <div v-if="form.values.cargo.items.length === 0" class="empty">
             No line items yet. Try
             <code>SKU-1001</code>, <code>SKU-2001</code>, or <code>PALLET-A</code>.
           </div>
           <div
-            v-for="(_, idx) in form.values.cargo?.items ?? []"
+            v-for="(_, idx) in form.values.cargo.items"
             :key="idx"
             class="line-item"
           >
@@ -813,7 +767,7 @@ ${'</'}script>
                   v-register="form.register(\`cargo.items.\${idx}.sku\`, { transforms: skuTransforms })"
                   placeholder="SKU-1001"
                 />
-                <small class="hint" v-if="form.fields.cargo.items[idx]?.sku.validating">
+                <small class="hint" v-if="form.fields.cargo.items[idx].sku.validating">
                   Checking SKU…
                 </small>
                 <small class="error" v-else>
@@ -868,22 +822,19 @@ ${'</'}script>
               :key="m"
               type="button"
               class="chip"
-              :class="{ active: form.values.service?.mode === m }"
+              :class="{ active: serviceMode === m }"
               @click="setServiceMode(m)"
             >
-              {{ m === 'truck' ? '🚚 Truck' : m === 'air' ? '✈️ Air' : '🚢 Ocean' }}
+              {{ SERVICE_LABELS[m] }}
             </button>
           </div>
         </div>
 
-        <div v-if="form.values.service?.mode === 'truck'" class="grid-2">
+        <div v-if="serviceMode === 'truck'" class="grid-2">
           <div class="field" :class="fieldClasses(form.fields.service.truckType)">
             <label>Truck type</label>
             <select v-register="form.register('service.truckType')">
-              <option value="box">Box</option>
-              <option value="flatbed">Flatbed</option>
-              <option value="reefer">Reefer</option>
-              <option value="tanker">Tanker</option>
+              <option v-for="t in TRUCK_TYPES" :key="t" :value="t">{{ TRUCK_TYPE_LABELS[t] }}</option>
             </select>
           </div>
           <label class="checkbox align-end">
@@ -892,7 +843,7 @@ ${'</'}script>
           </label>
         </div>
 
-        <div v-else-if="form.values.service?.mode === 'air'" class="grid-2">
+        <div v-else-if="serviceMode === 'air'" class="grid-2">
           <div class="field" :class="fieldClasses(form.fields.service.airline)">
             <label>Airline</label>
             <input v-register="form.register('service.airline')" placeholder="Lufthansa" />
@@ -905,7 +856,7 @@ ${'</'}script>
           </div>
         </div>
 
-        <div v-else-if="form.values.service?.mode === 'ocean'" class="grid-2">
+        <div v-else-if="serviceMode === 'ocean'" class="grid-2">
           <div class="field" :class="fieldClasses(form.fields.service.vessel)">
             <label>Vessel</label>
             <input v-register="form.register('service.vessel')" placeholder="MSC Aurelia" />
@@ -914,10 +865,7 @@ ${'</'}script>
           <div class="field" :class="fieldClasses(form.fields.service.containerSize)">
             <label>Container</label>
             <select v-register="form.register('service.containerSize')">
-              <option value="20FT">20 ft</option>
-              <option value="40FT">40 ft</option>
-              <option value="40FTHC">40 ft high-cube</option>
-              <option value="45FTHC">45 ft high-cube</option>
+              <option v-for="s in CONTAINER_SIZES" :key="s" :value="s">{{ CONTAINER_SIZE_LABELS[s] }}</option>
             </select>
           </div>
         </div>
@@ -950,9 +898,7 @@ ${'</'}script>
             <div class="field">
               <label>Coverage</label>
               <select v-register="form.register('insurance.coverage')">
-                <option value="none">None</option>
-                <option value="basic">Basic</option>
-                <option value="full">Full</option>
+                <option v-for="c in COVERAGES" :key="c" :value="c">{{ COVERAGE_LABELS[c] }}</option>
               </select>
             </div>
           </div>

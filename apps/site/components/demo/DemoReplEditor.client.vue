@@ -643,7 +643,7 @@ ${'</'}script>
                   v-register="form.register(\`cargo.items.\${idx}.sku\`, { transforms: skuTransforms })"
                   placeholder="SKU-1001"
                 />
-                <small class="hint" v-if="form.fields.cargo.items[idx].validating">
+                <small class="hint" v-if="form.fields.cargo.items[idx]?.sku.validating">
                   Checking SKU…
                 </small>
                 <small class="error" v-else>

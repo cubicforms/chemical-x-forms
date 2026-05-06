@@ -252,7 +252,25 @@ export default defineNuxtConfig({
     // declaring the heavy site-only deps here makes the boot crawl
     // comprehensive, so first-paint requests resolve cleanly.
     optimizeDeps: {
-      include: ['lucide-vue-next'],
+      // `parent > child` entries pre-bundle @nuxtjs/mdc's sub-deps —
+      // they're transitive (pulled in via @nuxt/content) and Vite's
+      // dep crawler can't resolve them from apps/site directly under
+      // pnpm's hoist-strict layout. Without these, every dev boot
+      // logs an "Unresolvable optimizeDeps.include entries" warning;
+      // listing them here completes the resolution and silences it.
+      include: [
+        'lucide-vue-next',
+        '@nuxtjs/mdc > remark-gfm',
+        '@nuxtjs/mdc > remark-emoji',
+        '@nuxtjs/mdc > remark-mdc',
+        '@nuxtjs/mdc > remark-rehype',
+        '@nuxtjs/mdc > rehype-raw',
+        '@nuxtjs/mdc > parse5',
+        '@nuxtjs/mdc > unist-util-visit',
+        '@nuxtjs/mdc > unified',
+        '@nuxtjs/mdc > debug',
+        '@nuxtjs/mdc > extend',
+      ],
       // Both @vue/repl entries are excluded from prebundling for two
       // reasons that interlock:
       //

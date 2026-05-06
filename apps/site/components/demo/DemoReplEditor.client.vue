@@ -77,6 +77,7 @@
   //   - Async field-level validation (postal-code lookup, SKU lookup)
   //   - Async aggregate validation (capacity check on cargo.items)
   //   - Transforms (SKU uppercase normalisation)
+  //   - Unset sentinel for optional fields (notes, permit number)
   //   - Persistence (drafts auto-saved to localStorage)
   //   - Multi-step navigation gated on per-step validity
   //   - meta.valid / field.valid for green/red field state
@@ -86,7 +87,7 @@
 
   import { computed, ref } from 'vue'
   import { z } from 'zod'
-  import { useForm } from 'attaform/zod'
+  import { useForm, unset, isUnset } from 'attaform/zod'
   import type { FieldStateLeaf } from 'attaform'
 
   // ─── Mock async services ─────────────────────────────────────────
@@ -273,9 +274,18 @@
       reference: 'SHP-100001',
       cargo: { type: 'dry', items: [], fragile: false },
       service: { mode: 'truck', truckType: 'box', liftgate: false },
-      insurance: { declaredValueUSD: 0, coverage: 'basic' },
+      // declaredValueUSD starts unset rather than 0 — declaring $0
+      // explicitly is a meaningful choice ("self-insured / no coverage
+      // value"), so the input shows empty until the user commits.
+      insurance: { declaredValueUSD: unset, coverage: 'basic' },
       pickup: { country: 'US' },
       delivery: { country: 'US' },
+      // Optional fields start displayed-empty AND marked-blank: the
+      // unset sentinel distinguishes "the user deliberately left this
+      // empty" from "the user hasn't touched it yet". Live blank state
+      // shows up under form.fields.notes.blank — typing into the field
+      // clears the unset marker automatically.
+      notes: unset,
     },
   })
 
@@ -341,9 +351,15 @@
       form.setValue('cargo', {
         type,
         items: [],
-        lengthCm: 0,
-        widthCm: 0,
-        heightCm: 0,
+        // unset (not 0) — dimensions have no meaningful default. The
+        // inputs render empty until the user types, and form.fields
+        // .cargo.<dim>.blank reflects that intentionally-blank state.
+        lengthCm: unset,
+        widthCm: unset,
+        heightCm: unset,
+        // permitNumber is optional — start it as deliberately blank
+        // (unset) rather than undefined-because-untouched.
+        permitNumber: unset,
       })
   }
 
@@ -634,6 +650,9 @@ ${'</'}script>
               Permit # <span class="muted">(optional, leave blank if none)</span>
             </label>
             <input v-register="form.register('cargo.permitNumber')" />
+            <small class="muted" v-if="isUnset(form.values.cargo?.permitNumber)">
+              No permit on file — start typing to add one.
+            </small>
           </div>
         </div>
 
@@ -813,6 +832,9 @@ ${'</'}script>
             rows="3"
             placeholder="Special handling instructions…"
           />
+          <small class="muted" v-if="isUnset(form.values.notes)">
+            No notes recorded — start typing to add some.
+          </small>
           <small class="error">{{ visibleError(form.fields.notes) }}</small>
         </div>
       </section>

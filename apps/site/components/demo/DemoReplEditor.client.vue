@@ -87,7 +87,7 @@
 
   import { computed, nextTick, ref, watch } from 'vue'
   import { z } from 'zod'
-  import { useForm, unset, isUnset } from 'attaform/zod'
+  import { useForm, unset } from 'attaform/zod'
   import type { FieldStateLeaf } from 'attaform'
 
   // ─── Mock async services ─────────────────────────────────────────
@@ -154,10 +154,14 @@
     unitWeightKg: z.number().positive('Must be positive'),
   })
 
-  // Items array shared across cargo variants. The async .superRefine
-  // is the capacity check — runs whenever items change (debounced by
-  // the form's debounceMs), and handleSubmit awaits it before firing
-  // the success callback. The error attaches at this array's path
+  // Manifest array, one per shipment. Lifted out of the cargo
+  // discriminated union so a "dry → hazmat" reclassification keeps
+  // whatever the user already typed; if items lived inside each
+  // variant, the variant reshape would reset items: [] every time
+  // the cargo class changed. The async .superRefine is the capacity
+  // check — runs whenever items change (debounced by the form's
+  // debounceMs), and handleSubmit awaits it before firing the
+  // success callback. The error attaches at this array's path
   // (cargo.items), surfacing through cargoItemsArrayError below.
   const lineItemArraySchema = z
     .array(lineItemSchema)
@@ -176,16 +180,17 @@
       }
     })
 
-  const dryGoodsSchema = z.object({
+  // Variant-detail schemas hold ONLY the fields that differ by cargo
+  // class (the union's payload). Shared fields (items) live one level
+  // up at cargo.items so they aren't part of the variant reshape.
+  const dryDetailsSchema = z.object({
     type: z.literal('dry'),
-    items: lineItemArraySchema,
     fragile: z.boolean(),
   })
 
-  const refrigeratedSchema = z
+  const refrigeratedDetailsSchema = z
     .object({
       type: z.literal('refrigerated'),
-      items: lineItemArraySchema,
       tempMinC: z.number().min(-30, 'Min -30°C').max(20, 'Max 20°C'),
       tempMaxC: z.number().min(-30, 'Min -30°C').max(20, 'Max 20°C'),
     })
@@ -194,29 +199,30 @@
       path: ['tempMaxC'],
     })
 
-  const hazmatSchema = z.object({
+  const hazmatDetailsSchema = z.object({
     type: z.literal('hazmat'),
-    items: lineItemArraySchema,
     unNumber: z.string().regex(/^UN\\d{4}$/, 'Format: UN1234'),
     hazardClass: z.enum(['1', '2', '3', '4', '5', '6', '7', '8', '9']),
     acknowledged: z.literal(true, { message: 'Acknowledge handling rules to continue' }),
   })
 
-  const oversizedSchema = z.object({
+  const oversizedDetailsSchema = z.object({
     type: z.literal('oversized'),
-    items: lineItemArraySchema,
     lengthCm: z.number().positive(),
     widthCm: z.number().positive(),
     heightCm: z.number().positive(),
     permitNumber: z.string().optional(),
   })
 
-  const cargoSchema = z.discriminatedUnion('type', [
-    dryGoodsSchema,
-    refrigeratedSchema,
-    hazmatSchema,
-    oversizedSchema,
-  ])
+  const cargoSchema = z.object({
+    items: lineItemArraySchema,
+    details: z.discriminatedUnion('type', [
+      dryDetailsSchema,
+      refrigeratedDetailsSchema,
+      hazmatDetailsSchema,
+      oversizedDetailsSchema,
+    ]),
+  })
 
   const truckServiceSchema = z.object({
     mode: z.literal('truck'),
@@ -278,7 +284,7 @@
     debounceMs: 200,
     defaultValues: {
       reference: 'SHP-100001',
-      cargo: { type: 'dry', items: [], fragile: false },
+      cargo: { items: [], details: { type: 'dry', fragile: false } },
       service: { mode: 'truck', truckType: 'box', liftgate: false },
       // declaredValueUSD starts unset rather than 0 — declaring $0
       // explicitly is a meaningful choice ("self-insured / no coverage
@@ -450,48 +456,24 @@
   }
 
   // ─── Cargo / service variant switching ───────────────────────────
-  // Discriminator writes are a wholesale variant swap: setting cargo.type
-  // reshapes the entire cargo subtree to the variant defaults. Attaform
-  // remembers per-variant state so flipping back restores prior values.
+  // Write the discriminator and let attaform reshape. Each switch
+  // snapshots the outgoing variant's typed state into per-form
+  // variant memory (rememberVariants is on by default), so flipping
+  // back restores what the user had typed — not a freshly-defaulted
+  // shell. Numeric leaves of the activated variant auto-mark blank
+  // (storage / display divergence rule), so dimension inputs render
+  // empty until the user types.
 
   const CARGO_TYPES = ['dry', 'refrigerated', 'hazmat', 'oversized'] as const
   const HAZARD_CLASSES = ['1', '2', '3', '4', '5', '6', '7', '8', '9'] as const
   const SERVICE_MODES = ['truck', 'air', 'ocean'] as const
 
   function setCargoType(type: (typeof CARGO_TYPES)[number]) {
-    if (type === 'dry') form.setValue('cargo', { type, items: [], fragile: false })
-    else if (type === 'refrigerated')
-      form.setValue('cargo', { type, items: [], tempMinC: 2, tempMaxC: 8 })
-    else if (type === 'hazmat')
-      form.setValue('cargo', {
-        type,
-        items: [],
-        unNumber: 'UN0000',
-        hazardClass: '3',
-        acknowledged: false,
-      })
-    else
-      form.setValue('cargo', {
-        type,
-        items: [],
-        // unset (not 0) — dimensions have no meaningful default. The
-        // inputs render empty until the user types, and form.fields
-        // .cargo.<dim>.blank reflects that intentionally-blank state.
-        lengthCm: unset,
-        widthCm: unset,
-        heightCm: unset,
-        // permitNumber is optional — start it as deliberately blank
-        // (unset) rather than undefined-because-untouched.
-        permitNumber: unset,
-      })
+    form.setValue('cargo.details.type', type)
   }
 
   function setServiceMode(mode: (typeof SERVICE_MODES)[number]) {
-    if (mode === 'truck')
-      form.setValue('service', { mode, truckType: 'box', liftgate: false })
-    else if (mode === 'air')
-      form.setValue('service', { mode, airline: '', awbPrefix: '000' })
-    else form.setValue('service', { mode, vessel: '', containerSize: '40FT' })
+    form.setValue('service.mode', mode)
   }
 
   // ─── Line items (field array) ────────────────────────────────────
@@ -713,7 +695,7 @@ ${'</'}script>
               :key="t"
               type="button"
               class="chip"
-              :class="{ active: form.values.cargo?.type === t }"
+              :class="{ active: form.values.cargo?.details?.type === t }"
               @click="setCargoType(t)"
             >
               {{ t === 'dry' ? 'Dry goods'
@@ -725,85 +707,85 @@ ${'</'}script>
         </div>
 
         <!-- Per-variant fields -->
-        <div v-if="form.values.cargo?.type === 'dry'" class="row">
+        <div v-if="form.values.cargo?.details?.type === 'dry'" class="row">
           <label class="checkbox">
-            <input v-register="form.register('cargo.fragile')" type="checkbox" />
+            <input v-register="form.register('cargo.details.fragile')" type="checkbox" />
             Mark as fragile
           </label>
         </div>
 
-        <div v-else-if="form.values.cargo?.type === 'refrigerated'" class="grid-2">
-          <div class="field" :class="fieldClasses(form.fields.cargo.tempMinC)">
+        <div v-else-if="form.values.cargo?.details?.type === 'refrigerated'" class="grid-2">
+          <div class="field" :class="fieldClasses(form.fields.cargo.details.tempMinC)">
             <label>Min temp (°C)</label>
             <input
-              v-register.number="form.register('cargo.tempMinC')"
+              v-register.number="form.register('cargo.details.tempMinC')"
               type="number"
               step="0.5"
             />
-            <small class="error">{{ visibleError(form.fields.cargo.tempMinC) }}</small>
+            <small class="error">{{ visibleError(form.fields.cargo.details.tempMinC) }}</small>
           </div>
-          <div class="field" :class="fieldClasses(form.fields.cargo.tempMaxC)">
+          <div class="field" :class="fieldClasses(form.fields.cargo.details.tempMaxC)">
             <label>Max temp (°C)</label>
             <input
-              v-register.number="form.register('cargo.tempMaxC')"
+              v-register.number="form.register('cargo.details.tempMaxC')"
               type="number"
               step="0.5"
             />
-            <small class="error">{{ visibleError(form.fields.cargo.tempMaxC) }}</small>
+            <small class="error">{{ visibleError(form.fields.cargo.details.tempMaxC) }}</small>
           </div>
         </div>
 
-        <div v-else-if="form.values.cargo?.type === 'hazmat'" class="hazmat">
+        <div v-else-if="form.values.cargo?.details?.type === 'hazmat'" class="hazmat">
           <div class="grid-2">
-            <div class="field" :class="fieldClasses(form.fields.cargo.unNumber)">
+            <div class="field" :class="fieldClasses(form.fields.cargo.details.unNumber)">
               <label>UN number</label>
               <input
-                v-register="form.register('cargo.unNumber')"
+                v-register="form.register('cargo.details.unNumber')"
                 placeholder="UN1234"
               />
-              <small class="error">{{ visibleError(form.fields.cargo.unNumber) }}</small>
+              <small class="error">{{ visibleError(form.fields.cargo.details.unNumber) }}</small>
             </div>
-            <div class="field" :class="fieldClasses(form.fields.cargo.hazardClass)">
+            <div class="field" :class="fieldClasses(form.fields.cargo.details.hazardClass)">
               <label>Hazard class</label>
-              <select v-register="form.register('cargo.hazardClass')">
+              <select v-register="form.register('cargo.details.hazardClass')">
                 <option v-for="c in HAZARD_CLASSES" :key="c" :value="c">
                   Class {{ c }}
                 </option>
               </select>
-              <small class="error">{{ visibleError(form.fields.cargo.hazardClass) }}</small>
+              <small class="error">{{ visibleError(form.fields.cargo.details.hazardClass) }}</small>
             </div>
           </div>
           <label class="checkbox">
-            <input v-register="form.register('cargo.acknowledged')" type="checkbox" />
+            <input v-register="form.register('cargo.details.acknowledged')" type="checkbox" />
             I have read and acknowledge the dangerous-goods handling rules.
           </label>
-          <small class="error">{{ visibleError(form.fields.cargo.acknowledged) }}</small>
+          <small class="error">{{ visibleError(form.fields.cargo.details.acknowledged) }}</small>
         </div>
 
-        <div v-else-if="form.values.cargo?.type === 'oversized'" class="oversized">
+        <div v-else-if="form.values.cargo?.details?.type === 'oversized'" class="oversized">
           <div class="grid-3">
-            <div class="field" :class="fieldClasses(form.fields.cargo.lengthCm)">
+            <div class="field" :class="fieldClasses(form.fields.cargo.details.lengthCm)">
               <label>Length (cm)</label>
-              <input v-register.number="form.register('cargo.lengthCm')" type="number" />
-              <small class="error">{{ visibleError(form.fields.cargo.lengthCm) }}</small>
+              <input v-register.number="form.register('cargo.details.lengthCm')" type="number" />
+              <small class="error">{{ visibleError(form.fields.cargo.details.lengthCm) }}</small>
             </div>
-            <div class="field" :class="fieldClasses(form.fields.cargo.widthCm)">
+            <div class="field" :class="fieldClasses(form.fields.cargo.details.widthCm)">
               <label>Width (cm)</label>
-              <input v-register.number="form.register('cargo.widthCm')" type="number" />
-              <small class="error">{{ visibleError(form.fields.cargo.widthCm) }}</small>
+              <input v-register.number="form.register('cargo.details.widthCm')" type="number" />
+              <small class="error">{{ visibleError(form.fields.cargo.details.widthCm) }}</small>
             </div>
-            <div class="field" :class="fieldClasses(form.fields.cargo.heightCm)">
+            <div class="field" :class="fieldClasses(form.fields.cargo.details.heightCm)">
               <label>Height (cm)</label>
-              <input v-register.number="form.register('cargo.heightCm')" type="number" />
-              <small class="error">{{ visibleError(form.fields.cargo.heightCm) }}</small>
+              <input v-register.number="form.register('cargo.details.heightCm')" type="number" />
+              <small class="error">{{ visibleError(form.fields.cargo.details.heightCm) }}</small>
             </div>
           </div>
           <div class="field">
             <label>
               Permit # <span class="muted">(optional, leave blank if none)</span>
             </label>
-            <input v-register="form.register('cargo.permitNumber')" />
-            <small class="muted" v-if="isUnset(form.values.cargo?.permitNumber)">
+            <input v-register="form.register('cargo.details.permitNumber')" />
+            <small class="muted" v-if="!form.values.cargo?.details?.permitNumber">
               No permit on file — start typing to add one.
             </small>
           </div>
@@ -985,7 +967,7 @@ ${'</'}script>
             rows="3"
             placeholder="Special handling instructions…"
           />
-          <small class="muted" v-if="isUnset(form.values.notes)">
+          <small class="muted" v-if="!form.values.notes">
             No notes recorded — start typing to add some.
           </small>
           <small class="error">{{ visibleError(form.fields.notes) }}</small>

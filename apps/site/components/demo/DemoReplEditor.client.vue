@@ -85,7 +85,7 @@
   //   - Touched-aware error display (no error spam pre-blur)
   // ─────────────────────────────────────────────────────────────────
 
-  import { computed, ref } from 'vue'
+  import { computed, ref, watch } from 'vue'
   import { z } from 'zod'
   import { useForm, unset, isUnset } from 'attaform/zod'
   import type { FieldStateLeaf } from 'attaform'
@@ -246,6 +246,12 @@
     reference: z.string().regex(/^SHP-\\d{6}$/, 'Format: SHP-123456'),
     pickup: addressSchema,
     delivery: addressSchema,
+    // When true, delivery mirrors pickup — see the watch below that
+    // calls form.setValue('delivery', () => ({ ...form.values.pickup }))
+    // to keep the two subforms in sync. Modeling the toggle in the
+    // schema (instead of a component-local ref) means it's persisted
+    // via the form's autosave and restored on reload.
+    useSameDeliveryAddress: z.boolean(),
     cargo: cargoSchema,
     service: serviceSchema,
     desiredPickupDate: z.string().min(1, 'Required'),
@@ -280,6 +286,7 @@
       insurance: { declaredValueUSD: unset, coverage: 'basic' },
       pickup: { country: 'US' },
       delivery: { country: 'US' },
+      useSameDeliveryAddress: false,
       // Optional fields start displayed-empty AND marked-blank: the
       // unset sentinel distinguishes "the user deliberately left this
       // empty" from "the user hasn't touched it yet". Live blank state
@@ -288,6 +295,23 @@
       notes: unset,
     },
   })
+
+  // ─── Pickup → delivery mirroring ─────────────────────────────────
+  // When the user ticks "Same as pickup" the delivery subform mirrors
+  // pickup live: every pickup edit re-fires the watch, which uses the
+  // CALLBACK form of setValue to grab the freshest pickup snapshot
+  // and write it to delivery. The callback's prev arg is unused
+  // here, but the shape is the point — setValue accepts either a
+  // value or a (prev) => next function, and the function form is
+  // perfect for "compute new value from somewhere else in the form."
+  watch(
+    [() => form.values.useSameDeliveryAddress, () => form.values.pickup],
+    ([same]) => {
+      if (!same) return
+      form.setValue('delivery', (_prev) => ({ ...form.values.pickup }))
+    },
+    { deep: true }
+  )
 
   // SKU transform: uppercase + collapse spaces, applied per keystroke.
   const skuTransforms = [
@@ -506,40 +530,70 @@ ${'</'}script>
           v-for="block in addressBlocks"
           :key="block.prefix"
           class="address"
+          :class="{ mirrored: block.prefix === 'delivery' && form.values.useSameDeliveryAddress }"
         >
           <legend>{{ block.label }}</legend>
+          <label v-if="block.prefix === 'delivery'" class="checkbox">
+            <input
+              v-register="form.register('useSameDeliveryAddress')"
+              type="checkbox"
+            />
+            Same as pickup address
+          </label>
           <div class="grid-2">
             <div class="field" :class="fieldClasses(form.fields[block.prefix].line1)">
               <label>Line 1</label>
-              <input v-register="form.register([block.prefix, 'line1'])" placeholder="Street address" />
+              <input
+                v-register="form.register([block.prefix, 'line1'])"
+                placeholder="Street address"
+                :disabled="block.prefix === 'delivery' && form.values.useSameDeliveryAddress"
+              />
               <small class="error">{{ visibleError(form.fields[block.prefix].line1) }}</small>
             </div>
             <div class="field">
               <label>Line 2 <span class="muted">(optional)</span></label>
-              <input v-register="form.register([block.prefix, 'line2'])" placeholder="Suite, unit, etc." />
+              <input
+                v-register="form.register([block.prefix, 'line2'])"
+                placeholder="Suite, unit, etc."
+                :disabled="block.prefix === 'delivery' && form.values.useSameDeliveryAddress"
+              />
             </div>
           </div>
           <div class="grid-3">
             <div class="field" :class="fieldClasses(form.fields[block.prefix].city)">
               <label>City</label>
-              <input v-register="form.register([block.prefix, 'city'])" />
+              <input
+                v-register="form.register([block.prefix, 'city'])"
+                :disabled="block.prefix === 'delivery' && form.values.useSameDeliveryAddress"
+              />
               <small class="error">{{ visibleError(form.fields[block.prefix].city) }}</small>
             </div>
             <div class="field" :class="fieldClasses(form.fields[block.prefix].region)">
               <label>Region</label>
-              <input v-register="form.register([block.prefix, 'region'])" placeholder="CA / ON" />
+              <input
+                v-register="form.register([block.prefix, 'region'])"
+                placeholder="CA / ON"
+                :disabled="block.prefix === 'delivery' && form.values.useSameDeliveryAddress"
+              />
               <small class="error">{{ visibleError(form.fields[block.prefix].region) }}</small>
             </div>
             <div class="field" :class="fieldClasses(form.fields[block.prefix].country)">
               <label>Country</label>
-              <select v-register="form.register([block.prefix, 'country'])">
+              <select
+                v-register="form.register([block.prefix, 'country'])"
+                :disabled="block.prefix === 'delivery' && form.values.useSameDeliveryAddress"
+              >
                 <option v-for="c in COUNTRIES" :key="c" :value="c">{{ c }}</option>
               </select>
             </div>
           </div>
           <div class="field" :class="fieldClasses(form.fields[block.prefix].postalCode)">
             <label>Postal code</label>
-            <input v-register="form.register([block.prefix, 'postalCode'])" placeholder="Try 10xxx, M5xxx, SWxxx…" />
+            <input
+              v-register="form.register([block.prefix, 'postalCode'])"
+              placeholder="Try 10xxx, M5xxx, SWxxx…"
+              :disabled="block.prefix === 'delivery' && form.values.useSameDeliveryAddress"
+            />
             <small class="hint" v-if="form.fields[block.prefix].postalCode.validating">
               Looking up postal code…
             </small>
@@ -1054,6 +1108,11 @@ body {
   gap: 0.75rem;
 }
 .address legend { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #667085; padding: 0 0.375rem; }
+.address.mirrored .field input,
+.address.mirrored .field select { background: #F9FAFB; color: #98A2B3; cursor: not-allowed; }
+.address.mirrored .field input:focus,
+.address.mirrored .field select:focus { border-color: #D0D5DD; box-shadow: none; }
+.address.mirrored .field label { color: #98A2B3; }
 
 /* ─── Variant chips ─── */
 .variant-picker { display: flex; flex-direction: column; gap: 0.5rem; }

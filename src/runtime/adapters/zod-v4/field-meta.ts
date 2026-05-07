@@ -38,8 +38,64 @@ import type { FieldMetaPayload } from '../../core/field-meta'
  * Consumers extending `FieldMetaPayload` via declaration merging
  * automatically get the richer payload type at every `register` /
  * `add` / `get` call site.
+ *
+ * **Shared-instance disambiguation.** A single schema instance reused
+ * at multiple form paths (e.g. one address schema bound to both
+ * `pickup` and `delivery`) can carry distinct metadata per path —
+ * even via the canonical `schema.register(fieldMeta, payload)` chain.
+ * Internally we maintain a parallel WeakMap of payload LISTS indexed
+ * per schema reference, and the path-resolver walks the form's
+ * schema tree counting per-schema occurrences to pick the right
+ * payload for each path. Object literals evaluate left-to-right, so
+ * registration order matches tree-walk order, and shared schemas
+ * pair their two registrations to the two paths correctly:
+ *
+ *     z.object({
+ *       pickup: addressSchema.register(fieldMeta, { label: 'Pickup address' }),
+ *       delivery: addressSchema.register(fieldMeta, { label: 'Delivery address' }),
+ *     })
+ *     // form.fields('pickup').label   → 'Pickup address'
+ *     // form.fields('delivery').label → 'Delivery address'
+ *
+ * Schemas reused via `withMeta()` get a fresh clone per call (see
+ * `withMeta` below), so they never share a registry slot in the
+ * first place.
  */
 export const fieldMeta = z.registry<FieldMetaPayload>()
+
+// Parallel list-per-schema store used by the path-resolver to pick
+// the right payload when one schema instance is registered at
+// multiple paths. The native registry only stores last-write-wins;
+// this list captures every registration so the resolver can
+// disambiguate by tree-walk order. Module-scoped so it survives
+// across multiple useForm calls; WeakMap so schemas GC normally.
+const fieldMetaLists = new WeakMap<object, FieldMetaPayload[]>()
+
+const originalAdd = fieldMeta.add.bind(fieldMeta)
+fieldMeta.add = function add(schema, payload) {
+  // The `add` overload's type uses Zod's `$ZodType` (core) while our
+  // public `getFieldMetaList` exposes `z.ZodType` (classic). Both
+  // are objects with stable identity at runtime — the WeakMap is
+  // typed as `object` to bridge the two without a noisy cast at
+  // every call site.
+  const list = fieldMetaLists.get(schema as object) ?? []
+  list.push(payload as FieldMetaPayload)
+  fieldMetaLists.set(schema as object, list)
+  return originalAdd(schema, payload)
+} as typeof fieldMeta.add
+
+/**
+ * Read the list of payloads registered against `schema`, in
+ * registration order. Empty list when nothing has been registered.
+ *
+ * Used by the v4 adapter's path-resolver to disambiguate per
+ * occurrence when a schema is shared across multiple form paths.
+ * Most consumers won't need this — use `fieldMeta.get(schema)` for
+ * the single-payload case.
+ */
+export function getFieldMetaList(schema: z.ZodType): readonly FieldMetaPayload[] {
+  return fieldMetaLists.get(schema as object) ?? []
+}
 
 /**
  * Attach `payload` to `schema` in the shared `fieldMeta` registry
@@ -58,8 +114,21 @@ export const fieldMeta = z.registry<FieldMetaPayload>()
  * `.default()` / etc.
  */
 export function withMeta<S extends z.ZodType>(schema: S, payload: FieldMetaPayload): S {
-  fieldMeta.add(schema, payload)
-  return schema
+  // Clone first so each `withMeta` returns a fresh schema identity.
+  // The fieldMeta registry keys on schema reference; without
+  // cloning, two registrations on the same instance — common when a
+  // sub-schema is reused at multiple form paths (e.g. address shared
+  // between pickup and delivery) — would overwrite (last-write-wins)
+  // and every path would resolve to the most recently registered
+  // payload. Cloning gives every callsite its own slot.
+  //
+  // Merge any existing payload through so chaining accumulates
+  // fields rather than replacing — `withMeta(withMeta(s, {label}), {description})`
+  // keeps both keys.
+  const existing = fieldMeta.get(schema) ?? {}
+  const cloned = schema.clone() as S
+  fieldMeta.add(cloned, { ...existing, ...payload })
+  return cloned
 }
 
 /**

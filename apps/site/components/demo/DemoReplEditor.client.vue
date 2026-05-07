@@ -77,7 +77,7 @@
 
   import { computed, nextTick, ref, watch } from 'vue'
   import { z } from 'zod'
-  import { fieldMeta, useForm, unset } from 'attaform/zod'
+  import { fieldMeta, useForm, unset, withMeta } from 'attaform/zod'
   import type { FieldState } from 'attaform'
 
   // ─── Mock async services ─────────────────────────────────────────
@@ -306,8 +306,8 @@
         placeholder: 'SHP-123456',
         description: 'Tracking ID for this shipment.',
       }),
-    pickup: addressSchema.register(fieldMeta, { label: 'Pickup address' }),
-    delivery: addressSchema.register(fieldMeta, { label: 'Delivery address' }),
+    pickup: withMeta(addressSchema, { label: 'Pickup address' }),
+    delivery: withMeta(addressSchema, { label: 'Delivery address' }),
     // Schema-modeled toggle so the flag is persisted + restored
     // alongside the rest of the draft. The watch below keeps
     // delivery in sync with pickup whenever it's true.

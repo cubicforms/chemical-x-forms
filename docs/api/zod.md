@@ -142,6 +142,35 @@ const schema = z.object({
 The single `fieldMeta` registry holds the augmented shape — no
 fragmentation across consumers.
 
+**Reusing a sub-schema at multiple paths.** Both registration styles
+are safe. Zod's registry keys on the schema reference, but the
+adapter walks the form's schema tree at first lookup and pairs each
+path with its intended payload — registration order (object literal
+left-to-right) matches walk order, so the two patterns below both
+resolve as you'd expect:
+
+```ts
+const addressSchema = z.object({ line1: z.string(), city: z.string() })
+
+// Native chain — adapter disambiguates by tree-walk order
+const form = z.object({
+  pickup: addressSchema.register(fieldMeta, { label: 'Pickup address' }),
+  delivery: addressSchema.register(fieldMeta, { label: 'Delivery address' }),
+})
+// form.fields('pickup').label   → 'Pickup address'
+// form.fields('delivery').label → 'Delivery address'
+
+// Helper — clones the schema first so each call gets distinct identity
+const form2 = z.object({
+  pickup: withMeta(addressSchema, { label: 'Pickup address' }),
+  delivery: withMeta(addressSchema, { label: 'Delivery address' }),
+})
+```
+
+Sharing a schema with IDENTICAL metadata is also fine — common for
+array elements (every line item shares one `lineItemSchema` instance
+and inherits the same per-leaf labels).
+
 ## `zodAdapter(schema)`
 
 Lower-level. Returns an `AbstractSchema<Form, Form>` that wraps a

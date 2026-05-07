@@ -123,6 +123,31 @@ describe('FieldState metadata — Zod 4 adapter', () => {
     expect(meta).toEqual({})
     expect(Object.isFrozen(meta)).toBe(true)
   })
+
+  it('disambiguates a shared schema registered via .register() at multiple paths', () => {
+    // The canonical footgun: one address schema bound to both pickup
+    // and delivery via the native .register(fieldMeta, ...) chain. The
+    // chain returns the original schema (not a clone), so the registry
+    // sees two writes against the same reference. The path-resolver
+    // walks the schema tree counting per-schema occurrences and pairs
+    // them with the registration list in declaration order — object
+    // literals evaluate left-to-right, so registration order matches
+    // walk order, and each path lands on its intended payload.
+    const addressSchema = zV4.object({ city: zV4.string() })
+    const schema = zV4.object({
+      pickup: addressSchema.register(fieldMetaV4, { label: 'Pickup address' }),
+      delivery: addressSchema.register(fieldMetaV4, { label: 'Delivery address' }),
+    })
+    const form = mountWithApp(() =>
+      useFormV4({
+        schema,
+        key: `meta-v4-shared-${Math.random()}`,
+        defaultValues: { pickup: { city: '' }, delivery: { city: '' } },
+      })
+    )
+    expect(form.fields('pickup').label).toBe('Pickup address')
+    expect(form.fields('delivery').label).toBe('Delivery address')
+  })
 })
 
 describe('FieldState metadata — Zod 3 adapter', () => {

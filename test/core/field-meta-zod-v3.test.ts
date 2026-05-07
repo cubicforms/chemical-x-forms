@@ -15,10 +15,15 @@ describe('Zod 3 — fieldMeta WeakMap shim + withMeta helper', () => {
     expect(fieldMeta.has(schema)).toBe(true)
   })
 
-  it('returns the schema reference (chainable) from withMeta', () => {
+  it('returns a fresh schema clone (not the original) from withMeta', () => {
+    // withMeta clones first so each call gets distinct identity —
+    // shields shared sub-schemas from the last-wins overwrite that
+    // the schema-keyed registry would otherwise impose. The clone
+    // round-trips its payload independently.
     const inner = z.string()
     const after = withMeta(inner, { label: 'X' })
-    expect(after).toBe(inner)
+    expect(after).not.toBe(inner)
+    expect(getFieldMeta(after)).toEqual({ label: 'X' })
   })
 
   it('returns undefined for schemas with no registered payload', () => {
@@ -26,37 +31,43 @@ describe('Zod 3 — fieldMeta WeakMap shim + withMeta helper', () => {
     expect(fieldMeta.has(z.string())).toBe(false)
   })
 
-  it('overwrites a prior payload when registered twice on the same schema', () => {
-    const schema = z.string()
-    withMeta(schema, { label: 'First' })
-    withMeta(schema, { label: 'Second' })
-    expect(getFieldMeta(schema)).toEqual({ label: 'Second' })
+  it('chained withMeta merges payloads through clones', () => {
+    // Each withMeta returns a clone with the previous clone's
+    // payload merged in plus the new fields — chaining accumulates
+    // rather than replacing.
+    const labeled = withMeta(z.string(), { label: 'Email' })
+    const labeledAndDescribed = withMeta(labeled, { description: 'For login' })
+    expect(getFieldMeta(labeledAndDescribed)).toEqual({
+      label: 'Email',
+      description: 'For login',
+    })
+    expect(getFieldMeta(labeled)).toEqual({ label: 'Email' })
   })
 
   it('does not leak between independently constructed schemas', () => {
-    const a = z.string()
+    const a = withMeta(z.string(), { label: 'A' })
     const b = z.string()
-    withMeta(a, { label: 'A' })
     expect(getFieldMeta(a)).toEqual({ label: 'A' })
     expect(getFieldMeta(b)).toBeUndefined()
   })
 })
 
 describe('Zod 3 — registry stores against schema reference identity', () => {
-  // Mirrors the v4 suite — WeakMap-keyed-by-reference; the adapter's
-  // two-stage lookup builds on this so both registration patterns
-  // surface payloads through `getFieldMetaAtPath`. Adapter-integration
-  // tests live in `test/composables/field-state-metadata.test.ts`.
+  // Direct fieldMeta.add (the .register-equivalent for v3) keys on
+  // the schema reference. The path-resolver disambiguates per
+  // tree-walk occurrence when the same schema instance is bound at
+  // multiple paths; these tests just lock the per-reference write
+  // semantics.
   it('a registration on the inner is readable on the inner reference', () => {
     const inner = z.string()
-    withMeta(inner, { label: 'Foo' })
+    fieldMeta.add(inner, { label: 'Foo' })
     expect(getFieldMeta(inner)).toEqual({ label: 'Foo' })
   })
 
   it('a registration on the inner is NOT readable on a derived wrapper', () => {
     const inner = z.string()
     const outer = inner.optional()
-    withMeta(inner, { label: 'Foo' })
+    fieldMeta.add(inner, { label: 'Foo' })
     expect(getFieldMeta(inner)).toEqual({ label: 'Foo' })
     expect(getFieldMeta(outer)).toBeUndefined()
   })
@@ -64,7 +75,7 @@ describe('Zod 3 — registry stores against schema reference identity', () => {
   it('a registration on a wrapper is readable on the wrapper but not the inner', () => {
     const inner = z.string()
     const outer = inner.optional()
-    withMeta(outer, { label: 'Foo' })
+    fieldMeta.add(outer, { label: 'Foo' })
     expect(getFieldMeta(outer)).toEqual({ label: 'Foo' })
     expect(getFieldMeta(inner)).toBeUndefined()
   })
@@ -72,7 +83,7 @@ describe('Zod 3 — registry stores against schema reference identity', () => {
   it('a registration on .default(x) is readable on the wrapper', () => {
     const inner = z.string()
     const outer = inner.default('seed')
-    withMeta(outer, { label: 'Foo' })
+    fieldMeta.add(outer, { label: 'Foo' })
     expect(getFieldMeta(outer)).toEqual({ label: 'Foo' })
     expect(getFieldMeta(inner)).toBeUndefined()
   })

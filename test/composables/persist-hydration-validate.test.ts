@@ -6,6 +6,7 @@ import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerpr
 import { hashStableString } from '../../src/runtime/core/hash'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { useForm } from '../../src/zod'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * Persistence hydration must run validation to completion against the
@@ -89,24 +90,6 @@ type SyncForm = z.infer<typeof syncSchema>
 
 const ASYNC_FP = hashStableString(fingerprintZodSchema(asyncSchema))
 const SYNC_FP = hashStableString(fingerprintZodSchema(syncSchema))
-
-async function wait(ms: number): Promise<void> {
-  await new Promise((r) => setTimeout(r, ms))
-}
-
-async function waitUntil<T>(
-  predicate: () => T | null | undefined,
-  timeoutMs = 2000,
-  intervalMs = 5
-): Promise<T | null> {
-  const deadline = Date.now() + timeoutMs
-  for (;;) {
-    const v = predicate()
-    if (v !== null && v !== undefined) return v
-    if (Date.now() >= deadline) return null
-    await wait(intervalMs)
-  }
-}
 
 type AsyncApi = ReturnType<typeof useForm<typeof asyncSchema>>
 type SyncApi = ReturnType<typeof useForm<typeof syncSchema>>

@@ -16,6 +16,8 @@
  */
 
 export { UnsupportedSchemaError, useForm, zodAdapter } from './runtime/adapters/zod-v4'
+export { assertZodVersion, kindOf } from './runtime/adapters/zod-v4/introspect'
+export type { ZodKind } from './runtime/adapters/zod-v4/introspect'
 // injectForm is schema-agnostic — the consumer supplies the Form
 // generic — so re-exporting from the /zod subpath is purely for
 // discoverability alongside useForm.
@@ -24,3 +26,5 @@ export { useRegister } from './runtime/composables/use-register'
 export { AttaformErrorCode } from './runtime/core/error-codes'
 export { unset, isUnset } from './runtime/core/unset'
 export type { Unset } from './runtime/core/unset'
+export { fieldMeta, withMeta } from './runtime/adapters/zod-v4/field-meta'
+export type { FieldMetaPayload } from './runtime/core/field-meta'

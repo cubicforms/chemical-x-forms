@@ -307,10 +307,11 @@ export function resolveStorageKey(
 
 /**
  * Delete every attaform-managed key under `base` that's not the current
- * fingerprint key. Includes:
- *   - Pre-fingerprint legacy keys (no `:` suffix at all) — left
- *     behind by older library versions.
- *   - New-format keys whose fingerprint suffix doesn't match the
+ * fingerprint key. Sweeps two shapes:
+ *   - Unfingerprinted keys (no `:` suffix at all) — defensive cover
+ *     for hand-written or migration-written entries that skipped the
+ *     fingerprint suffix.
+ *   - Fingerprint-suffixed keys whose suffix doesn't match the
  *     current schema.
  *
  * Exact-or-`:`-prefix match prevents collision with sibling forms
@@ -333,8 +334,8 @@ export async function cleanupOrphanKeys(
   }
   for (const key of keys) {
     if (key === currentKey) continue
-    // Match either the exact base (legacy pre-fingerprint key) or
-    // an explicit `:` continuation (new-format with stale fingerprint).
+    // Match either the exact base (unfingerprinted key) or an
+    // explicit `:` continuation (stale-fingerprint key).
     if (key === base || key.startsWith(`${base}:`)) {
       void adapter.removeItem(key).catch(() => undefined)
     }
@@ -380,8 +381,8 @@ export function normalizePersistConfig(input: PersistConfig): PersistConfigOptio
  * (any fingerprint), and the dev removing persistence should mean the
  * on-disk artifact is gone too — for every fingerprint that ever ran.
  *
- * Includes pre-fingerprint legacy keys (no `:` suffix) and
- * fingerprint-suffixed keys equally. Errors per backend are swallowed.
+ * Sweeps unfingerprinted keys (no `:` suffix) and fingerprint-
+ * suffixed keys equally. Errors per backend are swallowed.
  */
 export async function sweepAllOrphansAcrossStandardStores(base: string): Promise<void> {
   for (const kind of STANDARD_STORAGE_KINDS) {
@@ -429,8 +430,8 @@ export async function sweepAllOrphansAcrossStandardStores(base: string): Promise
  * Cross-store orphan cleanup: wipe every attaform-managed key under `base`
  * from each standard backend that's NOT the configured one. Symmetric
  * with `cleanupOrphanKeys` on the configured store: ensures stale
- * drafts don't survive in stores the dev migrated AWAY from. Includes
- * legacy pre-fingerprint keys and stale-fingerprint keys equally.
+ * drafts don't survive in stores the dev migrated AWAY from. Sweeps
+ * unfingerprinted and stale-fingerprint keys equally.
  *
  * If `configured` is a custom `FormStorage` adapter, all three
  * standard backends are swept (we don't know which built-in the dev
@@ -555,8 +556,8 @@ function mergeDeep(
   // DU rebase: if this path is a discriminated union AND target/
   // source describe different variants, rebase target onto the
   // matching variant's slim default before merging. Skips when no
-  // schema is provided (legacy callers / tests) or when the DU
-  // info isn't available at this path.
+  // schema is provided (callers without an adapter handle, including
+  // tests) or when the DU info isn't available at this path.
   let mergeTarget = target
   if (schema !== undefined) {
     const du = schema.getUnionDiscriminatorAtPath(path as Segment[])

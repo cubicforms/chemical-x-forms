@@ -7,8 +7,8 @@ import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
  * `form.fields` — Pinia-style nested reactive proxy. Each path
- * exposes the FieldStateLeaf at that path AND descent into named
- * children. FieldStateLeaf keys (`dirty`, `touched`, `errors`,
+ * exposes the FieldState at that path AND descent into named
+ * children. FieldState keys (`dirty`, `touched`, `errors`,
  * `blank`, `currentValue`, `focused`, `blurred`, `pristine`,
  * `value`, `original`, `connected`, `updatedAt`, `path`) shadow
  * schema fields with conflicting names at depth 2+.

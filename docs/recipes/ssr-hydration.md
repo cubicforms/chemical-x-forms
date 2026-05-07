@@ -1,3 +1,8 @@
+---
+title: 'SSR hydration'
+description: 'Server-render Vue 3 form values, errors, and field flags through Nuxt or bare Vue with Attaform — round-tripped without a hydration flash.'
+---
+
 # SSR hydration (Nuxt + bare Vue)
 
 Server-rendered form values, errors, and field flags round-trip to
@@ -57,16 +62,32 @@ export async function render(url: string) {
 }
 ```
 
-### Server template
+### Server template + injection
+
+The HTML shipped to the browser carries two placeholders — one for the rendered app HTML, one for the inline payload:
 
 ```html
 <body>
-  <div id="app"><!--ssr-outlet--></div>
-  <script>
-    window.__ATTAFORM_STATE__ = {{{ payload }}};
-  </script>
+  <div id="app"><!--app-html--></div>
+  <!--app-payload-->
   <script type="module" src="/src/entry-client.ts"></script>
 </body>
+```
+
+The request handler swaps both in:
+
+```ts
+import fs from 'node:fs/promises'
+import { render } from './entry-server'
+
+app.use('*', async (req, res) => {
+  const template = await fs.readFile('index.html', 'utf-8')
+  const { html, payload } = await render(req.originalUrl)
+  const final = template
+    .replace('<!--app-html-->', html)
+    .replace('<!--app-payload-->', `<script>window.__ATTAFORM_STATE__ = ${payload};</script>`)
+  res.status(200).set({ 'Content-Type': 'text/html' }).end(final)
+})
 ```
 
 ### Client (`entry-client.ts`)
@@ -122,5 +143,5 @@ snapshot. Create forms during `setup` so the server sees them.
 ## Reference test
 
 The bare-Vue round-trip has an end-to-end test at
-[`test/ssr-bare-vue/round-trip.test.ts`](../../test/ssr-bare-vue/round-trip.test.ts)
+[`test/ssr-bare-vue/round-trip.test.ts`](https://github.com/attaform/attaform/blob/main/test/ssr-bare-vue/round-trip.test.ts)
 — reading it is faster than reconstructing the wiring from scratch.

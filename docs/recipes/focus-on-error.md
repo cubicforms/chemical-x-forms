@@ -1,3 +1,7 @@
+---
+description: 'After a failed Attaform submit, focus and scroll to the first invalid field automatically — using field.element and the per-path validity gate.'
+---
+
 # Focus (and scroll) to the first error
 
 When a form fails validation, dropping the user at the top of the

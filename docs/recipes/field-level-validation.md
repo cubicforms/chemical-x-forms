@@ -1,3 +1,7 @@
+---
+description: 'Validate single Attaform fields independently of the full schema: per-path async checks, deferred fail-fast, ad-hoc Zod refinements on one input.'
+---
+
 # Live field validation
 
 Attaform validates as you type by default — `validateOn: 'change'` with

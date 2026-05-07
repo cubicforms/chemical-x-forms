@@ -77,8 +77,8 @@
 
   import { computed, nextTick, ref, watch } from 'vue'
   import { z } from 'zod'
-  import { useForm, unset } from 'attaform/zod'
-  import type { FieldStateLeaf } from 'attaform'
+  import { fieldMeta, useForm, unset, withMeta } from 'attaform/zod'
+  import type { FieldState } from 'attaform'
 
   // ─── Mock async services ─────────────────────────────────────────
   const KNOWN_POSTAL_PREFIXES = new Set([
@@ -108,9 +108,9 @@
   }
 
   // Aggregate capacity check — wired to cargo.items via .superRefine.
-  function checkCapacity(totalKg: number): Promise<boolean> {
+  function checkCapacity(totalLb: number): Promise<boolean> {
     return new Promise((resolve) => {
-      setTimeout(() => resolve(totalKg <= 3000), 800)
+      setTimeout(() => resolve(totalLb <= 6500), 800)
     })
   }
 
@@ -122,25 +122,57 @@
   const COVERAGES = ['none', 'basic', 'full'] as const
 
   const addressSchema = z.object({
-    line1: z.string().min(1, 'Required'),
-    line2: z.string().optional(),
-    city: z.string().min(1, 'Required'),
-    region: z.string().min(2, 'Two-letter region'),
+    line1: z
+      .string()
+      .min(1, 'Add a street address.')
+      .register(fieldMeta, { label: 'Line 1', description: 'Street and number.' }),
+    line2: z
+      .string()
+      .optional()
+      .register(fieldMeta, { label: 'Line 2', description: 'Suite, unit, etc. — optional.' }),
+    city: z.string().min(1, 'Add a city.').register(fieldMeta, { label: 'City' }),
+    region: z
+      .string()
+      .min(2, 'Two-letter code, like CA or ON.')
+      .register(fieldMeta, {
+        label: 'Region',
+        description: 'Two-letter abbreviation (CA, ON, NY, …).',
+      }),
     postalCode: z
       .string()
-      .min(3, 'Required')
-      .refine(async (v) => await lookupPostalCode(v), 'Postal code not found'),
-    country: z.enum(COUNTRIES),
+      .min(3, 'Postal code is required.')
+      .refine(
+        async (v) => await lookupPostalCode(v),
+        "We can't find that postal code — double-check the digits."
+      )
+      .register(fieldMeta, {
+        label: 'Postal code',
+        description: 'We auto-validate against the postal-code service.',
+      }),
+    country: z.enum(COUNTRIES).register(fieldMeta, { label: 'Country' }),
   })
 
   const lineItemSchema = z.object({
     sku: z
       .string()
-      .regex(/^[A-Z0-9-]{4,16}$/, 'Format: A-Z, 0-9, dashes')
-      .refine(async (sku) => await lookupSku(sku), 'Unknown SKU'),
-    description: z.string().min(1, 'Required').max(120, 'Max 120 chars'),
-    quantity: z.number().int('Whole units only').min(1, 'At least 1').max(10_000, 'Max 10,000'),
-    unitWeightKg: z.number().positive('Must be positive'),
+      .regex(/^[A-Z0-9-]{4,16}$/, 'Letters, numbers, and dashes (e.g. SKU-1001).')
+      .refine(async (sku) => await lookupSku(sku), "We don't see that SKU in our catalog yet.")
+      .register(fieldMeta, { label: 'SKU', description: 'A–Z, 0–9, dashes (4–16 chars).' }),
+    description: z
+      .string()
+      .min(1, 'Add a short description.')
+      .max(120, 'Keep it under 120 characters.')
+      .register(fieldMeta, { label: 'Description' }),
+    quantity: z
+      .number()
+      .int('Use a whole number.')
+      .min(1, 'Order at least 1.')
+      .max(10_000, 'More than 10,000 in one row? Split it across multiple line items.')
+      .register(fieldMeta, { label: 'Qty' }),
+    unitWeightLb: z
+      .number()
+      .positive('Weight has to be greater than zero.')
+      .register(fieldMeta, { label: 'Wt (lb)' }),
   })
 
   // Manifest array — lifted out of the cargo discriminated union so
@@ -150,78 +182,113 @@
   // this array's path (cargo.items), surfaced via cargoItemsArrayError.
   const lineItemArraySchema = z
     .array(lineItemSchema)
-    .min(1, 'Add at least one line item')
+    .min(1, 'Add at least one line item to ship.')
     .superRefine(async (items, ctx) => {
-      const totalKg = items.reduce(
-        (sum, it) => sum + it.quantity * it.unitWeightKg,
+      const totalLb = items.reduce(
+        (sum, it) => sum + it.quantity * it.unitWeightLb,
         0
       )
-      const ok = await checkCapacity(totalKg)
+      const ok = await checkCapacity(totalLb)
       if (!ok) {
         ctx.addIssue({
           code: 'custom',
-          message: \`Today's capacity is exhausted (\${totalKg} kg). Try a smaller shipment or schedule for tomorrow.\`,
+          message: \`Today's max is 6,500 lb — you're at \${totalLb} lb. Trim a row or schedule for tomorrow.\`,
         })
       }
     })
 
   const dryDetailsSchema = z.object({
-    type: z.literal('dry'),
-    fragile: z.boolean(),
+    type: z.literal('dry').register(fieldMeta, { label: 'Type' }),
+    fragile: z.boolean().register(fieldMeta, { label: 'Fragile' }),
   })
 
   const refrigeratedDetailsSchema = z
     .object({
-      type: z.literal('refrigerated'),
-      tempMinC: z.number().min(-30, 'Min -30°C').max(20, 'Max 20°C'),
-      tempMaxC: z.number().min(-30, 'Min -30°C').max(20, 'Max 20°C'),
+      type: z.literal('refrigerated').register(fieldMeta, { label: 'Type' }),
+      tempMinF: z
+        .number()
+        .min(-22, "Cold-chain low is -22°F — we can't go colder.")
+        .max(68, 'Cold-chain top is 68°F.')
+        .register(fieldMeta, { label: 'Min temp (°F)' }),
+      tempMaxF: z
+        .number()
+        .min(-22, 'Cold-chain low is -22°F.')
+        .max(68, "Cold-chain top is 68°F — we can't go warmer.")
+        .register(fieldMeta, { label: 'Max temp (°F)' }),
     })
-    .refine((v) => v.tempMinC < v.tempMaxC, {
-      message: 'Min temp must be below max',
-      path: ['tempMaxC'],
+    .refine((v) => v.tempMinF < v.tempMaxF, {
+      message: 'Min temp should be lower than max temp.',
+      path: ['tempMaxF'],
     })
 
   const hazmatDetailsSchema = z.object({
-    type: z.literal('hazmat'),
-    unNumber: z.string().regex(/^UN\\d{4}$/, 'Format: UN1234'),
-    hazardClass: z.enum(HAZARD_CLASSES),
-    acknowledged: z.literal(true, { message: 'Acknowledge handling rules to continue' }),
+    type: z.literal('hazmat').register(fieldMeta, { label: 'Type' }),
+    unNumber: z
+      .string()
+      .regex(/^UN\\d{4}$/, 'UN numbers look like UN1234 — UN plus 4 digits.')
+      .register(fieldMeta, {
+        label: 'UN number',
+        description: 'UN identifier for hazardous materials.',
+      }),
+    hazardClass: z
+      .enum(HAZARD_CLASSES)
+      .register(fieldMeta, { label: 'Hazard class', description: 'Per UN hazard classification.' }),
+    acknowledged: z
+      .literal(true, { message: 'Confirm the handling rules to continue.' })
+      .register(fieldMeta, { label: 'Hazmat acknowledgement' }),
   })
 
   const oversizedDetailsSchema = z.object({
-    type: z.literal('oversized'),
-    lengthCm: z.number().positive(),
-    widthCm: z.number().positive(),
-    heightCm: z.number().positive(),
-    permitNumber: z.string().optional(),
+    type: z.literal('oversized').register(fieldMeta, { label: 'Type' }),
+    lengthIn: z.number().positive().register(fieldMeta, { label: 'Length (in)' }),
+    widthIn: z.number().positive().register(fieldMeta, { label: 'Width (in)' }),
+    heightIn: z.number().positive().register(fieldMeta, { label: 'Height (in)' }),
+    permitNumber: z.string().optional().register(fieldMeta, {
+      label: 'Permit number',
+      description: 'Required for some oversized cargo. Leave blank if none.',
+    }),
   })
 
   const cargoSchema = z.object({
-    items: lineItemArraySchema,
-    details: z.discriminatedUnion('type', [
-      dryDetailsSchema,
-      refrigeratedDetailsSchema,
-      hazmatDetailsSchema,
-      oversizedDetailsSchema,
-    ]),
+    items: lineItemArraySchema.register(fieldMeta, { label: 'Line items' }),
+    details: z
+      .discriminatedUnion('type', [
+        dryDetailsSchema,
+        refrigeratedDetailsSchema,
+        hazmatDetailsSchema,
+        oversizedDetailsSchema,
+      ])
+      .register(fieldMeta, { label: 'Cargo details' }),
   })
 
   const truckServiceSchema = z.object({
     mode: z.literal('truck'),
-    truckType: z.enum(TRUCK_TYPES),
-    liftgate: z.boolean(),
+    truckType: z.enum(TRUCK_TYPES).register(fieldMeta, { label: 'Truck type' }),
+    liftgate: z.boolean().register(fieldMeta, { label: 'Liftgate required' }),
   })
 
   const airServiceSchema = z.object({
     mode: z.literal('air'),
-    airline: z.string().min(2, 'Required'),
-    awbPrefix: z.string().regex(/^\\d{3}$/, 'AWB prefix is 3 digits'),
+    airline: z
+      .string()
+      .min(2, 'Pick an airline (or type its name).')
+      .register(fieldMeta, { label: 'Airline' }),
+    awbPrefix: z
+      .string()
+      .regex(/^\\d{3}$/, 'AWB prefix is exactly 3 digits — like 220.')
+      .register(fieldMeta, {
+        label: 'AWB prefix',
+        description: '3 digits identifying the issuing airline.',
+      }),
   })
 
   const oceanServiceSchema = z.object({
     mode: z.literal('ocean'),
-    vessel: z.string().min(2, 'Required'),
-    containerSize: z.enum(CONTAINER_SIZES),
+    vessel: z
+      .string()
+      .min(2, 'Vessel name is required.')
+      .register(fieldMeta, { label: 'Vessel' }),
+    containerSize: z.enum(CONTAINER_SIZES).register(fieldMeta, { label: 'Container' }),
   })
 
   const serviceSchema = z.discriminatedUnion('mode', [
@@ -231,22 +298,49 @@
   ])
 
   const schema = z.object({
-    reference: z.string().regex(/^SHP-\\d{6}$/, 'Format: SHP-123456'),
-    pickup: addressSchema,
-    delivery: addressSchema,
+    reference: z
+      .string()
+      .regex(/^SHP-\\d{6}$/, 'Reference looks like SHP-123456 — SHP plus 6 digits.')
+      .register(fieldMeta, {
+        label: 'Reference',
+        placeholder: 'SHP-123456',
+        description: 'Tracking ID for this shipment.',
+      }),
+    pickup: withMeta(addressSchema, { label: 'Pickup address' }),
+    delivery: withMeta(addressSchema, { label: 'Delivery address' }),
     // Schema-modeled toggle so the flag is persisted + restored
     // alongside the rest of the draft. The watch below keeps
     // delivery in sync with pickup whenever it's true.
-    useSameDeliveryAddress: z.boolean(),
-    cargo: cargoSchema,
-    service: serviceSchema,
-    desiredPickupDate: z.string().min(1, 'Required'),
-    desiredDeliveryDate: z.string().min(1, 'Required'),
-    insurance: z.object({
-      declaredValueUSD: z.number().min(0, 'Cannot be negative'),
-      coverage: z.enum(COVERAGES),
-    }),
-    notes: z.string().max(500, 'Max 500 chars').optional(),
+    useSameDeliveryAddress: z
+      .boolean()
+      .register(fieldMeta, { label: 'Same as pickup address' }),
+    cargo: cargoSchema.register(fieldMeta, { label: 'Cargo' }),
+    service: serviceSchema.register(fieldMeta, { label: 'Service' }),
+    desiredPickupDate: z
+      .string()
+      .min(1, 'Pick a pickup date.')
+      .register(fieldMeta, { label: 'Pickup date' }),
+    desiredDeliveryDate: z
+      .string()
+      .min(1, 'Pick a delivery date.')
+      .register(fieldMeta, { label: 'Delivery date' }),
+    insurance: z
+      .object({
+        declaredValueUSD: z
+          .number()
+          .min(0, "Declared value can't be negative.")
+          .register(fieldMeta, {
+            label: 'Declared value (USD)',
+            description: 'Used to calculate insurance coverage.',
+          }),
+        coverage: z.enum(COVERAGES).register(fieldMeta, { label: 'Coverage' }),
+      })
+      .register(fieldMeta, { label: 'Insurance' }),
+    notes: z
+      .string()
+      .max(500, 'Keep notes under 500 characters.')
+      .optional()
+      .register(fieldMeta, { label: 'Notes', description: 'Optional handling instructions.' }),
   })
 
   // ─── Form ────────────────────────────────────────────────────────
@@ -312,7 +406,7 @@
   function isStepValid(id: StepId) {
     const paths = STEP_PATHS[id]
     if (paths.length === 0) return false
-    return form.isValid(paths)
+    return paths.every((p) => form.fields(p).valid)
   }
   const currentStepValid = computed(() => isStepValid(step.value))
 
@@ -326,44 +420,9 @@
   // ─── Error summary (review step) ────────────────────────────────
   // Group form.meta.errors by top-level segment so the Review step
   // renders one panel per section. Each row jumps to the owning step.
-  const ROOT_LABELS = new Map([
-    ['reference', 'Reference'],
-    ['pickup', 'Pickup address'],
-    ['delivery', 'Delivery address'],
-    ['cargo', 'Cargo'],
-    ['service', 'Service'],
-    ['insurance', 'Insurance'],
-    ['desiredPickupDate', 'Pickup date'],
-    ['desiredDeliveryDate', 'Delivery date'],
-    ['notes', 'Notes'],
-  ])
-  const LEAF_LABELS = new Map([
-    ['line1', 'Line 1'],
-    ['line2', 'Line 2'],
-    ['city', 'City'],
-    ['region', 'Region'],
-    ['postalCode', 'Postal code'],
-    ['country', 'Country'],
-    ['declaredValueUSD', 'Declared value'],
-    ['coverage', 'Coverage'],
-    ['carrier', 'Carrier'],
-    ['mode', 'Mode'],
-    ['items', 'Line items'],
-    ['fragile', 'Fragile'],
-    ['tempMinC', 'Min temperature'],
-    ['tempMaxC', 'Max temperature'],
-    ['unNumber', 'UN number'],
-    ['hazardClass', 'Hazard class'],
-    ['acknowledged', 'Hazmat acknowledgement'],
-    ['lengthCm', 'Length'],
-    ['widthCm', 'Width'],
-    ['heightCm', 'Height'],
-    ['permitNumber', 'Permit number'],
-    ['sku', 'SKU'],
-    ['description', 'Description'],
-    ['quantity', 'Quantity'],
-    ['type', 'Type'],
-  ])
+  // Section / leaf labels read straight from the schema's registered
+  // metadata via form.fields(path).label — the schema is the single
+  // source of truth for both structure and presentation.
   type ErrorGroup = {
     rootKey: string
     rootLabel: string
@@ -375,13 +434,16 @@
       const root = String(e.path[0] ?? '(root)')
       let group = groups.get(root)
       if (!group) {
-        group = { rootKey: root, rootLabel: ROOT_LABELS.get(root) ?? root, items: [] }
+        group = {
+          rootKey: root,
+          rootLabel: form.fields(root).label || root,
+          items: [],
+        }
         groups.set(root, group)
       }
       let leaf: string | null = null
       if (e.path.length > 1) {
-        const leafKey = String(e.path[e.path.length - 1])
-        leaf = LEAF_LABELS.get(leafKey) ?? leafKey
+        leaf = form.fields(e.path).label || null
       }
       group.items.push({ leafLabel: leaf, message: e.message, path: e.path })
     }
@@ -461,16 +523,16 @@
       sku: '',
       description: '',
       quantity: 1,
-      unitWeightKg: 1,
+      unitWeightLb: 1,
     })
   }
   function removeLineItem(idx: number) {
     form.remove('cargo.items', idx)
   }
 
-  const totalKg = computed(() =>
+  const totalLb = computed(() =>
     form.values.cargo.items.reduce(
-      (sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.unitWeightKg) || 0),
+      (sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.unitWeightLb) || 0),
       0
     )
   )
@@ -498,7 +560,7 @@
   }
 
   // ─── Template helpers ────────────────────────────────────────────
-  function fieldClasses(field: FieldStateLeaf<unknown> | undefined) {
+  function fieldClasses(field: FieldState<unknown> | undefined) {
     if (!field) return {}
     return {
       valid: field.valid && (field.dirty || field.touched),
@@ -506,19 +568,28 @@
       validating: field.validating,
     }
   }
-  function visibleError(field: FieldStateLeaf<unknown> | undefined) {
+  function visibleError(field: FieldState<unknown> | undefined) {
     if (!field || !field.touched) return ''
     return field.errors[0]?.message ?? ''
   }
 
   // Array-level error at cargo.items (min(1) + async capacity refine).
-  const cargoItemsArrayError = computed(() =>
-    form.errorsAt('cargo.items').find((e) => e.path.length === 2)?.message ?? ''
-  )
+  const cargoItemsArrayError = computed(() => {
+    const errs = form.errors('cargo.items')
+    return errs?.find((e) => e.path.length === 2)?.message ?? ''
+  })
 
   const addressBlocks = computed(() => [
-    { prefix: 'pickup' as const, label: 'Pickup', mirrored: false },
-    { prefix: 'delivery' as const, label: 'Delivery', mirrored: form.values.useSameDeliveryAddress },
+    {
+      prefix: 'pickup' as const,
+      label: form.fields('pickup').label,
+      mirrored: false,
+    },
+    {
+      prefix: 'delivery' as const,
+      label: form.fields('delivery').label,
+      mirrored: form.values.useSameDeliveryAddress,
+    },
   ])
 ${'</'}script>
 
@@ -552,11 +623,14 @@ ${'</'}script>
       <!-- ─── Step 1: addresses ─── -->
       <section v-show="step === 1" class="step-body">
         <div class="field" :class="fieldClasses(form.fields.reference)">
-          <label for="reference">Reference</label>
+          <label for="reference">{{ form.fields.reference.label }}</label>
+          <small class="help" v-if="form.fields.reference.description">
+            {{ form.fields.reference.description }}
+          </small>
           <input
             v-register="form.register('reference')"
             id="reference"
-            placeholder="SHP-123456"
+            :placeholder="form.fields.reference.placeholder"
           />
           <small class="hint" v-if="form.fields.reference.validating">Checking…</small>
           <small class="error" v-else>
@@ -576,30 +650,34 @@ ${'</'}script>
               v-register="form.register('useSameDeliveryAddress')"
               type="checkbox"
             />
-            Same as pickup address
+            {{ form.fields.useSameDeliveryAddress.label }}
           </label>
           <div class="grid-2">
             <div class="field" :class="fieldClasses(form.fields[block.prefix].line1)">
-              <label>Line 1</label>
+              <label>{{ form.fields[block.prefix].line1.label }}</label>
+              <small class="help" v-if="form.fields[block.prefix].line1.description">
+                {{ form.fields[block.prefix].line1.description }}
+              </small>
               <input
                 v-register="form.register([block.prefix, 'line1'])"
-                placeholder="Street address"
                 :disabled="block.mirrored"
               />
               <small class="error">{{ visibleError(form.fields[block.prefix].line1) }}</small>
             </div>
             <div class="field">
-              <label>Line 2 <span class="muted">(optional)</span></label>
+              <label>{{ form.fields[block.prefix].line2.label }}</label>
+              <small class="help" v-if="form.fields[block.prefix].line2.description">
+                {{ form.fields[block.prefix].line2.description }}
+              </small>
               <input
                 v-register="form.register([block.prefix, 'line2'])"
-                placeholder="Suite, unit, etc."
                 :disabled="block.mirrored"
               />
             </div>
           </div>
           <div class="grid-3">
             <div class="field" :class="fieldClasses(form.fields[block.prefix].city)">
-              <label>City</label>
+              <label>{{ form.fields[block.prefix].city.label }}</label>
               <input
                 v-register="form.register([block.prefix, 'city'])"
                 :disabled="block.mirrored"
@@ -607,16 +685,18 @@ ${'</'}script>
               <small class="error">{{ visibleError(form.fields[block.prefix].city) }}</small>
             </div>
             <div class="field" :class="fieldClasses(form.fields[block.prefix].region)">
-              <label>Region</label>
+              <label>{{ form.fields[block.prefix].region.label }}</label>
+              <small class="help" v-if="form.fields[block.prefix].region.description">
+                {{ form.fields[block.prefix].region.description }}
+              </small>
               <input
                 v-register="form.register([block.prefix, 'region'])"
-                placeholder="CA / ON"
                 :disabled="block.mirrored"
               />
               <small class="error">{{ visibleError(form.fields[block.prefix].region) }}</small>
             </div>
             <div class="field" :class="fieldClasses(form.fields[block.prefix].country)">
-              <label>Country</label>
+              <label>{{ form.fields[block.prefix].country.label }}</label>
               <select
                 v-register="form.register([block.prefix, 'country'])"
                 :disabled="block.mirrored"
@@ -626,7 +706,10 @@ ${'</'}script>
             </div>
           </div>
           <div class="field" :class="fieldClasses(form.fields[block.prefix].postalCode)">
-            <label>Postal code</label>
+            <label>{{ form.fields[block.prefix].postalCode.label }}</label>
+            <small class="help" v-if="form.fields[block.prefix].postalCode.description">
+              {{ form.fields[block.prefix].postalCode.description }}
+            </small>
             <input
               v-register="form.register([block.prefix, 'postalCode'])"
               placeholder="Try 10xxx, M5xxx, SWxxx…"
@@ -669,30 +752,33 @@ ${'</'}script>
         </div>
 
         <div v-else-if="cargoType === 'refrigerated'" class="grid-2">
-          <div class="field" :class="fieldClasses(form.fields.cargo.details.tempMinC)">
-            <label>Min temp (°C)</label>
+          <div class="field" :class="fieldClasses(form.fields.cargo.details.tempMinF)">
+            <label>{{ form.fields.cargo.details.tempMinF.label }}</label>
             <input
-              v-register.number="form.register('cargo.details.tempMinC')"
+              v-register.number="form.register('cargo.details.tempMinF')"
               type="number"
               step="0.5"
             />
-            <small class="error">{{ visibleError(form.fields.cargo.details.tempMinC) }}</small>
+            <small class="error">{{ visibleError(form.fields.cargo.details.tempMinF) }}</small>
           </div>
-          <div class="field" :class="fieldClasses(form.fields.cargo.details.tempMaxC)">
-            <label>Max temp (°C)</label>
+          <div class="field" :class="fieldClasses(form.fields.cargo.details.tempMaxF)">
+            <label>{{ form.fields.cargo.details.tempMaxF.label }}</label>
             <input
-              v-register.number="form.register('cargo.details.tempMaxC')"
+              v-register.number="form.register('cargo.details.tempMaxF')"
               type="number"
               step="0.5"
             />
-            <small class="error">{{ visibleError(form.fields.cargo.details.tempMaxC) }}</small>
+            <small class="error">{{ visibleError(form.fields.cargo.details.tempMaxF) }}</small>
           </div>
         </div>
 
         <div v-else-if="cargoType === 'hazmat'" class="hazmat">
           <div class="grid-2">
             <div class="field" :class="fieldClasses(form.fields.cargo.details.unNumber)">
-              <label>UN number</label>
+              <label>{{ form.fields.cargo.details.unNumber.label }}</label>
+              <small class="help" v-if="form.fields.cargo.details.unNumber.description">
+                {{ form.fields.cargo.details.unNumber.description }}
+              </small>
               <input
                 v-register="form.register('cargo.details.unNumber')"
                 placeholder="UN1234"
@@ -700,7 +786,10 @@ ${'</'}script>
               <small class="error">{{ visibleError(form.fields.cargo.details.unNumber) }}</small>
             </div>
             <div class="field" :class="fieldClasses(form.fields.cargo.details.hazardClass)">
-              <label>Hazard class</label>
+              <label>{{ form.fields.cargo.details.hazardClass.label }}</label>
+              <small class="help" v-if="form.fields.cargo.details.hazardClass.description">
+                {{ form.fields.cargo.details.hazardClass.description }}
+              </small>
               <select v-register="form.register('cargo.details.hazardClass')">
                 <option v-for="c in HAZARD_CLASSES" :key="c" :value="c">
                   Class {{ c }}
@@ -718,26 +807,27 @@ ${'</'}script>
 
         <div v-else-if="cargoType === 'oversized'" class="oversized">
           <div class="grid-3">
-            <div class="field" :class="fieldClasses(form.fields.cargo.details.lengthCm)">
-              <label>Length (cm)</label>
-              <input v-register.number="form.register('cargo.details.lengthCm')" type="number" />
-              <small class="error">{{ visibleError(form.fields.cargo.details.lengthCm) }}</small>
+            <div class="field" :class="fieldClasses(form.fields.cargo.details.lengthIn)">
+              <label>{{ form.fields.cargo.details.lengthIn.label }}</label>
+              <input v-register.number="form.register('cargo.details.lengthIn')" type="number" />
+              <small class="error">{{ visibleError(form.fields.cargo.details.lengthIn) }}</small>
             </div>
-            <div class="field" :class="fieldClasses(form.fields.cargo.details.widthCm)">
-              <label>Width (cm)</label>
-              <input v-register.number="form.register('cargo.details.widthCm')" type="number" />
-              <small class="error">{{ visibleError(form.fields.cargo.details.widthCm) }}</small>
+            <div class="field" :class="fieldClasses(form.fields.cargo.details.widthIn)">
+              <label>{{ form.fields.cargo.details.widthIn.label }}</label>
+              <input v-register.number="form.register('cargo.details.widthIn')" type="number" />
+              <small class="error">{{ visibleError(form.fields.cargo.details.widthIn) }}</small>
             </div>
-            <div class="field" :class="fieldClasses(form.fields.cargo.details.heightCm)">
-              <label>Height (cm)</label>
-              <input v-register.number="form.register('cargo.details.heightCm')" type="number" />
-              <small class="error">{{ visibleError(form.fields.cargo.details.heightCm) }}</small>
+            <div class="field" :class="fieldClasses(form.fields.cargo.details.heightIn)">
+              <label>{{ form.fields.cargo.details.heightIn.label }}</label>
+              <input v-register.number="form.register('cargo.details.heightIn')" type="number" />
+              <small class="error">{{ visibleError(form.fields.cargo.details.heightIn) }}</small>
             </div>
           </div>
           <div class="field">
-            <label>
-              Permit # <span class="muted">(optional, leave blank if none)</span>
-            </label>
+            <label>{{ form.fields.cargo.details.permitNumber.label }}</label>
+            <small class="help" v-if="form.fields.cargo.details.permitNumber.description">
+              {{ form.fields.cargo.details.permitNumber.description }}
+            </small>
             <input v-register="form.register('cargo.details.permitNumber')" />
             <small class="muted" v-if="!form.values.cargo.details.permitNumber">
               No permit on file — start typing to add one.
@@ -748,7 +838,7 @@ ${'</'}script>
         <!-- Line items (field array) -->
         <div class="line-items">
           <div class="line-items-header">
-            <h3>Line items <span class="muted">({{ totalKg }} kg total)</span></h3>
+            <h3>Line items <span class="muted">({{ totalLb }} kg total)</span></h3>
             <button type="button" class="ghost" @click="addLineItem">+ Add item</button>
           </div>
           <div v-if="form.values.cargo.items.length === 0" class="empty">
@@ -762,7 +852,7 @@ ${'</'}script>
           >
             <div class="li-grid">
               <div class="field" :class="fieldClasses(form.fields.cargo.items[idx].sku)">
-                <label>SKU</label>
+                <label>{{ form.fields.cargo.items[idx].sku.label }}</label>
                 <input
                   v-register="form.register(\`cargo.items.\${idx}.sku\`, { transforms: skuTransforms })"
                   placeholder="SKU-1001"
@@ -775,12 +865,12 @@ ${'</'}script>
                 </small>
               </div>
               <div class="field" :class="fieldClasses(form.fields.cargo.items[idx].description)">
-                <label>Description</label>
+                <label>{{ form.fields.cargo.items[idx].description.label }}</label>
                 <input v-register="form.register(\`cargo.items.\${idx}.description\`)" />
                 <small class="error">{{ visibleError(form.fields.cargo.items[idx].description) }}</small>
               </div>
               <div class="field qty" :class="fieldClasses(form.fields.cargo.items[idx].quantity)">
-                <label>Qty</label>
+                <label>{{ form.fields.cargo.items[idx].quantity.label }}</label>
                 <input
                   v-register.number="form.register(\`cargo.items.\${idx}.quantity\`)"
                   type="number"
@@ -788,15 +878,15 @@ ${'</'}script>
                 />
                 <small class="error">{{ visibleError(form.fields.cargo.items[idx].quantity) }}</small>
               </div>
-              <div class="field qty" :class="fieldClasses(form.fields.cargo.items[idx].unitWeightKg)">
-                <label>Wt (kg)</label>
+              <div class="field qty" :class="fieldClasses(form.fields.cargo.items[idx].unitWeightLb)">
+                <label>{{ form.fields.cargo.items[idx].unitWeightLb.label }}</label>
                 <input
-                  v-register.number="form.register(\`cargo.items.\${idx}.unitWeightKg\`)"
+                  v-register.number="form.register(\`cargo.items.\${idx}.unitWeightLb\`)"
                   type="number"
                   step="0.01"
                   min="0"
                 />
-                <small class="error">{{ visibleError(form.fields.cargo.items[idx].unitWeightKg) }}</small>
+                <small class="error">{{ visibleError(form.fields.cargo.items[idx].unitWeightLb) }}</small>
               </div>
               <button
                 type="button"
@@ -832,25 +922,28 @@ ${'</'}script>
 
         <div v-if="serviceMode === 'truck'" class="grid-2">
           <div class="field" :class="fieldClasses(form.fields.service.truckType)">
-            <label>Truck type</label>
+            <label>{{ form.fields.service.truckType.label }}</label>
             <select v-register="form.register('service.truckType')">
               <option v-for="t in TRUCK_TYPES" :key="t" :value="t">{{ TRUCK_TYPE_LABELS[t] }}</option>
             </select>
           </div>
           <label class="checkbox align-end">
             <input v-register="form.register('service.liftgate')" type="checkbox" />
-            Liftgate required
+            {{ form.fields.service.liftgate.label }}
           </label>
         </div>
 
         <div v-else-if="serviceMode === 'air'" class="grid-2">
           <div class="field" :class="fieldClasses(form.fields.service.airline)">
-            <label>Airline</label>
+            <label>{{ form.fields.service.airline.label }}</label>
             <input v-register="form.register('service.airline')" placeholder="Lufthansa" />
             <small class="error">{{ visibleError(form.fields.service.airline) }}</small>
           </div>
           <div class="field" :class="fieldClasses(form.fields.service.awbPrefix)">
-            <label>AWB prefix</label>
+            <label>{{ form.fields.service.awbPrefix.label }}</label>
+            <small class="help" v-if="form.fields.service.awbPrefix.description">
+              {{ form.fields.service.awbPrefix.description }}
+            </small>
             <input v-register="form.register('service.awbPrefix')" placeholder="220" />
             <small class="error">{{ visibleError(form.fields.service.awbPrefix) }}</small>
           </div>
@@ -858,12 +951,12 @@ ${'</'}script>
 
         <div v-else-if="serviceMode === 'ocean'" class="grid-2">
           <div class="field" :class="fieldClasses(form.fields.service.vessel)">
-            <label>Vessel</label>
+            <label>{{ form.fields.service.vessel.label }}</label>
             <input v-register="form.register('service.vessel')" placeholder="MSC Aurelia" />
             <small class="error">{{ visibleError(form.fields.service.vessel) }}</small>
           </div>
           <div class="field" :class="fieldClasses(form.fields.service.containerSize)">
-            <label>Container</label>
+            <label>{{ form.fields.service.containerSize.label }}</label>
             <select v-register="form.register('service.containerSize')">
               <option v-for="s in CONTAINER_SIZES" :key="s" :value="s">{{ CONTAINER_SIZE_LABELS[s] }}</option>
             </select>
@@ -872,22 +965,25 @@ ${'</'}script>
 
         <div class="grid-2">
           <div class="field" :class="fieldClasses(form.fields.desiredPickupDate)">
-            <label>Pickup date</label>
+            <label>{{ form.fields.desiredPickupDate.label }}</label>
             <input v-register="form.register('desiredPickupDate')" type="date" />
             <small class="error">{{ visibleError(form.fields.desiredPickupDate) }}</small>
           </div>
           <div class="field" :class="fieldClasses(form.fields.desiredDeliveryDate)">
-            <label>Delivery date</label>
+            <label>{{ form.fields.desiredDeliveryDate.label }}</label>
             <input v-register="form.register('desiredDeliveryDate')" type="date" />
             <small class="error">{{ visibleError(form.fields.desiredDeliveryDate) }}</small>
           </div>
         </div>
 
         <fieldset class="address">
-          <legend>Insurance</legend>
+          <legend>{{ form.fields('insurance').label }}</legend>
           <div class="grid-2">
             <div class="field" :class="fieldClasses(form.fields.insurance.declaredValueUSD)">
-              <label>Declared value (USD)</label>
+              <label>{{ form.fields.insurance.declaredValueUSD.label }}</label>
+              <small class="help" v-if="form.fields.insurance.declaredValueUSD.description">
+                {{ form.fields.insurance.declaredValueUSD.description }}
+              </small>
               <input
                 v-register.number="form.register('insurance.declaredValueUSD')"
                 type="number"
@@ -896,7 +992,7 @@ ${'</'}script>
               <small class="error">{{ visibleError(form.fields.insurance.declaredValueUSD) }}</small>
             </div>
             <div class="field">
-              <label>Coverage</label>
+              <label>{{ form.fields.insurance.coverage.label }}</label>
               <select v-register="form.register('insurance.coverage')">
                 <option v-for="c in COVERAGES" :key="c" :value="c">{{ COVERAGE_LABELS[c] }}</option>
               </select>
@@ -905,9 +1001,10 @@ ${'</'}script>
         </fieldset>
 
         <div class="field">
-          <label>
-            Notes <span class="muted">(optional)</span>
-          </label>
+          <label>{{ form.fields.notes.label }}</label>
+          <small class="help" v-if="form.fields.notes.description">
+            {{ form.fields.notes.description }}
+          </small>
           <textarea
             v-register="form.register('notes')"
             rows="3"
@@ -1149,6 +1246,7 @@ body {
 
 .field .error { display: block; font-size: 0.8125rem; line-height: 1.125rem; min-height: 1.125rem; color: #B42318; }
 .field .hint { display: block; font-size: 0.8125rem; line-height: 1.125rem; min-height: 1.125rem; color: #B54708; }
+.field .help { display: block; font-size: 0.8125rem; line-height: 1.125rem; color: #667085; margin-top: -0.125rem; }
 
 /* ─── Layouts ─── */
 .row { display: flex; gap: 0.75rem; }
@@ -1163,7 +1261,7 @@ body {
   flex-direction: column;
   gap: 0.75rem;
 }
-.address legend { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #667085; padding: 0 0.375rem; }
+.address legend { font-size: 0.8125rem; font-weight: 600; color: #344054; padding: 0 0.375rem; }
 .address.mirrored .field input,
 .address.mirrored .field select { background: #F9FAFB; color: #98A2B3; cursor: not-allowed; }
 .address.mirrored .field input:focus,

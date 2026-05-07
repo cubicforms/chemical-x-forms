@@ -1,3 +1,7 @@
+---
+description: 'Add, remove, and reorder array items in Attaform Vue forms with stable keys, per-item validation, and undo/redo through every array mutation.'
+---
+
 # Dynamic field arrays
 
 Forms that edit a list — tags on a post, line items on an invoice,
@@ -106,7 +110,7 @@ function addPost() {
 }
 ```
 
-Weaker (remounts reset the counter) but good enough in-session.
+Weaker on remount (counter resets), but solid in-session.
 
 For lists that only ever append and never reorder, raw index keys
 are OK.
@@ -118,10 +122,12 @@ are OK.
   `posts[0]` could be missing (sparse, deleted, fresh-mount empty).
   Narrow with `?.` / optional checks before non-null operations.
   Tuple positions stay strict (their length is static).
-- `form.fields.posts[0].title` → reactive per-field state at the
-  path. Leaf props: `value`, `dirty`, `errors`, `touched`, `focused`,
-  `blurred`, `blank`, `connected`, `path`. Same `| undefined`
-  taint on `value` once an array index is crossed.
+- `form.fields.posts[0].title` → reactive `FieldState` at the
+  path. Fields: `value`, `original`, `dirty`, `pristine`, `errors`,
+  `valid`, `validating`, `touched`, `focused`, `blurred`, `blank`,
+  `connected`, `updatedAt`, `path`, `element`, `elements`, `label`,
+  `description`, `placeholder`, `meta`. Same `| undefined` taint on
+  `value` once an array index is crossed.
 
 ```vue
 <template>
@@ -145,6 +151,24 @@ const upper = form.values.posts[0]?.title?.toUpperCase() ?? ''
 For ref-shaped interop (e.g. `watch(emailRef, …)` / external
 composables), use `form.toRef('posts.0.title')` to get a
 `Readonly<Ref<string | undefined>>` at the same path.
+
+## Container state on the array itself
+
+`form.fields('posts')` returns a `FieldState` for the whole array —
+same shape as a leaf, with keys aggregated over active descendants:
+
+```ts
+form.fields('posts').dirty // any post changed
+form.fields('posts').valid // every post is valid
+form.fields('posts').errors // active-variant aggregate, sorted
+form.fields('posts').label // registry-derived (e.g. 'Posts')
+form.fields('posts').validating // any descendant is validating
+```
+
+Useful for section-level UI: a per-array "Has unsaved changes" badge,
+an "Invalid posts" gate on a step button, an aggregate error count
+under the array. Same surface for nested objects and discriminated
+unions.
 
 ## Stale state on removal
 

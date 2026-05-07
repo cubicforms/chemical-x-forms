@@ -15,12 +15,12 @@ import type { FormStore } from './create-form-store'
 import { structuralSnapshot } from './diff-apply'
 import { buildErrorsProxy } from './errors-proxy'
 import { buildFieldArrayApi } from './field-arrays'
+import { aggregateErrorsAt, buildFieldStateAccessor } from './field-state-api'
 import { buildFieldStateProxy } from './field-state-proxy'
 import type { HistoryModule } from './history'
 import { getAtPath } from './path-walker'
 import {
   canonicalizePath,
-  isPathPrefix,
   ROOT_PATH_KEY,
   segmentsForPathKey,
   type Path,
@@ -307,84 +307,6 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     state.userErrors.delete(ROOT_PATH_KEY)
   }
 
-  function errorsAt(input: string | ReadonlyArray<string | number>): readonly ValidationError[] {
-    const { segments: prefix } = canonicalizePath(input as string | Path)
-    const out: ValidationError[] = []
-    // Read through `metaErrors.value` so callers wrapping the call in a
-    // `computed(() => form.errorsAt('cargo'))` participate in dep
-    // tracking via the underlying meta computed.
-    for (const err of metaErrors.value) {
-      if (isPathPrefix(prefix, err.path)) out.push(err)
-    }
-    return out
-  }
-
-  // `true` when no error AND no in-flight field-level validation
-  // sits at-or-under any of the supplied prefixes. Sugar over
-  // `errorsAt` for the multi-path case, scoped to per-prefix
-  // in-flight work (the per-field analogue of `meta.validating`).
-  //
-  // The `firstValidationDone` gate is applied **per prefix** — only
-  // for prefixes whose sub-schema declares async work. A purely
-  // synchronous subtree resolves its verdict at construction (or
-  // the next per-field run) without waiting on a microtask, so
-  // honouring the form-wide gate there would just play dumb about
-  // a known answer. The asymmetry kept the demo's stepper from
-  // flashing green for async-validating subtrees while leaving
-  // sync-only paths with the "valid by structure" answer they
-  // honestly hold.
-  //
-  // Whole-form `validate()` / `validateAsync()` runs increment
-  // `meta.validating` only — compose with that flag when the caller
-  // wants to also gate on form-wide async work that doesn't have a
-  // single path.
-  function isValid(paths: ReadonlyArray<string | ReadonlyArray<string | number>>): boolean {
-    for (const p of paths) {
-      const { segments: prefix } = canonicalizePath(p as string | Path)
-      // Per-prefix gate: only apply `firstValidationDone` when the
-      // sub-schema at this prefix actually declares async work. For
-      // a purely synchronous subtree the verdict is settled by the
-      // construction-time pass (or the next per-field run); the
-      // form-wide gate is irrelevant.
-      if (state.pathHasAsyncValidation(prefix) && !state.firstValidationDone.value) return false
-      // Errors under prefix? Read through `metaErrors.value` so callers
-      // wrapping `isValid` in a `computed(...)` get dep tracking via
-      // the same channel `errorsAt` uses.
-      for (const err of metaErrors.value) {
-        if (isPathPrefix(prefix, err.path)) return false
-      }
-      // Field-level validation under prefix? Iterating the reactive
-      // counts Map subscribes the surrounding effect to per-key
-      // changes, so the computed re-evaluates when a debounced
-      // run finishes.
-      for (const [key, count] of state.fieldValidationCounts) {
-        if (count <= 0) continue
-        const fieldSegments = segmentsForPathKey(key)
-        if (fieldSegments && isPathPrefix(prefix, fieldSegments)) return false
-      }
-    }
-    return true
-  }
-
-  // --- Form-level aggregates ---
-  // Each entry in `state.originals` stores its canonical `segments`
-  // alongside the recorded `value`, so this loop skips `JSON.parse` per
-  // iteration. See phase 5.1 notes.
-  const dirty = computed<boolean>(() => {
-    for (const [, { segments, value: original }] of state.originals) {
-      if (!Object.is(getAtPath(state.form.value, segments), original)) return true
-    }
-    // Storage matches but blank membership might have
-    // changed (user cleared a field whose default was non-empty, or
-    // typed into a field that was construction-time-empty). Compare
-    // the live reactive set against the construction-time snapshot.
-    if (state.blankPaths.size !== state.originalBlankPaths.size) return true
-    for (const key of state.blankPaths) {
-      if (!state.originalBlankPaths.has(key)) return true
-    }
-    return false
-  })
-
   // --- Submission lifecycle ---
   const submitting = computed<boolean>(() => state.submitting.value)
   const submitCount = computed<number>(() => state.submitCount.value)
@@ -440,23 +362,15 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // errors return to the slot they originally occupied: clearing
   // `email` then re-breaking it puts `email` back ahead of `password`,
   // not at the end of the aggregate.
-  const metaErrors = computed<readonly ValidationError[]>(() => {
-    const buckets = new Map<number, ValidationError[]>()
-    const collect = (errs: ReadonlyMap<PathKey, ValidationError[]>): void => {
-      for (const [pathKey, list] of errs) {
-        if (list.length === 0) continue
-        const ordinal = state.ensurePathOrdinal(pathKey)
-        const existing = buckets.get(ordinal)
-        if (existing === undefined) buckets.set(ordinal, [...list])
-        else existing.push(...list)
-      }
-    }
-    collect(state.schemaErrors)
-    collect(state.derivedBlankErrors.value)
-    collect(state.userErrors)
-    if (buckets.size === 0) return []
-    return [...buckets.entries()].sort(([a], [b]) => a - b).flatMap(([, errs]) => errs)
-  })
+  // The form-level error aggregate. Reads through the same shared
+  // `aggregateErrorsAt` helper that `form.fields(path).errors` and
+  // `form.errors(path)` use (with the empty-prefix path, which
+  // collects every active-variant leaf). One source of truth — the
+  // three surfaces never drift, and inactive-variant errors stay
+  // hidden everywhere by default.
+  const metaErrors = computed<readonly ValidationError[]>(() =>
+    aggregateErrorsAt(state, [] as Path)
+  )
 
   // --- Form-level meta bundle ---
   // Vue auto-unwraps refs that are top-level on a setup return, but not
@@ -468,18 +382,62 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   //
   // Named `formMeta` locally to avoid shadowing the `state: FormStore<F>`
   // param this function receives; exposed as `meta` on the public return.
+  //
+  // FormMeta = FieldState<F> at the root + lifecycle (submit / undo /
+  // redo / instance identity). The FieldState fields are derived
+  // through the shared `getFieldStateAt([])` accessor (memoised, same
+  // reference returned by `form.fields()`) so `form.meta.dirty`,
+  // `form.fields().dirty`, and `form.fields([]).dirty` all read
+  // identical aggregated state.
+  const getRootFieldStateAt = buildFieldStateAccessor(state)
+  const rootFieldState = getRootFieldStateAt([] as Path)
   const formMeta = readonly(
     reactive({
-      dirty,
+      // FieldState fields — read through one shared root computed. Each
+      // property accesses `rootFieldState.value[X]`, so any descendant
+      // change re-evaluates the root computed once (Vue's reactive
+      // graph dedupes the dependent re-renders).
+      value: computed(() => rootFieldState.value.value),
+      original: computed(() => rootFieldState.value.original),
+      pristine: computed(() => rootFieldState.value.pristine),
+      dirty: computed(() => rootFieldState.value.dirty),
+      focused: computed(() => rootFieldState.value.focused),
+      blurred: computed(() => rootFieldState.value.blurred),
+      touched: computed(() => rootFieldState.value.touched),
+      connected: computed(() => rootFieldState.value.connected),
+      element: computed(() => rootFieldState.value.element),
+      elements: computed(() => rootFieldState.value.elements),
+      updatedAt: computed(() => rootFieldState.value.updatedAt),
+      // Whole-form validating mirrors the LIFECYCLE counter
+      // (`state.activeValidations`) ORed with any per-leaf validation
+      // in flight (via `rootFieldState.validating`). A submit-time
+      // validate run shows up as activeValidations; per-field
+      // debounced validators show up as fieldValidationCounts. Either
+      // flips the flag.
+      validating: computed(
+        () => state.activeValidations.value > 0 || rootFieldState.value.validating
+      ),
+      // Whole-form valid keeps the original `firstValidationDone`
+      // mount gate so the surface doesn't lie about a yet-to-arrive
+      // verdict at construction time. The shared `aggregateErrorsAt`
+      // ensures `form.meta.errors` and `rootFieldState.errors` match,
+      // so `errors.length === 0` here would agree with `valid` —
+      // keep the explicit form-level computation for the gate.
       valid,
+      errors: metaErrors,
+      path: computed(() => rootFieldState.value.path),
+      blank: computed(() => rootFieldState.value.blank),
+      label: computed(() => rootFieldState.value.label),
+      description: computed(() => rootFieldState.value.description),
+      placeholder: computed(() => rootFieldState.value.placeholder),
+      meta: computed(() => rootFieldState.value.meta),
+      // Lifecycle (form-level only — not on FieldState).
       submitting,
-      validating,
       submitCount,
       submitError,
       canUndo,
       canRedo,
       historySize,
-      errors: metaErrors,
       // Per-`useForm()`-call identity. Stable for one mount; new on
       // re-mount; orthogonal to `form.key` (which is the user-supplied
       // shared identifier). Useful for devtools panels disambiguating
@@ -487,7 +445,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       // "which mount", and E2E tests stamping `data-form-id`.
       instanceId: formInstanceId,
     })
-  ) as FormMeta
+  ) as FormMeta<Form>
 
   // --- Persistence handle (cached on FormStore by useAbstractForm
   // when persist: is configured). The persist + clearPersistedDraft
@@ -616,7 +574,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
 
   // --- Pinia-style reactive per-field state proxy ---
   // Allocated once per buildFormApi call (one per consumer). Each Proxy
-  // node memoizes its descendants and the per-path FieldStateView
+  // node memoizes its descendants and the per-path FieldState
   // computed it reads through, so repeated access to the same path
   // (`form.fields.email` twice) returns the same object — useful
   // for downstream `===` checks and Vue's render diff.
@@ -643,8 +601,6 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     clearFieldErrors,
     setFormErrors,
     clearFormErrors,
-    errorsAt,
-    isValid,
     meta: formMeta,
     reset: reset as UseFormReturnType<Form, GetValueFormType>['reset'],
     resetField: resetField as UseFormReturnType<Form, GetValueFormType>['resetField'],

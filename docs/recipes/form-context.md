@@ -1,3 +1,7 @@
+---
+description: 'Share one Attaform form across distant Vue components without props drilling: provideFormContext and useFormContext expose the form to any descendant.'
+---
+
 # Form context in nested components
 
 Splitting a form across components? Don't prop-drill `register` /

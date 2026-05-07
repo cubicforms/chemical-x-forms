@@ -41,7 +41,7 @@ export type Unset = typeof _unsetBrand
  * every realm gets the same sentinel.
  *
  * @see {@link isUnset} — type guard that narrows a value back to {@link Unset}.
- * @see `docs/blank.md` — the conceptual model behind blank-aware fields.
+ * @see `docs/recipes/blank-inputs.md` — the conceptual model behind blank-aware fields.
  */
 export const unset: Unset = Symbol.for('attaform/unset') as Unset
 

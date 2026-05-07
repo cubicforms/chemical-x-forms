@@ -18,6 +18,7 @@ export const docsNavigation: DocsSection[] = [
     heading: 'Getting started',
     links: [
       { title: 'Documentation home', to: '/docs' },
+      { title: 'Why Attaform', to: '/docs/why' },
       { title: 'Quick start', to: '/docs/quickstart' },
     ],
   },
@@ -40,6 +41,7 @@ export const docsNavigation: DocsSection[] = [
     links: [
       { title: 'App-level defaults', to: '/docs/recipes/app-defaults' },
       { title: 'Async validation', to: '/docs/recipes/async-validation' },
+      { title: 'Blank inputs', to: '/docs/recipes/blank-inputs' },
       { title: 'Coercion', to: '/docs/recipes/coerce' },
       { title: 'Custom adapters', to: '/docs/recipes/custom-adapter' },
       { title: 'Devtools', to: '/docs/recipes/devtools' },

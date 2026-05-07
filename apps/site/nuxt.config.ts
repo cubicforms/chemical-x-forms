@@ -72,8 +72,91 @@ function isFilteredBuildWarning(msg: string): boolean {
   }) as typeof nuxtKitLogger.warn
 }
 
+// `console.warn` self-healing guard. Background: under Nuxt 4.4 +
+// Vite 7 + consola 3.4, the SSR bundle pass calls
+// `Consola.wrapAll() → wrapConsole()`, which writes `console[type] =
+// this[type].raw` for every type. For the SSR-targeted consola
+// instance, `this.warn.raw` resolves to `undefined` (the .raw
+// property is set up only on the rich Node consola, not the
+// browser-shimmed one Vite produces when `node:tty` is externalized).
+// `console.warn` then becomes `undefined` — and the next time
+// Rollup's `defaultPrintLog` tries to surface a warning during
+// prerender, it crashes with `TypeError: console.warn is not a
+// function`.
+//
+// The downstream symptom is that `nuxi build` / `nuxi generate` exit
+// non-zero on a hidden Rollup warning rather than completing the
+// prerender. The fix lives at the boundary where the bug lands:
+// reject any non-function assignment to `console.warn` and quietly
+// fall back to the original. The override survives the swap but the
+// global `console.warn` keeps working, so Rollup's warning printer
+// stays alive long enough for prerender to finish.
+{
+  const realWarn = console.warn.bind(console)
+  let current: typeof console.warn = realWarn
+  Object.defineProperty(console, 'warn', {
+    configurable: true,
+    get() {
+      return typeof current === 'function' ? current : realWarn
+    },
+    set(v) {
+      current = typeof v === 'function' ? v : realWarn
+    },
+  })
+}
+
 export default defineNuxtConfig({
-  modules: ['@nuxt/content', '@nuxt/fonts', '@nuxtjs/color-mode'],
+  modules: ['@nuxt/content', '@nuxt/fonts', '@nuxtjs/color-mode', '@nuxtjs/seo'],
+  // @nuxtjs/seo is the umbrella that wires sitemap.xml + robots.txt +
+  // per-page canonical links + nuxt-og-image (per-route social cards)
+  // + nuxt-schema-org (JSON-LD) + nuxt-link-checker behind one module.
+  // The auto-generated sitemap walks the prerendered routes set;
+  // canonicals + OG meta + structured-data URLs all resolve against
+  // `site.url`.
+  //
+  // Pin to the **www** host — the apex `attaform.com` 301s to
+  // `www.attaform.com` at the Vercel layer. Emitting sitemap entries
+  // (and canonicals, and og:url) on the apex would mean every URL the
+  // crawler hits redirects, wasting crawl budget and signaling
+  // duplicate content. The canonical host is www; everything we ship
+  // points there directly.
+  site: {
+    url: 'https://www.attaform.com',
+    name: 'Attaform',
+    description:
+      'A type-safe, schema-driven form library for Vue 3 and Nuxt with first-class Zod support.',
+    defaultLocale: 'en',
+  },
+  // nuxt-og-image renders Vue components to 1200×630 PNGs at build
+  // time via Satori. We're on the generic Nitro `static` preset
+  // (rather than the platform-specific `vercel-static`), and the
+  // module logs a one-time "Unknown Nitro preset" warning at config
+  // time about that — it's informational, the prerender path falls
+  // through to node-server compatibility which is correct for our
+  // SSG flow. Inter (the site's primary font) is already pulled in
+  // by @nuxt/fonts; nuxt-og-image picks it up automatically — no
+  // explicit fonts config needed at this layer.
+  //
+  // nuxt-link-checker walks every prerendered HTML page and probes
+  // each <a> + canonical / og:url for resolvability. With
+  // `failOnError: true`, a broken internal link exits the build
+  // non-zero — the same gate that `nitro.prerender.failOnError` uses
+  // for 500s, applied at the link layer. `fetchRemoteUrls: false`
+  // (the default) keeps external URLs out of the loop: an upstream
+  // dev tool retiring its domain shouldn't fail our CI. The trade-
+  // off is real internal breakage gets caught in CI, while link rot
+  // on the wider web stays a manual cleanup task.
+  //
+  // `strictNuxtContentPaths: true` tells the inspector that our
+  // markdown source paths map 1:1 to live URLs (docs/foo.md ↔
+  // /docs/foo). That sharpens detection for relative refs inside
+  // markdown (a `[label](other-doc.md)` resolves through the same
+  // path map @nuxt/content uses, instead of being treated as a raw
+  // file fetch).
+  linkChecker: {
+    failOnError: true,
+    strictNuxtContentPaths: true,
+  },
   // @nuxt/content's Shiki integration. Pinning the themes and lang
   // set here is intentional — the default theme set is broad and
   // bundles ~50 grammars we don't need; whitelisting brings the
@@ -234,14 +317,22 @@ export default defineNuxtConfig({
     // targets from the seed routes, so we only have to list the
     // entry points. `/docs` is the index page that links into every
     // doc; `/play` and `/` round out the rest of the public
-    // surface. failOnError: false keeps a single broken anchor in
-    // markdown from failing the whole build — Nuxt logs the misses
-    // to stderr.
+    // surface.
+    //
+    // `failOnError: true` gates the build on prerender errors. A 500
+    // on any prerendered route (e.g. a Vue mustache leaking through
+    // a markdown code fence and binding to an undefined variable —
+    // see the post-mortem on the {{{ payload }}} ssr-hydration bug)
+    // exits the build non-zero so CI can red-flag it. The trade-off:
+    // typo'd internal links (a `[label](does-not-exist.md)` whose
+    // target the crawler can't render) ALSO fail the build — but
+    // those are real bugs too, and catching them in CI beats finding
+    // them in production from a user filing an issue.
     preset: 'static',
     prerender: {
       crawlLinks: true,
       routes: ['/', '/docs', '/play'],
-      failOnError: false,
+      failOnError: true,
     },
     devHandlers: [
       {

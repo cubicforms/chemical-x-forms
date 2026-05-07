@@ -120,13 +120,15 @@ describe('form.errors — callable form', () => {
     expect(called).toEqual(dotted)
   })
 
-  it('callable with no arg returns the root proxy', () => {
+  it('callable with no arg returns the form-level error aggregate', () => {
+    // `form.errors()` returns the aggregated errors at the root path
+    // (same data `form.meta.errors` exposes). `undefined` when no
+    // errors; readonly array otherwise.
     const { app, api } = mount()
     apps.push(app)
 
     const root = (api.errors as unknown as () => unknown)()
-    // Root proxy is itself drillable and JSON-stringifies to {}.
-    expect(JSON.parse(JSON.stringify(root))).toEqual({})
+    expect(root).toBeUndefined()
   })
 
   it('callable with an array path resolves the same as dotted-string', () => {

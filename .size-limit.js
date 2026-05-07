@@ -100,7 +100,38 @@ export default [
     //     field-validation scheduler
     // Measured at 26.39 KB; 1.61 KB headroom for the follow-up docs /
     // test commit.
-    limit: '28 KB',
+    //
+    // Raised 28 → 30 KB on the field-state-metadata branch:
+    //   - schema-attached metadata (fieldMeta registry, withMeta
+    //     helper, humanize fallback, FieldMetaPayload interface,
+    //     ResolvedFieldMeta) on both Zod adapters
+    //   - AbstractSchema.getFieldMetaAtPath optional hook + adapter
+    //     implementations (resolveFieldMetaAtPath + path-walker tree
+    //     traversal + per-rootSchema WeakMap-cached path → payload
+    //     map for shared-schema disambiguation across multiple paths)
+    //   - unified FieldState shape — one type at every path, leaf or
+    //     container, with aggregations rolled up at containers
+    //     (event-presence by disjunction, uniformity by conjunction);
+    //     FieldStateMapEntry rewrite + FieldStateMap mapped type
+    //     stripping the optional flag (-?:)
+    //   - container call-form: form.fields(path) + form.errors(path)
+    //     return aggregated FieldState / ValidationError[] at any
+    //     depth (third proxy shape: fieldStateTerminalAt; surface-
+    //     proxy resolveCallTarget split between apply trap and get)
+    //   - FormMeta = FieldState<F> & { submitting, submitCount,
+    //     submitError, canUndo, canRedo, historySize, instanceId }
+    //   - shared aggregateErrorsAt helper driving form.errors(p),
+    //     form.fields(p).errors, and form.meta.errors through one
+    //     active-variant-filtered computed
+    //   - field.element / field.elements for native DOM ops
+    //   - per-path validity gate (firstValidationDone +
+    //     pathHasAsyncValidation) closing the meta.valid flash
+    //     window for strict + async schemas
+    //   - Zod 4 sync-refinement seed when async siblings throw
+    //   - getSchemasAtPath-driven per-path validity in adapters
+    // Measured at 28.77 KB; 1.23 KB headroom for the follow-up
+    // docs / test commit.
+    limit: '30 KB',
     gzip: true,
     modifyEsbuildConfig: asEsm,
   },
@@ -134,7 +165,13 @@ export default [
     // bump (same shared core chunk: coerce + transforms + DU memory
     // + meta-surface rewrite + DOM force-sync + sync-debounce).
     // Measured at 25.71 KB.
-    limit: '28 KB',
+    //
+    // Raised 28 → 30 KB tracking index.mjs's field-state-metadata
+    // bump (same shared core chunk + v4 fieldMeta registry +
+    // withMeta clone-on-write + getFieldMetaAtPath resolver + path-
+    // walker tree traversal for shared-schema disambiguation).
+    // Measured at 29.20 KB.
+    limit: '30 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
@@ -168,7 +205,12 @@ export default [
     // bump (same shared core chunk + UseFormConfigurationWithZod
     // adding coerce / rememberVariants fields + getUnionDiscriminator
     // plumbing in the v3 adapter). Measured at 25.68 KB.
-    limit: '28 KB',
+    //
+    // Raised 28 → 30 KB tracking index.mjs's field-state-metadata
+    // bump (same shared core chunk + v3 fieldMeta WeakMap shim +
+    // withMeta clone via constructor+_def + v3 getFieldMetaAtPath
+    // resolver). Measured at 29.05 KB.
+    limit: '30 KB',
     gzip: true,
     ignore: ['zod', 'lodash-es'],
     modifyEsbuildConfig: asEsm,

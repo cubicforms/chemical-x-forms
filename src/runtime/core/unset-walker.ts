@@ -14,7 +14,7 @@ import { isUnset } from './unset'
  *   - `reset(nextDefaultValues)` translation
  *
  * `blank` is the runtime's bookkeeping for **storage / display
- * divergence** — see `docs/blank.md` for the concept. Two sources of
+ * divergence** — see `docs/recipes/blank-inputs.md` for the concept. Two sources of
  * marks, gated by that purpose:
  *
  *   1. **Explicit `unset` (any primitive leaf)** — the consumer wrote

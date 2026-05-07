@@ -1,9 +1,15 @@
+---
+title: 'attaform/zod — Zod 4 adapter'
+description: 'The recommended Zod 4 adapter for Attaform — useForm with Zod schemas, withMeta for schema-attached labels, and the fieldMeta registry helpers.'
+---
+
 # `attaform/zod`
 
 Zod v4 adapter. Requires `zod@^4`.
 
 ```ts
-import { useForm, zodAdapter, kindOf, assertZodVersion } from 'attaform/zod'
+import { useForm, zodAdapter, fieldMeta, withMeta, kindOf, assertZodVersion } from 'attaform/zod'
+import type { FieldMetaPayload, ZodKind } from 'attaform/zod'
 ```
 
 ## `useForm<Schema>(options)`
@@ -76,22 +82,119 @@ on read.
 
 See [persistence recipe](/docs/recipes/persistence) for the full pattern.
 
+## Schema-attached metadata
+
+Attach labels, descriptions, and placeholders directly to schema
+fields. Read them off `form.fields(path).label` / `.description` /
+`.placeholder` / `.meta` — same surface for leaves and containers.
+
+```ts
+import { z } from 'zod'
+import { fieldMeta, withMeta } from 'attaform/zod'
+
+// Native Zod 4 chain
+const A = z.object({
+  email: z.email().register(fieldMeta, {
+    label: 'Email',
+    placeholder: 'you@example.com',
+  }),
+})
+
+// Helper (works on v3 and v4)
+const B = z.object({
+  email: withMeta(z.email(), {
+    label: 'Email',
+    placeholder: 'you@example.com',
+  }),
+})
+```
+
+Both forms write to the same `fieldMeta` registry; pick whichever
+reads naturally. Container schemas register the same way:
+`z.object({...}).register(fieldMeta, { label: 'Pickup address' })`.
+
+**Resolution order** for each field on `form.fields(path)`:
+
+| Field         | Sources                                                                                                                            |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `label`       | registered `label` → `humanize(lastSegment)` (camelCase / snake_case / kebab-case → Title Case; numeric segments collapse to `''`) |
+| `description` | registered `description` → `schema.description` (Zod's `.describe(...)`) → `undefined`                                             |
+| `placeholder` | registered `placeholder` → `undefined`                                                                                             |
+| `meta`        | the full registered payload, frozen — empty object when nothing has been registered                                                |
+
+Setting both `.describe('...')` and `.register(fieldMeta, { description: '...' })` is fine — the registered description wins,
+and `.describe()` stays readable for unrelated tooling (JSON-Schema
+export, etc.).
+
+**Custom payload keys.** `FieldMetaPayload` is an `interface` — extend
+it via TypeScript module augmentation:
+
+```ts
+declare module 'attaform/zod' {
+  interface FieldMetaPayload {
+    tooltip?: string
+    icon?: string
+  }
+}
+
+const schema = z.object({
+  email: z.email().register(fieldMeta, { label: 'Email', tooltip: 'For login' }),
+})
+
+// template: {{ form.fields.email.meta.tooltip }} → 'For login'
+```
+
+The single `fieldMeta` registry holds the augmented shape — no
+fragmentation across consumers.
+
+**Reusing a sub-schema at multiple paths.** Both registration styles
+are safe. Zod's registry keys on the schema reference, but the
+adapter walks the form's schema tree at first lookup and pairs each
+path with its intended payload — registration order (object literal
+left-to-right) matches walk order, so the two patterns below both
+resolve as you'd expect:
+
+```ts
+const addressSchema = z.object({ line1: z.string(), city: z.string() })
+
+// Native chain — adapter disambiguates by tree-walk order
+const form = z.object({
+  pickup: addressSchema.register(fieldMeta, { label: 'Pickup address' }),
+  delivery: addressSchema.register(fieldMeta, { label: 'Delivery address' }),
+})
+// form.fields('pickup').label   → 'Pickup address'
+// form.fields('delivery').label → 'Delivery address'
+
+// Helper — clones the schema first so each call gets distinct identity
+const form2 = z.object({
+  pickup: withMeta(addressSchema, { label: 'Pickup address' }),
+  delivery: withMeta(addressSchema, { label: 'Delivery address' }),
+})
+```
+
+Sharing a schema with IDENTICAL metadata is also fine — common for
+array elements (every line item shares one `lineItemSchema` instance
+and inherits the same per-leaf labels).
+
 ## `zodAdapter(schema)`
 
 Lower-level. Returns an `AbstractSchema<Form, Form>` that wraps a
-Zod schema. Use it only when composing your own `useForm`-like
+Zod schema. Reach for it only when composing your own `useForm`-like
 hook.
 
 ## `kindOf(schema)`
 
 Returns the zod kind (`'string'`, `'number'`, `'object'`,
-`'discriminated-union'`, etc.) for a zod v4 schema. For advanced
-adapter work.
+`'discriminated-union'`, etc.) for a Zod 4 schema. For advanced
+adapter work — wrapping `register`, building per-kind UI, branching
+on schema shape.
 
-## `assertZodVersion(version)`
+## `assertZodVersion(schema)`
 
-Throws if the installed zod major doesn't match the argument.
+Throws if the installed `zod` major doesn't match the adapter. Use
+when wiring custom adapter code that introspects schema internals
+and would silently misbehave under the wrong version.
 
 ## `type ZodKind`
 
-Union of the strings returned by `kindOf`.
+Union of the strings returned by `kindOf` — `'string' | 'number' | 'boolean' | 'object' | 'array' | 'tuple' | 'discriminated-union' | 'union' | …`.

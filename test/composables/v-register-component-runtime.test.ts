@@ -240,7 +240,7 @@ describe('pattern 2: v-register on a non-form root WITH useRegister (recommended
   it('wrapper-component primitives: child derives field state from rv.segments alone', async () => {
     // The wrapper-component story: the child reads `useRegister()`'s
     // captured RV and uses `rv.segments` + `injectForm()` to derive
-    // FieldStateView (errors, dirty, touched, value, …) without the
+    // FieldState (errors, dirty, touched, value, …) without the
     // parent re-threading a `path` prop. Today the child has the same
     // form via the api capture in `mountWithChild`, but the API surface
     // we exercise — `api.fields(rv.segments)` — is what
@@ -276,11 +276,21 @@ describe('pattern 2: v-register on a non-form root WITH useRegister (recommended
     expect(captured.rv.formKey).toBe(mounted.api.key)
     expect(typeof captured.rv.formInstanceId).toBe('string')
 
-    // The wrapper-component contract: `form.fields(rv.segments)`
-    // resolves to the same FieldStateView as `form.fields.email`.
-    const viaSegments = mounted.api.fields(captured.rv.segments)
-    const viaProperty = mounted.api.fields.email
-    expect(viaSegments).toBe(viaProperty)
+    // The wrapper-component contract: `form.fields(rv.segments)` and
+    // `form.fields.email` expose equivalent FieldState reads. Since
+    // call-form returns the FieldState terminal (different proxy
+    // shape from the leaf-view), assertions check structural
+    // equivalence rather than referential equality.
+    type FieldStateLike = {
+      value: unknown
+      path: readonly (string | number)[]
+      errors: readonly unknown[]
+    }
+    const viaSegments = mounted.api.fields(captured.rv.segments) as FieldStateLike
+    const viaProperty = mounted.api.fields.email as unknown as FieldStateLike
+    expect(viaSegments.value).toBe(viaProperty.value)
+    expect(viaSegments.path).toEqual(viaProperty.path)
+    expect(viaSegments.errors).toEqual(viaProperty.errors)
   })
 })
 

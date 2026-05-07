@@ -1,3 +1,8 @@
+---
+title: 'attaform/nuxt — Nuxt 4 module'
+description: 'Drop-in Nuxt module for Attaform: zero-config auto-imports, SSR-safe form state through nuxtApp.payload, devtools panel, and schema HMR.'
+---
+
 # `attaform/nuxt`
 
 A Nuxt module that installs the plugin, registers the node

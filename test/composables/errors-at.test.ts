@@ -6,9 +6,12 @@ import { z } from 'zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
- * `form.errorsAt(path)` returns every error whose path IS the given
- * path OR descends from it. Aggregates schema + blank + user errors
- * in the same order as `meta.errors`.
+ * `form.errors(path)` (call-form) returns every error whose path IS
+ * the given path OR descends from it. Aggregates schema + blank +
+ * user errors in the same order as `meta.errors`. The three
+ * surfaces — `form.errors(path)`, `form.fields(path).errors`, and
+ * `form.meta.errors` — share one aggregation helper, so reads at
+ * any prefix never disagree.
  */
 
 const schema = z.object({
@@ -27,6 +30,16 @@ const schema = z.object({
 })
 
 type Api = ReturnType<typeof useForm<typeof schema>>
+type ErrorsCallForm = (path: string | readonly (string | number)[]) =>
+  | readonly {
+      message: string
+      path: readonly (string | number)[]
+    }[]
+  | undefined
+
+function callErrors(api: Api): ErrorsCallForm {
+  return api.errors as unknown as ErrorsCallForm
+}
 
 function mount(): { app: App; api: Api } {
   const handle: { api?: Api } = {}
@@ -52,7 +65,7 @@ function mount(): { app: App; api: Api } {
   return { app, api: handle.api as Api }
 }
 
-describe('form.errorsAt', () => {
+describe('form.errors(path) — aggregation at any depth', () => {
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
@@ -93,11 +106,10 @@ describe('form.errorsAt', () => {
     apps.push(app)
     seedAllErrors(api)
 
-    const cargo = api.errorsAt('cargo')
+    const cargo = callErrors(api)('cargo') ?? []
     expect(cargo.map((e) => e.message).sort()).toEqual(
       ['cargo invalid', 'items invalid', 'sku bad'].sort()
     )
-    // No service or form-level errors leak in.
     for (const e of cargo) {
       expect(e.path[0]).toBe('cargo')
     }
@@ -108,10 +120,10 @@ describe('form.errorsAt', () => {
     apps.push(app)
     seedAllErrors(api)
 
-    const items = api.errorsAt('cargo.items')
+    const items = callErrors(api)('cargo.items') ?? []
     expect(items.map((e) => e.message).sort()).toEqual(['items invalid', 'sku bad'].sort())
 
-    const itemZero = api.errorsAt('cargo.items.0')
+    const itemZero = callErrors(api)('cargo.items.0') ?? []
     expect(itemZero.map((e) => e.message)).toEqual(['sku bad'])
   })
 
@@ -120,8 +132,8 @@ describe('form.errorsAt', () => {
     apps.push(app)
     seedAllErrors(api)
 
-    const dotted = api.errorsAt('cargo.items.0').map((e) => e.message)
-    const segments = api.errorsAt(['cargo', 'items', 0]).map((e) => e.message)
+    const dotted = (callErrors(api)('cargo.items.0') ?? []).map((e) => e.message)
+    const segments = (callErrors(api)(['cargo', 'items', 0]) ?? []).map((e) => e.message)
     expect(segments).toEqual(dotted)
   })
 
@@ -130,26 +142,20 @@ describe('form.errorsAt', () => {
     apps.push(app)
     seedAllErrors(api)
 
-    const allDotted = api
-      .errorsAt('')
-      .map((e) => e.message)
-      .sort()
-    const allSegments = api
-      .errorsAt([])
-      .map((e) => e.message)
-      .sort()
+    const allDotted = (callErrors(api)('') ?? []).map((e) => e.message).sort()
+    const allSegments = (callErrors(api)([]) ?? []).map((e) => e.message).sort()
     expect(allDotted).toEqual(allSegments)
     expect(allDotted).toEqual(
       ['airline bad', 'capacity full', 'cargo invalid', 'items invalid', 'sku bad'].sort()
     )
   })
 
-  it('returns empty array for a path with no matching errors', () => {
+  it('returns undefined for a path with no matching errors', () => {
     const { app, api } = mount()
     apps.push(app)
     seedAllErrors(api)
 
-    expect(api.errorsAt('reference')).toEqual([])
+    expect(callErrors(api)('reference')).toBeUndefined()
   })
 
   it('preserves the meta.errors ordering at every prefix', () => {
@@ -160,14 +166,14 @@ describe('form.errorsAt', () => {
     const metaCargoOrder = api.meta.errors
       .filter((e) => e.path[0] === 'cargo')
       .map((e) => e.message)
-    expect(api.errorsAt('cargo').map((e) => e.message)).toEqual(metaCargoOrder)
+    expect((callErrors(api)('cargo') ?? []).map((e) => e.message)).toEqual(metaCargoOrder)
   })
 
   it('reactively updates inside a computed wrapping the call', async () => {
     const { app, api } = mount()
     apps.push(app)
 
-    const stepInvalid = computed(() => api.errorsAt('cargo').length > 0)
+    const stepInvalid = computed(() => (callErrors(api)('cargo') ?? []).length > 0)
 
     expect(stepInvalid.value).toBe(false)
 

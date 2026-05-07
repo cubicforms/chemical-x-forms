@@ -1688,15 +1688,15 @@ describe('persistence — fingerprint-keyed storage + orphan cleanup', () => {
     expect(localStorage.getItem(fpKey('fp-orphan'))).not.toBeNull()
   })
 
-  it('orphan cleanup: pre-fingerprint legacy keys (no `:` suffix) are wiped', async () => {
+  it('orphan cleanup: unfingerprinted keys (no `:` suffix) are wiped', async () => {
     localStorage.setItem(
-      'fp-legacy',
-      JSON.stringify({ v: 4, data: { form: { email: 'legacy@x.com', password: 'pw' } } })
+      'fp-orphan-bare',
+      JSON.stringify({ v: 4, data: { form: { email: 'bare@x.com', password: 'pw' } } })
     )
-    const { app } = mountForm({ storage: 'local', key: 'fp-legacy', debounceMs: 20 })
+    const { app } = mountForm({ storage: 'local', key: 'fp-orphan-bare', debounceMs: 20 })
     apps.push(app)
-    await waitUntil(() => (localStorage.getItem('fp-legacy') === null ? true : null))
-    expect(localStorage.getItem('fp-legacy')).toBeNull()
+    await waitUntil(() => (localStorage.getItem('fp-orphan-bare') === null ? true : null))
+    expect(localStorage.getItem('fp-orphan-bare')).toBeNull()
   })
 
   it('orphan cleanup uses exact-or-`:`-prefix match (no sibling-form collision)', async () => {

@@ -1,3 +1,7 @@
+---
+description: 'How Attaform stays fast in Vue 3 apps: schema fingerprinting, debounced validation, slim primitives, and the runtime guards that catch perf footguns early.'
+---
+
 # Performance
 
 Notes on the hot paths — keystrokes, submits, validation, reset —
@@ -11,20 +15,19 @@ in [`bench/`](https://github.com/attaform/attaform/tree/main/bench).
   per-PR threshold; see [`bench/keystroke.bench.ts`](https://github.com/attaform/attaform/blob/main/bench/keystroke.bench.ts)
   for the measured scenarios (100-leaf and 500-leaf forms,
   single-leaf mutation).
-- **`state.dirty`** — iterates the tracked leaves with no
+- **`form.meta.dirty`** — iterates the tracked leaves with no
   per-leaf parse cost.
 - **Path resolution** — dotted-string paths are LRU-cached (128
   entries), so repeat canonicalisation reduces to a map lookup.
 
-For forms below a few hundred leaves, the hot paths typically
-don't surface in profiling.
+Sub-500-leaf forms don't surface in profiling.
 
 ## Sizing guidance
 
 | Scale              | Guidance                                                                                                           |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------ |
 | ≤ 500 leaves       | Default. No tuning needed.                                                                                         |
-| 500 – 5,000 leaves | Still fine. Watch out for templates that render every leaf's `state.dirty`.                                        |
+| 500 – 5,000 leaves | Still fine. Watch out for templates that render every leaf's `form.fields.<path>.dirty` in a hot scope.            |
 | 5,000+ leaves      | Consider splitting into sub-forms with distinct `key`s. One giant schema is not what the library is optimised for. |
 
 ## Array helpers are O(N)
@@ -52,15 +55,15 @@ Discriminated unions (`z.discriminatedUnion`) walk only the active
 branch. Plain unions (`z.union`) walk every branch unconditionally
 — use a DU when you have a shared key.
 
-## `state.dirty` in hot templates
+## `form.meta.dirty` in hot templates
 
-`state.dirty` is a whole-form aggregate — it invalidates whenever
+`form.meta.dirty` is a whole-form aggregate — it invalidates whenever
 any tracked leaf's `updatedAt` ticks. If you render it in a hot
 path (e.g., a header that re-renders on every keystroke), derive a
 more specific predicate instead:
 
 ```ts
-// Faster than gating on the whole-form state.dirty:
+// Faster than gating on the whole-form form.meta.dirty:
 const isEmailDirty = computed(() => form.fields.email.dirty)
 ```
 

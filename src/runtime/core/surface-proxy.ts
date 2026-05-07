@@ -90,17 +90,29 @@ export type SurfaceOptions<TLeaf> = {
    * function or `{{ form.errors }}` in a template re-runs whenever
    * the underlying state changes.
    *
-   * If undefined: containers serialise to `{}` (the pre-0.14.x
-   * behaviour). Provided so each surface controls its own
-   * materialisation strategy:
+   * If undefined: containers serialise to `{}`. Provided so each
+   * surface controls its own materialisation strategy:
    * - `errors`: sparse — only paths that actually have errors,
    *   active-path-filtered.
    * - `fields`: dense — every schema-leaf descendant snapshotted as
-   *   a `FieldStateView`.
+   *   a `FieldState`.
    * - `values`: not built on this generic; its own proxy serialises
    *   the inner readonly proxy directly.
    */
   readonly materializeContainer?: (segments: readonly Segment[]) => unknown
+  /**
+   * Terminal for the `apply` trap (call-form). `proxy('a.b.c')` and
+   * `proxy()` route here, separate from the dot/bracket `get` trap
+   * (which continues to descend at containers). This is what lets
+   * `form.fields.pickup` navigate while `form.fields('pickup')`
+   * returns the aggregated container `FieldState`; same dual-mode
+   * applies to `form.errors(path)`.
+   *
+   * `proxy()` (no-arg) calls `resolveCallTarget([])` so consumers
+   * grab the root state with one call (`form.fields()` aggregates
+   * over the whole form).
+   */
+  readonly resolveCallTarget: (path: Path) => unknown
 }
 
 /**
@@ -146,12 +158,6 @@ export function buildSurfaceProxy<TLeaf>(opts: SurfaceOptions<TLeaf>): SurfacePr
     return containerProxyAt(segs)
   }
 
-  function navigateTo(input: string | Path | undefined): unknown {
-    if (input === undefined) return rootProxy
-    const { segments } = canonicalizePath(input)
-    return descendOrTerminate(segments)
-  }
-
   function containerProxyAt(segments: readonly Segment[]): SurfaceProxy {
     const cacheKey = JSON.stringify(segments)
     const existing = containerCache.get(cacheKey)
@@ -190,13 +196,13 @@ export function buildSurfaceProxy<TLeaf>(opts: SurfaceOptions<TLeaf>): SurfacePr
     const target = (() => {}) as unknown as SurfaceProxy
     const proxy = new Proxy(target, {
       apply(_, __, args: unknown[]): unknown {
-        // proxy() → return THIS proxy (i.e. the root or this container).
-        // proxy('a.b.c') → walk from root, NOT relative to this proxy.
-        // The plan: callable returns the root proxy when called from
-        // anywhere (consistent semantic). Relative-walk via dot-access.
+        // proxy() returns the call-target at THIS path (so
+        // `form.fields()` resolves the root aggregation). proxy(arg)
+        // walks the absolutised arg path through the call-target.
         const arg = args[0] as string | Path | undefined
-        if (arg === undefined) return proxy
-        return navigateTo(arg)
+        if (arg === undefined) return opts.resolveCallTarget(segments as Path)
+        const { segments: argSegs } = canonicalizePath(arg)
+        return opts.resolveCallTarget(argSegs)
       },
       get(_, key: string | symbol): unknown {
         // Symbol passthrough: Vue's reactivity sigils + iteration symbols
@@ -266,9 +272,10 @@ export function buildSurfaceProxy<TLeaf>(opts: SurfaceOptions<TLeaf>): SurfacePr
     const leafKeys = opts.leafKeys
     const readLeafKey = opts.readLeafKey
     if (leafKeys === undefined || readLeafKey === undefined) {
-      // Defensive: leaf-VIEW proxy only constructed when leafKeys is
-      // configured. The branch in navigateTo + containerProxyAt's `get`
-      // both guard this — keep the runtime safe regardless.
+      // Defensive: leaf-VIEW proxy is only constructed via the `get`
+      // trap's `descendOrTerminate` branch in `containerProxyAt`,
+      // which guards on `opts.leafKeys`. Throw rather than silently
+      // misroute if a future caller skips the guard.
       throw new Error('leafViewProxyAt called without leafKeys/readLeafKey configured')
     }
 
@@ -276,7 +283,7 @@ export function buildSurfaceProxy<TLeaf>(opts: SurfaceOptions<TLeaf>): SurfacePr
     // handlers. Reads through `resolveLeaf` and `readLeafKey` happen at
     // call time inside the consumer's active effect, so Vue's dependency
     // tracking captures the leaf's reactive deps (the
-    // `ComputedRef<FieldStateView>` for fields).
+    // `ComputedRef<FieldState>` for fields).
     const snapshotLeaf = (): Record<string, unknown> => {
       const leaf = opts.resolveLeaf(segments)
       const snapshot: Record<string, unknown> = {}
@@ -295,19 +302,21 @@ export function buildSurfaceProxy<TLeaf>(opts: SurfaceOptions<TLeaf>): SurfacePr
     const target = (() => {}) as unknown as SurfaceProxy
     const proxy = new Proxy(target, {
       apply(_, __, args: unknown[]): unknown {
-        // Calling a leaf-view proxy is unusual but well-defined: with no
-        // arg, return the resolved leaf object itself; with a path, walk
-        // from the root.
+        // Same call-target dispatch as `containerProxyAt` so
+        // `form.fields.email(somePath)` reads identically to
+        // `form.fields(somePath)` — the call-form always lands on
+        // the FieldState terminal.
         const arg = args[0] as string | Path | undefined
-        if (arg === undefined) return opts.resolveLeaf(segments)
-        return navigateTo(arg)
+        if (arg === undefined) return opts.resolveCallTarget(segments as Path)
+        const { segments: argSegs } = canonicalizePath(arg)
+        return opts.resolveCallTarget(argSegs)
       },
       get(_, key: string | symbol): unknown {
         if (typeof key === 'symbol') {
           // See containerProxyAt for the rationale. Leaf-views return
           // the JSON-stringified snapshot so primitive coercion produces
           // a useful display (e.g. `String(form.fields.email)` shows the
-          // FieldStateView shape rather than throwing).
+          // FieldState shape rather than throwing).
           if (key === Symbol.toPrimitive) return leafToPrimitive
           return Reflect.get(target, key)
         }
@@ -324,10 +333,9 @@ export function buildSurfaceProxy<TLeaf>(opts: SurfaceOptions<TLeaf>): SurfacePr
         if (key === 'toString') return leafToString
         if (key === 'valueOf') return leafValueOf
         // `toJSON`: leaf-views serialise to a snapshot object containing
-        // every leaf-key value at the moment of the call. Matches the
-        // legacy `JSON.stringify(form.getFieldState(path).value)` shape
-        // and unblocks SSR templates that serialise `form.fields.<leaf>`
-        // into the hydration payload.
+        // every leaf-key value at the moment of the call. Lets SSR
+        // templates stringify `form.fields.<leaf>` straight into the
+        // hydration payload.
         if (key === 'toJSON') return snapshotLeaf
         // Reads inside the trap stay inside the consumer's active effect —
         // `resolveLeaf` returns a `ComputedRef` (for fields) and `.value`
@@ -345,7 +353,7 @@ export function buildSurfaceProxy<TLeaf>(opts: SurfaceOptions<TLeaf>): SurfacePr
         //   form.fields.address.valid  → leaf-view (here)
         //   form.fields.address.valid.valid → THIS read; 'valid'
         //                                          IS in leafKeys → returns
-        //                                          the FieldStateView's
+        //                                          the FieldState's
         //                                          valid prop.
         // For non-leafKeys reads, descend by appending the key to segments
         // and re-checking leaf-ness. This handles container-shaped
@@ -359,9 +367,8 @@ export function buildSurfaceProxy<TLeaf>(opts: SurfaceOptions<TLeaf>): SurfacePr
         return true
       },
       // Iteration: leaf-views expose the leaf-key set so
-      // `JSON.stringify(form.fields.email)` produces the expected
-      // FieldStateView snapshot (matching the legacy
-      // `JSON.stringify(form.getFieldState('email').value)` shape).
+      // `JSON.stringify(form.fields.email)` produces a FieldState
+      // snapshot rather than the function-target placeholder.
       ownKeys: () => Array.from(leafKeys),
       getOwnPropertyDescriptor(_, key: string | symbol): PropertyDescriptor | undefined {
         if (typeof key !== 'string') return undefined

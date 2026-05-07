@@ -1,3 +1,7 @@
+---
+description: 'Attaform persistence corner cases: storage quota errors, schema fingerprint mismatches, multi-tab writes, eviction sweeps, and cleanup hooks.'
+---
+
 # Persistence edge cases
 
 Imperative checkpoint and clear APIs, the four component-binding

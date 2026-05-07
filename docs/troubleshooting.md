@@ -1,3 +1,7 @@
+---
+description: 'Common Attaform pitfalls and how to fix them: shared-form key mismatches, missing v-register elements, hydration drift, validation timing, and more.'
+---
+
 # Troubleshooting
 
 Common issues — symptom first, fix second.
@@ -7,8 +11,7 @@ Common issues — symptom first, fix second.
 Three independent causes.
 
 **The schema doesn't include the field.** An `.optional()` wrapper
-without an inner refinement accepts anything. Double-check the
-schema is what you think it is.
+without an inner refinement accepts everything. Verify the schema.
 
 **You're in `strict: false` and watching `validate()`.** Lax mode
 strips refinements during default-values derivation so the form
@@ -57,7 +60,7 @@ collide when two forms with the same key live concurrently.
 In dev, a collision whose schemas disagree on shape surfaces as
 a `console.warn`:
 
-```
+```text
 [attaform] Two useForm() calls with key "signup" use
 structurally-different schemas. Only the first caller wires the
 form; the second caller's schema is silently ignored (shared
@@ -73,8 +76,8 @@ in production builds.
 
 ## "Shared-key warning fires for schemas I think are identical"
 
-The fingerprint is a best-effort structural hash. Two known
-false-positive sources in custom adapters:
+The fingerprint hashes schema structure. Two known false-positive
+sources in custom adapters:
 
 - The adapter's `fingerprint()` builds a string whose contents
   depend on a non-deterministic input (e.g. a factory default

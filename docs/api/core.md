@@ -1,3 +1,8 @@
+---
+title: 'attaform — core runtime API'
+description: 'The schema-agnostic core of Attaform: createAttaform plugin, useAbstractForm composable, v-register directive, parseApiErrors, and shared types.'
+---
+
 # `attaform`
 
 The framework-agnostic core. Use this if you're bringing your own
@@ -205,7 +210,7 @@ validation will surface a refinement error on the next render.
 
 ### Custom assigners
 
-Replaces the directive's default "DOM event → extract value →
+Overrides the directive's default "DOM event → extract value →
 `rv.setValueWithInternalPath(value)`" bridge. The handler receives
 the post-extraction value plus the `RegisterValue` and decides what
 (if anything) reaches form state.
@@ -231,11 +236,12 @@ Modifier extraction runs first — `.number` gives you a number,
 
 Four patterns:
 
-- **Transform** — call `rv.setValueWithInternalPath(normalised)`.
-- **Reject** — skip the call; the keystroke drops entirely (distinct
-  from validation errors, which accept then flag).
-- **Side-effect + default** — log / analytics, then call through.
-- **Redirect** — write to a different field or external store.
+| Pattern               | What to do                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------ |
+| Transform             | Call `rv.setValueWithInternalPath(normalised)`.                                                        |
+| Reject                | Skip the call; the keystroke drops entirely (distinct from validation errors, which accept then flag). |
+| Side-effect + default | Log / analytics, then call through.                                                                    |
+| Redirect              | Write to a different field or external store.                                                          |
 
 Handler signature:
 `(value: unknown, registerValue: RegisterValue) => boolean | undefined`.
@@ -274,7 +280,7 @@ Write defensive bodies that no-op on type mismatch.
 **Pipeline ordering**: transforms run after modifier extraction,
 before the assigner writes to form state.
 
-```
+```text
 DOM event → modifier cast → transforms[0] → … → transforms[n] → assigner
 ```
 

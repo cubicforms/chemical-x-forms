@@ -39,6 +39,37 @@
     excerpt: string
   }
 
+  type ExcerptSegment = { type: 'text' | 'mark'; text: string }
+
+  // Pagefind returns excerpts as HTML strings with matched substrings
+  // wrapped in `<mark>` tags and special characters escaped as HTML
+  // entities. We render via a typed-segment list (text vs mark) so the
+  // template can stay v-html-free: text segments go through Vue's text
+  // interpolation (HTML-escaped), and only literal `<mark>` elements
+  // emit a `<mark>` wrapper. Anything unexpected in the parsed tree
+  // degrades to its text content. SSR fallback strips the `<mark>`
+  // wrappers and returns the raw string as one text segment.
+  function parseExcerpt(html: string): ExcerptSegment[] {
+    if (typeof DOMParser === 'undefined') {
+      return [{ type: 'text', text: html.replace(/<\/?mark>/gi, '') }]
+    }
+    const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html')
+    const root = doc.body.firstChild
+    if (!(root instanceof Element)) return [{ type: 'text', text: '' }]
+    const segments: ExcerptSegment[] = []
+    for (const node of Array.from(root.childNodes)) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        segments.push({ type: 'text', text: node.textContent ?? '' })
+      } else if (node instanceof Element) {
+        segments.push({
+          type: node.tagName.toLowerCase() === 'mark' ? 'mark' : 'text',
+          text: node.textContent ?? '',
+        })
+      }
+    }
+    return segments
+  }
+
   const open = ref(false)
   const query = ref('')
   const hits = ref<SearchHit[]>([])
@@ -238,7 +269,7 @@
   <button
     type="button"
     aria-label="Search documentation"
-    class="group inline-flex h-9 items-center gap-2 rounded-md border border-border bg-bg pr-1.5 pl-3 text-sm text-fg-muted shadow-xs transition-colors duration-(--duration-fast) hover:border-border-strong hover:text-fg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent-ring md:w-56"
+    class="group inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-bg text-sm text-fg-muted shadow-xs transition-colors duration-(--duration-fast) hover:border-border-strong hover:text-fg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent-ring md:w-56 md:justify-start md:gap-2 md:pr-1.5 md:pl-3"
     @click="open = true"
   >
     <Search class="h-4 w-4 shrink-0" :stroke-width="2" />
@@ -281,6 +312,7 @@
         aria-modal="true"
         aria-label="Search documentation"
         class="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[10vh]"
+        @click.self="close"
         @keydown="onModalKeydown"
       >
         <div
@@ -288,7 +320,7 @@
           @click.stop
         >
           <!-- Search input row -->
-          <div class="flex h-14 items-center gap-3 border-b border-border px-4">
+          <div class="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
             <Search class="h-5 w-5 shrink-0 text-fg-muted" :stroke-width="2" />
             <input
               ref="inputRef"
@@ -388,7 +420,7 @@
               <p class="text-sm font-semibold text-fg">Something went wrong</p>
               <p class="mt-1.5 text-xs text-fg-muted">Try the search again in a moment.</p>
             </div>
-            <ul v-else class="py-2">
+            <ul v-else class="py-4">
               <li v-for="(hit, i) in hits" :key="`${hit.url}-${i}`">
                 <button
                   type="button"
@@ -413,15 +445,18 @@
                     >
                       {{ hit.pageTitle }}
                     </p>
-                    <!-- eslint-disable-next-line vue/no-v-html — Pagefind returns excerpts wrapped in <mark> tags from content we control (the docs corpus); rendering as HTML lets us style the highlighted matches via the [&_mark] selector. -->
                     <p
                       class="mt-1 line-clamp-2 text-sm text-fg-muted [&_mark]:bg-transparent [&_mark]:font-semibold [&_mark]:text-accent"
-                      v-html="hit.excerpt"
-                    />
+                    >
+                      <template v-for="(seg, segIdx) in parseExcerpt(hit.excerpt)" :key="segIdx">
+                        <mark v-if="seg.type === 'mark'">{{ seg.text }}</mark>
+                        <template v-else>{{ seg.text }}</template>
+                      </template>
+                    </p>
                   </div>
                   <CornerDownLeft
-                    v-if="i === activeIndex"
-                    class="mt-1 h-3.5 w-3.5 shrink-0 text-fg-subtle"
+                    class="mt-1 h-3.5 w-3.5 shrink-0 text-fg-subtle transition-opacity duration-(--duration-fast)"
+                    :class="i === activeIndex ? 'opacity-100' : 'opacity-0'"
                     :stroke-width="2.25"
                   />
                 </button>
@@ -431,7 +466,7 @@
 
           <!-- Keyboard hints footer -->
           <div
-            class="flex h-10 items-center gap-4 border-t border-border bg-surface/60 px-4 text-xs text-fg-subtle"
+            class="flex h-10 shrink-0 items-center gap-4 border-t border-border bg-surface/60 px-4 text-xs text-fg-subtle"
           >
             <span class="flex items-center gap-1.5">
               <kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd>

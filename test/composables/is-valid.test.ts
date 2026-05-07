@@ -9,11 +9,13 @@ import type { FormStore } from '../../src/runtime/core/create-form-store'
 import type { GenericForm } from '../../src/runtime/types/types-core'
 
 /**
- * `form.isValid(paths)` is sugar over `errorsAt` for the multi-path
- * case, with a built-in per-prefix in-flight check (so a caller
- * asking "is this subtree valid?" doesn't get gated on an unrelated
- * debounce elsewhere in the form). Composes with `meta.validating`
- * for "settled and clean" gating that includes whole-form runs.
+ * Per-prefix validity gating via `form.fields(path).valid`. The
+ * container call-form aggregates over descendants (errors empty +
+ * no in-flight per-field validation), with a per-prefix
+ * `firstValidationDone` gate for sub-schemas declaring async work.
+ *
+ * Multi-path "all of these subtrees valid" reads as
+ * `paths.every(p => form.fields(p).valid)`.
  */
 
 const schema = z.object({
@@ -32,6 +34,19 @@ const schema = z.object({
 })
 
 type Api = ReturnType<typeof useForm<typeof schema>>
+
+type FieldStateLike = {
+  valid: boolean
+  errors: readonly unknown[]
+  validating: boolean
+}
+function fieldsCall(api: Api): (p: string | readonly (string | number)[]) => FieldStateLike {
+  return api.fields as unknown as (p: string | readonly (string | number)[]) => FieldStateLike
+}
+function allValid(api: Api, paths: ReadonlyArray<string | readonly (string | number)[]>): boolean {
+  const f = fieldsCall(api)
+  return paths.every((p) => f(p).valid)
+}
 
 function mount(): { app: App; api: Api; store: FormStore<GenericForm> } {
   const handle: { api?: Api } = {}
@@ -61,7 +76,7 @@ function mount(): { app: App; api: Api; store: FormStore<GenericForm> } {
   return { app, api: handle.api as Api, store }
 }
 
-describe('form.isValid', () => {
+describe('per-prefix validity via form.fields(path).valid', () => {
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
@@ -70,7 +85,7 @@ describe('form.isValid', () => {
   it('returns true when no errors and no in-flight validation', () => {
     const { app, api } = mount()
     apps.push(app)
-    expect(api.isValid(['reference', 'cargo', 'service'])).toBe(true)
+    expect(allValid(api, ['reference', 'cargo', 'service'])).toBe(true)
   })
 
   it('returns false when an error sits at one of the prefixes', () => {
@@ -79,9 +94,8 @@ describe('form.isValid', () => {
     api.setFieldErrors([
       { path: ['cargo', 'items', 0, 'sku'], message: 'sku bad', formKey: api.key, code: 'x' },
     ])
-    expect(api.isValid(['cargo'])).toBe(false)
-    // Sibling subtree stays clean.
-    expect(api.isValid(['service'])).toBe(true)
+    expect(allValid(api, ['cargo'])).toBe(false)
+    expect(allValid(api, ['service'])).toBe(true)
   })
 
   it('returns false when an error descends from one of the prefixes', () => {
@@ -90,18 +104,18 @@ describe('form.isValid', () => {
     api.setFieldErrors([
       { path: ['cargo', 'items'], message: 'items bad', formKey: api.key, code: 'x' },
     ])
-    expect(api.isValid(['cargo'])).toBe(false)
+    expect(allValid(api, ['cargo'])).toBe(false)
   })
 
-  it('multi-path: returns false when ANY supplied prefix matches an error', () => {
+  it('multi-path: false when ANY supplied prefix matches an error', () => {
     const { app, api } = mount()
     apps.push(app)
     api.setFieldErrors([
       { path: ['service', 'airline'], message: 'airline bad', formKey: api.key, code: 'x' },
     ])
-    expect(api.isValid(['cargo', 'service'])).toBe(false)
-    expect(api.isValid(['cargo'])).toBe(true)
-    expect(api.isValid(['service'])).toBe(false)
+    expect(allValid(api, ['cargo', 'service'])).toBe(false)
+    expect(allValid(api, ['cargo'])).toBe(true)
+    expect(allValid(api, ['service'])).toBe(false)
   })
 
   it('returns false when a field-level validation is in flight under a prefix', async () => {
@@ -110,19 +124,18 @@ describe('form.isValid', () => {
     const skuKey = canonicalizePath(['cargo', 'items', 0, 'sku']).key
     store.fieldValidationCounts.set(skuKey, 1)
     await nextTick()
-    expect(api.isValid(['cargo'])).toBe(false)
-    // The unrelated subtree is unaffected.
-    expect(api.isValid(['service'])).toBe(true)
+    expect(allValid(api, ['cargo'])).toBe(false)
+    expect(allValid(api, ['service'])).toBe(true)
     store.fieldValidationCounts.delete(skuKey)
     await nextTick()
-    expect(api.isValid(['cargo'])).toBe(true)
+    expect(allValid(api, ['cargo'])).toBe(true)
   })
 
   it('reactively updates inside a computed wrapping the call', async () => {
     const { app, api } = mount()
     apps.push(app)
 
-    const cargoOk = computed(() => api.isValid(['cargo']))
+    const cargoOk = computed(() => allValid(api, ['cargo']))
     expect(cargoOk.value).toBe(true)
 
     api.setFieldErrors([
@@ -140,7 +153,7 @@ describe('form.isValid', () => {
     const { app, api, store } = mount()
     apps.push(app)
 
-    const cargoOk = computed(() => api.isValid(['cargo']))
+    const cargoOk = computed(() => allValid(api, ['cargo']))
     expect(cargoOk.value).toBe(true)
 
     const skuKey = canonicalizePath(['cargo', 'items', 0, 'sku']).key
@@ -156,15 +169,15 @@ describe('form.isValid', () => {
   it('empty paths array: vacuously true', () => {
     const { app, api } = mount()
     apps.push(app)
-    expect(api.isValid([])).toBe(true)
+    expect(allValid(api, [])).toBe(true)
   })
 
-  it('root prefix (empty string) matches every error including form-level', () => {
+  it('root prefix matches every error including form-level', () => {
     const { app, api } = mount()
     apps.push(app)
     api.setFormErrors([{ message: 'capacity full' }])
-    expect(api.isValid([''])).toBe(false)
+    expect(allValid(api, [[]])).toBe(false)
     // A scoped prefix doesn't see the form-level error.
-    expect(api.isValid(['cargo'])).toBe(true)
+    expect(allValid(api, ['cargo'])).toBe(true)
   })
 })

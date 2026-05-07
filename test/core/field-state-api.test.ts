@@ -231,3 +231,133 @@ describe('buildFieldStateAccessor', () => {
     })
   })
 })
+
+// Per-path memoisation guarantees that consumers reading the same
+// path multiple times share the same `ComputedRef` — Vue's
+// dependency tracking then accumulates one subscription per path,
+// not one per read.
+describe('buildFieldStateAccessor — per-path memoisation', () => {
+  it('returns the same ComputedRef on repeated calls with the same path', () => {
+    const { getFieldState } = makeAccessor()
+    const a = getFieldState(['email'])
+    const b = getFieldState(['email'])
+    expect(a).toBe(b)
+  })
+
+  it('treats dotted-string and array paths as the same canonical key', () => {
+    const { getFieldState } = makeAccessor()
+    const fromDotted = getFieldState('profile.name')
+    const fromArray = getFieldState(['profile', 'name'])
+    expect(fromDotted).toBe(fromArray)
+  })
+
+  it('hands different paths their own ComputedRefs', () => {
+    const { getFieldState } = makeAccessor()
+    const a = getFieldState(['email'])
+    const b = getFieldState(['profile', 'name'])
+    expect(a).not.toBe(b)
+  })
+})
+
+// Container aggregation — `getFieldState(containerPath)` returns
+// disjunction-aggregated event-presence (focused / dirty / touched
+// / validating) and conjunction-aggregated absence/uniformity
+// (pristine / valid / blank). Errors concat. updatedAt is the max
+// ISO timestamp across descendants.
+describe('buildFieldStateAccessor — container aggregation', () => {
+  type C = {
+    pickup: { city: string; zip: string }
+    delivery: { city: string }
+  }
+  function makeContainerAccessor() {
+    const state = createFormStore<C>({
+      formKey: 'cont',
+      schema: fakeSchema<C>({
+        pickup: { city: '', zip: '' },
+        delivery: { city: '' },
+      }),
+    })
+    return { state, getFieldState: buildFieldStateAccessor(state) }
+  }
+
+  it('container.pristine is true while all descendants are pristine', () => {
+    const { getFieldState } = makeContainerAccessor()
+    const pickup = getFieldState(['pickup'])
+    expect(pickup.value.pristine).toBe(true)
+    expect(pickup.value.dirty).toBe(false)
+  })
+
+  it('container.dirty flips on the first descendant mutation', () => {
+    const { state, getFieldState } = makeContainerAccessor()
+    const pickup = getFieldState(['pickup'])
+    state.setValueAtPath(['pickup', 'city'], 'NYC')
+    expect(pickup.value.pristine).toBe(false)
+    expect(pickup.value.dirty).toBe(true)
+  })
+
+  it('siblings are not affected by container.dirty under another path', () => {
+    const { state, getFieldState } = makeContainerAccessor()
+    const pickup = getFieldState(['pickup'])
+    const delivery = getFieldState(['delivery'])
+    state.setValueAtPath(['pickup', 'city'], 'NYC')
+    expect(pickup.value.dirty).toBe(true)
+    expect(delivery.value.dirty).toBe(false)
+  })
+
+  it('container.focused is true when any descendant is focused', () => {
+    const { state, getFieldState } = makeContainerAccessor()
+    const pickup = getFieldState(['pickup'])
+    expect(pickup.value.focused).toBe(false)
+    const cityKey = canonicalizePath(['pickup', 'city']).key
+    state.fields.set(cityKey, {
+      path: ['pickup', 'city'],
+      updatedAt: null,
+      connected: false,
+      focused: true,
+      blurred: false,
+      touched: false,
+    })
+    expect(pickup.value.focused).toBe(true)
+  })
+
+  it('container.errors aggregates descendants in lex path order', () => {
+    const { state, getFieldState } = makeContainerAccessor()
+    const pickup = getFieldState(['pickup'])
+    state.setSchemaErrorsForPath(
+      ['pickup', 'city'],
+      [{ message: 'missing city', path: ['pickup', 'city'], formKey: 'cont', code: 'atta:test' }]
+    )
+    state.setSchemaErrorsForPath(
+      ['pickup', 'zip'],
+      [{ message: 'missing zip', path: ['pickup', 'zip'], formKey: 'cont', code: 'atta:test' }]
+    )
+    expect(pickup.value.errors.map((e) => e.message)).toEqual(['missing city', 'missing zip'])
+  })
+
+  it('container.valid is true only when descendants have no errors and no async pending', () => {
+    const { state, getFieldState } = makeContainerAccessor()
+    const pickup = getFieldState(['pickup'])
+    expect(pickup.value.valid).toBe(true)
+    state.setSchemaErrorsForPath(
+      ['pickup', 'city'],
+      [{ message: 'bad', path: ['pickup', 'city'], formKey: 'cont', code: 'atta:test' }]
+    )
+    expect(pickup.value.valid).toBe(false)
+  })
+
+  it('root path (empty segments) aggregates over the whole form', () => {
+    const { state, getFieldState } = makeContainerAccessor()
+    const root = getFieldState([])
+    expect(root.value.pristine).toBe(true)
+    state.setValueAtPath(['delivery', 'city'], 'NYC')
+    expect(root.value.pristine).toBe(false)
+    expect(root.value.dirty).toBe(true)
+  })
+
+  it('container.element is null and elements is empty (containers do not bind to DOM)', () => {
+    const { getFieldState } = makeContainerAccessor()
+    const pickup = getFieldState(['pickup'])
+    expect(pickup.value.element).toBe(null)
+    expect(pickup.value.elements).toEqual([])
+  })
+})

@@ -1,3 +1,7 @@
+---
+description: 'Time-travel through Attaform form edits: undo and redo across every write, configurable history depth, integrates cleanly with persistence and SSR.'
+---
+
 # Undo / redo
 
 ```ts

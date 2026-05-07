@@ -57,13 +57,13 @@ describe('form.fields — shadowing immunity (FIELD_STATE_KEYS only inject at le
 
     // address is a container → descend without injection.
     // address.dirty is a leaf (boolean) → returns the leaf-view.
-    // The leaf-view's own .dirty prop is the FieldStateView's dirty boolean.
+    // The leaf-view's own .dirty prop is the FieldState's dirty boolean.
     expect(form.fields.address.dirty.value).toBe(false)
     expect(form.fields.address.dirty.dirty).toBe(false) // the leaf's pristine state
 
     form.setValue('address.dirty', true)
     expect(form.fields.address.dirty.value).toBe(true)
-    expect(form.fields.address.dirty.dirty).toBe(true) // now dirty per the FieldStateView
+    expect(form.fields.address.dirty.dirty).toBe(true) // now dirty per the FieldState
   })
 
   it('schema field named "valid" at depth 2 is reachable; .valid drilling works', () => {
@@ -75,7 +75,7 @@ describe('form.fields — shadowing immunity (FIELD_STATE_KEYS only inject at le
     })
     const form = mount(schema, { address: { valid: true, city: 'NYC' } })
 
-    // address.valid is a leaf (boolean) — exposed as a FieldStateLeaf.
+    // address.valid is a leaf (boolean) — exposed as a FieldState.
     expect(form.fields.address.valid.value).toBe(true)
     expect(form.fields.address.valid.path).toEqual(['address', 'valid'])
   })
@@ -91,7 +91,7 @@ describe('form.fields — shadowing immunity (FIELD_STATE_KEYS only inject at le
 
     // submission.errors is a leaf (string) → leaf-view.
     expect(form.fields.submission.errors.value).toBe('none')
-    // The leaf-view's OWN .errors (the FieldStateView's errors array) is empty.
+    // The leaf-view's OWN .errors (the FieldState's errors array) is empty.
     expect(form.fields.submission.errors.errors).toEqual([])
   })
 })
@@ -102,35 +102,69 @@ describe('form.fields — callable form', () => {
     address: z.object({ city: z.string(), zip: z.string() }),
   })
 
-  it('form.fields("path") matches form.fields.path for leaves', () => {
+  type FieldStateLike = {
+    value: unknown
+    path: readonly (string | number)[]
+    errors: readonly unknown[]
+    pristine: boolean
+    dirty: boolean
+    city?: unknown
+  }
+
+  // Dot-access and call-form return DIFFERENT proxy shapes by design:
+  //   - dot: leaf-view (descend-on-miss; depth-2+ collisions resolve via
+  //     descent, e.g. `form.fields.address.dirty.dirty`)
+  //   - call: FieldState terminal (FIELD_STATE_KEYS land directly,
+  //     non-keys return undefined)
+  // Both surface the same FIELD_STATE_KEYS values; equivalence is tested
+  // structurally, not via referential equality.
+  it('form.fields("path") and form.fields.path expose equivalent FieldState reads at leaves', () => {
     const form = mount(schema, { email: 'a@b.com', address: { city: 'NYC', zip: '10001' } })
     const fromDot = form.fields.email
-    const fromCall = (form.fields as unknown as (p: string) => unknown)('email')
-    expect(fromDot).toBe(fromCall)
+    const fromCall = (form.fields as unknown as (p: string) => FieldStateLike)('email')
+    expect(fromCall.value).toBe(fromDot.value)
+    expect(fromCall.errors).toEqual(fromDot.errors)
+    expect(fromCall.path).toEqual(fromDot.path)
   })
 
-  it('form.fields("a.b.c") walks chained paths', () => {
+  it('form.fields("a.b.c") and form.fields.a.b.c expose equivalent FieldState reads', () => {
     const form = mount(schema, { email: 'a@b.com', address: { city: 'NYC', zip: '10001' } })
     const fromDot = form.fields.address.city
-    const fromCall = (form.fields as unknown as (p: string) => unknown)('address.city')
-    expect(fromDot).toBe(fromCall)
+    const fromCall = (form.fields as unknown as (p: string) => FieldStateLike)('address.city')
+    expect(fromCall.value).toBe(fromDot.value)
+    expect(fromCall.path).toEqual(fromDot.path)
   })
 
-  it('form.fields([...path]) accepts array paths', () => {
+  it('form.fields([...path]) accepts array paths and exposes equivalent FieldState reads', () => {
     const form = mount(schema, { email: 'a@b.com', address: { city: 'NYC', zip: '10001' } })
     const fromDot = form.fields.address.city
-    const fromCall = (form.fields as unknown as (p: readonly string[]) => unknown)([
+    const fromCall = (form.fields as unknown as (p: readonly string[]) => FieldStateLike)([
       'address',
       'city',
     ])
-    expect(fromDot).toBe(fromCall)
+    expect(fromCall.value).toBe(fromDot.value)
+    expect(fromCall.path).toEqual(fromDot.path)
   })
 
-  it('form.fields() returns the root proxy', () => {
+  // No-arg call returns the root FieldState terminal — equivalent to
+  // `form.fields([])`. Same shape `form.meta` exposes (FormMeta is
+  // FieldState<F> at the root with lifecycle scalars layered on).
+  it('form.fields() returns the root FieldState terminal (aggregation over the whole form)', () => {
     const form = mount(schema, { email: 'a@b.com', address: { city: 'NYC', zip: '10001' } })
-    const root = (form.fields as unknown as () => unknown)()
-    // No-arg returns the SAME root proxy (referential equality preserved).
-    expect(root).toBe(form.fields)
+    const root = (form.fields as unknown as () => FieldStateLike)()
+    expect(root.path).toEqual([])
+    expect(root.pristine).toBe(true)
+    expect(root.dirty).toBe(false)
+  })
+
+  it('container call-form returns FieldState — not navigable', () => {
+    const form = mount(schema, { email: 'a@b.com', address: { city: 'NYC', zip: '10001' } })
+    const addr = (form.fields as unknown as (p: string) => FieldStateLike)('address')
+    expect(addr.path).toEqual(['address'])
+    expect(addr.pristine).toBe(true)
+    // FIELD_STATE_KEYS land directly; non-keys return undefined (no
+    // descent through schema children).
+    expect(addr.city).toBeUndefined()
   })
 })
 
@@ -183,10 +217,13 @@ describe('form.errors — callable form', () => {
     ])
   })
 
-  it('form.errors() with no arg returns the root proxy (drillable)', () => {
+  it('form.errors() with no arg returns the form-level error aggregate', () => {
+    // `form.errors()` is shorthand for `form.errors([])` — the same
+    // aggregated array `form.meta.errors` exposes. `undefined` when
+    // no errors exist.
     const form = mount(schema, { email: 'a@b.com', address: { city: 'NYC' } })
     const root = (form.errors as unknown as () => unknown)()
-    expect(root).toBe(form.errors)
+    expect(root).toBeUndefined()
   })
 
   it('form.errors at a container materialises descendants as a nested tree', () => {
@@ -250,7 +287,7 @@ describe('form.fields — JSON.stringify behaviour', () => {
     address: z.object({ city: z.string() }),
   })
 
-  it('JSON.stringify on a leaf returns the FieldStateView snapshot', () => {
+  it('JSON.stringify on a leaf returns the FieldState snapshot', () => {
     const form = mount(schema, { email: 'a@b.com', address: { city: 'NYC' } })
     const snapshot = JSON.parse(JSON.stringify(form.fields.email))
     expect(snapshot).toMatchObject({
@@ -262,7 +299,7 @@ describe('form.fields — JSON.stringify behaviour', () => {
     })
   })
 
-  it('JSON.stringify on a container materialises FieldStateView snapshots for every leaf descendant', () => {
+  it('JSON.stringify on a container materialises FieldState snapshots for every leaf descendant', () => {
     const form = mount(schema, { email: 'a@b.com', address: { city: 'NYC' } })
     const snapshot = JSON.parse(JSON.stringify(form.fields.address))
     expect(snapshot).toMatchObject({
@@ -318,7 +355,7 @@ describe('surface proxies — primitive coercion (Symbol.toPrimitive)', () => {
     expect(JSON.parse(String(form.errors.address))).toEqual({})
   })
 
-  it('String(form.fields) materialises the full FieldStateView tree (root container)', () => {
+  it('String(form.fields) materialises the full FieldState tree (root container)', () => {
     const form = mount(schema, { email: 'a@b.com', address: { city: 'NYC' } })
     expect(() => String(form.fields)).not.toThrow()
     const parsed = JSON.parse(String(form.fields))
@@ -328,7 +365,7 @@ describe('surface proxies — primitive coercion (Symbol.toPrimitive)', () => {
     })
   })
 
-  it('String(form.fields.email) returns the FieldStateView snapshot JSON (leaf-view)', () => {
+  it('String(form.fields.email) returns the FieldState snapshot JSON (leaf-view)', () => {
     const form = mount(schema, { email: 'a@b.com', address: { city: 'NYC' } })
     expect(() => String(form.fields.email)).not.toThrow()
     const str = String(form.fields.email)
@@ -371,7 +408,7 @@ describe('surface proxies — primitive coercion (Symbol.toPrimitive)', () => {
     })
 
     // Leaf-view coercion: starts with `{` and round-trips to a
-    // FieldStateView snapshot.
+    // FieldState snapshot.
     expect(JSON.parse(`${form.fields.email}`)).toMatchObject({
       value: '',
       errors: expect.any(Array),
@@ -431,7 +468,7 @@ describe('surface proxies — schema-named toString/valueOf collisions', () => {
     const form = mount(schema, { address: { toString: 'render-as', city: 'NYC' } })
 
     // Dot-access on `form.fields.address.toString` resolves to the
-    // FieldStateView for the schema's `toString` field, NOT the
+    // FieldState for the schema's `toString` field, NOT the
     // primitive-coercion handler.
     expect(form.fields.address.toString.value).toBe('render-as')
     expect(form.fields.address.toString.path).toEqual(['address', 'toString'])
@@ -467,7 +504,7 @@ describe('surface proxies — schema-named toString/valueOf collisions', () => {
     expect(form.values.account.valueOf).toBe(42)
 
     // Parent coercion: the materialised tree exposes both leaves, with
-    // a FieldStateView snapshot under the `valueOf` key (the schema
+    // a FieldState snapshot under the `valueOf` key (the schema
     // field, NOT the Object.prototype method).
     const parsed = JSON.parse(String(form.fields.account))
     expect(parsed).toMatchObject({
@@ -697,7 +734,7 @@ describe('form.errors — container materialisation (toJSON / String / `{{ }}`)'
 })
 
 describe('form.fields — container materialisation (toJSON / String / `{{ }}`)', () => {
-  it('root materialisation produces FieldStateView snapshots for every leaf', () => {
+  it('root materialisation produces FieldState snapshots for every leaf', () => {
     const schema = z.object({
       email: z.string(),
       address: z.object({ city: z.string() }),
@@ -710,7 +747,7 @@ describe('form.fields — container materialisation (toJSON / String / `{{ }}`)'
     })
   })
 
-  it('arrays materialise as arrays of FieldStateView snapshots', () => {
+  it('arrays materialise as arrays of FieldState snapshots', () => {
     const schema = z.object({ tags: z.array(z.string()) })
     const form = mount(schema, { tags: ['alpha', 'beta'] })
     const root = JSON.parse(JSON.stringify(form.fields)) as {
@@ -761,7 +798,7 @@ describe('surface materialisation — predictable representations + complex erro
   // These tests pin exact stringified output for non-trivial shapes
   // (deep nesting, arrays, discriminated unions). If the materialiser
   // ever drifts — wrong key ordering at the schema level, lost
-  // FieldStateView fields, mis-shaped error nesting — these break first.
+  // FieldState fields, mis-shaped error nesting — these break first.
 
   it('form.values prints an exact deep-equal copy of the form data (root + nested)', () => {
     const schema = z.object({
@@ -793,7 +830,7 @@ describe('surface materialisation — predictable representations + complex erro
     expect(JSON.parse(JSON.stringify(form.values.tags))).toEqual(['a', 'b', 'c'])
   })
 
-  it('form.fields prints a FieldStateView at every schema-leaf descendant', () => {
+  it('form.fields prints a FieldState at every schema-leaf descendant', () => {
     const schema = z.object({
       title: z.string(),
       tags: z.array(z.string()),
@@ -810,7 +847,7 @@ describe('surface materialisation — predictable representations + complex erro
 
     const tree = JSON.parse(JSON.stringify(form.fields)) as Record<string, unknown>
 
-    // Every schema-leaf carries the full FieldStateView surface — `value`
+    // Every schema-leaf carries the full FieldState surface — `value`
     // matches storage, `path` is the absolute path, `pristine` reflects
     // the un-mutated initial state. Pre-interaction interaction flags
     // (`focused`, `blurred`, `touched`) start as `null` (the sentinel
@@ -850,7 +887,7 @@ describe('surface materialisation — predictable representations + complex erro
       path: ['notify', 'number'],
     })
     // Inactive variant key is absent from live storage, so the dense
-    // walk doesn't surface a FieldStateView for it.
+    // walk doesn't surface a FieldState for it.
     expect(notify['address']).toBeUndefined()
   })
 

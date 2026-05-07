@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * `<input type="checkbox" v-register>` end-to-end coverage.
@@ -25,13 +26,6 @@ import { createAttaform } from '../../src/runtime/core/plugin'
  * sets `el._trueValue` / `el._falseValue` from those bindings, and
  * the directive's `getCheckboxValue` reads them through.
  */
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 4; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
 
 function dispatchChange(el: HTMLInputElement): void {
   el.dispatchEvent(new Event('change', { bubbles: true }))
@@ -65,7 +59,7 @@ describe('<input type="checkbox" v-register> — single boolean', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (captured.api?.values.agreed === false ? true : null))
 
     if (captured.api === undefined) throw new Error('unreachable')
     const cb = root.querySelector('input.agreed') as HTMLInputElement
@@ -74,12 +68,12 @@ describe('<input type="checkbox" v-register> — single boolean', () => {
 
     cb.checked = true
     dispatchChange(cb)
-    await flush()
+    await waitUntil(() => (captured.api?.values.agreed === true ? true : null))
     expect(captured.api.values.agreed).toBe(true)
 
     cb.checked = false
     dispatchChange(cb)
-    await flush()
+    await waitUntil(() => (captured.api?.values.agreed === false ? true : null))
     expect(captured.api.values.agreed).toBe(false)
   })
 
@@ -107,7 +101,11 @@ describe('<input type="checkbox" v-register> — single boolean', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      (root.querySelector('input.agreed') as HTMLInputElement | null)?.checked === true
+        ? true
+        : null
+    )
 
     const cb = root.querySelector('input.agreed') as HTMLInputElement
     expect(cb.checked).toBe(true)
@@ -150,7 +148,9 @@ describe('<input type="checkbox" v-register> — array group', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(captured.api?.values.fruits) === JSON.stringify([]) ? true : null
+    )
 
     if (captured.api === undefined) throw new Error('unreachable')
     expect(captured.api.values.fruits).toEqual([])
@@ -161,22 +161,34 @@ describe('<input type="checkbox" v-register> — array group', () => {
 
     apple.checked = true
     dispatchChange(apple)
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(captured.api?.values.fruits) === JSON.stringify(['apple']) ? true : null
+    )
     expect(captured.api.values.fruits).toEqual(['apple'])
 
     banana.checked = true
     dispatchChange(banana)
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(captured.api?.values.fruits) === JSON.stringify(['apple', 'banana'])
+        ? true
+        : null
+    )
     expect(captured.api.values.fruits).toEqual(['apple', 'banana'])
 
     apple.checked = false
     dispatchChange(apple)
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(captured.api?.values.fruits) === JSON.stringify(['banana']) ? true : null
+    )
     expect(captured.api.values.fruits).toEqual(['banana'])
 
     cherry.checked = true
     dispatchChange(cherry)
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(captured.api?.values.fruits) === JSON.stringify(['banana', 'cherry'])
+        ? true
+        : null
+    )
     expect(captured.api.values.fruits).toEqual(['banana', 'cherry'])
   })
 
@@ -212,7 +224,12 @@ describe('<input type="checkbox" v-register> — array group', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      (root.querySelector('input.apple') as HTMLInputElement | null)?.checked === true &&
+      (root.querySelector('input.cherry') as HTMLInputElement | null)?.checked === true
+        ? true
+        : null
+    )
 
     expect((root.querySelector('input.apple') as HTMLInputElement).checked).toBe(true)
     expect((root.querySelector('input.banana') as HTMLInputElement).checked).toBe(false)
@@ -247,7 +264,9 @@ describe('<input type="checkbox" v-register> — array group', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(captured.api?.values.fruits) === JSON.stringify([]) ? true : null
+    )
 
     if (captured.api === undefined) throw new Error('unreachable')
 
@@ -259,7 +278,9 @@ describe('<input type="checkbox" v-register> — array group', () => {
 
     apple.checked = true
     dispatchChange(apple)
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(captured.api?.values.fruits) === JSON.stringify(['apple']) ? true : null
+    )
 
     expect(captured.api.values.fruits).toEqual(['apple'])
   })
@@ -286,12 +307,20 @@ describe('<input type="checkbox" v-register> — array group', () => {
       const root = document.createElement('div')
       document.body.appendChild(root)
       app.mount(root)
-      await flush()
+      await waitUntil(() =>
+        JSON.stringify(captured.api?.values.fruits) === JSON.stringify([]) ? true : null
+      )
 
       const cb = root.querySelector('input.no-value') as HTMLInputElement
       cb.checked = true
       dispatchChange(cb)
-      await flush()
+      await waitUntil(() =>
+        warnSpy.mock.calls
+          .map((args) => args.join(' '))
+          .some((m) => /missing a `value` attribute/.test(m))
+          ? true
+          : null
+      )
 
       if (captured.api === undefined) throw new Error('unreachable')
       // No state change — directive bailed at the missing-value check.
@@ -345,7 +374,9 @@ describe('<input type="checkbox" v-register> — Set group', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      (captured.api?.values.tags as Set<string> | undefined)?.size === 0 ? true : null
+    )
 
     if (captured.api === undefined) throw new Error('unreachable')
     expect((captured.api.values.tags as Set<string>).size).toBe(0)
@@ -355,17 +386,23 @@ describe('<input type="checkbox" v-register> — Set group', () => {
 
     red.checked = true
     dispatchChange(red)
-    await flush()
+    await waitUntil(() =>
+      (captured.api?.values.tags as Set<string> | undefined)?.has('red') === true ? true : null
+    )
     expect([...(captured.api.values.tags as Set<string>)]).toEqual(['red'])
 
     green.checked = true
     dispatchChange(green)
-    await flush()
+    await waitUntil(() =>
+      (captured.api?.values.tags as Set<string> | undefined)?.has('green') === true ? true : null
+    )
     expect([...(captured.api.values.tags as Set<string>)].sort()).toEqual(['green', 'red'])
 
     red.checked = false
     dispatchChange(red)
-    await flush()
+    await waitUntil(() =>
+      (captured.api?.values.tags as Set<string> | undefined)?.has('red') === false ? true : null
+    )
     expect([...(captured.api.values.tags as Set<string>)]).toEqual(['green'])
   })
 })
@@ -414,7 +451,7 @@ describe('<input type="checkbox" v-register> — :true-value / :false-value', ()
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (captured.api?.values.newsletter === 'unsubscribe' ? true : null))
 
     if (captured.api === undefined) throw new Error('unreachable')
     const cb = root.querySelector('input.newsletter') as HTMLInputElement
@@ -423,12 +460,12 @@ describe('<input type="checkbox" v-register> — :true-value / :false-value', ()
 
     cb.checked = true
     dispatchChange(cb)
-    await flush()
+    await waitUntil(() => (captured.api?.values.newsletter === 'subscribe' ? true : null))
     expect(captured.api.values.newsletter).toBe('subscribe')
 
     cb.checked = false
     dispatchChange(cb)
-    await flush()
+    await waitUntil(() => (captured.api?.values.newsletter === 'unsubscribe' ? true : null))
     expect(captured.api.values.newsletter).toBe('unsubscribe')
   })
 })
@@ -462,7 +499,7 @@ describe('checkbox slim-primitive gate interactions', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (captured.api?.values.agreed === false ? true : null))
 
     if (captured.api === undefined) throw new Error('unreachable')
     const setVal = captured.api.setValue as (path: 'agreed', value: unknown) => boolean
@@ -485,7 +522,9 @@ describe('checkbox slim-primitive gate interactions', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(captured.api?.values.fruits) === JSON.stringify([]) ? true : null
+    )
 
     if (captured.api === undefined) throw new Error('unreachable')
     const setVal = captured.api.setValue as (path: 'fruits', value: unknown) => boolean

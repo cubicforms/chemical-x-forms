@@ -12,19 +12,13 @@
 // receives coerced value, el[assignKey] direct-install bypass,
 // reference-equality, transform-abort short-circuit).
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister, isRegisterValue, assignKey } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { defineCoercion, defaultCoercionRules } from '../../src/runtime/core/schema-coerce'
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 6; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
+import { waitUntil } from '../utils/form-harness'
 
 let app: App | undefined
 afterEach(() => {
@@ -70,11 +64,11 @@ describe('text input — numeric path', () => {
         withDirectives(h('input', { type: 'text', 'data-field': 'age' }), [[vRegister, rv]]),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.age === 0 ? true : null))
     const input = root.querySelector('[data-field="age"]') as HTMLInputElement
     input.value = '25'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.age === 25 ? true : null))
     expect(api.values.age).toBe(25)
   })
 
@@ -87,11 +81,13 @@ describe('text input — numeric path', () => {
         withDirectives(h('input', { type: 'text', 'data-field': 'age' }), [[vRegister, rv]]),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.age === 5 ? true : null))
     const input = root.querySelector('[data-field="age"]') as HTMLInputElement
     input.value = ''
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    // No predicate change is possible since the gate rejects — wait for the
+    // post-input microtask to finish via a benign tick.
+    await waitUntil(() => (input.value === '' ? true : null))
     // Empty string is NOT coerced to 0; it passes through and the
     // gate rejects → state preserves the original 5.
     expect(api.values.age).toBe(5)
@@ -107,11 +103,11 @@ describe('text input — boolean path', () => {
         withDirectives(h('input', { type: 'text', 'data-field': 'active' }), [[vRegister, rv]]),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.active === false ? true : null))
     const input = root.querySelector('[data-field="active"]') as HTMLInputElement
     input.value = 'true'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.active === true ? true : null))
     expect(api.values.active).toBe(true)
   })
 })
@@ -127,11 +123,11 @@ describe('text input — `.number` modifier composes without double-coerce', () 
         ]),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.age === 0 ? true : null))
     const input = root.querySelector('[data-field="age"]') as HTMLInputElement
     input.value = '42'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.age === 42 ? true : null))
     expect(api.values.age).toBe(42)
   })
 })
@@ -152,11 +148,11 @@ describe('select (single) — numeric path', () => {
         ),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.pick === 1 ? true : null))
     const sel = root.querySelector('[data-field="pick"]') as HTMLSelectElement
     sel.value = '2'
     sel.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.pick === 2 ? true : null))
     expect(api.values.pick).toBe(2)
   })
 })
@@ -177,13 +173,13 @@ describe('select (multi) — number array', () => {
         ),
       ])
     })
-    await flush()
+    await waitUntil(() => (JSON.stringify(api.values.ids) === JSON.stringify([]) ? true : null))
     const sel = root.querySelector('[data-field="ids"]') as HTMLSelectElement
     const [opt1, opt2] = Array.from(sel.options) as [HTMLOptionElement, HTMLOptionElement]
     opt1.selected = true
     opt2.selected = true
     sel.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (JSON.stringify(api.values.ids) === JSON.stringify([1, 2]) ? true : null))
     expect(api.values.ids).toEqual([1, 2])
   })
 })
@@ -203,13 +199,13 @@ describe('select (multi) — number Set', () => {
         ),
       ])
     })
-    await flush()
+    await waitUntil(() => ((api.values.ids as Set<number>).size === 0 ? true : null))
     const sel = root.querySelector('[data-field="ids"]') as HTMLSelectElement
     const [opt1, opt2] = Array.from(sel.options) as [HTMLOptionElement, HTMLOptionElement]
     opt1.selected = true
     opt2.selected = true
     sel.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => ((api.values.ids as Set<number>).size === 2 ? true : null))
     expect(api.values.ids).toEqual(new Set([1, 2]))
   })
 })
@@ -225,11 +221,11 @@ describe('checkbox array — numeric values', () => {
         ]),
       ])
     })
-    await flush()
+    await waitUntil(() => (JSON.stringify(api.values.ids) === JSON.stringify([]) ? true : null))
     const cb = root.querySelector('[data-field="cb3"]') as HTMLInputElement
     cb.checked = true
     cb.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (JSON.stringify(api.values.ids) === JSON.stringify([3]) ? true : null))
     expect(api.values.ids).toEqual([3])
   })
 })
@@ -248,17 +244,17 @@ describe('checkbox Set — boolean values', () => {
         ]),
       ])
     })
-    await flush()
+    await waitUntil(() => ((api.values.flags as Set<boolean>).size === 0 ? true : null))
     const t = root.querySelector('[data-field="t"]') as HTMLInputElement
     t.checked = true
     t.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => ((api.values.flags as Set<boolean>).has(true) ? true : null))
     expect(api.values.flags).toEqual(new Set([true]))
 
     const f = root.querySelector('[data-field="f"]') as HTMLInputElement
     f.checked = true
     f.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => ((api.values.flags as Set<boolean>).has(false) ? true : null))
     expect(api.values.flags).toEqual(new Set([true, false]))
   })
 })
@@ -272,11 +268,11 @@ describe('checkbox scalar — boolean path (no-op)', () => {
         withDirectives(h('input', { type: 'checkbox', 'data-field': 'cb' }), [[vRegister, rv]]),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.active === false ? true : null))
     const cb = root.querySelector('[data-field="cb"]') as HTMLInputElement
     cb.checked = true
     cb.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.active === true ? true : null))
     expect(api.values.active).toBe(true)
   })
 })
@@ -307,11 +303,11 @@ describe('checkbox with true-value / false-value — composes with coerce', () =
         ),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.choice === 'no' ? true : null))
     const cb = root.querySelector('[data-field="cb"]') as HTMLInputElement
     cb.checked = true
     cb.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.choice === 'yes' ? true : null))
     expect(api.values.choice).toBe('yes')
   })
 
@@ -336,11 +332,11 @@ describe('checkbox with true-value / false-value — composes with coerce', () =
         ),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.accepted === false ? true : null))
     const cb = root.querySelector('[data-field="cb"]') as HTMLInputElement
     cb.checked = true
     cb.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.accepted === true ? true : null))
     expect(api.values.accepted).toBe(true)
   })
 
@@ -384,7 +380,7 @@ describe('checkbox with true-value / false-value — composes with coerce', () =
         h('pre', null, JSON.stringify(api.values.accepted)),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.accepted === false ? true : null))
     const cb = root.querySelector('[data-field="cb"]') as HTMLInputElement
     expect(cb.checked).toBe(false)
     expect(api.values.accepted).toBe(false)
@@ -392,14 +388,14 @@ describe('checkbox with true-value / false-value — composes with coerce', () =
     // Toggle ON.
     cb.checked = true
     cb.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.accepted === true ? true : null))
     expect(api.values.accepted).toBe(true)
     expect(cb.checked).toBe(true) // pre-fix this would be false (desync)
 
     // Toggle OFF.
     cb.checked = false
     cb.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.accepted === false ? true : null))
     expect(api.values.accepted).toBe(false)
     expect(cb.checked).toBe(false)
 
@@ -407,7 +403,7 @@ describe('checkbox with true-value / false-value — composes with coerce', () =
     // click desync that the original report described).
     cb.checked = true
     cb.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.accepted === true ? true : null))
     expect(api.values.accepted).toBe(true)
     expect(cb.checked).toBe(true)
   })
@@ -434,11 +430,12 @@ describe('checkbox with true-value / false-value — composes with coerce', () =
         ),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.accepted === false ? true : null))
     const cb = root.querySelector('[data-field="cb"]') as HTMLInputElement
     cb.checked = true
     cb.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    // The gate rejects, so the value won't change. Wait for the post-tick state.
+    await waitUntil(() => (cb.checked === true ? true : null))
     // 'yes' isn't 'true'/'false' post-trim+lowercase → coerce passes
     // through → gate rejects → state preserves the original `false`.
     expect(api.values.accepted).toBe(false)
@@ -460,11 +457,11 @@ describe('radio — boolean path', () => {
         ),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.active === false ? true : null))
     const t = root.querySelector('[data-field="t"]') as HTMLInputElement
     t.checked = true
     t.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.active === true ? true : null))
     expect(api.values.active).toBe(true)
   })
 })
@@ -479,11 +476,12 @@ describe('NaN passthrough + gate rejection', () => {
         withDirectives(h('input', { type: 'text', 'data-field': 'age' }), [[vRegister, rv]]),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.age === 5 ? true : null))
     const input = root.querySelector('[data-field="age"]') as HTMLInputElement
     input.value = 'abc'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    // Gate rejects; wait for post-input tick to settle.
+    await waitUntil(() => (input.value === 'abc' ? true : null))
     // 'abc' is non-coercible; coerce passes through; gate rejects.
     expect(api.values.age).toBe(5)
   })
@@ -494,9 +492,10 @@ describe('programmatic write bypass', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const schema = z.object({ age: z.number() })
     const { api } = mount(schema, { age: 0 }, () => h('div'))
-    await flush()
+    await waitUntil(() => (api.values.age === 0 ? true : null))
     api.setValue('age', '25' as unknown as number)
-    await flush()
+    // Gate rejects; the value should remain 0. Wait briefly for any tick.
+    await waitUntil(() => (api.values.age === 0 ? true : null))
     // Coerce only fires on directive-driven writes. Programmatic
     // writes go through the slim gate untouched, which rejects.
     expect(api.values.age).toBe(0)
@@ -518,11 +517,12 @@ describe('plugin-default off', () => {
       },
       { defaults: { coerce: false } }
     )
-    await flush()
+    await waitUntil(() => (api.values.age === 0 ? true : null))
     const input = root.querySelector('[data-field="age"]') as HTMLInputElement
     input.value = '25'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    // Gate rejects; wait for the input event to be processed.
+    await waitUntil(() => (input.value === '25' ? true : null))
     // Coerce off → string write rejected by gate; state unchanged.
     expect(api.values.age).toBe(0)
   })
@@ -552,12 +552,12 @@ describe('per-form override beats plugin default (both directions)', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (handle.api?.values.age === 0 ? true : null))
     if (handle.api === undefined) throw new Error('api never set')
     const input = root.querySelector('[data-field="age"]') as HTMLInputElement
     input.value = '25'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.age === 25 ? true : null))
     expect(handle.api.values.age).toBe(25)
   })
 
@@ -585,12 +585,13 @@ describe('per-form override beats plugin default (both directions)', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (handle.api?.values.age === 0 ? true : null))
     if (handle.api === undefined) throw new Error('api never set')
     const input = root.querySelector('[data-field="age"]') as HTMLInputElement
     input.value = '25'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    // Gate rejects; wait for input event to settle.
+    await waitUntil(() => (input.value === '25' ? true : null))
     expect(handle.api.values.age).toBe(0)
   })
 })
@@ -614,11 +615,11 @@ describe('@update:registerValue override receives the coerced value', () => {
         ),
       ])
     })
-    await flush()
+    await waitUntil(() => (root.querySelector('[data-field="age"]') !== null ? true : null))
     const input = root.querySelector('[data-field="age"]') as HTMLInputElement
     input.value = '42'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (captured === 42 ? true : null))
     expect(captured).toBe(42)
     expect(typeof captured).toBe('number')
   })
@@ -665,11 +666,11 @@ describe('el[assignKey] direct-install bypasses coerce', () => {
         ),
       ])
     })
-    await flush()
+    await waitUntil(() => (root.querySelector('[data-field="age"]') !== null ? true : null))
     const input = root.querySelector('[data-field="age"]') as HTMLInputElement
     input.value = '42'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (captured === '42' ? true : null))
     // Custom assigner ran, received the raw string. The directive's
     // pipeline (transforms + coerce) wasn't invoked.
     expect(captured).toBe('42')
@@ -686,7 +687,7 @@ describe('reference-equality preservation', () => {
         withDirectives(h('input', { type: 'text', 'data-field': 'note' }), [[vRegister, rvNote]]),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.note === '' ? true : null))
     // Take a snapshot of the array reference.
     const before = api.values.ids
     // Trigger a re-render via an unrelated keystroke. Coerce isn't
@@ -695,7 +696,7 @@ describe('reference-equality preservation', () => {
     const input = root.querySelector('[data-field="note"]') as HTMLInputElement
     input.value = 'x'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.note === 'x' ? true : null))
     expect(api.values.ids).toBe(before)
   })
 })
@@ -737,12 +738,12 @@ describe('consumer-extended registry — string->bigint', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (handle.api?.values.amount === 0n ? true : null))
     if (handle.api === undefined) throw new Error('api never set')
     const input = root.querySelector('[data-field="amount"]') as HTMLInputElement
     input.value = '12345'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.amount === 12345n ? true : null))
     expect(handle.api.values.amount).toBe(12345n)
   })
 })
@@ -770,17 +771,19 @@ describe('read-side coerce symmetry — array checkbox with case-mismatched bool
         h('pre', null, JSON.stringify(api.values.flags)),
       ])
     })
-    await flush()
+    await waitUntil(() => (JSON.stringify(api.values.flags) === JSON.stringify([]) ? true : null))
     const t = root.querySelector('[data-field="t"]') as HTMLInputElement
     t.checked = true
     t.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(api.values.flags) === JSON.stringify([true]) ? true : null
+    )
     expect(api.values.flags).toEqual([true])
     expect(t.checked).toBe(true) // pre-fix this would be false (array branch desync)
 
     t.checked = false
     t.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (JSON.stringify(api.values.flags) === JSON.stringify([]) ? true : null))
     expect(api.values.flags).toEqual([])
     expect(t.checked).toBe(false)
   })
@@ -798,11 +801,11 @@ describe('read-side coerce symmetry — Set checkbox with numeric values', () =>
         h('pre', null, JSON.stringify([...api.values.tags])),
       ])
     })
-    await flush()
+    await waitUntil(() => ((api.values.tags as Set<number>).size === 0 ? true : null))
     const cb = root.querySelector('[data-field="cb1"]') as HTMLInputElement
     cb.checked = true
     cb.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => ((api.values.tags as Set<number>).has(1) ? true : null))
     expect(api.values.tags).toEqual(new Set([1]))
     // Pre-fix Set.has(model, "1") against Set<number>{1} returned
     // false (strict ===) → setChecked wrote el.checked = false.
@@ -828,13 +831,15 @@ describe('read-side coerce symmetry — multi-select with case-mismatched boolea
         h('pre', null, JSON.stringify(api.values.flags)),
       ])
     })
-    await flush()
+    await waitUntil(() => (JSON.stringify(api.values.flags) === JSON.stringify([]) ? true : null))
     const sel = root.querySelector('[data-field="sel"]') as HTMLSelectElement
     const [optTrue, optFalse] = Array.from(sel.options) as [HTMLOptionElement, HTMLOptionElement]
     optTrue.selected = true
     optFalse.selected = true
     sel.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(api.values.flags) === JSON.stringify([true, false]) ? true : null
+    )
     expect(api.values.flags).toEqual([true, false])
 
     // Force another re-render via a sibling write — this exercises
@@ -844,7 +849,7 @@ describe('read-side coerce symmetry — multi-select with case-mismatched boolea
     const note = root.querySelector('[data-field="note"]') as HTMLInputElement
     note.value = 'x'
     note.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.note === 'x' ? true : null))
 
     expect(optTrue.selected).toBe(true)
     expect(optFalse.selected).toBe(true)
@@ -867,11 +872,11 @@ describe('read-side coerce symmetry — single-select with case-mismatched boole
         h('pre', null, JSON.stringify(api.values.active)),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.active === false ? true : null))
     const sel = root.querySelector('[data-field="sel"]') as HTMLSelectElement
     sel.value = 'True'
     sel.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.active === true ? true : null))
     expect(api.values.active).toBe(true)
     // Pre-fix selectedIndex would land at -1 — looseEqual(true, "True")
     // returned false, so no option matched.
@@ -895,13 +900,13 @@ describe('read-side coerce symmetry — radio with case-mismatched boolean value
         h('pre', null, JSON.stringify(api.values.active)),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.active === false ? true : null))
     const t = root.querySelector('[data-field="t"]') as HTMLInputElement
     const f = root.querySelector('[data-field="f"]') as HTMLInputElement
 
     t.checked = true
     t.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.active === true ? true : null))
     expect(api.values.active).toBe(true)
     // Pre-fix the beforeUpdate hook ran `looseEqual(true, "True")`
     // → false → `el.checked = false`, immediately undoing the click.
@@ -910,7 +915,7 @@ describe('read-side coerce symmetry — radio with case-mismatched boolean value
 
     f.checked = true
     f.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.active === false ? true : null))
     expect(api.values.active).toBe(false)
     expect(t.checked).toBe(false)
     expect(f.checked).toBe(true)
@@ -927,11 +932,11 @@ describe('text input on numeric path without `.number` modifier', () => {
         h('pre', null, JSON.stringify(api.values.age)),
       ])
     })
-    await flush()
+    await waitUntil(() => (api.values.age === 0 ? true : null))
     const input = root.querySelector('[data-field="age"]') as HTMLInputElement
     input.value = '25'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (api.values.age === 25 ? true : null))
     expect(api.values.age).toBe(25)
     // Pre-fix the beforeUpdate hook fell through to
     // `el.value = typeof 25 === 'string' ? 25 : ''` → input cleared.

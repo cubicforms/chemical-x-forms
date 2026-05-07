@@ -8,6 +8,7 @@ import { createAttaform } from '../../src/runtime/core/plugin'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
 import { hashStableString } from '../../src/runtime/core/hash'
 import type { UseFormReturnType } from '../../src/runtime/types/types-api'
+import { wait, waitUntil } from '../utils/form-harness'
 
 /**
  * Variant memory × persistence interaction. The contract under test:
@@ -173,31 +174,6 @@ function mount(persistKey: string): {
   return { app, api: handle.api as Api, setAddress, setNumber, setChannel }
 }
 
-async function wait(ms: number): Promise<void> {
-  await new Promise<void>((r) => setTimeout(r, ms))
-}
-
-async function drain(rounds = 8): Promise<void> {
-  for (let i = 0; i < rounds; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
-
-async function waitUntil<T>(
-  predicate: () => T | null | undefined,
-  timeoutMs = 500,
-  intervalMs = 10
-): Promise<T> {
-  const start = Date.now()
-  while (Date.now() - start < timeoutMs) {
-    const v = predicate()
-    if (v !== null && v !== undefined) return v
-    await wait(intervalMs)
-  }
-  throw new Error('waitUntil: predicate never resolved')
-}
-
 describe('rememberVariants × persistence — refresh-survives contract', () => {
   const apps: App[] = []
   beforeEach(() => localStorage.clear())
@@ -211,7 +187,9 @@ describe('rememberVariants × persistence — refresh-survives contract', () => 
     // captures the email-variant state on switch-out.
     const s1 = mount('s1')
     apps.push(s1.app)
-    await drain()
+    // Wait for the mount-time hydration / wiring to settle — the email
+    // input is mounted only when the active variant resolves.
+    await waitUntil(() => (s1.api.values.notify.channel === 'email' ? true : null))
     s1.setAddress('a@b.com')
     await waitUntil(() => (localStorage.getItem(fpKey('s1')) !== null ? true : null))
     s1.setChannel('sms')

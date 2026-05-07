@@ -14,11 +14,12 @@
 // when a user interaction lands. This test exercises that combined
 // flow against a real `useForm` + Vue app.
 import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import { waitUntil } from '../utils/form-harness'
 
 const schema = z.object({
   colors: z.array(z.string()),
@@ -27,13 +28,6 @@ const schema = z.object({
   // select directive's `updated` hook with `_assigning === false`.
   note: z.string(),
 })
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 6; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
 
 describe('<select multiple v-register> — Cmd+click adds selection', () => {
   let app: App | undefined
@@ -82,7 +76,7 @@ describe('<select multiple v-register> — Cmd+click adds selection', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (handle.api?.values.colors !== undefined ? true : null))
 
     if (handle.api === undefined) throw new Error('api never set')
 
@@ -108,7 +102,11 @@ describe('<select multiple v-register> — Cmd+click adds selection', () => {
     // selected, then dispatch the same `change` event the browser would.
     green.selected = true
     select.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(handle.api?.values.colors) === JSON.stringify(['red', 'green', 'blue'])
+        ? true
+        : null
+    )
 
     // Form state landed correctly.
     expect(handle.api.values.colors).toEqual(['red', 'green', 'blue'])
@@ -128,7 +126,7 @@ describe('<select multiple v-register> — Cmd+click adds selection', () => {
     const note = root.querySelector('[data-field="note"]') as HTMLInputElement
     note.value = 'a'
     note.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.note === 'a' ? true : null))
 
     expect(red.selected).toBe(true)
     expect(green.selected).toBe(true)
@@ -194,7 +192,7 @@ describe('<select multiple v-register> — Cmd+click adds selection', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (handle.api?.values.colors !== undefined ? true : null))
 
     if (handle.api === undefined) throw new Error('api never set')
 
@@ -227,7 +225,7 @@ describe('<select multiple v-register> — Cmd+click adds selection', () => {
     // change and writes ['red','green','blue'] to the model.
     note.value = 'x'
     note.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.note === 'x' ? true : null))
 
     expect(green.selected).toBe(true) // ← the regression guard
     expect(red.selected).toBe(true)
@@ -237,7 +235,11 @@ describe('<select multiple v-register> — Cmd+click adds selection', () => {
     // Step 3: now fire the change event the browser would have fired,
     // confirming the full flow lands the model where the user expects.
     select.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(handle.api?.values.colors) === JSON.stringify(['red', 'green', 'blue'])
+        ? true
+        : null
+    )
 
     expect(handle.api.values.colors).toEqual(['red', 'green', 'blue'])
     expect(red.selected).toBe(true)

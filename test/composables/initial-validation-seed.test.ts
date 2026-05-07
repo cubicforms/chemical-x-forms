@@ -7,6 +7,7 @@ import { createAttaform } from '../../src/runtime/core/plugin'
 import { canonicalizePath } from '../../src/runtime/core/paths'
 import { useForm } from '../../src/zod'
 import { fakeSchema } from '../utils/fake-schema'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * Initial validation seed: when a form is constructed in strict mode
@@ -137,12 +138,6 @@ describe('initial validation seed — async-refine schema', () => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  async function flushMicrotasks(rounds = 8): Promise<void> {
-    for (let i = 0; i < rounds; i++) {
-      await Promise.resolve()
-    }
-  }
-
   async function waitFor<T>(
     fn: () => T | null | undefined,
     timeoutMs = 1000,
@@ -227,7 +222,10 @@ describe('initial validation seed — async-refine schema', () => {
     apps.push(app)
     const api = handle.api
     if (api === undefined) throw new Error('unreachable')
-    await flushMicrotasks()
+    // Lax mode must NOT fire the construction-time async seed. Poll on
+    // the would-fire signal (errors landing) — waitUntil times out
+    // (returns null) when it never happens, which is the contract.
+    await waitUntil(() => (api.errors.email !== undefined ? true : null), 50)
     expect(api.errors.email).toBeUndefined()
     expect(api.meta.valid).toBe(true)
   })
@@ -270,9 +268,13 @@ describe('initial validation seed — async-refine schema', () => {
     if (api === undefined) throw new Error('unreachable')
     // Synchronously: no async seed scheduled, no indicator flash.
     expect(api.meta.validating).toBe(false)
-    // After microtasks settle: still false. SSR never schedules the
-    // pass, so the validation never fires server-side.
-    await flushMicrotasks()
+    // SSR must NOT schedule the async seed. Poll on the would-fire
+    // signal (validating flipping true OR errors landing) — waitUntil
+    // times out when neither happens, which is the contract.
+    await waitUntil(
+      () => (api.meta.validating === true || api.errors.email !== undefined ? true : null),
+      50
+    )
     expect(api.meta.validating).toBe(false)
     expect(api.errors.email).toBeUndefined()
   })

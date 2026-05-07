@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, defineComponent, h, nextTick, watchEffect, type App } from 'vue'
+import { createApp, defineComponent, h, watchEffect, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * Visual flicker on DU variant switch: spike.vue shows the
@@ -69,14 +70,6 @@ function mountWithSnapshotter(): { app: App; api: ProfileApi; snapshots: string[
   return { app, api: handle.api as ProfileApi, snapshots }
 }
 
-async function flushAll(): Promise<void> {
-  await nextTick()
-  await new Promise<void>((r) => setTimeout(r, 0))
-  await nextTick()
-  await new Promise<void>((r) => setTimeout(r, 0))
-  await nextTick()
-}
-
 describe('DU variant switch — error materialisation flicker', () => {
   const apps: App[] = []
   afterEach(() => {
@@ -89,13 +82,15 @@ describe('DU variant switch — error materialisation flicker', () => {
 
     // Wait for the initial-mount validation to settle: E should be
     // present (notify.address fails z.email() against '').
-    await flushAll()
+    await waitUntil(() => (snapshots.some((s) => /notify.+address/.test(s)) ? true : null))
     const initialIdx = snapshots.findIndex((s) => /notify.+address/.test(s))
     expect(initialIdx).toBeGreaterThanOrEqual(0)
 
     // Switch to sms — number is empty, fails .min(7).
     api.setValue('notify.channel', 'sms')
-    await flushAll()
+    await waitUntil(() =>
+      /notify.+number/.test(snapshots[snapshots.length - 1] ?? '') ? true : null
+    )
 
     // Final snapshot must contain the sms-variant error.
     const finalSnapshot = snapshots[snapshots.length - 1]
@@ -121,18 +116,20 @@ describe('DU variant switch — error materialisation flicker', () => {
   it('sms→email transition does not pass through {} either (symmetric)', async () => {
     const { app, api, snapshots } = mountWithSnapshotter()
     apps.push(app)
-    await flushAll()
+    await waitUntil(() => (snapshots.some((s) => /notify.+address/.test(s)) ? true : null))
 
     // Pre-flight: switch to sms first so we start with S.
     api.setValue('notify.channel', 'sms')
-    await flushAll()
+    await waitUntil(() => (snapshots.some((s) => /notify.+number/.test(s)) ? true : null))
     const sIdx = snapshots.findIndex((s) => /notify.+number/.test(s))
     expect(sIdx).toBeGreaterThanOrEqual(0)
 
     // Reset capture window: now switch back to email.
     const startIdx = snapshots.length
     api.setValue('notify.channel', 'email')
-    await flushAll()
+    await waitUntil(() =>
+      /notify.+address/.test(snapshots[snapshots.length - 1] ?? '') ? true : null
+    )
 
     const finalSnapshot = snapshots[snapshots.length - 1]
     expect(finalSnapshot).toMatch(/notify.+address/)
@@ -157,9 +154,19 @@ describe('DU variant switch — error materialisation flicker', () => {
     // independently of the snapshot-history check above.
     const { app, api } = mountWithSnapshotter()
     apps.push(app)
-    await flushAll()
+    await waitUntil(() => {
+      const e = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
+        'notify.address'
+      )
+      return e !== undefined && e.length > 0 ? true : null
+    })
     api.setValue('notify.channel', 'sms')
-    await flushAll()
+    await waitUntil(() => {
+      const e = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
+        'notify.number'
+      )
+      return e !== undefined && e.length > 0 ? true : null
+    })
 
     const numberErrors = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
       'notify.number'

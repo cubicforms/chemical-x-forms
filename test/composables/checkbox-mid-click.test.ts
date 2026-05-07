@@ -11,23 +11,17 @@
 // browser's `change` decision triggers `beforeUpdate`, which writes
 // back the prior model state and clobbers the in-flight toggle.
 import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import { waitUntil } from '../utils/form-harness'
 
 const schema = z.object({
   items: z.array(z.string()),
   note: z.string(),
 })
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 6; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
 
 describe('<input type="checkbox" v-register> — sibling re-render mid-click', () => {
   let app: App | undefined
@@ -77,7 +71,9 @@ describe('<input type="checkbox" v-register> — sibling re-render mid-click', (
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(handle.api?.values.items) === JSON.stringify(['apple']) ? true : null
+    )
 
     if (handle.api === undefined) throw new Error('api never set')
 
@@ -110,7 +106,7 @@ describe('<input type="checkbox" v-register> — sibling re-render mid-click', (
     // writes ['apple','cherry'] to the model.
     note.value = 'x'
     note.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.note === 'x' ? true : null))
 
     expect(cherry.checked).toBe(true)
     expect(apple.checked).toBe(true)
@@ -118,7 +114,9 @@ describe('<input type="checkbox" v-register> — sibling re-render mid-click', (
 
     // Step 3: fire the change event the browser would have fired.
     cherry.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(handle.api?.values.items) === JSON.stringify(['apple', 'cherry']) ? true : null
+    )
 
     expect(handle.api.values.items).toEqual(['apple', 'cherry'])
     expect(apple.checked).toBe(true)
@@ -162,7 +160,9 @@ describe('<input type="checkbox" v-register> — sibling re-render mid-click', (
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(handle.api?.values.items) === JSON.stringify(['apple']) ? true : null
+    )
 
     const apple = root.querySelector<HTMLInputElement>('input[type="checkbox"]')
     if (apple === null) throw new Error('checkbox missing')
@@ -192,13 +192,13 @@ describe('<input type="checkbox" v-register> — sibling re-render mid-click', (
     // `items` doesn't change, so `setChecked` must skip every time.
     note.value = 'a'
     note.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.note === 'a' ? true : null))
     note.value = 'ab'
     note.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.note === 'ab' ? true : null))
     note.value = 'abc'
     note.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.note === 'abc' ? true : null))
 
     expect(writes).toBe(0)
   })
@@ -235,7 +235,9 @@ describe('<input type="checkbox" v-register> — sibling re-render mid-click', (
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      JSON.stringify(handle.api?.values.items) === JSON.stringify(['apple']) ? true : null
+    )
 
     if (handle.api === undefined) throw new Error('api never set')
     const [apple, banana] = Array.from(
@@ -246,7 +248,7 @@ describe('<input type="checkbox" v-register> — sibling re-render mid-click', (
     expect(banana.checked).toBe(false)
 
     handle.api.setValue('items', ['banana'])
-    await flush()
+    await waitUntil(() => (apple.checked === false && banana.checked === true ? true : null))
 
     expect(apple.checked).toBe(false)
     expect(banana.checked).toBe(true)

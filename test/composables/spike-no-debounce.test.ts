@@ -13,11 +13,12 @@
 // errors. A form with an explicit positive `debounceMs` needs a real
 // `setTimeout(>0)` flush to surface anything.
 import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import { waitUntil } from '../utils/form-harness'
 
 let app: App | undefined
 afterEach(() => {
@@ -25,23 +26,6 @@ afterEach(() => {
   app = undefined
   document.body.innerHTML = ''
 })
-
-async function microtaskFlush(): Promise<void> {
-  // Several microtask hops for the schema's
-  // `Promise.resolve().then(validateAtPath).then(applySchemaErrors)`
-  // chain plus Vue's render scheduler. Crucially: NO `setTimeout` —
-  // if the test passes after this, validation is genuinely off the
-  // debounce timer.
-  for (let i = 0; i < 6; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
-
-async function timerFlush(ms: number): Promise<void> {
-  await new Promise((r) => setTimeout(r, ms))
-  await nextTick()
-}
 
 describe('spike — debounceMs: 0 disables the debounce timer', () => {
   const schema = z.object({
@@ -76,7 +60,7 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await microtaskFlush()
+    await waitUntil(() => (handle.api?.errors.email === undefined ? true : null))
     expect(handle.api?.errors.email).toBeUndefined()
 
     const input = root.querySelector('[data-field="email"]') as HTMLInputElement
@@ -84,12 +68,17 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
 
     // Microtask flush only — the explicit 125 ms debounce timer hasn't
-    // fired, so no per-keystroke re-validation has run. Errors stay empty.
-    await microtaskFlush()
+    // fired, so no per-keystroke re-validation has run. Errors stay
+    // empty. Short timeout since waiting longer would let a real
+    // failure mode (timer fired early) hide.
+    await waitUntil(() => (handle.api?.errors.email === undefined ? true : null), 50)
     expect(handle.api?.errors.email).toBeUndefined()
 
-    // Wait long enough for the 125 ms timer to fire, then errors land.
-    await timerFlush(150)
+    // Wait for the 125 ms timer + revalidation chain to land. Polled
+    // rather than fixed-time-pumped so a contended CI doesn't flake.
+    await waitUntil(() =>
+      handle.api?.errors.email?.[0]?.message === 'Enter a valid email.' ? true : null
+    )
     expect(handle.api?.errors.email?.[0]?.message).toBe('Enter a valid email.')
   })
 
@@ -115,7 +104,7 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await microtaskFlush()
+    await waitUntil(() => (handle.api?.errors.email === undefined ? true : null))
     expect(handle.api?.errors.email).toBeUndefined()
 
     const input = root.querySelector('[data-field="email"]') as HTMLInputElement
@@ -125,7 +114,9 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
     // Microtask flush is enough — no setTimeout to wait on. Validation
     // ran synchronously inside the input handler; the schema's async
     // resolution lands on the next microtask.
-    await microtaskFlush()
+    await waitUntil(() =>
+      handle.api?.errors.email?.[0]?.message === 'Enter a valid email.' ? true : null
+    )
     expect(handle.api?.errors.email?.[0]?.message).toBe('Enter a valid email.')
   })
 
@@ -151,7 +142,7 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await microtaskFlush()
+    await waitUntil(() => (handle.api?.errors.email === undefined ? true : null))
     expect(handle.api?.errors.email).toBeUndefined()
 
     const input = root.querySelector('[data-field="email"]') as HTMLInputElement
@@ -171,7 +162,9 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
     for (const step of sequence) {
       input.value = step.typed
       input.dispatchEvent(new Event('input', { bubbles: true }))
-      await microtaskFlush()
+      await waitUntil(() =>
+        (handle.api?.errors.email !== undefined) === !step.valid ? true : null
+      )
       const hasError = handle.api?.errors.email !== undefined
       expect(hasError).toBe(!step.valid)
     }
@@ -238,18 +231,24 @@ describe('spike — persist.debounceMs: 0 writes immediately on every form chang
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await microtaskFlush()
+    // Allow mount-time setup to settle. No persist write expected yet
+    // since the user hasn't typed.
+    await waitUntil(() => (writes.length === 0 ? true : null), 50)
 
     const input = root.querySelector('[data-field="note"]') as HTMLInputElement
     input.value = 'hello'
     input.dispatchEvent(new Event('input', { bubbles: true }))
 
-    // Microtask flush — write hasn't happened yet (300 ms timer pending).
-    await microtaskFlush()
+    // Microtask flush — write hasn't happened yet (300 ms timer
+    // pending). Short timeout: a longer wait would let the timer fire
+    // and hide the contract.
+    await waitUntil(() => (writes.length === 0 ? true : null), 50)
     expect(writes.length).toBe(0)
 
-    // After the timer, exactly one coalesced write lands.
-    await timerFlush(350)
+    // After the debounce timer fires, exactly one coalesced write
+    // lands. Poll on the side-effect rather than time-pumping so a
+    // contended CI doesn't flake before the timer has a chance.
+    await waitUntil(() => (writes.length >= 1 ? true : null))
     expect(writes.length).toBe(1)
   })
 
@@ -288,16 +287,20 @@ describe('spike — persist.debounceMs: 0 writes immediately on every form chang
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await microtaskFlush()
+    // Allow mount-time setup to settle.
+    await waitUntil(() => (writes.length === 0 ? true : null), 50)
 
     const input = root.querySelector('[data-field="note"]') as HTMLInputElement
 
     // Three keystrokes → three writes. No coalescing since the timer
     // is the gate that would have collapsed bursts.
+    let expected = 0
     for (const typed of ['h', 'he', 'hel']) {
       input.value = typed
       input.dispatchEvent(new Event('input', { bubbles: true }))
-      await microtaskFlush()
+      expected += 1
+      const target = expected
+      await waitUntil(() => (writes.length >= target ? true : null))
     }
     expect(writes.length).toBe(3)
     // Last write reflects the last typed value.

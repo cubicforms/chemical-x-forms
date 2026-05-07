@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, defineComponent, h, nextTick, watch, type App } from 'vue'
+import { createApp, defineComponent, h, watch, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * `form.fields` — Pinia-style nested reactive proxy. Each path
@@ -22,13 +23,6 @@ const schema = z.object({
     zip: z.string(),
   }),
 })
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 4; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
 
 function mountForm(): {
   api: ReturnType<typeof useForm<typeof schema>>
@@ -96,9 +90,9 @@ describe('form.fields — top-level leaf reads', () => {
       }
     )
     mounted.api.setValue('email', 'first@x.com')
-    await flush()
+    await waitUntil(() => (seen.length >= 1 ? true : null))
     mounted.api.setValue('email', 'a@b.com')
-    await flush()
+    await waitUntil(() => (seen.length >= 2 ? true : null))
     stop()
     expect(seen).toEqual([true, false])
   })

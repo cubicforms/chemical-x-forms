@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod-v3'
 import type { FormStorage, UseFormReturnType } from '../../src/runtime/types/types-api'
 import { vRegister } from '../../src/runtime/core/directive'
@@ -8,6 +8,7 @@ import { createAttaform } from '../../src/runtime/core/plugin'
 import { useForm } from '../../src/zod-v3'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v3/fingerprint'
 import { hashStableString } from '../../src/runtime/core/hash'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * Regression pin: the zod v3 `useForm` wrapper used to hand-pick the
@@ -41,17 +42,6 @@ function mount(options: AnyUseFormOptions): { app: App; api: ApiReturn } {
   return { app, api: handle.api as ApiReturn }
 }
 
-async function drain(rounds = 8): Promise<void> {
-  for (let i = 0; i < rounds; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
-
-async function wait(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
   const apps: App[] = []
   afterEach(() => {
@@ -76,8 +66,7 @@ describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
     // reached useAbstractForm — populates fieldErrors within the
     // debounce window.
     api.setValue('email', 'nope')
-    await wait(60)
-    await drain()
+    await waitUntil(() => (api.errors.email?.[0]?.message === 'bad email' ? true : null))
 
     expect(api.errors.email?.[0]?.message).toBe('bad email')
   })
@@ -131,8 +120,7 @@ describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
     if (input === undefined) throw new Error('email input not mounted')
     input.value = 'alice@example.com'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await wait(50)
-    await drain()
+    await waitUntil(() => (setItem.mock.calls.length > 0 ? true : null))
 
     expect(setItem).toHaveBeenCalled()
     const [key, payload] = setItem.mock.calls[0] ?? []

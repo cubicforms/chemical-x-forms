@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * Edge cases adjacent to the schemaErrors-keying fix in
@@ -54,12 +55,6 @@ function mountForm<Schema extends z.ZodObject>(
   return { app, api: handle.api as LooseApi<Schema> }
 }
 
-async function flushValidations(): Promise<void> {
-  await nextTick()
-  await new Promise<void>((r) => setTimeout(r, 0))
-  await nextTick()
-}
-
 describe('schemaErrors edge cases — cross-field refine on a container', () => {
   // A `.refine()` on a container produces an error whose absolute path
   // equals the container's path (no leaf segment). The new
@@ -89,12 +84,11 @@ describe('schemaErrors edge cases — cross-field refine on a container', () => 
   it('refine error at a container path lands in form.meta.errors, not form.errors', async () => {
     const { app, api } = mountForm(schema, { address: { city: 'Springfield', zip: 'Springfield' } })
     apps.push(app)
-    await flushValidations()
     // Trigger a write so scheduleFieldValidation fires at the leaf path
     // (city), which propagates an error at the parent via the refine —
     // adapters typically surface the refine on the `.address` path.
     api.setValue('address.city', 'Springfield')
-    await flushValidations()
+    await waitUntil(() => (api.values.address.city === 'Springfield' ? true : null))
 
     // Force whole-form validation through handleSubmit so the
     // top-level refine actually executes (per-leaf schedules don't
@@ -146,7 +140,9 @@ describe('schemaErrors edge cases — cross-field refine on a container', () => 
     // at `['address','city']`, so the refine entry keyed at
     // `['address']` is not a descendant and must NOT be cleared.
     api.setValue('address.city', 'Springfield') // unchanged value, but triggers schedule
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.some((e) => /city and zip/.test(e.message)) ? true : null
+    )
 
     expect(api.meta.errors.some((e) => /city and zip/.test(e.message))).toBe(true)
   })
@@ -170,7 +166,10 @@ describe('schemaErrors edge cases — failing → passing transition', () => {
     const { app, api } = mountForm(schema, { email: 'not-an-email' })
     apps.push(app)
     api.setValue('email', 'not-an-email')
-    await flushValidations()
+    await waitUntil(() => {
+      const errs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)('email')
+      return errs?.[0]?.code?.startsWith('zod:') ? true : null
+    })
 
     // Failing state: error landed.
     const before = (api.errors as unknown as (p: string) => ValidationError[] | undefined)('email')
@@ -180,7 +179,10 @@ describe('schemaErrors edge cases — failing → passing transition', () => {
     // Fix the value — schedule fires again, validation passes,
     // applySchemaErrorsForSubtree clears the (now-empty) subtree.
     api.setValue('email', 'valid@example.com')
-    await flushValidations()
+    await waitUntil(() => {
+      const errs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)('email')
+      return errs === undefined ? true : null
+    })
 
     const after = (api.errors as unknown as (p: string) => ValidationError[] | undefined)('email')
     expect(after).toBeUndefined()
@@ -201,7 +203,15 @@ describe('schemaErrors edge cases — failing → passing transition', () => {
     apps.push(app)
     api.setValue('address.city', '') // schedule + fail at city
     api.setValue('address.zip', 'bad') // schedule + fail at zip
-    await flushValidations()
+    await waitUntil(() => {
+      const cityErrs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
+        'address.city'
+      )
+      const zipErrs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
+        'address.zip'
+      )
+      return cityErrs && zipErrs ? true : null
+    })
 
     expect(
       (api.errors as unknown as (p: string) => ValidationError[] | undefined)('address.city')
@@ -212,7 +222,15 @@ describe('schemaErrors edge cases — failing → passing transition', () => {
 
     // Whole-container write that passes for both leaves.
     api.setValue('address', { city: 'NYC', zip: '10001' })
-    await flushValidations()
+    await waitUntil(() => {
+      const cityErrs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
+        'address.city'
+      )
+      const zipErrs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
+        'address.zip'
+      )
+      return cityErrs === undefined && zipErrs === undefined ? true : null
+    })
 
     expect(
       (api.errors as unknown as (p: string) => ValidationError[] | undefined)('address.city')
@@ -244,13 +262,19 @@ describe('schemaErrors edge cases — field-array shrink', () => {
     apps.push(app)
     // Trigger a validation that lands an error at tags.0
     api.setValue('tags', ['', 'b', 'c'])
-    await flushValidations()
+    await waitUntil(() => {
+      const errs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)('tags.0')
+      return errs ? true : null
+    })
     expect(
       (api.errors as unknown as (p: string) => ValidationError[] | undefined)('tags.0')
     ).toBeDefined()
 
     api.remove('tags', 0)
-    await flushValidations()
+    await waitUntil(() => {
+      const errs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)('tags.0')
+      return errs === undefined ? true : null
+    })
 
     // tags.0 is now 'b' (was 'b' at index 1) — passes .min(1).
     expect(
@@ -271,13 +295,15 @@ describe('schemaErrors edge cases — field-array shrink', () => {
     const { app, api } = mountForm(schema, { tags: ['', 'b', 'c'] })
     apps.push(app)
     api.setValue('tags', ['', 'b', 'c'])
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === 'tags.0' ? true : null
+    )
 
     // Confirm the only error is at index 0 to start.
     expect(api.meta.errors.map((e) => e.path.join('.'))).toEqual(['tags.0'])
 
     api.remove('tags', 0)
-    await flushValidations()
+    await waitUntil(() => (api.meta.errors.length === 0 ? true : null))
 
     // No leftover entries at any index.
     expect(api.meta.errors).toEqual([])
@@ -314,8 +340,15 @@ describe('schemaErrors edge cases — parent + leaf overlapping schedules', () =
     // but the final state must reflect storage.
     api.setValue('address.city', 'X') // fails .min(2) → leaf error
     api.setValue('address', { city: 'X', zip: '12' }) // fails BOTH → both errors expected
-    await flushValidations()
-    await flushValidations() // double-flush in case both runs queue separate work
+    await waitUntil(() => {
+      const cityErrs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
+        'address.city'
+      )
+      const zipErrs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
+        'address.zip'
+      )
+      return cityErrs?.[0]?.path && zipErrs?.[0]?.path ? true : null
+    })
 
     // Final storage matches:
     expect(api.values.address).toEqual({ city: 'X', zip: '12' })
@@ -341,7 +374,10 @@ describe('schemaErrors edge cases — parent + leaf overlapping schedules', () =
     api.setValue('email', 'a')
     api.setValue('email', 'ab')
     api.setValue('email', 'abc@example.com') // valid — final
-    await flushValidations()
+    await waitUntil(() => {
+      const errs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)('email')
+      return errs === undefined && api.meta.errors.length === 0 ? true : null
+    })
 
     // Final state: no errors; only the final scheduled run won.
     const errs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)('email')

@@ -6,7 +6,6 @@ import {
   defineComponent,
   h,
   isRef,
-  nextTick,
   ref,
   watchEffect,
   withDirectives,
@@ -17,6 +16,7 @@ import { useForm } from '../../src/zod'
 import { useRegister } from '../../src/runtime/composables/use-register'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * Unit tests for the `useRegister()` composable. The composable's
@@ -37,13 +37,6 @@ import { createAttaform } from '../../src/runtime/core/plugin'
  */
 
 const schema = z.object({ email: z.string(), name: z.string() })
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 4; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
 
 describe('useRegister — outside setup', () => {
   it('returns a ComputedRef whose .value is undefined; warns once; does not throw', () => {
@@ -115,7 +108,7 @@ describe('useRegister — inside child setup', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (warnings.some((w) => w.includes('useRegister')) ? true : null))
 
     expect(captured.register).toBeDefined()
     if (captured.register === undefined) throw new Error('unreachable')
@@ -152,7 +145,9 @@ describe('useRegister — inside child setup', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      warnings.some((w) => w.includes('useRegister: no parent registerValue prop')) ? true : null
+    )
 
     if (captured.register === undefined) throw new Error('unreachable')
     // Hammer the computed.
@@ -211,7 +206,9 @@ describe('useRegister — inside child setup', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      root.querySelector('input')?.getAttribute('data-rv-bound') === '1' ? true : null
+    )
     warnSpy.mockRestore()
 
     // The render-time read of `captured.childRegister.value` should
@@ -258,7 +255,12 @@ describe('useRegister — inside child setup', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      captured.childRegister?.value !== undefined &&
+      captured.childRegister.value === captured.parentRV
+        ? true
+        : null
+    )
 
     expect(captured.parentRV).toBeDefined()
     expect(captured.childRegister).toBeDefined()
@@ -296,7 +298,9 @@ describe('useRegister — inside child setup', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      captured.childRegister?.value?.path === JSON.stringify(['email']) ? true : null
+    )
 
     expect(captured.childRegister).toBeDefined()
     if (captured.childRegister === undefined) throw new Error('unreachable')
@@ -305,7 +309,9 @@ describe('useRegister — inside child setup', () => {
     expect(initial?.path).toBe(JSON.stringify(['email']))
 
     fieldName.value = 'name'
-    await flush()
+    await waitUntil(() =>
+      captured.childRegister?.value?.path === JSON.stringify(['name']) ? true : null
+    )
 
     const rotated = captured.childRegister.value
     expect(rotated).toBeDefined()
@@ -346,7 +352,7 @@ describe('useRegister — inside child setup', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (captured.childRegister?.value !== undefined ? true : null))
 
     expect(captured.childRegister).toBeDefined()
     if (captured.childRegister === undefined) throw new Error('unreachable')
@@ -431,7 +437,9 @@ describe('useRegister — inside child setup', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      reads.path[reads.path.length - 1] === JSON.stringify(['email']) ? true : null
+    )
 
     // Initial reads: at least one `path` capture for `email`. The
     // exact count depends on Vue's flush pipeline — both watchEffects
@@ -457,7 +465,9 @@ describe('useRegister — inside child setup', () => {
     const computedSamplesBeforeRotation = pathComputedSamples.length
 
     fieldName.value = 'name'
-    await flush()
+    await waitUntil(() =>
+      reads.path[reads.path.length - 1] === JSON.stringify(['name']) ? true : null
+    )
 
     // The watchEffects must have re-fired with the new value, and the
     // computed must have re-sampled to `["name"]`.
@@ -508,14 +518,19 @@ describe('useRegister — inside child setup', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      captured.childRegister?.value?.formKey === 'wrapper-rotation-test' &&
+      captured.childRegister.value.segments[0] === 'email'
+        ? true
+        : null
+    )
 
     expect(captured.childRegister?.value?.segments).toEqual(['email'])
     expect(captured.childRegister?.value?.formKey).toBe('wrapper-rotation-test')
     const initialFormInstanceId = captured.childRegister?.value?.formInstanceId
 
     fieldName.value = 'name'
-    await flush()
+    await waitUntil(() => (captured.childRegister?.value?.segments[0] === 'name' ? true : null))
 
     expect(captured.childRegister?.value?.segments).toEqual(['name'])
     expect(captured.childRegister?.value?.formKey).toBe('wrapper-rotation-test')
@@ -583,7 +598,7 @@ describe('useRegister — sentinel suppresses parent-directive warn', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (root.querySelector('input.inner') !== null ? true : null))
     warnSpy.mockRestore()
 
     const matched = warnings.filter((w) => w.includes('is a no-op'))
@@ -631,7 +646,7 @@ describe('useRegister — sentinel suppresses parent-directive warn', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (formApi !== undefined ? true : null))
 
     if (formApi === undefined) throw new Error('unreachable')
     formApi.setValue('email', 'seed@example.com')
@@ -644,7 +659,7 @@ describe('useRegister — sentinel suppresses parent-directive warn', () => {
     const innerInput = root.querySelector('input.inner') as HTMLInputElement
     innerInput.value = 'typed-clobber-attempt'
     innerInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (formApi?.values.email === 'seed@example.com' ? true : null))
 
     expect(formApi.values.email).toBe('seed@example.com')
   })
@@ -694,7 +709,7 @@ describe('useRegister — inner v-register receives full directive lifecycle', (
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (captured.api !== undefined ? true : null))
 
     if (captured.api === undefined) throw new Error('unreachable')
 
@@ -707,7 +722,7 @@ describe('useRegister — inner v-register receives full directive lifecycle', (
     expect(innerInput).not.toBeNull()
     innerInput.focus()
     innerInput.dispatchEvent(new Event('focus', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (captured.api?.fields.email.focused === true ? true : null))
     expect(captured.api.fields.email.focused).toBe(true)
   })
 })
@@ -760,7 +775,12 @@ describe('useRegister — strips bridge keys from attrs (no inheritAttrs needed)
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      root.querySelector('label.wrapper') !== null &&
+      root.querySelector('label.wrapper')?.hasAttribute('registerValue') === false
+        ? true
+        : null
+    )
 
     const label = root.querySelector('label.wrapper')
     expect(label).not.toBeNull()
@@ -802,7 +822,9 @@ describe('useRegister — strips bridge keys from attrs (no inheritAttrs needed)
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      root.querySelector('label')?.classList.contains('consumer-class') === true ? true : null
+    )
 
     const label = root.querySelector('label')
     expect(label).not.toBeNull()
@@ -845,15 +867,24 @@ describe('useRegister — strips bridge keys from attrs (no inheritAttrs needed)
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      root.querySelector('label.wrapper') !== null &&
+      root.querySelector('label.wrapper')?.hasAttribute('registerValue') === false
+        ? true
+        : null
+    )
 
     const label = root.querySelector('label.wrapper')
     expect(label?.hasAttribute('registerValue')).toBe(false)
 
     tick.value += 1
-    await flush()
+    await waitUntil(() =>
+      root.querySelector('label.wrapper')?.hasAttribute('registerValue') === false ? true : null
+    )
     tick.value += 1
-    await flush()
+    await waitUntil(() =>
+      root.querySelector('label.wrapper')?.hasAttribute('registerValue') === false ? true : null
+    )
 
     expect(label?.hasAttribute('registerValue')).toBe(false)
     expect(label?.hasAttribute('value')).toBe(false)

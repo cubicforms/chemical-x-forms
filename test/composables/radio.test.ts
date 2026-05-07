@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * `<input type="radio" v-register>` end-to-end coverage.
@@ -19,13 +20,6 @@ import { createAttaform } from '../../src/runtime/core/plugin'
  * same regression classes (initial-state hydration, static-attr
  * hydration, slim-gate interactions).
  */
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 4; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
 
 function dispatchChange(el: HTMLInputElement): void {
   el.dispatchEvent(new Event('change', { bubbles: true }))
@@ -75,7 +69,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (captured.api?.values.tier === 'pro' ? true : null))
 
     if (captured.api === undefined) throw new Error('unreachable')
     const free = root.querySelector('input.free') as HTMLInputElement
@@ -95,7 +89,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
     pro.checked = false
     ent.checked = true
     dispatchChange(ent)
-    await flush()
+    await waitUntil(() => (captured.api?.values.tier === 'enterprise' ? true : null))
     expect(captured.api.values.tier).toBe('enterprise')
 
     // User selects `free`.
@@ -103,7 +97,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
     pro.checked = false
     ent.checked = false
     dispatchChange(free)
-    await flush()
+    await waitUntil(() => (captured.api?.values.tier === 'free' ? true : null))
     expect(captured.api.values.tier).toBe('free')
   })
 
@@ -139,7 +133,9 @@ describe('<input type="radio" v-register> — single-group selection', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      (root.querySelector('input.ent') as HTMLInputElement | null)?.checked === true ? true : null
+    )
 
     expect((root.querySelector('input.free') as HTMLInputElement).checked).toBe(false)
     expect((root.querySelector('input.pro') as HTMLInputElement).checked).toBe(false)
@@ -187,7 +183,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (captured.api?.values.tier === 'free' ? true : null))
 
     if (captured.api === undefined) throw new Error('unreachable')
     const free = root.querySelector('input.free') as HTMLInputElement
@@ -196,7 +192,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
     expect(free.checked).toBe(true)
     expect(pro.checked).toBe(false)
     ;(captured.api.setValue as (path: 'tier', value: 'pro') => boolean)('tier', 'pro')
-    await flush()
+    await waitUntil(() => (pro.checked === true && free.checked === false ? true : null))
     expect(free.checked).toBe(false)
     expect(pro.checked).toBe(true)
   })
@@ -235,7 +231,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (captured.api?.values.tier === 'unknown' ? true : null))
 
     expect((root.querySelector('input.free') as HTMLInputElement).checked).toBe(false)
     expect((root.querySelector('input.pro') as HTMLInputElement).checked).toBe(false)
@@ -293,7 +289,7 @@ describe('<input type="radio" v-register> — hydration with static value attrib
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (captured.api?.values.tier === 'pro' ? true : null))
 
     if (captured.api === undefined) throw new Error('unreachable')
     const free = root.querySelector('input.free') as HTMLInputElement
@@ -307,7 +303,7 @@ describe('<input type="radio" v-register> — hydration with static value attrib
     // is the path that reads vnode.props?.['value'] (post-fix:
     // getValue(el) with the DOM-attribute fallback).
     ;(captured.api.setValue as (path: 'tier', value: 'free') => boolean)('tier', 'free')
-    await flush()
+    await waitUntil(() => (free.checked === true && pro.checked === false ? true : null))
 
     expect(free.checked).toBe(true)
     expect(pro.checked).toBe(false)
@@ -346,7 +342,7 @@ describe('<input type="radio" v-register> — slim-gate interactions', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (captured.api?.values.tier === 'free' ? true : null))
 
     if (captured.api === undefined) throw new Error('unreachable')
     // z.enum(['free','pro']) slim = string. Writing a number is rejected
@@ -376,7 +372,7 @@ describe('<input type="radio" v-register> — slim-gate interactions', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (captured.api?.values.tier === 'free' ? true : null))
 
     if (captured.api === undefined) throw new Error('unreachable')
     // The slim primitive for z.enum(string) is just 'string'; the

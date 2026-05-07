@@ -174,7 +174,7 @@ form lands in the same UI state the user left it. A user who cleared
 a numeric input, navigated away, and came back sees the field empty
 and the error reappear — same lifecycle, just resumed.
 
-See [`recipes/persistence.md`](./recipes/persistence.md) for the
+See [`persistence.md`](./persistence.md) for the
 hydration boundary.
 
 ## TL;DR

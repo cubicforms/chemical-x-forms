@@ -127,7 +127,7 @@ useForm({ schema, defaultValues: { email: 'me@example.com', count: 10 } })
 //    required schemas. Strings and booleans are NOT auto-marked
 //    because their slim defaults match what the DOM shows natively
 //    — the schema is the authority on whether `''` / `false` is
-//    acceptable. See `docs/blank.md` for the full rationale.
+//    acceptable. See `./blank-inputs.md` for the full rationale.
 useForm({ schema })
 
 // 3. Mark specific leaves as `unset` — those leaves are blank
@@ -153,7 +153,7 @@ schemas accept the empty case.
 To opt a numeric leaf OUT of auto-mark, supply a non-`unset` value
 (`defaultValues: { count: 0 }` is the explicit "0 is intentional"
 signal). For strings and booleans you don't need an opt-out — they're
-not auto-marked in the first place. See `docs/blank.md` for why the
+not auto-marked in the first place. See `./blank-inputs.md` for why the
 asymmetry is principled (storage / display divergence is real for
 numerics and absent for strings / booleans).
 

@@ -121,7 +121,7 @@ string; formKey: FormKey }`.
   `form.fields.<path>` read: `value` / `original` (typed
   `Value`), `pristine` / `dirty` / `blank` (booleans), `focused` /
   `blurred` / `touched` (`boolean | null`), `errors`
-  (`readonly ValidationError[]`), `path`, `isConnected`, `updatedAt`.
+  (`readonly ValidationError[]`), `path`, `connected`, `updatedAt`.
   Schema fields with names matching these leaf keys at depth ≥ 2
   are shadowed by the leaf — bracket-access via `toRef` is the
   workaround.
@@ -158,7 +158,7 @@ string; formKey: FormKey }`.
   signals "this rule doesn't apply" — the write passes through
   untouched.
 - **`FormMeta`** — the shape of `form.meta`: form-level flags
-  (`isDirty`, `isValid`, `isSubmitting`, `isValidating`), counters
+  (`dirty`, `valid`, `submitting`, `validating`), counters
   (`submitCount`, `historySize`), the flat `errors` aggregate, and
   the per-mount `instanceId`.
 - **`FormErrorsSurface<F>`** — the shape of `form.errors`. Drillable
@@ -174,7 +174,7 @@ string; formKey: FormKey }`.
   `'object'`, `'array'`, `'symbol'`, `'function'`, `'map'`, `'set'`.
   Returned by `AbstractSchema.getSlimPrimitiveTypesAtPath(path)`.
 - **`MetaTrackerValue`** — per-leaf metadata: `updatedAt`,
-  `rawValue`, `isConnected`, `formKey`, `path`. Read from
+  `rawValue`, `connected`, `formKey`, `path`. Read from
   `FieldState.meta` when type-narrowing through that surface.
 - **`RegisterDirective`** — the union of every `v-register`
   directive variant (text input, select, checkbox, radio, dynamic).

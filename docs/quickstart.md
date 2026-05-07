@@ -87,8 +87,8 @@ For other bundlers, see [`attaform/transforms`](/docs/api/transforms).
       <small>{{ form.errors.password?.[0]?.message }}</small>
     </label>
 
-    <button type="submit" :disabled="!form.meta.isValid || form.meta.isSubmitting">
-      {{ form.meta.isSubmitting ? 'Creating account…' : 'Create account' }}
+    <button type="submit" :disabled="!form.meta.valid || form.meta.submitting">
+      {{ form.meta.submitting ? 'Creating account…' : 'Create account' }}
     </button>
   </form>
 </template>
@@ -101,7 +101,7 @@ Three things this demonstrates:
 - **`form.errors`** is a reactive proxy. Refinement errors surface as
   the user types; required-field "no value supplied" errors fire on
   submit.
-- **`form.meta.isValid`** and `form.meta.isSubmitting` gate the
+- **`form.meta.valid`** and `form.meta.submitting` gate the
   submit button — submit auto-runs validation first, so the callback
   receives strictly-typed values.
 

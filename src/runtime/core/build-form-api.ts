@@ -12,18 +12,26 @@ import type {
 import type { DeepPartial, DefaultValuesShape, GenericForm } from '../types/types-core'
 import { __DEV__ } from './dev'
 import type { FormStore } from './create-form-store'
+import { structuralSnapshot } from './diff-apply'
 import { buildErrorsProxy } from './errors-proxy'
 import { buildFieldArrayApi } from './field-arrays'
 import { buildFieldStateProxy } from './field-state-proxy'
 import type { HistoryModule } from './history'
 import { getAtPath } from './path-walker'
-import { canonicalizePath, segmentsForPathKey, type Path, type PathKey } from './paths'
+import {
+  canonicalizePath,
+  isPathPrefix,
+  ROOT_PATH_KEY,
+  segmentsForPathKey,
+  type Path,
+  type PathKey,
+} from './paths'
 import { PERSISTENCE_MODULE_KEY, type PersistenceModule } from './persistence'
 import { enforceSensitiveCheck } from './persistence/sensitive-names'
 import { buildProcessForm } from './process-form'
 import { buildRegister } from './register-api'
 import { isUnset } from './unset'
-import { walkUnsetSentinels } from './unset-walker'
+import { substituteUnsetSentinels, walkUnsetSentinels } from './unset-walker'
 import { buildValuesProxy } from './values-proxy'
 
 export type BuildFormApiOptions = {
@@ -110,13 +118,18 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
 
   function setValueImpl(pathOrValue: unknown, maybeValue?: unknown): boolean {
     if (arguments.length === 1) {
-      // Whole-form: prev is the live form (already structurally
-      // complete under the runtime invariant). The consumer's RETURN
-      // value passes through mergeStructural so any gaps the consumer
-      // introduced (partial replacement) are filled from defaults.
+      // Whole-form: hand the consumer's callback a STABLE structural
+      // snapshot of the form, not the live reactive value. The form
+      // store mutates `form.value` in place on commit (so deep-watch
+      // dependencies fire only for paths that actually changed), so
+      // a callback that closes over `prev` would otherwise see its
+      // `prev` reference silently follow the post-commit state. The
+      // consumer's RETURN value passes through mergeStructural so any
+      // gaps the consumer introduced (partial replacement) are filled
+      // from defaults.
       const next =
         typeof pathOrValue === 'function'
-          ? (pathOrValue as (prev: unknown) => unknown)(state.form.value)
+          ? (pathOrValue as (prev: unknown) => unknown)(structuralSnapshot(state.form.value))
           : pathOrValue
       // Whole-form `unset` sentinels (consumer wrote `setValue(unset)`
       // or returned `unset` for some leaf in a function form) flow
@@ -156,8 +169,11 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     // Path-form callback: when the slot at `segments` is unpopulated,
     // hand the consumer the schema's default at that path instead of
     // `undefined` so `(prev) => prev.first.toUpperCase()` is safe.
-    // For populated slots, prev is the live value (consumer's intent
-    // is to update existing data, not reset to defaults).
+    // For populated slots, prev is the live value — and stable: the
+    // form store reassigns the changed first-segment of `form.value`
+    // on commit (so the OLD subtree, which `prev` may close over, is
+    // orphaned but unmutated). Consumers caching `prev` see frozen
+    // pre-commit state.
     let resolvedValue: unknown
     if (typeof maybeValue === 'function') {
       const current = state.getValueAtPath(segments)
@@ -173,7 +189,37 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     } else {
       resolvedValue = maybeValue
     }
-    return state.setValueAtPath(segments, resolvedValue)
+    // Nested-unset pass. The leaf-level cases above (`maybeValue ===
+    // unset`, callback returned `unset`) are already done; what
+    // remains is values like `{ type: 'oversized', lengthCm: unset, … }`
+    // — the homepage REPL's discriminated-union Case B write. Without
+    // this scrub, the symbols flow into the slim-primitive gate, fail
+    // the kind check at the numeric leaf, and the whole write is
+    // rejected — leaving the form on the prior variant.
+    //
+    // The walker is reference-stable on subtrees with no substitutions,
+    // so the common case (no nested unsets) returns the same `resolvedValue`
+    // identity and produces an empty `paths` list — no extra writes.
+    const walked = substituteUnsetSentinels(
+      resolvedValue,
+      segments,
+      state.schema as unknown as Parameters<typeof substituteUnsetSentinels>[2]
+    )
+    const ok = state.setValueAtPath(segments, walked.cleanedValues)
+    if (!ok) return false
+    // Mark each substituted leaf blank. Re-write the slim default
+    // explicitly with `blank: true` so the gate hook adds the path
+    // to `blankPaths` (the variant reshape's `walkUnspecified` only
+    // auto-marks numeric leaves; this loop catches the
+    // string / boolean / bigint cases the consumer flagged blank).
+    for (const pathKey of walked.paths) {
+      const blankSegments = segmentsForPathKey(pathKey)
+      if (blankSegments === null) continue
+      state.setValueAtPath(blankSegments, state.schema.getDefaultAtPath(blankSegments), {
+        blank: true,
+      })
+    }
+    return true
   }
 
   // --- Error store API — leaf-aware drillable callable Proxy ---
@@ -229,11 +275,102 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     state.clearUserErrors(segments)
   }
 
+  function setFormErrors(
+    errors: ReadonlyArray<Partial<ValidationError> & { message: string }>
+  ): void {
+    // Surgically replace just the form-level (path: []) entry. Going
+    // through `setAllUserErrors` / `setFieldErrors` would clobber every
+    // field error too — wrong for "set this top-of-form message
+    // without disturbing field validation."
+    //
+    // Caller-provided `path` and `formKey` are intentionally ignored:
+    // this API is form-level-only by definition (path is always [])
+    // and the form knows its own key. The lenient input shape lets
+    // callers pipe `ValidationError[]` (e.g. from `parseApiErrors`)
+    // straight in without having to map first.
+    if (errors.length === 0) {
+      state.userErrors.delete(ROOT_PATH_KEY)
+      return
+    }
+    state.userErrors.set(
+      ROOT_PATH_KEY,
+      errors.map((e) => ({
+        path: [],
+        message: e.message,
+        formKey: state.formKey,
+        code: e.code ?? 'atta:form-error',
+      }))
+    )
+  }
+
+  function clearFormErrors(): void {
+    state.userErrors.delete(ROOT_PATH_KEY)
+  }
+
+  function errorsAt(input: string | ReadonlyArray<string | number>): readonly ValidationError[] {
+    const { segments: prefix } = canonicalizePath(input as string | Path)
+    const out: ValidationError[] = []
+    // Read through `metaErrors.value` so callers wrapping the call in a
+    // `computed(() => form.errorsAt('cargo'))` participate in dep
+    // tracking via the underlying meta computed.
+    for (const err of metaErrors.value) {
+      if (isPathPrefix(prefix, err.path)) out.push(err)
+    }
+    return out
+  }
+
+  // `true` when no error AND no in-flight field-level validation
+  // sits at-or-under any of the supplied prefixes. Sugar over
+  // `errorsAt` for the multi-path case, scoped to per-prefix
+  // in-flight work (the per-field analogue of `meta.validating`).
+  //
+  // The `firstValidationDone` gate is applied **per prefix** — only
+  // for prefixes whose sub-schema declares async work. A purely
+  // synchronous subtree resolves its verdict at construction (or
+  // the next per-field run) without waiting on a microtask, so
+  // honouring the form-wide gate there would just play dumb about
+  // a known answer. The asymmetry kept the demo's stepper from
+  // flashing green for async-validating subtrees while leaving
+  // sync-only paths with the "valid by structure" answer they
+  // honestly hold.
+  //
+  // Whole-form `validate()` / `validateAsync()` runs increment
+  // `meta.validating` only — compose with that flag when the caller
+  // wants to also gate on form-wide async work that doesn't have a
+  // single path.
+  function isValid(paths: ReadonlyArray<string | ReadonlyArray<string | number>>): boolean {
+    for (const p of paths) {
+      const { segments: prefix } = canonicalizePath(p as string | Path)
+      // Per-prefix gate: only apply `firstValidationDone` when the
+      // sub-schema at this prefix actually declares async work. For
+      // a purely synchronous subtree the verdict is settled by the
+      // construction-time pass (or the next per-field run); the
+      // form-wide gate is irrelevant.
+      if (state.pathHasAsyncValidation(prefix) && !state.firstValidationDone.value) return false
+      // Errors under prefix? Read through `metaErrors.value` so callers
+      // wrapping `isValid` in a `computed(...)` get dep tracking via
+      // the same channel `errorsAt` uses.
+      for (const err of metaErrors.value) {
+        if (isPathPrefix(prefix, err.path)) return false
+      }
+      // Field-level validation under prefix? Iterating the reactive
+      // counts Map subscribes the surrounding effect to per-key
+      // changes, so the computed re-evaluates when a debounced
+      // run finishes.
+      for (const [key, count] of state.fieldValidationCounts) {
+        if (count <= 0) continue
+        const fieldSegments = segmentsForPathKey(key)
+        if (fieldSegments && isPathPrefix(prefix, fieldSegments)) return false
+      }
+    }
+    return true
+  }
+
   // --- Form-level aggregates ---
   // Each entry in `state.originals` stores its canonical `segments`
   // alongside the recorded `value`, so this loop skips `JSON.parse` per
   // iteration. See phase 5.1 notes.
-  const isDirty = computed<boolean>(() => {
+  const dirty = computed<boolean>(() => {
     for (const [, { segments, value: original }] of state.originals) {
       if (!Object.is(getAtPath(state.form.value, segments), original)) return true
     }
@@ -248,20 +385,32 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     return false
   })
 
-  const isValid = computed<boolean>(
-    () =>
-      state.schemaErrors.size === 0 &&
-      state.userErrors.size === 0 &&
-      state.derivedBlankErrors.value.size === 0
-  )
-
   // --- Submission lifecycle ---
-  const isSubmitting = computed<boolean>(() => state.isSubmitting.value)
+  const submitting = computed<boolean>(() => state.submitting.value)
   const submitCount = computed<number>(() => state.submitCount.value)
   const submitError = computed<unknown>(() => state.submitError.value)
 
   // --- Validation lifecycle ---
-  const isValidating = computed<boolean>(() => state.activeValidations.value > 0)
+  const validating = computed<boolean>(() => state.activeValidations.value > 0)
+  // `valid` is "we've validated at least once AND no errors AND not
+  // currently validating." The `firstValidationDone` gate closes the
+  // brief flash window at mount time when the slim default-derivation
+  // parse strips refinements (`.refine`, `.superRefine`, async
+  // validators) and the queued construction-time microtask hasn't
+  // run yet. Without it, frame 1 paints the form as "valid" before
+  // the real verdict arrives. The `!validating.value` guard
+  // distinguishes a genuinely-clean form from one in the window
+  // between an async refinement starting and resolving (where errors
+  // haven't been written yet, but the verdict is pending).
+  // Submit-button gates and per-form clean indicators use this.
+  const valid = computed<boolean>(
+    () =>
+      state.firstValidationDone.value &&
+      state.schemaErrors.size === 0 &&
+      state.userErrors.size === 0 &&
+      state.derivedBlankErrors.value.size === 0 &&
+      !validating.value
+  )
 
   // --- History (undo/redo) ---
   // When the consumer doesn't configure history, fall back to inert
@@ -321,10 +470,10 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // param this function receives; exposed as `meta` on the public return.
   const formMeta = readonly(
     reactive({
-      isDirty,
-      isValid,
-      isSubmitting,
-      isValidating,
+      dirty,
+      valid,
+      submitting,
+      validating,
       submitCount,
       submitError,
       canUndo,
@@ -492,6 +641,10 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     setFieldErrors,
     addFieldErrors,
     clearFieldErrors,
+    setFormErrors,
+    clearFormErrors,
+    errorsAt,
+    isValid,
     meta: formMeta,
     reset: reset as UseFormReturnType<Form, GetValueFormType>['reset'],
     resetField: resetField as UseFormReturnType<Form, GetValueFormType>['resetField'],

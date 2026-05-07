@@ -46,7 +46,7 @@ as `errors` via a two-step pattern: parse the payload with
       {{ form.errors.password[0].message }}
     </small>
 
-    <button :disabled="form.meta.isSubmitting">Sign up</button>
+    <button :disabled="form.meta.submitting">Sign up</button>
   </form>
 </template>
 ```

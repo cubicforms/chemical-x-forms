@@ -167,9 +167,9 @@ export function useAbstractForm<
   // throw on hydration — that surfaces as a confusing hydration
   // mismatch instead of pointing at the actual config bug).
   const persistDisabledByAnonRule =
-    merged.persist !== undefined && enforceAnonPersistRule(state.formKey, registry.isSSR)
+    merged.persist !== undefined && enforceAnonPersistRule(state.formKey, registry.ssr)
   // everything below operates on the resolved shape.
-  if (existing === undefined && !registry.isSSR) {
+  if (existing === undefined && !registry.ssr) {
     if (merged.persist !== undefined && !persistDisabledByAnonRule) {
       const resolvedPersist = normalizePersistConfig(merged.persist)
       const persistenceBase = resolveStorageKeyBase(resolvedPersist, state.formKey)
@@ -227,7 +227,7 @@ export function useAbstractForm<
   // the collision, and warn lazily. Recording is skipped on SSR so the
   // client-side warn fires once, not once-per-render-pass.
   if (configuration.key === undefined) {
-    recordAmbientProvide(registry.isSSR)
+    recordAmbientProvide(registry.ssr)
     provide(kFormContext, state as FormStore<GenericForm>)
   }
 
@@ -356,7 +356,7 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
     ...((configuration as { debounceMs?: number }).debounceMs !== undefined
       ? { debounceMs: (configuration as { debounceMs?: number }).debounceMs }
       : {}),
-    isSSR: registry.isSSR,
+    ssr: registry.ssr,
     ...(configuration.rememberVariants !== undefined
       ? { rememberVariants: configuration.rememberVariants }
       : {}),
@@ -426,8 +426,8 @@ export const ambientProvideHistory: WeakMap<object, AmbientProvideEntry[]> | nul
   ? new WeakMap<object, AmbientProvideEntry[]>()
   : null
 
-function recordAmbientProvide(isSSR: boolean): void {
-  if (!__DEV__ || isSSR || ambientProvideHistory === null) return
+function recordAmbientProvide(ssr: boolean): void {
+  if (!__DEV__ || ssr || ambientProvideHistory === null) return
   const instance = getCurrentInstance()
   if (instance === null) return
   const instanceKey = instance as unknown as object
@@ -958,7 +958,7 @@ const warnedAnonPersistKeys: Set<string> = new Set<string>()
  *
  * Returns `true` when persistence MUST be skipped (anon + persist).
  */
-function enforceAnonPersistRule(formKey: string, isSSR: boolean): boolean {
+function enforceAnonPersistRule(formKey: string, ssr: boolean): boolean {
   if (!formKey.startsWith(ANONYMOUS_FORM_KEY_PREFIX)) return false
   if (__DEV__)
     throw new AnonPersistError({
@@ -969,7 +969,7 @@ function enforceAnonPersistRule(formKey: string, isSSR: boolean): boolean {
   // warn (skip server logs to avoid spamming SSR per-request output).
   // Persist is still skipped on the SSR pass — same disabling
   // outcome — just without the log noise.
-  if (!isSSR && !warnedAnonPersistKeys.has(formKey)) {
+  if (!ssr && !warnedAnonPersistKeys.has(formKey)) {
     warnedAnonPersistKeys.add(formKey)
     console.warn(
       "[attaform] persist: ignored — anonymous useForm() can't safely persist " +

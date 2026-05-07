@@ -17,14 +17,14 @@ import {
  * Why this exists: Vue intentionally skips directive lifecycle hooks
  * during SSR (see `core/directive.ts`'s top comment). That means the
  * `v-register` directive's `created` hook — the one that flips
- * `isConnected: true` for the field — never fires server-side. Every
- * SSR'd FieldState therefore serialises `isConnected: false`, and on
+ * `connected: true` for the field — never fires server-side. Every
+ * SSR'd FieldState therefore serialises `connected: false`, and on
  * hydration the directive runs and the flag flickers to `true`. Anyone
- * reading `getFieldState(path).isConnected` in a server-rendered
+ * reading `getFieldState(path).connected` in a server-rendered
  * template sees the stale value baked into the static HTML.
  *
  * The wrapping IIFE captures the `RegisterValue` produced by `<expr>`,
- * fires the optimistic mark (which itself is guarded by `state.isSSR`,
+ * fires the optimistic mark (which itself is guarded by `state.ssr`,
  * so client-side it's a free no-op), and returns the same object so
  * the directive receives exactly what the author wrote.
  *
@@ -37,7 +37,7 @@ import {
  * All three produce a `RegisterValue` at runtime, and the wrapper
  * doesn't need to know the path string. Setup-time `register()` calls
  * that are NEVER bound to `v-register` get no wrapper, no optimistic
- * mark, and stay `isConnected: false` post-hydration — exactly the
+ * mark, and stay `connected: false` post-hydration — exactly the
  * desired negative case (those calls don't represent a rendered DOM
  * element).
  *
@@ -54,7 +54,7 @@ const HINT_SUFFIX = `)`
  * Vue compiler node transform that wraps every `v-register`
  * expression in a small IIFE so the directive can flag a field as
  * connected during SSR. Eliminates the `false → true` flicker on
- * `getFieldState(path).isConnected` after hydration.
+ * `getFieldState(path).connected` after hydration.
  *
  * Must run after `vRegisterPreambleTransform`. Wired automatically
  * by `attaform/vite` and `attaform/nuxt`.

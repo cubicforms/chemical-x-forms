@@ -153,3 +153,116 @@ export function diffAndApply(
   }
   visit({ kind: 'changed', path: prefix, oldValue, newValue })
 }
+
+/**
+ * Apply `source`'s changes to `target` by reassigning only the
+ * top-level keys whose subtrees CONTENT-differ. Uses `diffAndApply`'s
+ * structural walk (not `Object.is`) to decide which keys changed,
+ * because reactive proxies and copy-on-write spreads routinely produce
+ * reference-different but content-equal subtrees that we don't want
+ * to reassign — reassigning fires Vue's property dep and re-triggers
+ * deep watches on that subtree.
+ *
+ * Returns `true` on success. Returns `false` when `target` and
+ * `source` have incompatible shapes (e.g. object ↔ array, or one
+ * side isn't a descendable container) — the caller must fall back
+ * to wholesale replacement.
+ *
+ * **Why** (subtle but load-bearing):
+ *
+ * Vue's reactive proxy for an object-typed Ref gets re-created every
+ * time the Ref's value is reassigned wholesale (`form.value = next`).
+ * That re-creation fires every deep watch transitively bound to the
+ * Ref — even watches whose underlying sub-tree is identity-equal
+ * across the swap. When one of those watches reacts by writing back
+ * to the form (the canonical "same as pickup address" mirror
+ * pattern), the watch re-fires synchronously on its own write and
+ * the browser tab freezes.
+ *
+ * The cure is to keep `form.value`'s identity stable across writes
+ * and update only the children whose CONTENT actually changed. Deep
+ * watches on sibling subtrees see no dep change and stay quiet; the
+ * touched child gets a new reference, so reactive consumers tracking
+ * THAT path (computeds, directive bindings, etc.) re-evaluate
+ * correctly.
+ *
+ * Old subtree references that get reassigned are orphaned but
+ * unmutated — exactly what consumers (history snapshots, captured
+ * `prev` callback args) need.
+ */
+export function applyChangedKeys(target: unknown, source: unknown): boolean {
+  if (!isDescendable(target) || !isDescendable(source)) return false
+  const targetIsArray = Array.isArray(target)
+  const sourceIsArray = Array.isArray(source)
+  if (targetIsArray !== sourceIsArray) return false
+
+  // Find the unique first segments where target and source differ in
+  // CONTENT. A root-level patch (path.length === 0) signals an
+  // un-recoverable shape mismatch: tell the caller to wholesale-replace.
+  // Tracking a sentinel inside `changedFirstSegments` itself rather
+  // than a separate flag — keeps eslint's narrowing from declaring
+  // the flag dead code (the visitor callback is opaque to its flow
+  // analysis).
+  const ROOT_SENTINEL = Symbol.for('attaform.applyChangedKeys.rootMismatch')
+  const changedFirstSegments = new Set<string | number | symbol>()
+  diffAndApply(target, source, [], (patch) => {
+    if (patch.path.length === 0) {
+      changedFirstSegments.add(ROOT_SENTINEL)
+      return
+    }
+    changedFirstSegments.add(patch.path[0] as string | number)
+  })
+  if (changedFirstSegments.has(ROOT_SENTINEL)) return false
+
+  if (targetIsArray) {
+    const t = target as unknown[]
+    const s = source as readonly unknown[]
+    if (t.length > s.length) t.length = s.length
+    for (const idx of changedFirstSegments) {
+      if (typeof idx === 'symbol') continue
+      const i = typeof idx === 'number' ? idx : Number(idx)
+      t[i] = s[i]
+    }
+  } else {
+    const t = target as Record<string, unknown>
+    const s = source as Record<string, unknown>
+    const sourceKeys = new Set(Object.keys(s))
+    for (const k of Object.keys(t)) {
+      if (!sourceKeys.has(k)) delete t[k]
+    }
+    for (const k of changedFirstSegments) {
+      if (typeof k === 'symbol') continue
+      t[String(k)] = s[String(k)]
+    }
+  }
+  return true
+}
+
+/**
+ * Stable structural snapshot of a value. Walks plain objects + arrays
+ * recursively; non-recursable values (primitives, Date, RegExp, Map,
+ * Set, functions, class instances) pass through unchanged.
+ *
+ * Used by setValue's callback path so the `prev` arg passed to a
+ * consumer's `(prev) => next` lambda is a frozen-in-time snapshot —
+ * not a live reference into `form.value` that would silently mutate
+ * once the surrounding setValue commits its in-place merge. Consumers
+ * routinely cache `prev` in a closure or a test variable; without this
+ * clone, those caches would silently drift to the post-setValue state.
+ */
+export function structuralSnapshot<T>(value: T): T {
+  if (!isDescendable(value)) return value
+  if (Array.isArray(value)) {
+    const out = new Array(value.length)
+    for (let i = 0; i < value.length; i++) {
+      out[i] = structuralSnapshot(value[i])
+    }
+    return out as unknown as T
+  }
+  const src = value as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const k of Object.keys(src)) {
+    out[k] = structuralSnapshot(src[k])
+  }
+  return out as unknown as T
+}

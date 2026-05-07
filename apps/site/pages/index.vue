@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { ShieldCheck, Zap, Layers, Server, ArrowRight, Github } from 'lucide-vue-next'
+  import { ShieldCheck, Zap, Layers, Server, ArrowRight } from 'lucide-vue-next'
 
   // Feature cards on the homepage. Same single-color icon-chip
   // discipline as the docs landing — every chip on this page uses
@@ -96,16 +96,19 @@
           </a>
 
           <h1
-            class="reveal-step text-display-md font-semibold tracking-tight text-fg sm:text-display-lg md:text-display-xl"
+            class="reveal-step text-display-md font-semibold tracking-tight text-balance text-fg sm:text-display-lg md:text-display-xl"
             style="--reveal-step-delay: 60ms"
           >
-            A type-safe, schema-driven form library for Vue&nbsp;3 and Nuxt with
-            <span class="text-accent">first-class Zod support.</span>
+            A schema is a form's <span class="text-accent">best friend.</span>
           </h1>
 
-          <p class="reveal-step max-w-2xl text-xl text-fg-muted" style="--reveal-step-delay: 120ms">
-            Point a Zod schema at <code class="font-mono">useForm</code> — get fully-typed values,
-            errors, validation, persistence, and undo/redo back.
+          <p
+            class="reveal-step max-w-2xl text-xl text-balance text-fg-muted"
+            style="--reveal-step-delay: 120ms"
+          >
+            Attaform is a <span class="font-medium text-accent">type-safe, schema-driven</span> form
+            library for Vue&nbsp;3 and Nuxt, with first-class Zod support. Point a schema at
+            <UiInlineCode>useForm</UiInlineCode> and live your best life.
           </p>
 
           <div class="reveal-step flex flex-wrap gap-3" style="--reveal-step-delay: 180ms">
@@ -115,7 +118,7 @@
             </UiButton>
             <UiButton to="/play" size="xl" variant="secondary">Try it live</UiButton>
             <UiButton href="https://github.com/attaform/attaform" size="xl" variant="ghost">
-              <Github class="h-5 w-5" :stroke-width="2" />
+              <UiBrandGithub class="h-5 w-5" />
               <span>GitHub</span>
             </UiButton>
           </div>
@@ -152,7 +155,7 @@
         <div class="max-w-2xl">
           <p class="text-sm font-semibold tracking-wide text-accent uppercase">Why Attaform</p>
           <h2 class="mt-3 text-display-md font-semibold tracking-tight text-fg">
-            Forms shouldn't fight you.
+            Schema-driven, end to end.
           </h2>
           <p class="mt-4 text-lg text-fg-muted">
             One schema. Inferred types end-to-end. Validation that runs where you want it.
@@ -169,7 +172,9 @@
             </div>
             <div>
               <h3 class="text-lg font-semibold text-fg">{{ feature.title }}</h3>
-              <p class="mt-1.5 text-base text-fg-muted">{{ feature.body }}</p>
+              <p class="mt-1.5 text-base text-fg-muted">
+                <UiCodedText :text="feature.body" />
+              </p>
             </div>
           </div>
         </div>
@@ -195,9 +200,9 @@
             <p class="mt-4 text-lg text-fg-muted">
               Edit the schema, edit the template, watch it run. No backend, no build step — every
               change re-renders live. Inputs stay native —
-              <code class="font-mono">v-register</code> is a Vue directive, not a wrapper component,
+              <UiInlineCode>v-register</UiInlineCode> is a Vue directive, not a wrapper component,
               so there's no field-component overhead between your
-              <code class="font-mono">&lt;input&gt;</code> and the form.
+              <UiInlineCode>&lt;input&gt;</UiInlineCode> and the form.
             </p>
           </div>
           <UiButton to="/play" variant="link">
@@ -212,7 +217,7 @@
                as a real card but more "this is the marquee piece" than
                the standard border. -->
           <div
-            class="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent to-transparent"
+            class="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-accent to-transparent"
             aria-hidden="true"
           />
           <DemoRepl height="37.5rem" />

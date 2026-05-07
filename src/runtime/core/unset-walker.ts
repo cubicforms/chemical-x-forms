@@ -1,7 +1,7 @@
 import type { AbstractSchema } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import { __DEV__ } from './dev'
-import { canonicalizePath, type PathKey, type Segment } from './paths'
+import { canonicalizePath, type Path, type PathKey, type Segment } from './paths'
 import { isUnset } from './unset'
 
 /**
@@ -104,12 +104,24 @@ function walk(
   ) {
     return input
   }
+  // Reference stability: when an array's elements all walk to themselves
+  // (no unset substitutions, no schema-only keys synthesized), return the
+  // ORIGINAL `input` reference. Without this, a whole-form setValue with
+  // a structurally-unchanged subtree (e.g., the `pickup` half of
+  // `({ ...prev, delivery: prev.pickup })`) still produces a new clone of
+  // pickup, which then re-fires any deep watch on `form.values.pickup` —
+  // and a watcher that reacts by writing back to the form loops forever.
+  // Returning the original reference for unchanged subtrees keeps Vue's
+  // reactivity quiet on identity-equal slots.
   if (Array.isArray(input)) {
     const out = new Array(input.length)
+    let mutated = false
     for (let i = 0; i < input.length; i++) {
-      out[i] = walk(input[i], [...segments, i], schema, paths)
+      const walked = walk(input[i], [...segments, i], schema, paths)
+      out[i] = walked
+      if (walked !== input[i]) mutated = true
     }
-    return out
+    return mutated ? out : input
   }
   if (typeof input === 'object') {
     // Walk both user-supplied keys AND schema-only keys so unspecified
@@ -117,7 +129,8 @@ function walk(
     // object (e.g., `defaultValues: { user: { name: 'a' } }` against a
     // schema with `user.{name, age}` marks `user.age`).
     const slim = schema.getDefaultAtPath(segments)
-    const allKeys = new Set<string>(Object.keys(input as object))
+    const inputKeys = Object.keys(input as object)
+    const allKeys = new Set<string>(inputKeys)
     if (
       slim !== null &&
       slim !== undefined &&
@@ -131,10 +144,14 @@ function walk(
       for (const k of Object.keys(slim as object)) allKeys.add(k)
     }
     const out: Record<string, unknown> = {}
+    let mutated = allKeys.size !== inputKeys.length
     for (const key of allKeys) {
-      out[key] = walk((input as Record<string, unknown>)[key], [...segments, key], schema, paths)
+      const orig = (input as Record<string, unknown>)[key]
+      const walked = walk(orig, [...segments, key], schema, paths)
+      out[key] = walked
+      if (walked !== orig) mutated = true
     }
-    return out
+    return mutated ? out : input
   }
   return input
 }
@@ -180,6 +197,94 @@ export function walkUnspecified(slim: unknown, segments: Segment[], paths: PathK
     return out
   }
   return slim
+}
+
+/**
+ * Substitute every `unset` sentinel inside `value` with the schema's
+ * slim default at its absolute path (rooted at `prefix`), returning
+ * the cleaned value plus the absolute paths where substitutions
+ * happened.
+ *
+ * Trust-the-caller cousin of `walkUnsetSentinels`. Differs in two
+ * ways tuned for the `setValue(path, value)` runtime boundary:
+ *
+ *   1. No auto-marking of unspecified primitive leaves. The caller's
+ *      shape is authoritative — we don't synthesize blanks for keys
+ *      they didn't supply. (The discriminated-union variant reshape
+ *      in `create-form-store.ts` handles numeric auto-marks for the
+ *      activated variant separately.)
+ *   2. No schema-only key synthesis at object paths. For Case B
+ *      whole-union writes (`setValue('cargo', { type: 'oversized', … })`),
+ *      `schema.getDefaultAtPath(['cargo'])` returns the FIRST union
+ *      variant's default — synthesizing those keys would smuggle the
+ *      FIRST variant's leaves into the activated variant. The variant
+ *      reshape clears them via the matched `getVariantDefault`; we
+ *      must not put them back.
+ *
+ * Reference-stable: subtrees with no substitutions return their
+ * original input reference, so a watcher on `form.values.<peer>`
+ * stays quiet when the consumer's write didn't touch that peer.
+ */
+export function substituteUnsetSentinels<T>(
+  value: T,
+  prefix: Path,
+  schema: AbstractSchema<GenericForm, GenericForm>
+): { cleanedValues: T; paths: PathKey[] } {
+  const paths: PathKey[] = []
+  const cleaned = substitute(value as unknown, [...prefix], schema, paths)
+  return { cleanedValues: cleaned as T, paths }
+}
+
+function substitute(
+  input: unknown,
+  segments: Segment[],
+  schema: AbstractSchema<GenericForm, GenericForm>,
+  paths: PathKey[]
+): unknown {
+  if (isUnset(input)) {
+    const slim = schema.getDefaultAtPath(segments)
+    if (!isPrimitiveOrEmpty(slim)) {
+      // unset misuse at non-primitive leaf — match the existing
+      // walker's guardrail: warn once, write the slim default, do
+      // NOT mark the offending path.
+      warnNonPrimitiveLeaf(segments, slim)
+      return slim
+    }
+    paths.push(canonicalizePath(segments).key)
+    return slim
+  }
+  if (input === undefined || input === null) return input
+  if (
+    input instanceof Date ||
+    input instanceof RegExp ||
+    input instanceof Map ||
+    input instanceof Set ||
+    typeof input === 'function'
+  ) {
+    return input
+  }
+  if (Array.isArray(input)) {
+    let mutated = false
+    const out = new Array(input.length)
+    for (let i = 0; i < input.length; i++) {
+      const walked = substitute(input[i], [...segments, i], schema, paths)
+      out[i] = walked
+      if (walked !== input[i]) mutated = true
+    }
+    return mutated ? out : input
+  }
+  if (typeof input === 'object') {
+    let mutated = false
+    const out: Record<string, unknown> = {}
+    for (const key of Object.keys(input as object)) {
+      const orig = (input as Record<string, unknown>)[key]
+      const walked = substitute(orig, [...segments, key], schema, paths)
+      out[key] = walked
+      if (walked !== orig) mutated = true
+    }
+    return mutated ? out : input
+  }
+  return input
 }
 
 function isPrimitiveOrEmpty(value: unknown): boolean {

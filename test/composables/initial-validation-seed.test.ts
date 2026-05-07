@@ -106,7 +106,7 @@ describe('initial validation seed — strict mode', () => {
     apps.push(app)
     expect(api.errors.email?.[0]?.message).toBe('bad email')
     expect(api.errors.password?.[0]?.message).toBe('min 8 chars')
-    expect(api.meta.isValid).toBe(false)
+    expect(api.meta.valid).toBe(false)
   })
 
   it('populates schemaErrors at construction when defaults fail validation', () => {
@@ -116,7 +116,7 @@ describe('initial validation seed — strict mode', () => {
     // surface in fieldErrors before any user interaction.
     expect(api.errors.email?.[0]?.message).toBe('bad email')
     expect(api.errors.password?.[0]?.message).toBe('min 8 chars')
-    expect(api.meta.isValid).toBe(false)
+    expect(api.meta.valid).toBe(false)
   })
 
   it('does NOT seed when defaults validate cleanly', () => {
@@ -127,7 +127,7 @@ describe('initial validation seed — strict mode', () => {
     apps.push(app)
     expect(api.errors.email).toBeUndefined()
     expect(api.errors.password).toBeUndefined()
-    expect(api.meta.isValid).toBe(true)
+    expect(api.meta.valid).toBe(true)
   })
 })
 
@@ -195,7 +195,7 @@ describe('initial validation seed — async-refine schema', () => {
     // After microtasks settle, the refine error lands.
     const message = await waitFor(() => api.errors.email?.[0]?.message ?? null)
     expect(message).toBe('That email is already registered.')
-    expect(api.meta.isValid).toBe(false)
+    expect(api.meta.valid).toBe(false)
   })
 
   it('lax mode does NOT fire the construction-time async seed', async () => {
@@ -229,16 +229,16 @@ describe('initial validation seed — async-refine schema', () => {
     if (api === undefined) throw new Error('unreachable')
     await flushMicrotasks()
     expect(api.errors.email).toBeUndefined()
-    expect(api.meta.isValid).toBe(true)
+    expect(api.meta.valid).toBe(true)
   })
 
-  it('SSR pass does not schedule the async seed (isValidating stays false through microtasks)', async () => {
+  it('SSR pass does not schedule the async seed (validating stays false through microtasks)', async () => {
     // Hydration mismatch regression: pre-fix the construction-time async
     // seed fired synchronously on every createFormStore call, including
     // SSR. SSR's `renderToString` doesn't await microtasks, so the async
     // chain never completed server-side, but the synchronous
     // `activeValidations += 1` inside `scheduleFieldValidation` was
-    // captured in the SSR HTML — `meta.isValidating` rendered as `true`,
+    // captured in the SSR HTML — `meta.validating` rendered as `true`,
     // emitting whatever indicator the template gated on it. The client
     // then took the hydration branch (which doesn't schedule the seed)
     // and rendered `false` on first render — Vue logged a hydration
@@ -269,20 +269,20 @@ describe('initial validation seed — async-refine schema', () => {
     const api = handle.api
     if (api === undefined) throw new Error('unreachable')
     // Synchronously: no async seed scheduled, no indicator flash.
-    expect(api.meta.isValidating).toBe(false)
+    expect(api.meta.validating).toBe(false)
     // After microtasks settle: still false. SSR never schedules the
     // pass, so the validation never fires server-side.
     await flushMicrotasks()
-    expect(api.meta.isValidating).toBe(false)
+    expect(api.meta.validating).toBe(false)
     expect(api.errors.email).toBeUndefined()
   })
 
-  it('CSR first render observes isValidating: false; async pass fires on next microtask', async () => {
+  it('CSR first render observes validating: false; async pass fires on next microtask', async () => {
     // Parity contract: client-side, the seed defers via `queueMicrotask`
     // so synchronous post-mount reads (matching what Vue's first-render
     // sees during hydration) observe `activeValidations: 0`. Without the
     // deferral, a CSR-only mount of an async-refine schema would flash
-    // `isValidating: true` synchronously — and any SSR→CSR pair would
+    // `validating: true` synchronously — and any SSR→CSR pair would
     // disagree on first-render output.
     const asyncSchema = z.object({
       email: z.email().refine(async (v) => v !== 'taken@example.com', 'taken'),
@@ -307,25 +307,159 @@ describe('initial validation seed — async-refine schema', () => {
     const api = handle.api
     if (api === undefined) throw new Error('unreachable')
     // Synchronous post-mount: queueMicrotask hasn't fired.
-    expect(api.meta.isValidating).toBe(false)
+    expect(api.meta.validating).toBe(false)
     // After microtasks settle: pass ran, errors landed, validation done.
     await waitFor(() => api.errors.email?.[0]?.message ?? null)
-    expect(api.meta.isValidating).toBe(false)
+    expect(api.meta.validating).toBe(false)
     expect(api.errors.email?.[0]?.message).toBe('taken')
   })
 
-  it('sync schema in strict mode lands errors synchronously and isValidating stays false', () => {
+  it('mixed sync+async refines: sync error seeds synchronously, async lands on next microtask', async () => {
+    // Regression: when a schema mixes sync and async refines and the
+    // SYNC refine fails on the supplied default, the sync error must
+    // seed at construction. Pre-fix, the construction-time
+    // `safeParse` threw on the async sibling and the catch swallowed
+    // both classes of error — sync verdicts only landed after the
+    // post-mount async pass. UI bound to construction-time errors
+    // ("fix N errors" badges, demo REPL stepper) missed the count
+    // for one frame.
+    //
+    // Fix: when sync `safeParse` throws on async refines, the adapter
+    // retries against a sync-only variant of the schema
+    // (`stripAsyncChecks`) so sync verdicts seed synchronously.
+    // Async-only verdicts stay deferred to the post-mount pass.
+    const mixedSchema = z.object({
+      word: z.string().refine((v) => v.length > 0, 'word required'),
+      email: z
+        .email()
+        .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
+    })
+    type MixedApi = ReturnType<typeof useForm<typeof mixedSchema>>
+    const handle: { api?: MixedApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: mixedSchema,
+          key: 'init-seed-mixed',
+          defaultValues: { word: '', email: 'taken@example.com' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    const api = handle.api
+    if (api === undefined) throw new Error('unreachable')
+
+    // Frame 1, no `await`: sync refine seeded directly. Async sibling's
+    // verdict is still in flight.
+    expect(api.errors.word?.[0]?.message).toBe('word required')
+    expect(api.errors.email).toBeUndefined()
+    expect(api.meta.valid).toBe(false)
+    expect(api.meta.errors.length).toBeGreaterThan(0)
+
+    // After microtasks settle: async refine error lands too. Sync
+    // error stays put.
+    const emailMessage = await waitFor(() => api.errors.email?.[0]?.message ?? null)
+    expect(emailMessage).toBe('That email is already registered.')
+    expect(api.errors.word?.[0]?.message).toBe('word required')
+    expect(api.meta.valid).toBe(false)
+  })
+
+  it('mixed sync+async refines: clean sync default does not seed, async still deferred', async () => {
+    // Symmetry with the failing-sync case: when the sync sibling's
+    // default is clean, no error seeds synchronously. The async
+    // sibling's verdict still lands on the post-mount pass — the
+    // sync-only retry just succeeded, so the catch path returns lax
+    // success (matching today's behaviour for pure-async schemas).
+    const mixedSchema = z.object({
+      word: z.string().refine((v) => v.length > 0, 'word required'),
+      email: z
+        .email()
+        .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
+    })
+    type MixedApi = ReturnType<typeof useForm<typeof mixedSchema>>
+    const handle: { api?: MixedApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: mixedSchema,
+          key: 'init-seed-mixed-clean',
+          defaultValues: { word: 'hello', email: 'taken@example.com' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    const api = handle.api
+    if (api === undefined) throw new Error('unreachable')
+
+    // Frame 1: sync portion is clean.
+    expect(api.errors.word).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
+
+    // Async sibling lands its verdict after microtasks.
+    const emailMessage = await waitFor(() => api.errors.email?.[0]?.message ?? null)
+    expect(emailMessage).toBe('That email is already registered.')
+    expect(api.errors.word).toBeUndefined()
+  })
+
+  it('mixed sync+async refines + lax mode: no construction-time seed at all', () => {
+    // Lax explicitly opts out of construction-time validation. The
+    // sync-only retry path is gated to strict mode (same gate as the
+    // existing strict parse branch), so lax forms continue to mount
+    // with a clean error state regardless of whether the sync sibling
+    // would have failed.
+    const mixedSchema = z.object({
+      word: z.string().refine((v) => v.length > 0, 'word required'),
+      email: z
+        .email()
+        .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
+    })
+    type MixedApi = ReturnType<typeof useForm<typeof mixedSchema>>
+    const handle: { api?: MixedApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: mixedSchema,
+          key: 'init-seed-mixed-lax',
+          strict: false,
+          defaultValues: { word: '', email: 'taken@example.com' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    apps.push(app)
+    const api = handle.api
+    if (api === undefined) throw new Error('unreachable')
+    expect(api.errors.word).toBeUndefined()
+    expect(api.errors.email).toBeUndefined()
+    expect(api.meta.valid).toBe(true)
+  })
+
+  it('sync schema in strict mode lands errors synchronously and validating stays false', () => {
     // Detection's load-bearing invariant: sync schemas don't pay a
     // construction-time async pass. Errors don't flicker either way
     // (`applySchemaErrorsForSubtree` runs sync and Vue batches per
     // microtask, so the wipe-then-apply window is invisible to a
-    // render). The visible cost would be `meta.isValidating` flashing
+    // render). The visible cost would be `meta.validating` flashing
     // true at mount for every sync form — `scheduleFieldValidation`
     // increments `activeValidations` synchronously when called, then
     // decrements after the async safeParseAsync resolves. That'd
     // misrepresent "validation is running" when nothing async is
     // actually pending. Skipping the schedule for sync schemas keeps
-    // `isValidating` honestly false at construction.
+    // `validating` honestly false at construction.
     const syncSchema = z.object({ email: z.email('Invalid email') })
     type SyncApi = ReturnType<typeof useForm<typeof syncSchema>>
     const handle: { api?: SyncApi } = {}
@@ -347,8 +481,8 @@ describe('initial validation seed — async-refine schema', () => {
     const api = handle.api
     if (api === undefined) throw new Error('unreachable')
     expect(api.errors.email?.[0]?.message).toBe('Invalid email')
-    expect(api.meta.isValid).toBe(false)
-    expect(api.meta.isValidating).toBe(false)
+    expect(api.meta.valid).toBe(false)
+    expect(api.meta.validating).toBe(false)
   })
 })
 
@@ -371,7 +505,7 @@ describe('initial validation seed — lax mode', () => {
     apps.push(app)
     expect(api.errors.email).toBeUndefined()
     expect(api.errors.password).toBeUndefined()
-    expect(api.meta.isValid).toBe(true)
+    expect(api.meta.valid).toBe(true)
   })
 })
 

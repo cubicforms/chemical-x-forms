@@ -9,8 +9,13 @@ import type {
   FlatPath,
   GenericForm,
   IsObjectOrArray,
+  IsUnion,
+  JoinSegments,
+  KeyofUnion,
+  LiftedValueShape,
   NestedReadType,
   NestedType,
+  ValueOfUnion,
   WriteShape,
 } from './types-core'
 
@@ -330,7 +335,7 @@ export type AbstractSchema<Form, GetValueFormType> = {
    *
    * The leaf-aware branching is what kills the FIELD_STATE_KEYS
    * shadowing problem: reserved leaf-prop names (`dirty`, `errors`,
-   * `isValid`, …) inject only at the FieldStateView terminal, not at
+   * `valid`, …) inject only at the FieldStateView terminal, not at
    * every depth. A schema field literally named `dirty` at depth ≥ 2
    * stays reachable as a sub-proxy or leaf in its own right.
    *
@@ -445,6 +450,12 @@ export type AbstractSchema<Form, GetValueFormType> = {
    * don't yet support detection — can omit it; async-only errors
    * then fall back to firing on first user mutation, matching the
    * pre-detection behavior. Detection is best-effort.
+   *
+   * For per-path queries, compose with `getSchemasAtPath(path)`:
+   * each candidate sub-schema exposes its own
+   * `needsAsyncValidation`, so a caller asking "does the cargo
+   * subtree contain async work?" can union the per-candidate
+   * answers without a separate top-level overload.
    */
   needsAsyncValidation?(): boolean
 }
@@ -1117,7 +1128,7 @@ export type HandleSubmit<Form extends GenericForm> = (
  *   or `null` if the field has never been written.
  * - `rawValue` — the value as it arrived (before any transform);
  *   useful for distinguishing parse-coerced reads from raw user input.
- * - `isConnected` — whether at least one DOM element bound to this
+ * - `connected` — whether at least one DOM element bound to this
  *   path is currently mounted. Flips to `false` when every binding
  *   unmounts.
  * - `formKey` — identifier of the form this metadata belongs to.
@@ -1129,7 +1140,7 @@ export type MetaTrackerValue = {
   /** Value as it arrived, before any transforms. */
   rawValue: unknown
   /** `true` while at least one binding to this path is currently mounted. */
-  isConnected: boolean
+  connected: boolean
   /** Form this metadata belongs to. */
   formKey: FormKey
   /** Dotted-string path to this leaf. */
@@ -1384,11 +1395,17 @@ export type RegisterOptions = {
  *
  * Or read `innerRef` directly when integrating with custom components.
  *
- * The remaining fields support advanced bindings (custom assigners,
- * SSR optimistic marking, persistence opt-ins). Most consumers only
- * touch `innerRef`.
+ * The returned value is a `shallowReadonly` reactive proxy: top-level
+ * reads (`rv.path`, `rv.formKey`, `rv.persist`, …) track in reactive
+ * scopes, mutations are blocked, and inner refs (`innerRef`,
+ * `displayValue`) keep their `Ref` shape.
+ *
+ * `path`, `formKey`, and `formInstanceId` are the wrapper-component
+ * primitives — a generic component using `useRegister()` can derive
+ * field state and form identity from them without re-threading props
+ * from the parent.
  */
-export type RegisterValue<Value = unknown> = {
+export type RegisterValue<Value = unknown> = Readonly<{
   /**
    * Live, read-only reactive value at this path. Watch it to drive
    * UI that depends on the field's current value.
@@ -1414,17 +1431,50 @@ export type RegisterValue<Value = unknown> = {
   setValueWithInternalPath: (value: unknown, meta?: WriteMeta) => boolean
   /**
    * Mark this field as DOM-connected during SSR so a server-rendered
-   * template that reads `form.fields.<path>.isConnected` doesn't
+   * template that reads `form.fields.<path>.connected` doesn't
    * flicker on hydration. The `v-register` directive calls this for
    * you; no-op on the client.
    * @internal
    */
   markConnectedOptimistically: () => void
   /**
-   * Canonical path key. Used by directive integrations.
-   * @internal
+   * Canonical, JSON-encoded path key for this binding (e.g.
+   * `'["items",0,"name"]'`). Useful for stable Map / Set keys, log
+   * messages, and equality checks against another `RegisterValue`'s
+   * path. Treat as opaque — for `form.fields(...)` / `form.values(...)`
+   * lookups inside wrapper components, use `segments` instead.
    */
   path: PathKey
+  /**
+   * Structured path segments for this binding (e.g.
+   * `['items', 0, 'name']`). The consumer-friendly form for
+   * `form.fields(...)` / `form.values(...)` lookups in generic
+   * wrapper components:
+   *
+   * ```ts
+   * const rv = useRegister()
+   * const form = injectForm()
+   * const field = computed(() => form.fields(rv.value?.segments ?? []))
+   * ```
+   *
+   * Frozen at runtime so wrapper components can read it without
+   * defensive copying.
+   */
+  segments: Path
+  /**
+   * The form's user-supplied (or auto-allocated) `key`, mirroring
+   * `form.key` on the public form API. Useful in wrapper components
+   * that target a specific form by key without prop-drilling.
+   */
+  formKey: string
+  /**
+   * Per-mount runtime identifier for the form instance. Stable across
+   * the form's lifetime. Used by the directive to scope element
+   * registrations to a single mount and exposed here for wrapper
+   * components that need to disambiguate sibling forms with the same
+   * `key`.
+   */
+  formInstanceId: string
   /**
    * Whether this binding opted into persistence via `register(path, { persist: true })`.
    * @internal
@@ -1500,29 +1550,35 @@ export type RegisterValue<Value = unknown> = {
    * @internal
    */
   markBlank: () => boolean
-  /**
-   * The user's most recently typed string form for this field while
-   * mid-typing, or `null` once the field has been blurred / cleared.
-   * The directive populates this on every committable input event
-   * and clears it on the change (blur) event so:
-   *
-   *   - Mid-typing: `displayValue` returns the typed form (e.g.
-   *     `'1e2'`) when it parses back to current storage. Vue's
-   *     `:value` patch then targets the typed form, which already
-   *     equals the DOM — idempotent, no cursor reset.
-   *   - On blur: `displayValue` falls back to `String(storage)`
-   *     (`'100'`), Vue patches the DOM to match. The user sees
-   *     exactly what's stored.
-   *
-   * Why a separate field: JavaScript's Number carries no
-   * representation info — `1e2 === 100`, so `String(parseFloat('1e2'))`
-   * yields `'100'`. Tracking the typed form lets us avoid Vue's
-   * mid-typing DOM yank without lying about storage.
-   *
-   * Only meaningful for `.number` text inputs and `<input type="number">`;
-   * other bindings ignore it.
-   * @internal
-   */
+}>
+
+/**
+ * Internal extension of `RegisterValue` that includes directive-private
+ * coordination state. Imported by the directive runtime; not part of
+ * the public surface.
+ *
+ * `lastTypedForm` is the user's most recently typed string form for a
+ * numeric field while mid-typing, or `null` once the field has been
+ * blurred / cleared. The directive populates it on every committable
+ * input event and clears it on the change (blur) event so:
+ *
+ *   - Mid-typing: `displayValue` returns the typed form (e.g.
+ *     `'1e2'`) when it parses back to current storage. Vue's
+ *     `:value` patch then targets the typed form, which already
+ *     equals the DOM — idempotent, no cursor reset.
+ *   - On blur: `displayValue` falls back to `String(storage)`
+ *     (`'100'`), Vue patches the DOM to match. The user sees
+ *     exactly what's stored.
+ *
+ * Why a separate field: JavaScript's Number carries no representation
+ * info — `1e2 === 100`, so `String(parseFloat('1e2'))` yields `'100'`.
+ * Tracking the typed form lets us avoid Vue's mid-typing DOM yank
+ * without lying about storage. Only meaningful for `.number` text
+ * inputs and `<input type="number">`; other bindings ignore it.
+ *
+ * @internal
+ */
+export type InternalRegisterValue<Value = unknown> = RegisterValue<Value> & {
   lastTypedForm: Ref<string | null>
 }
 
@@ -1842,9 +1898,61 @@ export type FieldStateLeaf<Value = unknown> = {
   readonly focused: boolean | null
   readonly blurred: boolean | null
   readonly touched: boolean | null
-  readonly isConnected: boolean
+  readonly connected: boolean
+  /**
+   * The first DOM element bound to this path via `v-register`, or
+   * `null` when none is registered (initial mount, post-unmount,
+   * SSR). "First" means first by registration order. Reach for it
+   * when you need to call a native DOM method on a field's input —
+   * `focus()`, `scrollIntoView()`, `select()`, `setSelectionRange()`,
+   * etc. — without the library having to verb every imperative:
+   *
+   * ```ts
+   * form.fields.email.element?.focus()
+   * form.fields.email.element?.scrollIntoView({ block: 'center' })
+   * ```
+   *
+   * For paths with multiple bindings (input syncing, mirrored
+   * shadow inputs), prefer `elements` and pick the right target
+   * yourself. Reactive: register / deregister triggers
+   * re-evaluation.
+   */
+  readonly element: HTMLElement | null
+  /**
+   * Every DOM element currently bound to this path via `v-register`,
+   * in registration order. Empty array when none is registered.
+   * Two bindings to the same path are intentional — input syncing,
+   * mirrored shadow inputs:
+   *
+   * ```ts
+   * for (const el of form.fields.email.elements) el.blur()
+   * ```
+   *
+   * For the common single-binding case, reach for `element` — sugar
+   * over `elements[0] ?? null`.
+   */
+  readonly elements: readonly HTMLElement[]
   readonly updatedAt: string | null
   readonly errors: readonly ValidationError[]
+  /**
+   * `true` while a per-field validation run is in flight at this path.
+   * Reflects field-level debounced runs (`validate-on-change`) and
+   * cross-field re-validations targeting this path. Whole-form
+   * `validate()` / `validateAsync()` calls drive `form.meta.validating`
+   * only — they don't flip per-field flags.
+   *
+   * Per-field analogue of `form.meta.validating`. Use for a tight
+   * "Checking…" indicator next to a single async-validated input
+   * without commandeering the whole-form spinner.
+   */
+  readonly validating: boolean
+  /**
+   * `true` when this field has no errors AND no per-field validation
+   * is in flight (`errors.length === 0 && !validating`). Confidence
+   * that "we've checked, and we have no problems right now." Use for
+   * green-checkmark / `aria-invalid` UX.
+   */
+  readonly valid: boolean
   readonly path: ReadonlyArray<string | number>
   readonly blank: boolean
 }
@@ -1868,21 +1976,27 @@ export type FieldStateLeaf<Value = unknown> = {
  * "T extends primitive". The two stay in sync for typical schemas;
  * exotic adapter-defined leaf kinds (custom `Date`-like) may need
  * a runtime check (the runtime is authoritative).
+ *
+ * For discriminated-union containers the object branch uses
+ * `[T] extends [object]` (non-distributive) plus
+ * `KeyofUnion`/`ValueOfUnion` to merge variant key sets — so
+ * `form.fields.cargo.tempMinC` (refrigerated-only) is reachable
+ * regardless of the active variant, with the leaf typed as
+ * `FieldStateLeaf<number | undefined>`. Matches the runtime's stub
+ * `FieldStateView` for inactive-variant paths.
  */
-export type FieldStateMapEntry<T> = T extends
-  | string
-  | number
-  | boolean
-  | bigint
-  | symbol
-  | null
-  | undefined
-  | Date
+export type FieldStateMapEntry<T> = [T] extends [
+  string | number | boolean | bigint | symbol | null | undefined | Date,
+]
   ? FieldStateLeaf<T>
-  : T extends ReadonlyArray<infer U>
+  : [T] extends [ReadonlyArray<infer U>]
     ? { readonly [K: number]: FieldStateMapEntry<U> }
-    : T extends object
-      ? { readonly [K in keyof T]: FieldStateMapEntry<T[K]> }
+    : [T] extends [object]
+      ? [IsUnion<T>] extends [true]
+        ? {
+            readonly [K in KeyofUnion<T>]: FieldStateMapEntry<ValueOfUnion<T, K>>
+          }
+        : { readonly [K in keyof T]: FieldStateMapEntry<T[K]> }
       : FieldStateLeaf<T>
 
 /**
@@ -1905,11 +2019,27 @@ export type FieldStateMapEntry<T> = T extends
  * string as a single key. Use chained dot/bracket or the callable
  * form.
  */
-export type FieldStateMap<Form extends GenericForm> = {
-  readonly [K in keyof Form]: FieldStateMapEntry<Form[K]>
-} & {
+export type FieldStateMap<Form extends GenericForm> = ([IsUnion<Form>] extends [true]
+  ? {
+      readonly [K in KeyofUnion<Form>]: FieldStateMapEntry<ValueOfUnion<Form, K>>
+    }
+  : { readonly [K in keyof Form]: FieldStateMapEntry<Form[K]> }) & {
   (path: string): unknown
-  (path: ReadonlyArray<string | number>): unknown
+  /**
+   * Tuple-segment form. Returns the typed `FieldStateMapEntry` for
+   * the resolved path when the tuple resolves to a known path.
+   * Equivalent to `form.fields[a][b][...]` but useful when the path
+   * is built from variables.
+   */
+  <const S extends ReadonlyArray<string | number>>(
+    segments: S & ([JoinSegments<S>] extends [FlatPath<Form>] ? unknown : never)
+  ): FieldStateMapEntry<NestedType<Form, JoinSegments<S>>>
+  /**
+   * Untyped fallback for callers passing `Path`-typed (dynamic)
+   * segment arrays — e.g. forwarding `RegisterValue.segments` to
+   * resolve a field view.
+   */
+  (segments: ReadonlyArray<string | number>): unknown
   (): FieldStateMap<Form>
 }
 
@@ -1962,24 +2092,30 @@ export type FormErrorStore = Map<FormKey, FormErrorRecord>
  */
 export type FormErrorsSurface<Form> = ErrorsProxyShape<Form> & {
   (path: string): readonly ValidationError[] | undefined
-  (path: ReadonlyArray<string | number>): readonly ValidationError[] | undefined
+  /**
+   * Tuple-segment form. Validated against `FlatPath<Form>` so literal
+   * tuples that don't resolve to a known path fail at the call site.
+   * Dynamic `Path`-typed inputs hit the untyped fallback overload below.
+   */
+  <const S extends ReadonlyArray<string | number>>(
+    segments: S & ([JoinSegments<S>] extends [FlatPath<Form>] ? unknown : never)
+  ): readonly ValidationError[] | undefined
+  (segments: ReadonlyArray<string | number>): readonly ValidationError[] | undefined
   (): FormErrorsSurface<Form>
 }
 
-type ErrorsProxyShape<T> = T extends
-  | string
-  | number
-  | boolean
-  | bigint
-  | symbol
-  | null
-  | undefined
-  | Date
+type ErrorsProxyShape<T> = [T] extends [
+  string | number | boolean | bigint | symbol | null | undefined | Date,
+]
   ? readonly ValidationError[] | undefined
-  : T extends ReadonlyArray<infer U>
+  : [T] extends [ReadonlyArray<infer U>]
     ? { readonly [K: number]: ErrorsProxyShape<U> }
-    : T extends object
-      ? { readonly [K in keyof T]: ErrorsProxyShape<T[K]> }
+    : [T] extends [object]
+      ? [IsUnion<T>] extends [true]
+        ? {
+            readonly [K in KeyofUnion<T>]: ErrorsProxyShape<ValueOfUnion<T, K>>
+          }
+        : { readonly [K in keyof T]: ErrorsProxyShape<T[K]> }
       : readonly ValidationError[] | undefined
 
 /**
@@ -2003,8 +2139,18 @@ type ErrorsProxyShape<T> = T extends
  * intentionally NOT supported — JS object semantics treat the dotted
  * string as a single key. Use chained dot/bracket or the callable
  * form.
+ *
+ * The chained shape applies the discriminated-union lift via
+ * `LiftedValueShape<F>` so per-variant keys are reachable without
+ * narrowing first (e.g. `form.values.cargo.permitNumber` types as
+ * `string | undefined` regardless of which cargo variant is active —
+ * matching the runtime, where plain JS object access on a missing
+ * variant key returns `undefined`). The strict-variant shape is
+ * still required at the WRITE side: `setValue` and `defaultValues`
+ * use the un-lifted `WriteShape` so consumers can't accidentally
+ * hand the form a partial / cross-variant object.
  */
-export type ValuesSurface<F> = Readonly<F> & {
+export type ValuesSurface<F> = Readonly<LiftedValueShape<F>> & {
   (path: string): unknown
   (path: ReadonlyArray<string | number>): unknown
   (): Readonly<F>
@@ -2081,13 +2227,13 @@ export type ApiErrorEnvelope = {
  * the reactive object:
  *
  * ```vue
- * <button :disabled="form.meta.isSubmitting">Save</button>
+ * <button :disabled="form.meta.submitting">Save</button>
  * ```
  *
  * Watch a single field via the getter form:
  *
  * ```ts
- * watch(() => form.meta.isSubmitting, (value) => …)
+ * watch(() => form.meta.submitting, (value) => …)
  * ```
  *
  * Per-field state (touched, dirty, errors) lives behind
@@ -2107,27 +2253,31 @@ export interface FormMeta {
    * Note: object/array leaves are compared by reference, so replacing
    * an array with an equal copy still reads as dirty.
    */
-  readonly isDirty: boolean
+  readonly dirty: boolean
 
   /**
-   * `true` when the form currently has no validation errors. Flips
-   * with every `validate()` / `handleSubmit` outcome.
+   * `true` when the form has no errors AND no validation run is in
+   * flight (`error stores empty && !validating`). A `true` here means
+   * "we've checked, and we're clean right now" — distinct from the
+   * brief window between an async refinement starting and resolving,
+   * where a looser signal would flicker `true` ahead of the verdict.
+   * Use for the enable-submit-when-clean pattern.
    */
-  readonly isValid: boolean
+  readonly valid: boolean
 
   /**
    * `true` while a `handleSubmit`-produced submit handler is running.
    * Covers both the validation phase and your async submit callback.
    * Useful for disabling the submit button.
    */
-  readonly isSubmitting: boolean
+  readonly submitting: boolean
 
   /**
    * `true` while any validation run is in flight (the reactive
    * `validate()` re-run, an imperative `validateAsync()`, or the
    * pre-submit validation inside `handleSubmit`).
    */
-  readonly isValidating: boolean
+  readonly validating: boolean
 
   /**
    * How many times the submit handler has been invoked, regardless of
@@ -2225,7 +2375,7 @@ export interface FormMeta {
  * form.errors.email             // ValidationError[] | undefined
  * form.setValue('email', 'a@b.c')
  * form.handleSubmit(onSubmit)   // returns a submit handler
- * form.meta.isSubmitting        // form-level reactive flag
+ * form.meta.submitting        // form-level reactive flag
  * ```
  */
 export type UseFormReturnType<
@@ -2297,7 +2447,7 @@ export type UseFormReturnType<
    *
    * Shadowing: at depth 2+, FieldStateLeaf keys (`dirty`, `touched`,
    * `errors`, `blank`, `focused`, `blurred`, `value`,
-   * `original`, `pristine`, `isConnected`, `updatedAt`, `path`) win
+   * `original`, `pristine`, `connected`, `updatedAt`, `path`) win
    * over schema field names. Top-level fields are NOT shadowed.
    * Document edge case; rename the offending schema field if the
    * collision matters.
@@ -2371,6 +2521,22 @@ export type UseFormReturnType<
       path: Path,
       value: Value
     ): boolean
+    /**
+     * Tuple-segment form. Equivalent to the dotted-string overload —
+     * useful when paths are built from variables or arrays:
+     * `form.setValue([prefix, 'line1'], 'value')`. The resolved leaf
+     * type is exact, matching the dotted-string form.
+     */
+    <
+      const S extends ReadonlyArray<string | number>,
+      Value extends SetValuePayload<
+        DefaultValuesShape<NestedType<Form, JoinSegments<S>>>,
+        NonNullable<WriteShape<NestedType<Form, JoinSegments<S>>>>
+      >,
+    >(
+      segments: S & ([JoinSegments<S>] extends [FlatPath<Form>] ? unknown : never),
+      value: Value
+    ): boolean
   }
 
   /**
@@ -2401,7 +2567,7 @@ export type UseFormReturnType<
    * if (!result.success) showErrors(result.errors)
    * ```
    *
-   * Pass a path to validate a subtree. `state.isValidating` flips
+   * Pass a path to validate a subtree. `state.validating` flips
    * `true` while the promise is in flight.
    */
   validateAsync: (path?: FlatPath<Form>) => Promise<ValidationResponseWithoutValue<Form>>
@@ -2418,14 +2584,32 @@ export type UseFormReturnType<
    * />
    * ```
    *
+   * Also accepts a segment-array form for callers building paths
+   * dynamically — particularly inside a `v-for` over a prefix variable
+   * where dotted-string concatenation widens the prefix's literal
+   * union to plain `string`:
+   *
+   * ```vue
+   * <fieldset v-for="block in [{ prefix: 'pickup' }, { prefix: 'delivery' }] as const">
+   *   <input v-register="form.register([block.prefix, 'line1'])" />
+   * </fieldset>
+   * ```
+   *
    * Pass `options.persist` to opt into the form's persistence
    * pipeline. Persistence requires `useForm({ persist })` configured
    * for storage activity to actually happen.
    */
-  register: <Path extends RegisterFlatPath<Form, keyof Form>>(
-    path: Path,
-    options?: RegisterOptions
-  ) => RegisterValue<NestedReadType<WriteShape<Form>, Path>>
+  register: {
+    <Path extends RegisterFlatPath<Form, keyof Form>>(
+      path: Path,
+      options?: RegisterOptions
+    ): RegisterValue<NestedReadType<WriteShape<Form>, Path>>
+    <const S extends ReadonlyArray<string | number>>(
+      segments: S &
+        ([JoinSegments<S>] extends [RegisterFlatPath<Form, keyof Form>] ? unknown : never),
+      options?: RegisterOptions
+    ): RegisterValue<NestedReadType<WriteShape<Form>, JoinSegments<S>>>
+  }
   /**
    * The form's identifier — either the explicit `key` passed to
    * `useForm` or an auto-generated unique id when `key` was omitted.
@@ -2482,9 +2666,14 @@ export type UseFormReturnType<
    * Prefer `form.values.email` for direct reads in templates +
    * scripts; `toRef` is for ref-shaped interop only.
    */
-  toRef: <Path extends FlatPath<Form>>(
-    path: Path
-  ) => Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
+  toRef: {
+    <Path extends FlatPath<Form>>(
+      path: Path
+    ): Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
+    <const S extends ReadonlyArray<string | number>>(
+      segments: S & ([JoinSegments<S>] extends [FlatPath<Form>] ? unknown : never)
+    ): Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, JoinSegments<S>>>>
+  }
 
   /**
    * Replace every field error for this form with the provided list.
@@ -2516,11 +2705,125 @@ export type UseFormReturnType<
    */
   clearFieldErrors: (path?: string | (string | number)[]) => void
 
+  /**
+   * Replace the form-level errors — the entries at the empty path
+   * (`path: []`) — without disturbing any field-level errors. Pass an
+   * empty array to clear them all.
+   *
+   * ```ts
+   * form.setFormErrors([{ message: 'Capacity exceeded' }])
+   * form.setFormErrors([
+   *   { message: 'Capacity exceeded', code: 'capacity:exceeded' },
+   *   { message: 'Pickup window full' },
+   * ])
+   * form.setFormErrors([])  // clear
+   * ```
+   *
+   * Only `message` is required. `code` defaults to `'atta:form-error'`.
+   * Any caller-provided `path` or `formKey` is ignored — `path` is
+   * always forced to `[]` (this API is form-level-only by definition)
+   * and `formKey` is filled in from the form instance. The lenient
+   * input shape lets you pipe `parseApiErrors` output (or any
+   * `ValidationError[]`) straight in:
+   *
+   * ```ts
+   * const result = parseApiErrors(payload, { formKey: form.key })
+   * if (result.ok) form.setFormErrors(result.errors)
+   * ```
+   *
+   * Form-level errors surface in `form.meta.errors` (alongside field
+   * errors) but are intentionally excluded from the path-keyed
+   * `form.errors` proxy (no key represents `[]` in a nested object) —
+   * read them via `meta.errors.filter(e => e.path.length === 0)` or
+   * `errorsAt('')`.
+   */
+  setFormErrors: (errors: ReadonlyArray<Partial<ValidationError> & { message: string }>) => void
+
+  /**
+   * Clear every form-level error. Equivalent to `setFormErrors([])`;
+   * field errors are untouched.
+   */
+  clearFormErrors: () => void
+
+  /**
+   * Returns every error whose path **is** the given path **or
+   * descends from it**. Aggregates schema, blank-derived, and
+   * user-injected errors in the same order as `meta.errors`. Empty
+   * array when nothing matches.
+   *
+   * ```ts
+   * form.errorsAt('cargo')
+   *   // → errors at 'cargo', 'cargo.items', 'cargo.items.0.sku', …
+   * form.errorsAt('cargo.items.0')
+   *   // → just that line item's leaves
+   * form.errorsAt('')          // root prefix matches everything,
+   * form.errorsAt([])          //   including form-level (path: [])
+   * ```
+   *
+   * Useful for step-validity gating in multi-step forms:
+   *
+   * ```ts
+   * const stepValid = computed(
+   *   () => form.errorsAt('cargo').length === 0
+   * )
+   * ```
+   *
+   * Wrap in your own `computed` to make the call reactive — read-
+   * through hits `meta.errors`, so dep tracking flows through.
+   */
+  errorsAt: {
+    (path: FlatPath<Form> | ''): readonly ValidationError[]
+    <const S extends ReadonlyArray<string | number>>(
+      segments: S & ([JoinSegments<S>] extends [FlatPath<Form> | ''] ? unknown : never)
+    ): readonly ValidationError[]
+  }
+
+  /**
+   * `true` when **none** of the supplied prefixes (or their
+   * descendants):
+   *
+   *   1. carry an error in `meta.errors`, AND
+   *   2. have a field-level validation currently in flight.
+   *
+   * (1) is sugar over `errorsAt(p).length === 0` summed across all
+   * supplied paths. (2) is the per-prefix analogue of
+   * `meta.validating` — answers "is anything inside these subtrees
+   * still resolving?" without conflating with whole-form
+   * `validate()` / `validateAsync()` calls happening elsewhere.
+   *
+   * Composable with `meta.validating` when the caller wants to also
+   * gate on form-wide async work that doesn't have a single path
+   * (whole-form `validate` / `validateAsync`, the submit pre-check):
+   *
+   * ```ts
+   * const STEP_PATHS = {
+   *   1: ['reference', 'pickup', 'delivery'],
+   *   2: ['cargo'],
+   *   3: ['service', 'insurance', 'desiredPickupDate', 'notes'],
+   * } as const
+   *
+   * const stepValid = computed(
+   *   () => !form.meta.validating && form.isValid(STEP_PATHS[step.value])
+   * )
+   * ```
+   *
+   * Each path can be a dotted-string `FlatPath` or the empty string
+   * (root prefix, matches every error including `path: []`). Wrap
+   * the call in a `computed` to make it reactive — read-through hits
+   * `meta.errors` and the per-field validation counters, so dep
+   * tracking flows through both channels automatically.
+   *
+   * For a single path, prefer
+   * `errorsAt(path).length === 0 && !fields.<path>.validating`;
+   * reach for `isValid` when checking two or more.
+   */
+  isValid: (paths: ReadonlyArray<FlatPath<Form> | ''>) => boolean
+
   // --- Form-level meta ---
 
   /**
-   * Form-level reactive flags, counters, and aggregates (`isDirty`,
-   * `isValid`, `isSubmitting`, `submitCount`, `canUndo`,
+   * Form-level reactive flags, counters, and aggregates (`dirty`,
+   * `valid`, `submitting`, `submitCount`, `canUndo`,
    * `historySize`, and the flat `errors` array). See `FormMeta` for
    * the full shape. Read leaves directly with no `.value`.
    *
@@ -2539,10 +2842,10 @@ export type UseFormReturnType<
    *
    * Resets:
    *   - the form value back to defaults;
-   *   - the dirty baseline (so the next edit flips `isDirty` correctly);
+   *   - the dirty baseline (so the next edit flips `dirty` correctly);
    *   - field errors;
    *   - touched / focused / blurred per-field flags;
-   *   - submission state (`isSubmitting` / `submitCount` / `submitError`);
+   *   - submission state (`submitting` / `submitCount` / `submitError`);
    *   - the persisted draft, if persistence is configured.
    *
    * The next edit on a still-mounted opted-in input will start

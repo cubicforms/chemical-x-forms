@@ -34,7 +34,7 @@ describe('createAttaform', () => {
   it('passes the ssr option through to the registry', () => {
     const app = createApp({ render: () => null })
     app.use(createAttaform({ override: true }))
-    expect(getRegistryFromApp(app).isSSR).toBe(true)
+    expect(getRegistryFromApp(app).ssr).toBe(true)
   })
 
   it('multiple apps in the same process get independent registries', () => {

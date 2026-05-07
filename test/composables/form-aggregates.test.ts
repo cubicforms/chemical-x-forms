@@ -7,7 +7,7 @@ import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 import { fakeSchema } from '../utils/fake-schema'
 
 /**
- * Runtime coverage for Phase 8.2 — form-level `isDirty` / `isValid`
+ * Runtime coverage for Phase 8.2 — form-level `dirty` / `valid`
  * computed aggregates. Type-level coverage lives in
  * test/composables/type-inference.test.ts.
  *
@@ -48,61 +48,64 @@ function harness(initial?: Partial<SignupForm>) {
   return { app, form: captured }
 }
 
-describe('useForm — isDirty / isValid form-level aggregates', () => {
+describe('useForm — dirty / valid form-level aggregates', () => {
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  it('pristine form is !isDirty && isValid', () => {
+  it('pristine form is !dirty && valid', () => {
     const { app, form } = harness()
     apps.push(app)
-    expect(form.meta.isDirty).toBe(false)
-    expect(form.meta.isValid).toBe(true)
+    expect(form.meta.dirty).toBe(false)
+    expect(form.meta.valid).toBe(true)
   })
 
-  it('setValue on any leaf flips isDirty true', () => {
+  it('setValue on any leaf flips dirty true', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setValue('email', 'user@example.com')
-    expect(form.meta.isDirty).toBe(true)
+    expect(form.meta.dirty).toBe(true)
   })
 
-  it('undoing all mutations flips isDirty back to false', () => {
+  it('undoing all mutations flips dirty back to false', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setValue('email', 'user@example.com')
-    expect(form.meta.isDirty).toBe(true)
+    expect(form.meta.dirty).toBe(true)
     form.setValue('email', '')
-    expect(form.meta.isDirty).toBe(false)
+    expect(form.meta.dirty).toBe(false)
   })
 
-  it('recording errors via setFieldErrors flips isValid false', () => {
+  it('recording errors via setFieldErrors flips valid false', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setFieldErrors([
       { path: ['email'], message: 'required', formKey: form.key, code: 'api:validation' },
     ])
-    expect(form.meta.isValid).toBe(false)
+    expect(form.meta.valid).toBe(false)
   })
 
-  it('clearing errors flips isValid back to true', () => {
+  it('clearing errors flips valid back to true', () => {
     const { app, form } = harness()
     apps.push(app)
     form.setFieldErrors([
       { path: ['email'], message: 'required', formKey: form.key, code: 'api:validation' },
     ])
-    expect(form.meta.isValid).toBe(false)
+    expect(form.meta.valid).toBe(false)
     form.clearFieldErrors()
-    expect(form.meta.isValid).toBe(true)
+    expect(form.meta.valid).toBe(true)
   })
 
-  it('isDirty and isValid are independent — dirty-but-valid is a real state', () => {
+  it('dirty and valid are independent — dirty-but-valid is a real state', async () => {
     const { app, form } = harness()
     apps.push(app)
     form.setValue('email', 'a@b')
-    // No errors recorded → still valid.
-    expect(form.meta.isDirty).toBe(true)
-    expect(form.meta.isValid).toBe(true)
+    // `meta.valid` is the strict signal: errors empty AND no validation
+    // in flight. `setValue` schedules a per-field run synchronously,
+    // so we drain the microtask chain before asserting valid.
+    for (let i = 0; i < 8 && form.meta.validating; i++) await Promise.resolve()
+    expect(form.meta.dirty).toBe(true)
+    expect(form.meta.valid).toBe(true)
   })
 })

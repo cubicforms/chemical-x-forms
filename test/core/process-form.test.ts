@@ -89,7 +89,7 @@ describe('buildProcessForm', () => {
       ])
     })
 
-    it('isValidating flips true during a run and back to false on settle', async () => {
+    it('validating flips true during a run and back to false on settle', async () => {
       const state = alwaysValid()
       const { validate } = buildProcessForm(state, 'test:inst')
       expect(state.activeValidations.value).toBe(0)
@@ -208,19 +208,19 @@ describe('buildProcessForm', () => {
   })
 
   describe('handleSubmit — submission lifecycle refs', () => {
-    it('flips isSubmitting true for the duration of the handler, false after', async () => {
+    it('flips submitting true for the duration of the handler, false after', async () => {
       const state = alwaysValid()
       const { handleSubmit } = buildProcessForm(state, 'test:inst')
-      expect(state.isSubmitting.value).toBe(false)
+      expect(state.submitting.value).toBe(false)
 
       let observedMidFlight: boolean | undefined
       const onSubmit = async () => {
-        observedMidFlight = state.isSubmitting.value
+        observedMidFlight = state.submitting.value
         await Promise.resolve()
       }
       await handleSubmit(onSubmit)()
       expect(observedMidFlight).toBe(true)
-      expect(state.isSubmitting.value).toBe(false)
+      expect(state.submitting.value).toBe(false)
     })
 
     it('increments submitCount on success', async () => {
@@ -265,7 +265,7 @@ describe('buildProcessForm', () => {
       )
       await expect(handler()).rejects.toBe(err)
       expect(state.submitError.value).toBe(err)
-      expect(state.isSubmitting.value).toBe(false)
+      expect(state.submitting.value).toBe(false)
     })
 
     it('clears submitError at the start of a fresh submission', async () => {
@@ -307,11 +307,11 @@ describe('buildProcessForm', () => {
       expect(state.submitError.value).toBeNull()
     })
 
-    it('keeps isSubmitting true across overlapping submissions until all complete', async () => {
-      // Regression: previously each handler invocation set isSubmitting
+    it('keeps submitting true across overlapping submissions until all complete', async () => {
+      // Regression: previously each handler invocation set submitting
       // = false on its own completion, so the FIRST resolution prematurely
       // flipped the flag while a later submission was still in flight.
-      // The fix maintains an in-flight counter on FormStore; isSubmitting
+      // The fix maintains an in-flight counter on FormStore; submitting
       // is true iff the counter is > 0.
       const state = alwaysValid()
       const { handleSubmit } = buildProcessForm(state, 'test:inst')
@@ -334,32 +334,32 @@ describe('buildProcessForm', () => {
       })
 
       await Promise.all([firstStarted, secondStarted])
-      expect(state.isSubmitting.value).toBe(true)
+      expect(state.submitting.value).toBe(true)
       expect(state.activeSubmissions.value).toBe(2)
 
       // Resolve the first submission — counter drops to 1, flag stays true.
       resolveFirst()
       await Promise.resolve() // microtask drain so the finally block runs
       await Promise.resolve()
-      expect(state.isSubmitting.value).toBe(true)
+      expect(state.submitting.value).toBe(true)
       expect(state.activeSubmissions.value).toBe(1)
 
       // Resolve the second — counter drops to 0, flag flips false.
       resolveSecond()
       await Promise.resolve()
       await Promise.resolve()
-      expect(state.isSubmitting.value).toBe(false)
+      expect(state.submitting.value).toBe(false)
       expect(state.activeSubmissions.value).toBe(0)
       expect(state.submitCount.value).toBe(2)
     })
   })
 
   describe('handleSubmit — reset() during in-flight submission', () => {
-    it('reset() keeps isSubmitting false through the in-flight completion', async () => {
+    it('reset() keeps submitting false through the in-flight completion', async () => {
       // Regression: previously `reset()` zeroed `activeSubmissions` and
       // the in-flight submission's finally-block then decremented into
       // a negative value (clamped to 0 by Math.max but still a messy
-      // state). With the clamp in place, isSubmitting stays false —
+      // state). With the clamp in place, submitting stays false —
       // this test pins that guarantee.
       const state = alwaysValid()
       const { handleSubmit } = buildProcessForm(state, 'test:inst')
@@ -373,10 +373,10 @@ describe('buildProcessForm', () => {
         })()
       })
       await started
-      expect(state.isSubmitting.value).toBe(true)
+      expect(state.submitting.value).toBe(true)
 
       state.reset()
-      expect(state.isSubmitting.value).toBe(false)
+      expect(state.submitting.value).toBe(false)
       expect(state.activeSubmissions.value).toBe(0)
       expect(state.submitCount.value).toBe(0)
 
@@ -386,9 +386,9 @@ describe('buildProcessForm', () => {
 
       // In-flight finally ran, but all visible lifecycle counters stay
       // at their post-reset values — the completion belongs to the
-      // prior generation, so isSubmitting, submitCount, and submitError
+      // prior generation, so submitting, submitCount, and submitError
       // remain the "fresh form" state the consumer asked for.
-      expect(state.isSubmitting.value).toBe(false)
+      expect(state.submitting.value).toBe(false)
       expect(state.activeSubmissions.value).toBe(0)
       expect(state.submitCount.value).toBe(0)
       expect(state.submitError.value).toBeNull()
@@ -423,7 +423,7 @@ describe('buildProcessForm', () => {
 
       // Post-reset state is stable: no stale error, not submitting.
       expect(state.submitError.value).toBeNull()
-      expect(state.isSubmitting.value).toBe(false)
+      expect(state.submitting.value).toBe(false)
       expect(state.submissionGeneration.value).toBe(1)
     })
 

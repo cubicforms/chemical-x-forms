@@ -148,7 +148,7 @@ describe('reset(args) with unset', () => {
     expect(form.values.count).toBe(0)
     expect(form.blankPaths.value.has(canonicalizePath('count').key)).toBe(true)
     // Dirty resets to false: the new baseline is "blank for this path".
-    expect(form.meta.isDirty).toBe(false)
+    expect(form.meta.dirty).toBe(false)
   })
 })
 
@@ -415,11 +415,11 @@ describe('auto-mark: unspecified numeric leaves are blank on construction', () =
     expect(form.values.age).toBe(0)
   })
 
-  it('isDirty stays false on construction even with auto-marks', () => {
+  it('dirty stays false on construction even with auto-marks', () => {
     // Construction-time auto-marks ARE the baseline — they shouldn't
     // count as "dirty" (the user hasn't done anything yet).
     const { app, form } = setupForm(z.object({ count: z.number(), name: z.string() }))
     apps.push(app)
-    expect(form.meta.isDirty).toBe(false)
+    expect(form.meta.dirty).toBe(false)
   })
 })

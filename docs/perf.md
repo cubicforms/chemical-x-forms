@@ -11,7 +11,7 @@ in [`bench/`](https://github.com/attaform/attaform/tree/main/bench).
   per-PR threshold; see [`bench/keystroke.bench.ts`](https://github.com/attaform/attaform/blob/main/bench/keystroke.bench.ts)
   for the measured scenarios (100-leaf and 500-leaf forms,
   single-leaf mutation).
-- **`state.isDirty`** — iterates the tracked leaves with no
+- **`state.dirty`** — iterates the tracked leaves with no
   per-leaf parse cost.
 - **Path resolution** — dotted-string paths are LRU-cached (128
   entries), so repeat canonicalisation reduces to a map lookup.
@@ -24,7 +24,7 @@ don't surface in profiling.
 | Scale              | Guidance                                                                                                           |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------ |
 | ≤ 500 leaves       | Default. No tuning needed.                                                                                         |
-| 500 – 5,000 leaves | Still fine. Watch out for templates that render every leaf's `state.isDirty`.                                      |
+| 500 – 5,000 leaves | Still fine. Watch out for templates that render every leaf's `state.dirty`.                                        |
 | 5,000+ leaves      | Consider splitting into sub-forms with distinct `key`s. One giant schema is not what the library is optimised for. |
 
 ## Array helpers are O(N)
@@ -52,15 +52,15 @@ Discriminated unions (`z.discriminatedUnion`) walk only the active
 branch. Plain unions (`z.union`) walk every branch unconditionally
 — use a DU when you have a shared key.
 
-## `state.isDirty` in hot templates
+## `state.dirty` in hot templates
 
-`state.isDirty` is a whole-form aggregate — it invalidates whenever
+`state.dirty` is a whole-form aggregate — it invalidates whenever
 any tracked leaf's `updatedAt` ticks. If you render it in a hot
 path (e.g., a header that re-renders on every keystroke), derive a
 more specific predicate instead:
 
 ```ts
-// Faster than gating on the whole-form state.isDirty:
+// Faster than gating on the whole-form state.dirty:
 const isEmailDirty = computed(() => form.fields.email.dirty)
 ```
 

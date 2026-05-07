@@ -79,15 +79,47 @@ const sharedEsbuildOpts = {
   tsconfig: resolve(repoRoot, 'tsconfig.json'),
 }
 
+// Triggers an attaform .d.ts re-emit after every esbuild rebuild
+// (post-initial). esbuild's watch mode keeps the runtime JS bundles
+// fresh; without this hook the rolled-up declaration bundles would
+// stay stuck at whatever shape src/ had when the script started, so
+// the REPL's Volar serves stale types until the dev server is
+// manually restarted. Fire-and-forget — we don't want a slow
+// rollup-plugin-dts pass to stall esbuild's pipeline.
+function attaformTypeWatchPlugin() {
+  let initial = true
+  return {
+    name: 'attaform-type-watch',
+    setup(build) {
+      build.onEnd(() => {
+        if (!watch) return
+        if (initial) {
+          initial = false
+          return
+        }
+        emitAttaformTypeBundles()
+          .then(() => console.log('[bundle-repl-deps] attaform .d.ts re-emitted'))
+          .catch((err) => {
+            console.error('[bundle-repl-deps] attaform .d.ts re-emit failed:', err)
+          })
+      })
+    },
+  }
+}
+
 const ctxs = await Promise.all([
   // attaform core — externalize vue + zod (loaded separately via import map)
   esbuild.context({
     ...sharedEsbuildOpts,
     entryPoints: { attaform: resolve(repoRoot, 'src/index.ts') },
     external: ['vue', 'zod'],
+    plugins: [attaformTypeWatchPlugin()],
   }),
   // attaform/zod adapter — also externalize attaform itself so the import
-  // map cross-resolves to the core bundle (single registry instance)
+  // map cross-resolves to the core bundle (single registry instance).
+  // Only the core context owns the type-re-emit hook — both attaform
+  // entries are bundled in a single emitAttaformTypeBundles() call,
+  // so duplicating the trigger here would just double the work.
   esbuild.context({
     ...sharedEsbuildOpts,
     entryPoints: { 'attaform-zod': resolve(repoRoot, 'src/zod.ts') },
@@ -135,12 +167,38 @@ const replAssetsDir = resolve(
   repoRoot,
   `node_modules/.pnpm/@vue+repl@4.7.2/node_modules/@vue/repl/dist/assets`
 )
+// Volar's web build emits two `console.warn` notices on startup:
+//   [service-emmet] this module is not yet supported for web.
+//   [volar-service-pug] this module is not yet supported for web.
+// They're advisory-only — neither service is meaningful in our REPL
+// (no Emmet expansion, no Pug compile path) — and they pollute every
+// page load with two yellow rows. Worker console output isn't
+// reachable from the main thread, so we patch each worker at copy
+// time: prepend a tiny `console.warn` shim that swallows messages
+// containing the shared "not yet supported for web" phrase.
+const SUPPRESS_PRELUDE =
+  ';(function(){var w=console.warn;' +
+  'console.warn=function(){' +
+  'var a=arguments[0];' +
+  'if(typeof a==="string"&&a.indexOf("not yet supported for web")!==-1)return;' +
+  'return w.apply(console,arguments)' +
+  '};})();\n'
+async function copyWorkerWithSuppressedWarnings(srcPath, destPath) {
+  const original = await readFile(srcPath, 'utf8')
+  await writeFile(destPath, SUPPRESS_PRELUDE + original)
+}
 const workerEntries = await readdir(replAssetsDir)
 for (const entry of workerEntries) {
   if (entry.startsWith('editor.worker')) {
-    await copyFile(resolve(replAssetsDir, entry), resolve(workerOutDir, 'editor.worker.js'))
+    await copyWorkerWithSuppressedWarnings(
+      resolve(replAssetsDir, entry),
+      resolve(workerOutDir, 'editor.worker.js')
+    )
   } else if (entry.startsWith('vue.worker')) {
-    await copyFile(resolve(replAssetsDir, entry), resolve(workerOutDir, 'vue.worker.js'))
+    await copyWorkerWithSuppressedWarnings(
+      resolve(replAssetsDir, entry),
+      resolve(workerOutDir, 'vue.worker.js')
+    )
   }
 }
 
@@ -260,12 +318,12 @@ const packageManifests = {
   },
 }
 
-async function emitTypeBundles() {
-  await Promise.all([
-    mkdir(resolve(typesDir, 'attaform'), { recursive: true }),
-    mkdir(resolve(typesDir, 'vue'), { recursive: true }),
-    mkdir(resolve(typesDir, 'zod'), { recursive: true }),
-  ])
+// Just attaform's two .d.ts entry points. Re-run on every src/ change
+// during watch mode so the REPL's Volar always sees the latest types.
+// vue + zod aren't included here because they come from node_modules
+// and don't change while the dev server is running.
+async function emitAttaformTypeBundles() {
+  await mkdir(resolve(typesDir, 'attaform'), { recursive: true })
   await Promise.all([
     bundleDts({
       input: resolve(repoRoot, 'src/index.ts'),
@@ -280,6 +338,17 @@ async function emitTypeBundles() {
       output: resolve(typesDir, 'attaform/zod.d.ts'),
       name: 'attaform-zod',
     }),
+  ])
+}
+
+async function emitTypeBundles() {
+  await Promise.all([
+    mkdir(resolve(typesDir, 'attaform'), { recursive: true }),
+    mkdir(resolve(typesDir, 'vue'), { recursive: true }),
+    mkdir(resolve(typesDir, 'zod'), { recursive: true }),
+  ])
+  await Promise.all([
+    emitAttaformTypeBundles(),
     bundleDts({
       input: runtimeDomDts,
       output: resolve(typesDir, 'vue/index.d.ts'),
@@ -312,6 +381,25 @@ async function emitTypeBundles() {
     writeFile(resolve(typesDir, 'attaform/zod.js'), ''),
     writeFile(resolve(typesDir, 'vue/index.js'), ''),
     writeFile(resolve(typesDir, 'zod/index.js'), ''),
+  ])
+  // Sidecar `.d.ts` next to each `.js` runtime bundle so Nuxt/IDE
+  // tooling (vue-tsc, Volar, vtsls) sees types when resolving an
+  // import like `~/public/lib/attaform-zod` from a Vue component
+  // file. Without these, the import resolves to the JS bundle alone
+  // and TypeScript falls back to JS-inference (which sees the
+  // exported function returning a `Proxy({}, …)` and types it as
+  // `() => {}`). The shim re-exports from the rolled-up type bundle
+  // so both surfaces (in-page Volar and host-side IDE) share one
+  // source of truth.
+  await Promise.all([
+    writeFile(
+      resolve(outDir, 'attaform.d.ts'),
+      `export * from './types/attaform/index'\n`
+    ),
+    writeFile(
+      resolve(outDir, 'attaform-zod.d.ts'),
+      `export * from './types/attaform/zod'\n`
+    ),
   ])
   // Directory listing JSON per package, mimicking unpkg's `?meta`
   // endpoint shape: `{ files: [{ path, type }] }`. Volar's worker
@@ -358,13 +446,12 @@ await emitTypeBundles()
 
 if (watch) {
   await Promise.all(ctxs.map((c) => c.watch()))
-  // esbuild's watch is incremental and fast; rolling up .d.ts costs
-  // a few hundred ms per package, so we trigger a full type-rebuild
-  // at fixed intervals only when src/ changes. We piggyback on
-  // esbuild's rebuild via the `onRebuild`-style hook implemented as
-  // a watch plugin below — but for simplicity in a small dev script,
-  // re-emit types whenever this script is re-run (host saves trigger
-  // the docker volume sync, the watch process picks them up).
+  // esbuild's watch keeps the runtime JS bundles fresh incrementally;
+  // the attaform .d.ts re-emit fires from the `attaform-type-watch`
+  // esbuild plugin (above) on each post-initial rebuild. vue + zod
+  // type bundles are static — they come from node_modules and only
+  // need to rebuild when this script is re-run (e.g. after a deps
+  // upgrade).
   console.log('[bundle-repl-deps] watching src/ for runtime + type changes')
 } else {
   await Promise.all(ctxs.map((c) => c.dispose()))

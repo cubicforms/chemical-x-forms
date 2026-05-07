@@ -1,5 +1,6 @@
-import { computed, ref, type Ref } from 'vue'
+import { computed, ref, shallowReadonly, type Ref } from 'vue'
 import type {
+  InternalRegisterValue,
   RegisterOptions,
   RegisterTransform,
   RegisterValue,
@@ -181,7 +182,7 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
     // `register({ persist: true })`. The client-side hydration pass
     // re-checks against a freshly-wired module and throws correctly if
     // the misuse is real.
-    if (persist && !state.isSSR && !state.modules.has(PERSISTENCE_MODULE_KEY)) {
+    if (persist && !state.ssr && !state.modules.has(PERSISTENCE_MODULE_KEY)) {
       throw new AnonPersistError({
         cause: 'register-without-config',
         schemaFields: extractSchemaFields(state.schema),
@@ -189,7 +190,14 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
       })
     }
 
-    return {
+    // `shallowReadonly` is what makes `rv.path`, `rv.formKey`, and the
+    // other top-level string fields feel like reactive state in
+    // wrapper components: property reads track in computeds /
+    // watchEffects, mutations are blocked at runtime + type level, and
+    // inner refs (`innerRef`, `displayValue`, `lastTypedForm`) keep
+    // their `Ref` shape so the directive's `.value` reads/writes
+    // continue to work unchanged.
+    const internalRv: InternalRegisterValue = {
       innerRef,
       displayValue,
       lastTypedForm,
@@ -227,19 +235,27 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
 
       // Called by the `vRegisterHint` compile-time transform's wrapping
       // IIFE on every server-side render of `<element v-register="…">`.
-      // Without it, every SSR'd FieldState serialises `isConnected: false`
+      // Without it, every SSR'd FieldState serialises `connected: false`
       // (because Vue skips directive lifecycle during SSR) and the client
       // briefly shows that stale flag until hydration runs the directive's
-      // `created` hook. The mark only takes effect when `state.isSSR` is
+      // `created` hook. The mark only takes effect when `state.ssr` is
       // true; on the client this is a no-op so the directive lifecycle
       // remains the source of truth.
       markConnectedOptimistically: (): void => {
         state.markConnectedOptimistically(segments)
       },
 
+      path: pathKey,
+      // Frozen so a wrapper component can pass `rv.segments` directly
+      // to `form.fields(...)` without defensive copying — and so test
+      // fixtures or downstream code can't mutate the canonical
+      // segment list out from under the directive.
+      segments: Object.freeze(segments.slice()),
+      formKey: state.formKey,
+      formInstanceId,
+
       // --- Persistence opt-in (internal; the directive is the only
       // legitimate consumer) ---
-      path: pathKey,
       persist,
       acknowledgeSensitive,
       persistOptIns: state.persistOptIns,
@@ -247,5 +263,6 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
       coerce,
       ...(coerceElement !== undefined ? { coerceElement } : {}),
     }
+    return shallowReadonly(internalRv) as RegisterValue
   }
 }

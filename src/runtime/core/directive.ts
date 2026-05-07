@@ -30,6 +30,7 @@ import { REGISTER_OWNER_MARKER } from '../composables/use-register'
 import { __DEV__ } from './dev'
 import type {
   CustomDirectiveRegisterAssignerFn,
+  InternalRegisterValue,
   RegisterCheckboxCustomDirective,
   RegisterModelDynamicCustomDirective,
   RegisterRadioCustomDirective,
@@ -133,6 +134,19 @@ function removeTrackedListeners(el: Element): void {
     el.removeEventListener(event, handler, options)
   }
   delete carrier[listenersKey]
+}
+
+/**
+ * Write the directive-private `lastTypedForm` ref. Lives on the
+ * `InternalRegisterValue` extension of `RegisterValue` (it's not part
+ * of the public type), but every RV constructed by `register-api.ts`
+ * carries it — so the cast captures a runtime invariant the type
+ * system can't otherwise express. Used by the numeric-text listener
+ * to surface the user's typed form (`'1e2'`) to `displayValue`
+ * mid-typing without yanking the caret on the next render.
+ */
+function writeLastTypedForm(rv: RegisterValue, next: string | null): void {
+  ;(rv as InternalRegisterValue).lastTypedForm.value = next
 }
 
 /**
@@ -433,7 +447,7 @@ function syncPersistOptIn(el: HTMLElement, value: unknown, oldValue: unknown): v
  * transitions. Symmetric with `syncPersistOptIn` for the
  * persistence opt-in dimension; this one tracks element-to-path
  * registration the form's element map relies on for
- * `getFieldState(path).meta.isConnected`, `focusFirstError`, and
+ * `getFieldState(path).meta.connected`, `focusFirstError`, and
  * `scrollToFirstError`.
  *
  * Cases:
@@ -445,7 +459,7 @@ function syncPersistOptIn(el: HTMLElement, value: unknown, oldValue: unknown): v
  *   - RV → RV (same path + same form): no-op. `register('foo')`
  *     returns a fresh closure on every parent re-render; without
  *     the early-out, every tick would deregister-and-re-register
- *     the element, thrashing the `isConnected` flag.
+ *     the element, thrashing the `connected` flag.
  *   - RV → RV (different path or different form): deregister old,
  *     register new. Covers dynamic-path templates
  *     (`v-register="form.register(\`item.${i}\`)"`) and the
@@ -601,7 +615,7 @@ const vRegisterText: RegisterTextCustomDirective = {
             return
           }
           if (isRegisterValue(value)) {
-            value.lastTypedForm.value = null
+            writeLastTypedForm(value, null)
             value.markBlank()
           }
           return
@@ -616,7 +630,7 @@ const vRegisterText: RegisterTextCustomDirective = {
           // doesn't surface a dev warning for a transient mid-edit
           // state.
           if (isRegisterValue(value)) {
-            value.lastTypedForm.value = null
+            writeLastTypedForm(value, null)
             value.markBlank()
           }
           return
@@ -644,7 +658,7 @@ const vRegisterText: RegisterTextCustomDirective = {
         // DOM and yank the user away from the `1e2` they're typing.
         // The blur normalizer clears `lastTypedForm` so the post-blur
         // DOM matches storage exactly.
-        if (isRegisterValue(value)) value.lastTypedForm.value = typedString
+        if (isRegisterValue(value)) writeLastTypedForm(value, typedString)
       }
       el[assignKey]?.(domValue)
       // After the default assigner runs, force-sync the DOM when
@@ -678,7 +692,7 @@ const vRegisterText: RegisterTextCustomDirective = {
         if (storage !== domValue) {
           const display = storage == null ? '' : String(storage)
           if (el.value !== display) el.value = display
-          if (castToNumber) value.lastTypedForm.value = null
+          if (castToNumber) writeLastTypedForm(value, null)
         }
       }
     })
@@ -702,7 +716,7 @@ const vRegisterText: RegisterTextCustomDirective = {
             // is gated on `lazy !== true` because the lazy listener
             // already wrote on the same change event ahead of this
             // handler.
-            if (isRegisterValue(value)) value.lastTypedForm.value = null
+            if (isRegisterValue(value)) writeLastTypedForm(value, null)
             el.value = String(cast)
             if (lazy !== true) el[assignKey]?.(cast)
           } else {
@@ -715,7 +729,7 @@ const vRegisterText: RegisterTextCustomDirective = {
             // pasted directly via the change event) this is the first
             // chance, so re-mark defensively.
             if (isRegisterValue(value)) {
-              value.lastTypedForm.value = null
+              writeLastTypedForm(value, null)
               value.markBlank()
             }
             el.value = ''
@@ -781,23 +795,33 @@ const vRegisterText: RegisterTextCustomDirective = {
   mounted(el, { value }) {
     if (!isRegisterValue(value)) return
 
-    const _val = value.innerRef.value
-    el.value = typeof _val === 'string' || typeof _val === 'number' ? `${_val}` : ''
+    // Read through `displayValue` rather than `innerRef`: it's the
+    // string projection that already honours `blankPaths` (returns
+    // `''` for a numeric leaf marked blank, even though storage
+    // holds the slim default `0`). Without this, the storage `0`
+    // round-trips to `'0'` here and the change handler at blur
+    // sees `el.value === '0'`, casts to 0, and writes-back through
+    // the assigner — wiping the blank flag and locking the user
+    // out of the empty display state.
+    el.value = value.displayValue.value
   },
-  beforeUpdate(el, { value, oldValue, modifiers: { lazy, trim, number } }, vnode) {
+  beforeUpdate(el, { value, oldValue, modifiers: { lazy, trim } }, vnode) {
     setAssignFunction(el, vnode, value)
     // Skip the el.value sync while the user is mid-IME-composition;
     // overwriting `el.value` would clobber the unresolved input.
     if ((el as { composing?: boolean }).composing === true) return
     if (!isRegisterValue(value)) return
 
-    const elValue =
-      (number === true || el.type === 'number') && !/^0\d/.test(el.value)
-        ? looseToNumber(el.value)
-        : el.value
-    const newValue = value.innerRef.value === null ? '' : value.innerRef.value
-
-    if (elValue === newValue) {
+    // `displayValue` is the canonical string view: it folds in the
+    // blank/unset rule (returns `''` for blank-marked numeric
+    // leaves) AND the typed-form preference (`lastTypedForm` so
+    // mid-typing `'1e2'` doesn't get clobbered by a sibling
+    // re-render). String comparison against the live DOM is honest:
+    // pre-fix this branch parsed `el.value` through `looseToNumber`
+    // and compared against raw storage, which paints `'0'` over a
+    // blank-empty DOM on every reactive update.
+    const target = value.displayValue.value
+    if (el.value === target) {
       return
     }
 
@@ -819,20 +843,12 @@ const vRegisterText: RegisterTextCustomDirective = {
       // Trim escape: same rationale — the trimmed-but-otherwise-equal
       // value is what we'd land on at blur anyway, so don't fight the
       // user's whitespace mid-typing.
-      if (trim === true && el.value.trim() === newValue) {
+      if (trim === true && el.value.trim() === target) {
         return
       }
     }
 
-    // Mirror Vue's `vModelText.beforeUpdate`: rely on the browser's
-    // implicit string coercion via the `el.value` setter, with a
-    // null/undefined → '' guard. Pre-fix this was
-    // `typeof newValue === 'string' ? newValue : ''`, which cleared
-    // the input whenever the post-coerce model was a number (e.g.
-    // a plain `<input type="text">` against `z.number()` with
-    // schema-driven coerce on). The defensive type-guard predates
-    // coerce and is now too narrow.
-    el.value = newValue == null ? '' : String(newValue)
+    el.value = target
   },
 }
 

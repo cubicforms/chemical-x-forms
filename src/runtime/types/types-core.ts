@@ -93,6 +93,109 @@ export type FlatPath<
 > = ForceFullPath extends true ? CompleteFlatPath<Form, Key> : PartialFlatPath<Form, Key>
 
 /**
+ * Convert a tuple of path segments to its dotted-string equivalent.
+ *
+ *   `JoinSegments<['cargo', 'items', 0, 'sku']>` → `'cargo.items.0.sku'`
+ *
+ * Recursion depth is bounded by the tuple length (typically 3–4),
+ * not by form depth — the cost does not scale with `FlatPath<Form>`.
+ * Template literal types distribute over union members, so segments
+ * containing unions like `'pickup' | 'delivery'` propagate through
+ * to the joined path's union: `JoinSegments<['pickup' | 'delivery', 'line1']>`
+ * → `'pickup.line1' | 'delivery.line1'`. This is what makes
+ * tuple-form path APIs work cleanly inside `v-for` over a prefix
+ * variable: the joined result is checked against `FlatPath<Form>` /
+ * `RegisterFlatPath<Form>` (which already exist), so we don't
+ * enumerate a separate tuple-path union.
+ */
+export type JoinSegments<
+  S extends ReadonlyArray<string | number>,
+  Acc extends string = '',
+> = S extends readonly [
+  infer Head extends string | number,
+  ...infer Rest extends ReadonlyArray<string | number>,
+]
+  ? Acc extends ''
+    ? JoinSegments<Rest, `${Head}`>
+    : JoinSegments<Rest, `${Acc}.${Head}`>
+  : Acc
+
+/**
+ * `true` when `T` is a union (multiple members), `false` when it's a
+ * single type. Used to gate non-homomorphic mapped-type forms so
+ * single-object types retain their homomorphic `[K in keyof T]`
+ * lookup (preserving literal keys instead of widening to an index
+ * signature).
+ */
+export type IsUnion<T, U = T> = T extends T ? ([U] extends [T] ? false : true) : never
+
+/**
+ * Union of all keys across all members of `T`. For a single object
+ * type this equals `keyof T`; for a discriminated union `A | B`, it
+ * produces `keyof A | keyof B` (whereas naked `keyof (A | B)` would
+ * intersect to common keys only).
+ *
+ * Paired with `ValueOfUnion` to merge variant key sets in chained
+ * metadata proxies (`form.fields`, `form.errors`) so per-variant
+ * leaves are addressable through one chained-access shape, regardless
+ * of which discriminant is currently active.
+ */
+export type KeyofUnion<T> = T extends unknown ? keyof T : never
+
+/**
+ * Value at key `K` across union members of `T`. Members containing
+ * `K` contribute `T[K]`; members lacking `K` contribute `undefined`.
+ *
+ * The resulting union mirrors the runtime semantics of metadata
+ * proxies: chained access works at every union member, with the leaf
+ * carrying `T | undefined` to reflect that the key is absent in some
+ * variants and the runtime returns a stable stub there.
+ */
+export type ValueOfUnion<T, K extends PropertyKey> = T extends unknown
+  ? K extends keyof T
+    ? T[K]
+    : undefined
+  : never
+
+/**
+ * Apply the discriminated-union "lift" to a value shape (i.e., a
+ * shape carrying actual values, not metadata leaves like
+ * `FieldStateLeaf`). Single-object types map homomorphically;
+ * discriminated unions of objects merge keys via
+ * `KeyofUnion` / `ValueOfUnion` so per-variant fields are reachable
+ * through one chained-access shape.
+ *
+ * Used by `ValuesSurface` to make `form.values.cargo.permitNumber`
+ * (oversized-only) typecheck regardless of the active variant —
+ * matching the runtime, where plain JS object access on a missing
+ * variant key returns `undefined` rather than throwing.
+ *
+ * Distinct from `FieldStateMapEntry`: that variant carries
+ * `FieldStateLeaf<T>` at the leaf; this one carries the leaf VALUE
+ * directly. They share the same union-merging logic but differ in
+ * what the recursion bottoms out at.
+ *
+ * Date / Map / Set / RegExp / function leaves stay opaque (not
+ * recursed into) — value reads of those types should preserve the
+ * platform shape unchanged.
+ */
+export type LiftedValueShape<T> = [T] extends [
+  string | number | boolean | bigint | symbol | null | undefined,
+]
+  ? T
+  : [T] extends [
+        Date | RegExp | Map<unknown, unknown> | Set<unknown> | ((...args: never) => unknown),
+      ]
+    ? T
+    : [T] extends [ReadonlyArray<unknown>]
+      ? T
+      : [T] extends [object]
+        ? [IsUnion<T>] extends [true]
+          ? { [K in KeyofUnion<T>]: LiftedValueShape<ValueOfUnion<T, K>> }
+          : { [K in keyof T]: LiftedValueShape<T[K]> }
+        : T
+
+/**
  * Recursive `Partial` — every property at every depth is optional.
  * Used as the parameter type of `defaultValues` and `reset()` so
  * partial overrides at any nesting level are valid.
@@ -113,6 +216,13 @@ export type DeepPartial<T> = T extends Primitive // Base case for primitive type
  *
  *   `NestedType<{ user: { email: string } }, 'user.email'>` → `string`
  *
+ * On discriminated-union descents (e.g. `cargo` is `A | B | C`), uses
+ * `KeyofUnion` / `ValueOfUnion` so per-variant keys resolve to
+ * `T | undefined` instead of `never`. This keeps NestedType in lockstep
+ * with `FlatPath`: any path FlatPath says is reachable resolves to a
+ * useful value type (vs. silently collapsing to `never` because
+ * `keyof (A|B|C)` would be the intersection of all variants' keys).
+ *
  * TypeScript caps conditional-type recursion at around 50 levels;
  * paths deeper than that resolve to `never`. Real form schemas
  * never reach this depth.
@@ -129,26 +239,30 @@ export type NestedType<
     ? never
     : FlattenedPath extends `${infer Key}.${infer Rest}`
       ? Key extends `${number}`
-        ? Key extends keyof _RootValue
-          ? NestedType<_RootValue[Key], Rest, FilterOutNullishTypesDuringRecursion>
+        ? Key extends KeyofUnion<_RootValue>
+          ? NestedType<ValueOfUnion<_RootValue, Key>, Rest, FilterOutNullishTypesDuringRecursion>
           : Key extends `${infer NumericKey extends number}`
-            ? NumericKey extends keyof _RootValue
-              ? NestedType<_RootValue[NumericKey], Rest, FilterOutNullishTypesDuringRecursion>
+            ? NumericKey extends KeyofUnion<_RootValue>
+              ? NestedType<
+                  ValueOfUnion<_RootValue, NumericKey>,
+                  Rest,
+                  FilterOutNullishTypesDuringRecursion
+                >
               : never
             : never
-        : Key extends keyof _RootValue
-          ? NestedType<_RootValue[Key], Rest, FilterOutNullishTypesDuringRecursion>
+        : Key extends KeyofUnion<_RootValue>
+          ? NestedType<ValueOfUnion<_RootValue, Key>, Rest, FilterOutNullishTypesDuringRecursion>
           : never
       : FlattenedPath extends `${number}`
-        ? FlattenedPath extends keyof _RootValue
-          ? _RootValue[FlattenedPath]
+        ? FlattenedPath extends KeyofUnion<_RootValue>
+          ? ValueOfUnion<_RootValue, FlattenedPath>
           : FlattenedPath extends `${infer NumericKey extends number}`
-            ? NumericKey extends keyof _RootValue
-              ? _RootValue[NumericKey]
+            ? NumericKey extends KeyofUnion<_RootValue>
+              ? ValueOfUnion<_RootValue, NumericKey>
               : never
             : never
-        : FlattenedPath extends keyof _RootValue
-          ? _RootValue[FlattenedPath]
+        : FlattenedPath extends KeyofUnion<_RootValue>
+          ? ValueOfUnion<_RootValue, FlattenedPath>
           : never
 
 // Helper type for primitive types (non-object and non-array)
@@ -169,7 +283,9 @@ export type IsTuple<T extends readonly unknown[]> = number extends T['length'] ?
  * Path-resolved type for read-side APIs. Like `NestedType`, but once
  * the walk crosses an array index segment the resulting type is
  * tagged `| undefined` (the runtime can return undefined for
- * out-of-bounds reads).
+ * out-of-bounds reads). Discriminated-union descents follow the same
+ * `KeyofUnion`/`ValueOfUnion` rule as `NestedType` — per-variant
+ * keys resolve to `T | undefined`, agreeing with `FlatPath`.
  *
  * Used by `form.values.<path>` reads, `form.toRef(path)`, and
  * `register(path).innerRef` so the compile-time type honours the
@@ -185,28 +301,28 @@ export type NestedReadType<
     ? never
     : FlattenedPath extends `${infer Key}.${infer Rest}`
       ? Key extends `${number}`
-        ? Key extends keyof _RootValue
-          ? NestedReadType<_RootValue[Key], Rest, true>
+        ? Key extends KeyofUnion<_RootValue>
+          ? NestedReadType<ValueOfUnion<_RootValue, Key>, Rest, true>
           : Key extends `${infer NumericKey extends number}`
-            ? NumericKey extends keyof _RootValue
-              ? NestedReadType<_RootValue[NumericKey], Rest, true>
+            ? NumericKey extends KeyofUnion<_RootValue>
+              ? NestedReadType<ValueOfUnion<_RootValue, NumericKey>, Rest, true>
               : never
             : never
-        : Key extends keyof _RootValue
-          ? NestedReadType<_RootValue[Key], Rest, _Tainted>
+        : Key extends KeyofUnion<_RootValue>
+          ? NestedReadType<ValueOfUnion<_RootValue, Key>, Rest, _Tainted>
           : never
       : FlattenedPath extends `${number}`
-        ? FlattenedPath extends keyof _RootValue
-          ? _RootValue[FlattenedPath] | undefined
+        ? FlattenedPath extends KeyofUnion<_RootValue>
+          ? ValueOfUnion<_RootValue, FlattenedPath> | undefined
           : FlattenedPath extends `${infer NumericKey extends number}`
-            ? NumericKey extends keyof _RootValue
-              ? _RootValue[NumericKey] | undefined
+            ? NumericKey extends KeyofUnion<_RootValue>
+              ? ValueOfUnion<_RootValue, NumericKey> | undefined
               : never
             : never
-        : FlattenedPath extends keyof _RootValue
+        : FlattenedPath extends KeyofUnion<_RootValue>
           ? _Tainted extends true
-            ? _RootValue[FlattenedPath] | undefined
-            : _RootValue[FlattenedPath]
+            ? ValueOfUnion<_RootValue, FlattenedPath> | undefined
+            : ValueOfUnion<_RootValue, FlattenedPath>
           : never
 
 /**

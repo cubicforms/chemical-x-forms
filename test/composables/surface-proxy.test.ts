@@ -10,7 +10,7 @@ import { createAttaform } from '../../src/runtime/core/plugin'
  * shared by `form.values`, `form.errors`, and `form.fields`.
  *
  * The pivotal behaviour: `FIELD_STATE_KEYS` (`value`, `dirty`,
- * `errors`, `isConnected`, …) inject ONLY at leaf paths, not at
+ * `errors`, `connected`, …) inject ONLY at leaf paths, not at
  * every depth. A schema field literally named `dirty` at depth 2+
  * stays reachable as a descent target.
  */
@@ -66,18 +66,18 @@ describe('form.fields — shadowing immunity (FIELD_STATE_KEYS only inject at le
     expect(form.fields.address.dirty.dirty).toBe(true) // now dirty per the FieldStateView
   })
 
-  it('schema field named "isValid" at depth 2 is reachable; .isValid drilling works', () => {
+  it('schema field named "valid" at depth 2 is reachable; .valid drilling works', () => {
     const schema = z.object({
       address: z.object({
-        isValid: z.boolean(),
+        valid: z.boolean(),
         city: z.string(),
       }),
     })
-    const form = mount(schema, { address: { isValid: true, city: 'NYC' } })
+    const form = mount(schema, { address: { valid: true, city: 'NYC' } })
 
-    // address.isValid is a leaf (boolean) — exposed as a FieldStateLeaf.
-    expect(form.fields.address.isValid.value).toBe(true)
-    expect(form.fields.address.isValid.path).toEqual(['address', 'isValid'])
+    // address.valid is a leaf (boolean) — exposed as a FieldStateLeaf.
+    expect(form.fields.address.valid.value).toBe(true)
+    expect(form.fields.address.valid.path).toEqual(['address', 'valid'])
   })
 
   it('schema field named "errors" at depth 2 reads the schema field, not aggregate', () => {
@@ -824,7 +824,7 @@ describe('surface materialisation — predictable representations + complex erro
       focused: null,
       blurred: null,
       touched: null,
-      isConnected: false,
+      connected: false,
       updatedAt: expect.anything(),
       errors: [],
       path: expect.any(Array),

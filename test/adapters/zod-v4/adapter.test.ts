@@ -90,6 +90,83 @@ describe('zod v4 adapter', () => {
       })
       expect(result.data).toEqual({ email: 'seeded@x', count: 0 })
     })
+
+    describe('sync-error seeding when async siblings throw the strict parse', () => {
+      it('seeds sync-refinement errors at construction when an async sibling exists', () => {
+        // Mixed schema: word's sync refine fails on '', email's async
+        // refine causes the original safeParse to throw. Pre-fix the
+        // catch swallowed both. Now the sync-only retry surfaces
+        // word's error.
+        const schema = z.object({
+          word: z.string().refine((v) => v.length > 0, 'word required'),
+          email: z.email().refine(async (v) => Promise.resolve(v !== 'taken@x.com'), 'taken'),
+        })
+        const adapter = zodAdapter(schema)('f')
+        const result = adapter.getDefaultValues({
+          useDefaultSchemaValues: false,
+          constraints: { word: '', email: 'a@b.com' },
+          strict: true,
+        })
+        expect(result.success).toBe(false)
+        const messages = result.errors?.map((e) => e.message) ?? []
+        expect(messages).toContain('word required')
+        // Async refine error must NOT appear at construction —
+        // deferred to the post-mount async pass.
+        expect(messages).not.toContain('taken')
+      })
+
+      it('returns success when the sync portion is clean but async refines exist', () => {
+        // Sync refine satisfied; async would throw the original
+        // parse. Sync-only retry succeeds → lax success, deferring
+        // the async verdict to the post-mount pass.
+        const schema = z.object({
+          word: z.string().refine((v) => v.length > 0, 'word required'),
+          email: z.email().refine(async (v) => Promise.resolve(v !== 'taken@x.com'), 'taken'),
+        })
+        const adapter = zodAdapter(schema)('f')
+        const result = adapter.getDefaultValues({
+          useDefaultSchemaValues: false,
+          constraints: { word: 'hello', email: 'a@b.com' },
+          strict: true,
+        })
+        expect(result.success).toBe(true)
+        expect(result.errors).toBeUndefined()
+      })
+
+      it('strict: false bypasses the sync-only retry path entirely', () => {
+        // Lax mode is a global opt-out; even an obviously failing
+        // sync default returns success without the retry running.
+        const schema = z.object({
+          word: z.string().refine((v) => v.length > 0, 'word required'),
+          email: z.email().refine(async (v) => Promise.resolve(v !== 'taken@x.com'), 'taken'),
+        })
+        const adapter = zodAdapter(schema)('f')
+        const result = adapter.getDefaultValues({
+          useDefaultSchemaValues: false,
+          constraints: { word: '', email: 'a@b.com' },
+          strict: false,
+        })
+        expect(result.success).toBe(true)
+        expect(result.errors).toBeUndefined()
+      })
+
+      it('pure-async schema with clean defaults regression: still returns success', () => {
+        // Regression: schemas with only async refines and no sync
+        // failures must continue to return success at construction.
+        // The sync-only retry strips the async refine and parses
+        // clean.
+        const schema = z.object({
+          email: z.email().refine(async () => Promise.resolve(true), 'never fires'),
+        })
+        const adapter = zodAdapter(schema)('f')
+        const result = adapter.getDefaultValues({
+          useDefaultSchemaValues: false,
+          constraints: { email: 'a@b.com' },
+          strict: true,
+        })
+        expect(result.success).toBe(true)
+      })
+    })
   })
 
   describe('validateAtPath', () => {

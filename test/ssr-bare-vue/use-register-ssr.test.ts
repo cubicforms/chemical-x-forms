@@ -149,6 +149,56 @@ describe('useRegister — SSR (renderToString)', () => {
     expect(html).not.toMatch(/<label[^>]*\svalue=/)
   })
 
+  it('rv.path / rv.segments / rv.formKey are readable during SSR render and land in markup', async () => {
+    // Wrapper-component primitives need to survive the SSR pass — a
+    // child component using `useRegister()` to derive field state via
+    // `rv.segments` should work server-side without flicker on
+    // hydration. A new child template that emits `rv.path` /
+    // `rv.formKey` into data-attrs gives a positive signal that the
+    // shallowReadonly proxy doesn't trip over `renderToString`.
+    const SsrPathChild = defineComponent({
+      name: 'SsrPathChild',
+      inheritAttrs: false,
+      setup() {
+        const register = useRegister()
+        return () => {
+          const rv = register.value
+          return Vue.h('span', {
+            'data-atta-path': rv?.path ?? '',
+            'data-atta-segments': rv !== undefined ? JSON.stringify(rv.segments) : '',
+            'data-atta-form-key': rv?.formKey ?? '',
+          })
+        }
+      },
+    })
+
+    const Parent = defineComponent({
+      name: 'SsrPathParent',
+      components: { SsrPathChild },
+      setup() {
+        const form = useForm<Form>({
+          schema: fakeSchema<Form>({ email: '', password: '', color: '' }),
+          key: 'ssr-path-test',
+        })
+        return { form }
+      },
+      render: compileWithTransforms(
+        `<div>
+           <SsrPathChild v-register="form.register('email')" />
+         </div>`
+      ),
+    })
+    const app = createSSRApp(Parent)
+    app.use(createAttaform({ override: true }))
+    const html = await renderToString(app)
+
+    // Path is the canonical PathKey (JSON-encoded). Vue's HTML
+    // serializer escapes `"` as `&quot;`, so check the escaped form.
+    expect(html).toContain('data-atta-path="[&quot;email&quot;]"')
+    expect(html).toContain('data-atta-segments="[&quot;email&quot;]"')
+    expect(html).toContain('data-atta-form-key="ssr-path-test"')
+  })
+
   it('multiple children with v-register render without false-positive warns', async () => {
     // Attaform reproduced 5+ warns in one page; this asserts the
     // single-child case generalises so a regression on instance-keyed

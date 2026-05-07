@@ -2,7 +2,151 @@
 
 ## Unreleased
 
-_No unreleased changes yet._
+- **Sync-refinement errors seed at construction even when an async
+  sibling is present (zod-v4 adapter).** When a strict-mode form's
+  schema mixes sync and async refinements, sync-refinement
+  violations on the supplied `defaultValues` now seed into
+  `state.schemaErrors` immediately at construction. Pre-fix, the
+  presence of any async refine caused `safeParse` to throw, and
+  the catch swallowed every sync-refinement error along with the
+  async ones — sync verdicts only landed after the post-mount
+  async pass, so UI bound to construction-time errors ("fix N
+  errors" badges, the demo REPL stepper) flickered for a frame.
+  The catch now retries against a sync-only variant of the schema
+  via a new `stripAsyncChecks` helper that filters async refines
+  while preserving every sync refine (`.refine`, `.superRefine`,
+  built-in checks). Async-only verdicts stay deferred to the
+  post-mount async pass — that contract is unchanged. The zod-v3
+  adapter carries the same conceptual gap; lifting v3 to parity
+  requires a probe-and-parse detection scheme or a slim-schema
+  redesign and is tracked as a follow-up.
+
+- **Discriminated-union access extends to `form.values` and to
+  every path-resolver type.** `form.values.cargo.permitNumber`
+  (oversized-only) now types as `string | undefined` regardless of
+  active variant — the same merged-view treatment we applied to
+  `form.fields` and `form.errors`. Implementation lifts `ValuesSurface`
+  via a new `LiftedValueShape<T>` helper. In addition, `NestedType`
+  and `NestedReadType` switched to `KeyofUnion` / `ValueOfUnion` so
+  path lookups on a union descent agree with `FlatPath`: every path
+  `FlatPath` says is reachable now resolves to a useful value type
+  (variant-specific paths previously collapsed to `never` because
+  `keyof (A|B|C)` is the intersection of variant keys, not the
+  union). Net: `setValue('cargo.tempMinC', 4)`, `toRef('cargo.tempMinC')`,
+  `register('cargo.tempMinC')` etc. now typecheck on schemas where
+  `tempMinC` is variant-only. Strict-variant write-side input still
+  required by `setValue` and `defaultValues` whole-cargo writes —
+  `WriteShape` itself stays distributive.
+
+- **Discriminated-union forms expose merged metadata proxies.**
+  `form.fields.X.Y` and `form.errors.X.Y` chained access now resolves
+  for variant-only keys regardless of which discriminant is active.
+  Reading `form.fields.cargo.tempMinC` (refrigerated-only) when the
+  active variant is `dry` types as `FieldStateLeaf<number | undefined>`
+  and resolves to a stable stub `FieldStateView` at runtime
+  (`value: undefined`, `errors: []`, `valid: true`). Reading
+  `form.errors.cargo.tempMinC` types as
+  `readonly ValidationError[] | undefined` and yields `undefined` when
+  no error is present at that path. Implementation: a "lift" in
+  `FieldStateMapEntry`, `FieldStateMap`, and `ErrorsProxyShape` that
+  merges variant key sets via two new utility types
+  (`KeyofUnion`, `ValueOfUnion`), gated by `IsUnion<T>` so single-
+  object schemas skip the merge entirely (zero perf cost on the
+  common case). Value-shape types (`form.values`, `defaultValues`,
+  `setValue` parameters) intentionally keep their existing
+  discriminated-union distribution so consumers can still pattern-
+  match on the runtime variant; the merged view of values is
+  available through `form.fields.X.Y.value` or `form.values('X.Y')`.
+
+- **Tuple-segment overload across path APIs.** New array-form
+  overloads accept segments directly:
+
+  ```ts
+  form.register(['cargo', 'items', 0, 'sku'])
+  form.setValue(['cargo', 'items', 0, 'sku'], 'SKU-1001')
+  form.toRef(['cargo', 'items', 0, 'sku'])
+  form.fields(['cargo', 'items', 0, 'sku'])    // typed FieldStateLeaf
+  form.errors(['cargo', 'items', 0, 'sku'])    // typed errors
+  form.errorsAt(['cargo', 'items'])             // typed prefix
+  ```
+
+  Resolved value types match the dotted-string forms exactly.
+  Particularly useful inside a `v-for` over a prefix variable, where
+  dotted concatenation widens a literal union to plain `string`:
+  `form.register([block.prefix, 'line1'])` preserves
+  `'pickup' | 'delivery'` through the joined path. New `JoinSegments`
+  helper (in `runtime/types/types-core`) is exported alongside; no
+  new path-segment union type is added (the constraint reuses the
+  existing `FlatPath` / `RegisterFlatPath`). Type-check perf on the
+  public surface (`src/`) is unchanged in practice (within ±20ms of
+  baseline). The `fields()` and `errors()` callables keep their
+  permissive `(segments: ReadonlyArray<string | number>)` overload as
+  an untyped fallback so dynamic `Path`-typed inputs (e.g.
+  `RegisterValue.segments`) keep working without casts.
+
+- **`form.errorsAt(path)`.** Read-side aggregate that returns every
+  error whose path **is** the given path **or descends from it**.
+  Aggregates schema, blank-derived, and user-injected errors in the
+  same order as `meta.errors`. Accepts both dotted-string
+  (`errorsAt('cargo.items.0')`) and segment-array
+  (`errorsAt(['cargo', 'items', 0])`) paths. Root prefix
+  (`errorsAt('')` / `errorsAt([])`) matches every error including
+  form-level. Useful for step-validity gating in multi-step forms:
+  `STEP_PATHS[step].every(p => form.errorsAt(p).length === 0)`.
+  New `isPathPrefix` helper exported from the path primitives.
+
+- **`form.setFormErrors` / `form.clearFormErrors`.** First-class
+  shortcut for the form-level error case (entries at `path: []`).
+  Replaces just the form-level slot — field errors are untouched —
+  with the library filling in `path: []`, `formKey`, and a default
+  `code: 'atta:form-error'` per entry. Pass an empty array (or call
+  `clearFormErrors()`) to clear. Form-level errors continue to
+  surface in `meta.errors` only; the path-keyed `form.errors` proxy
+  intentionally excludes them.
+
+- **Per-field `validating` and `valid`.** `form.fields.<path>.validating`
+  is the per-field analogue of `form.meta.validating` — `true` while a
+  field-level run is in flight at this path (debounced
+  `validate-on-change` runs and cross-field re-validations targeting
+  the path). Whole-form `validate()` / `validateAsync()` calls drive
+  `meta.validating` only and don't flip per-field flags.
+  `form.fields.<path>.valid` is the composite signal: `true` iff
+  `errors` is empty AND `validating` is `false`. Same shape as
+  `meta.valid`. Reactive Map under the hood (`fieldValidationCounts`
+  on `FormStore`); `> 0` semantics so a brief abort/restart overlap
+  doesn't flicker `validating` off mid-flight.
+
+- **Breaking — `is`-prefix dropped from state-boolean property names.**
+  `form.meta` and `FieldStateLeaf` now use bare adjectives for state
+  flags, reserving the `is` prefix for type-predicate functions
+  (`isPlainRecord(x)`, `isUnset(x)`). Renames:
+
+  | Before                          | After                         |
+  | ------------------------------- | ----------------------------- |
+  | `form.meta.isDirty`             | `form.meta.dirty`             |
+  | `form.meta.isValid`             | `form.meta.valid` (see below) |
+  | `form.meta.isSubmitting`        | `form.meta.submitting`        |
+  | `form.meta.isValidating`        | `form.meta.validating`        |
+  | `form.fields.<path>.isConnected`| `form.fields.<path>.connected`|
+
+  `meta.valid` ALSO gets a stricter semantic: it now requires both
+  empty error stores AND `!validating`, so the value can't read `true`
+  during the brief window between an async refinement starting and
+  resolving. The looser "errors-only" check is gone.
+
+  Internal renames mirror the public ones: `state.isSubmitting` →
+  `state.submitting`, `state.isSSR` → `state.ssr`, `FieldRecord.isConnected`
+  → `FieldRecord.connected`, `FormStoreOptions.isSSR` → `ssr`,
+  `AttaformRegistry.isSSR` → `ssr`. The DOM API `Element.isConnected`
+  is untouched (W3C standard).
+
+- **Reactive `RegisterValue.path` proxy.** `register('email').path`
+  now tracks under `computed` / `watchEffect` reads — rotating the
+  parent's path binding re-runs dependents in the child without a
+  manual `.value` step. `formKey`, `formInstanceId`, and `segments`
+  added alongside; `path` keeps its canonical JSON-encoded `PathKey`
+  form, `segments` is the consumer-friendly array. `RegisterValue` is
+  now `shallowReadonly(shallowReactive(...))`.
 
 ## v0.14.0
 _No unreleased changes yet._

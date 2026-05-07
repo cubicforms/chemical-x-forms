@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { z as zV3 } from 'zod-v3'
-import { useForm } from '../../src/zod'
+import { isUnset, unset, useForm } from '../../src/zod'
 import { useForm as useFormV3 } from '../../src/zod-v3'
 import { AttaformErrorCode } from '../../src/runtime/core/error-codes'
 import { createAttaform } from '../../src/runtime/core/plugin'
@@ -1494,5 +1494,248 @@ describe('inactive-variant errors — filtered from form.errors, schemaErrors re
     // The email variant's construction-seeded error is still in the
     // store but stays filtered out.
     expect(api.errors('notify.address')).toBeUndefined()
+  })
+})
+
+/**
+ * Cargo 4-variant fixture for the discriminated-union "lift" — runtime
+ * smoke that the lifted types match the runtime's stub semantics for
+ * inactive-variant chained access. Mirrors the demo schema's shape
+ * (`type` discriminator with `dry | refrigerated | hazmat | oversized`)
+ * so a regression here would break the canonical demo flow.
+ */
+const cargoLiftSchema = z.object({
+  reference: z.string(),
+  cargo: z.discriminatedUnion('type', [
+    z.object({
+      type: z.literal('dry'),
+      items: z.array(z.object({ sku: z.string() })),
+      fragile: z.boolean(),
+    }),
+    z.object({
+      type: z.literal('refrigerated'),
+      items: z.array(z.object({ sku: z.string() })),
+      tempMinC: z.number().min(-30).max(20),
+      tempMaxC: z.number().min(-30).max(20),
+    }),
+  ]),
+})
+
+type CargoLiftApi = ReturnType<typeof useForm<typeof cargoLiftSchema>>
+
+function mountCargoLift(): { app: App; api: CargoLiftApi } {
+  const handle: { api?: CargoLiftApi } = {}
+  const App = defineComponent({
+    setup() {
+      handle.api = useForm({
+        schema: cargoLiftSchema,
+        key: 'cargo-lift',
+        defaultValues: {
+          reference: 'SHP-1',
+          cargo: { type: 'dry', items: [], fragile: false },
+        },
+      })
+      return () => h('div')
+    },
+  })
+  const app = createApp(App).use(createAttaform({ override: true }))
+  app.mount(document.createElement('div'))
+  return { app, api: handle.api as CargoLiftApi }
+}
+
+describe('discriminated-union lift — chained metadata-proxy access', () => {
+  const apps: App[] = []
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+  })
+
+  it('api.fields.cargo.tempMinC returns a stable stub on the inactive (dry) variant', () => {
+    const { app, api } = mountCargoLift()
+    apps.push(app)
+
+    // Active variant is `dry`; `tempMinC` lives only on `refrigerated`.
+    // The lifted FieldStateMapEntry makes this access type-safe; the
+    // runtime returns a stable FieldStateView stub so consumers don't
+    // need a guard before reading metadata.
+    const tempMin = api.fields.cargo.tempMinC
+    expect(tempMin.value).toBeUndefined()
+    expect(tempMin.errors).toEqual([])
+    expect(tempMin.valid).toBe(true)
+    expect(tempMin.validating).toBe(false)
+  })
+
+  it('api.fields.cargo.tempMinC.value re-evaluates after a variant switch', async () => {
+    const { app, api } = mountCargoLift()
+    apps.push(app)
+
+    api.setValue('cargo', { type: 'refrigerated', items: [], tempMinC: 4, tempMaxC: 8 })
+    await nextTick()
+    expect(api.fields.cargo.tempMinC.value).toBe(4)
+    expect(api.fields.cargo.tempMaxC.value).toBe(8)
+
+    // Switch back to dry — the lifted leaf collapses to the stub.
+    api.setValue('cargo', { type: 'dry', items: [], fragile: false })
+    await nextTick()
+    expect(api.fields.cargo.tempMinC.value).toBeUndefined()
+    expect(api.fields.cargo.fragile.value).toBe(false)
+  })
+
+  it('api.errors.cargo.tempMinC chain yields undefined when no errors are present', () => {
+    const { app, api } = mountCargoLift()
+    apps.push(app)
+    expect(api.errors.cargo.tempMinC).toBeUndefined()
+    expect(api.errors.cargo.fragile).toBeUndefined()
+  })
+
+  it('api.errors.cargo.tempMinC populates after a schema-violating write on the refrigerated variant', async () => {
+    const { app, api } = mountCargoLift()
+    apps.push(app)
+
+    api.setValue('cargo', { type: 'refrigerated', items: [], tempMinC: 4, tempMaxC: 8 })
+    await nextTick()
+
+    // -100 violates min(-30); drive validation explicitly so the leaf
+    // lights up regardless of debounce timing.
+    api.setValue('cargo.tempMinC', -100)
+    const result = await api.validateAsync()
+    expect(result.success).toBe(false)
+    await nextTick()
+
+    const errs = api.errors.cargo.tempMinC
+    expect(errs).toBeDefined()
+    expect(errs).toHaveLength(1)
+  })
+})
+
+/**
+ * Whole-union Case B writes carrying `unset` sentinels in the
+ * consumer-supplied object — the homepage REPL flow. The demo's
+ * `setCargoType('oversized')` calls
+ *
+ *   form.setValue('cargo', {
+ *     type: 'oversized',
+ *     items: [],
+ *     lengthCm: unset, widthCm: unset, heightCm: unset,
+ *     permitNumber: unset,
+ *   })
+ *
+ * after a prior switch into a different variant. The construction-
+ * time `walkUnsetSentinels` only scrubs `defaultValues`; later
+ * setValue path-form writes were forwarded straight into the
+ * variant reshape, so the symbols spread into `finalValue` next to
+ * the discriminator and reached storage. Once the next read tried
+ * to operate on a Symbol-valued leaf, the active-variant branch in
+ * the template stopped resolving and the UI froze on the previous
+ * variant's body.
+ */
+describe('discriminated-union variant switch — whole-union write with unset sentinels', () => {
+  const cargoSchema = z.object({
+    cargo: z.discriminatedUnion('type', [
+      z.object({
+        type: z.literal('dry'),
+        fragile: z.boolean(),
+      }),
+      z.object({
+        type: z.literal('hazmat'),
+        unNumber: z.string(),
+        acknowledged: z.boolean(),
+      }),
+      z.object({
+        type: z.literal('oversized'),
+        lengthCm: z.number().positive(),
+        widthCm: z.number().positive(),
+        heightCm: z.number().positive(),
+        permitNumber: z.string().optional(),
+      }),
+    ]),
+  })
+  type CargoApi = Omit<UseFormReturnType<z.output<typeof cargoSchema>>, 'setValue'> & {
+    setValue: (path: string, value: unknown) => boolean
+    values: { cargo: { type: string } & Record<string, unknown> }
+  }
+
+  const apps: App[] = []
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+  })
+
+  function mountCargo(): CargoApi {
+    const handle: { api?: CargoApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: cargoSchema,
+          key: `du-unset-case-b-${Math.random().toString(36).slice(2)}`,
+          defaultValues: { cargo: { type: 'dry', fragile: false } },
+        }) as unknown as CargoApi
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform({ override: true }))
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    return handle.api as CargoApi
+  }
+
+  it('switches dry → hazmat → oversized when the oversized write carries unset sentinels', async () => {
+    const api = mountCargo()
+
+    api.setValue('cargo', { type: 'hazmat', unNumber: 'UN0000', acknowledged: false })
+    await nextTick()
+    expect(api.values.cargo.type).toBe('hazmat')
+
+    api.setValue('cargo', {
+      type: 'oversized',
+      lengthCm: unset,
+      widthCm: unset,
+      heightCm: unset,
+      permitNumber: unset,
+    })
+    await nextTick()
+
+    expect(api.values.cargo.type).toBe('oversized')
+  })
+
+  it('scrubs unset sentinels out of storage on a Case B write', async () => {
+    const api = mountCargo()
+
+    api.setValue('cargo', {
+      type: 'oversized',
+      lengthCm: unset,
+      widthCm: unset,
+      heightCm: unset,
+      permitNumber: unset,
+    })
+    await nextTick()
+
+    // Storage holds the schema's slim defaults — never raw symbols.
+    // Without this gate, `JSON.stringify(form.values())` (the demo's
+    // review pane) would silently drop these leaves and persistence
+    // would fail to round-trip.
+    expect(isUnset(api.values.cargo.lengthCm)).toBe(false)
+    expect(isUnset(api.values.cargo.widthCm)).toBe(false)
+    expect(isUnset(api.values.cargo.heightCm)).toBe(false)
+    expect(isUnset(api.values.cargo.permitNumber)).toBe(false)
+    expect(typeof api.values.cargo.lengthCm).toBe('number')
+    expect(typeof api.values.cargo.widthCm).toBe('number')
+    expect(typeof api.values.cargo.heightCm).toBe('number')
+  })
+
+  it('marks the unset-flagged leaves blank so display stays empty', async () => {
+    const api = mountCargo()
+
+    api.setValue('cargo', {
+      type: 'oversized',
+      lengthCm: unset,
+      widthCm: unset,
+      heightCm: unset,
+      permitNumber: unset,
+    })
+    await nextTick()
+
+    expect(api.fields.cargo.lengthCm.blank).toBe(true)
+    expect(api.fields.cargo.widthCm.blank).toBe(true)
+    expect(api.fields.cargo.heightCm.blank).toBe(true)
+    expect(api.fields.cargo.permitNumber.blank).toBe(true)
   })
 })

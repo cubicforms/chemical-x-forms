@@ -30,7 +30,7 @@ Options:
 
 | Field      | Type               | Description                                                                                          |
 | ---------- | ------------------ | ---------------------------------------------------------------------------------------------------- |
-| `override` | `boolean`          | Force `isSSR` to `true` / `false`. Auto-detected otherwise.                                          |
+| `override` | `boolean`          | Force `ssr` to `true` / `false`. Auto-detected otherwise.                                            |
 | `devtools` | `boolean`          | Enable the Vue DevTools plugin. Default `true`. See [recipe](/docs/recipes/devtools).                |
 | `defaults` | `AttaformDefaults` | App-level option defaults applied to every `useForm` call. See [recipe](/docs/recipes/app-defaults). |
 
@@ -125,6 +125,61 @@ handles it and `useRegister` is unnecessary.
 </template>
 ```
 
+### Wrapper-component primitives
+
+The `RegisterValue` returned by `register(...)` is a `shallowReadonly`
+reactive proxy. Top-level reads track in `computed` / `watchEffect`,
+mutations are blocked, and inner refs (`innerRef`, `displayValue`)
+keep their `Ref` shape. A generic wrapper using `useRegister()` can
+derive field state from the captured RV alone — no separate `path`
+prop:
+
+| Field            | Type                 | Use                                                                          |
+| ---------------- | -------------------- | ---------------------------------------------------------------------------- |
+| `path`           | `PathKey`            | Canonical, JSON-encoded path (`'["items",0,"name"]'`). Stable Map / Set key. |
+| `segments`       | `readonly Segment[]` | Frozen path array (`['items', 0, 'name']`). Pass to `form.fields(...)`.      |
+| `formKey`        | `string`             | Mirrors `form.key` so wrappers can target a specific form by key.            |
+| `formInstanceId` | `string`             | Per-mount runtime id — disambiguates sibling forms with the same `key`.      |
+
+`useRegister()` itself returns a hybrid Proxy: it answers like a
+`Ref<RegisterValue | undefined>` to Vue's template auto-unwrap (so
+`v-register="rv"` keeps feeding the directive the underlying RV and
+its path-migration diff stays sound across renders), AND every other
+property read pierces to the captured RV — so `rv.path`,
+`rv.segments`, `rv.formKey` work directly in `<script setup>` without
+a `.value` step. Reads inside reactive scopes still track the
+underlying `shallowRef`, so derived state re-runs when the parent
+rebinds.
+
+```vue
+<!-- ErrorRow.vue — wraps any v-register binding, shows the first error -->
+<script setup lang="ts">
+  import { computed } from 'vue'
+  import { injectForm, useRegister } from 'attaform'
+
+  const rv = useRegister()
+  const form = injectForm()
+  const field = computed(() => (form !== null ? form.fields(rv.segments) : undefined))
+</script>
+
+<template>
+  <div class="row">
+    <slot />
+    <small v-if="field?.validating">Checking…</small>
+    <small v-else-if="field?.errors[0]">{{ field.errors[0].message }}</small>
+    <!-- Or read the path directly in the template — auto-unwrap pierces:
+         <small>bound to {{ rv.path }}</small> -->
+  </div>
+</template>
+```
+
+`field.validating` is the per-field analogue of
+`form.meta.validating`: it's `true` while a field-level validation
+run (debounced or cross-field) is in flight at this path. Whole-form
+`validate()` / `validateAsync()` calls drive `form.meta.validating`
+only — they don't flip per-field flags. See [field-level validation
+recipe](/docs/recipes/field-level-validation#per-field).
+
 ### Modifiers
 
 `v-register` mirrors Vue's `v-model` modifier semantics, scoped per
@@ -148,7 +203,7 @@ directive's listener completes silently and the DOM keeps the user's
 input. The form state stays at its previous value. Field-level
 validation will surface a refinement error on the next render.
 
-### Custom assigners — `@update:registerValue`
+### Custom assigners
 
 Replaces the directive's default "DOM event → extract value →
 `rv.setValueWithInternalPath(value)`" bridge. The handler receives
@@ -192,7 +247,7 @@ The handler can be a top-level function outside `setup()` since
 `rv` is supplied by the directive. Multiple listeners on the same
 element receive `(value, rv)` in registration order.
 
-### Transforms — `register(path, { transforms: [...] })`
+### Transforms
 
 A pipeline of pure functions for normalizing user input. Composed
 left-to-right; runs inside the directive's assigner across every
@@ -394,7 +449,7 @@ brand.
 ## Other exports
 
 - `parseDottedPath(s)` — string → `Segment[]`
-- `assignKey` — `unique symbol` used to install a custom assigner on a v-register-bound element. For most cases prefer the `@update:registerValue` listener (see [Custom assigners](#custom-assigners--updateregistervalue)); reach for `assignKey` only when you need pre-mount installation (typically Web Components).
+- `assignKey` — `unique symbol` used to install a custom assigner on a v-register-bound element. For most cases prefer the `@update:registerValue` listener (see [Custom assigners](#custom-assigners)); reach for `assignKey` only when you need pre-mount installation (typically Web Components).
 - `isRegisterValue(x)` — type guard for the object `register` returns
 - `RegisterTransform` — `(value: unknown) => unknown` — type alias for entries in `register(path, { transforms: [...] })`. Generic-erased so a personal library of transforms works across any path type; see [Transforms](#transforms--registerpath--transforms-).
 - `ROOT_PATH` / `ROOT_PATH_KEY` — the empty path and its key

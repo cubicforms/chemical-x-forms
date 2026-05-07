@@ -19,11 +19,11 @@ import {
  * the input in render order. But Vue's SSR is single-pass top-to-bottom,
  * so a template like:
  *
- *   <pre>{{ form.fields.password.isConnected }}</pre>
+ *   <pre>{{ form.fields.password.connected }}</pre>
  *   <input v-register="form.register('password')" />
  *
  * evaluates the `<pre>` first, BEFORE the v-register wrapper has had a
- * chance to fire. The serialized HTML carries `isConnected: false` for
+ * chance to fire. The serialized HTML carries `connected: false` for
  * password — and the post-hydration steady state shows `true`, leaving
  * a one-tick `false → true` flicker visible to the user.
  *
@@ -37,7 +37,7 @@ import {
  *
  * The binding's expression resolves to `undefined`, which Vue's SSR
  * renderer drops (no `data-atta-pre-mark` attribute appears in the
- * rendered HTML). The side effect — flipping `isConnected: true` on
+ * rendered HTML). The side effect — flipping `connected: true` on
  * each field record — is the only output we want.
  *
  * Companion to `vRegisterHintTransform`: register both, with this one
@@ -90,7 +90,7 @@ const PREAMBLE_ATTR = 'data-atta-pre-mark'
  * Vue compiler node transform that hoists `v-register`'s SSR
  * connection marks to the root of the template. Together with
  * `vRegisterHintTransform`, ensures expressions earlier in the
- * template that read `getFieldState(path).isConnected` see the
+ * template that read `getFieldState(path).connected` see the
  * correct value during the server's single-pass render.
  *
  * Must run before `vRegisterHintTransform`. Wired automatically

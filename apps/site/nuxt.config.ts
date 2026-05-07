@@ -1,3 +1,4 @@
+import { logger as nuxtKitLogger } from '@nuxt/kit'
 import tailwindcss from '@tailwindcss/vite'
 import { rendererRich, transformerTwoslash } from '@shikijs/twoslash'
 import type { Logger, LogOptions } from 'vite'
@@ -28,6 +29,19 @@ import zodPkg from 'zod/package.json'
 //      /lib/repl-workers/* (the static copies bundle:repl emits).
 //      Filtered narrowly to the editor + vue worker filenames; any
 //      other "URL doesn't exist at build time" warning still surfaces.
+//
+//   3. "Unresolvable optimizeDeps.include entries: @nuxtjs/mdc > …"
+//      — @nuxtjs/mdc (pulled in transitively by @nuxt/content) declares
+//      its own remark/rehype/unified sub-deps in its Vite optimizeDeps
+//      manifest. Under pnpm's strict hoist, those sub-deps live deep
+//      in the workspace store; Vite's resolver (rooted at apps/site)
+//      can't reach them via the `parent > child` traversal because
+//      @nuxtjs/mdc itself isn't surfaced at apps/site/node_modules.
+//      The warning is harmless — Nuxt's own machinery re-resolves the
+//      deps through @nuxt/content's pipeline at module-load time —
+//      and listing the entries explicitly in our config doesn't help
+//      (they'd just add their own unresolvable copies). Filtered
+//      narrowly to the @nuxtjs/mdc prefix.
 function isFilteredBuildWarning(msg: string): boolean {
   if (msg.includes('Sourcemap is likely to be incorrect')) return true
   if (
@@ -36,7 +50,26 @@ function isFilteredBuildWarning(msg: string): boolean {
   ) {
     return true
   }
+  if (msg.includes('Unresolvable optimizeDeps.include entries') && msg.includes('@nuxtjs/mdc')) {
+    return true
+  }
   return false
+}
+
+// Wrap @nuxt/kit's Consola logger at config-evaluation time so the
+// Nuxt vite-builder's "Unresolvable optimizeDeps.include entries"
+// warning (emitted via `logger.warn(...)` from inside the optimizer
+// poll) flows through our filter. The Vite-side `customLogger` wrap
+// further down doesn't catch this — vite-builder constructs a fresh
+// Vite logger AND also calls into the kit Consola directly for the
+// optimize-deps callback, so we need both layers.
+{
+  const origWarn = nuxtKitLogger.warn.bind(nuxtKitLogger)
+  nuxtKitLogger.warn = ((...args: unknown[]) => {
+    const head = args[0]
+    if (typeof head === 'string' && isFilteredBuildWarning(head)) return
+    return origWarn(...(args as [unknown, ...unknown[]]))
+  }) as typeof nuxtKitLogger.warn
 }
 
 export default defineNuxtConfig({

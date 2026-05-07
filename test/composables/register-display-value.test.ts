@@ -5,7 +5,11 @@ import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { canonicalizePath } from '../../src/runtime/core/paths'
 import { attachRegistryToApp, createRegistry } from '../../src/runtime/core/registry'
-import type { UseFormReturnType } from '../../src/runtime/types/types-api'
+import type {
+  InternalRegisterValue,
+  RegisterValue,
+  UseFormReturnType,
+} from '../../src/runtime/types/types-api'
 
 /**
  * Coverage for `displayValue` and `markBlank` on
@@ -13,6 +17,18 @@ import type { UseFormReturnType } from '../../src/runtime/types/types-api'
  * directive (commit 5) plug these into the UI flow; here we test the
  * contract directly through the register binding.
  */
+
+/**
+ * `lastTypedForm` lives on the directive-private `InternalRegisterValue`
+ * extension. These tests exercise the typed-form contract directly,
+ * so they reach through the public RV to that internal slot via a
+ * targeted cast — the runtime field is always present (every RV is
+ * an `InternalRegisterValue` underneath), but the public type omits
+ * it to keep the surface focused on wrapper-component primitives.
+ */
+function asInternal<V>(rv: RegisterValue<V>): InternalRegisterValue<V> {
+  return rv as InternalRegisterValue<V>
+}
 
 function setupForm<F extends z.ZodObject<Record<string, z.ZodType>>>(
   schema: F,
@@ -128,10 +144,10 @@ describe('displayValue', () => {
     const binding = form.register('count')
     form.setValue('count', 100)
     expect(binding.displayValue.value).toBe('100')
-    binding.lastTypedForm.value = '1e2'
+    asInternal(binding).lastTypedForm.value = '1e2'
     expect(binding.displayValue.value).toBe('1e2')
     // Clearing falls back to the canonical String form (post-blur path).
-    binding.lastTypedForm.value = null
+    asInternal(binding).lastTypedForm.value = null
     expect(binding.displayValue.value).toBe('100')
   })
 
@@ -144,7 +160,7 @@ describe('displayValue', () => {
     apps.push(app)
     const binding = form.register('count')
     form.setValue('count', 100)
-    binding.lastTypedForm.value = '1e2'
+    asInternal(binding).lastTypedForm.value = '1e2'
     expect(binding.displayValue.value).toBe('1e2')
     // Storage advances to 200; `parseFloat('1e2') === 100 ≠ 200`, so
     // the typed form is ignored and the honest canonical wins.
@@ -161,8 +177,8 @@ describe('displayValue', () => {
     const schema = z.object({ count: z.number() })
     const { app, form } = setupForm(schema, { count: 0 })
     apps.push(app)
-    const a = form.register('count')
-    const b = form.register('count')
+    const a = asInternal(form.register('count'))
+    const b = asInternal(form.register('count'))
     // Same ref instance — sharing is by identity, not by copy.
     expect(a.lastTypedForm).toBe(b.lastTypedForm)
     form.setValue('count', 100)

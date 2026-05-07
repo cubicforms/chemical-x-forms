@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { Menu, X, Github, BookOpen, FlaskConical } from 'lucide-vue-next'
+  import { Menu, X, BookOpen, FlaskConical } from 'lucide-vue-next'
 
   const navLinks = [
     { label: 'Docs', to: '/docs', icon: BookOpen },
@@ -211,7 +211,7 @@
             class="inline-flex items-center gap-2 rounded-md px-3 py-3 text-base font-medium text-fg-muted transition-colors duration-(--duration-fast) ease-(--ease-out-quart) hover:bg-surface hover:text-fg"
             @click="mobileNavOpen = false"
           >
-            <Github class="h-4 w-4" :stroke-width="2" />
+            <UiBrandGithub class="h-4 w-4" />
             <span>GitHub</span>
           </a>
         </nav>

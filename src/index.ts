@@ -130,13 +130,24 @@ export type {
   FlatPath,
   GenericForm,
   IsTuple,
+  IsUnion,
+  JoinSegments,
+  KeyofUnion,
+  LiftedValueShape,
   NestedReadType,
   NestedType,
+  ValueOfUnion,
 } from './runtime/types/types-core'
 
 // Path primitives — exposed for consumers writing custom adapters that
 // need to canonicalise user-provided paths.
-export { canonicalizePath, parseDottedPath, ROOT_PATH, ROOT_PATH_KEY } from './runtime/core/paths'
+export {
+  canonicalizePath,
+  isPathPrefix,
+  parseDottedPath,
+  ROOT_PATH,
+  ROOT_PATH_KEY,
+} from './runtime/core/paths'
 export type { Path, PathKey, Segment } from './runtime/core/paths'
 
 // Error classes — every library-emitted error extends `AttaformError`, so

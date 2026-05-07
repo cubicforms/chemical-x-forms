@@ -94,7 +94,7 @@ values the server rendered.
 
 - `form` — the current reactive value.
 - `errors` — every error currently in the store.
-- `fields` — touched / focused / blurred / isConnected / updatedAt
+- `fields` — touched / focused / blurred / connected / updatedAt
   per path.
 
 ## Common issues
@@ -112,7 +112,7 @@ values the server rendered.
 By design. Any mutation re-runs validation, which can replace the
 errors. To keep server-provided errors around until the user
 dirties the field, gate the display on
-`form.fields.<path>.touched` or on `form.meta.isDirty`.
+`form.fields.<path>.touched` or on `form.meta.dirty`.
 
 **"Some fields look right, others don't."**
 

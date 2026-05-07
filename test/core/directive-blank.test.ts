@@ -7,7 +7,7 @@ import { ref, type Ref } from 'vue'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createPersistOptInRegistry } from '../../src/runtime/core/persistence/opt-in-registry'
 import type { PathKey } from '../../src/runtime/core/paths'
-import type { RegisterValue } from '../../src/runtime/types/types-api'
+import type { InternalRegisterValue, RegisterValue } from '../../src/runtime/types/types-api'
 
 /**
  * Coverage for commit 5's directive wiring: empty / non-castable input
@@ -21,7 +21,7 @@ import type { RegisterValue } from '../../src/runtime/types/types-api'
 type Spy = ReturnType<typeof vi.fn>
 
 function makeRegisterValue<T>(initial: T): {
-  value: RegisterValue<T>
+  value: InternalRegisterValue<T>
   markBlank: Spy
   setValue: Spy
 } {
@@ -37,8 +37,10 @@ function makeRegisterValue<T>(initial: T): {
     return true
   })
   const markBlank = vi.fn(() => true)
-  const value: RegisterValue<T> = {
-    innerRef: innerRef as RegisterValue<T>['innerRef'],
+  // Typed as InternalRegisterValue so the mock can carry `lastTypedForm`
+  // (directive-private; off the public RegisterValue type).
+  const value: InternalRegisterValue<T> = {
+    innerRef: innerRef as InternalRegisterValue<T>['innerRef'],
     displayValue: ref('') as Readonly<Ref<string>>,
     markBlank,
     lastTypedForm: ref<string | null>(null),
@@ -47,6 +49,9 @@ function makeRegisterValue<T>(initial: T): {
     setValueWithInternalPath: setValue,
     markConnectedOptimistically: () => undefined,
     path: 'mock' as PathKey,
+    segments: Object.freeze(['mock']),
+    formKey: 'mock-form',
+    formInstanceId: 'mock-inst',
     persist: false,
     acknowledgeSensitive: false,
     persistOptIns: createPersistOptInRegistry(),

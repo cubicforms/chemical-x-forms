@@ -24,8 +24,8 @@ describe('createRegistry', () => {
   })
 
   it('captures the SSR flag from options', () => {
-    expect(createRegistry({ override: true }).isSSR).toBe(true)
-    expect(createRegistry({ override: false }).isSSR).toBe(false)
+    expect(createRegistry({ override: true }).ssr).toBe(true)
+    expect(createRegistry({ override: false }).ssr).toBe(false)
   })
 
   it('initialises forms + pendingHydration as empty Maps', () => {

@@ -340,13 +340,13 @@ export function buildSurfaceProxy<TLeaf>(opts: SurfaceOptions<TLeaf>): SurfacePr
         // Schema field at a leaf-prop name: descend further. The leaf-prop
         // and the schema field name occupy DIFFERENT proxy depths because
         // the schema's leaf-aware structure puts them on different paths.
-        // Example: schema `{ address: { isValid: boolean } }`:
+        // Example: schema `{ address: { valid: boolean } }`:
         //   form.fields.address          → container proxy
-        //   form.fields.address.isValid  → leaf-view (here)
-        //   form.fields.address.isValid.isValid → THIS read; 'isValid'
+        //   form.fields.address.valid  → leaf-view (here)
+        //   form.fields.address.valid.valid → THIS read; 'valid'
         //                                          IS in leafKeys → returns
         //                                          the FieldStateView's
-        //                                          isValid prop.
+        //                                          valid prop.
         // For non-leafKeys reads, descend by appending the key to segments
         // and re-checking leaf-ness. This handles container-shaped
         // schema fields hanging off a leaf-named ancestor (rare but

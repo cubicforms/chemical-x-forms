@@ -1,6 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, ref, withDirectives, type App } from 'vue'
+import {
+  createApp,
+  defineComponent,
+  h,
+  nextTick,
+  onMounted,
+  ref,
+  withDirectives,
+  type App,
+} from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { assignKey, vRegister } from '../../src/runtime/core/directive'
@@ -226,6 +235,52 @@ describe('pattern 2: v-register on a non-form root WITH useRegister (recommended
     innerInput.dispatchEvent(new Event('focus', { bubbles: true }))
     await flush()
     expect(mounted.api.fields.email.focused).toBe(true)
+  })
+
+  it('wrapper-component primitives: child derives field state from rv.segments alone', async () => {
+    // The wrapper-component story: the child reads `useRegister()`'s
+    // captured RV and uses `rv.segments` + `injectForm()` to derive
+    // FieldStateView (errors, dirty, touched, value, …) without the
+    // parent re-threading a `path` prop. Today the child has the same
+    // form via the api capture in `mountWithChild`, but the API surface
+    // we exercise — `api.fields(rv.segments)` — is what
+    // `injectForm()` would surface to a real wrapper component.
+    const captured: { rv?: RegisterValue } = {}
+    const ChildCapturingRv = defineComponent({
+      name: 'ChildCapturingRv',
+      inheritAttrs: false,
+      setup() {
+        const register = useRegister()
+        onMounted(() => {
+          // Capture the inner RV after mount so the test can assert
+          // against the proxy-wrapped value the child sees.
+          if (register.value !== undefined) captured.rv = register.value
+        })
+        return { register }
+      },
+      render() {
+        return h('div', { class: 'wrapper' }, [
+          withDirectives(h('input', { type: 'text', class: 'inner' }), [
+            [vRegister, this.register],
+          ]),
+        ])
+      },
+    })
+
+    mounted = await mountWithChild(ChildCapturingRv)
+    expect(captured.rv).toBeDefined()
+    if (captured.rv === undefined) throw new Error('unreachable')
+
+    expect(captured.rv.path).toBe(JSON.stringify(['email']))
+    expect(captured.rv.segments).toEqual(['email'])
+    expect(captured.rv.formKey).toBe(mounted.api.key)
+    expect(typeof captured.rv.formInstanceId).toBe('string')
+
+    // The wrapper-component contract: `form.fields(rv.segments)`
+    // resolves to the same FieldStateView as `form.fields.email`.
+    const viaSegments = mounted.api.fields(captured.rv.segments)
+    const viaProperty = mounted.api.fields.email
+    expect(viaSegments).toBe(viaProperty)
   })
 })
 

@@ -427,7 +427,7 @@ interface ZodCheckInternals {
   _zod?: { def?: { fn?: unknown } }
 }
 
-function isAsyncCheck(check: unknown): boolean {
+export function isAsyncCheck(check: unknown): boolean {
   if (typeof check !== 'object' || check === null) return false
   const c = check as ZodCheckInternals
   const fn = c._def?.fn ?? c.def?.fn ?? c._zod?.def?.fn

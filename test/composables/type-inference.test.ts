@@ -297,6 +297,120 @@ describe('useForm type inference — primitive-array register paths', () => {
   })
 })
 
+describe('useForm type inference — setValue tuple-segment overload', () => {
+  it('segment-array form accepts the same value as the dotted-string form', () => {
+    form.setValue(['email'], 'a@b.c')
+    form.setValue(['profile', 'name'], 'alice')
+    form.setValue(['posts', 0, 'title'], 'hi')
+  })
+
+  it('rejects an invalid tuple', () => {
+    // @ts-expect-error - 'nonexistent' isn't a top-level key on Form.
+    form.setValue(['nonexistent'], 'x')
+  })
+
+  it('rejects a value whose type does not match the resolved leaf', () => {
+    // @ts-expect-error - email is string, not number.
+    form.setValue(['email'], 123)
+  })
+})
+
+describe('useForm type inference — fields() callable tuple form', () => {
+  it('literal tuple resolves to a typed FieldStateLeaf', () => {
+    const f = form.fields(['email'])
+    expectTypeOf(f.value).toEqualTypeOf<string>()
+  })
+
+  it('literal tuple drilling into nested object', () => {
+    const f = form.fields(['profile', 'name'])
+    expectTypeOf(f.value).toEqualTypeOf<string>()
+  })
+
+  it('dynamic Path-typed segments hit the untyped fallback', () => {
+    // Forwarding `RegisterValue.segments` (typed as Path) preserves
+    // back-compat: JoinSegments<Path> resolves to plain `string`, which
+    // doesn't fit FlatPath<Form>'s literal union, so the typed overload
+    // is skipped and the permissive fallback returns `unknown`.
+    const dynamic: ReadonlyArray<string | number> = ['email']
+    const result = form.fields(dynamic)
+    expectTypeOf(result).toEqualTypeOf<unknown>()
+  })
+})
+
+describe('useForm type inference — errors() callable tuple form', () => {
+  it('literal tuple returns ValidationError[] | undefined', () => {
+    const errs = form.errors(['email'])
+    // Match shape (the public ValidationError type is exported, but
+    // accessing the imported alias here would couple the test to its
+    // import path — toMatchTypeOf is enough).
+    expectTypeOf(errs).toMatchTypeOf<readonly { message: string }[] | undefined>()
+  })
+
+  it('dynamic Path-typed segments hit the untyped fallback', () => {
+    const dynamic: ReadonlyArray<string | number> = ['email']
+    const result = form.errors(dynamic)
+    expectTypeOf(result).toMatchTypeOf<readonly { message: string }[] | undefined>()
+  })
+})
+
+describe('useForm type inference — errorsAt tuple form', () => {
+  it('accepts dotted-string and literal tuple', () => {
+    form.errorsAt('profile.name')
+    form.errorsAt(['profile', 'name'])
+    form.errorsAt('') // root
+    form.errorsAt([]) // root tuple
+  })
+
+  it('rejects an invalid literal tuple', () => {
+    // @ts-expect-error - 'nonexistent' isn't a top-level key.
+    form.errorsAt(['nonexistent'])
+  })
+})
+
+describe('useForm type inference — toRef tuple-segment overload', () => {
+  it('segment-array form returns a Readonly<Ref<T>> matching the dotted form', () => {
+    expectTypeOf(form.toRef(['email']).value).toEqualTypeOf<string>()
+    expectTypeOf(form.toRef(['profile', 'name']).value).toEqualTypeOf<string>()
+    expectTypeOf(form.toRef(['posts', 0, 'title']).value).toEqualTypeOf<string | undefined>()
+  })
+
+  it('rejects an invalid tuple', () => {
+    // @ts-expect-error - 'nonexistent' isn't a top-level key on Form.
+    form.toRef(['nonexistent'])
+  })
+})
+
+describe('useForm type inference — register tuple-segment overload', () => {
+  it('segment-array form resolves to the same value type as dotted-string', () => {
+    expectTypeOf(form.register(['email']).innerRef.value).toEqualTypeOf<string>()
+    expectTypeOf(form.register(['profile', 'name']).innerRef.value).toEqualTypeOf<string>()
+    expectTypeOf(form.register(['posts', 0, 'title']).innerRef.value).toEqualTypeOf<
+      string | undefined
+    >()
+    expectTypeOf(form.register(['tags', 0]).innerRef.value).toEqualTypeOf<string | undefined>()
+  })
+
+  it('rejects an invalid tuple', () => {
+    // @ts-expect-error - 'nonexistent' isn't a top-level key on Form.
+    form.register(['nonexistent'])
+    // @ts-expect-error - 'wrong' isn't a member of profile.
+    form.register(['profile', 'wrong'])
+  })
+
+  it('preserves a literal-union prefix through the tuple form', () => {
+    // The v-for case: a prefix variable typed as a literal union must
+    // distribute through the tuple to the joined path's union, so the
+    // resolved RegisterValue.innerRef.value is the union of leaves.
+    const prefix = 'profile' as const
+    expectTypeOf(form.register([prefix, 'name']).innerRef.value).toEqualTypeOf<string>()
+  })
+
+  it('passes options through on both forms', () => {
+    expectTypeOf(form.register('email', { persist: true }).innerRef.value).toEqualTypeOf<string>()
+    expectTypeOf(form.register(['email'], { persist: true }).innerRef.value).toEqualTypeOf<string>()
+  })
+})
+
 describe('useForm type inference — handleSubmit', () => {
   it('callback `values` parameter is the fully inferred Form', () => {
     form.handleSubmit((values) => {
@@ -347,10 +461,10 @@ describe('useForm type inference — form-level state bundle', () => {
     // `Readonly<ComputedRef<X>>`. Inside reactive() they auto-unwrap
     // on access — so the template footgun (binding to the wrapper
     // object instead of its .value) is gone at the type level too.
-    expectTypeOf(form.meta.isDirty).toEqualTypeOf<boolean>()
-    expectTypeOf(form.meta.isValid).toEqualTypeOf<boolean>()
-    expectTypeOf(form.meta.isSubmitting).toEqualTypeOf<boolean>()
-    expectTypeOf(form.meta.isValidating).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.dirty).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.valid).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.submitting).toEqualTypeOf<boolean>()
+    expectTypeOf(form.meta.validating).toEqualTypeOf<boolean>()
     expectTypeOf(form.meta.submitCount).toEqualTypeOf<number>()
     expectTypeOf(form.meta.submitError).toEqualTypeOf<unknown>()
     expectTypeOf(form.meta.canUndo).toEqualTypeOf<boolean>()
@@ -360,7 +474,7 @@ describe('useForm type inference — form-level state bundle', () => {
 
   it('rejects writes (state is readonly at the type level)', () => {
     // @ts-expect-error — state is readonly; prefer setValue / handleSubmit
-    form.meta.isSubmitting = true
+    form.meta.submitting = true
     // @ts-expect-error — same for counters
     form.meta.submitCount = 5
   })

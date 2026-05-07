@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { getSlimSchema, stripRefinements } from '../../../src/runtime/adapters/zod-v4/strip'
+import {
+  getSlimSchema,
+  stripAsyncChecks,
+  stripRefinements,
+} from '../../../src/runtime/adapters/zod-v4/strip'
 
 describe('stripRefinements', () => {
   it('z.string().min(3) → parses empty string without error', () => {
@@ -139,5 +143,143 @@ describe('getSlimSchema — container-level constraints survive strict mode', ()
     const slim = getSlimSchema(schema, { stripRefinements: false })
     expect(slim.safeParse({ a: 2, b: 1 }).success).toBe(false)
     expect(slim.safeParse({ a: 1, b: 2 }).success).toBe(true)
+  })
+})
+
+describe('stripAsyncChecks', () => {
+  it('strips a top-level async refine so safeParse no longer throws', () => {
+    const schema = z.string().refine(async (v) => Promise.resolve(v === 'OK'), 'must be OK')
+    // Sanity: original throws on sync safeParse.
+    expect(() => schema.safeParse('OK')).toThrow()
+    const stripped = stripAsyncChecks(schema)
+    expect(() => stripped.safeParse('OK')).not.toThrow()
+    expect(stripped.safeParse('OK').success).toBe(true)
+    // Async check stripped → previously-failing 'nope' now passes.
+    expect(stripped.safeParse('nope').success).toBe(true)
+  })
+
+  it('preserves a sync refine while stripping a co-located async refine', () => {
+    const schema = z
+      .string()
+      .refine(async (v) => Promise.resolve(v.length > 0), 'must be non-empty (async)')
+      .refine((v) => v !== 'banned', 'banned word (sync)')
+    const stripped = stripAsyncChecks(schema)
+    // Sync survives — 'banned' rejected, with the sync message.
+    const banned = stripped.safeParse('banned')
+    expect(banned.success).toBe(false)
+    if (!banned.success) {
+      expect(banned.error.issues[0]?.message).toBe('banned word (sync)')
+    }
+    // Async stripped — empty string no longer rejected.
+    expect(stripped.safeParse('').success).toBe(true)
+  })
+
+  it('seeds sync sibling errors when an async sibling would throw the original', () => {
+    const schema = z.object({
+      word: z.string().refine((v) => v.length > 0, 'word required'),
+      email: z.email().refine(async (v) => Promise.resolve(v !== 'taken@x.com'), 'taken'),
+    })
+    expect(() => schema.safeParse({ word: '', email: 'a@b.com' })).toThrow()
+    const stripped = stripAsyncChecks(schema)
+    const result = stripped.safeParse({ word: '', email: 'a@b.com' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message)
+      expect(messages).toContain('word required')
+      // Async refine error must NOT appear — it was stripped.
+      expect(messages).not.toContain('taken')
+    }
+  })
+
+  it('strips a cross-field async refine at the object root, preserving sync child refines', () => {
+    const schema = z
+      .object({ word: z.string().refine((v) => v.length > 0, 'word required') })
+      .refine(async (data) => Promise.resolve(data.word.length < 100), 'too long (async)')
+    expect(() => schema.safeParse({ word: '' })).toThrow()
+    const stripped = stripAsyncChecks(schema)
+    const result = stripped.safeParse({ word: '' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toBe('word required')
+    }
+  })
+
+  it('recurses through .optional()', () => {
+    const schema = z
+      .string()
+      .refine(async (v) => Promise.resolve(v === 'OK'))
+      .optional()
+    const stripped = stripAsyncChecks(schema)
+    expect(stripped.safeParse(undefined).success).toBe(true)
+    expect(stripped.safeParse('anything').success).toBe(true)
+  })
+
+  it('recurses through .nullable()', () => {
+    const schema = z
+      .string()
+      .refine(async () => Promise.resolve(true))
+      .nullable()
+    const stripped = stripAsyncChecks(schema)
+    expect(stripped.safeParse(null).success).toBe(true)
+    expect(stripped.safeParse('value').success).toBe(true)
+  })
+
+  it('recurses through .default(v)', () => {
+    const schema = z
+      .string()
+      .refine(async () => Promise.resolve(true))
+      .default('seed')
+    const stripped = stripAsyncChecks(schema)
+    const result = stripped.safeParse(undefined)
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data).toBe('seed')
+  })
+
+  it('strips async checks inside discriminated-union variants independently', () => {
+    const schema = z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('a'),
+        x: z.string().refine((v) => v.length > 0, 'x required'),
+      }),
+      z.object({
+        kind: z.literal('b'),
+        y: z.string().refine(async (v) => Promise.resolve(v === 'OK'), 'y must be OK'),
+      }),
+    ])
+    expect(() => schema.safeParse({ kind: 'b', y: 'nope' })).toThrow()
+    const stripped = stripAsyncChecks(schema)
+    // Variant b: async stripped, anything passes for y.
+    expect(stripped.safeParse({ kind: 'b', y: 'nope' }).success).toBe(true)
+    // Variant a: sync refine survives.
+    const result = stripped.safeParse({ kind: 'a', x: '' })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toBe('x required')
+    }
+  })
+
+  it('terminates on z.lazy() schemas with async refines (cycle-safe)', () => {
+    type Tree = { name: string; children: Tree[] }
+    const treeSchema: z.ZodType<Tree> = z.lazy(() =>
+      z.object({
+        name: z.string().refine(async (v) => Promise.resolve(v.length > 0), 'name required'),
+        children: z.array(treeSchema),
+      })
+    )
+    // Smoke: stripAsyncChecks must not infinite-loop.
+    const stripped = stripAsyncChecks(treeSchema)
+    expect(stripped.safeParse({ name: '', children: [] }).success).toBe(true)
+  })
+
+  it('passes pure-sync schemas through behaviourally unchanged', () => {
+    const schema = z.object({
+      a: z.string().min(3, 'min 3'),
+      b: z.number().int().positive(),
+    })
+    const stripped = stripAsyncChecks(schema)
+    // Same parse verdicts — sync schemas have no async checks to strip.
+    expect(stripped.safeParse({ a: 'ab', b: 1 }).success).toBe(false)
+    expect(stripped.safeParse({ a: 'abc', b: 1 }).success).toBe(true)
+    expect(stripped.safeParse({ a: 'abc', b: -1 }).success).toBe(false)
   })
 })

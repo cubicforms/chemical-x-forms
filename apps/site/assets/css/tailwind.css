@@ -367,6 +367,26 @@ body {
   color: var(--color-accent-soft-fg);
 }
 
+/* Inline code chip — single source of truth for the pill we drop
+   around `useForm`-style references in body copy. Used by the
+   `<UiInlineCode>` component (direct template usage) and the
+   `renderInlineCode` util (parses backtick-wrapped tokens in data
+   strings into the same chip). The thin border is the load-bearing
+   bit: `bg-surface` alone disappears against the hero glow.
+   `0.875em` keeps the chip visually subordinate to the surrounding
+   text; `font-weight: 700` keeps the code reference legible without
+   reaching for the brand-soft tint. */
+@utility inline-code {
+  border-radius: 0.25rem;
+  border: 0.0625rem solid var(--color-border);
+  background: var(--color-surface);
+  padding: 0.125rem 0.375rem;
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  font-weight: 700;
+  color: var(--color-fg);
+}
+
 /* ─── Shared keyframes ───
    Every animation across the site sources from this set. Keeping them
    here (rather than scoped to component <style> blocks) means a single

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
-import { isRef } from 'vue'
+import { describe, expect, it, vi } from 'vitest'
+import { computed, isRef } from 'vue'
 import { createFormStore } from '../../src/runtime/core/create-form-store'
 import { AnonPersistError } from '../../src/runtime/core/errors'
 import { buildRegister } from '../../src/runtime/core/register-api'
@@ -8,13 +8,13 @@ import { fakeSchema } from '../utils/fake-schema'
 
 type F = { email: string; note: string }
 
-function makeRegister(opts?: { isSSR?: boolean }) {
+function makeRegister(opts?: { ssr?: boolean; formKey?: string; instanceId?: string }) {
   const state = createFormStore<F>({
-    formKey: `r-${Math.random().toString(36).slice(2)}`,
+    formKey: opts?.formKey ?? `r-${Math.random().toString(36).slice(2)}`,
     schema: fakeSchema<F>({ email: '', note: '' }),
-    ...(opts?.isSSR === true ? { isSSR: true } : {}),
+    ...(opts?.ssr === true ? { ssr: true } : {}),
   })
-  return { state, register: buildRegister(state, 'test:inst') }
+  return { state, register: buildRegister(state, opts?.instanceId ?? 'test:inst') }
 }
 
 describe('buildRegister', () => {
@@ -46,13 +46,86 @@ describe('buildRegister', () => {
     })
   })
 
+  describe('wrapper-component primitives (path, segments, formKey, formInstanceId)', () => {
+    // These four fields are the wrapper-component story: a generic
+    // child using `useRegister()` derives field state and form
+    // identity from them without re-threading props from the parent.
+
+    it('exposes the canonical PathKey string', () => {
+      const { register } = makeRegister()
+      const rv = register(['email'])
+      // PathKey is the JSON-encoded segment array — opaque, stable for
+      // Map/Set keys, equality, and log strings.
+      expect(rv.path).toBe('["email"]')
+      expect(typeof rv.path).toBe('string')
+      expect(isRef(rv.path)).toBe(false)
+    })
+
+    it('canonicalises array and dotted paths to the same PathKey', () => {
+      const { register } = makeRegister()
+      expect(register(['email']).path).toBe(register('email').path)
+    })
+
+    it('exposes structured segments for form.fields(rv.segments) lookups', () => {
+      const { register } = makeRegister()
+      expect(register('email').segments).toEqual(['email'])
+      expect(register(['items', 0, 'name']).segments).toEqual(['items', 0, 'name'])
+    })
+
+    it('freezes segments so wrapper components can pass them without copying', () => {
+      const { register } = makeRegister()
+      const rv = register(['email'])
+      expect(Object.isFrozen(rv.segments)).toBe(true)
+    })
+
+    it('exposes the form key from the FormStore', () => {
+      const { register } = makeRegister({ formKey: 'signup-form' })
+      const rv = register(['email'])
+      expect(rv.formKey).toBe('signup-form')
+    })
+
+    it('exposes the formInstanceId passed to buildRegister', () => {
+      const { register } = makeRegister({ instanceId: 'inst-42' })
+      const rv = register(['email'])
+      expect(rv.formInstanceId).toBe('inst-42')
+    })
+
+    it('reads track via the shallowReadonly proxy in a computed scope', () => {
+      // Vue's shallowReadonly proxy registers reads as dependencies.
+      // The values themselves never mutate within an RV's lifetime
+      // (path / formKey / formInstanceId are baked at construction),
+      // but the tracking pass should still visit them — important
+      // for wrapper-component patterns that read these inside a
+      // `computed(() => form.fields(rv.value?.segments))` derivation.
+      const { register } = makeRegister({ formKey: 'k', instanceId: 'i' })
+      const rv = register(['email'])
+      const derived = computed(() => `${rv.formKey}:${rv.formInstanceId}:${rv.segments.join('.')}`)
+      expect(derived.value).toBe('k:i:email')
+    })
+
+    it('blocks direct field mutation under shallowReadonly', () => {
+      const { register } = makeRegister()
+      const rv = register(['email'])
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      try {
+        // Vue's readonly proxies log a console.warn and silently drop
+        // the write — the value is unchanged, no exception thrown.
+        ;(rv as unknown as { path: string }).path = 'phone' as never
+        expect(rv.path).toBe('["email"]')
+        expect(warn).toHaveBeenCalled()
+      } finally {
+        warn.mockRestore()
+      }
+    })
+  })
+
   describe('element registration', () => {
     it('registers interactive elements and tracks connection', () => {
       const { state, register } = makeRegister()
       const rv = register(['email'])
       const input = document.createElement('input')
       rv.registerElement(input)
-      expect(state.getFieldRecord(['email'])?.isConnected).toBe(true)
+      expect(state.getFieldRecord(['email'])?.connected).toBe(true)
     })
 
     it('skips non-interactive elements silently', () => {
@@ -61,7 +134,7 @@ describe('buildRegister', () => {
       const div = document.createElement('div')
       rv.registerElement(div)
       // The field record exists (from init) but was not connected via this call.
-      expect(state.getFieldRecord(['email'])?.isConnected).toBe(false)
+      expect(state.getFieldRecord(['email'])?.connected).toBe(false)
     })
 
     it('attaches focus/blur listeners that drive markFocused', () => {
@@ -97,7 +170,7 @@ describe('buildRegister', () => {
       // markFocused isn't called post-deregister — the record still reflects
       // the last value before deregister.
       expect(state.getFieldRecord(['email'])?.focused).toBe(true)
-      expect(state.getFieldRecord(['email'])?.isConnected).toBe(false)
+      expect(state.getFieldRecord(['email'])?.connected).toBe(false)
       document.body.removeChild(input)
     })
   })
@@ -122,8 +195,8 @@ describe('buildRegister', () => {
       document.body.appendChild(input)
       rvA.registerElement(input)
 
-      expect(stateA.getFieldRecord(['email'])?.isConnected).toBe(true)
-      expect(stateB.getFieldRecord(['email'])?.isConnected).toBe(false)
+      expect(stateA.getFieldRecord(['email'])?.connected).toBe(true)
+      expect(stateB.getFieldRecord(['email'])?.connected).toBe(false)
 
       // Writing to A's registerValue doesn't touch B.
       rvA.setValueWithInternalPath('only-in-A')
@@ -145,7 +218,7 @@ describe('buildRegister', () => {
       // server render of `register({ persist: true })` would falsely
       // throw. The client-side hydration pass re-checks against a
       // freshly-wired module and throws correctly if the misuse is real.
-      const { register } = makeRegister({ isSSR: true })
+      const { register } = makeRegister({ ssr: true })
       expect(() => register('email', { persist: true })).not.toThrow()
     })
 

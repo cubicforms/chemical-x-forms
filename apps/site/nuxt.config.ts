@@ -106,7 +106,36 @@ function isFilteredBuildWarning(msg: string): boolean {
 }
 
 export default defineNuxtConfig({
-  modules: ['@nuxt/content', '@nuxt/fonts', '@nuxtjs/color-mode'],
+  modules: ['@nuxt/content', '@nuxt/fonts', '@nuxtjs/color-mode', '@nuxtjs/seo'],
+  // @nuxtjs/seo is the umbrella that wires sitemap.xml + robots.txt +
+  // per-page canonical links + nuxt-og-image (per-route social cards)
+  // + nuxt-schema-org (JSON-LD) + nuxt-link-checker behind one module.
+  // The auto-generated sitemap walks the prerendered routes set;
+  // canonicals + OG meta + structured-data URLs all resolve against
+  // `site.url`.
+  //
+  // Pin to the **www** host — the apex `attaform.com` 301s to
+  // `www.attaform.com` at the Vercel layer. Emitting sitemap entries
+  // (and canonicals, and og:url) on the apex would mean every URL the
+  // crawler hits redirects, wasting crawl budget and signaling
+  // duplicate content. The canonical host is www; everything we ship
+  // points there directly.
+  site: {
+    url: 'https://www.attaform.com',
+    name: 'Attaform',
+    description:
+      'A type-safe, schema-driven form library for Vue 3 and Nuxt with first-class Zod support.',
+    defaultLocale: 'en',
+  },
+  // nuxt-og-image renders Vue components to 1200×630 PNGs at build
+  // time via Satori. We're on the generic Nitro `static` preset
+  // (rather than the platform-specific `vercel-static`), and the
+  // module logs a one-time "Unknown Nitro preset" warning at config
+  // time about that — it's informational, the prerender path falls
+  // through to node-server compatibility which is correct for our
+  // SSG flow. Inter (the site's primary font) is already pulled in
+  // by @nuxt/fonts; nuxt-og-image picks it up automatically — no
+  // explicit fonts config needed at this layer.
   // @nuxt/content's Shiki integration. Pinning the themes and lang
   // set here is intentional — the default theme set is broad and
   // bundles ~50 grammars we don't need; whitelisting brings the

@@ -9,6 +9,32 @@
   // does Attaform do" in 5 seconds.
   const { attaformVersion } = useRuntimeConfig().public
 
+  // Schema.org SoftwareApplication entry — the canonical structured-
+  // data shape for a developer library / dev-tool. Eligible for
+  // Google's software rich card (the side panel that shows name,
+  // category, rating, license, and a screenshot when present). Even
+  // without the rich card, this is a strong topical signal: the page
+  // is about a piece of software named "Attaform" in the
+  // DeveloperApplication category, free, MIT-licensed, by a named
+  // author. `defineSoftwareApp` from nuxt-schema-org auto-resolves
+  // url + image against `site.url`.
+  useSchemaOrg([
+    defineSoftwareApp({
+      name: 'Attaform',
+      applicationCategory: 'DeveloperApplication',
+      operatingSystem: 'Cross-platform',
+      description:
+        'A type-safe, schema-driven form library for Vue 3 and Nuxt with first-class Zod support.',
+      url: 'https://www.attaform.com',
+      author: { '@type': 'Person', name: 'Oswald Chisala' },
+      // MIT-licensed and free — surface the price-zero offer so the
+      // SoftwareApplication node validates against Google's required
+      // properties (name, description, applicationCategory, offers).
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+      softwareVersion: attaformVersion,
+    }),
+  ])
+
   const features = [
     {
       icon: ShieldCheck,
@@ -100,14 +126,30 @@
             A schema is a form's <span class="text-accent">best friend.</span>
           </h1>
 
-          <p
-            class="reveal-step max-w-2xl text-xl text-balance text-fg-muted"
-            style="--reveal-step-delay: 120ms"
+          <!-- Keyword-rich sub-headline. The H1 above keeps its voice;
+               this H2 gives crawlers (and readers who skim) the plain-
+               English value prop in one line, with the high-intent
+               phrase "form library for Vue 3 and Nuxt" near the top of
+               the document outline. The next section's "Why Attaform"
+               H2 is its own heading lower down — having two H2s on the
+               page is fine; document-outline tools just thread them
+               sequentially. -->
+          <h2
+            class="reveal-step max-w-3xl text-xl font-medium tracking-tight text-balance text-fg-muted sm:text-2xl"
+            style="--reveal-step-delay: 100ms"
           >
-            <span class="font-semibold text-fg">Attaform</span> is a
-            <span class="font-medium text-accent">type-safe, schema-driven</span> form library for
-            Vue&nbsp;3 and Nuxt, with first-class Zod support. Point a schema at
-            <UiInlineCode>useForm</UiInlineCode> and live your best life.
+            The
+            <span class="font-semibold text-fg">type-safe, schema-driven</span> form library for
+            Vue&nbsp;3 and Nuxt.
+          </h2>
+
+          <p
+            class="reveal-step max-w-2xl text-lg text-balance text-fg-muted"
+            style="--reveal-step-delay: 140ms"
+          >
+            Point a Zod schema at <UiInlineCode>useForm</UiInlineCode>, and Attaform turns it into
+            validated reactive state — typed paths, inferred values, live errors, SSR-safe out of
+            the box. Live your best life.
           </p>
 
           <div class="reveal-step flex flex-wrap gap-3" style="--reveal-step-delay: 180ms">
@@ -176,6 +218,13 @@
               </p>
             </div>
           </div>
+        </div>
+
+        <div class="mt-12">
+          <UiButton to="/docs/why" variant="link">
+            <span>Read the full case for Attaform</span>
+            <ArrowRight class="h-4 w-4" :stroke-width="2.25" />
+          </UiButton>
         </div>
       </UiContainer>
     </section>

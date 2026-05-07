@@ -31,6 +31,56 @@
   useSeoMeta({
     description: () => page.value?.description ?? '',
   })
+
+  // Structured data per doc page. Two nodes:
+  //
+  //   1. BreadcrumbList — drives the breadcrumb display in SERPs
+  //      (replaces the URL line under the result title with a
+  //      readable trail). Reuses the same segment array as the on-
+  //      page <DocsBreadcrumb> via useDocsBreadcrumb so on-page text
+  //      and the structured trail can never drift apart. We keep
+  //      only segments that have a URL; section labels (e.g. the
+  //      middle "Recipes" entry, which is a sidebar grouping rather
+  //      than a navigable page) are dropped because Google's
+  //      BreadcrumbList parser expects every non-final item to
+  //      resolve to a page.
+  //
+  //   2. TechArticle — adds article-class signals (headline, author,
+  //      description, mainEntityOfPage) so a docs page reads as
+  //      "technical article about a software topic" rather than a
+  //      generic page. Pairs with the SoftwareApplication node on
+  //      the homepage to build out a coherent knowledge graph.
+  //
+  // defineBreadcrumb / defineArticle come from nuxt-schema-org's
+  // auto-imports (registered by @nuxtjs/seo). They handle the
+  // @context / @type boilerplate and resolve relative URLs against
+  // site.url.
+  const breadcrumbs = useDocsBreadcrumb()
+  useSchemaOrg([
+    defineBreadcrumb({
+      itemListElement: computed(() =>
+        breadcrumbs.value
+          .filter((seg) => seg.to)
+          .map((seg, idx) => ({ name: seg.label, item: seg.to as string, position: idx + 1 }))
+          .concat([
+            {
+              name: page.value?.title ?? 'Documentation',
+              item: route.path,
+              position: breadcrumbs.value.filter((seg) => seg.to).length + 1,
+            },
+          ])
+      ),
+    }),
+    defineArticle({
+      '@type': 'TechArticle',
+      headline: () => page.value?.title ?? 'Documentation',
+      description: () => page.value?.description ?? '',
+      author: { '@type': 'Person', name: 'Oswald Chisala' },
+      // mainEntityOfPage is inferred from the current route by
+      // defineArticle when omitted — let it resolve against site.url
+      // so we don't have to construct the canonical URL ourselves.
+    }),
+  ])
 </script>
 
 <template>

@@ -38,6 +38,14 @@
     twitterDescription:
       'A type-safe, schema-driven form library for Vue 3 and Nuxt with first-class Zod support.',
   })
+
+  // Default OG card for every route. Pages override per-route by
+  // calling `defineOgImageComponent` with their own props; pages
+  // that say nothing inherit this baseline. nuxt-og-image hands the
+  // component the page's resolved title + description from the head
+  // store, so the per-page card automatically carries the right
+  // text without each page having to wire it explicitly.
+  defineOgImageComponent('Default')
 </script>
 
 <template>

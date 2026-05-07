@@ -319,7 +319,7 @@
           @click.stop
         >
           <!-- Search input row -->
-          <div class="flex h-14 items-center gap-3 border-b border-border px-4">
+          <div class="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
             <Search class="h-5 w-5 shrink-0 text-fg-muted" :stroke-width="2" />
             <input
               ref="inputRef"
@@ -465,7 +465,7 @@
 
           <!-- Keyboard hints footer -->
           <div
-            class="flex h-10 items-center gap-4 border-t border-border bg-surface/60 px-4 text-xs text-fg-subtle"
+            class="flex h-10 shrink-0 items-center gap-4 border-t border-border bg-surface/60 px-4 text-xs text-fg-subtle"
           >
             <span class="flex items-center gap-1.5">
               <kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd>

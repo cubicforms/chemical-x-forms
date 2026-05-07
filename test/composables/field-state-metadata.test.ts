@@ -148,6 +148,86 @@ describe('FieldState metadata — Zod 4 adapter', () => {
     expect(form.fields('pickup').label).toBe('Pickup address')
     expect(form.fields('delivery').label).toBe('Delivery address')
   })
+
+  it('optional schema fields surface as a non-undefined FieldState wrapper', () => {
+    // FieldStateMap's mapped type strips the optional flag (-?:) so
+    // optional schema fields always have a FieldState record at form
+    // construction. The optionality of the underlying VALUE survives
+    // (FieldState<string | undefined>) — only the wrapper is locked
+    // non-undefined. Without this, every reactive read on an
+    // optional path would need an optional-chain in consumer code.
+    const schema = zV4.object({
+      required: zV4.string(),
+      maybe: zV4.string().optional(),
+    })
+    const form = mountWithApp(() =>
+      useFormV4({
+        schema,
+        key: `meta-v4-optional-${Math.random()}`,
+        defaultValues: { required: '' },
+      })
+    )
+    // Wrapper is present — direct dot-access works without ?.
+    expect(form.fields.maybe).toBeDefined()
+    expect(form.fields.maybe.label).toBe('Maybe')
+    // Value carries the optional via the inner type.
+    expect(form.fields.maybe.value).toBeUndefined()
+  })
+
+  it('shares a single registration across every array-element index', () => {
+    // The path-walker visits an array's element schema once (with a
+    // synthetic [0] index) so a single registration on lineItemSchema
+    // populates the path-meta map at index 0 only. Runtime accesses
+    // via [1], [2], … rely on the resolver's fallback: when the path
+    // map misses, getFieldMeta(schema) on the schema reference still
+    // returns the registered payload. Together that means every
+    // array index reads the same metadata from one .register() call —
+    // the canonical "every line item shares the schema" pattern.
+    const lineItemSchema = zV4
+      .object({
+        sku: zV4.string().register(fieldMetaV4, { label: 'SKU' }),
+      })
+      .register(fieldMetaV4, { label: 'Line item' })
+    const schema = zV4.object({
+      items: zV4.array(lineItemSchema),
+    })
+    const form = mountWithApp(() =>
+      useFormV4({
+        schema,
+        key: `meta-v4-array-${Math.random()}`,
+        defaultValues: { items: [{ sku: 'A' }, { sku: 'B' }, { sku: 'C' }] },
+      })
+    )
+    // Every index reads the same per-leaf label.
+    expect(form.fields.items[0].sku.label).toBe('SKU')
+    expect(form.fields.items[1].sku.label).toBe('SKU')
+    expect(form.fields.items[2].sku.label).toBe('SKU')
+    // Container call-form picks up the array-element label too.
+    expect(form.fields(['items', 0]).label).toBe('Line item')
+    expect(form.fields(['items', 2]).label).toBe('Line item')
+  })
+
+  it('walks through z.lazy() to register metadata on the dereferenced inner', () => {
+    // The walker's lazy case unwraps the deferred schema and recurses
+    // through its body. Useful for schemas that reference shared
+    // sub-shapes via lazy without forming a true self-reference (the
+    // adapter rejects recursive lazy upstream). Without the lazy case
+    // metadata on the inner would be unreachable.
+    const inner = zV4.object({
+      handle: zV4.string().register(fieldMetaV4, { label: 'Handle' }),
+    })
+    const schema = zV4.object({
+      profile: zV4.lazy(() => inner),
+    })
+    const form = mountWithApp(() =>
+      useFormV4({
+        schema,
+        key: `meta-v4-lazy-${Math.random()}`,
+        defaultValues: { profile: { handle: '' } },
+      })
+    )
+    expect(form.fields.profile.handle.label).toBe('Handle')
+  })
 })
 
 describe('FieldState metadata — Zod 3 adapter', () => {

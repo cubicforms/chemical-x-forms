@@ -18,18 +18,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../src/runtime/core/dev', () => ({ __DEV__: false }))
 
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 4; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
+import { waitUntil } from '../utils/form-harness'
 
 describe('register({ transforms }) — prod log shape (information-leak guard)', () => {
   let app: App | undefined
@@ -67,12 +61,12 @@ describe('register({ transforms }) — prod log shape (information-leak guard)',
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => root.firstElementChild)
 
     const input = root.firstElementChild as HTMLInputElement
     input.value = 'abc'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (errSpy.mock.calls.length > 0 ? true : null))
 
     expect(errSpy).toHaveBeenCalled()
     // The prod log is a single argument (no second-positional error object).
@@ -116,12 +110,12 @@ describe('register({ transforms }) — prod log shape (information-leak guard)',
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => root.firstElementChild)
 
     const input = root.firstElementChild as HTMLInputElement
     input.value = 'abc'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (errSpy.mock.calls.length > 0 ? true : null))
 
     expect(errSpy).toHaveBeenCalled()
     const call = errSpy.mock.calls[0]

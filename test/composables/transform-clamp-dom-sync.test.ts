@@ -23,18 +23,12 @@
 // "1e2" → 100 case (where post-cast `domValue` already equals
 // storage, so no force-sync triggers).
 import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 6; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
+import { waitUntil } from '../utils/form-harness'
 
 function clamp0to100(value: unknown): unknown {
   if (typeof value !== 'number' || Number.isNaN(value)) return value
@@ -74,7 +68,7 @@ describe('spike 18c — `<input type="number">` + clamp transform DOM/storage pa
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => root.querySelector('[data-field="bounded"]'))
 
     const input = root.querySelector('[data-field="bounded"]') as HTMLInputElement
     if (input === null) throw new Error('input not rendered')
@@ -83,7 +77,9 @@ describe('spike 18c — `<input type="number">` + clamp transform DOM/storage pa
     // Type up to the cap. Storage and DOM agree: 100/100.
     input.value = '100'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() =>
+      handle.api?.values.bounded === 100 && input.value === '100' ? true : null
+    )
     expect(handle.api?.values.bounded).toBe(100)
     expect(input.value).toBe('100')
 
@@ -92,7 +88,9 @@ describe('spike 18c — `<input type="number">` + clamp transform DOM/storage pa
     // and the DOM keeps the user's "1000" — diverged from storage.
     input.value = '1000'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() =>
+      handle.api?.values.bounded === 100 && input.value === '100' ? true : null
+    )
     expect(handle.api?.values.bounded).toBe(100)
     expect(input.value).toBe('100')
 
@@ -100,7 +98,9 @@ describe('spike 18c — `<input type="number">` + clamp transform DOM/storage pa
     // keep typing characters into the DOM while storage stays at 100.
     input.value = '100000'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() =>
+      handle.api?.values.bounded === 100 && input.value === '100' ? true : null
+    )
     expect(handle.api?.values.bounded).toBe(100)
     expect(input.value).toBe('100')
   })
@@ -129,7 +129,7 @@ describe('spike 18c — `<input type="number">` + clamp transform DOM/storage pa
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => root.querySelector('[data-field="bounded"]'))
 
     const input = root.querySelector('[data-field="bounded"]') as HTMLInputElement
     if (input === null) throw new Error('input not rendered')
@@ -139,7 +139,7 @@ describe('spike 18c — `<input type="number">` + clamp transform DOM/storage pa
     // storage 0... wait, equal. So this hits the same bug but at the floor.
     input.value = '-5'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.bounded === 0 && input.value === '0' ? true : null))
     expect(handle.api?.values.bounded).toBe(0)
     expect(input.value).toBe('0')
   })
@@ -172,7 +172,7 @@ describe('spike 18c — `<input type="number">` + clamp transform DOM/storage pa
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => root.querySelector('[data-field="bounded"]'))
 
     const input = root.querySelector('[data-field="bounded"]') as HTMLInputElement
     if (input === null) throw new Error('input not rendered')
@@ -184,13 +184,15 @@ describe('spike 18c — `<input type="number">` + clamp transform DOM/storage pa
     // storage (100), so the typed form "1e2" is preserved in the DOM.
     input.value = '50'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.bounded === 50 && input.value === '50' ? true : null))
     expect(handle.api?.values.bounded).toBe(50)
     expect(input.value).toBe('50')
 
     input.value = '1e2'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() =>
+      handle.api?.values.bounded === 100 && input.value === '1e2' ? true : null
+    )
     expect(handle.api?.values.bounded).toBe(100)
     // The typed form "1e2" stays in the DOM mid-typing — the typed-form
     // preservation contract.

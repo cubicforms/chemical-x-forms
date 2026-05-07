@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
@@ -60,18 +60,6 @@ const schema = z.object({ income: z.number() })
 // resolve to the same suffix the form looks up.
 const FP = hashStableString(fingerprintZodSchema(schema))
 const fpKey = (base: string): string => `${base}:${FP}`
-
-async function flushAll(rounds = 12): Promise<void> {
-  for (let i = 0; i < rounds; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-  await new Promise((r) => setTimeout(r, 30))
-  for (let i = 0; i < rounds; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
 
 describe('persistence — v=2 envelope rejection emits a one-time dev-warn', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>
@@ -170,7 +158,10 @@ describe('persistence — blank round-trips across mount', () => {
     apps.push(app)
     app.mount(document.createElement('div'))
 
-    await flushAll()
+    // Poll until hydration lands the persisted blank mark — the
+    // dynamic-imported adapter chain can outlast a fixed-time pump on
+    // a contended runner.
+    await waitUntil(() => (captured?.blankPaths.value.has(incomeKey) === true ? true : null))
 
     if (captured === undefined) throw new Error('form not captured')
     const binding = captured.register('income')
@@ -211,24 +202,39 @@ describe('persistence — blank round-trips across mount', () => {
     apps.push(app)
     app.mount(root)
 
-    await flushAll()
-
-    const input = document.querySelector('input[data-test="income"]') as HTMLInputElement
+    // Wait for the directive to attach to the input before driving it.
+    const input = await waitUntil(
+      () => document.querySelector('input[data-test="income"]') as HTMLInputElement | null
+    )
+    if (input === null) throw new Error('income input not mounted')
     // Type a value to trigger the persistence opt-in path, then
     // clear to trigger markBlank + a follow-up persist.
     input.value = '5'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flushAll()
+    // Poll until the typed value's debounced write lands so the next
+    // event isn't racing the previous one's persist pipeline.
+    await waitUntil(() => {
+      const r = localStorage.getItem(fpKey('te-write'))
+      if (r === null) return null
+      const p = JSON.parse(r) as { data?: { form?: { income?: number } } }
+      return p.data?.form?.income === 5 ? true : null
+    })
 
     input.value = ''
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flushAll()
 
-    const raw = localStorage.getItem(fpKey('te-write'))
+    // Poll until the post-clear write lands the blankPaths entry —
+    // the 10ms debounce + adapter.setItem can outlast a fixed pump.
+    const incomeKey = canonicalizePath('income').key
+    const raw = await waitUntil(() => {
+      const r = localStorage.getItem(fpKey('te-write'))
+      if (r === null) return null
+      const p = JSON.parse(r) as { data?: { blankPaths?: string[] } }
+      return p.data?.blankPaths?.includes(incomeKey) === true ? r : null
+    })
     expect(raw).not.toBeNull()
     const payload = JSON.parse(raw as string)
     expect(payload.v).toBe(4)
-    const incomeKey = canonicalizePath('income').key
     expect(payload.data.blankPaths).toContain(incomeKey)
   })
 
@@ -268,7 +274,11 @@ describe('persistence — blank round-trips across mount', () => {
     apps.push(app)
     app.mount(document.createElement('div'))
 
-    await flushAll()
+    // Poll until hydration replaces the construction-time auto-mark
+    // with the persisted (empty) state — visible via `values.income`
+    // landing the persisted 100. A fixed-time pump can race the
+    // dynamic-imported adapter chain on contended CI.
+    await waitUntil(() => (captured?.values.income === 100 ? true : null))
 
     if (captured === undefined) throw new Error('form not captured')
     expect(captured.blankPaths.value.size).toBe(0)

@@ -1,21 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  createApp,
-  defineComponent,
-  h,
-  nextTick,
-  onMounted,
-  ref,
-  withDirectives,
-  type App,
-} from 'vue'
+import { createApp, defineComponent, h, onMounted, ref, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { assignKey, vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { useRegister } from '../../src/runtime/composables/use-register'
 import type { RegisterValue } from '../../src/runtime/types/types-api'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * Runtime contract for `<MyComponent v-register="register(...)" />`.
@@ -111,9 +103,10 @@ async function mountWithChild(
   // The directive's "is a no-op" warn is deferred via `nextTick` so
   // that `useRegister`'s `onMounted` marker (and any post-install
   // assignKey) has a chance to land before the warn check runs.
-  // Flush microtasks before restoring the spy so the captured
-  // `warnings` array reflects the post-deferred state.
-  await flush()
+  // Wait until the api is captured AND the rendered root has been
+  // committed; that gives the deferred-warn microtask time to settle
+  // before the spy is restored.
+  await waitUntil(() => (handle.api !== undefined && root.firstElementChild !== null ? true : null))
   warnSpy.mockRestore()
 
   const rootEl = root.firstElementChild as HTMLElement | null
@@ -122,13 +115,6 @@ async function mountWithChild(
     throw new Error('mountWithChild: no firstElementChild — multi-root or empty render')
   if (options?.installAssigner) options.installAssigner(rootEl)
   return { app, api: handle.api, rootEl, warnings }
-}
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 4; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
 }
 
 describe('pattern 1: v-register on a component whose root is <input>', () => {
@@ -154,7 +140,7 @@ describe('pattern 1: v-register on a component whose root is <input>', () => {
     const input = mounted.rootEl as HTMLInputElement
     input.value = 'alice@example.com'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (mounted?.api.values.email === 'alice@example.com' ? true : null))
 
     expect(mounted.api.values.email).toBe('alice@example.com')
   })
@@ -211,7 +197,7 @@ describe('pattern 2: v-register on a non-form root WITH useRegister (recommended
     expect(innerInput).not.toBeNull()
     innerInput.value = 'typed'
     innerInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (mounted?.api.values.email === 'typed' ? true : null))
 
     expect(mounted.api.values.email).toBe('typed')
   })
@@ -233,7 +219,7 @@ describe('pattern 2: v-register on a non-form root WITH useRegister (recommended
     expect(innerInput).not.toBeNull()
     innerInput.focus()
     innerInput.dispatchEvent(new Event('focus', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (mounted?.api.fields.email.focused === true ? true : null))
     expect(mounted.api.fields.email.focused).toBe(true)
   })
 
@@ -326,7 +312,7 @@ describe('non-pattern: v-register on a non-form root WITHOUT useRegister/assignK
     const innerInput = mounted.rootEl.querySelector('input.inner') as HTMLInputElement
     innerInput.value = 'typed'
     innerInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (mounted?.api.values.email === 'seed@example.com' ? true : null))
 
     // With listeners SKIPPED on the unsupported root, the bubbled event
     // doesn't reach a directive listener, doesn't read `el.value` off
@@ -428,7 +414,7 @@ describe('pattern 4: v-register on a non-form root WITH assignKey (kept-current 
     const innerInput = root.querySelector('input') as HTMLInputElement
     innerInput.value = 'typed'
     innerInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (received.length >= 1 ? true : null))
 
     expect(received.length).toBeGreaterThanOrEqual(1)
     expect(received).not.toContain('typed')
@@ -464,7 +450,7 @@ describe('pattern 3: @update:registerValue prop on a component', () => {
     const input = mounted.rootEl as HTMLInputElement
     input.value = 'typed'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (received.includes('typed') ? true : null))
 
     expect(received).toContain('typed')
     // Default assigner was bypassed — the FormStore did NOT receive
@@ -498,7 +484,7 @@ describe('pattern 3: @update:registerValue prop on a component', () => {
     const input = mounted.rootEl as HTMLInputElement
     input.value = 'hello'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (mounted?.api.values.email === 'HELLO' ? true : null))
 
     expect(receivedRv).toBeDefined()
     expect(mounted.api.values.email).toBe('HELLO')
@@ -540,12 +526,14 @@ describe('pattern 3: @update:registerValue prop on a component', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     localApp.mount(root)
-    await flush()
+    await waitUntil(() =>
+      handle.api !== undefined && root.firstElementChild !== null ? true : null
+    )
 
     const input = root.firstElementChild as HTMLInputElement
     input.value = 'hello'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.email === 'HELLO' ? true : null))
 
     localApp.unmount()
     document.body.innerHTML = ''
@@ -582,7 +570,7 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
     const input = mounted.rootEl as HTMLInputElement
     input.value = 'abc'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (mounted?.api.values.email === 'ABC' ? true : null))
     expect(mounted.api.values.email).toBe('ABC')
   })
 
@@ -591,7 +579,7 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
     const input = mounted.rootEl as HTMLInputElement
     input.value = '  HELLO  '
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (mounted?.api.values.email === 'hello' ? true : null))
     expect(mounted.api.values.email).toBe('hello')
   })
 
@@ -606,14 +594,14 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
     const input = mounted.rootEl as HTMLInputElement
     input.value = 'abc'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (received === 'ABC' ? true : null))
     expect(received).toBe('ABC')
   })
 
   it('4. programmatic writes bypass transforms', async () => {
     mounted = await mountWithChild(ChildInput, { transforms: [upper] })
     mounted.api.setValue('email', 'lowercase')
-    await flush()
+    await waitUntil(() => (mounted?.api.values.email === 'lowercase' ? true : null))
     expect(mounted.api.values.email).toBe('lowercase')
   })
 
@@ -622,7 +610,7 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
     const input = mounted.rootEl as HTMLInputElement
     input.value = 'untouched'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (mounted?.api.values.email === 'untouched' ? true : null))
     expect(mounted.api.values.email).toBe('untouched')
   })
 
@@ -636,7 +624,7 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
     const input = mounted.rootEl as HTMLInputElement
     input.value = 'abc'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (errSpy.mock.calls.length > 0 ? true : null))
 
     expect(errSpy).toHaveBeenCalled()
     const msg = errSpy.mock.calls[0]?.[0] as string
@@ -651,7 +639,7 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
     const input2 = mounted.rootEl as HTMLInputElement
     input2.value = 'def'
     input2.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (mounted?.api.values.email === 'DEF' ? true : null))
     expect(mounted.api.values.email).toBe('DEF')
 
     errSpy.mockRestore()
@@ -677,7 +665,7 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
     const input = mounted.rootEl as HTMLInputElement
     input.value = 'abc'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (calls.includes('t2') ? true : null))
 
     expect(calls).toEqual(['t1', 't2'])
     expect(calls).not.toContain('t3')
@@ -693,7 +681,7 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
     const input = mounted.rootEl as HTMLInputElement
     input.value = 'abc'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (errSpy.mock.calls.length > 0 ? true : null))
 
     expect(errSpy).toHaveBeenCalled()
     const msg = errSpy.mock.calls[0]?.[0] as string
@@ -731,7 +719,9 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     localApp.mount(root)
-    await flush()
+    await waitUntil(() =>
+      handle.api !== undefined && root.querySelector('[data-field="B"]') !== null ? true : null
+    )
 
     const inputA = root.querySelector('[data-field="A"]') as HTMLInputElement
     const inputB = root.querySelector('[data-field="B"]') as HTMLInputElement
@@ -740,7 +730,7 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
     inputA.dispatchEvent(new Event('input', { bubbles: true }))
     inputB.value = 'def'
     inputB.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.name === 'DEF' ? true : null))
 
     if (handle.api === undefined) throw new Error('api never set')
     expect(handle.api.values.email).toBe('') // A's write aborted
@@ -776,7 +766,9 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     localApp.mount(root)
-    await flush()
+    await waitUntil(() =>
+      handle.api !== undefined && root.querySelector('[data-bind="B"]') !== null ? true : null
+    )
 
     if (handle.api === undefined) throw new Error('api never set')
     const inputA = root.querySelector('[data-bind="A"]') as HTMLInputElement
@@ -785,14 +777,14 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
     // Type into A → A's transform runs → uppercase lands.
     inputA.value = 'abc'
     inputA.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.email === 'ABC' ? true : null))
     expect(handle.api.values.email).toBe('ABC')
 
     // Type into B → B has no transforms → raw value lands, overwriting A's
     // earlier write. Proves B's bypass is independent of A's pipeline.
     inputB.value = 'xyz'
     inputB.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.email === 'xyz' ? true : null))
     expect(handle.api.values.email).toBe('xyz')
 
     // Type into A again → A's pipeline still works after B's untransformed
@@ -800,7 +792,7 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
     // bindings' assigner runs on the same path.
     inputA.value = 'def'
     inputA.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.email === 'DEF' ? true : null))
     expect(handle.api.values.email).toBe('DEF')
 
     localApp.unmount()
@@ -842,12 +834,24 @@ describe('v-register="undefined" is a graceful no-op (invariant 4)', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      (root.firstElementChild as HTMLInputElement | null)?.getAttribute('data-trigger') === '0'
+        ? true
+        : null
+    )
 
     trigger.value += 1
-    await flush()
+    await waitUntil(() =>
+      (root.firstElementChild as HTMLInputElement | null)?.getAttribute('data-trigger') === '1'
+        ? true
+        : null
+    )
     trigger.value += 1
-    await flush()
+    await waitUntil(() =>
+      (root.firstElementChild as HTMLInputElement | null)?.getAttribute('data-trigger') === '2'
+        ? true
+        : null
+    )
 
     warnSpy.mockRestore()
 
@@ -865,7 +869,6 @@ describe('v-register="undefined" is a graceful no-op (invariant 4)', () => {
     const input = root.firstElementChild as HTMLInputElement
     input.value = 'whatever'
     expect(() => input.dispatchEvent(new Event('input', { bubbles: true }))).not.toThrow()
-    await flush()
   })
 
   it('a standalone-rendered component (no parent v-register, useRegister fallback) mounts cleanly with a single warn', async () => {
@@ -898,7 +901,11 @@ describe('v-register="undefined" is a graceful no-op (invariant 4)', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      warnings.some((w) => w.includes('useRegister') || w.includes('no parent registerValue'))
+        ? true
+        : null
+    )
     warnSpy.mockRestore()
 
     // useRegister fires its "no parent registerValue" warn ONCE.
@@ -950,7 +957,7 @@ describe('listener teardown on component unmount (works ✓)', () => {
     }) as Element['removeEventListener']
 
     mounted.api.setValue('name', 'x')
-    await flush()
+    await waitUntil(() => (mounted?.api.values.name === 'x' ? true : null))
     expect(counts.added).toBe(0)
     expect(counts.removed).toBe(0)
 
@@ -1043,7 +1050,16 @@ describe("multi-root component — directive lands on Vue's placeholder ⚠", ()
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      collected.some(
+        (w) =>
+          w.includes('Runtime directive used on component with non-element root') ||
+          w.includes('non-element root') ||
+          w.includes('is a no-op')
+      )
+        ? true
+        : null
+    )
 
     const matched = collected.filter(
       (w) =>
@@ -1069,19 +1085,28 @@ describe('component re-render with prop change does NOT leak listeners (works �
     })
 
     const hint = ref('one')
+    const renderObservations: string[] = []
     const Parent = defineComponent({
       setup() {
         const api = useForm({ schema, key: `rerender-${Math.random().toString(36).slice(2)}` })
         const rv = api.register('email')
-        return () =>
-          withDirectives(h(ChildInput, { hint: hint.value, registerValue: rv }), [[vRegister, rv]])
+        return () => {
+          // Side-channel observation point: the parent's render effect
+          // re-runs on every hint mutation, so pushing here is a clean
+          // signal for waitUntil to poll on without modifying the
+          // listener-count assertions below.
+          renderObservations.push(hint.value)
+          return withDirectives(h(ChildInput, { hint: hint.value, registerValue: rv }), [
+            [vRegister, rv],
+          ])
+        }
       },
     })
     const app = createApp(Parent).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (root.firstElementChild !== null ? true : null))
 
     const el = root.firstElementChild as HTMLElement
     const counts = { added: 0, removed: 0 }
@@ -1098,7 +1123,9 @@ describe('component re-render with prop change does NOT leak listeners (works �
 
     for (let i = 0; i < 5; i++) {
       hint.value = `iter-${i}`
-      await flush()
+      await waitUntil(() =>
+        renderObservations[renderObservations.length - 1] === `iter-${i}` ? true : null
+      )
     }
     expect(counts.added).toBe(0)
     expect(counts.removed).toBe(0)

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
-import { flush, makeMounter as makeMounterShared } from '../utils/form-harness'
+import { makeMounter as makeMounterShared, waitUntil } from '../utils/form-harness'
 
 /**
  * The slim-primitive write contract.
@@ -41,14 +41,14 @@ describe('slim-primitive write gate — accepted writes (slim type matches)', ()
   const apps: App[] = []
   afterEach(async () => {
     while (apps.length > 0) apps.pop()?.unmount()
-    await flush()
+    await waitUntil(() => (apps.length === 0 ? true : null))
   })
 
   it('z.string().email() accepts any string (refinement-invalid passes through)', async () => {
     const { api, app } = makeMounter(z.object({ email: z.string().email() }))()
     apps.push(app)
     const ok = (api.setValue as (path: 'email', value: unknown) => boolean)('email', 'luigi')
-    await flush()
+    await waitUntil(() => (api.values.email === 'luigi' ? true : null))
     expect(ok).toBe(true)
     expect(api.values.email).toBe('luigi')
   })
@@ -58,7 +58,7 @@ describe('slim-primitive write gate — accepted writes (slim type matches)', ()
     const { api, app } = makeMounter(schema)()
     apps.push(app)
     const ok = (api.setValue as (path: 'color', value: unknown) => boolean)('color', 'magenta')
-    await flush()
+    await waitUntil(() => (api.values.color === 'magenta' ? true : null))
     expect(ok).toBe(true)
     expect(api.values.color).toBe('magenta')
   })
@@ -68,7 +68,7 @@ describe('slim-primitive write gate — accepted writes (slim type matches)', ()
     const { api, app } = makeMounter(schema)()
     apps.push(app)
     const ok = (api.setValue as (path: 'mode', value: unknown) => boolean)('mode', 'off')
-    await flush()
+    await waitUntil(() => (api.values.mode === 'off' ? true : null))
     expect(ok).toBe(true)
     expect(api.values.mode).toBe('off')
   })
@@ -80,15 +80,15 @@ describe('slim-primitive write gate — accepted writes (slim type matches)', ()
     const setVal = api.setValue as (path: 'field', value: unknown) => boolean
 
     expect(setVal('field', 'x')).toBe(true)
-    await flush()
+    await waitUntil(() => (api.values.field === 'x' ? true : null))
     expect(api.values.field).toBe('x')
 
     expect(setVal('field', 42)).toBe(true)
-    await flush()
+    await waitUntil(() => (api.values.field === 42 ? true : null))
     expect(api.values.field).toBe(42)
 
     expect(setVal('field', true)).toBe(false)
-    await flush()
+    await waitUntil(() => (api.values.field === 42 ? true : null))
     // Still 42 — the boolean write was rejected.
     expect(api.values.field).toBe(42)
   })
@@ -98,7 +98,7 @@ describe('slim-primitive write gate — accepted writes (slim type matches)', ()
     const { api, app } = makeMounter(schema)()
     apps.push(app)
     const ok = (api.setValue as (path: 'note', value: unknown) => boolean)('note', null)
-    await flush()
+    await waitUntil(() => (api.values.note === null ? true : null))
     expect(ok).toBe(true)
     expect(api.values.note).toBe(null)
   })
@@ -108,7 +108,7 @@ describe('slim-primitive write gate — accepted writes (slim type matches)', ()
     const { api, app } = makeMounter(schema)()
     apps.push(app)
     const ok = (api.setValue as (path: 'note', value: unknown) => boolean)('note', undefined)
-    await flush()
+    await waitUntil(() => (api.values.note === undefined ? true : null))
     expect(ok).toBe(true)
     expect(api.values.note).toBe(undefined)
   })
@@ -124,7 +124,7 @@ describe('slim-primitive write gate — rejected writes (wrong primitive)', () =
   afterEach(async () => {
     while (apps.length > 0) apps.pop()?.unmount()
     warnSpy.mockRestore()
-    await flush()
+    await waitUntil(() => (apps.length === 0 ? true : null))
   })
 
   it('z.number(): rejects a string write', async () => {
@@ -133,7 +133,7 @@ describe('slim-primitive write gate — rejected writes (wrong primitive)', () =
     apps.push(app)
     const before = api.values.age
     const ok = (api.setValue as (path: 'age', value: unknown) => boolean)('age', 'twenty')
-    await flush()
+    await waitUntil(() => (api.values.age === before ? true : null))
     expect(ok).toBe(false)
     expect(api.values.age).toBe(before)
   })
@@ -144,7 +144,7 @@ describe('slim-primitive write gate — rejected writes (wrong primitive)', () =
     apps.push(app)
     const before = api.values.flag
     const ok = (api.setValue as (path: 'flag', value: unknown) => boolean)('flag', 'no')
-    await flush()
+    await waitUntil(() => (api.values.flag === before ? true : null))
     expect(ok).toBe(false)
     expect(api.values.flag).toBe(before)
   })
@@ -155,7 +155,7 @@ describe('slim-primitive write gate — rejected writes (wrong primitive)', () =
     apps.push(app)
     const before = api.values.color
     const ok = (api.setValue as (path: 'color', value: unknown) => boolean)('color', 1)
-    await flush()
+    await waitUntil(() => (api.values.color === before ? true : null))
     expect(ok).toBe(false)
     expect(api.values.color).toBe(before)
   })
@@ -166,7 +166,7 @@ describe('slim-primitive write gate — rejected writes (wrong primitive)', () =
     apps.push(app)
     const before = api.values.count
     const ok = (api.setValue as (path: 'count', value: unknown) => boolean)('count', 'abc')
-    await flush()
+    await waitUntil(() => (api.values.count === before ? true : null))
     expect(ok).toBe(false)
     expect(api.values.count).toBe(before)
   })
@@ -177,7 +177,7 @@ describe('slim-primitive write gate — rejected writes (wrong primitive)', () =
     apps.push(app)
     const before = api.values.note
     const ok = (api.setValue as (path: 'note', value: unknown) => boolean)('note', null)
-    await flush()
+    await waitUntil(() => (api.values.note === before ? true : null))
     expect(ok).toBe(false)
     expect(api.values.note).toBe(before)
   })
@@ -187,7 +187,7 @@ describe('slim-primitive write gate — rejected writes (wrong primitive)', () =
     const { api, app } = makeMounter(schema)()
     apps.push(app)
     ;(api.setValue as (path: 'age', value: unknown) => boolean)('age', 'twenty')
-    await flush()
+    await waitUntil(() => (warnSpy.mock.calls.length > 0 ? true : null))
     expect(warnSpy).toHaveBeenCalled()
     const message = warnSpy.mock.calls.flat().join(' ')
     expect(message).toMatch(/age/)
@@ -206,7 +206,9 @@ describe('slim-primitive write gate — rejected writes (wrong primitive)', () =
     const { api, app } = makeMounter(schema)()
     apps.push(app)
     ;(api.setValue as (path: 'salary', value: unknown) => boolean)('salary', '123')
-    await flush()
+    await waitUntil(() =>
+      warnSpy.mock.calls.flat().join(' ').includes('type="number"') ? true : null
+    )
     const message = warnSpy.mock.calls.flat().join(' ')
     expect(message).toContain('type="number"')
     expect(message).toContain('.number')
@@ -220,7 +222,7 @@ describe('slim-primitive write gate — rejected writes (wrong primitive)', () =
     setVal('age', 'twenty')
     setVal('age', 'thirty')
     setVal('age', 'forty')
-    await flush()
+    await waitUntil(() => (warnSpy.mock.calls.length === 1 ? true : null))
     expect(warnSpy).toHaveBeenCalledTimes(1)
   })
 })
@@ -229,7 +231,7 @@ describe('slim-primitive write gate — subtree writes', () => {
   const apps: App[] = []
   afterEach(async () => {
     while (apps.length > 0) apps.pop()?.unmount()
-    await flush()
+    await waitUntil(() => (apps.length === 0 ? true : null))
   })
 
   it('object-write with one wrong-primitive leaf rejects the whole write', async () => {
@@ -244,7 +246,13 @@ describe('slim-primitive write gate — subtree writes', () => {
       name: 'Bob',
       age: 'twenty', // wrong primitive at user.age
     })
-    await flush()
+    await waitUntil(() => {
+      try {
+        return JSON.stringify(api.values.user) === JSON.stringify(before) ? true : null
+      } catch {
+        return null
+      }
+    })
     expect(ok).toBe(false)
     expect(api.values.user).toEqual(before)
     warnSpy.mockRestore()
@@ -260,7 +268,9 @@ describe('slim-primitive write gate — subtree writes', () => {
       name: 'Bob',
       age: 30,
     })
-    await flush()
+    await waitUntil(() =>
+      api.values.user?.name === 'Bob' && api.values.user?.age === 30 ? true : null
+    )
     expect(ok).toBe(true)
     expect(api.values.user).toEqual({ name: 'Bob', age: 30 })
   })
@@ -273,7 +283,7 @@ describe('slim-primitive write gate — subtree writes', () => {
     const { api, app } = makeMounter(schema)()
     apps.push(app)
     const ok = (api.setValue as (path: 'user', value: unknown) => boolean)('user', 'oops')
-    await flush()
+    await waitUntil(() => (typeof api.values.user !== 'string' ? true : null))
     expect(ok).toBe(false)
     warnSpy.mockRestore()
   })
@@ -288,7 +298,7 @@ describe('slim-primitive write gate — subtree writes', () => {
       'b',
       1, // wrong
     ])
-    await flush()
+    await waitUntil(() => (!api.values.items?.includes(1 as unknown as string) ? true : null))
     expect(ok).toBe(false)
     warnSpy.mockRestore()
   })
@@ -298,7 +308,7 @@ describe('slim-primitive write gate — non-form-key permissive shapes', () => {
   const apps: App[] = []
   afterEach(async () => {
     while (apps.length > 0) apps.pop()?.unmount()
-    await flush()
+    await waitUntil(() => (apps.length === 0 ? true : null))
   })
 
   it('z.any() leaf accepts any primitive', async () => {
@@ -343,7 +353,7 @@ describe('slim-primitive write gate — unknown schema paths', () => {
   afterEach(async () => {
     while (apps.length > 0) apps.pop()?.unmount()
     warnSpy.mockRestore()
-    await flush()
+    await waitUntil(() => (apps.length === 0 ? true : null))
   })
 
   it('rejects writes to a leaf path the schema does not define', async () => {
@@ -354,7 +364,7 @@ describe('slim-primitive write gate — unknown schema paths', () => {
     apps.push(app)
     const before = JSON.parse(JSON.stringify(api.values))
     const ok = (api.setValue as (path: string, value: unknown) => boolean)('address.salary', 'abc')
-    await flush()
+    await waitUntil(() => (JSON.stringify(api.values()) === JSON.stringify(before) ? true : null))
     expect(ok).toBe(false)
     // Form value unchanged — no `address.salary` slot created.
     expect(api.values()).toEqual(before)
@@ -366,7 +376,7 @@ describe('slim-primitive write gate — unknown schema paths', () => {
     apps.push(app)
     const before = JSON.parse(JSON.stringify(api.values))
     const ok = (api.setValue as (path: string, value: unknown) => boolean)('phantom', 'x')
-    await flush()
+    await waitUntil(() => (JSON.stringify(api.values()) === JSON.stringify(before) ? true : null))
     expect(ok).toBe(false)
     expect(api.values()).toEqual(before)
   })
@@ -384,7 +394,7 @@ describe('slim-primitive write gate — unknown schema paths', () => {
       'profile.details.unknown',
       'x'
     )
-    await flush()
+    await waitUntil(() => (JSON.stringify(api.values()) === JSON.stringify(before) ? true : null))
     expect(ok).toBe(false)
     expect(api.values()).toEqual(before)
   })
@@ -396,7 +406,9 @@ describe('slim-primitive write gate — unknown schema paths', () => {
     const { api, app } = makeMounter(schema)()
     apps.push(app)
     ;(api.setValue as (path: string, value: unknown) => boolean)('address.salary', 'abc')
-    await flush()
+    await waitUntil(() =>
+      /address\.salary/.test(warnSpy.mock.calls.flat().join(' ')) ? true : null
+    )
     expect(warnSpy).toHaveBeenCalled()
     const message = warnSpy.mock.calls.flat().join(' ')
     expect(message).toMatch(/address\.salary/)
@@ -411,7 +423,9 @@ describe('slim-primitive write gate — unknown schema paths', () => {
     const { api, app } = makeMounter(schema)()
     apps.push(app)
     ;(api.setValue as (path: string, value: unknown) => boolean)('address.salary', 'abc')
-    await flush()
+    await waitUntil(() =>
+      warnSpy.mock.calls.flat().join(' ').includes('not in your schema') ? true : null
+    )
     const message = warnSpy.mock.calls.flat().join(' ')
     expect(message).toContain('not in your schema')
     expect(message).toContain('typo')

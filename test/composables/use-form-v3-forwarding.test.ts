@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod-v3'
 import type { FormStorage, UseFormReturnType } from '../../src/runtime/types/types-api'
 import { vRegister } from '../../src/runtime/core/directive'
@@ -42,13 +42,6 @@ function mount(options: AnyUseFormOptions): { app: App; api: ApiReturn } {
   return { app, api: handle.api as ApiReturn }
 }
 
-async function drain(rounds = 8): Promise<void> {
-  for (let i = 0; i < rounds; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
-
 describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
   const apps: App[] = []
   afterEach(() => {
@@ -74,7 +67,6 @@ describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
     // debounce window.
     api.setValue('email', 'nope')
     await waitUntil(() => (api.errors.email?.[0]?.message === 'bad email' ? true : null))
-    await drain()
 
     expect(api.errors.email?.[0]?.message).toBe('bad email')
   })
@@ -129,7 +121,6 @@ describe('v3 useForm forwards opt-in options to useAbstractForm', () => {
     input.value = 'alice@example.com'
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await waitUntil(() => (setItem.mock.calls.length > 0 ? true : null))
-    await drain()
 
     expect(setItem).toHaveBeenCalled()
     const [key, payload] = setItem.mock.calls[0] ?? []

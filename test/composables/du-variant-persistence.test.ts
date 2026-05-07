@@ -174,13 +174,6 @@ function mount(persistKey: string): {
   return { app, api: handle.api as Api, setAddress, setNumber, setChannel }
 }
 
-async function drain(rounds = 8): Promise<void> {
-  for (let i = 0; i < rounds; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
-
 describe('rememberVariants × persistence — refresh-survives contract', () => {
   const apps: App[] = []
   beforeEach(() => localStorage.clear())
@@ -194,7 +187,9 @@ describe('rememberVariants × persistence — refresh-survives contract', () => 
     // captures the email-variant state on switch-out.
     const s1 = mount('s1')
     apps.push(s1.app)
-    await drain()
+    // Wait for the mount-time hydration / wiring to settle — the email
+    // input is mounted only when the active variant resolves.
+    await waitUntil(() => (s1.api.values.notify.channel === 'email' ? true : null))
     s1.setAddress('a@b.com')
     await waitUntil(() => (localStorage.getItem(fpKey('s1')) !== null ? true : null))
     s1.setChannel('sms')

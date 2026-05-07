@@ -7,18 +7,12 @@
 // in directive.ts). If a future refactor splits the assigner path per
 // element type, this test catches the divergence.
 import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 4; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
+import { waitUntil } from '../utils/form-harness'
 
 describe('register({ transforms }) — applies to all four element variants', () => {
   let app: App | undefined
@@ -88,7 +82,7 @@ describe('register({ transforms }) — applies to all four element variants', ()
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (handle.api !== undefined ? true : null))
 
     if (handle.api === undefined) throw new Error('api never set')
 
@@ -96,7 +90,7 @@ describe('register({ transforms }) — applies to all four element variants', ()
     const text = root.querySelector('[data-field="text"]') as HTMLInputElement
     text.value = 'abc'
     text.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.text === 'tagged:abc' ? true : null))
     expect(handle.api.values.text).toBe('tagged:abc')
 
     // Select — change event after picking 'b' → transform tags → 'tagged:b'.
@@ -107,7 +101,7 @@ describe('register({ transforms }) — applies to all four element variants', ()
     const pick = root.querySelector('[data-field="pick"]') as HTMLSelectElement
     pick.value = 'b'
     pick.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.pick === 'tagged:b' ? true : null))
     expect(handle.api.values.pick).toBe('tagged:b')
 
     // Checkbox — clicking flips storage from false → true; transform's
@@ -115,14 +109,14 @@ describe('register({ transforms }) — applies to all four element variants', ()
     const box = root.querySelector('[data-field="box"]') as HTMLInputElement
     box.checked = true
     box.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.box === false ? true : null))
     expect(handle.api.values.box).toBe(false)
 
     // Radio — clicking dispatches change; transform tags 'one' → 'tagged:one'.
     const radio = root.querySelector('[data-field="radio"]') as HTMLInputElement
     radio.checked = true
     radio.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.radio === 'tagged:one' ? true : null))
     expect(handle.api.values.radio).toBe('tagged:one')
   })
 })

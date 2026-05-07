@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, defineComponent, h, nextTick, type App } from 'vue'
+import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType } from '../../src/runtime/types/types-api'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * `form.meta.errors` is sorted by a stable schema-declaration ordinal.
@@ -56,12 +57,6 @@ function mountForm<Schema extends z.ZodObject>(
   return { app, api: handle.api as ApiFor<Schema> }
 }
 
-async function flushValidations(): Promise<void> {
-  await nextTick()
-  await new Promise<void>((r) => setTimeout(r, 0))
-  await nextTick()
-}
-
 describe('form.meta.errors — schema-declaration ordinal sort', () => {
   const apps: App[] = []
   afterEach(() => {
@@ -86,7 +81,9 @@ describe('form.meta.errors — schema-declaration ordinal sort', () => {
       async () => {}
     )
     await handler()
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === 'email|password' ? true : null
+    )
 
     const initialPaths = api.meta.errors.map((e) => e.path.join('.'))
     expect(initialPaths).toEqual(['email', 'password'])
@@ -96,7 +93,11 @@ describe('form.meta.errors — schema-declaration ordinal sort', () => {
     // ...)` — moving email to the END of the Map's insertion order, so
     // the aggregate flips to [password, email].
     api.setValue('email', 'a')
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === initialPaths.join('|')
+        ? true
+        : null
+    )
 
     const afterTypePaths = api.meta.errors.map((e) => e.path.join('.'))
     expect(afterTypePaths).toEqual(initialPaths)
@@ -111,16 +112,30 @@ describe('form.meta.errors — schema-declaration ordinal sort', () => {
       async () => {}
     )
     await handler()
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === 'email|password' ? true : null
+    )
 
     const initialPaths = api.meta.errors.map((e) => e.path.join('.'))
 
     api.setValue('email', 'a')
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === initialPaths.join('|')
+        ? true
+        : null
+    )
     api.setValue('email', 'ab')
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === initialPaths.join('|')
+        ? true
+        : null
+    )
     api.setValue('email', 'abc')
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === initialPaths.join('|')
+        ? true
+        : null
+    )
 
     expect(api.meta.errors.map((e) => e.path.join('.'))).toEqual(initialPaths)
   })
@@ -134,14 +149,18 @@ describe('form.meta.errors — schema-declaration ordinal sort', () => {
       async () => {}
     )
     await handler()
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === 'email|password' ? true : null
+    )
 
     expect(api.meta.errors.map((e) => e.path.join('.'))).toEqual(['email', 'password'])
 
     // Fix email → its key drops out of the underlying Map. Password
     // stays in its original slot.
     api.setValue('email', 'valid@example.com')
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === 'password' ? true : null
+    )
 
     expect(api.meta.errors.map((e) => e.path.join('.'))).toEqual(['password'])
 
@@ -149,7 +168,9 @@ describe('form.meta.errors — schema-declaration ordinal sort', () => {
     // (slot 0, ahead of password's slot 1) and the ordinal map never
     // shrinks — so the resurrected error sorts back to the front.
     api.setValue('email', 'a')
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === 'email|password' ? true : null
+    )
 
     expect(api.meta.errors.map((e) => e.path.join('.'))).toEqual(['email', 'password'])
   })
@@ -163,20 +184,24 @@ describe('form.meta.errors — schema-declaration ordinal sort', () => {
       password: 'long-enough-password',
     })
     apps.push(app)
-    await flushValidations()
+    await waitUntil(() => (api.meta.errors.length === 0 ? true : null))
 
     expect(api.meta.errors).toEqual([])
 
     // Break password FIRST (the second-declared field).
     api.setValue('password', 'a')
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === 'password' ? true : null
+    )
     expect(api.meta.errors.map((e) => e.path.join('.'))).toEqual(['password'])
 
     // Then break email. Even though password was first temporally,
     // email's ordinal is lower (assigned at construction in
     // declaration order), so it sorts ahead.
     api.setValue('email', 'a')
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === 'email|password' ? true : null
+    )
     expect(api.meta.errors.map((e) => e.path.join('.'))).toEqual(['email', 'password'])
   })
 
@@ -189,18 +214,22 @@ describe('form.meta.errors — schema-declaration ordinal sort', () => {
       async () => {}
     )
     await handler()
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === 'email|password' ? true : null
+    )
 
     const beforeReset = api.meta.errors.map((e) => e.path.join('.'))
     expect(beforeReset).toEqual(['email', 'password'])
 
     api.reset()
-    await flushValidations()
+    await waitUntil(() => (api.meta.errors.length === 0 ? true : null))
     expect(api.meta.errors).toEqual([])
 
     // Re-submit with the same default-empty state.
     await handler()
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === beforeReset.join('|') ? true : null
+    )
     expect(api.meta.errors.map((e) => e.path.join('.'))).toEqual(beforeReset)
   })
 
@@ -213,7 +242,9 @@ describe('form.meta.errors — schema-declaration ordinal sort', () => {
       async () => {}
     )
     await handler()
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === 'email|password' ? true : null
+    )
 
     // Inject a user error AT password — same path as the existing
     // schema "too small" error. Both should end up in password's slot
@@ -227,7 +258,7 @@ describe('form.meta.errors — schema-declaration ordinal sort', () => {
         code: 'user:reused',
       },
     ])
-    await flushValidations()
+    await waitUntil(() => (api.meta.errors.some((e) => e.code === 'user:reused') ? true : null))
 
     const codes = api.meta.errors.map((e) => `${e.path.join('.')}:${e.code}`)
     expect(codes).toEqual([
@@ -256,7 +287,6 @@ describe('form.meta.errors — schema-declaration ordinal sort', () => {
       age: 0,
     })
     apps.push(app)
-    await flushValidations()
 
     // Trigger errors on the variant-1 path first.
     const handler = api.handleSubmit(
@@ -264,7 +294,9 @@ describe('form.meta.errors — schema-declaration ordinal sort', () => {
       async () => {}
     )
     await handler()
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.some((e) => e.path.join('.') === 'notify.n') ? true : null
+    )
 
     // notify.n declared first inside the union; age declared second
     // at the root. Both seeded at construction.
@@ -275,9 +307,11 @@ describe('form.meta.errors — schema-declaration ordinal sort', () => {
     // walk didn't visit — its ordinal is assigned lazily on first
     // metaErrors read after the variant write.
     api.setValue('notify', { kind: 'txt', t: '' })
-    await flushValidations()
+    await waitUntil(() => ((api.values.notify as { kind: string }).kind === 'txt' ? true : null))
     await handler()
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.some((e) => e.path.join('.') === 'notify.t') ? true : null
+    )
 
     const v2Paths = api.meta.errors.map((e) => e.path.join('.'))
     expect(v2Paths).toContain('notify.t')

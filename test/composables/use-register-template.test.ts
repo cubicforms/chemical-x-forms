@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
 import { baseCompile } from '@vue/compiler-core'
-import { createApp, defineComponent, nextTick, type App } from 'vue'
+import { createApp, defineComponent, type App } from 'vue'
 import * as VueRuntime from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
@@ -12,6 +12,7 @@ import { inputTextAreaNodeTransform } from '../../src/runtime/lib/core/transform
 import { selectNodeTransform } from '../../src/runtime/lib/core/transforms/select-transform'
 import { vRegisterHintTransform } from '../../src/runtime/lib/core/transforms/v-register-hint-transform'
 import { vRegisterPreambleTransform } from '../../src/runtime/lib/core/transforms/v-register-preamble-transform'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * End-to-end template-compiled tests for the useRegister + inner
@@ -37,13 +38,6 @@ import { vRegisterPreambleTransform } from '../../src/runtime/lib/core/transform
  */
 
 const schema = z.object({ email: z.string(), name: z.string() })
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 4; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
 
 /**
  * Compile a template string through the production transform stack
@@ -116,7 +110,7 @@ describe('useRegister — template-compiled v-register reaches inner input', () 
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (captured.api !== undefined ? true : null))
 
     if (captured.api === undefined) throw new Error('unreachable')
 
@@ -137,7 +131,7 @@ describe('useRegister — template-compiled v-register reaches inner input', () 
 
     innerInput.value = 'typed-via-template'
     innerInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (captured.api?.values.email === 'typed-via-template' ? true : null))
 
     expect(captured.api.values.email).toBe('typed-via-template')
   })
@@ -169,7 +163,7 @@ describe('useRegister — template-compiled v-register reaches inner input', () 
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (captured.api !== undefined ? true : null))
 
     if (captured.api === undefined) throw new Error('unreachable')
 
@@ -179,7 +173,7 @@ describe('useRegister — template-compiled v-register reaches inner input', () 
 
     innerInput.focus()
     innerInput.dispatchEvent(new Event('focus', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (captured.api?.fields.email.focused === true ? true : null))
 
     // The inner input is what FormStore registered (via the directive
     // that landed on it from the inner `<input v-register>`). Focus

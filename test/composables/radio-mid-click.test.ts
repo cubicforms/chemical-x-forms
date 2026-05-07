@@ -10,23 +10,17 @@
 // `beforeUpdate` and writes back the prior model state, clobbering
 // the in-flight selection.
 import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import { waitUntil } from '../utils/form-harness'
 
 const schema = z.object({
   flavor: z.string(),
   note: z.string(),
 })
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 6; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
 
 describe('<input type="radio" v-register> — sibling re-render mid-click', () => {
   let app: App | undefined
@@ -73,7 +67,7 @@ describe('<input type="radio" v-register> — sibling re-render mid-click', () =
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (handle.api?.values.flavor === 'vanilla' ? true : null))
 
     if (handle.api === undefined) throw new Error('api never set')
 
@@ -107,7 +101,7 @@ describe('<input type="radio" v-register> — sibling re-render mid-click', () =
     // subsequent `change` event sees the real selection change.
     note.value = 'x'
     note.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.note === 'x' ? true : null))
 
     expect(strawberry.checked).toBe(true)
     expect(vanilla.checked).toBe(false)
@@ -115,7 +109,7 @@ describe('<input type="radio" v-register> — sibling re-render mid-click', () =
 
     // Step 3: fire the change event the browser would have fired.
     strawberry.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.flavor === 'strawberry' ? true : null))
 
     expect(handle.api.values.flavor).toBe('strawberry')
     expect(strawberry.checked).toBe(true)
@@ -153,7 +147,7 @@ describe('<input type="radio" v-register> — sibling re-render mid-click', () =
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (handle.api?.values.flavor === 'vanilla' ? true : null))
 
     const vanilla = root.querySelector<HTMLInputElement>('input[type="radio"]')
     if (vanilla === null) throw new Error('radio missing')
@@ -181,13 +175,13 @@ describe('<input type="radio" v-register> — sibling re-render mid-click', () =
 
     note.value = 'a'
     note.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.note === 'a' ? true : null))
     note.value = 'ab'
     note.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.note === 'ab' ? true : null))
     note.value = 'abc'
     note.dispatchEvent(new Event('input', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.note === 'abc' ? true : null))
 
     expect(writes).toBe(0)
   })
@@ -221,7 +215,7 @@ describe('<input type="radio" v-register> — sibling re-render mid-click', () =
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (handle.api?.values.flavor === 'vanilla' ? true : null))
 
     if (handle.api === undefined) throw new Error('api never set')
     const [vanilla, chocolate] = Array.from(
@@ -232,7 +226,7 @@ describe('<input type="radio" v-register> — sibling re-render mid-click', () =
     expect(chocolate.checked).toBe(false)
 
     handle.api.setValue('flavor', 'chocolate')
-    await flush()
+    await waitUntil(() => (chocolate.checked === true && vanilla.checked === false ? true : null))
 
     expect(vanilla.checked).toBe(false)
     expect(chocolate.checked).toBe(true)

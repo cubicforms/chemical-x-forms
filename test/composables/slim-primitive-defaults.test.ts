@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, defineComponent, h, nextTick, type App } from 'vue'
+import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
@@ -27,13 +27,6 @@ import { createAttaform } from '../../src/runtime/core/plugin'
  *      mode validation pass at construction. Silent rewriting is
  *      replaced with explicit error display.
  */
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 4; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
 
 function mountWith<S extends z.ZodObject>(
   schema: S,
@@ -62,9 +55,8 @@ function mountWith<S extends z.ZodObject>(
 
 describe('slim-primitive defaults — refinement-invalid passes through', () => {
   const apps: App[] = []
-  afterEach(async () => {
+  afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
-    await flush()
   })
 
   it("defaultValues: { color: 'teal' } against z.enum lands as 'teal'", async () => {
@@ -98,9 +90,8 @@ describe('slim-primitive defaults — refinement-invalid passes through', () => 
 
 describe('slim-primitive defaults — wrong-primitive fixed to schema default', () => {
   const apps: App[] = []
-  afterEach(async () => {
+  afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
-    await flush()
   })
 
   it("defaultValues: { color: 1 } against z.enum lands as the schema default ('red')", async () => {
@@ -136,9 +127,8 @@ describe('slim-primitive defaults — wrong-primitive fixed to schema default', 
 
 describe('slim-primitive defaults — strict-mode surfaces refinement errors at construction', () => {
   const apps: App[] = []
-  afterEach(async () => {
+  afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
-    await flush()
   })
 
   it('strict mount with refinement-invalid default surfaces a field error', async () => {

@@ -7,21 +7,8 @@
  * Parameterised on `useFormFn` so v3 and v4 callers can pass their
  * own typed import without the harness coupling to either zod major.
  */
-import { createApp, defineComponent, h, nextTick, type App } from 'vue'
+import { createApp, defineComponent, h, type App } from 'vue'
 import { createAttaform } from '../../src/runtime/core/plugin'
-
-/**
- * Drain microtasks + Vue's queue four times. Four is empirical —
- * enough for the directive's optimistic-connect IIFE, the field's
- * validate-on-init effect, and any `nextTick`-deferred dev warns to
- * settle. Three was occasionally too few; five was wasteful.
- */
-export async function flush(): Promise<void> {
-  for (let i = 0; i < 4; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
 
 /**
  * Sleep for `ms` real-time milliseconds. Thin wrapper over

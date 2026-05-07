@@ -11,18 +11,12 @@
 // force-sync added to each variant's change handler, the DOM kept
 // the user's clicked / selected state divorced from storage.
 import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 6; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
+import { waitUntil } from '../utils/form-harness'
 
 describe('no-op-write DOM-sync bug class — probes for non-text directives', () => {
   let app: App | undefined
@@ -63,7 +57,7 @@ describe('no-op-write DOM-sync bug class — probes for non-text directives', ()
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => root.querySelector('[data-field="agreed"]'))
 
     const input = root.querySelector('[data-field="agreed"]') as HTMLInputElement
     if (input === null) throw new Error('checkbox not rendered')
@@ -72,7 +66,9 @@ describe('no-op-write DOM-sync bug class — probes for non-text directives', ()
 
     input.checked = true
     input.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() =>
+      handle.api?.values.agreed === false && input.checked === false ? true : null
+    )
     expect(handle.api?.values.agreed).toBe(false)
     expect(input.checked).toBe(false)
   })
@@ -110,7 +106,7 @@ describe('no-op-write DOM-sync bug class — probes for non-text directives', ()
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => root.querySelector('[data-field="pick"]'))
 
     const select = root.querySelector('[data-field="pick"]') as HTMLSelectElement
     if (select === null) throw new Error('select not rendered')
@@ -119,7 +115,7 @@ describe('no-op-write DOM-sync bug class — probes for non-text directives', ()
 
     select.value = 'b'
     select.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (handle.api?.values.pick === 'a' && select.value === 'a' ? true : null))
     expect(handle.api?.values.pick).toBe('a')
     expect(select.value).toBe('a')
   })

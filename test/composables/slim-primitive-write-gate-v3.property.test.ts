@@ -7,7 +7,7 @@ import { useForm } from '../../src/zod-v3'
 import { zodAdapter } from '../../src/runtime/adapters/zod-v3'
 import { getAtPath } from '../../src/runtime/core/path-walker'
 import type { SlimPrimitiveKind } from '../../src/runtime/types/types-api'
-import { flush, makeMounter } from '../utils/form-harness'
+import { makeMounter, waitUntil } from '../utils/form-harness'
 import {
   arbitraryValueOfKind,
   buildSchemaWithManifest,
@@ -52,7 +52,7 @@ describe('slim-primitive write gate — property: known leaf paths (v3)', () => 
   afterEach(async () => {
     while (apps.length > 0) apps.pop()?.unmount()
     warnSpy.mockRestore()
-    await flush()
+    await waitUntil(() => (apps.length === 0 ? true : null))
   })
 
   test.prop([
@@ -78,7 +78,19 @@ describe('slim-primitive write gate — property: known leaf paths (v3)', () => 
 
       const beforeForm = api.values
       const ok = (api.setValue as SetValueFn)(leaf.path.join('.'), value)
-      await flush()
+      await waitUntil(() => {
+        if (expected) {
+          try {
+            return Object.is(getAtPath(api.values(), leaf.path), value) ||
+              JSON.stringify(getAtPath(api.values(), leaf.path)) === JSON.stringify(value)
+              ? true
+              : null
+          } catch {
+            return Object.is(getAtPath(api.values(), leaf.path), value) ? true : null
+          }
+        }
+        return api.values === beforeForm ? true : null
+      })
 
       expect(ok).toBe(expected)
 
@@ -101,7 +113,7 @@ describe('slim-primitive write gate — property: unknown paths (v3)', () => {
   afterEach(async () => {
     while (apps.length > 0) apps.pop()?.unmount()
     warnSpy.mockRestore()
-    await flush()
+    await waitUntil(() => (apps.length === 0 ? true : null))
   })
 
   test.prop([
@@ -128,7 +140,7 @@ describe('slim-primitive write gate — property: unknown paths (v3)', () => {
 
       const beforeForm = api.values
       const ok = (api.setValue as SetValueFn)(unknownPath, value)
-      await flush()
+      await waitUntil(() => (api.values === beforeForm ? true : null))
 
       expect(ok).toBe(false)
       expect(api.values).toBe(beforeForm)

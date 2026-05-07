@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
@@ -166,13 +166,6 @@ function mountForm(persist: Parameters<typeof useForm<typeof schema>>[0]['persis
   return { app, api: handle.api as ApiReturn, type }
 }
 
-async function drain(rounds = 8): Promise<void> {
-  for (let i = 0; i < rounds; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
-
 describe('persistence — localStorage backend', () => {
   const apps: App[] = []
   beforeEach(() => localStorage.clear())
@@ -182,9 +175,9 @@ describe('persistence — localStorage backend', () => {
   })
 
   it('writes form state after a mutation + debounce window', async () => {
-    const { app, type } = mountForm({ storage: 'local', key: 'test-local', debounceMs: 20 })
+    const { app, api, type } = mountForm({ storage: 'local', key: 'test-local', debounceMs: 20 })
     apps.push(app)
-    await drain()
+    await waitUntil(() => (api.values.email === '' ? true : null))
     type('email', 'alice@example.com')
     const raw = await waitUntil(() => localStorage.getItem(fpKey('test-local')))
     expect(raw).not.toBeNull()
@@ -275,13 +268,13 @@ describe('persistence — localStorage backend', () => {
       clearOnSubmitSuccess: false,
     })
     apps.push(app)
-    await drain()
+    await waitUntil(() => (api.values.email === '' ? true : null))
     type('email', 'user@x.com')
     await waitUntil(() => localStorage.getItem(fpKey('test-noclear')))
     expect(localStorage.getItem(fpKey('test-noclear'))).not.toBeNull()
     const handler = api.handleSubmit(async () => {})
     await handler()
-    await drain()
+    await waitUntil(() => (localStorage.getItem(fpKey('test-noclear')) !== null ? true : null))
     // Entry stayed — user opted out of clear-on-success. Give a small
     // wait afterwards to prove the clear path genuinely didn't run
     // (otherwise a delayed removeItem would fail this after the
@@ -367,7 +360,7 @@ describe('persistence — non-opted-in blank paths survive hydration', () => {
     document.body.appendChild(root)
     app.mount(root)
     apps.push(app)
-    await drain()
+    await waitUntil(() => (captured.api !== undefined ? true : null))
 
     // Wait for the persistence hydrate to land (it's async — dynamic
     // import + adapter.getItem + apply).
@@ -409,9 +402,13 @@ describe('persistence — sessionStorage backend', () => {
   })
 
   it('round-trips through sessionStorage', async () => {
-    const { app, type } = mountForm({ storage: 'session', key: 'test-session', debounceMs: 20 })
+    const { app, api, type } = mountForm({
+      storage: 'session',
+      key: 'test-session',
+      debounceMs: 20,
+    })
     apps.push(app)
-    await drain()
+    await waitUntil(() => (api.values.email === '' ? true : null))
     type('email', 'sess@example.com')
     const raw = await waitUntil(() => sessionStorage.getItem(fpKey('test-session')))
     expect(raw).not.toBeNull()
@@ -497,9 +494,13 @@ describe('persistence — anonymous useForm() rejects persist (dev throw)', () =
   })
 
   it('does NOT throw when useForm has an explicit key + persist', async () => {
-    const { app, type } = mountForm({ storage: 'session', key: 'test-explicit', debounceMs: 20 })
+    const { app, api, type } = mountForm({
+      storage: 'session',
+      key: 'test-explicit',
+      debounceMs: 20,
+    })
     apps.push(app)
-    await drain()
+    await waitUntil(() => (api.values.email === '' ? true : null))
     type('email', 'works@example.com')
     const raw = await waitUntil(() => sessionStorage.getItem(fpKey('test-explicit')))
     expect(raw).not.toBeNull()
@@ -522,7 +523,7 @@ describe('persistence — backend swap cleans up the prior backend', () => {
     // Mount 1: persist to localStorage.
     const first = mountForm({ storage: 'local', key: 'swap-test', debounceMs: 20 })
     apps.push(first.app)
-    await drain()
+    await waitUntil(() => (first.api.values.email === '' ? true : null))
     first.type('email', 'mango')
     await waitUntil(() => localStorage.getItem(fpKey('swap-test')))
     expect(localStorage.getItem(fpKey('swap-test'))).not.toBeNull()
@@ -556,9 +557,13 @@ describe('persistence — IndexedDB backend', () => {
   })
 
   it('writes + hydrates through IDB', async () => {
-    const { app, type } = mountForm({ storage: 'indexeddb', key: 'test-idb-rt', debounceMs: 20 })
+    const { app, api, type } = mountForm({
+      storage: 'indexeddb',
+      key: 'test-idb-rt',
+      debounceMs: 20,
+    })
     apps.push(app)
-    await drain(16)
+    await waitUntil(() => (api.values.email === '' ? true : null))
     type('email', 'idb@example.com')
     // Wait for the debounced write to reach IDB. We can't peek IDB
     // directly, but the second-mount hydration below IS what reads
@@ -566,7 +571,7 @@ describe('persistence — IndexedDB backend', () => {
     // convergence signal. A small hold here lets the write's tx
     // settle before we tear the db down.
     await wait(80)
-    await drain(16)
+    await waitUntil(() => (api.values.email === 'idb@example.com' ? true : null))
     app.unmount()
     __resetIndexedDbForTests()
     const second = mountForm({ storage: 'indexeddb', key: 'test-idb-rt', debounceMs: 20 })
@@ -592,7 +597,7 @@ describe('persistence — include=form+errors', () => {
       include: 'form+errors',
     })
     apps.push(app)
-    await drain()
+    await waitUntil(() => (api.values.email === '' ? true : null))
     api.setFieldErrors([
       { path: ['email'], message: 'bad', formKey: api.key, code: 'api:validation' },
     ])
@@ -668,7 +673,7 @@ describe('persistence — per-element opt-in', () => {
     handle.api?.setValue('email', 'leak@example.com')
     // Generous wait — debounce is 20 ms, so 80 ms covers timer + drain.
     await wait(80)
-    await drain()
+    await waitUntil(() => (localStorage.getItem(fpKey('test-noop')) === null ? true : null))
     expect(localStorage.getItem(fpKey('test-noop'))).toBeNull()
   })
 
@@ -710,7 +715,7 @@ describe('persistence — per-element opt-in', () => {
     input.value = 'no-opt-in@example.com'
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await wait(80)
-    await drain()
+    await waitUntil(() => (localStorage.getItem(fpKey('test-no-flag')) === null ? true : null))
     expect(localStorage.getItem(fpKey('test-no-flag'))).toBeNull()
     // Sanity: the value still landed in the form ref (writes work, just
     // no persistence).
@@ -765,7 +770,7 @@ describe('persistence — per-element opt-in', () => {
     b.value = 'from-b@example.com'
     b.dispatchEvent(new Event('input', { bubbles: true }))
     await wait(80)
-    await drain()
+    await waitUntil(() => (localStorage.getItem(fpKey('test-mixed')) === null ? true : null))
     expect(localStorage.getItem(fpKey('test-mixed'))).toBeNull()
 
     // Input A fires — should persist.
@@ -878,7 +883,7 @@ describe('persistence — sensitive-name heuristic', () => {
     document.body.appendChild(root)
     app.mount(root)
     apps.push(app)
-    await drain()
+    await waitUntil(() => (handle.api !== undefined ? true : null))
     await expect(handle.api?.persist('password')).rejects.toThrow(/sensitive-name pattern/)
   })
 
@@ -899,7 +904,7 @@ describe('persistence — sensitive-name heuristic', () => {
     document.body.appendChild(root)
     app.mount(root)
     apps.push(app)
-    await drain()
+    await waitUntil(() => (handle.api !== undefined ? true : null))
     handle.api?.setValue('password', 'unsafe-but-acknowledged')
     await expect(
       handle.api?.persist('password', { acknowledgeSensitive: true })
@@ -943,7 +948,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
     document.body.appendChild(root)
     app.mount(root)
     apps.push(app)
-    await drain()
+    await waitUntil(() => (handle.api !== undefined ? true : null))
 
     handle.api?.setValue('email', 'checkpoint@example.com')
     await handle.api?.persist('email')
@@ -1039,7 +1044,7 @@ describe('persistence — form.persist / form.clearPersistedDraft', () => {
     document.body.appendChild(root)
     app.mount(root)
     apps.push(app)
-    await drain()
+    await waitUntil(() => (handle.api !== undefined ? true : null))
     // Both should resolve without throwing or touching storage.
     await expect(handle.api?.persist('email')).resolves.toBeUndefined()
     await expect(handle.api?.clearPersistedDraft()).resolves.toBeUndefined()
@@ -1062,7 +1067,7 @@ describe('persistence — reset wipes the persisted draft', () => {
   it('form.reset() wipes the storage entry and the in-memory state', async () => {
     const { app, api, type } = mountForm({ storage: 'local', key: 'test-reset', debounceMs: 20 })
     apps.push(app)
-    await drain()
+    await waitUntil(() => (api.values.email === '' ? true : null))
     type('email', 'before-reset@example.com')
     await waitUntil(() => localStorage.getItem(fpKey('test-reset')))
     expect(localStorage.getItem(fpKey('test-reset'))).not.toBeNull()
@@ -1180,7 +1185,19 @@ describe('persistence — reset wipes the persisted draft', () => {
       // Construct-time should NOT throw.
       expect(() => app.mount(root)).not.toThrow()
       apps.push(app)
-      await drain()
+      // Watch for the post-mount microtask warning to fire — if dormant
+      // config were lecturing, the warn would land on a Promise.resolve
+      // continuation. Poll until any [attaform] noise appears, otherwise
+      // time out and confirm silence.
+      await waitUntil(
+        () =>
+          [...warnSpy.mock.calls, ...errorSpy.mock.calls]
+            .map((args) => args.join(' '))
+            .some((m) => m.includes('[attaform]'))
+            ? true
+            : null,
+        50
+      )
       const warnCalls = warnSpy.mock.calls.map((args) => args.join(' '))
       const errorCalls = errorSpy.mock.calls.map((args) => args.join(' '))
       const attaformNoise = [...warnCalls, ...errorCalls].filter((m) => m.includes('[attaform]'))
@@ -1615,9 +1632,9 @@ describe('persistence — fingerprint-keyed storage + orphan cleanup', () => {
   })
 
   it('storage key includes the schema fingerprint suffix', async () => {
-    const { app, type } = mountForm({ storage: 'local', key: 'fp-write', debounceMs: 20 })
+    const { app, api, type } = mountForm({ storage: 'local', key: 'fp-write', debounceMs: 20 })
     apps.push(app)
-    await drain()
+    await waitUntil(() => (api.values.email === '' ? true : null))
     type('email', 'fp@example.com')
     const expected = fpKey('fp-write')
     const raw = await waitUntil(() => localStorage.getItem(expected))
@@ -1632,7 +1649,7 @@ describe('persistence — fingerprint-keyed storage + orphan cleanup', () => {
     localStorage.setItem('fp-mismatch:OLD-FINGERPRINT', stalePayload)
     const { app, api } = mountForm({ storage: 'local', key: 'fp-mismatch', debounceMs: 20 })
     apps.push(app)
-    await drain()
+    await waitUntil(() => (api.values.email === '' ? true : null))
     expect(api.values.email).toBe('')
   })
 
@@ -1677,9 +1694,9 @@ describe('persistence — fingerprint-keyed storage + orphan cleanup', () => {
       fpKey('my-form-2'),
       JSON.stringify({ v: 4, data: { form: { email: 'sibling@x.com', password: 'pw' } } })
     )
-    const { app } = mountForm({ storage: 'local', key: 'my-form', debounceMs: 20 })
+    const { app, api } = mountForm({ storage: 'local', key: 'my-form', debounceMs: 20 })
     apps.push(app)
-    await drain()
+    await waitUntil(() => (api.values.email === '' ? true : null))
     expect(localStorage.getItem(fpKey('my-form-2'))).not.toBeNull()
   })
 })
@@ -1738,13 +1755,13 @@ describe('persistence — dispose race (B1)', () => {
   })
 
   it('drains the last debounced keystroke when the component unmounts mid-debounce', async () => {
-    const { app, type } = mountForm({
+    const { app, api, type } = mountForm({
       storage: 'local',
       key: 'test-drain',
       debounceMs: 200, // long enough that unmount races the timer
     })
     apps.push(app)
-    await drain()
+    await waitUntil(() => (api.values.email === '' ? true : null))
     // Type a value, then immediately unmount — well before the debounce
     // window expires. Pre-fix, dispose() set `disposed=true` BEFORE
     // calling writer.flush(), so the closure bailed at its first guard
@@ -1762,18 +1779,26 @@ describe('persistence — dispose race (B1)', () => {
   it('exposes registry.shutdown() that drains every form before resolving', async () => {
     // Two forms with overlapping pending debounced writes. shutdown()
     // should resolve only after both writes have landed in storage.
-    const { app: app1, type: type1 } = mountForm({
+    const {
+      app: app1,
+      api: api1,
+      type: type1,
+    } = mountForm({
       storage: 'local',
       key: 'test-shutdown-a',
       debounceMs: 100,
     })
-    const { app: app2, type: type2 } = mountForm({
+    const {
+      app: app2,
+      api: api2,
+      type: type2,
+    } = mountForm({
       storage: 'local',
       key: 'test-shutdown-b',
       debounceMs: 100,
     })
     apps.push(app1, app2)
-    await drain()
+    await waitUntil(() => (api1.values.email === '' && api2.values.email === '' ? true : null))
     type1('email', 'one@example.com')
     type2('email', 'two@example.com')
     // Use the registry from app1 (any of them works — both share the

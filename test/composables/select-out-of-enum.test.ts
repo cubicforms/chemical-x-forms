@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * `<select v-register>` against a `z.enum(...)` schema with an
@@ -26,13 +27,6 @@ import { createAttaform } from '../../src/runtime/core/plugin'
  */
 
 const schema = z.object({ color: z.enum(['red', 'green', 'blue']) })
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 4; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
 
 describe('<select v-register> with out-of-enum option', () => {
   let app: App | undefined
@@ -75,7 +69,12 @@ describe('<select v-register> with out-of-enum option', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      captured.api !== undefined &&
+      ['red', 'green', 'blue'].includes(captured.api.values.color as string)
+        ? true
+        : null
+    )
 
     if (captured.api === undefined) throw new Error('unreachable')
 
@@ -87,7 +86,7 @@ describe('<select v-register> with out-of-enum option', () => {
 
     select.value = 'magenta'
     select.dispatchEvent(new Event('change', { bubbles: true }))
-    await flush()
+    await waitUntil(() => (captured.api?.values.color === 'magenta' ? true : null))
 
     // Slim-type contract: 'magenta' is a string → accepted.
     expect(captured.api.values.color).toBe('magenta')
@@ -113,7 +112,12 @@ describe('<select v-register> with out-of-enum option', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      captured.api !== undefined &&
+      ['red', 'green', 'blue'].includes(captured.api.values.color as string)
+        ? true
+        : null
+    )
 
     if (captured.api === undefined) throw new Error('unreachable')
 
@@ -124,7 +128,7 @@ describe('<select v-register> with out-of-enum option', () => {
     // through unknown to simulate a runtime type-system bypass
     // (server payload, JSON, etc.).
     const ok = (captured.api.setValue as (path: 'color', value: unknown) => boolean)('color', 1)
-    await flush()
+    await waitUntil(() => (warnSpy.mock.calls.length > 0 ? true : null))
 
     // Rejection contract: returns false, value at path unchanged,
     // dev-warn fires once with the path + value.
@@ -155,7 +159,7 @@ describe('<select v-register> with out-of-enum option', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
-    await flush()
+    await waitUntil(() => (captured.api !== undefined ? true : null))
 
     if (captured.api === undefined) throw new Error('unreachable')
 
@@ -163,7 +167,7 @@ describe('<select v-register> with out-of-enum option', () => {
       'color',
       'magenta'
     )
-    await flush()
+    await waitUntil(() => (captured.api?.values.color === 'magenta' ? true : null))
 
     expect(ok).toBe(true)
     expect(captured.api.values.color).toBe('magenta')

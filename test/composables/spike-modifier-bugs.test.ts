@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { baseCompile } from '@vue/compiler-core'
-import { createApp, defineComponent, nextTick, type App } from 'vue'
+import { createApp, defineComponent, type App } from 'vue'
 import * as VueRuntime from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
@@ -10,6 +10,7 @@ import { inputTextAreaNodeTransform } from '../../src/runtime/lib/core/transform
 import { selectNodeTransform } from '../../src/runtime/lib/core/transforms/select-transform'
 import { vRegisterHintTransform } from '../../src/runtime/lib/core/transforms/v-register-hint-transform'
 import { vRegisterPreambleTransform } from '../../src/runtime/lib/core/transforms/v-register-preamble-transform'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * Regression coverage for the two spike-reported bugs in section 16
@@ -37,13 +38,6 @@ import { vRegisterPreambleTransform } from '../../src/runtime/lib/core/transform
  * exact keystroke sequence the user reported. Pre-fix, both tests
  * fail; post-fix, both pass.
  */
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 4; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
 
 function compileTemplateToRender(template: string): (...args: unknown[]) => unknown {
   const { code } = baseCompile(template, {
@@ -96,7 +90,7 @@ describe('regression: 16b — `<input v-register.trim>` spacebar after content',
     app = createApp(App)
     app.use(createAttaform({ override: false }))
     app.mount(root)
-    await flush()
+    await waitUntil(() => root.querySelector<HTMLInputElement>('input.probe'))
 
     const input = root.querySelector<HTMLInputElement>('input.probe')
     if (input === null) throw new Error('input not rendered')
@@ -105,7 +99,7 @@ describe('regression: 16b — `<input v-register.trim>` spacebar after content',
     input.focus()
     input.value = 'hello'
     input.dispatchEvent(new Event('input'))
-    await flush()
+    await waitUntil(() => (input.value === 'hello' ? true : null))
     expect(input.value).toBe('hello')
 
     // Type a trailing space. The trim modifier strips it before
@@ -113,14 +107,14 @@ describe('regression: 16b — `<input v-register.trim>` spacebar after content',
     // must remain visible in the DOM so they can keep typing.
     input.value = 'hello '
     input.dispatchEvent(new Event('input'))
-    await flush()
+    await waitUntil(() => (input.value === 'hello ' ? true : null))
     expect(input.value).toBe('hello ')
 
     // Type the next character. The internal space survives —
     // String.prototype.trim() only strips leading/trailing.
     input.value = 'hello w'
     input.dispatchEvent(new Event('input'))
-    await flush()
+    await waitUntil(() => (input.value === 'hello w' ? true : null))
     expect(input.value).toBe('hello w')
   })
 
@@ -145,7 +139,7 @@ describe('regression: 16b — `<input v-register.trim>` spacebar after content',
     app = createApp(App)
     app.use(createAttaform({ override: false }))
     app.mount(root)
-    await flush()
+    await waitUntil(() => root.querySelector<HTMLInputElement>('input.probe'))
 
     const input = root.querySelector<HTMLInputElement>('input.probe')
     if (input === null) throw new Error('input not rendered')
@@ -153,7 +147,7 @@ describe('regression: 16b — `<input v-register.trim>` spacebar after content',
     input.focus()
     input.value = ' '
     input.dispatchEvent(new Event('input'))
-    await flush()
+    await waitUntil(() => (input.value === ' ' ? true : null))
 
     // The user typed a space. With deferred trim the input listener
     // writes the raw " " to the model — DOM and model agree, Vue's
@@ -200,7 +194,7 @@ describe('regression: 16e — `<input type="number">` backspace-to-empty', () =>
     app = createApp(App)
     app.use(createAttaform({ override: false }))
     app.mount(root)
-    await flush()
+    await waitUntil(() => root.querySelector<HTMLInputElement>('input.probe'))
 
     const input = root.querySelector<HTMLInputElement>('input.probe')
     if (input === null) throw new Error('input not rendered')
@@ -210,7 +204,7 @@ describe('regression: 16e — `<input type="number">` backspace-to-empty', () =>
     // Type "1".
     input.value = '1'
     input.dispatchEvent(new Event('input'))
-    await flush()
+    await waitUntil(() => (input.value === '1' ? true : null))
 
     // Backspace to empty. Pre-fix the directive called setValue('')
     // which the slim-primitive gate rejected with a dev warning.
@@ -218,7 +212,7 @@ describe('regression: 16e — `<input type="number">` backspace-to-empty', () =>
     // transient mid-edit state and skips the assigner entirely.
     input.value = ''
     input.dispatchEvent(new Event('input'))
-    await flush()
+    await waitUntil(() => (input.value === '' ? true : null))
 
     const matched = warnSpy.mock.calls.filter((c: unknown[]) =>
       String(c[0]).includes('write rejected')

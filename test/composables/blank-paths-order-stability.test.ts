@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, defineComponent, h, nextTick, type App } from 'vue'
+import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType } from '../../src/runtime/types/types-api'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * `derivedBlankErrors` (computed off `blankPaths`) feeds
@@ -46,12 +47,6 @@ function mountForm<Schema extends z.ZodObject>(schema: Schema): { app: App; api:
   return { app, api: handle.api as ApiFor<Schema> }
 }
 
-async function flushValidations(): Promise<void> {
-  await nextTick()
-  await new Promise<void>((r) => setTimeout(r, 0))
-  await nextTick()
-}
-
 describe('derivedBlankErrors — insertion-order stability across DU reshape', () => {
   const apps: App[] = []
   afterEach(() => {
@@ -79,13 +74,15 @@ describe('derivedBlankErrors — insertion-order stability across DU reshape', (
     // every numeric primitive leaf in schema-declaration order.
     const { app, api } = mountForm(schema)
     apps.push(app)
-    await flushValidations()
+    await waitUntil(() => (api.blankPaths.value.size >= 2 ? true : null))
 
     const initialBlanks = [...api.blankPaths.value]
     expect(initialBlanks).toEqual([JSON.stringify(['notify', 'n']), JSON.stringify(['age'])])
 
     api.setValue('notify', { kind: 'num', n: 0 })
-    await flushValidations()
+    await waitUntil(() =>
+      [...api.blankPaths.value].join('|') === initialBlanks.join('|') ? true : null
+    )
 
     const afterReshapeBlanks = [...api.blankPaths.value]
     expect(afterReshapeBlanks).toEqual(initialBlanks)
@@ -94,13 +91,19 @@ describe('derivedBlankErrors — insertion-order stability across DU reshape', (
   it('same-disc Case B reshape preserves form.meta.errors order', async () => {
     const { app, api } = mountForm(schema)
     apps.push(app)
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === 'notify.n|age' ? true : null
+    )
 
     const initialPaths = api.meta.errors.map((e) => e.path.join('.'))
     expect(initialPaths).toEqual(['notify.n', 'age'])
 
     api.setValue('notify', { kind: 'num', n: 0 })
-    await flushValidations()
+    await waitUntil(() =>
+      api.meta.errors.map((e) => e.path.join('.')).join('|') === initialPaths.join('|')
+        ? true
+        : null
+    )
 
     const afterPaths = api.meta.errors.map((e) => e.path.join('.'))
     expect(afterPaths).toEqual(initialPaths)

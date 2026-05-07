@@ -11,21 +11,15 @@
 // This test runs the same SSR → hydrate flow inside jsdom to find out
 // where in the lifecycle the selectedness gets lost.
 import { afterEach, describe, expect, it } from 'vitest'
-import { createSSRApp, defineComponent, h, nextTick, withDirectives, type App } from 'vue'
+import { createSSRApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import { waitUntil } from '../utils/form-harness'
 
 const schema = z.object({ colors: z.array(z.string()) })
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 6; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
 
 const Parent = defineComponent({
   setup() {
@@ -95,7 +89,9 @@ describe('<select multiple v-register> — SSR + hydration', () => {
     // performs hydration (vs createApp + mount which does a fresh render).
     app = createSSRApp(Parent).use(createAttaform())
     app.mount(root)
-    await flush()
+    await waitUntil(() =>
+      select.options[0]?.selected === true && select.options[2]?.selected === true ? true : null
+    )
 
     const postHydration = Array.from(select.options).map((o) => ({
       value: o.value,

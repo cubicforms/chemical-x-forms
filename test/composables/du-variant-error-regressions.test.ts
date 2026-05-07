@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, defineComponent, h, nextTick, type App } from 'vue'
+import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { unset, useForm } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType, ValidationError } from '../../src/runtime/types/types-api'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * Regression coverage for failure modes observed in spike.vue
@@ -101,13 +102,6 @@ function mount(
   return { app, api: handle.api as ProfileApi, warnings, errorsObserved }
 }
 
-/** Flush microtasks + a debounce-resilient real-timer wait. */
-async function flushValidations(): Promise<void> {
-  await nextTick()
-  await new Promise<void>((r) => setTimeout(r, 0))
-  await nextTick()
-}
-
 describe('DU variant switch — error materialisation regressions', () => {
   const apps: App[] = []
   afterEach(() => {
@@ -128,7 +122,12 @@ describe('DU variant switch — error materialisation regressions', () => {
     // ['notify','number'] so the materialised tree is
     // `{ notify: { number: [errors] } }` and per-leaf reads work.
     api.setValue('notify.channel', 'sms')
-    await flushValidations()
+    await waitUntil(() => {
+      const errs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
+        'notify.number'
+      )
+      return errs && errs.length === 1 ? true : null
+    })
 
     // Per-leaf read: the canonical key lookup must hit. Today this
     // returns undefined because the schemaErrors store has the entry
@@ -156,7 +155,11 @@ describe('DU variant switch — error materialisation regressions', () => {
     apps.push(app)
 
     api.setValue('notify.channel', 'sms')
-    await flushValidations()
+    await waitUntil(() => {
+      const drilled = (api.errors as unknown as { notify: { number?: ValidationError[] } }).notify
+        .number
+      return drilled && drilled.length === 1 ? true : null
+    })
 
     // Dot-access path — same store lookup as the callable form.
     const drilled = (api.errors as unknown as { notify: { number?: ValidationError[] } }).notify
@@ -177,7 +180,12 @@ describe('DU variant switch — error materialisation regressions', () => {
       notify: { channel: 'email', address: 'not-an-email' }, // produces an `notify.address` error
     })
     apps.push(app)
-    await flushValidations()
+    await waitUntil(() => {
+      const errs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
+        'notify.address'
+      )
+      return errs?.[0]?.code?.startsWith('zod:') ? true : null
+    })
 
     // Confirm the email-variant error landed.
     const addressBefore = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
@@ -191,7 +199,12 @@ describe('DU variant switch — error materialisation regressions', () => {
     // entry itself should not survive the re-validation either, or
     // `form.meta.errors` will leak it).
     api.setValue('notify.channel', 'sms')
-    await flushValidations()
+    await waitUntil(() => {
+      const errs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
+        'notify.address'
+      )
+      return errs === undefined ? true : null
+    })
 
     // The stale leaf entry must NOT show up anywhere — not in the
     // active-path-filtered surface, not in the unfiltered aggregate.
@@ -216,7 +229,12 @@ describe('DU variant switch — error materialisation regressions', () => {
       notify: { channel: 'email', address: unset },
     })
     apps.push(app)
-    await flushValidations()
+    await waitUntil(() => {
+      const errs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
+        'notify.address'
+      )
+      return errs?.some((e) => e.code === 'atta:no-value-supplied') ? true : null
+    })
 
     const initial = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
       'notify.address'
@@ -225,13 +243,18 @@ describe('DU variant switch — error materialisation regressions', () => {
 
     // Switch to sms — address is no longer in the active variant.
     api.setValue('notify.channel', 'sms')
-    await flushValidations()
+    await waitUntil(() => (api.values.notify?.channel === 'sms' ? true : null))
 
     // Switch back — variant memory should restore `address` AND the
     // construction-time `unset` intent (preserved as blankPaths
     // membership). The derived blank error must reappear.
     api.setValue('notify.channel', 'email')
-    await flushValidations()
+    await waitUntil(() => {
+      const errs = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
+        'notify.address'
+      )
+      return errs?.some((e) => e.code === 'atta:no-value-supplied') ? true : null
+    })
 
     const restored = (api.errors as unknown as (p: string) => ValidationError[] | undefined)(
       'notify.address'

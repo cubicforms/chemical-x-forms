@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, isReactive, isReadonly, isRef, nextTick, watch } from 'vue'
+import { createApp, defineComponent, h, isReactive, isReadonly, isRef, watch } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * `form.values` — Pinia-style reactive readonly proxy over the form
@@ -23,13 +24,6 @@ const schema = z.object({
 })
 
 type Form = z.infer<typeof schema>
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 4; i++) {
-    await Promise.resolve()
-    await nextTick()
-  }
-}
 
 function mountForm(): {
   api: ReturnType<typeof useForm<typeof schema>>
@@ -146,9 +140,9 @@ describe('form.values — readonly reactive proxy', () => {
     )
     try {
       api.setValue('email', 'first@x.com')
-      await flush()
+      await waitUntil(() => (seen.includes('first@x.com') ? true : null))
       api.setValue('email', 'second@x.com')
-      await flush()
+      await waitUntil(() => (seen.includes('second@x.com') ? true : null))
       expect(seen).toEqual(['first@x.com', 'second@x.com'])
     } finally {
       stop()
@@ -163,7 +157,7 @@ describe('form.values — readonly reactive proxy', () => {
       expect(api.values.email).toBe('pre-reset@x.com')
 
       api.reset()
-      await flush()
+      await waitUntil(() => (api.values.email === 'a@b.com' ? true : null))
       expect(api.values.email).toBe('a@b.com')
       expect(api.values.address.city).toBe('NYC')
     } finally {
@@ -182,9 +176,9 @@ describe('form.values — readonly reactive proxy', () => {
     )
     try {
       api.setValue('email', 'before-reset@x.com')
-      await flush()
+      await waitUntil(() => (seen.includes('before-reset@x.com') ? true : null))
       api.reset()
-      await flush()
+      await waitUntil(() => (seen.includes('a@b.com') ? true : null))
       // First entry: setValue. Second: reset (back to default).
       expect(seen).toEqual(['before-reset@x.com', 'a@b.com'])
     } finally {
@@ -197,15 +191,23 @@ describe('form.values — readonly reactive proxy', () => {
     const { api, unmount } = mountForm()
     try {
       api.append('tags', 'gamma')
-      await flush()
+      await waitUntil(() =>
+        JSON.stringify(api.values.tags) === JSON.stringify(['alpha', 'beta', 'gamma']) ? true : null
+      )
       expect(api.values.tags).toEqual(['alpha', 'beta', 'gamma'])
 
       api.prepend('tags', 'pre')
-      await flush()
+      await waitUntil(() =>
+        JSON.stringify(api.values.tags) === JSON.stringify(['pre', 'alpha', 'beta', 'gamma'])
+          ? true
+          : null
+      )
       expect(api.values.tags).toEqual(['pre', 'alpha', 'beta', 'gamma'])
 
       api.remove('tags', 0)
-      await flush()
+      await waitUntil(() =>
+        JSON.stringify(api.values.tags) === JSON.stringify(['alpha', 'beta', 'gamma']) ? true : null
+      )
       expect(api.values.tags).toEqual(['alpha', 'beta', 'gamma'])
     } finally {
       unmount()
@@ -251,7 +253,7 @@ describe('form.toRef — escape hatch for ref-shaped interop', () => {
     try {
       const emailRef = api.toRef('email')
       api.setValue('email', 'changed@x.com')
-      await flush()
+      await waitUntil(() => (emailRef.value === 'changed@x.com' ? true : null))
       expect(emailRef.value).toBe('changed@x.com')
     } finally {
       unmount()

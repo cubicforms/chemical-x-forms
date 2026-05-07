@@ -6,6 +6,7 @@ import { unset, useForm } from '../../src/zod'
 import { canonicalizePath } from '../../src/runtime/core/paths'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * The contract under test: when a `number` leaf is in `blankPaths`,
@@ -30,10 +31,6 @@ import { createAttaform } from '../../src/runtime/core/plugin'
 const numericLeafSchema = z.object({
   lengthCm: z.number().positive(),
 })
-
-function flushAll(): Promise<void> {
-  return new Promise((r) => setTimeout(r, 0))
-}
 
 function mountNumericInput() {
   const root = document.createElement('div')
@@ -77,7 +74,10 @@ describe('blank-marked number leaf — blur preserves empty display', () => {
   it('starts displayed empty when the schema default is auto-unset', async () => {
     const { app } = mountNumericInput()
     apps.push(app)
-    await flushAll()
+    await waitUntil(() => {
+      const el = document.querySelector('input[data-test="lengthCm"]') as HTMLInputElement | null
+      return el !== null && el.value === '' ? true : null
+    })
     const input = document.querySelector('input[data-test="lengthCm"]') as HTMLInputElement
     expect(input.value).toBe('')
   })
@@ -85,16 +85,19 @@ describe('blank-marked number leaf — blur preserves empty display', () => {
   it('focus + blur with no typing keeps the field blank and empty', async () => {
     const { app } = mountNumericInput()
     apps.push(app)
-    await flushAll()
+    await waitUntil(() => {
+      const el = document.querySelector('input[data-test="lengthCm"]') as HTMLInputElement | null
+      return el !== null && el.value === '' ? true : null
+    })
     const input = document.querySelector('input[data-test="lengthCm"]') as HTMLInputElement
     // Sanity: starts blank.
     expect(input.value).toBe('')
 
     input.dispatchEvent(new FocusEvent('focus', { bubbles: true }))
-    await flushAll()
+    await waitUntil(() => (document.activeElement === input || input.value === '' ? true : null))
     input.dispatchEvent(new Event('change', { bubbles: true }))
     input.dispatchEvent(new FocusEvent('blur', { bubbles: true }))
-    await flushAll()
+    await waitUntil(() => (input.value === '' ? true : null))
 
     // Bug repro: this assertion fails today because the change
     // handler's blur normalizer paints `'0'` over the empty DOM.
@@ -104,22 +107,25 @@ describe('blank-marked number leaf — blur preserves empty display', () => {
   it('type then clear then blur stays blank and empty', async () => {
     const { app } = mountNumericInput()
     apps.push(app)
-    await flushAll()
+    await waitUntil(() => {
+      const el = document.querySelector('input[data-test="lengthCm"]') as HTMLInputElement | null
+      return el !== null && el.value === '' ? true : null
+    })
     const input = document.querySelector('input[data-test="lengthCm"]') as HTMLInputElement
 
     input.value = '5'
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flushAll()
+    await waitUntil(() => (input.value === '5' ? true : null))
     expect(input.value).toBe('5')
 
     input.value = ''
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flushAll()
+    await waitUntil(() => (input.value === '' ? true : null))
     expect(input.value).toBe('')
 
     input.dispatchEvent(new Event('change', { bubbles: true }))
     input.dispatchEvent(new FocusEvent('blur', { bubbles: true }))
-    await flushAll()
+    await waitUntil(() => (input.value === '' ? true : null))
 
     // After clear+blur, storage is the slim default (0) but the path
     // is in blankPaths — display must stay ''.
@@ -166,18 +172,18 @@ describe('blank-marked number leaf — blank flag survives blur', () => {
     const app = createApp(App).use(createAttaform({ override: true }))
     apps.push(app)
     app.mount(root)
-    await flushAll()
+    const lengthKey = canonicalizePath('lengthCm').key
+    await waitUntil(() => (captured?.blankPaths.value.has(lengthKey) === true ? true : null))
     if (captured === undefined) throw new Error('form not captured')
 
-    const lengthKey = canonicalizePath('lengthCm').key
     expect(captured.blankPaths.value.has(lengthKey)).toBe(true)
 
     const input = document.querySelector('input[data-test="lengthCm"]') as HTMLInputElement
     input.dispatchEvent(new FocusEvent('focus', { bubbles: true }))
-    await flushAll()
+    await waitUntil(() => (captured?.blankPaths.value.has(lengthKey) === true ? true : null))
     input.dispatchEvent(new Event('change', { bubbles: true }))
     input.dispatchEvent(new FocusEvent('blur', { bubbles: true }))
-    await flushAll()
+    await waitUntil(() => (captured?.blankPaths.value.has(lengthKey) === true ? true : null))
 
     // The flag must still be set — a focus + blur with no typing
     // must not unmark a deliberately-blank field.

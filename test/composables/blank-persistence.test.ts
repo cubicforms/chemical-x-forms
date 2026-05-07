@@ -72,6 +72,24 @@ async function flushAll(rounds = 12): Promise<void> {
   }
 }
 
+// Poll `predicate` until truthy or the timeout elapses. Used over a
+// fixed-time pump for the persist-hydration chain — dynamic-import +
+// adapter.getItem can blow past any fixed sleep on a contended CI
+// runner, especially on the cold-cache first-mount in a module.
+async function waitUntil<T>(
+  predicate: () => T | null | undefined,
+  timeoutMs = 500,
+  intervalMs = 5
+): Promise<T | null> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const v = predicate()
+    if (v !== null && v !== undefined) return v
+    if (Date.now() >= deadline) return null
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
+}
+
 describe('persistence — v=2 envelope rejection emits a one-time dev-warn', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>
   const apps: App[] = []
@@ -110,12 +128,13 @@ describe('persistence — v=2 envelope rejection emits a one-time dev-warn', () 
     apps.push(app)
     app.mount(document.createElement('div'))
 
-    await flushAll()
-
-    const v2Warns = warnSpy.mock.calls.filter((c: unknown[]) =>
-      String(c[0] ?? '').includes('envelope v=2')
-    )
-    expect(v2Warns.length).toBeGreaterThanOrEqual(1)
+    const v2Warns = await waitUntil(() => {
+      const calls = warnSpy.mock.calls.filter((c: unknown[]) =>
+        String(c[0] ?? '').includes('envelope v=2')
+      )
+      return calls.length > 0 ? calls : null
+    })
+    expect(v2Warns?.length ?? 0).toBeGreaterThanOrEqual(1)
   })
 })
 

@@ -228,6 +228,44 @@ describe('FieldState metadata — Zod 4 adapter', () => {
     )
     expect(form.fields.profile.handle.label).toBe('Handle')
   })
+
+  it('reads variant-specific metadata across discriminated-union branches', () => {
+    // The walker descends into every variant of a discriminated
+    // union at the same path, so leaf metadata on variant-only
+    // fields (e.g. `fragile` in the dry variant, `unNumber` in the
+    // hazmat variant) all register correctly. The runtime exposes
+    // every variant's keys via FieldStateMapEntry's KeyofUnion
+    // merge, so the consumer reads each variant's label regardless
+    // of which variant is currently active.
+    const dry = zV4.object({
+      type: zV4.literal('dry'),
+      fragile: zV4.boolean().register(fieldMetaV4, { label: 'Fragile' }),
+    })
+    const hazmat = zV4.object({
+      type: zV4.literal('hazmat'),
+      unNumber: zV4.string().register(fieldMetaV4, { label: 'UN number' }),
+    })
+    const schema = zV4.object({
+      cargo: zV4.discriminatedUnion('type', [dry, hazmat]).register(fieldMetaV4, {
+        label: 'Cargo',
+      }),
+    })
+    const form = mountWithApp(() =>
+      useFormV4({
+        schema,
+        key: `meta-v4-du-${Math.random()}`,
+        defaultValues: { cargo: { type: 'dry', fragile: false } },
+      })
+    )
+    // Container label resolves at the DU root.
+    expect(form.fields('cargo').label).toBe('Cargo')
+    // Active-variant key reads its registered label.
+    expect(form.fields.cargo.fragile.label).toBe('Fragile')
+    // Inactive-variant key still reads its registered label —
+    // FieldStateMapEntry's union-key merge exposes every variant's
+    // shape, and the walker registered metadata for both branches.
+    expect(form.fields.cargo.unNumber.label).toBe('UN number')
+  })
 })
 
 describe('FieldState metadata — Zod 3 adapter', () => {

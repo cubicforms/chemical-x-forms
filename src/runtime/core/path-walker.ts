@@ -12,7 +12,7 @@ export type SchemaForFill = {
   /**
    * Distinguish tuple (number — structural length) from unbounded
    * array (null) at `path`. `undefined` signals "fall back to the
-   * legacy index-probe loop" for adapters that can't introspect.
+   * runtime's index-probe loop" for adapters that can't introspect.
    * See `AbstractSchema.arrayShapeAtPath` for the full contract.
    */
   arrayShapeAtPath(path: Path): number | null | undefined
@@ -198,14 +198,14 @@ function deleteAtPathOffset(root: unknown, path: Path, offset: number): unknown 
  * Resolve the array shape at `scratch`. Returns the tuple's
  * structural length, `null` for unbounded arrays, or `undefined`
  * if the adapter doesn't support `arrayShapeAtPath` (signalling
- * the legacy probe loop).
+ * the fallback probe loop).
  *
- * The fallback path matches the pre-5.2 semantic: probe at index
- * `1_000_000` (tuple → `undefined`; array → element default), then
- * probe sequentially up to the cap to discover the tuple length.
- * Built-in zod adapters return a definitive shape so this never
- * fires for them; the fallback exists for third-party adapters
- * that haven't implemented the new method.
+ * The fallback probes at index `1_000_000` (tuple → `undefined`;
+ * array → element default), then probes sequentially up to the cap
+ * to discover the tuple length. Built-in zod adapters return a
+ * definitive shape so this never fires for them; the fallback
+ * exists for third-party adapters that haven't implemented the
+ * method.
  */
 function resolveArrayShape(schema: SchemaForFill, scratch: Segment[]): number | null | undefined {
   const shape = schema.arrayShapeAtPath(scratch)

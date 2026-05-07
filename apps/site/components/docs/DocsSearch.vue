@@ -419,7 +419,7 @@
               <p class="text-sm font-semibold text-fg">Something went wrong</p>
               <p class="mt-1.5 text-xs text-fg-muted">Try the search again in a moment.</p>
             </div>
-            <ul v-else class="py-2">
+            <ul v-else class="py-4">
               <li v-for="(hit, i) in hits" :key="`${hit.url}-${i}`">
                 <button
                   type="button"

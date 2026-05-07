@@ -18,6 +18,7 @@ export const docsNavigation: DocsSection[] = [
     heading: 'Getting started',
     links: [
       { title: 'Documentation home', to: '/docs' },
+      { title: 'Why Attaform', to: '/docs/why' },
       { title: 'Quick start', to: '/docs/quickstart' },
     ],
   },

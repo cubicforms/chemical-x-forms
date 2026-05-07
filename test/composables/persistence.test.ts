@@ -10,6 +10,7 @@ import { __resetIndexedDbForTests } from '../../src/runtime/core/persistence/ind
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
 import { hashStableString } from '../../src/runtime/core/hash'
+import { wait, waitUntil } from '../utils/form-harness'
 
 /**
  * Node 25's native `localStorage` (behind `--experimental-webstorage`)
@@ -169,34 +170,6 @@ async function drain(rounds = 8): Promise<void> {
   for (let i = 0; i < rounds; i++) {
     await Promise.resolve()
     await nextTick()
-  }
-}
-
-async function wait(ms: number): Promise<void> {
-  await new Promise((r) => setTimeout(r, ms))
-}
-
-/**
- * Poll `predicate` until it returns a non-null / non-undefined value or
- * the timeout elapses. Avoids the classic `await wait(40)` flake: the
- * debounced writer + adapter chain (dynamic-imported + Promise.then →
- * adapter.setItem) can exceed a fixed sleep on a loaded CI runner,
- * even for an expected 20 ms debounce window. Polling converges as
- * soon as the write lands, with a generous ceiling (default 500 ms)
- * so a genuinely broken write still fails the assertion instead of
- * hanging the suite.
- */
-async function waitUntil<T>(
-  predicate: () => T | null | undefined,
-  timeoutMs = 500,
-  intervalMs = 5
-): Promise<T | null> {
-  const deadline = Date.now() + timeoutMs
-  for (;;) {
-    const v = predicate()
-    if (v !== null && v !== undefined) return v
-    if (Date.now() >= deadline) return null
-    await wait(intervalMs)
   }
 }
 

@@ -23,6 +23,51 @@ export async function flush(): Promise<void> {
   }
 }
 
+/**
+ * Sleep for `ms` real-time milliseconds. Thin wrapper over
+ * `setTimeout` for ergonomic use inside `waitUntil`'s polling loop
+ * and for the rare test that legitimately needs a wall-clock pause.
+ *
+ * Prefer `waitUntil(predicate)` over `wait(N)` followed by an
+ * assertion — a fixed-time pump can blow past its budget on a
+ * contended CI runner (dynamic-imported adapters, debounced writes,
+ * async refinement chains), producing flakes that pass locally and
+ * fail intermittently on CI.
+ */
+export async function wait(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Poll `predicate` until it returns a non-null / non-undefined value
+ * or the timeout elapses. Returns the resolved value, or `null` if
+ * the deadline passed.
+ *
+ * Use this for any wait-then-assert pattern that depends on async
+ * I/O — debounced storage writes, dynamic-imported persistence
+ * adapters, async Zod refinements. The classic alternative
+ * (`await wait(40); expect(...)`) silently flakes when the chain
+ * exceeds the fixed budget under CI contention.
+ *
+ * The default 1000 ms timeout covers in-process work, dynamic-imported
+ * adapters, and short async-refinement chains. Raise it for tests
+ * that wait on a debounce window plus an external mock with its own
+ * latency budget.
+ */
+export async function waitUntil<T>(
+  predicate: () => T | null | undefined,
+  timeoutMs = 1000,
+  intervalMs = 5
+): Promise<T | null> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const v = predicate()
+    if (v !== null && v !== undefined) return v
+    if (Date.now() >= deadline) return null
+    await wait(intervalMs)
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyUseForm = (opts: any) => any
 

@@ -9,6 +9,7 @@ import { canonicalizePath } from '../../src/runtime/core/paths'
 import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerprint'
 import { hashStableString } from '../../src/runtime/core/hash'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import { waitUntil } from '../utils/form-harness'
 
 /**
  * Round-trip coverage for blank across `localStorage`
@@ -69,24 +70,6 @@ async function flushAll(rounds = 12): Promise<void> {
   for (let i = 0; i < rounds; i++) {
     await Promise.resolve()
     await nextTick()
-  }
-}
-
-// Poll `predicate` until truthy or the timeout elapses. Used over a
-// fixed-time pump for the persist-hydration chain — dynamic-import +
-// adapter.getItem can blow past any fixed sleep on a contended CI
-// runner, especially on the cold-cache first-mount in a module.
-async function waitUntil<T>(
-  predicate: () => T | null | undefined,
-  timeoutMs = 500,
-  intervalMs = 5
-): Promise<T | null> {
-  const deadline = Date.now() + timeoutMs
-  for (;;) {
-    const v = predicate()
-    if (v !== null && v !== undefined) return v
-    if (Date.now() >= deadline) return null
-    await new Promise((r) => setTimeout(r, intervalMs))
   }
 }
 

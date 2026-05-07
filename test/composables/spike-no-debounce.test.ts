@@ -18,6 +18,7 @@ import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import { waitUntil } from '../utils/form-harness'
 
 let app: App | undefined
 afterEach(() => {
@@ -36,11 +37,6 @@ async function microtaskFlush(): Promise<void> {
     await Promise.resolve()
     await nextTick()
   }
-}
-
-async function timerFlush(ms: number): Promise<void> {
-  await new Promise((r) => setTimeout(r, ms))
-  await nextTick()
 }
 
 describe('spike — debounceMs: 0 disables the debounce timer', () => {
@@ -88,8 +84,11 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
     await microtaskFlush()
     expect(handle.api?.errors.email).toBeUndefined()
 
-    // Wait long enough for the 125 ms timer to fire, then errors land.
-    await timerFlush(150)
+    // Wait for the 125 ms timer + revalidation chain to land. Polled
+    // rather than fixed-time-pumped so a contended CI doesn't flake.
+    await waitUntil(() =>
+      handle.api?.errors.email?.[0]?.message === 'Enter a valid email.' ? true : null
+    )
     expect(handle.api?.errors.email?.[0]?.message).toBe('Enter a valid email.')
   })
 
@@ -248,8 +247,10 @@ describe('spike — persist.debounceMs: 0 writes immediately on every form chang
     await microtaskFlush()
     expect(writes.length).toBe(0)
 
-    // After the timer, exactly one coalesced write lands.
-    await timerFlush(350)
+    // After the debounce timer fires, exactly one coalesced write
+    // lands. Poll on the side-effect rather than time-pumping so a
+    // contended CI doesn't flake before the timer has a chance.
+    await waitUntil(() => (writes.length >= 1 ? true : null))
     expect(writes.length).toBe(1)
   })
 

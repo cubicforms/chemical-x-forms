@@ -1,5 +1,18 @@
 # Releases
 
+## v0.15.0 — 2026-05-07
+
+## What's Changed
+* refactor(site): editorial polish on docs landing + homepage v-register flag by @ozzyfromspace in https://github.com/attaform/Attaform/pull/170
+* feat(register/forms): reactive RegisterValue + per-field validating/valid + bare-name booleans by @ozzyfromspace in https://github.com/attaform/Attaform/pull/171
+* feat(core): unified FieldState + schema-attached metadata via fieldMeta by @ozzyfromspace in https://github.com/attaform/Attaform/pull/172
+* fix(test): deterministic poll for v=2 envelope warn flake by @ozzyfromspace in https://github.com/attaform/Attaform/pull/173
+
+
+**Full Changelog**: https://github.com/attaform/Attaform/compare/v0.14.0...v0.15.0
+
+---
+
 ## v0.14.0 — 2026-05-04
 
 ## What's Changed

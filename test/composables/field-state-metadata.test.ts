@@ -198,13 +198,17 @@ describe('FieldState metadata — Zod 4 adapter', () => {
         defaultValues: { items: [{ sku: 'A' }, { sku: 'B' }, { sku: 'C' }] },
       })
     )
-    // Every index reads the same per-leaf label.
-    expect(form.fields.items[0].sku.label).toBe('SKU')
-    expect(form.fields.items[1].sku.label).toBe('SKU')
-    expect(form.fields.items[2].sku.label).toBe('SKU')
-    // Container call-form picks up the array-element label too.
-    expect(form.fields(['items', 0]).label).toBe('Line item')
-    expect(form.fields(['items', 2]).label).toBe('Line item')
+    // Every index reads the same per-leaf label. Using ?. on the
+    // array-index access since noUncheckedIndexedAccess (set in the
+    // repo tsconfig) widens [N] reads to T | undefined for safety
+    // even when v-for guarantees presence at runtime.
+    expect(form.fields.items[0]?.sku.label).toBe('SKU')
+    expect(form.fields.items[1]?.sku.label).toBe('SKU')
+    expect(form.fields.items[2]?.sku.label).toBe('SKU')
+    // Dotted-string call-form picks up the array-element container
+    // label (the FieldState terminal) at any depth.
+    expect(form.fields('items.0').label).toBe('Line item')
+    expect(form.fields('items.2').label).toBe('Line item')
   })
 
   it('walks through z.lazy() to register metadata on the dereferenced inner', () => {
@@ -227,6 +231,59 @@ describe('FieldState metadata — Zod 4 adapter', () => {
       })
     )
     expect(form.fields.profile.handle.label).toBe('Handle')
+  })
+
+  it('accumulates payload across mixed withMeta + .register() chains', () => {
+    // withMeta clones and registers on the clone; chaining .register
+    // onto that clone appends to its registration list. Both writes
+    // target the SAME clone instance, so the walker visits one path
+    // exactly once and would normally pick only list[0]. The
+    // resolver's fallback to fieldMeta.get(schema) returns Zod's
+    // native single-slot value (last-write-wins) — so chained
+    // registrations on a single path resolve via the OR-fallback in
+    // resolveFieldMetaAtPath: pathMap.get(...) ?? getFieldMeta(...).
+    // Net effect: label survives via the path map, description
+    // survives via the native single-slot read.
+    const schema = zV4.object({
+      reference: withMetaV4(zV4.string(), { label: 'Reference' }).register(fieldMetaV4, {
+        description: 'PO or order number',
+      }),
+    })
+    const form = mountWithApp(() =>
+      useFormV4({
+        schema,
+        key: `meta-v4-mixed-${Math.random()}`,
+        defaultValues: { reference: '' },
+      })
+    )
+    expect(form.fields.reference.label).toBe('Reference')
+    expect(form.fields.reference.description).toBe('PO or order number')
+  })
+
+  it('walks both sides of an intersection schema', () => {
+    // Intersection (z.intersection / a.and(b)) folds two schemas
+    // together; the walker descends into both at the same path so
+    // metadata registered on either side surfaces. Verifies the
+    // case branch in walkForMeta — without it, intersection
+    // metadata would be silently dropped.
+    const left = zV4.object({
+      sku: zV4.string().register(fieldMetaV4, { label: 'SKU' }),
+    })
+    const right = zV4.object({
+      qty: zV4.number().register(fieldMetaV4, { label: 'Quantity' }),
+    })
+    const schema = zV4.object({
+      item: zV4.intersection(left, right),
+    })
+    const form = mountWithApp(() =>
+      useFormV4({
+        schema,
+        key: `meta-v4-intersection-${Math.random()}`,
+        defaultValues: { item: { sku: '', qty: 0 } },
+      })
+    )
+    expect(form.fields.item.sku.label).toBe('SKU')
+    expect(form.fields.item.qty.label).toBe('Quantity')
   })
 
   it('reads variant-specific metadata across discriminated-union branches', () => {

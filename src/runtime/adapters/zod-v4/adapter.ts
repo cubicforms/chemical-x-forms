@@ -601,8 +601,26 @@ function getPathMetaMap(rootSchema: z.ZodType): Map<PathKey, FieldMetaPayload> {
   if (cached !== undefined) return cached
   const map = new Map<PathKey, FieldMetaPayload>()
   const counters = new Map<z.ZodType, number>()
+  // Track the LAST path each schema was visited at — used after the
+  // walk to absorb any "surplus" registrations (cases where the
+  // registration list is longer than the schema is visited, e.g. a
+  // chain like `withMeta(s, {label}).register(fieldMeta, {desc})`
+  // where one path consumes list[0] and list[1] would otherwise go
+  // unread). Surplus entries get merged into the schema's last-
+  // visited path so chained registrations accumulate as expected.
+  const lastPathPerSchema = new Map<z.ZodType, PathKey>()
   const inProgress = new WeakSet<z.ZodType>()
-  walkForMeta(rootSchema, [], map, counters, inProgress)
+  walkForMeta(rootSchema, [], map, counters, lastPathPerSchema, inProgress)
+  for (const [schema, lastPath] of lastPathPerSchema) {
+    const list = getFieldMetaList(schema)
+    const consumed = counters.get(schema) ?? 0
+    if (list.length <= consumed) continue
+    const surplus = list
+      .slice(consumed)
+      .reduce<FieldMetaPayload>((acc, p) => ({ ...acc, ...p }), {})
+    const existing = map.get(lastPath) ?? {}
+    map.set(lastPath, { ...existing, ...surplus })
+  }
   pathMetaCache.set(rootSchema, map)
   return map
 }
@@ -625,6 +643,7 @@ function walkForMeta(
   path: Path,
   map: Map<PathKey, FieldMetaPayload>,
   counters: Map<z.ZodType, number>,
+  lastPathPerSchema: Map<z.ZodType, PathKey>,
   inProgress: WeakSet<z.ZodType>
 ): void {
   if (inProgress.has(schema)) return
@@ -634,14 +653,20 @@ function walkForMeta(
     // Pull a payload off the target schema's list (counter-indexed).
     if (!map.has(pathKey)) {
       const payload = consumePayload(schema, counters)
-      if (payload !== undefined) map.set(pathKey, payload)
+      if (payload !== undefined) {
+        map.set(pathKey, payload)
+        lastPathPerSchema.set(schema, pathKey)
+      }
     }
     // Also try the peeled inner — covers `withMeta(z.string(), {...}).optional()`
     // where the registration sits on the inner before wrapping.
     const peeled = peelAllWrappers(schema)
     if (peeled !== schema && !map.has(pathKey)) {
       const payload = consumePayload(peeled, counters)
-      if (payload !== undefined) map.set(pathKey, payload)
+      if (payload !== undefined) {
+        map.set(pathKey, payload)
+        lastPathPerSchema.set(peeled, pathKey)
+      }
     }
     // Descend.
     const kind = kindOf(schema)
@@ -649,7 +674,7 @@ function walkForMeta(
       case 'object': {
         const shape = getObjectShape(schema as z.ZodObject)
         for (const [key, child] of Object.entries(shape)) {
-          walkForMeta(child, [...path, key], map, counters, inProgress)
+          walkForMeta(child, [...path, key], map, counters, lastPathPerSchema, inProgress)
         }
         return
       }
@@ -660,32 +685,54 @@ function walkForMeta(
         // array element share the same schema instance, so the
         // resolver's fallback (getFieldMeta on the schema) picks up
         // anything not captured here.
-        walkForMeta(getArrayElement(schema as z.ZodArray), [...path, 0], map, counters, inProgress)
+        walkForMeta(
+          getArrayElement(schema as z.ZodArray),
+          [...path, 0],
+          map,
+          counters,
+          lastPathPerSchema,
+          inProgress
+        )
         return
       }
       case 'tuple': {
         const items = getTupleItems(schema)
         for (let i = 0; i < items.length; i++) {
           const item = items[i]
-          if (item !== undefined) walkForMeta(item, [...path, i], map, counters, inProgress)
+          if (item !== undefined)
+            walkForMeta(item, [...path, i], map, counters, lastPathPerSchema, inProgress)
         }
         return
       }
       case 'set':
-        walkForMeta(getSetValueType(schema), [...path, 0], map, counters, inProgress)
+        walkForMeta(
+          getSetValueType(schema),
+          [...path, 0],
+          map,
+          counters,
+          lastPathPerSchema,
+          inProgress
+        )
         return
       case 'record':
-        walkForMeta(getRecordValueType(schema), [...path, '*'], map, counters, inProgress)
+        walkForMeta(
+          getRecordValueType(schema),
+          [...path, '*'],
+          map,
+          counters,
+          lastPathPerSchema,
+          inProgress
+        )
         return
       case 'union': {
         for (const opt of getUnionOptions(schema)) {
-          walkForMeta(opt, path, map, counters, inProgress)
+          walkForMeta(opt, path, map, counters, lastPathPerSchema, inProgress)
         }
         return
       }
       case 'discriminated-union': {
         for (const opt of getDiscriminatedOptions(schema)) {
-          walkForMeta(opt, path, map, counters, inProgress)
+          walkForMeta(opt, path, map, counters, lastPathPerSchema, inProgress)
         }
         return
       }
@@ -695,17 +742,20 @@ function walkForMeta(
       case 'readonly':
       case 'catch': {
         const inner = unwrapInner(schema)
-        if (inner !== undefined) walkForMeta(inner, path, map, counters, inProgress)
+        if (inner !== undefined)
+          walkForMeta(inner, path, map, counters, lastPathPerSchema, inProgress)
         return
       }
       case 'pipe': {
         const inner = unwrapPipe(schema)
-        if (inner !== undefined) walkForMeta(inner, path, map, counters, inProgress)
+        if (inner !== undefined)
+          walkForMeta(inner, path, map, counters, lastPathPerSchema, inProgress)
         return
       }
       case 'lazy': {
         const inner = unwrapLazy(schema)
-        if (inner !== undefined) walkForMeta(inner, path, map, counters, inProgress)
+        if (inner !== undefined)
+          walkForMeta(inner, path, map, counters, lastPathPerSchema, inProgress)
         return
       }
       case 'intersection': {
@@ -713,8 +763,10 @@ function walkForMeta(
         // on either side surface for the same path.
         const left = getIntersectionLeft(schema)
         const right = getIntersectionRight(schema)
-        if (left !== undefined) walkForMeta(left, path, map, counters, inProgress)
-        if (right !== undefined) walkForMeta(right, path, map, counters, inProgress)
+        if (left !== undefined)
+          walkForMeta(left, path, map, counters, lastPathPerSchema, inProgress)
+        if (right !== undefined)
+          walkForMeta(right, path, map, counters, lastPathPerSchema, inProgress)
         return
       }
       // Leaf kinds — no children to descend into; metadata for the

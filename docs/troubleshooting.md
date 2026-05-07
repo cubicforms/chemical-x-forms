@@ -56,7 +56,7 @@ collide when two forms with the same key live concurrently.
 In dev, a collision whose schemas disagree on shape surfaces as
 a `console.warn`:
 
-```
+```text
 [attaform] Two useForm() calls with key "signup" use
 structurally-different schemas. Only the first caller wires the
 form; the second caller's schema is silently ignored (shared

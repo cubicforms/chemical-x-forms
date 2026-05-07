@@ -106,7 +106,7 @@ Attaform).
 
 For a single user-typed write, Attaform applies (in order):
 
-```
+```text
 DOM event → modifier cast → coerce → transforms[0..n] → assigner
 ```
 

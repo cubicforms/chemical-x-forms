@@ -231,11 +231,12 @@ Modifier extraction runs first — `.number` gives you a number,
 
 Four patterns:
 
-- **Transform** — call `rv.setValueWithInternalPath(normalised)`.
-- **Reject** — skip the call; the keystroke drops entirely (distinct
-  from validation errors, which accept then flag).
-- **Side-effect + default** — log / analytics, then call through.
-- **Redirect** — write to a different field or external store.
+| Pattern               | What to do                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------ |
+| Transform             | Call `rv.setValueWithInternalPath(normalised)`.                                                        |
+| Reject                | Skip the call; the keystroke drops entirely (distinct from validation errors, which accept then flag). |
+| Side-effect + default | Log / analytics, then call through.                                                                    |
+| Redirect              | Write to a different field or external store.                                                          |
 
 Handler signature:
 `(value: unknown, registerValue: RegisterValue) => boolean | undefined`.
@@ -274,7 +275,7 @@ Write defensive bodies that no-op on type mismatch.
 **Pipeline ordering**: transforms run after modifier extraction,
 before the assigner writes to form state.
 
-```
+```text
 DOM event → modifier cast → transforms[0] → … → transforms[n] → assigner
 ```
 

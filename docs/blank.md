@@ -44,7 +44,7 @@ the moment storage is `''`, schema speaking.
 
 ## Lifecycle (numeric)
 
-```
+```text
 form mounts (no defaults)
   → blankPaths.add('income')
   → form.errors.income = [{ code: 'atta:no-value-supplied', … }]
@@ -72,7 +72,7 @@ either changes.
 
 ## Lifecycle (string)
 
-```
+```text
 form mounts (no defaults)
   → blankPaths empty (strings don't auto-mark)
   → form.errors.email = undefined          (z.string() accepts '')

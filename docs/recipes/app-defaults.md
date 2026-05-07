@@ -46,7 +46,7 @@ export default defineNuxtConfig({
 
 Per-form > app-level > library default. Per-form always wins.
 
-```
+```text
 useForm({ … })  >  createAttaform({ defaults })  >  library default
 ```
 

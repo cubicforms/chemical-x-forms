@@ -29,7 +29,7 @@ gate at write time.
 
 ## Pipeline ordering
 
-```
+```text
 DOM event → modifier cast → coerce → transforms[0] → … → transforms[n] → assigner
 ```
 

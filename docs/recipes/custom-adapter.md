@@ -39,74 +39,59 @@ type AbstractSchema<Form, GetValueFormType = Form> = {
 }
 ```
 
-- **`fingerprint()`** — structural signature of the schema. Two
-  schemas with the same shape return the same string; different
-  shapes return different strings. Used to detect shared-key
-  mismatches AND to key persisted drafts — see
-  [Fingerprint implementation](#fingerprint-implementation).
-- **`getDefaultValues({ useDefaultSchemaValues, constraints, strict })`**
-  — returns `{ data, errors, success, formKey }`. Called at form
-  creation and on `reset()`.
-- **`getDefaultAtPath(path)`** — returns the schema-prescribed
-  default at a structured path. The runtime calls this on every
-  `setValue` to fill structural gaps. See
-  [getDefaultAtPath](#getdefaultatpath-the-peeling-rule) below.
-- **`arrayShapeAtPath(path)`** — `number` for tuples (their fixed
-  length), `null` for unbounded arrays, `undefined` for non-array
-  paths. The runtime caches the answer to skip per-write probe
-  loops on array writes.
-- **`isLeafAtPath(path)`** — `true` for primitive paths, `false`
-  for object / array / map / set containers. Drives the proxy's
-  descend-vs-terminate decision; reserved leaf-prop names (`dirty`,
-  `errors`, `valid`, `label`, …) inject only at the FieldState
-  terminal.
-- **`isRequiredAtPath(path)`** — `true` when the leaf is required
-  (no `.optional()` / `.nullable()` / `.default()` / `.catch()`
-  wrapper). Used by the blank validation augmentation to raise
-  `'No value supplied'` for unfilled required fields.
-- **`getSchemasAtPath(path)`** — list of candidate sub-schemas
-  at `path`. Multiple results are expected for DU branches.
-  `path` is a canonical `Segment[]`. Return `[]` if your library
-  doesn't model union-style multi-candidates.
-- **`getSlimPrimitiveTypesAtPath(path)`** — set of primitive
-  `typeof`-style kinds the path's leaf accepts at write time
-  (`'string'`, `'number'`, `'boolean'`, `'bigint'`, …). Drives
-  the slim-primitive write gate. Return `PERMISSIVE` for paths
-  the schema doesn't declare — over-rejecting breaks dynamic /
-  SSR rehydration.
-- **`getUnionDiscriminatorAtPath(path)`** — for discriminated-union
-  containers, return `{ discriminatorKey, getVariantDefault }`.
-  Used by the variant-reshape pipeline so a discriminator-key
-  write swaps the active branch without leaking old keys.
-  Return `undefined` if your library doesn't model DUs.
-- **`validateAtPath(data, path?, options?)`** — returns
-  `MaybePromise<ValidationResponse>`. `path` is a `Segment[]` or
-  `undefined` (whole-form validation). Honor `options.sync` when
-  the schema is sync-capable; the runtime uses it to batch error
-  writes inside DU variant reshape.
-- **`getFieldMetaAtPath?(path)`** — _optional_. Resolves
-  schema-attached metadata (label, description, placeholder, full
-  payload). Drives `form.fields(p).label` / `.description` /
-  `.placeholder` / `.meta`. Omit if your library doesn't model
-  metadata yet — consumers see humanized fallbacks.
-- **`needsAsyncValidation?()`** — _optional_. Return `true` if
-  `validateAtPath` may need a Promise to surface every error
-  this schema can produce. The runtime uses this to decide
-  whether to schedule a one-shot construction-time async pass.
+### `fingerprint()`
 
-`validateAtPath` must NOT throw. Return `{ success: false, errors }`
-for validation failures.
+Structural signature of the schema. Two schemas with the same shape return the same string; different shapes return different strings. Used to detect shared-key mismatches AND to key persisted drafts — see [Fingerprint implementation](#fingerprint-implementation).
 
-`fingerprint` must NOT throw. If it does, the library catches the
-exception, logs it via `console.error` in dev, and skips the
-shared-key mismatch check for that call. An opaque stable string
-(`'custom-adapter:v1'`) is a valid fallback — note that opaque
-fingerprints disable schema-change auto-invalidation for persisted
-drafts (the key never changes), so prefer a real structural hash if
-your library exposes the metadata.
+Must NOT throw. If it does, the library catches the exception, logs it via `console.error` in dev, and skips the shared-key mismatch check for that call. An opaque stable string (`'custom-adapter:v1'`) is a valid fallback — note that opaque fingerprints disable schema-change auto-invalidation for persisted drafts (the key never changes), so prefer a real structural hash if your library exposes the metadata.
 
-`getDefaultAtPath` must NOT throw. Return `undefined` for missing
-paths; the runtime skips filling.
+### `getDefaultValues(config)`
+
+Returns `{ data, errors, success, formKey }`. Called at form creation and on `reset()`. The `config` argument carries `useDefaultSchemaValues`, `constraints`, and `strict` flags.
+
+### `getDefaultAtPath(path)`
+
+Returns the schema-prescribed default at a structured path. The runtime calls this on every `setValue` to fill structural gaps. See [getDefaultAtPath: the peeling rule](#getdefaultatpath-the-peeling-rule) below.
+
+Must NOT throw. Return `undefined` for missing paths; the runtime skips filling.
+
+### `arrayShapeAtPath(path)`
+
+`number` for tuples (their fixed length), `null` for unbounded arrays, `undefined` for non-array paths. The runtime caches the answer to skip per-write probe loops on array writes.
+
+### `isLeafAtPath(path)`
+
+`true` for primitive paths, `false` for object / array / map / set containers. Drives the proxy's descend-vs-terminate decision; reserved leaf-prop names (`dirty`, `errors`, `valid`, `label`, …) inject only at the FieldState terminal.
+
+### `isRequiredAtPath(path)`
+
+`true` when the leaf is required (no `.optional()` / `.nullable()` / `.default()` / `.catch()` wrapper). Used by the blank validation augmentation to raise `'No value supplied'` for unfilled required fields.
+
+### `getSchemasAtPath(path)`
+
+List of candidate sub-schemas at `path`. Multiple results are expected for DU branches. `path` is a canonical `Segment[]`. Return `[]` if your library doesn't model union-style multi-candidates.
+
+### `getSlimPrimitiveTypesAtPath(path)`
+
+Set of primitive `typeof`-style kinds the path's leaf accepts at write time (`'string'`, `'number'`, `'boolean'`, `'bigint'`, …). Drives the slim-primitive write gate. Return `PERMISSIVE` for paths the schema doesn't declare — over-rejecting breaks dynamic / SSR rehydration.
+
+### `getUnionDiscriminatorAtPath(path)`
+
+For discriminated-union containers, return `{ discriminatorKey, getVariantDefault }`. Used by the variant-reshape pipeline so a discriminator-key write swaps the active branch without leaking old keys. Return `undefined` if your library doesn't model DUs.
+
+### `validateAtPath(data, path?, options?)`
+
+Returns `MaybePromise<ValidationResponse>`. `path` is a `Segment[]` or `undefined` (whole-form validation). Honor `options.sync` when the schema is sync-capable; the runtime uses it to batch error writes inside DU variant reshape.
+
+Must NOT throw. Return `{ success: false, errors }` for validation failures.
+
+### `getFieldMetaAtPath(path)` _(optional)_
+
+Resolves schema-attached metadata (label, description, placeholder, full payload). Drives `form.fields(p).label` / `.description` / `.placeholder` / `.meta`. Omit if your library doesn't model metadata yet — consumers see humanized fallbacks.
+
+### `needsAsyncValidation()` _(optional)_
+
+Return `true` if `validateAtPath` may need a Promise to surface every error this schema can produce. The runtime uses this to decide whether to schedule a one-shot construction-time async pass.
 
 ## A minimal Valibot-ish adapter
 

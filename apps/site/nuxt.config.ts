@@ -72,6 +72,39 @@ function isFilteredBuildWarning(msg: string): boolean {
   }) as typeof nuxtKitLogger.warn
 }
 
+// `console.warn` self-healing guard. Background: under Nuxt 4.4 +
+// Vite 7 + consola 3.4, the SSR bundle pass calls
+// `Consola.wrapAll() → wrapConsole()`, which writes `console[type] =
+// this[type].raw` for every type. For the SSR-targeted consola
+// instance, `this.warn.raw` resolves to `undefined` (the .raw
+// property is set up only on the rich Node consola, not the
+// browser-shimmed one Vite produces when `node:tty` is externalized).
+// `console.warn` then becomes `undefined` — and the next time
+// Rollup's `defaultPrintLog` tries to surface a warning during
+// prerender, it crashes with `TypeError: console.warn is not a
+// function`.
+//
+// The downstream symptom is that `nuxi build` / `nuxi generate` exit
+// non-zero on a hidden Rollup warning rather than completing the
+// prerender. The fix lives at the boundary where the bug lands:
+// reject any non-function assignment to `console.warn` and quietly
+// fall back to the original. The override survives the swap but the
+// global `console.warn` keeps working, so Rollup's warning printer
+// stays alive long enough for prerender to finish.
+{
+  const realWarn = console.warn.bind(console)
+  let current: typeof console.warn = realWarn
+  Object.defineProperty(console, 'warn', {
+    configurable: true,
+    get() {
+      return typeof current === 'function' ? current : realWarn
+    },
+    set(v) {
+      current = typeof v === 'function' ? v : realWarn
+    },
+  })
+}
+
 export default defineNuxtConfig({
   modules: ['@nuxt/content', '@nuxt/fonts', '@nuxtjs/color-mode'],
   // @nuxt/content's Shiki integration. Pinning the themes and lang

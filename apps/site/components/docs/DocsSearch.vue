@@ -269,7 +269,7 @@
   <button
     type="button"
     aria-label="Search documentation"
-    class="group inline-flex h-9 items-center gap-2 rounded-md border border-border bg-bg pr-1.5 pl-3 text-sm text-fg-muted shadow-xs transition-colors duration-(--duration-fast) hover:border-border-strong hover:text-fg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent-ring md:w-56"
+    class="group inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-bg text-sm text-fg-muted shadow-xs transition-colors duration-(--duration-fast) hover:border-border-strong hover:text-fg focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent-ring md:w-56 md:justify-start md:gap-2 md:pr-1.5 md:pl-3"
     @click="open = true"
   >
     <Search class="h-4 w-4 shrink-0" :stroke-width="2" />

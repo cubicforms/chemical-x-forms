@@ -1,3 +1,8 @@
+---
+title: 'SSR hydration'
+description: 'Server-render Vue 3 form values, errors, and field flags through Nuxt or bare Vue with Attaform — round-tripped without a hydration flash.'
+---
+
 # SSR hydration (Nuxt + bare Vue)
 
 Server-rendered form values, errors, and field flags round-trip to

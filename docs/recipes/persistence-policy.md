@@ -1,3 +1,7 @@
+---
+description: 'Configure what Attaform persists per field: opt-in allowlist, sensitive-field exclusion, max-age sweeps, fingerprint-keyed storage isolation.'
+---
+
 # Persistence policy
 
 What gets stored in a persisted draft, how schema changes

@@ -1,3 +1,7 @@
+---
+description: 'Choose the right Attaform persistence backend: localStorage, sessionStorage, or IndexedDB — quotas, latency, eviction, and sensitive-field protection.'
+---
+
 # Persistence backends
 
 How to pick a storage backend, configure operational options, and

@@ -1,3 +1,8 @@
+---
+title: 'Shared types'
+description: 'Reference for every public type Attaform exports — paths, write shapes, field state, validation, submit lifecycle, persistence, schema contract.'
+---
+
 # Types
 
 All types listed below are exported from the core entry:

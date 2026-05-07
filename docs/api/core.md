@@ -1,3 +1,8 @@
+---
+title: 'attaform — core runtime API'
+description: 'The schema-agnostic core of Attaform: createAttaform plugin, useAbstractForm composable, v-register directive, parseApiErrors, and shared types.'
+---
+
 # `attaform`
 
 The framework-agnostic core. Use this if you're bringing your own

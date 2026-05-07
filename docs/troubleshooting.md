@@ -1,3 +1,7 @@
+---
+description: 'Common Attaform pitfalls and how to fix them: shared-form key mismatches, missing v-register elements, hydration drift, validation timing, and more.'
+---
+
 # Troubleshooting
 
 Common issues — symptom first, fix second.

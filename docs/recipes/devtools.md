@@ -1,3 +1,7 @@
+---
+description: 'Inspect Attaform forms at runtime through the Vue DevTools panel: form state, errors, history, persistence drafts, and per-field meta in real time.'
+---
+
 # Vue DevTools
 
 Every registered form shows up in the Vue DevTools sidebar with an

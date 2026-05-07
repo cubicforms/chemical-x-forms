@@ -1,3 +1,7 @@
+---
+description: 'Configure Attaform defaults across your whole Vue 3 app — storage backend, debounce, error policy, persistence opt-in — set once, apply everywhere.'
+---
+
 # App-level defaults
 
 Attaform ships sensible library defaults (`validateOn: 'change'`,

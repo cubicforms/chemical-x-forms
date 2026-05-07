@@ -1,3 +1,7 @@
+---
+description: "Coerce DOM input values to the right type before they reach the schema: numbers, dates, booleans from string inputs without losing Attaform's type safety."
+---
+
 # Schema-driven coercion
 
 Attaform coerces user-typed DOM values to the schema's slim type at the

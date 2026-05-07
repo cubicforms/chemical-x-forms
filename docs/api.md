@@ -1,3 +1,8 @@
+---
+title: 'API reference'
+description: "Attaform's full API reference — useForm, v-register, parseApiErrors, plus the Zod 3, Zod 4, Vite, and Nuxt entry points in one index."
+---
+
 # API reference
 
 Every public export of `attaform`, grouped by subpath. Pick the

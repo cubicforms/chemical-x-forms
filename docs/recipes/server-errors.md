@@ -1,3 +1,8 @@
+---
+title: 'Server errors'
+description: "Map server-returned validation errors back into Attaform's reactive error store via parseApiErrors — JSON envelopes, dotted paths, bare strings."
+---
+
 # Server errors (HTTP 4xx validation failures)
 
 Server-side rules the client doesn't know — "email already taken",

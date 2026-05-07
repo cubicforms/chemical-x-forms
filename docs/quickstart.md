@@ -1,3 +1,7 @@
+---
+description: 'Five minutes from pnpm install to a working Vue 3 form: write a Zod schema, mount with useForm, render with v-register — type-safe end to end.'
+---
+
 # Quick start
 
 Get a working Attaform form on screen in under five minutes. The

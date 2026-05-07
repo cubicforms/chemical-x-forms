@@ -1,3 +1,8 @@
+---
+title: 'attaform/zod — Zod 4 adapter'
+description: 'The recommended Zod 4 adapter for Attaform — useForm with Zod schemas, withMeta for schema-attached labels, and the fieldMeta registry helpers.'
+---
+
 # `attaform/zod`
 
 Zod v4 adapter. Requires `zod@^4`.

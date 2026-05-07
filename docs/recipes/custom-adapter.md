@@ -1,3 +1,8 @@
+---
+title: 'Custom schema adapters'
+description: 'Wire any schema library (Valibot, ArkType, your own) into Attaform via the AbstractSchema contract: fingerprint, defaults, validation hooks.'
+---
+
 # Plug in your own schema library
 
 Attaform is schema-agnostic. Zod is just one implementation of

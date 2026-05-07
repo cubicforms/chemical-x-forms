@@ -1,3 +1,7 @@
+---
+description: 'Render Vue 3 forms over Zod discriminated unions: variant-aware fields, snapshot/restore on discriminator change, type-narrow rendering per branch.'
+---
+
 # Discriminated unions with variant memory
 
 When a discriminated-union variant changes, attaform reshapes storage

@@ -1,3 +1,7 @@
+---
+description: 'Server-side validation in Vue 3 forms with Attaform: race-safe async refinements, debounced lookups, AbortSignal cancellation on stale checks.'
+---
+
 # Async validation
 
 Use `z.refine(async …)` anywhere in your schema — uniqueness checks,

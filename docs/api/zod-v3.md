@@ -1,3 +1,8 @@
+---
+title: 'attaform/zod-v3 — Zod 3 adapter'
+description: 'Use Attaform with Zod 3 schemas: full API parity with the Zod 4 adapter, no rewrites needed for existing Vue or Nuxt projects on Zod 3.'
+---
+
 # `attaform/zod-v3`
 
 Zod v3 adapter. Requires `zod@^3`. New projects should use [`/zod`](/docs/api/zod)

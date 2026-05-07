@@ -1,3 +1,8 @@
+---
+title: 'Blank inputs'
+description: "How Attaform handles cleared numeric inputs that storage can't represent: the unset sentinel, the blank field-state bit, and the no-value-supplied error."
+---
+
 # `blank` — the storage / display divergence side-channel
 
 The form library tracks one extra bit per primitive leaf called `blank`.

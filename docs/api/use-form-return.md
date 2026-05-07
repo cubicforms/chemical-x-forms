@@ -1,3 +1,7 @@
+---
+description: "Everything useForm returns: form, errors, fields, meta, register, validate, handleSubmit — Attaform's full reactive Vue 3 form surface in one place."
+---
+
 # The useForm return value
 
 `useForm(options)` returns a single object with every reactive

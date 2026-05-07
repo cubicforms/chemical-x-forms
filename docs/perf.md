@@ -1,3 +1,7 @@
+---
+description: 'How Attaform stays fast in Vue 3 apps: schema fingerprinting, debounced validation, slim primitives, and the runtime guards that catch perf footguns early.'
+---
+
 # Performance
 
 Notes on the hot paths — keystrokes, submits, validation, reset —

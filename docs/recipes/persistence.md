@@ -1,3 +1,8 @@
+---
+title: 'Persistence'
+description: 'Persist Attaform draft state to localStorage, sessionStorage, or IndexedDB across page reloads — opt in per field, hydrate on remount, sweep stale drafts.'
+---
+
 # Persist drafts across reloads
 
 Long forms — multi-step onboarding, checkout, surveys — should

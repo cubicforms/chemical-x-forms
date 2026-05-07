@@ -1,3 +1,7 @@
+---
+description: 'Customize how Attaform writes DOM input values into form state — per-element transforms, side-effects, and writer redirects without touching the schema.'
+---
+
 # Register transforms
 
 A pipeline of pure sync functions that runs over user input before

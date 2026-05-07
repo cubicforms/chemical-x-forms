@@ -1,3 +1,7 @@
+---
+description: 'Add, remove, and reorder array items in Attaform Vue forms with stable keys, per-item validation, and undo/redo through every array mutation.'
+---
+
 # Dynamic field arrays
 
 Forms that edit a list — tags on a post, line items on an invoice,

@@ -234,14 +234,22 @@ export default defineNuxtConfig({
     // targets from the seed routes, so we only have to list the
     // entry points. `/docs` is the index page that links into every
     // doc; `/play` and `/` round out the rest of the public
-    // surface. failOnError: false keeps a single broken anchor in
-    // markdown from failing the whole build — Nuxt logs the misses
-    // to stderr.
+    // surface.
+    //
+    // `failOnError: true` gates the build on prerender errors. A 500
+    // on any prerendered route (e.g. a Vue mustache leaking through
+    // a markdown code fence and binding to an undefined variable —
+    // see the post-mortem on the {{{ payload }}} ssr-hydration bug)
+    // exits the build non-zero so CI can red-flag it. The trade-off:
+    // typo'd internal links (a `[label](does-not-exist.md)` whose
+    // target the crawler can't render) ALSO fail the build — but
+    // those are real bugs too, and catching them in CI beats finding
+    // them in production from a user filing an issue.
     preset: 'static',
     prerender: {
       crawlLinks: true,
       routes: ['/', '/docs', '/play'],
-      failOnError: false,
+      failOnError: true,
     },
     devHandlers: [
       {

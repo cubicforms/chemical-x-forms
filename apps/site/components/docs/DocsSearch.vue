@@ -454,8 +454,8 @@
                     </p>
                   </div>
                   <CornerDownLeft
-                    v-if="i === activeIndex"
-                    class="mt-1 h-3.5 w-3.5 shrink-0 text-fg-subtle"
+                    class="mt-1 h-3.5 w-3.5 shrink-0 text-fg-subtle transition-opacity duration-(--duration-fast)"
+                    :class="i === activeIndex ? 'opacity-100' : 'opacity-0'"
                     :stroke-width="2.25"
                   />
                 </button>

@@ -77,8 +77,8 @@
 
   import { computed, nextTick, ref, watch } from 'vue'
   import { z } from 'zod'
-  import { useForm, unset } from 'attaform/zod'
-  import type { FieldStateLeaf } from 'attaform'
+  import { fieldMeta, useForm, unset } from 'attaform/zod'
+  import type { FieldState } from 'attaform'
 
   // ─── Mock async services ─────────────────────────────────────────
   const KNOWN_POSTAL_PREFIXES = new Set([
@@ -122,25 +122,39 @@
   const COVERAGES = ['none', 'basic', 'full'] as const
 
   const addressSchema = z.object({
-    line1: z.string().min(1, 'Required'),
-    line2: z.string().optional(),
-    city: z.string().min(1, 'Required'),
-    region: z.string().min(2, 'Two-letter region'),
+    line1: z.string().min(1, 'Required').register(fieldMeta, { label: 'Line 1' }),
+    line2: z.string().optional().register(fieldMeta, { label: 'Line 2' }),
+    city: z.string().min(1, 'Required').register(fieldMeta, { label: 'City' }),
+    region: z.string().min(2, 'Two-letter region').register(fieldMeta, { label: 'Region' }),
     postalCode: z
       .string()
       .min(3, 'Required')
-      .refine(async (v) => await lookupPostalCode(v), 'Postal code not found'),
-    country: z.enum(COUNTRIES),
+      .refine(async (v) => await lookupPostalCode(v), 'Postal code not found')
+      .register(fieldMeta, { label: 'Postal code' }),
+    country: z.enum(COUNTRIES).register(fieldMeta, { label: 'Country' }),
   })
 
   const lineItemSchema = z.object({
     sku: z
       .string()
       .regex(/^[A-Z0-9-]{4,16}$/, 'Format: A-Z, 0-9, dashes')
-      .refine(async (sku) => await lookupSku(sku), 'Unknown SKU'),
-    description: z.string().min(1, 'Required').max(120, 'Max 120 chars'),
-    quantity: z.number().int('Whole units only').min(1, 'At least 1').max(10_000, 'Max 10,000'),
-    unitWeightKg: z.number().positive('Must be positive'),
+      .refine(async (sku) => await lookupSku(sku), 'Unknown SKU')
+      .register(fieldMeta, { label: 'SKU' }),
+    description: z
+      .string()
+      .min(1, 'Required')
+      .max(120, 'Max 120 chars')
+      .register(fieldMeta, { label: 'Description' }),
+    quantity: z
+      .number()
+      .int('Whole units only')
+      .min(1, 'At least 1')
+      .max(10_000, 'Max 10,000')
+      .register(fieldMeta, { label: 'Quantity' }),
+    unitWeightKg: z
+      .number()
+      .positive('Must be positive')
+      .register(fieldMeta, { label: 'Unit weight' }),
   })
 
   // Manifest array — lifted out of the cargo discriminated union so
@@ -166,15 +180,23 @@
     })
 
   const dryDetailsSchema = z.object({
-    type: z.literal('dry'),
-    fragile: z.boolean(),
+    type: z.literal('dry').register(fieldMeta, { label: 'Type' }),
+    fragile: z.boolean().register(fieldMeta, { label: 'Fragile' }),
   })
 
   const refrigeratedDetailsSchema = z
     .object({
-      type: z.literal('refrigerated'),
-      tempMinC: z.number().min(-30, 'Min -30°C').max(20, 'Max 20°C'),
-      tempMaxC: z.number().min(-30, 'Min -30°C').max(20, 'Max 20°C'),
+      type: z.literal('refrigerated').register(fieldMeta, { label: 'Type' }),
+      tempMinC: z
+        .number()
+        .min(-30, 'Min -30°C')
+        .max(20, 'Max 20°C')
+        .register(fieldMeta, { label: 'Min temperature' }),
+      tempMaxC: z
+        .number()
+        .min(-30, 'Min -30°C')
+        .max(20, 'Max 20°C')
+        .register(fieldMeta, { label: 'Max temperature' }),
     })
     .refine((v) => v.tempMinC < v.tempMaxC, {
       message: 'Min temp must be below max',
@@ -182,28 +204,35 @@
     })
 
   const hazmatDetailsSchema = z.object({
-    type: z.literal('hazmat'),
-    unNumber: z.string().regex(/^UN\\d{4}$/, 'Format: UN1234'),
-    hazardClass: z.enum(HAZARD_CLASSES),
-    acknowledged: z.literal(true, { message: 'Acknowledge handling rules to continue' }),
+    type: z.literal('hazmat').register(fieldMeta, { label: 'Type' }),
+    unNumber: z
+      .string()
+      .regex(/^UN\\d{4}$/, 'Format: UN1234')
+      .register(fieldMeta, { label: 'UN number' }),
+    hazardClass: z.enum(HAZARD_CLASSES).register(fieldMeta, { label: 'Hazard class' }),
+    acknowledged: z
+      .literal(true, { message: 'Acknowledge handling rules to continue' })
+      .register(fieldMeta, { label: 'Hazmat acknowledgement' }),
   })
 
   const oversizedDetailsSchema = z.object({
-    type: z.literal('oversized'),
-    lengthCm: z.number().positive(),
-    widthCm: z.number().positive(),
-    heightCm: z.number().positive(),
-    permitNumber: z.string().optional(),
+    type: z.literal('oversized').register(fieldMeta, { label: 'Type' }),
+    lengthCm: z.number().positive().register(fieldMeta, { label: 'Length' }),
+    widthCm: z.number().positive().register(fieldMeta, { label: 'Width' }),
+    heightCm: z.number().positive().register(fieldMeta, { label: 'Height' }),
+    permitNumber: z.string().optional().register(fieldMeta, { label: 'Permit number' }),
   })
 
   const cargoSchema = z.object({
-    items: lineItemArraySchema,
-    details: z.discriminatedUnion('type', [
-      dryDetailsSchema,
-      refrigeratedDetailsSchema,
-      hazmatDetailsSchema,
-      oversizedDetailsSchema,
-    ]),
+    items: lineItemArraySchema.register(fieldMeta, { label: 'Line items' }),
+    details: z
+      .discriminatedUnion('type', [
+        dryDetailsSchema,
+        refrigeratedDetailsSchema,
+        hazmatDetailsSchema,
+        oversizedDetailsSchema,
+      ])
+      .register(fieldMeta, { label: 'Cargo details' }),
   })
 
   const truckServiceSchema = z.object({
@@ -231,22 +260,42 @@
   ])
 
   const schema = z.object({
-    reference: z.string().regex(/^SHP-\\d{6}$/, 'Format: SHP-123456'),
-    pickup: addressSchema,
-    delivery: addressSchema,
+    reference: z
+      .string()
+      .regex(/^SHP-\\d{6}$/, 'Format: SHP-123456')
+      .register(fieldMeta, { label: 'Reference', placeholder: 'SHP-123456' }),
+    pickup: addressSchema.register(fieldMeta, { label: 'Pickup address' }),
+    delivery: addressSchema.register(fieldMeta, { label: 'Delivery address' }),
     // Schema-modeled toggle so the flag is persisted + restored
     // alongside the rest of the draft. The watch below keeps
     // delivery in sync with pickup whenever it's true.
-    useSameDeliveryAddress: z.boolean(),
-    cargo: cargoSchema,
-    service: serviceSchema,
-    desiredPickupDate: z.string().min(1, 'Required'),
-    desiredDeliveryDate: z.string().min(1, 'Required'),
-    insurance: z.object({
-      declaredValueUSD: z.number().min(0, 'Cannot be negative'),
-      coverage: z.enum(COVERAGES),
-    }),
-    notes: z.string().max(500, 'Max 500 chars').optional(),
+    useSameDeliveryAddress: z
+      .boolean()
+      .register(fieldMeta, { label: 'Use same delivery address' }),
+    cargo: cargoSchema.register(fieldMeta, { label: 'Cargo' }),
+    service: serviceSchema.register(fieldMeta, { label: 'Service' }),
+    desiredPickupDate: z
+      .string()
+      .min(1, 'Required')
+      .register(fieldMeta, { label: 'Pickup date' }),
+    desiredDeliveryDate: z
+      .string()
+      .min(1, 'Required')
+      .register(fieldMeta, { label: 'Delivery date' }),
+    insurance: z
+      .object({
+        declaredValueUSD: z
+          .number()
+          .min(0, 'Cannot be negative')
+          .register(fieldMeta, { label: 'Declared value' }),
+        coverage: z.enum(COVERAGES).register(fieldMeta, { label: 'Coverage' }),
+      })
+      .register(fieldMeta, { label: 'Insurance' }),
+    notes: z
+      .string()
+      .max(500, 'Max 500 chars')
+      .optional()
+      .register(fieldMeta, { label: 'Notes' }),
   })
 
   // ─── Form ────────────────────────────────────────────────────────
@@ -312,7 +361,7 @@
   function isStepValid(id: StepId) {
     const paths = STEP_PATHS[id]
     if (paths.length === 0) return false
-    return form.isValid(paths)
+    return paths.every((p) => form.fields(p).valid)
   }
   const currentStepValid = computed(() => isStepValid(step.value))
 
@@ -326,44 +375,9 @@
   // ─── Error summary (review step) ────────────────────────────────
   // Group form.meta.errors by top-level segment so the Review step
   // renders one panel per section. Each row jumps to the owning step.
-  const ROOT_LABELS = new Map([
-    ['reference', 'Reference'],
-    ['pickup', 'Pickup address'],
-    ['delivery', 'Delivery address'],
-    ['cargo', 'Cargo'],
-    ['service', 'Service'],
-    ['insurance', 'Insurance'],
-    ['desiredPickupDate', 'Pickup date'],
-    ['desiredDeliveryDate', 'Delivery date'],
-    ['notes', 'Notes'],
-  ])
-  const LEAF_LABELS = new Map([
-    ['line1', 'Line 1'],
-    ['line2', 'Line 2'],
-    ['city', 'City'],
-    ['region', 'Region'],
-    ['postalCode', 'Postal code'],
-    ['country', 'Country'],
-    ['declaredValueUSD', 'Declared value'],
-    ['coverage', 'Coverage'],
-    ['carrier', 'Carrier'],
-    ['mode', 'Mode'],
-    ['items', 'Line items'],
-    ['fragile', 'Fragile'],
-    ['tempMinC', 'Min temperature'],
-    ['tempMaxC', 'Max temperature'],
-    ['unNumber', 'UN number'],
-    ['hazardClass', 'Hazard class'],
-    ['acknowledged', 'Hazmat acknowledgement'],
-    ['lengthCm', 'Length'],
-    ['widthCm', 'Width'],
-    ['heightCm', 'Height'],
-    ['permitNumber', 'Permit number'],
-    ['sku', 'SKU'],
-    ['description', 'Description'],
-    ['quantity', 'Quantity'],
-    ['type', 'Type'],
-  ])
+  // Section / leaf labels read straight from the schema's registered
+  // metadata via form.fields(path).label — the schema is the single
+  // source of truth for both structure and presentation.
   type ErrorGroup = {
     rootKey: string
     rootLabel: string
@@ -375,13 +389,16 @@
       const root = String(e.path[0] ?? '(root)')
       let group = groups.get(root)
       if (!group) {
-        group = { rootKey: root, rootLabel: ROOT_LABELS.get(root) ?? root, items: [] }
+        group = {
+          rootKey: root,
+          rootLabel: form.fields(root).label || root,
+          items: [],
+        }
         groups.set(root, group)
       }
       let leaf: string | null = null
       if (e.path.length > 1) {
-        const leafKey = String(e.path[e.path.length - 1])
-        leaf = LEAF_LABELS.get(leafKey) ?? leafKey
+        leaf = form.fields(e.path).label || null
       }
       group.items.push({ leafLabel: leaf, message: e.message, path: e.path })
     }
@@ -498,7 +515,7 @@
   }
 
   // ─── Template helpers ────────────────────────────────────────────
-  function fieldClasses(field: FieldStateLeaf<unknown> | undefined) {
+  function fieldClasses(field: FieldState<unknown> | undefined) {
     if (!field) return {}
     return {
       valid: field.valid && (field.dirty || field.touched),
@@ -506,15 +523,16 @@
       validating: field.validating,
     }
   }
-  function visibleError(field: FieldStateLeaf<unknown> | undefined) {
+  function visibleError(field: FieldState<unknown> | undefined) {
     if (!field || !field.touched) return ''
     return field.errors[0]?.message ?? ''
   }
 
   // Array-level error at cargo.items (min(1) + async capacity refine).
-  const cargoItemsArrayError = computed(() =>
-    form.errorsAt('cargo.items').find((e) => e.path.length === 2)?.message ?? ''
-  )
+  const cargoItemsArrayError = computed(() => {
+    const errs = form.errors('cargo.items')
+    return errs?.find((e) => e.path.length === 2)?.message ?? ''
+  })
 
   const addressBlocks = computed(() => [
     { prefix: 'pickup' as const, label: 'Pickup', mirrored: false },

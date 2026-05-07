@@ -57,16 +57,32 @@ export async function render(url: string) {
 }
 ```
 
-### Server template
+### Server template + injection
+
+The HTML shipped to the browser carries two placeholders — one for the rendered app HTML, one for the inline payload:
 
 ```html
 <body>
-  <div id="app"><!--ssr-outlet--></div>
-  <script>
-    window.__ATTAFORM_STATE__ = {{{ payload }}};
-  </script>
+  <div id="app"><!--app-html--></div>
+  <!--app-payload-->
   <script type="module" src="/src/entry-client.ts"></script>
 </body>
+```
+
+The request handler swaps both in:
+
+```ts
+import fs from 'node:fs/promises'
+import { render } from './entry-server'
+
+app.use('*', async (req, res) => {
+  const template = await fs.readFile('index.html', 'utf-8')
+  const { html, payload } = await render(req.originalUrl)
+  const final = template
+    .replace('<!--app-html-->', html)
+    .replace('<!--app-payload-->', `<script>window.__ATTAFORM_STATE__ = ${payload};</script>`)
+  res.status(200).set({ 'Content-Type': 'text/html' }).end(final)
+})
 ```
 
 ### Client (`entry-client.ts`)

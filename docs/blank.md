@@ -1,15 +1,15 @@
 # `blank` — the storage / display divergence side-channel
 
 The form library tracks one extra bit per primitive leaf called `blank`.
-Most of the time you don't need to think about it — submit / validate
-already incorporate it, and `form.errors` reflects it reactively. But
-when you do hit it, this is the model.
+You won't need to think about it day-to-day — submit / validate already
+incorporate it, and `form.errors` reflects it reactively. When you do
+hit it, this is the model.
 
 ## Why it exists
 
 The whole library obeys one principle: **`errors = f(schema, state)`**.
-Storage plus the schema is enough to know whether the form is valid.
-That's almost true — there's exactly one case where it isn't.
+Storage plus the schema tell you whether the form is valid — except
+for one case.
 
 Numeric inputs lie. A `<input type="number">` whose value the user has
 just cleared shows `''` in the DOM, but the slim shape requires a
@@ -27,10 +27,9 @@ recording paths where the runtime knows storage and the visible
 display diverge. The schema author writes `z.number()` and gets the
 "empty input" signal back without inventing a sentinel value.
 
-## Where it shines (and where it doesn't)
+## When `blank` applies
 
-The mechanism is principled exactly because the asymmetry below is
-real, not invented:
+`blank` auto-marks **numeric leaves only**. The asymmetry is real:
 
 | Type      | Storage slim default | DOM "empty" | Need the side-channel?                 |
 | --------- | -------------------- | ----------- | -------------------------------------- |
@@ -39,12 +38,9 @@ real, not invented:
 | `string`  | `''`                 | `''`        | No — they match byte-for-byte.         |
 | `boolean` | `false`              | unchecked   | No — they match.                       |
 
-So `blank` auto-marks **only numeric leaves**. For strings and
-booleans, the schema sees what the user sees. If you want
-"required string must be non-empty," express that in the schema
-(`z.string().min(1)`) and a refinement error fires the moment storage
-is `''` — no library-level guess required. The library doesn't
-second-guess the schema's accepted-empty verdict.
+For strings and booleans the schema sees what the user sees. Require
+non-empty strings via `z.string().min(1)` — the refinement error fires
+the moment storage is `''`, schema speaking.
 
 ## Lifecycle (numeric)
 

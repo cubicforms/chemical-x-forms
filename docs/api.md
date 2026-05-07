@@ -7,13 +7,14 @@ signatures, options, and return shapes.
 ## `attaform/zod`
 
 The recommended entry — Zod v4 adapter. `useForm`, `zodAdapter`,
-`kindOf`, `assertZodVersion`, `type ZodKind`.
+`fieldMeta`, `withMeta`, `kindOf`, `assertZodVersion`,
+`FieldMetaPayload`, `ZodKind`.
 
 → [Read `attaform/zod`](/docs/api/zod)
 
 ## `attaform/zod-v3`
 
-Legacy Zod v3 adapter. New projects should use `attaform/zod`.
+Zod v3 adapter for projects still on v3. New projects should use `attaform/zod`.
 
 → [Read `attaform/zod-v3`](/docs/api/zod-v3)
 
@@ -58,7 +59,8 @@ imperative persistence.
 
 ## Types
 
-The exported type surface — `FlatPath`, `WriteShape`,
-`NestedReadType`, `ValidationError`, `FormStorage`, and the rest.
+The exported type surface — `FlatPath`, `NestedReadType`,
+`FieldState`, `FieldMetaPayload`, `ValidationError`, `FormStorage`,
+and the rest.
 
 → [Read shared types](/docs/api/shared-types)

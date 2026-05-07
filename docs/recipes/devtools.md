@@ -71,17 +71,16 @@ For a zero-overhead production build:
 1. Pass `{ devtools: false }`.
 2. Keep `@vue/devtools-api` in `devDependencies`, not `dependencies`.
 
-## Not included (yet)
+## Coming soon
 
-- **Field flags** (touched / focused / blurred). The inspector
-  shows values + errors; UI interaction state is omitted.
+- **Field flags** (touched / focused / blurred) in the inspector —
+  values + errors are surfaced today, UI interaction state isn't.
 - **History stack visualisation.** Undo / redo snapshots show on
-  the timeline via `form.change` entries, but the stack itself
-  isn't a separate node. Open an issue if your editor workflow
-  needs it.
-- **Persisted payload preview.** Inspect the live form state in
-  the inspector; for the serialised payload on disk, open
-  Application → Storage in the browser devtools.
+  the timeline via `form.change` entries; the stack itself isn't a
+  separate node yet. Open an issue if your editor workflow needs it.
+- **Persisted payload preview.** Inspect live form state in the
+  inspector; for the serialised payload on disk, open Application →
+  Storage in the browser devtools.
 
 ## Caveats
 

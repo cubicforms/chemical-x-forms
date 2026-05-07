@@ -6,10 +6,10 @@ directive layer — `'25'` → `25` for a `z.number()` slot, `'true'` →
 storage shape; consumers stop sprinkling `.number` modifiers across
 templates.
 
-Coercion is **on by default** with the built-in `defaultCoercionRules`
-(`string→number`, `string→boolean`). Programmatic writes
-(`form.setValue`, `setValueWithInternalPath`) are NEVER coerced —
-coercion is user-input-only.
+Coercion (on by default) applies to user input only — programmatic
+writes (`form.setValue`, `setValueWithInternalPath`) bypass it. The
+built-in rules cover `string→number` and `string→boolean` via
+`defaultCoercionRules`.
 
 ## Default in action
 

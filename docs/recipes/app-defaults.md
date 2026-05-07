@@ -44,14 +44,11 @@ export default defineNuxtConfig({
 
 ## Resolution order
 
-For each option, the resolved value is the first defined among:
+Per-form > app-level > library default. Per-form always wins.
 
 ```
 useForm({ … })  >  createAttaform({ defaults })  >  library default
 ```
-
-So a per-form value always wins, an app-level default fills in when
-omitted, and the library's built-in default is the final fallback.
 
 ## Merge semantics
 

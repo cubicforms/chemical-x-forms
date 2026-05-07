@@ -1,9 +1,8 @@
 # Register transforms
 
 A pipeline of pure sync functions that runs over user input before
-the assigner writes to form state. Use it for trim / lowercase /
-mask / clamp normalisations — anything that should always apply
-no matter how the user typed.
+the assigner writes to form state. Use for trim, lowercase, mask,
+clamp — any always-on normalisation, no matter how the user typed.
 
 ## Basic example
 
@@ -48,18 +47,11 @@ casts to a number on blur, clamps, then writes.
 
 ## What transforms DON'T apply to
 
-This is deliberately narrow — transforms are user-input
-normalisation, not storage middleware:
+Transforms are user-input normalisation, not storage middleware:
 
-- `form.setValue(path, value)` and
-  `rv.setValueWithInternalPath(value)` — programmatic writes.
-  Compose transforms yourself at the call site if you want the
-  same normalisation:
-  `form.setValue('email', lowercase(trim(rawValue)))`.
-- `form.reset()` / hydration / SSR replay — those write canonical
-  state that's already been validated; running normalisation over
-  it would be redundant or destructive.
-- `markBlank()` — already writes the slim default.
+- **Programmatic writes** (`form.setValue`, `rv.setValueWithInternalPath`) — compose transforms yourself at the call site: `form.setValue('email', lowercase(trim(rawValue)))`.
+- **`form.reset()` / hydration / SSR replay** — already canonical state; re-normalising would be redundant or destructive.
+- **`markBlank()`** — already writes the slim default.
 
 ## Composing with `@update:registerValue`
 

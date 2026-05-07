@@ -12,14 +12,12 @@ import type {
   CoercionEntry,
   CoercionRegistry,
   CoercionResult,
-  CurrentValueContext,
-  CurrentValueWithContext,
   CustomDirectiveRegisterAssignerFn,
   DeepPartial,
   DefaultValuesResponse,
   DefaultValuesShape,
+  FieldMetaPayload,
   FieldState,
-  FieldStateLeaf,
   FieldStateMap,
   FieldStateMapEntry,
   FlatPath,
@@ -112,29 +110,38 @@ The ones you'll touch most:
   callback's return shape matches its input shape; runtime
   mergeStructural completes any structural gaps.
 - **`ArrayPath<Form>`** — `FlatPath<Form>` filtered to array-leaf
-  paths. Used by `append` / `remove` / etc.
+  paths. The path-constraint type used by `append` / `prepend` /
+  `insert` / `remove` / `swap` / `move` / `replace`.
 - **`ArrayItem<Form, Path>`** — the element type of the array at
-  `Path`.
+  `Path`. Field-array helpers parameterise their `value` argument
+  by `WriteShape<ArrayItem<Form, Path>>`.
 - **`ValidationError`** — `{ path: readonly Segment[]; message:
 string; formKey: FormKey }`.
-- **`FieldStateLeaf<Value>`** — runtime shape of a single
-  `form.fields.<path>` read: `value` / `original` (typed
-  `Value`), `pristine` / `dirty` / `blank` (booleans), `focused` /
-  `blurred` / `touched` (`boolean | null`), `errors`
-  (`readonly ValidationError[]`), `path`, `connected`, `updatedAt`.
-  Schema fields with names matching these leaf keys at depth ≥ 2
-  are shadowed by the leaf — bracket-access via `toRef` is the
-  workaround.
+- **`FieldState<Value = unknown>`** — runtime shape returned by
+  `form.fields.<path>` and `form.fields(path)`. Same shape at every
+  path — leaf or container. Identity (`path`); value (`value`,
+  `original`); change (`pristine`, `dirty`, `updatedAt`); interaction
+  (`focused`, `blurred`, `touched`, `connected`); validation
+  (`valid`, `validating`, `errors`); emptiness (`blank`); DOM
+  (`element`, `elements`); metadata (`label`, `description`,
+  `placeholder`, `meta`). At containers the keys aggregate over
+  active-variant descendants — event-presence by disjunction
+  (`dirty`, `focused`, `touched`, `validating`), uniformity by
+  conjunction (`pristine`, `valid`, `blank`). See
+  [the fields surface](/docs/api/use-form-return#reading-values).
 - **`FieldStateMap<Form>`** — the recursive type behind
-  `form.fields`. Top-level fields and nested objects are
-  reachable via dot-descent; leaf keys (`value`, `dirty`, `errors`,
-  …) read off the FieldStateLeaf at the current path.
-- **`FieldState<Value = unknown>`** — richer per-field type kept for
-  type-level utility code: `currentValue` / `originalValue` /
-  `previousValue` (typed `Value`), the same flag set as
-  `FieldStateLeaf`, plus `meta` (`MetaTrackerValue`). Returned by no
-  current public API directly; useful when type-narrowing or
-  building higher-order helpers.
+  `form.fields`. Dot-access descends through nested objects; call-form
+  (`form.fields('pickup')`) returns a `FieldState` at any depth.
+  Schema fields whose names collide with `FieldState` keys at depth
+  ≥ 2 stay reachable as descent targets — leaf-keys inject only at
+  the FieldState terminal.
+- **`FieldMetaPayload`** — schema-attached metadata payload:
+  `label?`, `description?`, `placeholder?`. Declared as an
+  `interface` so consumers can extend it via TypeScript module
+  augmentation. Written via `schema.register(fieldMeta, {...})`
+  (Zod 4) or `withMeta(schema, {...})` (helper, both v3 and v4);
+  read off `form.fields(p).meta`. See the [Zod adapter](/docs/api/zod#schema-attached-metadata)
+  docs for usage.
 - **`ValidateOn`** — `'change' | 'blur' | 'submit'`. The trigger for
   per-field validation. Default `'change'`. `'submit'` opts out of
   live validation entirely (submit is the only validator).
@@ -157,25 +164,34 @@ string; formKey: FormKey }`.
   Returned by a `CoercionEntry.transform`. Returning `{ coerced: false }`
   signals "this rule doesn't apply" — the write passes through
   untouched.
-- **`FormMeta`** — the shape of `form.meta`: form-level flags
-  (`dirty`, `valid`, `submitting`, `validating`), counters
-  (`submitCount`, `historySize`), the flat `errors` aggregate, and
-  the per-mount `instanceId`.
+- **`FormMeta<Form>`** — `FieldState<Form> & { submitting,
+submitCount, submitError, canUndo, canRedo, historySize, instanceId }`.
+  The shape of `form.meta`. Inherits every `FieldState` field at the
+  root path (so `meta.dirty`, `meta.valid`, `meta.errors`,
+  `meta.label`, `meta.element`, etc. all resolve) and adds the form-
+  lifecycle fields.
 - **`FormErrorsSurface<F>`** — the shape of `form.errors`. Drillable
-  callable Proxy; per-leaf `ValidationError[] | undefined`. Replaces
-  the pre-0.14 flat-record shape `Partial<Record<FlatPath<F>, ValidationError[]>>`.
-- **`AbstractSchema`** — the schema contract (6 methods:
-  `fingerprint`, `getDefaultValues`, `getDefaultAtPath`,
-  `getSchemasAtPath`, `validateAtPath`, `getSlimPrimitiveTypesAtPath`).
-  See [custom-adapter recipe](/docs/recipes/custom-adapter).
+  callable Proxy: dot-access descends; call-form aggregates and
+  returns `readonly ValidationError[] | undefined` at any path
+  (active-variant filtered, sorted by schema-declaration order).
+- **`AbstractSchema`** — the schema contract: ten required methods
+  (`fingerprint`, `getDefaultValues`, `getDefaultAtPath`,
+  `arrayShapeAtPath`, `getSchemasAtPath`, `validateAtPath`,
+  `getSlimPrimitiveTypesAtPath`, `isLeafAtPath`, `isRequiredAtPath`,
+  `getUnionDiscriminatorAtPath`) plus two optional hooks
+  (`getFieldMetaAtPath` for schema-attached metadata,
+  `needsAsyncValidation` for async-detection). See
+  [custom-adapter recipe](/docs/recipes/custom-adapter).
 - **`SlimPrimitiveKind`** — the set of primitive `typeof`-style
   kinds the slim-write contract recognises: `'string'`, `'number'`,
   `'boolean'`, `'bigint'`, `'date'`, `'null'`, `'undefined'`,
   `'object'`, `'array'`, `'symbol'`, `'function'`, `'map'`, `'set'`.
   Returned by `AbstractSchema.getSlimPrimitiveTypesAtPath(path)`.
-- **`MetaTrackerValue`** — per-leaf metadata: `updatedAt`,
-  `rawValue`, `connected`, `formKey`, `path`. Read from
-  `FieldState.meta` when type-narrowing through that surface.
+- **`MetaTrackerValue`** — internal per-leaf record (`updatedAt`,
+  `rawValue`, `connected`, `formKey`, `path`, `blank`). Surfaced for
+  custom-adapter authors who thread metadata through their own
+  pipelines; most consumers don't reach for it directly — the
+  matching fields appear with friendlier shape on `FieldState`.
 - **`RegisterDirective`** — the union of every `v-register`
   directive variant (text input, select, checkbox, radio, dynamic).
   Most consumers use this only when augmenting Vue's `GlobalDirectives`

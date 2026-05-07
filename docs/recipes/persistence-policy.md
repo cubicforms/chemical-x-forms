@@ -41,7 +41,7 @@ storage until the next write (which won't include it) or an explicit
 ## Including errors
 
 Default `include: 'form'` persists just the values. Server-side
-validation errors on reload are usually stale and confusing.
+validation errors on reload are stale by then.
 
 For multi-step wizards where reconstructing errors is expensive,
 `include: 'form+errors'` persists and re-hydrates `errors`.
@@ -73,10 +73,6 @@ bump, no possibility of forgetting it, no draft drops when only
 refinement logic changed (refinements collapse to opaque sentinels
 in the fingerprint).
 
-The same orphan pass also wipes pre-fingerprint legacy entries
-written by older library versions, so upgrades clean up cleanly on
-the next mount.
-
 Malformed-shape entries (corrupted JSON, attaform-internal envelope-version
 mismatch, anything that doesn't match the expected payload contract)
 are wiped on read. "Truly absent" entries (the key was never set)
@@ -94,23 +90,17 @@ signal.
 
 ## What persistence is NOT for
 
-- **Sensitive data.** Don't persist passwords, payment cards, SSNs,
-  tokens, or anything else listed in the sensitive-name heuristic
-  unless your storage adapter encrypts AND the encryption key isn't
-  itself client-side derivable. The library throws at mount on
-  obvious cases; the heuristic isn't exhaustive.
+- **Sensitive data.** See [Security](/docs/recipes/persistence#security-what-not-to-persist).
 - **Authoritative state.** Persistence is for draft UX, not for
   source-of-truth data. The server still owns the canonical record.
 - **Cross-form coordination.** Each form persists independently.
   Multiple forms can share a key (and so a FormStore + a persistence
   entry), but they're still one form to the persistence layer.
-- **Schema migrations.** Schema changes auto-invalidate old payloads
-  via the fingerprint (the old key becomes unreachable and is swept
-  on the next mount). If you need to rename a field without losing
-  state, read the raw entry yourself before the schema change ships
-  and massage it into the new shape before calling `reset()`. The
-  library deliberately doesn't ship a renaming-aware migration
-  helper — schemas are the contract; renames are a write-once
+- **Schema migrations.** Auto-invalidation handles the common case
+  (see above). To rename a field without losing state, read the raw
+  entry before the schema change ships and massage it into the new
+  shape before calling `reset()`. The library deliberately doesn't
+  ship a renaming-aware migration helper — renames are a write-once
   transformation the consumer owns.
 
 ## See also

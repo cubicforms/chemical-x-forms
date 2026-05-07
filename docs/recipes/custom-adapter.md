@@ -7,25 +7,42 @@ without forking the library.
 
 ## The contract
 
-Seven methods:
+Ten required methods plus two optional hooks:
 
 ```ts
 type AbstractSchema<Form, GetValueFormType = Form> = {
+  // Identity
   fingerprint(): string
+
+  // Defaults
   getDefaultValues(config): DefaultValuesResponse<Form>
   getDefaultAtPath(path: Path): unknown
+
+  // Shape introspection
+  arrayShapeAtPath(path: Path): number | null | undefined
+  isLeafAtPath(path: Path): boolean
+  isRequiredAtPath(path: Path): boolean
   getSchemasAtPath(path: Path): AbstractSchema<unknown, GetValueFormType>[]
   getSlimPrimitiveTypesAtPath(path: Path): Set<SlimPrimitiveKind>
-  isRequiredAtPath(path: Path): boolean
-  validateAtPath(data: unknown, path: Path | undefined): Promise<ValidationResponse<Form>>
+  getUnionDiscriminatorAtPath(path: Path): UnionDiscriminatorContext | undefined
+
+  // Validation
+  validateAtPath(
+    data: unknown,
+    path: Path | undefined,
+    options?: ValidateOptions
+  ): MaybePromise<ValidationResponse<Form>>
+
+  // Optional hooks
+  getFieldMetaAtPath?(path: Path): ResolvedFieldMeta
+  needsAsyncValidation?(): boolean
 }
 ```
 
 - **`fingerprint()`** — structural signature of the schema. Two
-  schemas with the same shape must return the same string; two
-  schemas with different shapes should (best-effort) return
-  different strings. Used to detect shared-key mismatches AND to
-  key persisted drafts — see
+  schemas with the same shape return the same string; different
+  shapes return different strings. Used to detect shared-key
+  mismatches AND to key persisted drafts — see
   [Fingerprint implementation](#fingerprint-implementation).
 - **`getDefaultValues({ useDefaultSchemaValues, constraints, strict })`**
   — returns `{ data, errors, success, formKey }`. Called at form
@@ -33,42 +50,63 @@ type AbstractSchema<Form, GetValueFormType = Form> = {
 - **`getDefaultAtPath(path)`** — returns the schema-prescribed
   default at a structured path. The runtime calls this on every
   `setValue` to fill structural gaps. See
-  [getDefaultAtPath](#getdefaultatpath) below.
-- **`getSchemasAtPath(path)`** — returns the list of sub-schemas
-  at `path`. `path` is the canonical `Segment[]`, not a dotted
-  string. Advanced introspection hook; return `[]` if you don't
-  use it.
-- **`getSlimPrimitiveTypesAtPath(path)`** — returns the set of
-  primitive `typeof`-style kinds the path's leaf accepts at write
-  time (`'string'`, `'number'`, `'boolean'`, `'bigint'`, etc.). The
-  runtime calls this to gate the slim-primitive write contract.
-  Return `PERMISSIVE` for paths the schema doesn't declare so
-  dynamic writes don't get rejected.
-- **`isRequiredAtPath(path)`** — returns `true` when the leaf is
-  required (no `.optional()` / `.nullable()` / `.default()` /
-  `.catch()` wrapper). Used by the blank validation augmentation
-  to raise `'No value supplied'` for unfilled required fields.
-  Return `false` for any wrapper that admits the empty case.
-- **`validateAtPath(data, path?)`** — returns
-  `Promise<ValidationResponse>`. `path` is a `Segment[]` or
-  `undefined` (whole-form validation).
+  [getDefaultAtPath](#getdefaultatpath-the-peeling-rule) below.
+- **`arrayShapeAtPath(path)`** — `number` for tuples (their fixed
+  length), `null` for unbounded arrays, `undefined` for non-array
+  paths. The runtime caches the answer to skip per-write probe
+  loops on array writes.
+- **`isLeafAtPath(path)`** — `true` for primitive paths, `false`
+  for object / array / map / set containers. Drives the proxy's
+  descend-vs-terminate decision; reserved leaf-prop names (`dirty`,
+  `errors`, `valid`, `label`, …) inject only at the FieldState
+  terminal.
+- **`isRequiredAtPath(path)`** — `true` when the leaf is required
+  (no `.optional()` / `.nullable()` / `.default()` / `.catch()`
+  wrapper). Used by the blank validation augmentation to raise
+  `'No value supplied'` for unfilled required fields.
+- **`getSchemasAtPath(path)`** — list of candidate sub-schemas
+  at `path`. Multiple results are expected for DU branches.
+  `path` is a canonical `Segment[]`. Return `[]` if your library
+  doesn't model union-style multi-candidates.
+- **`getSlimPrimitiveTypesAtPath(path)`** — set of primitive
+  `typeof`-style kinds the path's leaf accepts at write time
+  (`'string'`, `'number'`, `'boolean'`, `'bigint'`, …). Drives
+  the slim-primitive write gate. Return `PERMISSIVE` for paths
+  the schema doesn't declare — over-rejecting breaks dynamic /
+  SSR rehydration.
+- **`getUnionDiscriminatorAtPath(path)`** — for discriminated-union
+  containers, return `{ discriminatorKey, getVariantDefault }`.
+  Used by the variant-reshape pipeline so a discriminator-key
+  write swaps the active branch without leaking old keys.
+  Return `undefined` if your library doesn't model DUs.
+- **`validateAtPath(data, path?, options?)`** — returns
+  `MaybePromise<ValidationResponse>`. `path` is a `Segment[]` or
+  `undefined` (whole-form validation). Honor `options.sync` when
+  the schema is sync-capable; the runtime uses it to batch error
+  writes inside DU variant reshape.
+- **`getFieldMetaAtPath?(path)`** — _optional_. Resolves
+  schema-attached metadata (label, description, placeholder, full
+  payload). Drives `form.fields(p).label` / `.description` /
+  `.placeholder` / `.meta`. Omit if your library doesn't model
+  metadata yet — consumers see humanized fallbacks.
+- **`needsAsyncValidation?()`** — _optional_. Return `true` if
+  `validateAtPath` may need a Promise to surface every error
+  this schema can produce. The runtime uses this to decide
+  whether to schedule a one-shot construction-time async pass.
 
-`validateAtPath` must NOT throw. Return `{ success: false, errors
-}` for validation failures; return (or reject with) a synthetic
-error only if your parser is genuinely misbehaving.
+`validateAtPath` must NOT throw. Return `{ success: false, errors }`
+for validation failures.
 
-`fingerprint` must NOT throw either. If it does, the library
-catches the exception, logs it via `console.error` in dev, and
-skips the shared-key mismatch check for that call. An opaque
-stable string (`'custom-adapter:v1'`) is a valid fallback when
-your schema library is hard to introspect — note that opaque
-fingerprints disable schema-change auto-invalidation for
-persisted drafts (the key never changes), so prefer a real
-structural hash if your library exposes the metadata.
+`fingerprint` must NOT throw. If it does, the library catches the
+exception, logs it via `console.error` in dev, and skips the
+shared-key mismatch check for that call. An opaque stable string
+(`'custom-adapter:v1'`) is a valid fallback — note that opaque
+fingerprints disable schema-change auto-invalidation for persisted
+drafts (the key never changes), so prefer a real structural hash if
+your library exposes the metadata.
 
-`getDefaultAtPath` must NOT throw. Return `undefined` for paths
-that don't exist in the schema; the runtime treats that as
-"don't fill" and falls back to the existing data.
+`getDefaultAtPath` must NOT throw. Return `undefined` for missing
+paths; the runtime skips filling.
 
 ## A minimal Valibot-ish adapter
 
@@ -137,6 +175,22 @@ export function myLibAdapter<F extends GenericForm>(schema: MyLibSchema<F>): Abs
       return walkSchemaToDefault(schema, path)
     },
 
+    arrayShapeAtPath(path) {
+      // Tuples → number (their length); unbounded arrays → null;
+      // anything else → undefined. The runtime caches the answer
+      // to skip a 1024-step probe loop on array writes.
+      return walkSchemaToArrayShape(schema, path)
+    },
+
+    isLeafAtPath(path) {
+      // True for primitive leaves; false for objects / arrays /
+      // maps / sets. Drives the proxy's descend-vs-terminate
+      // decision.
+      const kinds = walkSchemaToSlimPrimitives(schema, path)
+      if (kinds === undefined) return false
+      return ![...kinds].some((k) => k === 'object' || k === 'array' || k === 'map' || k === 'set')
+    },
+
     getSchemasAtPath(_path) {
       return []
     },
@@ -155,6 +209,13 @@ export function myLibAdapter<F extends GenericForm>(schema: MyLibSchema<F>): Abs
       // Catch) means the leaf is NOT required — return false.
       const leaf = walkSchemaToLeaf(schema, path)
       return leaf !== undefined && !isOptionalLikeWrapper(leaf)
+    },
+
+    getUnionDiscriminatorAtPath(_path) {
+      // Return undefined when your library doesn't model
+      // discriminated unions; the runtime DU reshape pipeline is a
+      // no-op without this hook.
+      return undefined
     },
 
     async validateAtPath(data, _path): Promise<ValidationResponse<F>> {
@@ -260,7 +321,7 @@ See `src/runtime/adapters/zod-v4/fingerprint.ts` for a full
 walker with factory-default idempotence and shared-reference
 handling.
 
-## getDefaultAtPath
+## getDefaultAtPath: the peeling rule
 
 The runtime's structural-completeness invariant — every `setValue`
 write leaves the form satisfying the slim schema — depends on this
@@ -278,8 +339,6 @@ runtime callers:
   writes `setValue('user', prev => ({ ...prev, name: 'X' }))` and
   the slot was previously empty. The runtime calls
   `getDefaultAtPath(['user'])` and feeds the result to the callback.
-
-### The peeling rule
 
 Wrappers around _structural_ types peel; wrappers around
 _primitive_ leaves don't:

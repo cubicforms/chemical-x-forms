@@ -4,7 +4,7 @@ Long forms — multi-step onboarding, checkout, surveys — should
 survive a navigation mistake or a browser refresh. Attaform persists drafts
 to client-side storage with a per-field opt-in.
 
-## The threat model
+## Security: what not to persist
 
 Client-side storage is unencrypted at rest, readable by any
 same-origin script, and survives logouts. Persisting a name is

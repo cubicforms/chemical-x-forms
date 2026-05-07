@@ -205,7 +205,7 @@ validation will surface a refinement error on the next render.
 
 ### Custom assigners
 
-Replaces the directive's default "DOM event → extract value →
+Overrides the directive's default "DOM event → extract value →
 `rv.setValueWithInternalPath(value)`" bridge. The handler receives
 the post-extraction value plus the `RegisterValue` and decides what
 (if anything) reaches form state.

@@ -140,9 +140,9 @@ IndexedDB (and any async custom `FormStorage`) can't deliver a value
 in time for the first render. Users see schema defaults for one
 microtask, then the persisted payload swaps in.
 
-For small forms where that flash is jarring, stick to `'local'` or
-`'session'`. For larger forms, gate rendering on an `onMounted`
-tick or show a spinner until the first mutation settles.
+Stick to `'local'` / `'session'` for small forms; for larger ones,
+gate rendering until hydrated (an `onMounted` tick or a spinner
+until the first mutation settles).
 
 ## SSR
 

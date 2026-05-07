@@ -579,15 +579,21 @@
     return errs?.find((e) => e.path.length === 2)?.message ?? ''
   })
 
+  // Call-form form.fields('pickup') returns the container's
+  // FieldState (with .label from the registry). Dot-access at
+  // containers descends instead of injecting FieldState keys —
+  // that's how schema fields literally named "label" at depth ≥ 2
+  // stay reachable as descent targets. Use call-form whenever you
+  // want the FieldState at a container path.
   const addressBlocks = computed(() => [
     {
       prefix: 'pickup' as const,
-      label: form.fields.pickup.label,
+      label: form.fields('pickup').label,
       mirrored: false,
     },
     {
       prefix: 'delivery' as const,
-      label: form.fields.delivery.label,
+      label: form.fields('delivery').label,
       mirrored: form.values.useSameDeliveryAddress,
     },
   ])
@@ -977,7 +983,7 @@ ${'</'}script>
         </div>
 
         <fieldset class="address">
-          <legend>{{ form.fields.insurance.label }}</legend>
+          <legend>{{ form.fields('insurance').label }}</legend>
           <div class="grid-2">
             <div class="field" :class="fieldClasses(form.fields.insurance.declaredValueUSD)">
               <label>{{ form.fields.insurance.declaredValueUSD.label }}</label>

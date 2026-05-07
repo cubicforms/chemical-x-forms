@@ -2014,6 +2014,15 @@ export type FieldState<Value = unknown> = {
  * exotic adapter-defined leaf kinds (custom `Date`-like) may need
  * a runtime check (the runtime is authoritative).
  *
+ * The mapped type strips optional flags (`-?:`) because the field-
+ * state surface always exposes a record per known leaf, regardless
+ * of whether the schema field is declared `.optional()`. Optional
+ * schemas mean the VALUE can be undefined — `FieldState<string |
+ * undefined>` carries that — but the FieldState wrapper itself
+ * always exists. Without the strip, `form.fields.notes` (where
+ * `notes?: string`) would type as `FieldState<...> | undefined`,
+ * forcing consumers to optional-chain through every reactive read.
+ *
  * For discriminated-union containers the object branch uses
  * `[T] extends [object]` (non-distributive) plus
  * `KeyofUnion`/`ValueOfUnion` to merge variant key sets — so
@@ -2031,9 +2040,9 @@ export type FieldStateMapEntry<T> = [T] extends [
     : [T] extends [object]
       ? [IsUnion<T>] extends [true]
         ? {
-            readonly [K in KeyofUnion<T>]: FieldStateMapEntry<ValueOfUnion<T, K>>
+            readonly [K in KeyofUnion<T>]-?: FieldStateMapEntry<ValueOfUnion<T, K>>
           }
-        : { readonly [K in keyof T]: FieldStateMapEntry<T[K]> }
+        : { readonly [K in keyof T]-?: FieldStateMapEntry<T[K]> }
       : FieldState<T>
 
 /**
@@ -2058,9 +2067,9 @@ export type FieldStateMapEntry<T> = [T] extends [
  */
 export type FieldStateMap<Form extends GenericForm> = ([IsUnion<Form>] extends [true]
   ? {
-      readonly [K in KeyofUnion<Form>]: FieldStateMapEntry<ValueOfUnion<Form, K>>
+      readonly [K in KeyofUnion<Form>]-?: FieldStateMapEntry<ValueOfUnion<Form, K>>
     }
-  : { readonly [K in keyof Form]: FieldStateMapEntry<Form[K]> }) & {
+  : { readonly [K in keyof Form]-?: FieldStateMapEntry<Form[K]> }) & {
   /**
    * Dotted-string fallback for dynamic paths. Returns
    * `FieldState<unknown>` — the runtime always lands on a FieldState

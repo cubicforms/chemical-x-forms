@@ -143,5 +143,5 @@ snapshot. Create forms during `setup` so the server sees them.
 ## Reference test
 
 The bare-Vue round-trip has an end-to-end test at
-[`test/ssr-bare-vue/round-trip.test.ts`](../../test/ssr-bare-vue/round-trip.test.ts)
+[`test/ssr-bare-vue/round-trip.test.ts`](https://github.com/attaform/attaform/blob/main/test/ssr-bare-vue/round-trip.test.ts)
 — reading it is faster than reconstructing the wiring from scratch.

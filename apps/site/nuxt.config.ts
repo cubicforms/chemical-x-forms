@@ -136,6 +136,27 @@ export default defineNuxtConfig({
   // SSG flow. Inter (the site's primary font) is already pulled in
   // by @nuxt/fonts; nuxt-og-image picks it up automatically — no
   // explicit fonts config needed at this layer.
+  //
+  // nuxt-link-checker walks every prerendered HTML page and probes
+  // each <a> + canonical / og:url for resolvability. With
+  // `failOnError: true`, a broken internal link exits the build
+  // non-zero — the same gate that `nitro.prerender.failOnError` uses
+  // for 500s, applied at the link layer. `fetchRemoteUrls: false`
+  // (the default) keeps external URLs out of the loop: an upstream
+  // dev tool retiring its domain shouldn't fail our CI. The trade-
+  // off is real internal breakage gets caught in CI, while link rot
+  // on the wider web stays a manual cleanup task.
+  //
+  // `strictNuxtContentPaths: true` tells the inspector that our
+  // markdown source paths map 1:1 to live URLs (docs/foo.md ↔
+  // /docs/foo). That sharpens detection for relative refs inside
+  // markdown (a `[label](other-doc.md)` resolves through the same
+  // path map @nuxt/content uses, instead of being treated as a raw
+  // file fetch).
+  linkChecker: {
+    failOnError: true,
+    strictNuxtContentPaths: true,
+  },
   // @nuxt/content's Shiki integration. Pinning the themes and lang
   // set here is intentional — the default theme set is broad and
   // bundles ~50 grammars we don't need; whitelisting brings the

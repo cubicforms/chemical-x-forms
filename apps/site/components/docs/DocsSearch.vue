@@ -312,6 +312,7 @@
         aria-modal="true"
         aria-label="Search documentation"
         class="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[10vh]"
+        @click.self="close"
         @keydown="onModalKeydown"
       >
         <div

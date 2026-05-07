@@ -579,12 +579,6 @@
     return errs?.find((e) => e.path.length === 2)?.message ?? ''
   })
 
-  // Call-form form.fields('pickup') returns the container's
-  // FieldState (with .label from the registry). Dot-access at
-  // containers descends instead of injecting FieldState keys —
-  // that's how schema fields literally named "label" at depth ≥ 2
-  // stay reachable as descent targets. Use call-form whenever you
-  // want the FieldState at a container path.
   const addressBlocks = computed(() => [
     {
       prefix: 'pickup' as const,
@@ -1267,7 +1261,7 @@ body {
   flex-direction: column;
   gap: 0.75rem;
 }
-.address legend { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #667085; padding: 0 0.375rem; }
+.address legend { font-size: 0.8125rem; font-weight: 600; color: #344054; padding: 0 0.375rem; }
 .address.mirrored .field input,
 .address.mirrored .field select { background: #F9FAFB; color: #98A2B3; cursor: not-allowed; }
 .address.mirrored .field input:focus,

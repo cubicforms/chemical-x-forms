@@ -80,8 +80,8 @@ export type {
   CoercionResult,
   CustomDirectiveRegisterAssignerFn,
   DefaultValuesResponse,
+  FieldMetaPayload,
   FieldState,
-  FieldStateLeaf,
   FieldStateMap,
   FieldStateMapEntry,
   FormErrorRecord,
@@ -125,6 +125,8 @@ export type {
 } from './runtime/types/types-api'
 
 export type {
+  ArrayItem,
+  ArrayPath,
   DeepPartial,
   DefaultValuesShape,
   FlatPath,
@@ -137,6 +139,7 @@ export type {
   NestedReadType,
   NestedType,
   ValueOfUnion,
+  WriteShape,
 } from './runtime/types/types-core'
 
 // Path primitives — exposed for consumers writing custom adapters that

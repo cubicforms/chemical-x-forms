@@ -2,7 +2,7 @@ import { describe, expectTypeOf, it } from 'vitest'
 import { z } from 'zod'
 import type { IsUnion, KeyofUnion, ValueOfUnion } from '../../src/runtime/types/types-core'
 import type {
-  FieldStateLeaf,
+  FieldState,
   FieldStateMapEntry,
   ValidationError,
 } from '../../src/runtime/types/types-api'
@@ -82,32 +82,30 @@ describe('FieldStateMapEntry — discriminated-union lift (synthetic fixtures)',
 
   it('discriminator key (present in every variant) types without `| undefined`', () => {
     type T = FieldStateMapEntry<Cargo>['type']
-    expectTypeOf<T>().toEqualTypeOf<
-      FieldStateLeaf<'dry' | 'refrigerated' | 'hazmat' | 'oversized'>
-    >()
+    expectTypeOf<T>().toEqualTypeOf<FieldState<'dry' | 'refrigerated' | 'hazmat' | 'oversized'>>()
   })
 
   it('per-variant key (only on one variant) types as `T | undefined`', () => {
     type FragileLeaf = FieldStateMapEntry<Cargo>['fragile']
-    expectTypeOf<FragileLeaf>().toEqualTypeOf<FieldStateLeaf<boolean | undefined>>()
+    expectTypeOf<FragileLeaf>().toEqualTypeOf<FieldState<boolean | undefined>>()
 
     type TempMinLeaf = FieldStateMapEntry<Cargo>['tempMinC']
-    expectTypeOf<TempMinLeaf>().toEqualTypeOf<FieldStateLeaf<number | undefined>>()
+    expectTypeOf<TempMinLeaf>().toEqualTypeOf<FieldState<number | undefined>>()
 
     type UnNumberLeaf = FieldStateMapEntry<Cargo>['unNumber']
-    expectTypeOf<UnNumberLeaf>().toEqualTypeOf<FieldStateLeaf<string | undefined>>()
+    expectTypeOf<UnNumberLeaf>().toEqualTypeOf<FieldState<string | undefined>>()
 
     type LengthLeaf = FieldStateMapEntry<Cargo>['lengthCm']
-    expectTypeOf<LengthLeaf>().toEqualTypeOf<FieldStateLeaf<number | undefined>>()
+    expectTypeOf<LengthLeaf>().toEqualTypeOf<FieldState<number | undefined>>()
   })
 
   it('single-object regression: literal keys stay literal, no extra `| undefined`', () => {
     type Single = { a: string; b: number }
     type ALeaf = FieldStateMapEntry<Single>['a']
-    expectTypeOf<ALeaf>().toEqualTypeOf<FieldStateLeaf<string>>()
+    expectTypeOf<ALeaf>().toEqualTypeOf<FieldState<string>>()
 
     type BLeaf = FieldStateMapEntry<Single>['b']
-    expectTypeOf<BLeaf>().toEqualTypeOf<FieldStateLeaf<number>>()
+    expectTypeOf<BLeaf>().toEqualTypeOf<FieldState<number>>()
   })
 })
 

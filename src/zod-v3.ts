@@ -1,11 +1,8 @@
 /**
- * `attaform/zod-v3` — Zod v3 adapter.
- *
- * This subpath is considered legacy; new projects should use
- * `attaform/zod` (v4 adapter) once v4 support lands. The two
- * adapters are physically isolated (separate directories, no cross-imports,
- * enforced by ESLint), so v3 can be removed in a future major without
- * touching v4 or the framework-agnostic core.
+ * `attaform/zod-v3` — Zod v3 adapter for projects on Zod 3. New projects
+ * should reach for `attaform/zod` (v4 adapter). The two adapters are
+ * physically isolated (separate directories, no cross-imports, enforced
+ * by ESLint).
  *
  * Prerequisites: install `zod@^3`. The adapter's behavior assumes v3
  * internals (`_def.typeName`, `.unwrap()`, `.innerType()`); importing this
@@ -38,3 +35,5 @@ export type {
   UnwrapZodObject,
   UseFormConfigurationWithZod,
 } from './runtime/adapters/zod-v3/types-zod-adapter'
+export { fieldMeta, withMeta } from './runtime/adapters/zod-v3/field-meta'
+export type { FieldMetaPayload } from './runtime/core/field-meta'

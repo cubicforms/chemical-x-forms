@@ -1,6 +1,7 @@
 import type { ValidationError } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
+import { aggregateErrorsAt } from './field-state-api'
 import { getAtPath, hasAtPath } from './path-walker'
 import {
   canonicalizePath,
@@ -62,6 +63,19 @@ export function buildErrorsProxy<F extends GenericForm>(state: FormStore<F>): Su
     // No leafKeys — at a leaf, the resolved value (the merged array or
     // undefined) IS the terminal.
     materializeContainer: (segments) => materializeErrors(state, segments),
+    // Call-form aggregates: `form.errors(path)` returns a single
+    // `ValidationError[]` for any depth (leaf or container) — same
+    // shared `aggregateErrorsAt` helper that `form.meta.errors` and
+    // `form.fields(path).errors` use, so the three surfaces never
+    // drift. Empty results return `undefined`, matching the leaf
+    // proxy's pre-existing semantic (`form.errors.email === undefined`
+    // when valid) so consumer code that branches on truthiness keeps
+    // working — the call-form just extends that semantic to
+    // containers and dynamic paths.
+    resolveCallTarget: (path) => {
+      const errs = aggregateErrorsAt(state, path)
+      return errs.length === 0 ? undefined : errs
+    },
   })
 }
 

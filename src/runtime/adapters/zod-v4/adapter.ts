@@ -2,12 +2,15 @@ import type { z } from 'zod'
 import type {
   AbstractSchema,
   FormKey,
+  ResolvedFieldMeta,
   SlimPrimitiveKind,
   UnionDiscriminatorContext,
   ValidationError,
   ValidationResponse,
 } from '../../types/types-api'
 import { AttaformErrorCode } from '../../core/error-codes'
+import { getFieldMeta } from './field-meta'
+import { humanize } from '../../core/humanize'
 import { canonicalizePath, type Path, type PathKey } from '../../core/paths'
 import type { DeepPartial, GenericForm } from '../../types/types-core'
 import { assertSupportedKinds } from './assert-supported'
@@ -449,6 +452,10 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         return resolved.every((candidate) => isLeafRequired(candidate))
       },
 
+      getFieldMetaAtPath(path): ResolvedFieldMeta {
+        return resolveFieldMetaAtPath(rootSchema, path)
+      },
+
       getUnionDiscriminatorAtPath(path): UnionDiscriminatorContext | undefined {
         // Resolve every candidate at `path`; pick the unique one that
         // is (or wraps) a discriminated union. Wrappers
@@ -578,6 +585,61 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
       },
     }
   }
+}
+
+/**
+ * Resolve the field metadata for the schema node at `path`. Reads
+ * the `fieldMeta` registry on the resolved Zod schema and applies
+ * the precedence rules in `getFieldMetaAtPath`'s docblock:
+ *
+ *   - label: registry → humanize(lastSegment)
+ *   - description: registry → schema.description (.describe()) → undefined
+ *   - placeholder: registry → undefined
+ *   - meta: registry payload (frozen) — empty object when absent
+ *
+ * Returns the empty resolution when the path doesn't resolve in the
+ * schema. DU branches: first candidate wins (matches the existing
+ * first-success precedent in `getDefaultAtPath` / `validateAtPath`).
+ */
+function resolveFieldMetaAtPath(rootSchema: z.ZodType, path: Path): ResolvedFieldMeta {
+  const lastSegment = path.length === 0 ? '' : (path[path.length - 1] as string | number)
+  const candidates = path.length === 0 ? [rootSchema] : getNestedZodSchemasAtPath(rootSchema, path)
+  const target = candidates[0]
+  if (target === undefined) {
+    return {
+      label: humanize(lastSegment),
+      description: undefined,
+      placeholder: undefined,
+      meta: Object.freeze({}),
+    }
+  }
+  // Two-stage lookup so both registration patterns work:
+  //   1. `withMeta(z.string().optional(), {...})` — entry on the wrapper
+  //   2. `withMeta(z.string(), {...}).optional()` — entry on the inner
+  // The walker returns the wrapper at terminal positions and peels at
+  // intermediate descent, so checking both the target and the peeled
+  // inner covers leaf and container registration symmetrically.
+  const peeled = peelAllWrappers(target)
+  const payload = getFieldMeta(target) ?? (peeled !== target ? getFieldMeta(peeled) : undefined)
+  // `description` is exposed as a public property on Zod 4 schemas;
+  // when set via `.describe('...')` or `.meta({ description })`, it
+  // reads back as a string. Read from the target first; fall back to
+  // the peeled inner so a `.describe()` on `z.string()` is still
+  // visible when wrapped in `.optional()`.
+  const targetDescription = readDescription(target)
+  const peeledDescription = peeled !== target ? readDescription(peeled) : undefined
+  const schemaDescription = targetDescription ?? peeledDescription
+  return {
+    label: payload?.label ?? humanize(lastSegment),
+    description: payload?.description ?? schemaDescription ?? undefined,
+    placeholder: payload?.placeholder ?? undefined,
+    meta: Object.freeze({ ...(payload ?? {}) }),
+  }
+}
+
+function readDescription(schema: z.ZodType): string | undefined {
+  const candidate = (schema as z.ZodType & { description?: unknown }).description
+  return typeof candidate === 'string' ? candidate : undefined
 }
 
 // Type-only re-export so downstream code can reference the Form shape.

@@ -7,14 +7,17 @@ import { z } from 'zod-v3'
 import type {
   AbstractSchema,
   FormKey,
+  ResolvedFieldMeta,
   SlimPrimitiveKind,
   UnionDiscriminatorContext,
   ValidationError,
   ValidationResponse,
 } from '../../types/types-api'
 import { getAtPath } from '../../core/path-walker'
+import { humanize } from '../../core/humanize'
 import { canonicalizePath, type Path, type PathKey } from '../../core/paths'
 import { slimKindOf } from '../../core/slim-primitive-gate'
+import { getFieldMeta } from './field-meta'
 
 // The adapter exchanges dotted-string paths with core at the
 // AbstractSchema boundary (`validateAtPath`, `getSchemasAtPath`).
@@ -417,6 +420,10 @@ export function zodAdapter<
         if (!leaf) return false
         return isLeafRequiredV3(leaf)
       },
+      getFieldMetaAtPath(path): ResolvedFieldMeta {
+        return resolveFieldMetaAtPathV3(_zodSchema, path)
+      },
+
       getUnionDiscriminatorAtPath(path): UnionDiscriminatorContext | undefined {
         // Resolve every candidate at `path`; pick the unique one that
         // is (or wraps) a discriminated union. `peelV3Wrappers` peels
@@ -1738,4 +1745,57 @@ function getSlimSchema<RS extends z.ZodRawShape, Schema extends z.ZodSchema>(
 
   const processedRootSchema = stripRootSchema(config.schema, config.stripConfig)[0]
   return _getSlimSchema(processedRootSchema) as unknown as z.ZodObject<RS>
+}
+
+/**
+ * Resolve the field metadata for the schema node at `path` against
+ * the user's ORIGINAL schema (not the stripped / slim derivative —
+ * stripping creates new schema instances which would lose registry
+ * entries keyed by reference identity). Reads the WeakMap-backed
+ * `fieldMeta` shim and applies the same precedence rules as the v4
+ * adapter:
+ *
+ *   - label: registry → humanize(lastSegment)
+ *   - description: registry → schema.description (.describe()) → undefined
+ *   - placeholder: registry → undefined
+ *   - meta: registry payload (frozen) — empty object when absent
+ *
+ * Walks via `walkV3ToLeafSchema` (descends through wrappers
+ * transparently) then peels the terminal wrapper via `peelV3Wrappers`
+ * — symmetric with the v4 walker's terminal behavior.
+ */
+function resolveFieldMetaAtPathV3(rootSchema: z.ZodSchema, path: Path): ResolvedFieldMeta {
+  const lastSegment = path.length === 0 ? '' : (path[path.length - 1] as string | number)
+  const target =
+    path.length === 0 ? (rootSchema as z.ZodTypeAny) : walkV3ToLeafSchema(rootSchema, path)
+  if (target === undefined) {
+    return {
+      label: humanize(lastSegment),
+      description: undefined,
+      placeholder: undefined,
+      meta: Object.freeze({}),
+    }
+  }
+  // Two-stage lookup mirrors the v4 adapter: try the schema returned
+  // by the walker (the terminal wrapper at leaf paths), then fall
+  // back to the peeled inner so registrations placed before wrapping
+  // still resolve. Whichever style the schema author picked, reads
+  // succeed.
+  const peeled = peelV3Wrappers(target)
+  const payload = getFieldMeta(target) ?? (peeled !== target ? getFieldMeta(peeled) : undefined)
+  const targetDescription =
+    typeof (target as { description?: unknown }).description === 'string'
+      ? ((target as { description?: string }).description as string)
+      : undefined
+  const peeledDescription =
+    peeled !== target && typeof (peeled as { description?: unknown }).description === 'string'
+      ? ((peeled as { description?: string }).description as string)
+      : undefined
+  const schemaDescription = targetDescription ?? peeledDescription
+  return {
+    label: payload?.label ?? humanize(lastSegment),
+    description: payload?.description ?? schemaDescription ?? undefined,
+    placeholder: payload?.placeholder ?? undefined,
+    meta: Object.freeze({ ...(payload ?? {}) }),
+  }
 }

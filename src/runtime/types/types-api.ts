@@ -1,6 +1,9 @@
 import type { ComputedRef, ObjectDirective, Ref } from 'vue'
+import type { FieldMetaPayload, ResolvedFieldMeta } from '../core/field-meta'
 import type { Path, PathKey } from '../core/paths'
 import type { PersistOptInRegistry } from '../core/persistence/opt-in-registry'
+
+export type { FieldMetaPayload, ResolvedFieldMeta }
 import type {
   ArrayItem,
   ArrayPath,
@@ -244,8 +247,8 @@ export type AbstractSchema<Form, GetValueFormType> = {
    *   length and reuses one element default for every position.
    * - `undefined` → the path doesn't resolve to an array OR the
    *   adapter can't determine the shape. The runtime falls back to
-   *   the legacy probe loop in this case (defensive — every built-in
-   *   adapter returns `number` or `null`).
+   *   a probe loop in this case (defensive — every built-in adapter
+   *   returns `number` or `null`).
    *
    * Wrappers (optional / nullable / default / readonly / catch /
    * pipe / lazy) are peeled transparently before the type check, so
@@ -335,7 +338,7 @@ export type AbstractSchema<Form, GetValueFormType> = {
    *
    * The leaf-aware branching is what kills the FIELD_STATE_KEYS
    * shadowing problem: reserved leaf-prop names (`dirty`, `errors`,
-   * `valid`, …) inject only at the FieldStateView terminal, not at
+   * `valid`, …) inject only at the FieldState terminal, not at
    * every depth. A schema field literally named `dirty` at depth ≥ 2
    * stays reachable as a sub-proxy or leaf in its own right.
    *
@@ -433,6 +436,35 @@ export type AbstractSchema<Form, GetValueFormType> = {
    * without this hook.
    */
   getUnionDiscriminatorAtPath(path: Path): UnionDiscriminatorContext | undefined
+
+  /**
+   * Return the resolved field metadata for the schema node at `path`
+   * — label, description, placeholder, plus the full registered
+   * payload as `meta` for consumer-augmented keys. Reads through the
+   * adapter's metadata mechanism (Zod 4: `z.registry()`; Zod 3:
+   * a WeakMap shim) and applies these one-way fallbacks:
+   *
+   *   - `label`:       registry payload → `humanize(lastSegment)`
+   *   - `description`: registry payload → `schema.description`
+   *                    (`.describe()` value) → `undefined`
+   *   - `placeholder`: registry payload → `undefined`
+   *   - `meta`:        registry payload (frozen) — empty object when
+   *                    nothing was registered
+   *
+   * `path` is the canonical `Segment[]`. The empty path resolves to
+   * the root schema's metadata. Multiple candidates (DU branches)
+   * resolve against the first candidate to match the existing
+   * first-success precedent in `getDefaultAtPath` /
+   * `validateAtPath` — schema authors register on the union root
+   * for shared metadata, on individual branches for variant-
+   * specific metadata.
+   *
+   * Optional. The runtime treats a missing implementation as a
+   * stub that returns `EMPTY_RESOLVED_FIELD_META` — so adapters
+   * that don't model field metadata yet can omit it; consumers
+   * see humanized fallbacks for `label`, undefined elsewhere.
+   */
+  getFieldMetaAtPath?(path: Path): ResolvedFieldMeta
 
   /**
    * Return `true` if `validateAtPath` MAY have to run asynchronously
@@ -1121,8 +1153,12 @@ export type HandleSubmit<Form extends GenericForm> = (
 ) => SubmitHandler
 
 /**
- * Per-leaf metadata tracked alongside a field's value. Read from
- * `FieldState.meta` when type-narrowing through that surface.
+ * Per-leaf internal tracker record. Distinct from `FieldState.meta`
+ * (which surfaces as `Readonly<FieldMetaPayload>` — the registry-
+ * attached label / description / placeholder payload). Surfaced for
+ * custom-adapter authors threading metadata through their own
+ * pipelines; most consumers don't reach for it directly — the
+ * matching fields appear with friendlier shape on `FieldState`.
  *
  * - `updatedAt` — ISO timestamp of the most recent write at this path,
  *   or `null` if the field has never been written.
@@ -1811,14 +1847,6 @@ export type SetValueCallback<Read, Write = Read> = (prev: Read) => Read | Write
  */
 export type SetValuePayload<Write, Read = Write> = Write | SetValueCallback<Read, Write>
 
-type DeepFlatten<T> =
-  // If it's not an object, just leave it as-is
-  T extends object
-    ? {
-        // Re-map every property key of T
-        [K in keyof T]: DeepFlatten<T[K]>
-      }
-    : T
 /**
  * Focus / blur / touched flags for a registered field.
  *
@@ -1839,58 +1867,20 @@ export type DOMFieldState = {
   touched: boolean | null
 }
 /**
- * Richer per-field type kept for type-level utility code (e.g.
- * higher-order helpers that pass field state around). Carries
- * `currentValue` / `originalValue` / `previousValue` (typed `Value`),
- * the same flag set as `FieldStateLeaf`, plus `meta`
- * (`MetaTrackerValue`).
+ * Per-field reactive shape returned by `form.fields.<leaf-path>` and
+ * `form.fields(path)`. Slim, readonly across the board. The unified
+ * shape replaces the older split between `FieldState` /
+ * `FieldStateBranch`: one type lives at every path, with aggregations
+ * rolled up at containers.
  *
- * `form.fields.<path>` returns the slim `FieldStateLeaf` shape;
- * pick `FieldState<Value>` for code that needs `meta` or the historical
- * `previousValue` slot.
+ * Leaf-aware: this shape only injects these keys at LEAF paths via
+ * dot-access. At container paths the proxy descends without
+ * injecting, so a schema field literally named `dirty` at depth 2+
+ * stays reachable as a descent target — no shadowing. Container
+ * call-form (`form.fields('address')`) returns a `FieldState`
+ * surface where the keys are aggregations of the descendant leaves.
  */
-export type FieldState<Value = unknown> = DeepFlatten<
-  DOMFieldState & {
-    /** Per-field metadata (timestamps, raw value, connection state). */
-    meta: MetaTrackerValue
-    /**
-     * Validation errors for this path. Populated automatically by
-     * `handleSubmit` and per-field validation; also writable via
-     * `setFieldErrors` / `addFieldErrors`. Empty when valid — safe
-     * to read without a null check.
-     */
-    errors: ValidationError[]
-    /** The value the field was initialised with. */
-    originalValue: Value
-    /** The value before the most recent write. */
-    previousValue: Value
-    /** The current value at this path. */
-    currentValue: Value
-    /** `true` when `currentValue` matches `originalValue`. */
-    pristine: boolean
-    /** `true` when `currentValue` differs from `originalValue`. */
-    dirty: boolean
-    /**
-     * `true` when this field is **blank** — the side-channel for
-     * storage / display divergence (numeric leaves where storage
-     * holds `0` / `0n` but the DOM shows `''`, plus any primitive
-     * leaf the consumer explicitly opted in via `unset`). Surfaces
-     * both as a top-level field here AND via `meta.blank` (the meta
-     * projection mirrors the same value). See `docs/blank.md`.
-     */
-    blank: boolean
-  }
->
-
-/**
- * Per-field reactive shape returned by `form.fields.<leaf-path>`.
- * Slim, readonly across the board. Leaf-aware: this shape only
- * appears at LEAF paths (primitives, dates). At container paths
- * the proxy descends without injecting these keys, so a schema
- * field literally named `dirty` at depth 2+ stays reachable as a
- * descent target — no shadowing.
- */
-export type FieldStateLeaf<Value = unknown> = {
+export type FieldState<Value = unknown> = {
   readonly value: Value
   readonly original: Value
   readonly pristine: boolean
@@ -1955,18 +1945,65 @@ export type FieldStateLeaf<Value = unknown> = {
   readonly valid: boolean
   readonly path: ReadonlyArray<string | number>
   readonly blank: boolean
+  /**
+   * Presentational label for this field. Resolves through the
+   * adapter's metadata mechanism — Zod 4's `z.registry()` (typed
+   * payload via `schema.register(fieldMeta, {...})` or the
+   * `withMeta()` helper); Zod 3's WeakMap shim — and falls back to
+   * a humanized form of the path's last segment when nothing has
+   * been registered. Always a string.
+   *
+   * ```ts
+   * z.string().register(fieldMeta, { label: 'Reference' })
+   * // template: <label>{{ form.fields.reference.label }}</label>
+   * ```
+   *
+   * Numeric segments (array indices) collapse to the empty string;
+   * consumers wanting "Item 3" substitute their own format.
+   */
+  readonly label: string
+  /**
+   * Helper-text description for this field. Reads from the
+   * registered `description` first; falls back to the schema's own
+   * `.describe('...')` value (both Zod 3 and Zod 4 expose that as
+   * `schema.description`); `undefined` when neither is set.
+   *
+   * Useful for `aria-describedby`-linked help text. Distinct from
+   * `label` — descriptions are longer prose, labels are short
+   * presentational nouns.
+   */
+  readonly description: string | undefined
+  /**
+   * Placeholder hint for input affordance. Reads from the
+   * registered `placeholder`; `undefined` otherwise.
+   */
+  readonly placeholder: string | undefined
+  /**
+   * Full registered metadata payload, frozen — empty object when
+   * nothing has been registered. Use as an escape hatch for
+   * consumer-augmented keys (declared via TypeScript module
+   * augmentation on `FieldMetaPayload`):
+   *
+   * ```ts
+   * declare module 'attaform/zod' {
+   *   interface FieldMetaPayload { tooltip?: string }
+   * }
+   * // template: {{ form.fields.email.meta.tooltip }}
+   * ```
+   */
+  readonly meta: Readonly<FieldMetaPayload>
 }
 
 /**
  * Recursive type behind `form.fields`. Leaf-aware branching: at
  * primitive paths (string, number, boolean, bigint, Date, …) the
- * proxy returns a `FieldStateLeaf`; at container paths (object,
+ * proxy returns a `FieldState`; at container paths (object,
  * array, …) the proxy descends without injecting leaf-keys.
  *
  * Field-name collisions at depth 2+ resolve unambiguously: a schema
  * field literally named `dirty` at depth 2 is reachable as a
  * descent target (`form.fields.address.dirty` returns the
- * FieldStateView for `address.dirty`). Reading `dirty` AT the
+ * FieldState for `address.dirty`). Reading `dirty` AT the
  * leaf-view (`form.fields.address.dirty.dirty`) reads the leaf's
  * own dirty boolean — path-segment and leaf-prop occupy different
  * proxy depths.
@@ -1982,13 +2019,13 @@ export type FieldStateLeaf<Value = unknown> = {
  * `KeyofUnion`/`ValueOfUnion` to merge variant key sets — so
  * `form.fields.cargo.tempMinC` (refrigerated-only) is reachable
  * regardless of the active variant, with the leaf typed as
- * `FieldStateLeaf<number | undefined>`. Matches the runtime's stub
- * `FieldStateView` for inactive-variant paths.
+ * `FieldState<number | undefined>`. Matches the runtime's stub
+ * `FieldState` for inactive-variant paths.
  */
 export type FieldStateMapEntry<T> = [T] extends [
   string | number | boolean | bigint | symbol | null | undefined | Date,
 ]
-  ? FieldStateLeaf<T>
+  ? FieldState<T>
   : [T] extends [ReadonlyArray<infer U>]
     ? { readonly [K: number]: FieldStateMapEntry<U> }
     : [T] extends [object]
@@ -1997,18 +2034,18 @@ export type FieldStateMapEntry<T> = [T] extends [
             readonly [K in KeyofUnion<T>]: FieldStateMapEntry<ValueOfUnion<T, K>>
           }
         : { readonly [K in keyof T]: FieldStateMapEntry<T[K]> }
-      : FieldStateLeaf<T>
+      : FieldState<T>
 
 /**
  * Type of `form.fields` — leaf-aware drillable callable Proxy. At
- * a leaf path the proxy resolves to a `FieldStateLeaf<Value>`; at
+ * a leaf path the proxy resolves to a `FieldState<Value>`; at
  * a container path it returns a sub-proxy you can keep drilling.
  *
  * Augmented with the callable signatures so dot-access and function-
  * call coexist on the same identifier:
  *
  * ```ts
- * form.fields.email.value           // string (leaf-prop on FieldStateView)
+ * form.fields.email.value           // string (leaf-prop on FieldState)
  * form.fields('email').value        // function-call (dynamic / programmatic)
  * form.fields(['users', 0, 'name']) // path-array form
  * form.fields()                     // root proxy
@@ -2024,7 +2061,13 @@ export type FieldStateMap<Form extends GenericForm> = ([IsUnion<Form>] extends [
       readonly [K in KeyofUnion<Form>]: FieldStateMapEntry<ValueOfUnion<Form, K>>
     }
   : { readonly [K in keyof Form]: FieldStateMapEntry<Form[K]> }) & {
-  (path: string): unknown
+  /**
+   * Dotted-string fallback for dynamic paths. Returns
+   * `FieldState<unknown>` — the runtime always lands on a FieldState
+   * terminal at any depth (leaf or container). Cast to
+   * `FieldState<TypedValue>` when the caller knows the leaf type.
+   */
+  (path: string): FieldState<unknown>
   /**
    * Tuple-segment form. Returns the typed `FieldStateMapEntry` for
    * the resolved path when the tuple resolves to a known path.
@@ -2035,12 +2078,18 @@ export type FieldStateMap<Form extends GenericForm> = ([IsUnion<Form>] extends [
     segments: S & ([JoinSegments<S>] extends [FlatPath<Form>] ? unknown : never)
   ): FieldStateMapEntry<NestedType<Form, JoinSegments<S>>>
   /**
-   * Untyped fallback for callers passing `Path`-typed (dynamic)
+   * Dynamic-array fallback for callers passing `Path`-typed (runtime)
    * segment arrays — e.g. forwarding `RegisterValue.segments` to
-   * resolve a field view.
+   * resolve a field view. Returns `FieldState<unknown>`; cast when
+   * the value type is known.
    */
-  (segments: ReadonlyArray<string | number>): unknown
-  (): FieldStateMap<Form>
+  (segments: ReadonlyArray<string | number>): FieldState<unknown>
+  /**
+   * No-arg call returns the root FieldState — same as
+   * `form.fields([])`. Aggregates over the whole form (one
+   * conjunction over every active-variant leaf).
+   */
+  (): FieldState<Form>
 }
 
 export type DOMFieldStateStore = Map<string, DOMFieldState | undefined>
@@ -2101,7 +2150,12 @@ export type FormErrorsSurface<Form> = ErrorsProxyShape<Form> & {
     segments: S & ([JoinSegments<S>] extends [FlatPath<Form>] ? unknown : never)
   ): readonly ValidationError[] | undefined
   (segments: ReadonlyArray<string | number>): readonly ValidationError[] | undefined
-  (): FormErrorsSurface<Form>
+  /**
+   * No-arg call returns the form-level error aggregate — same as
+   * `form.errors([])` and `form.meta.errors`. `undefined` when the
+   * form has no errors; readonly array otherwise.
+   */
+  (): readonly ValidationError[] | undefined
 }
 
 type ErrorsProxyShape<T> = [T] extends [
@@ -2244,40 +2298,13 @@ export type ApiErrorEnvelope = {
  * the current values; use `toRefs()` if you need reactive handles
  * to individual fields.
  */
-export interface FormMeta {
-  /**
-   * `true` when any field's current value differs from its initial
-   * value. `false` for a pristine form and for one where every change
-   * has been undone. Restore the pristine baseline via `reset()`.
-   *
-   * Note: object/array leaves are compared by reference, so replacing
-   * an array with an equal copy still reads as dirty.
-   */
-  readonly dirty: boolean
-
-  /**
-   * `true` when the form has no errors AND no validation run is in
-   * flight (`error stores empty && !validating`). A `true` here means
-   * "we've checked, and we're clean right now" — distinct from the
-   * brief window between an async refinement starting and resolving,
-   * where a looser signal would flicker `true` ahead of the verdict.
-   * Use for the enable-submit-when-clean pattern.
-   */
-  readonly valid: boolean
-
+export type FormMeta<F = unknown> = FieldState<F> & {
   /**
    * `true` while a `handleSubmit`-produced submit handler is running.
    * Covers both the validation phase and your async submit callback.
    * Useful for disabling the submit button.
    */
   readonly submitting: boolean
-
-  /**
-   * `true` while any validation run is in flight (the reactive
-   * `validate()` re-run, an imperative `validateAsync()`, or the
-   * pre-submit validation inside `handleSubmit`).
-   */
-  readonly validating: boolean
 
   /**
    * How many times the submit handler has been invoked, regardless of
@@ -2309,34 +2336,6 @@ export interface FormMeta {
    * `canUndo` / `canRedo` instead.
    */
   readonly historySize: number
-
-  /**
-   * Flat aggregate of EVERY validation error in the form — schema-
-   * keyed entries, form-level errors (path: []), unmapped server
-   * errors (paths not in `FlatPath`), and cross-field-refine errors
-   * (paths at containers). Reads as English: "the form's errors."
-   *
-   * Unlike `form.errors.<path>` (per-leaf, active-path-filtered),
-   * `form.meta.errors` is unfiltered — inactive-variant errors stay
-   * in the array. Consumers who want only addressable errors filter
-   * the array themselves (`form.meta.errors.filter(e => …)`).
-   *
-   * Common patterns:
-   *
-   * ```vue
-   * <p v-if="form.meta.errors.length">{{ form.meta.errors.length }} issue(s)</p>
-   * <ul>
-   *   <li v-for="err in form.meta.errors" :key="err.path.join('.')">
-   *     {{ err.path.join('.') || 'form' }}: {{ err.message }}
-   *   </li>
-   * </ul>
-   * ```
-   *
-   * The array re-allocates on any underlying store change (schema /
-   * derived-blank / user); reactivity propagates through the standard
-   * Vue computed graph.
-   */
-  readonly errors: readonly ValidationError[]
 
   /**
    * Per-`useForm()`-call identity. Stable for the lifetime of one
@@ -2438,14 +2437,14 @@ export type UseFormReturnType<
    * ```
    *
    * The same proxy supports descent at every level — `address` reads
-   * the FieldStateLeaf for the address object, and `address.city`
+   * the FieldState for the address object, and `address.city`
    * descends into the nested leaf.
    *
    * Leaf values follow the slim WriteShape contract: enum-typed leaves
    * widen to their primitive supertype. The errors array, dirty flag,
    * focus state, etc. are unaffected.
    *
-   * Shadowing: at depth 2+, FieldStateLeaf keys (`dirty`, `touched`,
+   * Shadowing: at depth 2+, FieldState keys (`dirty`, `touched`,
    * `errors`, `blank`, `focused`, `blurred`, `value`,
    * `original`, `pristine`, `connected`, `updatedAt`, `path`) win
    * over schema field names. Top-level fields are NOT shadowed.
@@ -2735,7 +2734,8 @@ export type UseFormReturnType<
    * errors) but are intentionally excluded from the path-keyed
    * `form.errors` proxy (no key represents `[]` in a nested object) —
    * read them via `meta.errors.filter(e => e.path.length === 0)` or
-   * `errorsAt('')`.
+   * `form.errors([])` (the call-form aggregates everywhere, including
+   * form-level errors at `path: []`).
    */
   setFormErrors: (errors: ReadonlyArray<Partial<ValidationError> & { message: string }>) => void
 
@@ -2744,80 +2744,6 @@ export type UseFormReturnType<
    * field errors are untouched.
    */
   clearFormErrors: () => void
-
-  /**
-   * Returns every error whose path **is** the given path **or
-   * descends from it**. Aggregates schema, blank-derived, and
-   * user-injected errors in the same order as `meta.errors`. Empty
-   * array when nothing matches.
-   *
-   * ```ts
-   * form.errorsAt('cargo')
-   *   // → errors at 'cargo', 'cargo.items', 'cargo.items.0.sku', …
-   * form.errorsAt('cargo.items.0')
-   *   // → just that line item's leaves
-   * form.errorsAt('')          // root prefix matches everything,
-   * form.errorsAt([])          //   including form-level (path: [])
-   * ```
-   *
-   * Useful for step-validity gating in multi-step forms:
-   *
-   * ```ts
-   * const stepValid = computed(
-   *   () => form.errorsAt('cargo').length === 0
-   * )
-   * ```
-   *
-   * Wrap in your own `computed` to make the call reactive — read-
-   * through hits `meta.errors`, so dep tracking flows through.
-   */
-  errorsAt: {
-    (path: FlatPath<Form> | ''): readonly ValidationError[]
-    <const S extends ReadonlyArray<string | number>>(
-      segments: S & ([JoinSegments<S>] extends [FlatPath<Form> | ''] ? unknown : never)
-    ): readonly ValidationError[]
-  }
-
-  /**
-   * `true` when **none** of the supplied prefixes (or their
-   * descendants):
-   *
-   *   1. carry an error in `meta.errors`, AND
-   *   2. have a field-level validation currently in flight.
-   *
-   * (1) is sugar over `errorsAt(p).length === 0` summed across all
-   * supplied paths. (2) is the per-prefix analogue of
-   * `meta.validating` — answers "is anything inside these subtrees
-   * still resolving?" without conflating with whole-form
-   * `validate()` / `validateAsync()` calls happening elsewhere.
-   *
-   * Composable with `meta.validating` when the caller wants to also
-   * gate on form-wide async work that doesn't have a single path
-   * (whole-form `validate` / `validateAsync`, the submit pre-check):
-   *
-   * ```ts
-   * const STEP_PATHS = {
-   *   1: ['reference', 'pickup', 'delivery'],
-   *   2: ['cargo'],
-   *   3: ['service', 'insurance', 'desiredPickupDate', 'notes'],
-   * } as const
-   *
-   * const stepValid = computed(
-   *   () => !form.meta.validating && form.isValid(STEP_PATHS[step.value])
-   * )
-   * ```
-   *
-   * Each path can be a dotted-string `FlatPath` or the empty string
-   * (root prefix, matches every error including `path: []`). Wrap
-   * the call in a `computed` to make it reactive — read-through hits
-   * `meta.errors` and the per-field validation counters, so dep
-   * tracking flows through both channels automatically.
-   *
-   * For a single path, prefer
-   * `errorsAt(path).length === 0 && !fields.<path>.validating`;
-   * reach for `isValid` when checking two or more.
-   */
-  isValid: (paths: ReadonlyArray<FlatPath<Form> | ''>) => boolean
 
   // --- Form-level meta ---
 
@@ -2830,7 +2756,7 @@ export type UseFormReturnType<
    * For per-field state (touched, focused, blurred, errors at one
    * path), use `form.fields.<path>` instead.
    */
-  meta: FormMeta
+  meta: FormMeta<Form>
 
   // --- Reset ---
 

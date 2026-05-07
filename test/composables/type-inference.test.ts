@@ -316,7 +316,7 @@ describe('useForm type inference — setValue tuple-segment overload', () => {
 })
 
 describe('useForm type inference — fields() callable tuple form', () => {
-  it('literal tuple resolves to a typed FieldStateLeaf', () => {
+  it('literal tuple resolves to a typed FieldState', () => {
     const f = form.fields(['email'])
     expectTypeOf(f.value).toEqualTypeOf<string>()
   })
@@ -326,14 +326,17 @@ describe('useForm type inference — fields() callable tuple form', () => {
     expectTypeOf(f.value).toEqualTypeOf<string>()
   })
 
-  it('dynamic Path-typed segments hit the untyped fallback', () => {
-    // Forwarding `RegisterValue.segments` (typed as Path) preserves
-    // back-compat: JoinSegments<Path> resolves to plain `string`, which
-    // doesn't fit FlatPath<Form>'s literal union, so the typed overload
-    // is skipped and the permissive fallback returns `unknown`.
+  it('dynamic Path-typed segments resolve to FieldState<unknown>', () => {
+    // Forwarding `RegisterValue.segments` (typed as Path) skips the
+    // tuple overload (`JoinSegments<Path>` → plain `string`) and lands
+    // on the dynamic-array fallback. The call-form always lands on a
+    // FieldState terminal at any path — the type signature mirrors
+    // that with `FieldState<unknown>`, so consumers get a usable
+    // shape without casting.
     const dynamic: ReadonlyArray<string | number> = ['email']
     const result = form.fields(dynamic)
-    expectTypeOf(result).toEqualTypeOf<unknown>()
+    expectTypeOf(result.valid).toEqualTypeOf<boolean>()
+    expectTypeOf(result.path).toMatchTypeOf<readonly (string | number)[]>()
   })
 })
 
@@ -350,20 +353,6 @@ describe('useForm type inference — errors() callable tuple form', () => {
     const dynamic: ReadonlyArray<string | number> = ['email']
     const result = form.errors(dynamic)
     expectTypeOf(result).toMatchTypeOf<readonly { message: string }[] | undefined>()
-  })
-})
-
-describe('useForm type inference — errorsAt tuple form', () => {
-  it('accepts dotted-string and literal tuple', () => {
-    form.errorsAt('profile.name')
-    form.errorsAt(['profile', 'name'])
-    form.errorsAt('') // root
-    form.errorsAt([]) // root tuple
-  })
-
-  it('rejects an invalid literal tuple', () => {
-    // @ts-expect-error - 'nonexistent' isn't a top-level key.
-    form.errorsAt(['nonexistent'])
   })
 })
 
@@ -453,7 +442,7 @@ describe('useForm type inference — form-level state bundle', () => {
     // Pins the whole-bundle contract: any future refactor that drops a
     // field, re-widens a type, or loses the auto-unwrap (re-exposing a
     // Ref/ComputedRef at a leaf) fails this assertion at compile time.
-    expectTypeOf(form.meta).toEqualTypeOf<FormMeta>()
+    expectTypeOf(form.meta).toEqualTypeOf<FormMeta<ExpectedForm>>()
   })
 
   it('scalar leaves are primitives, not Refs', () => {

@@ -11,7 +11,7 @@ import { __DEV__ } from '../core/dev'
 import { captureUserCallSite } from '../core/dev-stack-trace'
 import { AnonPersistError, ReservedFormKeyError } from '../core/errors'
 import { extractSchemaFields } from '../core/extract-schema-fields'
-import type { FieldStateView } from '../core/field-state-api'
+import type { FieldState } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
 import { createHistoryModule, type HistoryModule } from '../core/history'
 import {
@@ -174,8 +174,8 @@ export function useAbstractForm<
       const resolvedPersist = normalizePersistConfig(merged.persist)
       const persistenceBase = resolveStorageKeyBase(resolvedPersist, state.formKey)
       // Cross-store orphan cleanup: any standard backend not matching
-      // the configured one gets every attaform-managed key under the base
-      // wiped (legacy pre-fingerprint AND stale fingerprints alike).
+      // the configured one gets every attaform-managed key under the
+      // base wiped (unfingerprinted AND stale-fingerprint alike).
       // Ensures stale drafts can't survive in stores the dev migrated
       // AWAY from. Fire-and-forget; backend unavailability is silent.
       void sweepNonConfiguredStandardStoresForOrphans(resolvedPersist.storage, persistenceBase)
@@ -1030,4 +1030,4 @@ function isDescendantPathKey(candidate: string, ancestor: string): boolean {
   return candidate.startsWith(childPrefix)
 }
 
-export type { FieldStateView }
+export type { FieldState }

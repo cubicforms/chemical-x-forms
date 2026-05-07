@@ -112,15 +112,17 @@ describe('schemaErrors edge cases — cross-field refine on a container', () => 
     expect(refineErr).toBeDefined()
     expect(refineErr?.path).toEqual(['address'])
 
-    // form.errors is descend-only at containers — drilling never
-    // reaches a refine keyed at a container itself.
+    // The errors call-form aggregates at containers —
+    // `form.errors('address')` returns the merged array including
+    // the container-keyed refine error. The call-form, the meta
+    // aggregate, and per-field reads all share one helper, so
+    // every surface sees the same data.
     const errorsAtContainer = (
       api.errors as unknown as (p: string) => ValidationError[] | undefined
     )('address')
-    // Container access returns the proxy, not an array. Dotted-call to
-    // a container path returns the sub-proxy (drillable), not the
-    // refine error.
-    expect(Array.isArray(errorsAtContainer)).toBe(false)
+    expect(Array.isArray(errorsAtContainer)).toBe(true)
+    const containerMessages = (errorsAtContainer ?? []).map((e) => e.message)
+    expect(containerMessages.some((m) => /city and zip/.test(m))).toBe(true)
   })
 
   it('container-keyed refine error survives a leaf-keyed re-validation', async () => {

@@ -244,10 +244,10 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   /**
    * `true` once the form has completed at least one validation pass
    * — flips when `activeValidations` returns to 0 from any positive
-   * value. Until that happens, `meta.valid` and `isValid(paths)`
-   * report `false` even when `schemaErrors.size === 0`, because the
-   * absence of errors at frame 1 is just "we haven't checked yet,"
-   * not "we checked and it's clean."
+   * value. Until that happens, `meta.valid` and `field.valid` report
+   * `false` even when `schemaErrors.size === 0`, because the absence
+   * of errors at frame 1 is just "we haven't checked yet," not "we
+   * checked and it's clean."
    *
    * This closes the brief flash window for schemas where the slim
    * default-derivation parse strips refinements (`.refine`,
@@ -269,16 +269,16 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    * `schema.getSchemasAtPath(path)` with each candidate's
    * `needsAsyncValidation()`, memoised per canonical path key for
    * the lifetime of the FormStore. Used by `meta.valid` /
-   * `field.valid` / `isValid(paths)` to skip the
-   * `firstValidationDone` gate on subtrees that are fully
-   * synchronous: their verdict resolves at construction (or on the
-   * next per-field run) without waiting on a microtask, so honouring
-   * the form-wide gate would just play dumb about a known answer.
+   * `field.valid` to skip the `firstValidationDone` gate on subtrees
+   * that are fully synchronous: their verdict resolves at construction
+   * (or on the next per-field run) without waiting on a microtask, so
+   * honouring the form-wide gate would just play dumb about a known
+   * answer.
    */
   pathHasAsyncValidation(path: Path): boolean
   /**
    * Per-path counter of in-flight field-level validation runs.
-   * `field.validating` on `FieldStateView` mirrors
+   * `field.validating` on `FieldState` mirrors
    * `(fieldValidationCounts.get(key) ?? 0) > 0`.
    *
    * Incremented at the same point as `activeValidations` inside
@@ -296,7 +296,7 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    * across the abort/restart boundary.
    *
    * Reactive Map: Vue 3's `reactive(new Map())` proxy makes `.get()`,
-   * `.has()`, and `.size` track per-key, so the FieldStateView
+   * `.has()`, and `.size` track per-key, so the FieldState
    * computed only re-runs when the count for ITS key changes.
    */
   readonly fieldValidationCounts: Map<PathKey, number>
@@ -1706,7 +1706,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // reactivity, and consumers comparing `===` against the original
     // ref expect to get back what they registered). The Set itself
     // is reactive so add/delete on an existing record fires
-    // FieldStateView's `element` / `elements` accessors.
+    // FieldState's `element` / `elements` accessors.
     const raw = markRaw(element)
     if (record === undefined) {
       elements.set(key, { path, elements: reactive(new Set([raw])) })

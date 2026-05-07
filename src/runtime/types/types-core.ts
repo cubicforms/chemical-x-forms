@@ -160,7 +160,7 @@ export type ValueOfUnion<T, K extends PropertyKey> = T extends unknown
 /**
  * Apply the discriminated-union "lift" to a value shape (i.e., a
  * shape carrying actual values, not metadata leaves like
- * `FieldStateLeaf`). Single-object types map homomorphically;
+ * `FieldState`). Single-object types map homomorphically;
  * discriminated unions of objects merge keys via
  * `KeyofUnion` / `ValueOfUnion` so per-variant fields are reachable
  * through one chained-access shape.
@@ -171,7 +171,7 @@ export type ValueOfUnion<T, K extends PropertyKey> = T extends unknown
  * variant key returns `undefined` rather than throwing.
  *
  * Distinct from `FieldStateMapEntry`: that variant carries
- * `FieldStateLeaf<T>` at the leaf; this one carries the leaf VALUE
+ * `FieldState<T>` at the leaf; this one carries the leaf VALUE
  * directly. They share the same union-merging logic but differ in
  * what the recursion bottoms out at.
  *

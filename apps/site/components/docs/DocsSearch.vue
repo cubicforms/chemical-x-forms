@@ -39,6 +39,37 @@
     excerpt: string
   }
 
+  type ExcerptSegment = { type: 'text' | 'mark'; text: string }
+
+  // Pagefind returns excerpts as HTML strings with matched substrings
+  // wrapped in `<mark>` tags and special characters escaped as HTML
+  // entities. We render via a typed-segment list (text vs mark) so the
+  // template can stay v-html-free: text segments go through Vue's text
+  // interpolation (HTML-escaped), and only literal `<mark>` elements
+  // emit a `<mark>` wrapper. Anything unexpected in the parsed tree
+  // degrades to its text content. SSR fallback strips the `<mark>`
+  // wrappers and returns the raw string as one text segment.
+  function parseExcerpt(html: string): ExcerptSegment[] {
+    if (typeof DOMParser === 'undefined') {
+      return [{ type: 'text', text: html.replace(/<\/?mark>/gi, '') }]
+    }
+    const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html')
+    const root = doc.body.firstChild
+    if (!(root instanceof Element)) return [{ type: 'text', text: '' }]
+    const segments: ExcerptSegment[] = []
+    for (const node of Array.from(root.childNodes)) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        segments.push({ type: 'text', text: node.textContent ?? '' })
+      } else if (node instanceof Element) {
+        segments.push({
+          type: node.tagName.toLowerCase() === 'mark' ? 'mark' : 'text',
+          text: node.textContent ?? '',
+        })
+      }
+    }
+    return segments
+  }
+
   const open = ref(false)
   const query = ref('')
   const hits = ref<SearchHit[]>([])
@@ -413,11 +444,14 @@
                     >
                       {{ hit.pageTitle }}
                     </p>
-                    <!-- eslint-disable-next-line vue/no-v-html — Pagefind returns excerpts wrapped in <mark> tags from content we control (the docs corpus); rendering as HTML lets us style the highlighted matches via the [&_mark] selector. -->
                     <p
                       class="mt-1 line-clamp-2 text-sm text-fg-muted [&_mark]:bg-transparent [&_mark]:font-semibold [&_mark]:text-accent"
-                      v-html="hit.excerpt"
-                    />
+                    >
+                      <template v-for="(seg, segIdx) in parseExcerpt(hit.excerpt)" :key="segIdx">
+                        <mark v-if="seg.type === 'mark'">{{ seg.text }}</mark>
+                        <template v-else>{{ seg.text }}</template>
+                      </template>
+                    </p>
                   </div>
                   <CornerDownLeft
                     v-if="i === activeIndex"

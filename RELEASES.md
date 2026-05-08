@@ -1,5 +1,16 @@
 # Releases
 
+## v0.16.1 — 2026-05-08
+
+## What's Changed
+* chore(security): force fast-uri >=3.1.2 to patch open Dependabot alerts by @ozzyfromspace in https://github.com/attaform/Attaform/pull/179
+* docs: expand attaform/nuxt reference, rename app-defaults to Global defaults, strip prose backticks from InstallCommand by @ozzyfromspace in https://github.com/attaform/Attaform/pull/178
+
+
+**Full Changelog**: https://github.com/attaform/Attaform/compare/v0.16.0...v0.16.1
+
+---
+
 ## v0.16.0 — 2026-05-08
 
 ## What's Changed

@@ -240,7 +240,7 @@ describe('pattern 2: v-register on a non-form root WITH useRegister (recommended
         onMounted(() => {
           // Capture the inner RV after mount so the test can assert
           // against the proxy-wrapped value the child sees.
-          if (register.value !== undefined) captured.rv = register.value
+          if (register?.value !== undefined) captured.rv = register.value
         })
         return { register }
       },

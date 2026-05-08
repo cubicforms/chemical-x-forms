@@ -391,6 +391,7 @@ describe('useRegister — inside child setup', () => {
       inheritAttrs: false,
       setup() {
         const rv = useRegister()
+        if (rv === undefined) throw new Error('unreachable: useRegister returned undefined')
         captured.childRegister = rv
         // `computed` route: read `.value.path` so we go through the
         // hybrid proxy's `value` getter (auto-unwrap shape) AND the

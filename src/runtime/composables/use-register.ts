@@ -35,12 +35,14 @@
  * rebinds to a different path.
  *
  * Unbound state: when the parent didn't pass `v-register`, every
- * piercing read returns `undefined` at runtime even though the type
- * says otherwise. The composable's `onMounted` warn fires once per
- * instance to flag this misuse — the type "lies" because the bound
- * case is the only correct one, and forcing every consumer through
- * a `T | undefined` narrow at every property access is a worse
- * trade than the runtime warn.
+ * piercing read returns `undefined` at runtime, and the return type
+ * surfaces this honestly as `UseRegisterReturn<V> | undefined`.
+ * Consumers defend with optional chaining (`rv?.formKey`,
+ * `rv?.segments`); the directive accepts `undefined` peacefully (its
+ * binding value type is already `RegisterValue<V> | undefined`), so
+ * `v-register="rv"` works whether or not a parent has bound. The
+ * composable's `onMounted` warn fires once per instance to surface
+ * the misuse case at runtime.
  *
  * Diagnostic: in dev mode, a single `console.warn` fires per instance
  * at `onMounted` if the captured value is still `undefined` — by then
@@ -158,7 +160,7 @@ function makeRegisterValueProxy<V>(
   }) as unknown as UseRegisterReturn<V>
 }
 
-export function useRegister<V = unknown>(): UseRegisterReturn<V> {
+export function useRegister<V = unknown>(): UseRegisterReturn<V> | undefined {
   const instance = getCurrentInstance()
   if (instance === null) {
     warnOutsideSetup()

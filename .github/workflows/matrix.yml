@@ -128,11 +128,14 @@ jobs:
         # dependencies (Nuxt 4's nuxi → @clack/core) now call
         # `node:util.styleText`, which ships in Node 20.12+ only.
         #
-        # Pinning explicit majors (rather than `lts/*` aliases): 20.x
-        # is the engines lower bound; 22.x is the current LTS. `lts/*`
-        # was previously listed too, but it currently resolves to 22.x
-        # — the same row twice was pure waste.
-        node-version: [20.x, 22.x]
+        # Two-row matrix: 20.x is the engines lower bound (pinned —
+        # never auto-rotates), and `lts/*` is the auto-rotating
+        # current-LTS canary (today 22.x; when Node 24 ships LTS the
+        # canary jumps with no config change). Listing 22.x explicitly
+        # alongside `lts/*` would be redundant today and would freeze
+        # us at "previous LTS" the moment a new one ships — neither
+        # outcome is what we want.
+        node-version: [20.x, 'lts/*']
       fail-fast: false
 
     steps:

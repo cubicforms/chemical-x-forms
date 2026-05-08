@@ -133,10 +133,21 @@ export default defineNuxtConfig({
   // module logs a one-time "Unknown Nitro preset" warning at config
   // time about that — it's informational, the prerender path falls
   // through to node-server compatibility which is correct for our
-  // SSG flow. Inter (the site's primary font) is already pulled in
-  // by @nuxt/fonts; nuxt-og-image picks it up automatically — no
-  // explicit fonts config needed at this layer.
+  // SSG flow.
   //
+  // `ogImage.fonts` is pinned to Inter explicitly so Satori only
+  // tries to load fonts it can actually serve. Without this, the
+  // module discovers font names from the global stack
+  // (`--font-sans` in tailwind.css includes 'Helvetica Neue',
+  // Arial, … as system-font fallbacks) and warns at every dev
+  // start that it can't resolve Arial through Google / Bunny /
+  // Fontsource — Satori needs real woff2 bytes, system fallbacks
+  // aren't fetchable. The OG cards themselves only ever use Inter
+  // (see components/OgImage/Default.satori.vue), so this constrains
+  // resolution to what's actually rendered.
+  ogImage: {
+    fonts: ['Inter:400', 'Inter:600', 'Inter:700'],
+  },
   // nuxt-link-checker walks every prerendered HTML page and probes
   // each <a> + canonical / og:url for resolvability. With
   // `failOnError: true`, a broken internal link exits the build

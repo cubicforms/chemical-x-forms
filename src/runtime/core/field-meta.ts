@@ -1,13 +1,21 @@
 /**
  * Schema-attached field metadata — the shared types used by both Zod
- * adapters (`attaform/zod` for v4 and `attaform/zod-v3` for v3) so a
- * consumer's data flow reads the same shape regardless of adapter.
+ * adapters and the unified `attaform/zod` entry so a consumer's data
+ * flow reads the same shape regardless of which path runs at lookup.
  *
- * The Zod 4 adapter creates a typed `z.registry<FieldMetaPayload>()`
- * and writes through `schema.register(fieldMeta, payload)` (native) or
- * the `withMeta(schema, payload)` helper. The Zod 3 adapter has no
- * native registry — it shims a `WeakMap<ZodTypeAny, FieldMetaPayload>`
- * with the same write API via `withMeta`.
+ * Storage lives in the cross-adapter `field-meta-store` core: a pair
+ * of WeakMaps (single-payload for last-write-wins reads, list-of-
+ * payloads for shared-schema disambiguation). Every entry's
+ * `fieldMeta` re-exports the same registry-shaped object, so
+ * `withMeta`/`fieldMeta.add` writes from one entry surface at lookup
+ * through any other.
+ *
+ * `withMeta(schema, payload)` clones the schema before registering,
+ * so each call gets fresh identity (the WeakMap keys on reference).
+ * The cloning strategy depends on the major: Zod 4 schemas use the
+ * native `.clone()`, Zod 3 schemas reconstruct via constructor +
+ * `_def`. The unified entry's `withMeta` runtime-branches on which
+ * one is in play.
  *
  * Reads are unified through `AbstractSchema.getFieldMetaAtPath(path)`,
  * which returns a fully-resolved `ResolvedFieldMeta` (label /

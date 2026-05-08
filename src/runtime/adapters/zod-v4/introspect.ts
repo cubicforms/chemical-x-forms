@@ -324,7 +324,13 @@ export function getDiscriminatedOptions(schema: z.ZodType): readonly z.ZodObject
 export function assertZodVersion(schema: unknown): void {
   const def = readDef(schema)
   if (def?.type === undefined) {
-    throw new Error('[attaform/zod] schema is not zod v4. Install zod@^4 or use /zod-v3.')
+    throw new Error(
+      '[attaform/zod-v4] Schema is not a Zod v4 schema. The `attaform/zod-v4` adapter requires ' +
+        'zod@^4. Either: (a) install zod@^4 in your project; (b) import from `attaform/zod`, ' +
+        'which auto-detects the Zod version (and tree-shakes to a single adapter when the ' +
+        '`attaform/vite` plugin is active); or (c) import from `attaform/zod-v3` if you are ' +
+        'staying on Zod v3.'
+    )
   }
 }
 

@@ -30,6 +30,36 @@ export class AttaformError extends Error {
 export class InvalidPathError extends AttaformError {}
 
 /**
+ * Thrown when `useForm` receives an invalid configuration — most often
+ * a schema passed directly as the first argument, or no argument at
+ * all. The configuration is an options bag; the schema is one of
+ * several fields, even when it's the only one in use.
+ *
+ * ```ts
+ * // ✗ Crashes deep inside the validator with an opaque message:
+ * const form = useForm(z.object({ ... }))
+ * // ✗ Same:
+ * const form = useForm()
+ * // ✓ Pass the schema as the `schema` field:
+ * const form = useForm({ schema: z.object({ ... }) })
+ * ```
+ *
+ * The same shape applies to every entry point: `attaform/zod`,
+ * `attaform/zod-v3`, `attaform/zod-v4`, and the schema-agnostic
+ * `attaform` root.
+ */
+export class InvalidUseFormConfigError extends AttaformError {
+  constructor() {
+    super(
+      '[attaform] useForm received an invalid configuration (a schema directly, no argument, ' +
+        'or no `schema` field). Pass it as `useForm({ schema })` — the schema is one of several ' +
+        'configuration options. See https://attaform.com/docs/api/use-form-return for the full ' +
+        'configuration shape.'
+    )
+  }
+}
+
+/**
  * Thrown when a `handleSubmit`-supplied `onError` callback itself
  * throws or rejects. Wraps the inner failure so both the original
  * cause (via `error.cause`) and the propagation site are visible.
@@ -37,15 +67,28 @@ export class InvalidPathError extends AttaformError {}
 export class SubmitErrorHandlerError extends AttaformError {}
 
 /**
- * Thrown by `useForm` / `injectForm` when the form library's
- * plugin hasn't been installed on the current Vue app.
+ * Thrown when an `attaform` API needs the registry attached to a Vue
+ * app but it isn't there yet. Component-level entry points (`useForm`,
+ * `injectForm`, `useRegister`) lazy-install the registry on first use,
+ * so this error is mostly reached by SSR helpers — `renderAttaformState`
+ * and `hydrateAttaformState` — which run outside a setup context and
+ * have no current instance to install against.
  *
- * Fix: add `app.use(createAttaform())` to your app entry
- * (or `attaform/nuxt` for Nuxt projects).
+ * Fix: add `app.use(createAttaform())` (or `app.use(createAttaform({
+ * ssr: true }))` on the server) to your SSR entry, before
+ * `renderToString` / hydration. Under Nuxt, `attaform/nuxt` already
+ * does this; the error usually points at a non-Nuxt SSR setup that
+ * hasn't installed explicitly.
  */
 export class RegistryNotInstalledError extends AttaformError {
   constructor() {
-    super('[attaform] Registry not found. Install the plugin via `app.use(createAttaform())`.')
+    super(
+      '[attaform] No registry attached to this Vue app. Component-level useForm / injectForm / ' +
+        'useRegister auto-install the registry, but SSR helpers (renderAttaformState, ' +
+        'hydrateAttaformState) run outside setup and require an explicit ' +
+        '`app.use(createAttaform())` at server-render time. Add it to your SSR entry, before ' +
+        '`renderToString`.'
+    )
   }
 }
 

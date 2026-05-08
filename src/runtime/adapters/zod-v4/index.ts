@@ -5,6 +5,7 @@
  */
 import type { z } from 'zod'
 import { useAbstractForm } from '../../composables/use-abstract-form'
+import { InvalidUseFormConfigError } from '../../core/errors'
 import type {
   AbstractSchema,
   FormKey,
@@ -62,6 +63,20 @@ export function useForm<Schema extends z.ZodObject>(
   z.output<Schema> extends GenericForm ? z.output<Schema> : never,
   z.output<Schema> extends GenericForm ? z.output<Schema> : never
 > {
+  // Foot-gun guard: catches `useForm(z.object({...}))` (raw schema as
+  // the first arg — its `.schema` field is undefined), `useForm()` (no
+  // args), and `useForm({ schema: undefined })` before they reach the
+  // adapter and crash deep with an opaque message. JS callers and
+  // `as any` callers can defy the static signature; the `unknown`
+  // cast forces the runtime checks to stay live under tsc.
+  const candidate = configuration as unknown
+  if (
+    candidate === undefined ||
+    candidate === null ||
+    (candidate as { schema?: unknown }).schema === undefined
+  ) {
+    throw new InvalidUseFormConfigError()
+  }
   type Form = z.output<Schema> extends GenericForm ? z.output<Schema> : never
   // `zodV4Adapter` returns a factory `(formKey: FormKey) => AbstractSchema`;
   // `UseFormConfiguration.schema` accepts `Schema | ((key) => Schema)`, so

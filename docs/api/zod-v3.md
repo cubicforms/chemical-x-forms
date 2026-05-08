@@ -5,8 +5,11 @@ description: 'Use Attaform with Zod 3 schemas: full API parity with the Zod 4 ad
 
 # `attaform/zod-v3`
 
-Zod v3 adapter. Requires `zod@^3`. New projects should use [`/zod`](/docs/api/zod)
-(v4).
+Explicit Zod v3 adapter subpath. Use this when you want to pin v3 regardless of what your bundler resolves — handy for non-Vite bundlers (webpack, esbuild standalone, Rollup) where you'd otherwise pay for both adapters via the unified [`attaform/zod`](/docs/api/zod) entry's runtime fallback.
+
+Most Vite consumers should import from `attaform/zod` instead — the [`attaform/vite`](/docs/api/vite) plugin rewrites that import to this subpath at build time when `zod@^3` is detected, so the same lean bundle ships with less ceremony.
+
+Requires `zod@^3`.
 
 ```ts
 import { useForm, zodAdapter, isZodSchemaType, fieldMeta, withMeta } from 'attaform/zod-v3'

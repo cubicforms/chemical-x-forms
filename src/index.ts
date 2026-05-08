@@ -161,6 +161,7 @@ export {
   AnonPersistError,
   AttaformError,
   InvalidPathError,
+  InvalidUseFormConfigError,
   OutsideSetupError,
   RegistryNotInstalledError,
   ReservedFormKeyError,

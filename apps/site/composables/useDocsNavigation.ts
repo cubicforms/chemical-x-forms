@@ -30,6 +30,7 @@ export const docsNavigation: DocsSection[] = [
       { title: 'useForm return value', to: '/docs/api/use-form-return' },
       { title: 'attaform/zod', to: '/docs/api/zod' },
       { title: 'attaform/zod-v3', to: '/docs/api/zod-v3' },
+      { title: 'attaform/zod-v4', to: '/docs/api/zod-v4' },
       { title: 'attaform/nuxt', to: '/docs/api/nuxt' },
       { title: 'attaform/vite', to: '/docs/api/vite' },
       { title: 'attaform/transforms', to: '/docs/api/transforms' },

@@ -14,7 +14,11 @@ A type-safe, schema-driven form library for Vue 3 and Nuxt with first-class Zod 
 npm install attaform zod
 ```
 
-**Nuxt 3 / 4** — install the module:
+That's it for client-side rendering. Forms render and validate the moment you call `useForm` — the registry self-installs on first use.
+
+### Going further
+
+**Nuxt 3 / 4** — add the module:
 
 ```ts
 // nuxt.config.ts
@@ -23,15 +27,7 @@ export default defineNuxtConfig({
 })
 ```
 
-**Bare Vue 3** — install the plugin and the Vite plugin:
-
-```ts
-// main.ts
-import { createApp } from 'vue'
-import { createAttaform } from 'attaform'
-
-createApp(App).use(createAttaform()).mount('#app')
-```
+**Bare Vue + SSR** — add the Vite plugin so server-rendered HTML matches the hydrated client (the plugin injects `:value` / `:checked` bindings at compile time):
 
 ```ts
 // vite.config.ts
@@ -41,6 +37,20 @@ import { attaform } from 'attaform/vite'
 export default defineConfig({
   plugins: [vue(), attaform()],
 })
+```
+
+The Vite plugin also rewrites `attaform/zod` imports at build time to `attaform/zod-v3` or `attaform/zod-v4` — your bundle ships only the adapter you actually use.
+
+**App-wide options** — install the Vue plugin if you want to set defaults or disable devtools:
+
+```ts
+// main.ts
+import { createApp } from 'vue'
+import { createAttaform } from 'attaform'
+
+createApp(App)
+  .use(createAttaform({ defaults: { debounceMs: 100 } }))
+  .mount('#app')
 ```
 
 ### Recommended tsconfig
@@ -63,7 +73,7 @@ It catches stale `form.values.contacts[N]` reads at compile time. Nuxt 3 / 4 set
 ```vue
 <script setup lang="ts">
   import { z } from 'zod'
-  import { useForm } from 'attaform/zod' // zod v4; use /zod-v3 for v3
+  import { useForm } from 'attaform/zod' // auto-detects Zod major
 
   const schema = z.object({
     email: z.email(),

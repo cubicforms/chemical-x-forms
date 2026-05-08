@@ -11,13 +11,33 @@ on:
     branches: ['main']
   workflow_dispatch:
 
+# Cancel superseded runs on the same ref. When a follow-up commit
+# lands while CI is still running, the older run is killed — only
+# the latest commit's status matters for review. Saves wasted
+# compute on force-push / rapid push cycles.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Job topology — designed for parallelism, no redundant work:
+#   - Version-agnostic checks (lint, typecheck, size, bench, coverage,
+#     build-site) each run ONCE on a single Node version, in parallel.
+#     They have no Node-version sensitivity — running them on a matrix
+#     would 3× the compute for no signal.
+#   - Cross-Node coverage lives in the `test` matrix: it runs ONLY
+#     `pnpm test`, on the load-bearing Node majors (20.x as the
+#     engines minimum, 22.x as the current LTS).
+#
+# Wall-clock time = max(slowest single-Node job, slowest matrix
+# shard). The previous `pnpm check` matrix had each Node version
+# re-running every step (including the Node-version-agnostic ones),
+# pushing the critical path to ~5min. Splitting brings it to ~2min.
+#
+# When adding a new check to `pnpm check`, ALSO add a corresponding
+# job here. `pnpm check` stays the single source-of-truth command
+# for local dev; CI fans the same set out into independent jobs.
+
 jobs:
-  # Dedicated lint job — runs in parallel with the test matrix so a lint-only
-  # regression flips the PR red within ~30s instead of waiting on the full
-  # gate (typecheck + tests + size + bench + coverage). The matrix's
-  # `pnpm check` still runs lint + format:check too; the duplication is
-  # intentional (cheap, and keeps `pnpm check` as the single source-of-truth
-  # command for local dev).
   lint:
     name: Lint and format
     runs-on: ubuntu-latest
@@ -51,9 +71,7 @@ jobs:
 
       # Generate apps/site/.nuxt/imports.d.ts so the eslint config can
       # parse Nuxt's auto-imports (`computed`, `useState`, etc.) and
-      # `no-undef` doesn't false-fail on auto-imported names. The full
-      # `test` job below also runs this before `pnpm check`; mirroring
-      # the same step here keeps the dedicated lint job self-contained.
+      # `no-undef` doesn't false-fail on auto-imported names.
       - name: Prepare Nuxt auto-imports
         run: pnpm dev:prepare
 
@@ -63,8 +81,45 @@ jobs:
       - name: Prettier
         run: pnpm format:check
 
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 'lts/*'
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Stub attaform (Nuxt + site types)
+        run: pnpm dev:prepare
+
+      - name: Typecheck
+        run: pnpm typecheck
+
   test:
-    name: Full check on Node.js ${{ matrix.node-version }}
+    name: Test (Node.js ${{ matrix.node-version }})
     runs-on: ubuntu-latest
 
     strategy:
@@ -72,7 +127,15 @@ jobs:
         # Node 18 dropped after its 2025-04-30 EOL — several transitive
         # dependencies (Nuxt 4's nuxi → @clack/core) now call
         # `node:util.styleText`, which ships in Node 20.12+ only.
-        node-version: [20.x, 22.x, 'lts/*']
+        #
+        # Two-row matrix: 20.x is the engines lower bound (pinned —
+        # never auto-rotates), and `lts/*` is the auto-rotating
+        # current-LTS canary (today 22.x; when Node 24 ships LTS the
+        # canary jumps with no config change). Listing 22.x explicitly
+        # alongside `lts/*` would be redundant today and would freeze
+        # us at "previous LTS" the moment a new one ships — neither
+        # outcome is what we want.
+        node-version: [20.x, 'lts/*']
       fail-fast: false
 
     steps:
@@ -106,28 +169,133 @@ jobs:
       - name: Stub attaform (Nuxt + site types)
         run: pnpm dev:prepare
 
-      # `pnpm check` runs the full gate: lint → format:check → typecheck →
-      # test → check:size → check:bench → check:coverage. Running it on the
-      # full Node matrix catches compat regressions (a new syntax, a changed
-      # Buffer API, a bundler quirk on LTS vs current) at PR time rather
-      # than on release.
-      - name: Full pnpm check
-        run: pnpm check
+      - name: Run tests
+        run: pnpm test
 
-      # Build the docs site so a regression in apps/site (broken link in
-      # markdown, malformed Vue template, REPL bundler choke on src/ change)
-      # fails the PR. Runs after pnpm check so the lib gate signal isn't
-      # masked by site issues.
+  size:
+    name: Bundle size
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 'lts/*'
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install
+
+      # `pnpm check:size` runs `pnpm prepack` (unbuild) before
+      # invoking size-limit, so we don't need a separate prepack
+      # step here.
+      - name: Check bundle size
+        run: pnpm check:size
+
+  bench:
+    name: Performance benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 'lts/*'
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Stub attaform
+        run: pnpm dev:prepare
+
+      - name: Run benchmarks
+        run: pnpm check:bench
+
+  build-site:
+    name: Build docs site
+    runs-on: ubuntu-latest
+    # The docs site is a downstream consumer of attaform — building
+    # it catches site-level regressions (broken markdown link, REPL
+    # bundler choke on a src/ change) at PR time. Node-version
+    # agnostic: a single LTS run is enough; the test matrix covers
+    # the cross-version surface.
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 'lts/*'
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Stub attaform (Nuxt + site types)
+        run: pnpm dev:prepare
+
       - name: Build docs site
         run: pnpm build:site
 
   coverage-artifact:
     name: Publish coverage HTML artifact
     runs-on: ubuntu-latest
-    # Independent of the matrix job — this exists so PR reviewers can open
-    # the coverage report in a browser without checking out the branch and
-    # running the suite locally. Fails only if coverage thresholds fail
-    # (matrix job would already be red in that case).
+    # Independent of the test matrix — this exists so PR reviewers
+    # can open the coverage report in a browser without checking out
+    # the branch and running the suite locally. Uses
+    # `pnpm check:coverage` (vitest with coverage instrumentation),
+    # which also fails the job if coverage thresholds drop.
     steps:
       - uses: actions/checkout@v6
 

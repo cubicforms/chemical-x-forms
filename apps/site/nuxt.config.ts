@@ -129,11 +129,11 @@ export default defineNuxtConfig({
   },
   // nuxt-og-image renders Vue components to 1200×630 PNGs at build
   // time via Satori. We're on the generic Nitro `static` preset
-  // (rather than the platform-specific `vercel-static`), and the
-  // module logs a one-time "Unknown Nitro preset" warning at config
-  // time about that — it's informational, the prerender path falls
-  // through to node-server compatibility which is correct for our
-  // SSG flow.
+  // (rather than the platform-specific `vercel-static`) for
+  // portability — the resulting `dist/` is servable anywhere. The
+  // og-image module reads `nitro.static` (set in the `nitro:` block
+  // below) to detect SSG and route to its `nitro-prerender`
+  // compatibility profile.
   //
   // `ogImage.fonts` is pinned to Inter explicitly so Satori only
   // tries to load fonts it can actually serve. Without this, the
@@ -340,6 +340,15 @@ export default defineNuxtConfig({
     // those are real bugs too, and catching them in CI beats finding
     // them in production from a user filing an issue.
     preset: 'static',
+    // `static: true` is the SSG flag a few modules read to detect
+    // "this build emits HTML at prerender time, no runtime server."
+    // nuxt-og-image specifically uses it (its `resolveOgImagePreset`
+    // returns `'nitro-prerender'` for `nitro.static`), which puts it
+    // on a known preset and silences the "Unknown Nitro preset
+    // 'static'" warning. Setting `preset: 'static'` alone doesn't
+    // flip this flag — Nitro's `static` preset and the `static`
+    // boolean are sibling concerns rather than one-implies-the-other.
+    static: true,
     prerender: {
       crawlLinks: true,
       routes: ['/', '/docs', '/play'],

@@ -64,7 +64,7 @@ function makeChildWithUseRegister() {
       // no-parent-RV warn when `capturedRegisterValue` is `undefined`.
       const register = useRegister()
       return () => {
-        const rv = register.value
+        const rv = register?.value
         return Vue.h('label', null, [
           Vue.h('span', null, 'inner-label'),
           Vue.h('input', {
@@ -162,7 +162,7 @@ describe('useRegister — SSR (renderToString)', () => {
       setup() {
         const register = useRegister()
         return () => {
-          const rv = register.value
+          const rv = register?.value
           return Vue.h('span', {
             'data-atta-path': rv?.path ?? '',
             'data-atta-segments': rv !== undefined ? JSON.stringify(rv.segments) : '',

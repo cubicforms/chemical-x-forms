@@ -21,7 +21,7 @@ Get a working Attaform form on screen in under five minutes.
   import { useForm } from 'attaform/zod'
 
   const schema = z.object({
-    email: z.email(),
+    username: z.string().min(2, 'At least 2 characters'),
     password: z.string().min(8, 'At least 8 characters'),
   })
 
@@ -36,9 +36,9 @@ Get a working Attaform form on screen in under five minutes.
 <template>
   <form @submit.prevent="onSubmit">
     <label>
-      Email
-      <input v-register="form.register('email')" type="email" />
-      <small>{{ form.errors.email?.[0]?.message }}</small>
+      Username
+      <input v-register="form.register('username')" />
+      <small>{{ form.errors.username?.[0]?.message }}</small>
     </label>
 
     <label>
@@ -75,14 +75,16 @@ Attach metadata to fields so the schema stays the single source of truth for bot
 ```vue
 <script setup lang="ts">
   import { z } from 'zod'
-  import { useForm, fieldMeta } from 'attaform/zod'
+  import { useForm, withMeta } from 'attaform/zod'
 
   const schema = z.object({
-    email: z.email().register(fieldMeta, {
-      label: 'Email',
-      placeholder: 'you@example.com',
+    username: withMeta(z.string().min(2, 'At least 2 characters'), {
+      label: 'Username',
+      placeholder: 'your-handle',
     }),
-    password: z.string().min(8).register(fieldMeta, { label: 'Password' }),
+    password: withMeta(z.string().min(8, 'At least 8 characters'), {
+      label: 'Password',
+    }),
   })
 
   const form = useForm({ schema, key: 'signup' })
@@ -90,12 +92,8 @@ Attach metadata to fields so the schema stays the single source of truth for bot
 
 <template>
   <label>
-    {{ form.fields.email.label }}
-    <input
-      v-register="form.register('email')"
-      type="email"
-      :placeholder="form.fields.email.placeholder"
-    />
+    {{ form.fields.username.label }}
+    <input v-register="form.register('username')" :placeholder="form.fields.username.placeholder" />
   </label>
 </template>
 ```

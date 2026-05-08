@@ -47,8 +47,8 @@ import type { DeepPartial, DefaultValuesShape, GenericForm } from '../../types/t
  *
  * const form = useForm({
  *   schema: z.object({
- *     email: z.email(),
- *     password: z.string().min(8),
+ *     username: z.string().min(2, 'At least 2 characters'),
+ *     password: z.string().min(8, 'At least 8 characters'),
  *   }),
  * })
  * ```

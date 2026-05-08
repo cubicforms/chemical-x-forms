@@ -76,8 +76,8 @@ It catches stale `form.values.contacts[N]` reads at compile time. Nuxt 3 / 4 set
   import { useForm } from 'attaform/zod' // auto-detects Zod major
 
   const schema = z.object({
-    email: z.email(),
-    password: z.string().min(8),
+    username: z.string().min(2, 'At least 2 characters'),
+    password: z.string().min(8, 'At least 8 characters'),
   })
 
   const form = useForm({ schema, key: 'signup' })
@@ -89,8 +89,8 @@ It catches stale `form.values.contacts[N]` reads at compile time. Nuxt 3 / 4 set
 
 <template>
   <form @submit.prevent="onSubmit">
-    <input v-register="form.register('email')" placeholder="Email" />
-    <small v-if="form.errors.email?.[0]">{{ form.errors.email[0].message }}</small>
+    <input v-register="form.register('username')" placeholder="Username" />
+    <small v-if="form.errors.username?.[0]">{{ form.errors.username[0].message }}</small>
 
     <input v-register="form.register('password')" type="password" placeholder="Password" />
     <small v-if="form.errors.password?.[0]">{{ form.errors.password[0].message }}</small>
@@ -102,9 +102,9 @@ It catches stale `form.values.contacts[N]` reads at compile time. Nuxt 3 / 4 set
 
 `useForm({ schema, key })` returns a Pinia-style reactive object — read leaves directly, no `.value`:
 
-- **`form.values`** — current values. `form.values.email`, `form.values.address.city`.
-- **`form.errors`** — per-field errors, keyed by dotted path. `form.errors.email?.[0]?.message`.
-- **`form.fields`** — per-field flags (`dirty`, `touched`, `errors`, `blank`, …). `form.fields.email.dirty`.
+- **`form.values`** — current values. `form.values.username`, `form.values.address.city`.
+- **`form.errors`** — per-field errors, keyed by dotted path. `form.errors.username?.[0]?.message`.
+- **`form.fields`** — per-field flags (`dirty`, `touched`, `errors`, `blank`, …). `form.fields.username.dirty`.
 - **`form.meta`** — form-level flags + counters (`isSubmitting`, `isValid`, `canUndo`, `submitCount`, the flat `meta.errors` aggregate, the per-mount `instanceId`, …).
 - **`form.register(path)`** — typed two-way binding; pair with `v-register` on `<input>` / `<textarea>` / `<select>`.
 - **`form.handleSubmit(onValid, onInvalid?)`** — runs validation, dispatches. The valid callback receives the strict zod-inferred type.

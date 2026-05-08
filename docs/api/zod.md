@@ -11,7 +11,12 @@ The unified Zod entry. Same import for Zod 3 and Zod 4 projects — the runtime 
 import { useForm, fieldMeta, withMeta } from 'attaform/zod'
 import { z } from 'zod'
 
-const form = useForm({ schema: z.object({ email: z.email() }) })
+const form = useForm({
+  schema: z.object({
+    username: z.string().min(2, 'At least 2 characters'),
+    password: z.string().min(8, 'At least 8 characters'),
+  }),
+})
 ```
 
 This is THE recommended import for new projects. Use it whenever you don't have a specific reason to pin one Zod major.
@@ -42,13 +47,13 @@ import {
 import type { FieldMetaPayload, Unset } from 'attaform/zod'
 ```
 
-| Export                                      | What it does                                                                            |
-| ------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `useForm`                                   | Runtime-dispatching wrapper. Type signature targets Zod 4. See [usage](#useform).       |
-| `injectForm`, `useRegister`                 | Schema-agnostic — identical across the two adapters.                                    |
-| `fieldMeta`, `withMeta`, `FieldMetaPayload` | Re-exported from the v4 adapter; see [Caveats](#caveats) for the runtime-dispatch case. |
-| `unset`, `isUnset`, `Unset`                 | Sentinel for "displayed empty"; identical across adapters.                              |
-| `AttaformErrorCode`                         | Library-emitted error-code enum (`atta:*`).                                             |
+| Export                                      | What it does                                                                                                                                                            |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `useForm`                                   | Runtime-dispatching wrapper. Type signature targets Zod 4. See [usage](#useform).                                                                                       |
+| `injectForm`, `useRegister`                 | Schema-agnostic — identical across the two adapters.                                                                                                                    |
+| `fieldMeta`, `withMeta`, `FieldMetaPayload` | Cross-major schema metadata. Backed by a shared store so writes here are read by whichever adapter dispatches; `withMeta` runtime-branches on schema shape for cloning. |
+| `unset`, `isUnset`, `Unset`                 | Sentinel for "displayed empty"; identical across adapters.                                                                                                              |
+| `AttaformErrorCode`                         | Library-emitted error-code enum (`atta:*`).                                                                                                                             |
 
 For `zodAdapter`, `kindOf`, `assertZodVersion`, `ZodKind`, and `UnsupportedSchemaError` — the surfaces that diverge between v3 and v4 — use the [`attaform/zod-v3`](/docs/api/zod-v3) or [`attaform/zod-v4`](/docs/api/zod-v4) explicit subpath.
 
@@ -58,7 +63,10 @@ Same surface as the per-major adapters. See [The useForm return value](/docs/api
 
 ```ts
 const form = useForm({
-  schema: z.object({ email: z.email() }),
+  schema: z.object({
+    username: z.string().min(2, 'At least 2 characters'),
+    password: z.string().min(8, 'At least 8 characters'),
+  }),
   key: 'signup',
 })
 ```
@@ -67,11 +75,28 @@ When the build-time alias is in play, the consumer's bundled code resolves to th
 
 ## Schema-attached metadata
 
-`fieldMeta` and `withMeta` are re-exported from the v4 adapter. Same surface as documented in [`attaform/zod-v4` § Schema-attached metadata](/docs/api/zod-v4#schema-attached-metadata).
+`fieldMeta` and `withMeta` write to a cross-adapter store, so a payload registered through this entry is visible at lookup whether the v3 or v4 adapter actually runs. `withMeta` runtime-branches on the schema's shape: Zod 4 schemas are cloned via the native `.clone()`, Zod 3 schemas via constructor + `_def` reconstruction. The native `schema.register(fieldMeta, payload)` chain still works for v4 schemas — Zod 4's `.register()` only needs `.add(this, payload)` on the registry, which the shared store provides.
+
+```ts
+import { z } from 'zod'
+import { useForm, withMeta } from 'attaform/zod'
+
+const schema = z.object({
+  username: withMeta(z.string().min(2, 'At least 2 characters'), {
+    label: 'Username',
+    placeholder: 'your-handle',
+  }),
+})
+
+const form = useForm({ schema })
+// form.fields.username.label       → 'Username'
+// form.fields.username.placeholder → 'your-handle'
+```
+
+See [`attaform/zod-v4` § Schema-attached metadata](/docs/api/zod-v4#schema-attached-metadata) for the resolution-order table and the registration-pattern notes — both apply identically to the unified entry.
 
 ## Caveats
 
-- **`fieldMeta` shape on Zod 3 without the Vite plugin.** Without the build-time alias, the unified entry exports the v4 `fieldMeta` registry. The v4 registry's `getFieldMetaList` helper isn't available on Zod 3. If you're on Zod 3 and not using Vite, import `fieldMeta` from [`attaform/zod-v3`](/docs/api/zod-v3) directly.
 - **Both Zod versions installed.** Aliasing both `zod` and `zod-v3` (or similar) bypasses the Vite plugin's detection — pass `attaform({ resolveZodAlias: false })` and consume the runtime dispatch, or import the explicit subpath at every call site.
 - **TypeScript inference.** The unified entry's `useForm` signature targets Zod 4. With the build-time alias, the consumer's code is rewritten to the explicit subpath, so post-build inference is exact. Without it, Zod 3 consumers should reach for [`attaform/zod-v3`](/docs/api/zod-v3) for the strongest inference.
 

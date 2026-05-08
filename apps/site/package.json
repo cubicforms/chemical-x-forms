@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/clean-stale-cache.mjs && pnpm bundle:repl && pnpm index:search:dev && (pnpm bundle:repl:watch & nuxi dev)",
-    "build": "pnpm bundle:repl && nuxi build && pnpm index:search",
-    "generate": "pnpm bundle:repl && nuxi generate && pnpm index:search",
+    "build": "pnpm bundle:repl && nuxi build && pnpm index:search && pnpm index:bing",
+    "generate": "pnpm bundle:repl && nuxi generate && pnpm index:search && pnpm index:bing",
     "preview": "nuxi preview",
     "bundle:repl": "node scripts/bundle-repl-deps.mjs",
     "bundle:repl:watch": "node scripts/bundle-repl-deps.mjs --watch",
     "index:search": "pagefind --site .output/public --output-path .output/public/_pagefind",
     "index:search:dev": "node scripts/index-search-dev.mjs",
+    "index:bing": "node scripts/indexnow-ping.mjs",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {

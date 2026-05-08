@@ -4,6 +4,9 @@
 
 _No unreleased changes yet._
 
+## v0.15.1
+_No unreleased changes yet._
+
 ## v0.15.0
 - **Sync-refinement errors seed at construction even when an async
   sibling is present (zod-v4 adapter).** When a strict-mode form's

@@ -1,5 +1,15 @@
 # Releases
 
+## v0.16.0 — 2026-05-08
+
+## What's Changed
+* feat: Vite + useForm DX overhaul by @ozzyfromspace in https://github.com/attaform/Attaform/pull/176
+
+
+**Full Changelog**: https://github.com/attaform/Attaform/compare/v0.15.1...v0.16.0
+
+---
+
 ## v0.15.1 — 2026-05-08
 
 ## What's Changed

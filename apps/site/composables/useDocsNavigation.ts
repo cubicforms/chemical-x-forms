@@ -40,7 +40,7 @@ export const docsNavigation: DocsSection[] = [
   {
     heading: 'Recipes',
     links: [
-      { title: 'App-level defaults', to: '/docs/recipes/app-defaults' },
+      { title: 'Global defaults', to: '/docs/recipes/app-defaults' },
       { title: 'Async validation', to: '/docs/recipes/async-validation' },
       { title: 'Blank inputs', to: '/docs/recipes/blank-inputs' },
       { title: 'Coercion', to: '/docs/recipes/coerce' },

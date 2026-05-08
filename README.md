@@ -18,12 +18,14 @@ That's it for client-side rendering. Forms render and validate the moment you ca
 
 ### Going further
 
-**Nuxt 3 / 4** — add the module:
+**Nuxt 3 / 4** — install the Vue plugin via a Nuxt plugin:
 
 ```ts
-// nuxt.config.ts
-export default defineNuxtConfig({
-  modules: ['attaform/nuxt'],
+// plugins/attaform.ts
+import { createAttaform } from 'attaform'
+
+export default defineNuxtPlugin((nuxtApp) => {
+  nuxtApp.vueApp.use(createAttaform())
 })
 ```
 

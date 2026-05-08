@@ -85,8 +85,14 @@
 </script>
 
 <template>
+  <!-- `not-prose` opts out of @tailwindcss/typography's `prose` styling
+       for the subtree. Without it, the docs page's outer `prose`
+       wrapper applies `code::before { content: '`' }` (and the matching
+       ::after), framing the install command with visual backticks like
+       it's an inline code span. The component renders its own framing
+       via the surrounding card; the typography defaults are wrong here. -->
   <div
-    class="flex w-full flex-col overflow-hidden rounded-xl border border-border bg-surface/60 shadow-xs"
+    class="not-prose flex w-full flex-col overflow-hidden rounded-xl border border-border bg-surface/60 shadow-xs"
   >
     <!-- Manager tabs -->
     <div

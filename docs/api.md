@@ -45,7 +45,7 @@ SSR helpers, `parseApiErrors`, error codes, the `unset` sentinel.
 **Recipes that use this:** [Custom schema adapters](/docs/recipes/custom-adapter) ·
 [Form context](/docs/recipes/form-context) ·
 [Server errors](/docs/recipes/server-errors) ·
-[App-level defaults](/docs/recipes/app-defaults) ·
+[Global defaults](/docs/recipes/app-defaults) ·
 [Vue DevTools](/docs/recipes/devtools)
 
 ## `attaform/nuxt`
@@ -56,7 +56,7 @@ global auto-import.
 → [Read `attaform/nuxt`](/docs/api/nuxt)
 
 **Recipes that use this:** [SSR hydration](/docs/recipes/ssr-hydration) ·
-[App-level defaults](/docs/recipes/app-defaults) ·
+[Global defaults](/docs/recipes/app-defaults) ·
 [Persistence](/docs/recipes/persistence)
 
 ## `attaform/vite`

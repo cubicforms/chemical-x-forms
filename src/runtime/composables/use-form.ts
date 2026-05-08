@@ -1,5 +1,6 @@
 import type { z } from 'zod-v3'
 import { zodAdapter } from '../adapters/zod-v3'
+import { InvalidUseFormConfigError } from '../core/errors'
 import type { AbstractSchema, UseFormReturnType, UseFormConfiguration } from '../types/types-api'
 import type { DeepPartial, DefaultValuesShape, GenericForm } from '../types/types-core'
 import type { TypeWithNullableDynamicKeys } from '../adapters/zod-v3/types-zod'
@@ -80,6 +81,18 @@ export function useForm<
         DeepPartial<DefaultValuesShape<z.infer<UnwrapZodObject<Schema>>>>
       >
 ): UseFormReturnType<Form, GetValueFormType> {
+  // Foot-gun guard: catches `useForm(z.object({...}))` (raw schema as
+  // the first arg — its `.schema` field is undefined), `useForm()` (no
+  // args), and `useForm({ schema: undefined })` before they reach the
+  // adapter and crash deep with an opaque message.
+  if (
+    configuration === undefined ||
+    configuration === null ||
+    (configuration as { schema?: unknown }).schema === undefined
+  ) {
+    throw new InvalidUseFormConfigError()
+  }
+
   function isZodType(value: unknown): value is z.ZodType {
     return typeof value === 'object' && value !== null && '_def' in value
   }

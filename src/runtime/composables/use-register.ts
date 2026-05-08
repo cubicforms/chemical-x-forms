@@ -68,6 +68,7 @@ import {
 } from 'vue'
 import { __DEV__ } from '../core/dev'
 import { captureUserCallSite } from '../core/dev-stack-trace'
+import { ensureAttaformInstalled } from '../core/plugin'
 import type { RegisterValue } from '../types/types-api'
 
 /**
@@ -166,6 +167,15 @@ export function useRegister<V = unknown>(): UseRegisterReturn<V> | undefined {
     warnOutsideSetup()
     return makeRegisterValueProxy<V>(shallowRef<RegisterValue<V> | undefined>(undefined))
   }
+
+  // Lazy-install: even though `useRegister` doesn't read the registry
+  // directly, it's a public setup-context entry point and its template
+  // typically renders `<input v-register="rv" />` — the directive must
+  // be registered on the app at render time. Without auto-install, a
+  // wrapper component used in isolation (no `useForm` ancestor, no
+  // `createAttaform()`) hits Vue's "Failed to resolve directive"
+  // warning. Idempotent — explicit installs win when they ran first.
+  ensureAttaformInstalled(instance.appContext.app)
 
   // Capture the bridge `registerValue` from instance.attrs into a
   // local ref, then STRIP the bridge keys (`registerValue` + `value`)

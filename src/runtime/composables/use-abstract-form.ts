@@ -9,7 +9,7 @@ import {
 } from '../core/defaults'
 import { __DEV__ } from '../core/dev'
 import { captureUserCallSite } from '../core/dev-stack-trace'
-import { AnonPersistError, ReservedFormKeyError } from '../core/errors'
+import { AnonPersistError, InvalidUseFormConfigError, ReservedFormKeyError } from '../core/errors'
 import { extractSchemaFields } from '../core/extract-schema-fields'
 import type { FieldState } from '../core/field-state-api'
 import { getComputedSchema } from '../core/get-computed-schema'
@@ -33,6 +33,7 @@ import {
 import { hashStableString } from '../core/hash'
 import { canonicalizePath, type Path, type PathKey } from '../core/paths'
 import { deleteAtPath, getAtPath, setAtPath, isPlainRecord } from '../core/path-walker'
+import { ensureAttaformInstalled } from '../core/plugin'
 import { kFormContext, kFormInstanceId, useRegistry } from '../core/registry'
 import { walkUnsetSentinels } from '../core/unset-walker'
 import type {
@@ -60,10 +61,9 @@ import type { DeepPartial, DefaultValuesShape, GenericForm, WriteShape } from '.
  * })
  * ```
  *
- * Most consumers prefer a typed entry point — e.g.
- * `attaform/zod` (v4) or `attaform/zod-v3` —
- * which wrap the underlying library's schema with the matching
- * adapter automatically.
+ * Most consumers prefer a typed entry point that wraps the underlying
+ * library's schema with the matching adapter automatically; see the
+ * subpath documentation for the available adapters.
  *
  * Returns the same form API as the typed entry points; see
  * `UseFormReturnType` for the full surface.
@@ -80,6 +80,19 @@ export function useAbstractForm<
     DeepPartial<DefaultValuesShape<Form>>
   >
 ): UseFormReturnType<Form, GetValueFormType> {
+  // Foot-gun guard: catches `useForm()` (no args), `useForm(null)`,
+  // `useForm(rawSchema)` (any schema-like object passed as the first
+  // argument — its `.schema` field is undefined), and the explicit
+  // `useForm({ schema: undefined })` case. Throws synchronously
+  // before any downstream code reads `configuration.schema`.
+  if (
+    configuration === undefined ||
+    configuration === null ||
+    (configuration as { schema?: unknown }).schema === undefined
+  ) {
+    throw new InvalidUseFormConfigError()
+  }
+
   const key = resolveFormKey(configuration.key)
 
   // Resolve the schema (accepts either an AbstractSchema or a factory).
@@ -108,6 +121,15 @@ export function useAbstractForm<
   // One FormStore per (app, formKey). Multiple useForm calls with the same
   // key resolve to the same instance — that's the shared-store semantic
   // for forms that explicitly opt in to a stable key.
+  //
+  // Lazy-install: if the consumer hasn't called `createAttaform()`,
+  // attach the registry now. Idempotent — explicit installs (Nuxt
+  // module, manual `app.use(createAttaform({ defaults }))`) win when
+  // they ran first. The strict `useRegistry()` below still throws
+  // `OutsideSetupError` when called outside setup; the lazy install
+  // only ever fires when an instance is available.
+  const instance = getCurrentInstance()
+  if (instance !== null) ensureAttaformInstalled(instance.appContext.app)
   const registry = useRegistry()
 
   // Merge app-level defaults from the registry over per-form options.

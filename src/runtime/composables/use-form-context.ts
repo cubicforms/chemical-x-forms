@@ -4,6 +4,7 @@ import type { FormStore } from '../core/create-form-store'
 import { __DEV__ } from '../core/dev'
 import { captureUserCallSite } from '../core/dev-stack-trace'
 import type { HistoryModule } from '../core/history'
+import { ensureAttaformInstalled } from '../core/plugin'
 import { kFormContext, kFormInstanceId, useRegistry, type AttaformRegistry } from '../core/registry'
 import type { FormKey, UseFormReturnType } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
@@ -60,6 +61,15 @@ let injectedInstanceCounter = 0
 export function injectForm<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
   key?: FormKey
 ): UseFormReturnType<Form, GetValueFormType> | null {
+  // Lazy-install: if no `useForm` ancestor and no explicit
+  // `createAttaform()`, the registry is missing. Auto-install here so
+  // `injectForm` collapses to its existing "no form for that key" /
+  // "no ambient form context" null-return + dev-warning paths instead
+  // of throwing the misleading `RegistryNotInstalledError`. The strict
+  // `useRegistry()` below still surfaces `OutsideSetupError` when
+  // called outside setup.
+  const instance = getCurrentInstance()
+  if (instance !== null) ensureAttaformInstalled(instance.appContext.app)
   const registry = useRegistry()
 
   const state = resolveState<Form>(key, registry)

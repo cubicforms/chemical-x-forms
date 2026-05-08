@@ -4,6 +4,9 @@
 
 _No unreleased changes yet._
 
+## v0.16.2
+_No unreleased changes yet._
+
 ## v0.16.1
 _No unreleased changes yet._
 

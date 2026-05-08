@@ -1,6 +1,6 @@
 {
   "name": "attaform",
-  "version": "0.16.1",
+  "version": "0.16.2",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "files": [

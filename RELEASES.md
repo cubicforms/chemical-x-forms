@@ -1,5 +1,15 @@
 # Releases
 
+## v0.16.2 — 2026-05-08
+
+## What's Changed
+* docs(readme): simplify going further snippet by @ozzyfromspace in https://github.com/attaform/Attaform/pull/180
+
+
+**Full Changelog**: https://github.com/attaform/Attaform/compare/v0.16.1...v0.16.2
+
+---
+
 ## v0.16.1 — 2026-05-08
 
 ## What's Changed

@@ -1,11 +1,15 @@
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { addImports, addPlugin, addTypeTemplate, createResolver, defineNuxtModule } from '@nuxt/kit'
-import { inputTextAreaNodeTransform } from './runtime/lib/core/transforms/input-text-area-transform'
-import { selectNodeTransform } from './runtime/lib/core/transforms/select-transform'
-import { vRegisterHintTransform } from './runtime/lib/core/transforms/v-register-hint-transform'
-import { vRegisterPreambleTransform } from './runtime/lib/core/transforms/v-register-preamble-transform'
+import {
+  addImports,
+  addPlugin,
+  addTypeTemplate,
+  addVitePlugin,
+  createResolver,
+  defineNuxtModule,
+} from '@nuxt/kit'
 import type { AttaformDefaults } from './runtime/types/types-api'
+import { attaform as attaformVitePlugin } from './vite'
 
 /**
  * Options accepted by `attaform/nuxt` under the `attaform`
@@ -28,6 +32,14 @@ export interface AttaformModuleOptions {
    * supported option set and merge rules.
    */
   defaults?: AttaformDefaults
+  /**
+   * Forwarded to `attaform/vite`'s `resolveZodAlias` option.
+   * Default `true` — `attaform/zod` imports are rewritten at build
+   * time to either `attaform/zod-v3` or `attaform/zod-v4`, based on
+   * the consumer's installed Zod major. Set to `false` to bypass
+   * the rewrite and ship the runtime-dispatch unified entry instead.
+   */
+  resolveZodAlias?: boolean
 }
 
 /**
@@ -88,15 +100,16 @@ export default defineNuxtModule<AttaformModuleOptions>({
   },
   defaults: {},
   setup(_options, nuxt) {
-    // vRegisterPreambleTransform MUST come before vRegisterHintTransform
-    // — see src/vite.ts for the ordering rationale.
-    nuxt.options.vue.compilerOptions.nodeTransforms ??= []
-    nuxt.options.vue.compilerOptions.nodeTransforms.push(
-      selectNodeTransform,
-      inputTextAreaNodeTransform,
-      vRegisterPreambleTransform,
-      vRegisterHintTransform
-    )
+    // Register `attaform/vite` so the same plugin handles every Vite-
+    // surface concern: pushing the compile-time node transforms into
+    // `@vitejs/plugin-vue`'s `api.options.template.compilerOptions.
+    // nodeTransforms`, AND rewriting `attaform/zod` imports at build
+    // time to either `/zod-v3` or `/zod-v4` based on the consumer's
+    // installed Zod major. Consolidating both behaviors in one Vite
+    // plugin instance keeps the Nuxt-side wiring minimal and ensures
+    // the consumer's Nuxt build sees the exact same DX as a bare-Vite
+    // consumer.
+    addVitePlugin(attaformVitePlugin({ resolveZodAlias: _options.resolveZodAlias !== false }))
 
     // Publish module options to public runtime config so the plugin can
     // read them at install time on both server and client. Frozen-empty
@@ -120,7 +133,8 @@ export default defineNuxtModule<AttaformModuleOptions>({
     //
     // We declare here only deps attaform itself owns the relationship
     // with — `@vue/devtools-api` (attaform's DevTools integration
-    // peer) and `zod` (the `/zod` and `/zod-v3` adapter peer). Consumer-
+    // peer) and `zod` (the adapter peer for `/zod`, `/zod-v3`, and
+    // `/zod-v4`). Consumer-
     // side deps (vue-query, immer, etc.) are the consumer's
     // responsibility — they declare them in their own
     // `vite.optimizeDeps.include`. Each push is gated on the spec

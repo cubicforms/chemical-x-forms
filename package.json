@@ -78,6 +78,10 @@
       "types": "./dist/zod-v3.d.mts",
       "import": "./dist/zod-v3.mjs"
     },
+    "./zod-v4": {
+      "types": "./dist/zod-v4.d.mts",
+      "import": "./dist/zod-v4.mjs"
+    },
     "./types": {
       "types": "./dist/index.d.mts"
     }

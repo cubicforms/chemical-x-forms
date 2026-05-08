@@ -21,6 +21,7 @@ export default defineBuildConfig({
     'src/transforms',
     'src/zod',
     'src/zod-v3',
+    'src/zod-v4',
     'src/runtime/plugins/attaform',
   ],
   externals: [

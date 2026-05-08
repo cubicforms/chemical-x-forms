@@ -1,8 +1,16 @@
 /**
- * `attaform/zod-v3` — Zod v3 adapter for projects on Zod 3. New projects
- * should reach for `attaform/zod` (v4 adapter). The two adapters are
- * physically isolated (separate directories, no cross-imports, enforced
- * by ESLint).
+ * `attaform/zod-v3` — explicit Zod v3 adapter subpath.
+ *
+ * Use this when you want to pin the v3 adapter regardless of what
+ * other tooling resolves. Bundles ship a single adapter (no runtime
+ * dispatch) — handy for non-Vite bundlers (webpack, esbuild standalone,
+ * Rollup) where you'd otherwise pay for both adapters via the unified
+ * `attaform/zod` entry's runtime fallback.
+ *
+ * Most Vite consumers should import from `attaform/zod` instead — the
+ * `attaform/vite` plugin rewrites that import to this subpath at build
+ * time when zod@^3 is detected, so the same lean bundle ships with
+ * less ceremony.
  *
  * Prerequisites: install `zod@^3`. The adapter's behavior assumes v3
  * internals (`_def.typeName`, `.unwrap()`, `.innerType()`); importing this

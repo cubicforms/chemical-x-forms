@@ -171,7 +171,36 @@ export default [
     // withMeta clone-on-write + getFieldMetaAtPath resolver + path-
     // walker tree traversal for shared-schema disambiguation).
     // Measured at 29.20 KB.
-    limit: '30 KB',
+    //
+    // Raised 30 → 45 KB on the unified-attaform/zod-entry branch.
+    // `attaform/zod` is no longer a single-adapter subpath — it's
+    // the runtime-dispatch unified entry that pulls in BOTH the
+    // Zod 3 wrapper and the Zod 4 adapter so it can route on schema
+    // shape at call time. The build-time alias in `attaform/vite`
+    // rewrites `attaform/zod` imports to the matching explicit
+    // subpath (`/zod-v3` or `/zod-v4`), so Vite consumers DON'T
+    // ship this file in their bundle. The size cap covers the
+    // "no Vite plugin" fallback path. Explicit-subpath consumers
+    // (other bundlers) still get a lean ~30 KB v3 or v4 bundle.
+    // Measured at 40.55 KB; 4.45 KB headroom.
+    limit: '45 KB',
+    gzip: true,
+    ignore: ['zod'],
+    modifyEsbuildConfig: asEsm,
+  },
+  {
+    path: 'dist/zod-v4.mjs',
+    // Explicit Zod 4 subpath. Mirrors what `attaform/zod` used to be
+    // before the unified-entry rework: a single-adapter bundle with
+    // strict typing. The Vite plugin rewrites `attaform/zod` to this
+    // path at build time when zod@^4 is detected, so most Vite
+    // consumers ship this regardless of which import they wrote.
+    //
+    // Cap at 36 KB to match zod-v3.mjs — unbuild's chunker pulls
+    // unified-entry shared code into v4's closure on this branch,
+    // adding ~5 KB over the pre-rework single-adapter baseline.
+    // Measured at 34.89 KB.
+    limit: '36 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
@@ -210,7 +239,14 @@ export default [
     // bump (same shared core chunk + v3 fieldMeta WeakMap shim +
     // withMeta clone via constructor+_def + v3 getFieldMetaAtPath
     // resolver). Measured at 29.05 KB.
-    limit: '30 KB',
+    //
+    // Raised 30 → 36 KB on the unified-attaform/zod-entry branch:
+    // unbuild's chunker now shares more code between zod-v3.mjs and
+    // the unified zod.mjs (which imports from both v3 and v4). The
+    // shared chunk pulls extra symbols into v3's closure that
+    // weren't there when zod.mjs was a single-adapter v4 bundle.
+    // Measured at 34.49 KB; 1.51 KB headroom.
+    limit: '36 KB',
     gzip: true,
     ignore: ['zod', 'lodash-es'],
     modifyEsbuildConfig: asEsm,
@@ -224,7 +260,14 @@ export default [
   },
   {
     path: 'dist/vite.mjs',
-    limit: '4 KB',
+    // Raised 4 → 5 KB on the unified-attaform/zod-entry branch: the
+    // plugin gained a `resolveId` hook + Zod-major detection
+    // (`detectZodMajor` reads the consumer's `zod/package.json` via
+    // `import.meta.resolve`) + the `resolveZodAlias` opt-out + the
+    // associated diagnostic copy (missing-zod throw, unparseable-
+    // version warn). Measured at 4.19 KB; ~0.8 KB headroom for the
+    // follow-up docs / test commit.
+    limit: '5 KB',
     gzip: true,
     ignore: ['vite'],
     modifyEsbuildConfig: asEsmNode,

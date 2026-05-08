@@ -35,6 +35,31 @@ const isRealBuild =
   existsSync(join(distDir, 'index.mjs')) &&
   !/from\s*['"][^'"]*jiti[^'"]*['"]/.test(readFileSync(join(distDir, 'index.mjs'), 'utf-8'))
 
+/**
+ * Walk a dist entry's transitive import graph and return true if any
+ * file in the closure imports the bare `zod` specifier. Unbuild's
+ * shared-chunk splitter can hoist `from 'zod'` out of an entry into
+ * a shared chunk; checking only the entry would miss the dependency.
+ */
+function closureContainsZodImport(entryPath: string): boolean {
+  const seen = new Set<string>()
+  const stack: string[] = [entryPath]
+  while (stack.length > 0) {
+    const current = stack.pop()
+    if (current === undefined || seen.has(current)) continue
+    seen.add(current)
+    if (!existsSync(current)) continue
+    const src = readFileSync(current, 'utf-8')
+    if (/from\s*['"]zod['"]/.test(src) || /require\(\s*['"]zod['"]\s*\)/.test(src)) return true
+    // Pull every relative import so the walk follows shared chunks.
+    for (const match of src.matchAll(/from\s*['"](\.\/[^'"]+)['"]/g)) {
+      const spec = match[1]
+      if (spec !== undefined) stack.push(join(current, '..', spec))
+    }
+  }
+  return false
+}
+
 describe.skipIf(!existsSync(distDir) || !isRealBuild)('packaging: package.json exports', () => {
   it('main points at a file that exists', () => {
     expect(existsSync(join(repoRoot, pkg.main))).toBe(true)
@@ -58,8 +83,8 @@ describe.skipIf(!existsSync(distDir) || !isRealBuild)('packaging: package.json e
     })
   }
 
-  it('all five expected entries are present', () => {
-    for (const name of ['nuxt', 'index', 'vite', 'transforms', 'zod-v3']) {
+  it('all expected entries are present', () => {
+    for (const name of ['nuxt', 'index', 'vite', 'transforms', 'zod', 'zod-v3', 'zod-v4']) {
       expect(existsSync(join(distDir, `${name}.mjs`)), `${name}.mjs`).toBe(true)
       expect(existsSync(join(distDir, `${name}.d.mts`)), `${name}.d.mts`).toBe(true)
     }
@@ -73,9 +98,20 @@ describe.skipIf(!existsSync(distDir) || !isRealBuild)('packaging: package.json e
     expect(src).not.toMatch(/require\(\s*['"]zod['"]\s*\)/)
   })
 
-  it('zod-v3 entry references zod', () => {
-    const src = readFileSync(join(distDir, 'zod-v3.mjs'), 'utf-8')
-    expect(src).toMatch(/from\s*['"]zod['"]/)
+  it('zod-v3 entry references zod (directly or via a shared chunk)', () => {
+    // Unbuild's chunker may pull the zod import into a shared chunk
+    // when more than one entry shares v3 internals (e.g. the unified
+    // entry's runtime dispatch). Either form is correct — the v3
+    // adapter must depend on zod somewhere in its closure.
+    expect(closureContainsZodImport(join(distDir, 'zod-v3.mjs'))).toBe(true)
+  })
+
+  it('zod-v4 entry references zod (directly or via a shared chunk)', () => {
+    expect(closureContainsZodImport(join(distDir, 'zod-v4.mjs'))).toBe(true)
+  })
+
+  it('zod (unified) entry references zod (directly or via a shared chunk)', () => {
+    expect(closureContainsZodImport(join(distDir, 'zod.mjs'))).toBe(true)
   })
 
   it('no dist bundle imports `zod-v3` (the pnpm-alias specifier gets rewritten)', () => {
@@ -84,7 +120,7 @@ describe.skipIf(!existsSync(distDir) || !isRealBuild)('packaging: package.json e
     // externalize as `from 'zod-v3'` and consumers would hit resolution
     // failures at install time. We exclude error-message string literals
     // from the check.
-    for (const name of ['index', 'nuxt', 'vite', 'transforms', 'zod', 'zod-v3']) {
+    for (const name of ['index', 'nuxt', 'vite', 'transforms', 'zod', 'zod-v3', 'zod-v4']) {
       const mjs = readFileSync(join(distDir, `${name}.mjs`), 'utf-8')
       expect(mjs, `${name}.mjs imports zod-v3`).not.toMatch(
         /from\s*['"]zod-v3['"]|require\(\s*['"]zod-v3['"]\s*\)/

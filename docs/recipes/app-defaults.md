@@ -2,7 +2,7 @@
 description: 'Configure Attaform defaults across your whole Vue 3 app — storage backend, debounce, error policy, persistence opt-in — set once, apply everywhere.'
 ---
 
-# App-level defaults
+# Global defaults
 
 Attaform ships sensible library defaults (`validateOn: 'change'`,
 `debounceMs: 0`, `strict: true`, `coerce: true`,
@@ -111,7 +111,7 @@ What's **not** supported (and why):
 
 ## Per-form `defaultValues`
 
-App-level defaults shape options like `strict` and `validateOn`.
+Global defaults shape options like `strict` and `validateOn`.
 Per-form initial values live on each `useForm({ defaultValues })`
 call.
 

@@ -51,7 +51,7 @@ Both forms are equivalent — the configKey form is what most Nuxt module docs l
 
 | Option            | Type                            | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | ----------------- | ------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `defaults`        | [`AttaformDefaults`](#defaults) | `{}`    | App-level defaults applied to every `useForm` call. Per-form options always win. See [App-level defaults](/docs/recipes/app-defaults) for the resolution order, merge semantics, and the full list of supported keys (`strict`, `validateOn`, `debounceMs`, `onInvalidSubmit`, `history`, `rememberVariants`, `coerce`).                                                                                                                                                                                             |
+| `defaults`        | [`AttaformDefaults`](#defaults) | `{}`    | Global defaults applied to every `useForm` call. Per-form options always win. See [Global defaults](/docs/recipes/app-defaults) for the resolution order, merge semantics, and the full list of supported keys (`strict`, `validateOn`, `debounceMs`, `onInvalidSubmit`, `history`, `rememberVariants`, `coerce`).                                                                                                                                                                                                   |
 | `resolveZodAlias` | `boolean`                       | `true`  | Forwarded to [`attaform/vite`'s `resolveZodAlias`](/docs/api/vite#resolvezodalias) option. When `true`, `attaform/zod` imports are rewritten at build time to either `attaform/zod-v3` or `attaform/zod-v4` based on the installed Zod major, so the bundle ships exactly one adapter. Set to `false` to bypass the rewrite and ship the runtime-dispatch unified entry instead — useful when your project intentionally has both Zod versions installed (via aliasing) or when monorepo resolution is non-standard. |
 
 ### `defaults`
@@ -70,7 +70,7 @@ type AttaformDefaults = {
 }
 ```
 
-`schema`, `key`, `defaultValues`, and `persist` are intentionally NOT supported at the app level — see [App-level defaults § What's supported](/docs/recipes/app-defaults#whats-supported) for the rationale.
+`schema`, `key`, `defaultValues`, and `persist` are intentionally NOT supported at the app level — see [Global defaults § What's supported](/docs/recipes/app-defaults#whats-supported) for the rationale.
 
 ### Reading defaults at runtime
 
@@ -109,6 +109,6 @@ If you're driving SSR manually (custom Vite SSR, Vue's `renderToString` directly
 
 ## See also
 
-- [App-level defaults](/docs/recipes/app-defaults) — full options table, resolution order, and merge semantics.
+- [Global defaults](/docs/recipes/app-defaults) — full options table, resolution order, and merge semantics.
 - [`attaform/vite`](/docs/api/vite) — the Vite plugin the module installs for you. Same `resolveZodAlias` option lives there.
 - [SSR hydration](/docs/recipes/ssr-hydration) — the underlying payload mechanism the module wires up automatically.

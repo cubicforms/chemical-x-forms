@@ -23,7 +23,10 @@
  *   import { z } from 'zod'
  *
  *   const { register, handleSubmit, errors } = useForm({
- *     schema: z.object({ email: z.email() }),
+ *     schema: z.object({
+ *       username: z.string().min(2, 'At least 2 characters'),
+ *       password: z.string().min(8, 'At least 8 characters'),
+ *     }),
  *     key: 'signup',
  *   })
  *
@@ -31,11 +34,11 @@
  * - `useForm` — runtime-dispatching wrapper.
  * - `injectForm`, `useRegister`, `unset` / `isUnset`,
  *   `AttaformErrorCode` — schema-agnostic; identical across adapters.
- * - `fieldMeta`, `withMeta` — re-exported from the v4 adapter. With
- *   the build-time alias the consumer's bundle gets the right
- *   `fieldMeta` for their Zod version. Without the alias, v3
- *   consumers should import `fieldMeta` from `attaform/zod-v3`
- *   directly.
+ * - `fieldMeta`, `withMeta` — backed by a shared cross-adapter store
+ *   so writes from this entry are visible at lookup whether the v3
+ *   or v4 adapter runs at call time. `withMeta` runtime-branches on
+ *   schema shape so the right cloning strategy applies for each
+ *   major.
  *
  * Surfaces NOT exposed here (use the explicit subpath):
  * - `UnsupportedSchemaError`, `zodAdapter`, `assertZodVersion`,
@@ -48,5 +51,5 @@ export { useRegister } from './runtime/composables/use-register'
 export { AttaformErrorCode } from './runtime/core/error-codes'
 export { unset, isUnset } from './runtime/core/unset'
 export type { Unset } from './runtime/core/unset'
-export { fieldMeta, withMeta } from './runtime/adapters/zod-v4/field-meta'
+export { fieldMeta, withMeta } from './runtime/adapters/unified/field-meta'
 export type { FieldMetaPayload } from './runtime/core/field-meta'

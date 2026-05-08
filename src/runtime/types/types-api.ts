@@ -441,8 +441,8 @@ export type AbstractSchema<Form, GetValueFormType> = {
    * Return the resolved field metadata for the schema node at `path`
    * — label, description, placeholder, plus the full registered
    * payload as `meta` for consumer-augmented keys. Reads through the
-   * adapter's metadata mechanism (Zod 4: `z.registry()`; Zod 3:
-   * a WeakMap shim) and applies these one-way fallbacks:
+   * shared cross-adapter field-meta store and applies these one-way
+   * fallbacks:
    *
    *   - `label`:       registry payload → `humanize(lastSegment)`
    *   - `description`: registry payload → `schema.description`
@@ -1947,9 +1947,9 @@ export type FieldState<Value = unknown> = {
   readonly blank: boolean
   /**
    * Presentational label for this field. Resolves through the
-   * adapter's metadata mechanism — Zod 4's `z.registry()` (typed
-   * payload via `schema.register(fieldMeta, {...})` or the
-   * `withMeta()` helper); Zod 3's WeakMap shim — and falls back to
+   * shared cross-adapter field-meta store — written via
+   * `schema.register(fieldMeta, {...})` (Zod 4 native chain) or the
+   * `withMeta()` helper (works on both majors) — and falls back to
    * a humanized form of the path's last segment when nothing has
    * been registered. Always a string.
    *

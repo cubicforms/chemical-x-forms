@@ -1,11 +1,16 @@
 /**
  * Field-metadata write/read API for the Zod v3 adapter.
  *
- * Zod 3 has no `z.registry()` mechanism, so we shim one with a
- * module-scoped `WeakMap<ZodTypeAny, FieldMetaPayload>` plus a
- * registry-shaped object exposing `add` / `get` / `has`. The public
- * `withMeta(schema, payload)` write API matches `attaform/zod` so
- * schema authoring reads identically across the two adapters.
+ * Storage lives in the shared `field-meta-store` core — every entry
+ * (`attaform/zod`, `attaform/zod-v3`, `attaform/zod-v4`) writes to and
+ * reads from the same `WeakMap`s, so a payload registered via any
+ * entry surfaces at lookup regardless of which adapter actually runs.
+ *
+ * Zod 3 has no `z.registry()` mechanism, so `fieldMeta` is the
+ * shared registry-shaped object exposing `add` / `get` / `has` /
+ * `remove`. The public `withMeta(schema, payload)` write API matches
+ * `attaform/zod`'s so schema authoring reads identically across the
+ * two adapters.
  *
  * **Registration patterns:** both styles work — register on whatever
  * schema reference you assign into the parent's shape, OR on the
@@ -23,14 +28,13 @@
  */
 import type { z } from 'zod-v3'
 import type { FieldMetaPayload } from '../../core/field-meta'
-
-const store = new WeakMap<z.ZodTypeAny, FieldMetaPayload>()
+import { fieldMetaStore, getFieldMetaForSchema } from '../../core/field-meta-store'
 
 /**
  * The shared registry every Attaform-aware Zod 3 schema can register
- * field metadata against. Exposes a registry-shaped surface so that
- * v3 user code can use the same idiom v4 users do (`fieldMeta.add(schema,
- * payload)`); under the hood it's just a `WeakMap`.
+ * field metadata against. Backed by the cross-adapter
+ * `fieldMetaStore` — a payload registered here is visible to the v4
+ * adapter and the unified `attaform/zod` entry, and vice versa.
  */
 type FieldMetaRegistryV3 = {
   /**
@@ -47,25 +51,14 @@ type FieldMetaRegistryV3 = {
   has(schema: z.ZodTypeAny): boolean
 }
 
-export const fieldMeta: FieldMetaRegistryV3 = {
-  add(schema, payload) {
-    store.set(schema, payload)
-    return fieldMeta
-  },
-  get(schema) {
-    return store.get(schema)
-  },
-  has(schema) {
-    return store.has(schema)
-  },
-}
+export const fieldMeta = fieldMetaStore as unknown as FieldMetaRegistryV3
 
 /**
  * Attach `payload` to `schema` in the shared `fieldMeta` registry
  * and return a clone of `schema` (chainable, with the new metadata).
  * Cross-version with `attaform/zod`'s `withMeta()`.
  *
- * **Why clone, not mutate.** The WeakMap shim keys metadata on the
+ * **Why clone, not mutate.** The shared store keys metadata on the
  * schema reference. Calling `withMeta` twice on the same instance
  * would overwrite (last-write-wins) — so a sub-schema reused at
  * multiple form paths (e.g. an address schema shared between pickup
@@ -83,18 +76,18 @@ export const fieldMeta: FieldMetaRegistryV3 = {
  * registers once and surfaces at every path.
  *
  * `schema.register()` does NOT exist on Zod 3 — `withMeta` is the
- * only write API. Register on the inner schema before wrapping;
- * see the "Registration rule" note in this file's header.
+ * only fluent write API. Register on the inner schema before
+ * wrapping; see the "Registration rule" note in this file's header.
  */
 export function withMeta<S extends z.ZodTypeAny>(schema: S, payload: FieldMetaPayload): S {
-  const existing = store.get(schema) ?? {}
+  const existing = getFieldMetaForSchema(schema as object) ?? {}
   // Zod 3 lacks a public `.clone()`, so reconstruct via the
   // constructor + _def. Each ZodSchema subclass's constructor takes
   // a `_def` object and produces an instance — same shape, fresh
   // identity.
   const Ctor = schema.constructor as new (def: S['_def']) => S
   const cloned = new Ctor(schema._def)
-  store.set(cloned, { ...existing, ...payload })
+  fieldMetaStore.add(cloned as object, { ...existing, ...payload })
   return cloned
 }
 
@@ -107,5 +100,5 @@ export function withMeta<S extends z.ZodTypeAny>(schema: S, payload: FieldMetaPa
  * Not part of the public `attaform/zod-v3` surface.
  */
 export function getFieldMeta(schema: z.ZodTypeAny): FieldMetaPayload | undefined {
-  return store.get(schema)
+  return getFieldMetaForSchema(schema as object)
 }

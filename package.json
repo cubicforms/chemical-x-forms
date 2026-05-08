@@ -118,7 +118,15 @@
   "pnpm": {
     "overrides": {
       "@nuxt/devtools": "3.2.4"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "better-sqlite3",
+      "esbuild",
+      "sharp",
+      "unrs-resolver",
+      "vue-demi"
+    ]
   },
   "devDependencies": {
     "@commitlint/cli": "^20.5.0",

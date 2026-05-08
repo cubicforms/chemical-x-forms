@@ -4,74 +4,25 @@ description: 'Five minutes from pnpm install to a working Vue 3 form: write a Zo
 
 # Quick start
 
-Get a working Attaform form on screen in under five minutes. The
-mainline path is Nuxt — bare-Vue + Vite is one section down.
+Get a working Attaform form on screen in under five minutes.
 
 ## 1. Install
 
 ::ui-install-command{:show-quick-start="false"}
 ::
 
-`zod` is a peer dependency. Requires Vue 3 and Zod 4 — for Zod v3,
-swap the import for [`attaform/zod-v3`](/docs/api/zod-v3) (same
-surface, separate adapter).
+`zod` is a peer dependency. Both Zod 3 and Zod 4 are supported — `attaform/zod` auto-detects the version you have installed.
 
-## 2. Wire it up
-
-### Nuxt 3 / 4
-
-Add the module to `nuxt.config.ts`:
-
-```ts
-export default defineNuxtConfig({
-  modules: ['attaform/nuxt'],
-})
-```
-
-That's everything. The module installs the plugin, registers the
-`v-register` directive, and auto-imports `useForm` so you can call
-it without an explicit import.
-
-### Bare Vue + Vite
-
-```ts
-// vite.config.ts
-import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
-import { attaform } from 'attaform/vite'
-
-export default defineConfig({
-  plugins: [vue(), attaform()],
-})
-```
-
-```ts
-// main.ts
-import { createApp } from 'vue'
-import { createAttaform } from 'attaform'
-import App from './App.vue'
-
-createApp(App).use(createAttaform()).mount('#app')
-```
-
-The Vite plugin is required for SSR-correct `v-register` bindings.
-For other bundlers, see [`attaform/transforms`](/docs/api/transforms).
-
-## 3. Your first form
+## 2. Your first form
 
 ```vue
 <script setup lang="ts">
   import { z } from 'zod'
-  import { useForm, fieldMeta } from 'attaform/zod' // or auto-imported under Nuxt
+  import { useForm } from 'attaform/zod'
 
   const schema = z.object({
-    email: z.email().register(fieldMeta, {
-      label: 'Email',
-      placeholder: 'you@example.com',
-    }),
-    password: z.string().min(8, 'At least 8 characters').register(fieldMeta, {
-      label: 'Password',
-    }),
+    email: z.email(),
+    password: z.string().min(8, 'At least 8 characters'),
   })
 
   const form = useForm({ schema, key: 'signup' })
@@ -85,17 +36,13 @@ For other bundlers, see [`attaform/transforms`](/docs/api/transforms).
 <template>
   <form @submit.prevent="onSubmit">
     <label>
-      {{ form.fields.email.label }}
-      <input
-        v-register="form.register('email')"
-        type="email"
-        :placeholder="form.fields.email.placeholder"
-      />
+      Email
+      <input v-register="form.register('email')" type="email" />
       <small>{{ form.errors.email?.[0]?.message }}</small>
     </label>
 
     <label>
-      {{ form.fields.password.label }}
+      Password
       <input v-register="form.register('password')" type="password" />
       <small>{{ form.errors.password?.[0]?.message }}</small>
     </label>
@@ -107,22 +54,96 @@ For other bundlers, see [`attaform/transforms`](/docs/api/transforms).
 </template>
 ```
 
-This shows four things:
+That's the whole library in one screen:
 
-- **`v-register`** binds a native input directly to a path on the form.
-  No two-way wiring, no manual `v-model` plumbing.
-- **`fieldMeta`** attaches labels and placeholders to schema fields.
-  Read them off `form.fields.<path>.label` / `.placeholder` — schema is the
-  single source of truth for both shape and presentation.
-- **`form.errors`** is a reactive proxy. Refinement errors surface as
-  the user types; required-field "no value supplied" errors fire on
-  submit.
-- **`form.meta.valid`** and `form.meta.submitting` gate the
-  submit button — submit auto-runs validation first, so the callback
-  receives strictly-typed values.
+- **`v-register`** binds a native input directly to a path on the form. No two-way wiring, no manual `v-model` plumbing.
+- **`form.errors`** is a reactive proxy. Refinement errors surface as the user types; required-field "no value supplied" errors fire on submit.
+- **`form.meta.valid`** and `form.meta.submitting` gate the submit button — submit auto-runs validation first, so the callback receives strictly-typed values.
 
-Open the [live playground](/play) to edit this exact example without
-leaving the browser.
+You don't need to call `app.use(createAttaform())` or add a Vite plugin to get this working — `useForm` auto-installs the registry the first time you call it.
+
+Open the [live playground](/play) to edit this exact example without leaving the browser.
+
+## 3. Going further
+
+Each section below opts in to a layered capability. None are required for the example above.
+
+### Adding labels and placeholders
+
+Attach metadata to fields so the schema stays the single source of truth for both shape and presentation:
+
+```vue
+<script setup lang="ts">
+  import { z } from 'zod'
+  import { useForm, fieldMeta } from 'attaform/zod'
+
+  const schema = z.object({
+    email: z.email().register(fieldMeta, {
+      label: 'Email',
+      placeholder: 'you@example.com',
+    }),
+    password: z.string().min(8).register(fieldMeta, { label: 'Password' }),
+  })
+
+  const form = useForm({ schema, key: 'signup' })
+</script>
+
+<template>
+  <label>
+    {{ form.fields.email.label }}
+    <input
+      v-register="form.register('email')"
+      type="email"
+      :placeholder="form.fields.email.placeholder"
+    />
+  </label>
+</template>
+```
+
+Read `form.fields.<path>.label` / `.placeholder` (and any custom metadata you attach) directly in the template. See [Schema-attached metadata](/docs/api/zod#schema-attached-metadata) for the full surface.
+
+### Bare Vue + SSR
+
+For server-rendered pages, install the Vite plugin so `:value` / `:checked` / `:selected` bindings appear in the SSR HTML — without it, the first render is correct but `v-register`-bound elements briefly flash blank during hydration.
+
+```ts
+// vite.config.ts
+import vue from '@vitejs/plugin-vue'
+import { attaform } from 'attaform/vite'
+
+export default defineConfig({
+  plugins: [vue(), attaform()],
+})
+```
+
+The Vite plugin also rewrites `attaform/zod` imports at build time to either `attaform/zod-v3` or `attaform/zod-v4` based on the Zod major you installed — your bundle ships exactly one adapter. Pass `attaform({ resolveZodAlias: false })` to opt out (e.g. when intentionally running both Zod versions side by side).
+
+For [SSR payload round-tripping](/docs/recipes/ssr-hydration) (`renderAttaformState` / `hydrateAttaformState`), install the Vue plugin explicitly on your server entry — auto-install only covers the component-setup path.
+
+### Nuxt
+
+Add the module — it wires the Vite plugin (transforms + build-time alias), the SSR payload bridge, and `useForm` auto-imports in one step:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['attaform/nuxt'],
+})
+```
+
+### App-wide options
+
+If you want to set defaults across every `useForm` call (or disable devtools), install the Vue plugin explicitly. Auto-install always runs with default options; `createAttaform({ ... })` must run before the first `useForm`:
+
+```ts
+// main.ts
+import { createApp } from 'vue'
+import { createAttaform } from 'attaform'
+
+createApp(App)
+  .use(createAttaform({ defaults: { debounceMs: 100 } }))
+  .mount('#app')
+```
 
 ## 4. Where to next
 

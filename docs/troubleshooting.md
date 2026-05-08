@@ -298,6 +298,25 @@ the full contract including `isRequiredAtPath` (used by the blank
 validation augmentation) and `getSlimPrimitiveTypesAtPath` (used
 by the slim-primitive write gate).
 
+## "Which Zod entry should I import — `attaform/zod`, `/zod-v3`, or `/zod-v4`?"
+
+Default to **`attaform/zod`** for new code. It auto-detects the installed Zod major and routes to the matching adapter. With the [`attaform/vite`](./api/vite.md) plugin (or `attaform/nuxt`) installed, the import is rewritten at build time to either `attaform/zod-v3` or `attaform/zod-v4`, so your bundle ships exactly one adapter — same DX, no decision required at the call site.
+
+Reach for the explicit subpaths when:
+
+- **You're not using Vite (and want a lean bundle).** `attaform/zod` without the build-time alias falls back to runtime dispatch and ships both adapters. Importing [`attaform/zod-v3`](./api/zod-v3.md) or [`attaform/zod-v4`](./api/zod-v4.md) directly gives you a single-adapter bundle on webpack, esbuild, Rollup, and friends.
+- **You intentionally have both Zod versions installed** (e.g. via `pnpm add zod zod-v3`). Pin each import site to the version you mean.
+- **You hit a Zod 3 type-inference edge case under the unified entry.** The unified entry's TypeScript signature targets Zod 4; importing from `attaform/zod-v3` gives Zod 3 consumers the strongest inference.
+
+## "My bundle ships both Zod adapters — how do I trim it?"
+
+Two paths:
+
+- **Vite consumers:** install [`attaform/vite`](./api/vite.md) (or use the [Nuxt module](./api/nuxt.md), which installs it for you). The plugin rewrites `attaform/zod` to the matching subpath at build time. No code changes required.
+- **Other bundlers:** swap `import { useForm } from 'attaform/zod'` for the explicit subpath — `attaform/zod-v3` or `attaform/zod-v4` — at every call site. The unified entry's runtime dispatch is the only path that pulls in both adapters.
+
+The Vite plugin can also be opted out via `attaform({ resolveZodAlias: false })` — useful when your project intentionally mixes Zod versions and the runtime dispatch is the right behavior.
+
 ## "Dev warnings don't fire — am I in production?"
 
 The library uses a `__DEV__` flag that resolves from

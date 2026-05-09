@@ -1,5 +1,16 @@
 # Releases
 
+## v0.16.3 — 2026-05-09
+
+## What's Changed
+* fix(zod): unify fieldMeta storage; portable hello-world example by @ozzyfromspace in https://github.com/attaform/Attaform/pull/181
+* chore(site): IndexNow ping for Bing/Yandex/Naver/Seznam fast-recrawl by @ozzyfromspace in https://github.com/attaform/Attaform/pull/182
+
+
+**Full Changelog**: https://github.com/attaform/Attaform/compare/v0.16.2...v0.16.3
+
+---
+
 ## v0.16.2 — 2026-05-08
 
 ## What's Changed

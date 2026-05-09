@@ -16,6 +16,17 @@
       // Hardcoded accent fill (#6938ef) + white "A" strokes so the
       // mark reads cleanly on both light and dark browser chrome.
       { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+      // Raster fallbacks. Bing's SERP favicon pipeline fetches
+      // /favicon.ico directly and won't fall back to SVG, so we
+      // ship a multi-size ICO (16/32/48) for search engines and
+      // older browsers. The matching `apple-touch-icon.png` for
+      // iOS home-screen bookmarks is auto-injected by
+      // `nuxt-seo-utils` (via @nuxtjs/seo) when it scans
+      // `public/` — no explicit <link> needed for that one.
+      // All three rasters come from `favicon.svg` via
+      // `scripts/generate-favicons.mjs`.
+      { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico', sizes: 'any' },
+      { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32.png' },
     ],
     meta: [
       // Tints mobile-browser chrome (Safari status bar on iOS, the

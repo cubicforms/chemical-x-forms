@@ -111,6 +111,8 @@ export type {
   SetValueCallback,
   SetValuePayload,
   SettledValidationStatus,
+  ShouldShowErrors,
+  ShouldShowErrorsConfig,
   SlimPrimitiveKind,
   SlimRuntimeOf,
   SubmitHandler,
@@ -168,6 +170,11 @@ export {
   SensitivePersistFieldError,
   SubmitErrorHandlerError,
 } from './runtime/core/errors'
+
+// Library-default heuristic for `shouldShowErrors`. Public so adopter
+// predicates can compose with it (a layered predicate that defers to
+// the library default for the unhandled cases).
+export { defaultShouldShowErrors } from './runtime/core/should-show-errors'
 
 // API-error parser. Pure transformation: takes a server response in
 // the common shapes (wrapped envelope, raw details record) and returns

@@ -15,7 +15,12 @@ import type { FormStore } from './create-form-store'
 import { structuralSnapshot } from './diff-apply'
 import { buildErrorsProxy } from './errors-proxy'
 import { buildFieldArrayApi } from './field-arrays'
-import { aggregateErrorsAt, buildFieldStateAccessor } from './field-state-api'
+import {
+  aggregateErrorsAt,
+  buildContainerFieldStateBase,
+  buildFieldStateAccessor,
+  type FormMetaBase,
+} from './field-state-api'
 import { buildFieldStateProxy } from './field-state-proxy'
 import type { HistoryModule } from './history'
 import { getAtPath } from './path-walker'
@@ -24,6 +29,7 @@ import {
   FORM_ERRORS_PATH,
   FORM_ERRORS_PATH_KEY,
   ROOT_PATH,
+  ROOT_PATH_KEY,
   segmentsForPathKey,
   type Path,
   type PathKey,
@@ -397,7 +403,29 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // reference returned by `form.fields()`) so `form.meta.dirty`,
   // `form.fields().dirty`, and `form.fields([]).dirty` all read
   // identical aggregated state.
-  const getRootFieldStateAt = buildFieldStateAccessor(state)
+  // Thunk producing a fresh `FormMetaBase` snapshot on each call —
+  // the omit'd-shape second argument to `state.shouldShowErrors`.
+  // Reads run inside the field-state computed, so every reactive
+  // primitive touched here (submitCount, canUndo, ...) registers as
+  // a dependency of that computed. Bypasses the cached field-state
+  // accessor by calling `buildContainerFieldStateBase` directly —
+  // going through the accessor would recurse through the root path's
+  // own showErrors computation.
+  const getFormMetaBase = (): FormMetaBase => {
+    const rootBase = buildContainerFieldStateBase(state, ROOT_PATH, ROOT_PATH_KEY)
+    return {
+      ...rootBase,
+      submitting: state.submitting.value,
+      submitCount: state.submitCount.value,
+      submitError: state.submitError.value,
+      canUndo: canUndo.value,
+      canRedo: canRedo.value,
+      historySize: historySize.value,
+      instanceId: formInstanceId,
+    }
+  }
+
+  const getRootFieldStateAt = buildFieldStateAccessor(state, getFormMetaBase)
   const rootFieldState = getRootFieldStateAt([] as Path)
   const formMeta = readonly(
     reactive({
@@ -433,6 +461,13 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       // keep the explicit form-level computation for the gate.
       valid,
       errors: metaErrors,
+      // `showErrors` / `firstError` flow through the same root
+      // field-state computed as the rest of the FieldState surface,
+      // so `form.meta.showErrors` matches `form.fields().showErrors`
+      // exactly — the predicate runs once at the root and the result
+      // is shared.
+      showErrors: computed(() => rootFieldState.value.showErrors),
+      firstError: computed(() => rootFieldState.value.firstError),
       path: computed(() => rootFieldState.value.path),
       blank: computed(() => rootFieldState.value.blank),
       label: computed(() => rootFieldState.value.label),
@@ -597,7 +632,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // computed it reads through, so repeated access to the same path
   // (`form.fields.email` twice) returns the same object — useful
   // for downstream `===` checks and Vue's render diff.
-  const fieldStateProxy = buildFieldStateProxy(state)
+  const fieldStateProxy = buildFieldStateProxy(state, getFormMetaBase)
 
   return {
     handleSubmit,

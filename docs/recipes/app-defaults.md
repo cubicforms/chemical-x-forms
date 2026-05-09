@@ -97,8 +97,16 @@ type AttaformDefaults = {
   history?: true | { max?: number }
   rememberVariants?: boolean
   coerce?: boolean | CoercionRegistry
+  shouldShowErrors?: ShouldShowErrors | boolean
 }
 ```
+
+`shouldShowErrors` drives `field.showErrors` and
+`form.meta.showErrors` — the centralised "is this error ready to
+render?" gate. Set once at the app level so every form follows the
+same convention. See [Error display](./error-display) for the full
+contract, the predicate signature, and how to compose with the
+library default.
 
 What's **not** supported (and why):
 

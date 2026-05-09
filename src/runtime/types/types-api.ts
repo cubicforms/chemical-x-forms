@@ -1032,6 +1032,17 @@ export type UseFormConfiguration<
    * coerced.
    */
   coerce?: boolean | CoercionRegistry
+  /**
+   * Per-form override of the `shouldShowErrors` heuristic that drives
+   * `field.showErrors` and `form.meta.showErrors`. Falls back to
+   * `AttaformDefaults.shouldShowErrors`, then to the library default
+   * (`defaultShouldShowErrors`). See `AttaformDefaults.shouldShowErrors`
+   * for the resolution rules and predicate signature.
+   *
+   * Boolean shorthand: `true` → always show *when errors exist*;
+   * `false` → never show.
+   */
+  shouldShowErrors?: ShouldShowErrorsConfig
 }
 
 /**
@@ -1098,6 +1109,34 @@ export type AttaformDefaults = {
    * authoritative writes whose strict typing is on the caller.
    */
   coerce?: boolean | CoercionRegistry
+  /**
+   * Default for `useForm({ shouldShowErrors })`. Centralised heuristic
+   * that drives `field.showErrors` (and `form.meta.showErrors`) — a
+   * boolean that gates whether a path's errors are *ready* to render.
+   *
+   * Resolution order (per-form wins):
+   *
+   *   useForm({ shouldShowErrors })  >  AttaformDefaults  >  library default
+   *
+   * The library default reads "show after the first submit attempt OR
+   * after the field has been interacted with AND changed":
+   *
+   * ```ts
+   * (field, formMeta) =>
+   *   formMeta.submitCount > 0 || (field.touched === true && field.dirty)
+   * ```
+   *
+   * Compose with the library default via the public
+   * `defaultShouldShowErrors` export. Boolean shorthand is supported:
+   * `true` → always show *when errors exist*; `false` → never show. The
+   * predicate is invoked only when `errors.length > 0`, so authors
+   * don't re-check inside.
+   *
+   * The predicate's args are `Omit`'d of `showErrors` / `firstError`
+   * to prevent recursive predicates — those are derived FROM this
+   * predicate, so reading them inside would be a self-reference.
+   */
+  shouldShowErrors?: ShouldShowErrorsConfig
 }
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>
@@ -1126,6 +1165,51 @@ export type OnSubmit<Form extends GenericForm> = (form: Form) => void | Promise<
  * automatic `onInvalidSubmit` UI nudge).
  */
 export type OnError = (error: ValidationError[]) => void | Promise<void>
+
+/**
+ * Predicate that drives `field.showErrors` (and `form.meta.showErrors`).
+ * Receives the field's reactive state plus the form's reactive meta;
+ * returns `true` to render the field's errors, `false` to keep them
+ * hidden. The framework gates the call on `errors.length > 0`, so
+ * authors don't re-check error presence inside.
+ *
+ * Both arguments are `Omit`'d of `showErrors` / `firstError` — those
+ * are derived FROM this predicate, so reading them inside would be a
+ * self-reference. The omit is enforced at the type level AND at
+ * runtime: the keys literally are not present on the objects passed
+ * in, so `as` casting in TS or vanilla-JS bypass cannot create a
+ * cycle.
+ *
+ * The library default — `defaultShouldShowErrors` — is publicly
+ * exported so a layered predicate can compose with it:
+ *
+ * ```ts
+ * import { defaultShouldShowErrors } from 'attaform'
+ *
+ * useForm({
+ *   schema,
+ *   shouldShowErrors: (field, formMeta) =>
+ *     field.path[0] === 'urgent' || defaultShouldShowErrors(field, formMeta),
+ * })
+ * ```
+ */
+export type ShouldShowErrors = (
+  field: Omit<FieldState, 'showErrors' | 'firstError'>,
+  formMeta: Omit<FormMeta, 'showErrors' | 'firstError'>
+) => boolean
+
+/**
+ * Configuration shape for `shouldShowErrors`. A predicate function or
+ * a boolean shorthand:
+ *
+ * - `true` — always show errors (when any exist).
+ * - `false` — never show errors.
+ * - function — custom predicate, see `ShouldShowErrors`.
+ *
+ * Resolved through three tiers (per-form > plugin defaults > library
+ * default).
+ */
+export type ShouldShowErrorsConfig = ShouldShowErrors | boolean
 
 /**
  * Submit handler returned by `handleSubmit(onSubmit, onError)`. Bind
@@ -1949,6 +2033,51 @@ export type FieldState<Value = unknown> = {
    * green-checkmark / `aria-invalid` UX.
    */
   readonly valid: boolean
+  /**
+   * Centralised "should I render this field's errors right now?"
+   * gate. Wraps `errors.length > 0 && shouldShowErrors(field, formMeta)`
+   * so templates avoid re-spelling the heuristic at every error site:
+   *
+   * ```vue
+   * <span v-if="form.fields.email.showErrors">
+   *   {{ form.fields.email.firstError?.message }}
+   * </span>
+   * ```
+   *
+   * The heuristic itself comes from `useForm({ shouldShowErrors })` →
+   * `createAttaform({ defaults: { shouldShowErrors } })` → library
+   * default (`defaultShouldShowErrors` — show after first submit OR
+   * after touched-and-dirty). Override per form, app-wide, or
+   * compose with `defaultShouldShowErrors` for a layered predicate.
+   *
+   * Falls back to `false` whenever there are no errors — the gate
+   * skips the predicate entirely in that case.
+   *
+   * Available on container paths too: `form.fields.users[0].showErrors`
+   * aggregates over the row's descendants (any descendant with a
+   * qualifying error flips the container on).
+   */
+  readonly showErrors: boolean
+  /**
+   * The first `ValidationError` at this path in the deterministic
+   * schema-declaration order — equivalent to `errors[0]`, exposed as
+   * a sugar accessor for the common case of "show the highest-priority
+   * error message and ignore the rest":
+   *
+   * ```vue
+   * <span v-if="form.fields.email.showErrors">
+   *   {{ form.fields.email.firstError?.message }}
+   * </span>
+   * ```
+   *
+   * `undefined` when no errors exist. Independent of `showErrors` —
+   * the data primitive is always available; the heuristic only
+   * decides when to render it.
+   *
+   * On container paths, the first error in the aggregated subtree
+   * (descendants sorted by `pathOrdinal`).
+   */
+  readonly firstError: ValidationError | undefined
   readonly path: ReadonlyArray<string | number>
   readonly blank: boolean
   /**

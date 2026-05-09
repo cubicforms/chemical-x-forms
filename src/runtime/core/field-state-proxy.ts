@@ -1,6 +1,10 @@
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
-import { buildFieldStateAccessor, type FieldState } from './field-state-api'
+import {
+  buildFieldStateAccessor,
+  type FieldState,
+  type FormMetaBaseGetter,
+} from './field-state-api'
 import { getAtPath } from './path-walker'
 import type { Path, Segment } from './paths'
 import { buildSurfaceProxy, type SurfaceProxy } from './surface-proxy'
@@ -38,6 +42,8 @@ const FIELD_STATE_KEYS: ReadonlySet<string> = new Set<keyof FieldState<unknown>>
   'errors',
   'validating',
   'valid',
+  'showErrors',
+  'firstError',
   'path',
   'blank',
   'label',
@@ -68,8 +74,11 @@ const FIELD_STATE_KEYS: ReadonlySet<string> = new Set<keyof FieldState<unknown>>
  *   triggers the computed's evaluation; the bracket lookup is a plain
  *   object read against the resulting `FieldState`.
  */
-export function buildFieldStateProxy<F extends GenericForm>(state: FormStore<F>): SurfaceProxy {
-  const getFieldStateAt = buildFieldStateAccessor(state)
+export function buildFieldStateProxy<F extends GenericForm>(
+  state: FormStore<F>,
+  getFormMetaBase: FormMetaBaseGetter
+): SurfaceProxy {
+  const getFieldStateAt = buildFieldStateAccessor(state, getFormMetaBase)
   const snapshotFieldStateAt = (path: Path): Record<string, unknown> => {
     const view = getFieldStateAt(path as Parameters<typeof getFieldStateAt>[0]).value
     const snapshot: Record<string, unknown> = {}

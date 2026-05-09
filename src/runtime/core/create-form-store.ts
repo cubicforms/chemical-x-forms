@@ -4,10 +4,13 @@ import type {
   CoercionRegistry,
   FormKey,
   DefaultValuesResponse,
+  ShouldShowErrors,
+  ShouldShowErrorsConfig,
   ValidateOn,
   ValidationError,
   WriteMeta,
 } from '../types/types-api'
+import { resolveShouldShowErrors } from './should-show-errors'
 import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
 import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS } from './defaults'
 import { applyChangedKeys, diffAndApply, structuralSnapshot, type Patch } from './diff-apply'
@@ -212,6 +215,17 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    * the eventual directive lifecycle remains the source of truth.
    */
   readonly ssr: boolean
+
+  /**
+   * Resolved `shouldShowErrors` predicate driving `field.showErrors`
+   * and `form.meta.showErrors`. Resolved once at construction via
+   * `resolveShouldShowErrors(options.shouldShowErrors)` so the
+   * field-state computeds don't repeat the boolean-vs-function
+   * branch on every read. Boolean shorthand has already been lifted
+   * to a constant predicate by the time it lands here; `undefined`
+   * config falls through to `defaultShouldShowErrors`.
+   */
+  readonly shouldShowErrors: ShouldShowErrors
 
   // --- submission lifecycle ---
   // Driven by buildProcessForm's handleSubmit wrapper. See use-abstract-form.ts
@@ -624,6 +638,15 @@ export type CreateFormStoreOptions<F extends GenericForm, G extends GenericForm 
    * `FormStore.coerceIndex`.
    */
   readonly coerce?: boolean | CoercionRegistry | undefined
+  /**
+   * Configurable predicate driving `field.showErrors` and
+   * `form.meta.showErrors`. Function | boolean | undefined; resolved
+   * once at construction via `resolveShouldShowErrors`. See
+   * `UseFormConfiguration.shouldShowErrors` and
+   * `AttaformDefaults.shouldShowErrors` for the full contract and
+   * three-tier resolution rules.
+   */
+  readonly shouldShowErrors?: ShouldShowErrorsConfig | undefined
 }
 
 /**
@@ -676,6 +699,14 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // dispatch. `register()` reads it via `state.coerceIndex` to bake
   // path-scoped coerce closures on each `RegisterValue`.
   const coerceIndex: CoercionIndex = resolveCoercionIndex(options.coerce)
+
+  // Resolve `shouldShowErrors` once. Boolean shorthand lifts to a
+  // constant predicate; `undefined` falls back to
+  // `defaultShouldShowErrors`. The field-state computeds read the
+  // resolved function directly without re-branching on type.
+  const resolvedShouldShowErrors: ShouldShowErrors = resolveShouldShowErrors(
+    options.shouldShowErrors
+  )
 
   // State-scoped teardown hooks. Persistence / history / any other
   // per-state module registers its disposer here so the cleanup is
@@ -2162,6 +2193,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     originals,
     schema,
     ssr,
+    shouldShowErrors: resolvedShouldShowErrors,
     submitting,
     activeSubmissions,
     submitCount,

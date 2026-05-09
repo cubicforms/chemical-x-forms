@@ -1,5 +1,5 @@
 import { computed, type ComputedRef } from 'vue'
-import type { FieldState, ValidationError } from '../types/types-api'
+import type { FieldState, FormMeta, ValidationError } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { EMPTY_RESOLVED_FIELD_META } from './field-meta'
@@ -40,7 +40,43 @@ import {
  */
 export type { FieldState }
 
-export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<F>) {
+/**
+ * Internal shape of a field's reactive state minus the two derived
+ * predicate-fed properties (`showErrors`, `firstError`). The
+ * predicate `state.shouldShowErrors(field, formMeta)` is invoked
+ * with this exact shape on the field side: the keys literally are
+ * not present, so a vanilla-JS adopter (or `as`-cast caller) cannot
+ * read `field.showErrors` from inside their predicate and form a
+ * cycle. Pair with `FormMetaBase` for the matching guard on the
+ * form-level argument.
+ */
+export type FieldStateBase = Omit<FieldState<unknown>, 'showErrors' | 'firstError'>
+
+/**
+ * Internal shape of the form's reactive meta minus the two derived
+ * predicate-fed properties. Same defense-in-depth role as
+ * `FieldStateBase` for the second predicate argument. Built in
+ * `build-form-api.ts` once per form (where the history options are
+ * in scope) and threaded through to the field-state computeds via
+ * the `getFormMetaBase` thunk.
+ */
+export type FormMetaBase = Omit<FormMeta<unknown>, 'showErrors' | 'firstError'>
+
+/**
+ * Thunk shape passed to `buildFieldStateAccessor`. Each call to the
+ * accessor's returned `computed` invokes this thunk to materialise
+ * a fresh `FormMetaBase` snapshot — Vue's reactivity tracks every
+ * `Ref.value` read inside, so the field-state computed re-evaluates
+ * when (e.g.) `submitCount` changes. Stateless function, not a Ref:
+ * we never need to swap predicates at runtime, and a plain function
+ * keeps the dependency graph shallow.
+ */
+export type FormMetaBaseGetter = () => FormMetaBase
+
+export function buildFieldStateAccessor<F extends GenericForm>(
+  state: FormStore<F>,
+  getFormMetaBase: FormMetaBaseGetter
+) {
   // Per-path memoisation so `getFieldStateAt(p)` returns the same
   // `ComputedRef` reference on repeated reads with the same canonical
   // path. The Map's lifetime equals the form-store's; cleared
@@ -53,8 +89,8 @@ export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<
     if (cached !== undefined) return cached
     const c = computed<FieldState<unknown>>(() =>
       state.schema.isLeafAtPath(segments)
-        ? buildLeafFieldState(state, segments, key)
-        : buildContainerFieldState(state, segments, key)
+        ? buildLeafFieldState(state, segments, key, getFormMetaBase)
+        : buildContainerFieldState(state, segments, key, getFormMetaBase)
     )
     cache.set(key, c)
     return c
@@ -62,13 +98,16 @@ export function buildFieldStateAccessor<F extends GenericForm>(state: FormStore<
 }
 
 /**
- * Per-leaf computation: reads the leaf-specific reactive sources.
+ * Per-leaf computation of the predicate-safe base shape. Reads the
+ * leaf-specific reactive sources only; does NOT compute
+ * `showErrors` / `firstError` (those are layered on by
+ * `buildLeafFieldState`).
  */
-function buildLeafFieldState<F extends GenericForm>(
+function buildLeafFieldStateBase<F extends GenericForm>(
   state: FormStore<F>,
   segments: Path,
   key: PathKey
-): FieldState<unknown> {
+): FieldStateBase {
   const record = state.fields.get(key)
   const value = state.getValueAtPath(segments)
   const original = state.originals.get(key)?.value
@@ -125,10 +164,27 @@ function buildLeafFieldState<F extends GenericForm>(
 }
 
 /**
- * Per-container aggregation: rolls up descendant-leaf state per the
- * rule sheet. Reads only ACTIVE-variant descendants — DU branches
- * not currently selected by the discriminator are filtered out via
- * `hasAtPath` on the live form value.
+ * Per-leaf full computation: builds the base, then layers on
+ * `showErrors` / `firstError` via `state.shouldShowErrors`. The
+ * base object passed to the predicate has NO `showErrors` /
+ * `firstError` keys at runtime (it's the literal `FieldStateBase`
+ * we just constructed) — recursion is impossible regardless of TS
+ * vs vanilla-JS.
+ */
+function buildLeafFieldState<F extends GenericForm>(
+  state: FormStore<F>,
+  segments: Path,
+  key: PathKey,
+  getFormMetaBase: FormMetaBaseGetter
+): FieldState<unknown> {
+  const base = buildLeafFieldStateBase(state, segments, key)
+  return decorateWithDerivedProps(base, state, getFormMetaBase)
+}
+
+/**
+ * Per-container aggregation for the predicate-safe base shape.
+ * Rolls up descendant-leaf state per the rule sheet; does NOT
+ * compute `showErrors` / `firstError`.
  *
  * Aggregation rules (matches `docs/api/use-form-return.md`):
  *   - pristine / valid / blank: conjunction (all descendants)
@@ -139,12 +195,17 @@ function buildLeafFieldState<F extends GenericForm>(
  *   - value / original: live subtree at the path
  *   - element / elements: nothing bound at containers — null / empty
  *   - label / description / placeholder / meta: from `getFieldMetaAtPath`
+ *
+ * Exported so `build-form-api.ts` can build a `FormMetaBase` (the
+ * predicate's second arg) without going through the cached
+ * field-state accessor — that route would recurse through the
+ * root path's own `showErrors` computation.
  */
-function buildContainerFieldState<F extends GenericForm>(
+export function buildContainerFieldStateBase<F extends GenericForm>(
   state: FormStore<F>,
   segments: Path,
   _key: PathKey
-): FieldState<unknown> {
+): FieldStateBase {
   // Read live form value first so the access participates in dep
   // tracking; the discriminator key write that switches a DU variant
   // shows up here and re-runs the computed.
@@ -234,6 +295,44 @@ function buildContainerFieldState<F extends GenericForm>(
     placeholder: resolved.placeholder,
     meta: resolved.meta,
   }
+}
+
+/**
+ * Per-container full computation: builds the base, layers on the
+ * derived predicate-fed props.
+ */
+function buildContainerFieldState<F extends GenericForm>(
+  state: FormStore<F>,
+  segments: Path,
+  key: PathKey,
+  getFormMetaBase: FormMetaBaseGetter
+): FieldState<unknown> {
+  const base = buildContainerFieldStateBase(state, segments, key)
+  return decorateWithDerivedProps(base, state, getFormMetaBase)
+}
+
+/**
+ * Layer `showErrors` + `firstError` onto a freshly-computed base.
+ * Shared by leaf and container paths so the gate runs identically
+ * at every depth.
+ *
+ * `firstError` is `errors[0]` — deterministic because errors are
+ * already sorted by schema-declaration order (within a leaf: schema
+ * → blank → user concat; across a container: `pathOrdinal` bucket
+ * sort).
+ *
+ * `showErrors` short-circuits when there are no errors, so the
+ * predicate only fires when the heuristic actually has something to
+ * decide.
+ */
+function decorateWithDerivedProps<F extends GenericForm>(
+  base: FieldStateBase,
+  state: FormStore<F>,
+  getFormMetaBase: FormMetaBaseGetter
+): FieldState<unknown> {
+  const firstError = base.errors[0]
+  const showErrors = base.errors.length > 0 && state.shouldShowErrors(base, getFormMetaBase())
+  return { ...base, showErrors, firstError }
 }
 
 /**

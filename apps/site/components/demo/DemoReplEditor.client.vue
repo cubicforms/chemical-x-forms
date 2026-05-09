@@ -71,8 +71,15 @@
   // Cargo shipment booking — a stress test for Attaform. Exercises:
   // discriminated unions, enums, field arrays, async field + aggregate
   // validation, transforms, the unset sentinel, persistence, multi-step
-  // navigation, meta + field valid/validating flags, and touched-aware
-  // error display.
+  // navigation, meta + field valid/validating flags, and the
+  // \`field.showErrors\` / \`field.firstError\` error-display primitives.
+  //
+  // Error display: every field reads \`showErrors\` (heuristic-gated:
+  // show after submit OR after touched + dirty) plus \`firstError\` (the
+  // top error in schema order). Override the heuristic globally via
+  // \`createAttaform({ defaults: { shouldShowErrors } })\` or per-form
+  // via \`useForm({ shouldShowErrors })\`. Library default kicks in
+  // here — see the \`errorMessage\` helper below.
   // ─────────────────────────────────────────────────────────────────
 
   import { computed, nextTick, ref, watch } from 'vue'
@@ -459,15 +466,9 @@
   function goToError(path: ReadonlyArray<string | number>) {
     step.value = pathToStep(path)
     // nextTick so v-show paints the active step body before we focus.
-    nextTick(() => {
-      let view: unknown = form.fields
-      for (const seg of path) {
-        if (view == null) break
-        view = (view as Record<string | number, unknown>)[seg]
-      }
-      const el = (view as { element?: HTMLElement | null } | undefined)?.element
-      el?.focus()
-    })
+    // \`form.fields(path)\` resolves the FieldState directly (call-form);
+    // \`.element\` is the first DOM node bound at that path.
+    nextTick(() => form.fields(path).element?.focus())
   }
 
   // ─── Cargo / service variant switching ───────────────────────────
@@ -560,24 +561,28 @@
   }
 
   // ─── Template helpers ────────────────────────────────────────────
+  // \`field.showErrors\` is the heuristic-gated render flag (library
+  // default: submit-or-touched-and-dirty); \`firstError\` is the top
+  // error in schema order. The two compose into a single readable
+  // call site — no per-template repetition of the heuristic.
   function fieldClasses(field: FieldState<unknown> | undefined) {
     if (!field) return {}
     return {
       valid: field.valid && (field.dirty || field.touched),
-      invalid: field.touched && !field.valid && !field.validating,
+      invalid: field.showErrors,
       validating: field.validating,
     }
   }
-  function visibleError(field: FieldState<unknown> | undefined) {
-    if (!field || !field.touched) return ''
-    return field.errors[0]?.message ?? ''
+  function errorMessage(field: FieldState<unknown> | undefined) {
+    return field?.showErrors ? (field.firstError?.message ?? '') : ''
   }
 
   // Array-level error at cargo.items (min(1) + async capacity refine).
-  const cargoItemsArrayError = computed(() => {
-    const errs = form.errors('cargo.items')
-    return errs?.find((e) => e.path.length === 2)?.message ?? ''
-  })
+  // Filtered to path.length === 2 so per-row errors at
+  // cargo.items.\${i}.\${leaf} don't bleed into the array banner.
+  const cargoItemsArrayError = computed(
+    () => form.errors('cargo.items')?.find((e) => e.path.length === 2)?.message ?? ''
+  )
 
   const addressBlocks = computed(() => [
     {
@@ -634,7 +639,7 @@ ${'</'}script>
           />
           <small class="hint" v-if="form.fields.reference.validating">Checking…</small>
           <small class="error" v-else>
-            {{ visibleError(form.fields.reference) }}
+            {{ errorMessage(form.fields.reference) }}
           </small>
         </div>
 
@@ -662,7 +667,7 @@ ${'</'}script>
                 v-register="form.register([block.prefix, 'line1'])"
                 :disabled="block.mirrored"
               />
-              <small class="error">{{ visibleError(form.fields[block.prefix].line1) }}</small>
+              <small class="error">{{ errorMessage(form.fields[block.prefix].line1) }}</small>
             </div>
             <div class="field">
               <label>{{ form.fields[block.prefix].line2.label }}</label>
@@ -682,7 +687,7 @@ ${'</'}script>
                 v-register="form.register([block.prefix, 'city'])"
                 :disabled="block.mirrored"
               />
-              <small class="error">{{ visibleError(form.fields[block.prefix].city) }}</small>
+              <small class="error">{{ errorMessage(form.fields[block.prefix].city) }}</small>
             </div>
             <div class="field" :class="fieldClasses(form.fields[block.prefix].region)">
               <label>{{ form.fields[block.prefix].region.label }}</label>
@@ -693,7 +698,7 @@ ${'</'}script>
                 v-register="form.register([block.prefix, 'region'])"
                 :disabled="block.mirrored"
               />
-              <small class="error">{{ visibleError(form.fields[block.prefix].region) }}</small>
+              <small class="error">{{ errorMessage(form.fields[block.prefix].region) }}</small>
             </div>
             <div class="field" :class="fieldClasses(form.fields[block.prefix].country)">
               <label>{{ form.fields[block.prefix].country.label }}</label>
@@ -719,7 +724,7 @@ ${'</'}script>
               Looking up postal code…
             </small>
             <small class="error" v-else>
-              {{ visibleError(form.fields[block.prefix].postalCode) }}
+              {{ errorMessage(form.fields[block.prefix].postalCode) }}
             </small>
           </div>
         </fieldset>
@@ -759,7 +764,7 @@ ${'</'}script>
               type="number"
               step="0.5"
             />
-            <small class="error">{{ visibleError(form.fields.cargo.details.tempMinF) }}</small>
+            <small class="error">{{ errorMessage(form.fields.cargo.details.tempMinF) }}</small>
           </div>
           <div class="field" :class="fieldClasses(form.fields.cargo.details.tempMaxF)">
             <label>{{ form.fields.cargo.details.tempMaxF.label }}</label>
@@ -768,7 +773,7 @@ ${'</'}script>
               type="number"
               step="0.5"
             />
-            <small class="error">{{ visibleError(form.fields.cargo.details.tempMaxF) }}</small>
+            <small class="error">{{ errorMessage(form.fields.cargo.details.tempMaxF) }}</small>
           </div>
         </div>
 
@@ -783,7 +788,7 @@ ${'</'}script>
                 v-register="form.register('cargo.details.unNumber')"
                 placeholder="UN1234"
               />
-              <small class="error">{{ visibleError(form.fields.cargo.details.unNumber) }}</small>
+              <small class="error">{{ errorMessage(form.fields.cargo.details.unNumber) }}</small>
             </div>
             <div class="field" :class="fieldClasses(form.fields.cargo.details.hazardClass)">
               <label>{{ form.fields.cargo.details.hazardClass.label }}</label>
@@ -795,14 +800,14 @@ ${'</'}script>
                   Class {{ c }}
                 </option>
               </select>
-              <small class="error">{{ visibleError(form.fields.cargo.details.hazardClass) }}</small>
+              <small class="error">{{ errorMessage(form.fields.cargo.details.hazardClass) }}</small>
             </div>
           </div>
           <label class="checkbox">
             <input v-register="form.register('cargo.details.acknowledged')" type="checkbox" />
             I have read and acknowledge the dangerous-goods handling rules.
           </label>
-          <small class="error">{{ visibleError(form.fields.cargo.details.acknowledged) }}</small>
+          <small class="error">{{ errorMessage(form.fields.cargo.details.acknowledged) }}</small>
         </div>
 
         <div v-else-if="cargoType === 'oversized'" class="oversized">
@@ -810,17 +815,17 @@ ${'</'}script>
             <div class="field" :class="fieldClasses(form.fields.cargo.details.lengthIn)">
               <label>{{ form.fields.cargo.details.lengthIn.label }}</label>
               <input v-register.number="form.register('cargo.details.lengthIn')" type="number" />
-              <small class="error">{{ visibleError(form.fields.cargo.details.lengthIn) }}</small>
+              <small class="error">{{ errorMessage(form.fields.cargo.details.lengthIn) }}</small>
             </div>
             <div class="field" :class="fieldClasses(form.fields.cargo.details.widthIn)">
               <label>{{ form.fields.cargo.details.widthIn.label }}</label>
               <input v-register.number="form.register('cargo.details.widthIn')" type="number" />
-              <small class="error">{{ visibleError(form.fields.cargo.details.widthIn) }}</small>
+              <small class="error">{{ errorMessage(form.fields.cargo.details.widthIn) }}</small>
             </div>
             <div class="field" :class="fieldClasses(form.fields.cargo.details.heightIn)">
               <label>{{ form.fields.cargo.details.heightIn.label }}</label>
               <input v-register.number="form.register('cargo.details.heightIn')" type="number" />
-              <small class="error">{{ visibleError(form.fields.cargo.details.heightIn) }}</small>
+              <small class="error">{{ errorMessage(form.fields.cargo.details.heightIn) }}</small>
             </div>
           </div>
           <div class="field">
@@ -838,7 +843,7 @@ ${'</'}script>
         <!-- Line items (field array) -->
         <div class="line-items">
           <div class="line-items-header">
-            <h3>Line items <span class="muted">({{ totalLb }} kg total)</span></h3>
+            <h3>Line items <span class="muted">({{ totalLb }} lb total)</span></h3>
             <button type="button" class="ghost" @click="addLineItem">+ Add item</button>
           </div>
           <div v-if="form.values.cargo.items.length === 0" class="empty">
@@ -861,13 +866,13 @@ ${'</'}script>
                   Checking SKU…
                 </small>
                 <small class="error" v-else>
-                  {{ visibleError(form.fields.cargo.items[idx].sku) }}
+                  {{ errorMessage(form.fields.cargo.items[idx].sku) }}
                 </small>
               </div>
               <div class="field" :class="fieldClasses(form.fields.cargo.items[idx].description)">
                 <label>{{ form.fields.cargo.items[idx].description.label }}</label>
                 <input v-register="form.register(\`cargo.items.\${idx}.description\`)" />
-                <small class="error">{{ visibleError(form.fields.cargo.items[idx].description) }}</small>
+                <small class="error">{{ errorMessage(form.fields.cargo.items[idx].description) }}</small>
               </div>
               <div class="field qty" :class="fieldClasses(form.fields.cargo.items[idx].quantity)">
                 <label>{{ form.fields.cargo.items[idx].quantity.label }}</label>
@@ -876,7 +881,7 @@ ${'</'}script>
                   type="number"
                   min="1"
                 />
-                <small class="error">{{ visibleError(form.fields.cargo.items[idx].quantity) }}</small>
+                <small class="error">{{ errorMessage(form.fields.cargo.items[idx].quantity) }}</small>
               </div>
               <div class="field qty" :class="fieldClasses(form.fields.cargo.items[idx].unitWeightLb)">
                 <label>{{ form.fields.cargo.items[idx].unitWeightLb.label }}</label>
@@ -886,7 +891,7 @@ ${'</'}script>
                   step="0.01"
                   min="0"
                 />
-                <small class="error">{{ visibleError(form.fields.cargo.items[idx].unitWeightLb) }}</small>
+                <small class="error">{{ errorMessage(form.fields.cargo.items[idx].unitWeightLb) }}</small>
               </div>
               <button
                 type="button"
@@ -937,7 +942,7 @@ ${'</'}script>
           <div class="field" :class="fieldClasses(form.fields.service.airline)">
             <label>{{ form.fields.service.airline.label }}</label>
             <input v-register="form.register('service.airline')" placeholder="Lufthansa" />
-            <small class="error">{{ visibleError(form.fields.service.airline) }}</small>
+            <small class="error">{{ errorMessage(form.fields.service.airline) }}</small>
           </div>
           <div class="field" :class="fieldClasses(form.fields.service.awbPrefix)">
             <label>{{ form.fields.service.awbPrefix.label }}</label>
@@ -945,7 +950,7 @@ ${'</'}script>
               {{ form.fields.service.awbPrefix.description }}
             </small>
             <input v-register="form.register('service.awbPrefix')" placeholder="220" />
-            <small class="error">{{ visibleError(form.fields.service.awbPrefix) }}</small>
+            <small class="error">{{ errorMessage(form.fields.service.awbPrefix) }}</small>
           </div>
         </div>
 
@@ -953,7 +958,7 @@ ${'</'}script>
           <div class="field" :class="fieldClasses(form.fields.service.vessel)">
             <label>{{ form.fields.service.vessel.label }}</label>
             <input v-register="form.register('service.vessel')" placeholder="MSC Aurelia" />
-            <small class="error">{{ visibleError(form.fields.service.vessel) }}</small>
+            <small class="error">{{ errorMessage(form.fields.service.vessel) }}</small>
           </div>
           <div class="field" :class="fieldClasses(form.fields.service.containerSize)">
             <label>{{ form.fields.service.containerSize.label }}</label>
@@ -967,12 +972,12 @@ ${'</'}script>
           <div class="field" :class="fieldClasses(form.fields.desiredPickupDate)">
             <label>{{ form.fields.desiredPickupDate.label }}</label>
             <input v-register="form.register('desiredPickupDate')" type="date" />
-            <small class="error">{{ visibleError(form.fields.desiredPickupDate) }}</small>
+            <small class="error">{{ errorMessage(form.fields.desiredPickupDate) }}</small>
           </div>
           <div class="field" :class="fieldClasses(form.fields.desiredDeliveryDate)">
             <label>{{ form.fields.desiredDeliveryDate.label }}</label>
             <input v-register="form.register('desiredDeliveryDate')" type="date" />
-            <small class="error">{{ visibleError(form.fields.desiredDeliveryDate) }}</small>
+            <small class="error">{{ errorMessage(form.fields.desiredDeliveryDate) }}</small>
           </div>
         </div>
 
@@ -989,7 +994,7 @@ ${'</'}script>
                 type="number"
                 min="0"
               />
-              <small class="error">{{ visibleError(form.fields.insurance.declaredValueUSD) }}</small>
+              <small class="error">{{ errorMessage(form.fields.insurance.declaredValueUSD) }}</small>
             </div>
             <div class="field">
               <label>{{ form.fields.insurance.coverage.label }}</label>
@@ -1013,7 +1018,7 @@ ${'</'}script>
           <small class="muted" v-if="!form.values.notes">
             No notes recorded — start typing to add some.
           </small>
-          <small class="error">{{ visibleError(form.fields.notes) }}</small>
+          <small class="error">{{ errorMessage(form.fields.notes) }}</small>
         </div>
       </section>
 
@@ -1021,7 +1026,11 @@ ${'</'}script>
       <section v-show="step === 4" class="step-body review">
         <h3>Review</h3>
         <pre>{{ JSON.stringify(form.values(), null, 2) }}</pre>
-        <aside v-if="!form.meta.valid" class="errors-summary" aria-live="polite">
+        <!-- \`form.meta.showErrors\` runs the configured heuristic against
+             the root container's aggregated state — same gate as every
+             per-field error site, so the summary only appears when the
+             user is ready to see issues. -->
+        <aside v-if="form.meta.showErrors" class="errors-summary" aria-live="polite">
           <header class="errors-summary-head">
             <span class="errors-summary-icon" aria-hidden="true">⚠</span>
             <div>

@@ -20,6 +20,7 @@ import {
   vRegister,
   canonicalizePath,
   parseApiErrors,
+  defaultShouldShowErrors,
 } from 'attaform'
 ```
 
@@ -46,6 +47,28 @@ Valibot schema, ArkType schema, or a hand-rolled validator with
 [a custom adapter](/docs/recipes/custom-adapter). The Zod subpaths
 are pre-made wrappers over this. For options, see
 [`attaform/zod`](/docs/api/zod#useformschemaoptions).
+
+## `defaultShouldShowErrors`
+
+The library-default heuristic for `field.showErrors`. Public so
+adopters writing a layered predicate can compose with it without
+copy-pasting the rule body — future heuristic refinements
+propagate automatically.
+
+```ts
+import { defaultShouldShowErrors } from 'attaform'
+
+useForm({
+  schema,
+  shouldShowErrors: (field, formMeta) =>
+    field.path[0] === 'urgent' || defaultShouldShowErrors(field, formMeta),
+})
+```
+
+Signature: `(field, formMeta) => boolean`. Defaults to "show errors
+after first submit attempt OR after the user has interacted
+(touched) and made a change (dirty)". See
+[error display recipe](/docs/recipes/error-display).
 
 ## `injectForm<Form>(key?)`
 

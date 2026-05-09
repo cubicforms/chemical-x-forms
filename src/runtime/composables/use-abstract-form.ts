@@ -315,6 +315,7 @@ function mergeWithDefaults<
   // unconditional. The runtime check in `create-form-store.ts` ignores
   // the value under non-`'change'` modes regardless.
   const debounceMs = (configuration as { debounceMs?: number }).debounceMs ?? defaults.debounceMs
+  const shouldShowErrors = configuration.shouldShowErrors ?? defaults.shouldShowErrors
   return {
     ...configuration,
     ...(strict === undefined ? {} : { strict }),
@@ -324,6 +325,7 @@ function mergeWithDefaults<
     ...(coerce === undefined ? {} : { coerce }),
     ...(validateOn === undefined ? {} : { validateOn }),
     ...(debounceMs === undefined ? {} : { debounceMs }),
+    ...(shouldShowErrors === undefined ? {} : { shouldShowErrors }),
   } as UseFormConfiguration<Form, GetValueFormType, Schema, Defaults>
 }
 
@@ -383,6 +385,9 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
       ? { rememberVariants: configuration.rememberVariants }
       : {}),
     ...(configuration.coerce !== undefined ? { coerce: configuration.coerce } : {}),
+    ...(configuration.shouldShowErrors !== undefined
+      ? { shouldShowErrors: configuration.shouldShowErrors }
+      : {}),
     ...(initialBlankPaths !== undefined ? { initialBlankPaths } : {}),
   }
   const state = createFormStore<F, G>(createOptions)

@@ -21,7 +21,9 @@ import type { HistoryModule } from './history'
 import { getAtPath } from './path-walker'
 import {
   canonicalizePath,
-  ROOT_PATH_KEY,
+  FORM_ERRORS_PATH,
+  FORM_ERRORS_PATH_KEY,
+  ROOT_PATH,
   segmentsForPathKey,
   type Path,
   type PathKey,
@@ -278,24 +280,30 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   function setFormErrors(
     errors: ReadonlyArray<Partial<ValidationError> & { message: string }>
   ): void {
-    // Surgically replace just the form-level (path: []) entry. Going
-    // through `setAllUserErrors` / `setFieldErrors` would clobber every
-    // field error too — wrong for "set this top-of-form message
-    // without disturbing field validation."
+    // Surgically replace just the form-level entry. Going through
+    // `setAllUserErrors` / `setFieldErrors` would clobber every field
+    // error too — wrong for "set this top-of-form message without
+    // disturbing field validation."
+    //
+    // Form-level errors live at the empty-string path bucket
+    // (PathKey `'[""]'`, segments `['']`). Distinct from the root
+    // subtree address `[]`: aggregate reads like `errors([])` /
+    // `errors()` still surface them, while `errors('')` returns ONLY
+    // this bucket — the dedicated channel for `<FieldErrors path="" />`.
     //
     // Caller-provided `path` and `formKey` are intentionally ignored:
-    // this API is form-level-only by definition (path is always [])
-    // and the form knows its own key. The lenient input shape lets
-    // callers pipe `ValidationError[]` (e.g. from `parseApiErrors`)
-    // straight in without having to map first.
+    // this API is form-level-only by definition and the form knows
+    // its own key. The lenient input shape lets callers pipe
+    // `ValidationError[]` (e.g. from `parseApiErrors`) straight in
+    // without having to map first.
     if (errors.length === 0) {
-      state.userErrors.delete(ROOT_PATH_KEY)
+      state.userErrors.delete(FORM_ERRORS_PATH_KEY)
       return
     }
     state.userErrors.set(
-      ROOT_PATH_KEY,
+      FORM_ERRORS_PATH_KEY,
       errors.map((e) => ({
-        path: [],
+        path: [...FORM_ERRORS_PATH],
         message: e.message,
         formKey: state.formKey,
         code: e.code ?? 'atta:form-error',
@@ -304,7 +312,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   }
 
   function clearFormErrors(): void {
-    state.userErrors.delete(ROOT_PATH_KEY)
+    state.userErrors.delete(FORM_ERRORS_PATH_KEY)
   }
 
   // --- Submission lifecycle ---
@@ -528,6 +536,17 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     await persistence.clearPersistedDraft(segments)
   }
 
+  // --- Programmatic touch ---
+  // Flip `touched: true` on a leaf, every leaf under a container, or
+  // every leaf in the form (no arg). Closes the post-import / paste /
+  // autofill gap where there's no DOM blur to drive the standard
+  // gesture-based touched flow. Touched is the sticky-true flag the
+  // standard "show errors after interaction" pattern reads.
+  function touch(pathInput?: string | Path): void {
+    const segments = pathInput === undefined ? ROOT_PATH : canonicalizePath(pathInput).segments
+    state.touchAtPath(segments)
+  }
+
   // --- Focus / scroll to first error ---
   // Both helpers scope to `formInstanceId` so two `useForm()` callsites
   // sharing a `key` (e.g. sidebar + main mounting the same form) only
@@ -611,6 +630,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     >['clearPersistedDraft'],
     focusFirstError,
     scrollToFirstError,
+    touch: touch as UseFormReturnType<Form, GetValueFormType>['touch'],
     undo,
     redo,
     append: fieldArrays.append as UseFormReturnType<Form, GetValueFormType>['append'],

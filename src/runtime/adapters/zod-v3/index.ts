@@ -642,6 +642,11 @@ function zodIssuesToValidationErrors(issues: z.ZodIssue[], formKey: FormKey): Va
       // can smuggle a Symbol through — the public surface promised
       // strings/numbers, so coerce defensively to keep the contract.
       // Mirrors v4's behaviour at the same site.
+      //
+      // Adapter-side paths stay schema-relative — the validation
+      // pipeline in `create-form-store.ts` prepends the parent path
+      // to absolutise, then routes form-level (absolute path length 0)
+      // entries to the empty-string bucket at storage time.
       path: coercePathSegments(issue.path),
       formKey: formKey,
       code,

@@ -30,7 +30,7 @@ const schema = z.object({
 })
 
 type Api = ReturnType<typeof useForm<typeof schema>>
-type ErrorsCallForm = (path: string | readonly (string | number)[]) =>
+type ErrorsCallForm = (path?: string | readonly (string | number)[]) =>
   | readonly {
       message: string
       path: readonly (string | number)[]
@@ -137,17 +137,29 @@ describe('form.errors(path) — aggregation at any depth', () => {
     expect(segments).toEqual(dotted)
   })
 
-  it('root prefix matches every error including form-level', () => {
+  it('root array prefix [] matches every error including form-level', () => {
     const { app, api } = mount()
     apps.push(app)
     seedAllErrors(api)
 
-    const allDotted = (callErrors(api)('') ?? []).map((e) => e.message).sort()
+    const noArg = (callErrors(api)() ?? []).map((e) => e.message).sort()
     const allSegments = (callErrors(api)([]) ?? []).map((e) => e.message).sort()
-    expect(allDotted).toEqual(allSegments)
-    expect(allDotted).toEqual(
+    expect(noArg).toEqual(allSegments)
+    expect(allSegments).toEqual(
       ['airline bad', 'capacity full', 'cargo invalid', 'items invalid', 'sku bad'].sort()
     )
+  })
+
+  it("dotted-string '' is the form-level path, not the root subtree", () => {
+    const { app, api } = mount()
+    apps.push(app)
+    seedAllErrors(api)
+
+    // `''` is one segment (the empty-string key), distinct from
+    // root `[]`. Form-level errors live at this PathKey, so the
+    // call returns ONLY the form-level bucket.
+    const formLevel = (callErrors(api)('') ?? []).map((e) => e.message)
+    expect(formLevel).toEqual(['capacity full'])
   })
 
   it('returns undefined for a path with no matching errors', () => {

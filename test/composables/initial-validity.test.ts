@@ -119,7 +119,7 @@ describe('initial validity gating — async-refinement schema (the demo case)', 
   it('isValid([root]) is false synchronously after mount', () => {
     const { app, api } = mountAsync()
     apps.push(app)
-    expect(isValid(api, [''])).toBe(false)
+    expect(isValid(api, [[]])).toBe(false)
   })
 
   it('isValid on a sync-only prefix is true even before first validation completes (per-path gate)', () => {
@@ -154,7 +154,7 @@ describe('initial validity gating — async-refinement schema (the demo case)', 
     await handle.api?.validateAsync()
     await nextTick()
     expect(handle.api?.meta.valid).toBe(true)
-    expect(isValid(handle.api, [''])).toBe(true)
+    expect(isValid(handle.api, [[]])).toBe(true)
   })
 
   it('stays false after handleSubmit on an invalid form (gate flipped, errors written)', async () => {

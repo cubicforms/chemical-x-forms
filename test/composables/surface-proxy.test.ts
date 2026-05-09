@@ -271,13 +271,16 @@ describe('form.meta.errors — flat aggregate', () => {
     expect(form.meta.errors).toEqual([])
   })
 
-  it('includes form-level errors (path: [])', () => {
+  it("includes form-level errors (path: [''])", () => {
+    // setFieldErrors entries that arrive with `path: []` are rerouted
+    // at storage to the form-level bucket (`['']`), so the aggregate
+    // surfaces them with the new contract path.
     const form = mount(schema, { email: '', password: '' })
     form.setFieldErrors([
       { path: [], message: 'whole-form invalid', formKey: form.key, code: 'api:validation' },
     ])
     expect(form.meta.errors).toHaveLength(1)
-    expect(form.meta.errors[0]?.path).toEqual([])
+    expect(form.meta.errors[0]?.path).toEqual([''])
   })
 })
 
@@ -1057,11 +1060,14 @@ describe('surface materialisation — predictable representations + complex erro
     expect(afterSwitch.notify.number).toMatchObject([{ message: 'number bad' }])
   })
 
-  it('form-level errors (path: []) are excluded from form.errors but surface in form.meta.errors', () => {
-    // Container materialisation skips self-path errors at every container
-    // depth — including the root. That's by design: `form.errors` is the
-    // descend-only path-keyed view; the unfiltered flat aggregate lives
-    // on `form.meta.errors`.
+  it("form-level errors (path: ['']) are excluded from form.errors drill but surface in form.meta.errors and form.errors('')", () => {
+    // Container materialisation skips self-path errors at every
+    // container depth — including the root. The form-level bucket
+    // (`['']`) lives in its own dedicated channel: `form.errors('')`
+    // returns just the bucket; `form.meta.errors` is the unfiltered
+    // flat aggregate; the descend-only path-keyed `form.errors`
+    // proxy intentionally has no key representing the empty path
+    // in its nested tree.
     const schema = z.object({ name: z.string() })
     const form = mount(schema, { name: '' })
     form.setFieldErrors([
@@ -1073,13 +1079,13 @@ describe('surface materialisation — predictable representations + complex erro
     // Leaf-keyed entry surfaces.
     expect(errorsTree['name']).toMatchObject([{ message: 'name bad' }])
     // The form-level error is NOT serialised (no key represents the
-    // empty path in the nested tree).
+    // form-level path in the nested tree).
     const keys = Object.keys(errorsTree)
     expect(keys).toEqual(['name'])
 
     // The flat aggregate captures BOTH entries.
     expect(form.meta.errors).toHaveLength(2)
-    const formLevel = form.meta.errors.find((e) => e.path.length === 0)
+    const formLevel = form.meta.errors.find((e) => e.path.length === 1 && e.path[0] === '')
     expect(formLevel?.message).toBe('whole-form invalid')
   })
 })

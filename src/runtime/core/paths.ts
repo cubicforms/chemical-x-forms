@@ -46,15 +46,20 @@ function normalizeSegment(raw: Segment): Segment {
  * ```ts
  * parseDottedPath('user.address.line1')   // ['user', 'address', 'line1']
  * parseDottedPath('items.0.name')         // ['items', 0, 'name']
- * parseDottedPath('')                     // [] (root)
+ * parseDottedPath('')                     // ['']  (the empty-string key)
  * ```
  *
- * Throws `InvalidPathError` for paths with empty segments
+ * The empty-string input `''` is the **literal empty-key path**, not
+ * the root. Use the array form `[]` for root. Form-level errors
+ * (root `.refine()`) live at the empty-string path bucket so
+ * `errors('')` returns them without sweeping every field error too.
+ *
+ * Throws `InvalidPathError` for paths with empty INTERNAL segments
  * (`'a..b'`, leading or trailing dots). For keys containing literal
  * dots, pass an array form (`['user.name']`) instead.
  */
 export function parseDottedPath(path: string): Segment[] {
-  if (path.length === 0) return []
+  if (path.length === 0) return ['']
   const rawSegments = path.split('.')
   const segments: Segment[] = []
   for (const raw of rawSegments) {
@@ -205,6 +210,24 @@ export function canonicalizePath(input: string | Path): {
 export const ROOT_PATH: Path = Object.freeze([])
 /** Stable string key for the root path. */
 export const ROOT_PATH_KEY = '[]' as PathKey
+
+/**
+ * The form-level path — a one-segment path with the empty-string
+ * key. Conventionally home for errors that don't belong to any
+ * specific field: root `.refine()` messages, server-emitted form
+ * errors, capacity / availability / cross-field-summary banners.
+ *
+ * Distinct from `ROOT_PATH` (`[]`): the root is the whole-form
+ * subtree address (e.g. `errors([])` returns every error). The
+ * form-level path is a sibling-of-no-field path that aggregation
+ * walks DON'T sweep into per-field reads — `errors('field')`
+ * returns only the field's errors, never the form-level bucket,
+ * and `errors('')` returns only the form-level bucket, never the
+ * field errors.
+ */
+export const FORM_ERRORS_PATH: Path = Object.freeze([''])
+/** Stable string key for the form-level errors path. */
+export const FORM_ERRORS_PATH_KEY = '[""]' as PathKey
 
 /**
  * `true` when `path` starts with every segment of `prefix` (in order).

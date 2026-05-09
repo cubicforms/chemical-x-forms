@@ -135,19 +135,16 @@ export default defineNuxtConfig({
   // below) to detect SSG and route to its `nitro-prerender`
   // compatibility profile.
   //
-  // `ogImage.fonts` is pinned to Inter explicitly so Satori only
-  // tries to load fonts it can actually serve. Without this, the
-  // module discovers font names from the global stack
-  // (`--font-sans` in tailwind.css includes 'Helvetica Neue',
-  // Arial, … as system-font fallbacks) and warns at every dev
-  // start that it can't resolve Arial through Google / Bunny /
-  // Fontsource — Satori needs real woff2 bytes, system fallbacks
-  // aren't fetchable. The OG cards themselves only ever use Inter
-  // (see components/OgImage/Default.satori.vue), so this constrains
-  // resolution to what's actually rendered.
-  ogImage: {
-    fonts: ['Inter:400', 'Inter:600', 'Inter:700'],
-  },
+  // The previous `ogImage.fonts: ['Inter:400', ...]` block was
+  // dropped: `nuxt-og-image` v6 removed that option from
+  // `ModuleOptions` (vue-tsc reported it as `does not exist on
+  // type Partial<ModuleOptions>`), and the runtime silently
+  // ignored the field. Inter is now pulled from `@nuxt/fonts` at
+  // PREVIEW / BUILD time via the standard fontless resolver. The
+  // "Could not resolve font 'Helvetica Neue' / 'Arial' / 'Segoe UI'"
+  // warnings during build are noise from the system-font fallbacks
+  // in `--font-sans`; they're left visible so any future regression
+  // in OG-card font resolution stays observable.
   // nuxt-link-checker walks every prerendered HTML page and probes
   // each <a> + canonical / og:url for resolvability. With
   // `failOnError: true`, a broken internal link exits the build
@@ -264,20 +261,30 @@ export default defineNuxtConfig({
       },
     },
   },
-  // Disable runtime payload extraction in dev only. Background:
-  // Nitro's `payloadCache` (mounted under `cache:nuxt:payload` with
-  // an fs base of `.nuxt/cache/nuxt/payload`) writes one cache entry
-  // per rendered route. For the root route `/`, unstorage normalizes
-  // the key down to an empty string, which the fs driver writes as
-  // a bare `payload` *file* at the cache base — collision with the
-  // directory it's supposed to be. Every subsequent route then 500s
-  // with `ENOTDIR: ... payload/docs-<hash>` when its payload tries
-  // to write to `payload/<safe-key>`.
+  // Payload extraction strategy: ON in build (full-static output
+  // benefits from prefetched `_payload.json` per route — SPA-style
+  // nav speed at zero runtime cost), OFF in dev.
   //
-  // Production keeps payload extraction on: prerendering writes
-  // `_payload.json` files directly to `.output/public/<route>/` via
-  // a different code path that doesn't go through the dev cache, so
-  // SPA-style hydration on the static build is unaffected.
+  // Why dev is excluded: Nitro's `payloadCache` (mounted under
+  // `cache:nuxt:payload` with an fs base of `.nuxt/cache/nuxt/payload`)
+  // writes one cache entry per rendered route. For the root route `/`,
+  // unstorage normalizes the key down to an empty string, which the
+  // fs driver writes as a bare `payload` *file* at the cache base —
+  // collision with the directory it's supposed to be. Every
+  // subsequent route then 500s with `ENOTDIR: ... payload/docs-<hash>`
+  // when its payload tries to write to `payload/<safe-key>`.
+  // Production prerendering writes `_payload.json` files directly to
+  // `.output/public/<route>/` via a different code path that doesn't
+  // touch the dev cache, so the static build is unaffected.
+  //
+  // The detection: `process.env.NODE_ENV` is read at config-eval time.
+  // `nuxi dev` runs with `NODE_ENV=development` (Vite dev server), so
+  // the gate evaluates to `false`. `nuxi build` doesn't pre-set
+  // NODE_ENV — package.json's `build` / `generate` scripts pin it to
+  // `production` explicitly so this gate (and any other `NODE_ENV`
+  // probes upstream) sees the right value. Without that prefix, Nuxt
+  // emits a "Payload extraction is recommended for full-static output"
+  // warning at every build.
   experimental: {
     payloadExtraction: process.env.NODE_ENV === 'production',
   },

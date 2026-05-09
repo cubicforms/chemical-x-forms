@@ -574,16 +574,20 @@ export function zodAdapter<
         }
 
         function nestedSchemasAtPath(p: Path): z.ZodTypeAny[] {
-          const [strippedSchema] = stripRootSchema(_zodSchema, {
-            stripDefaultValues: true,
-            stripNullable: true,
-            stripOptional: true,
-          })
-          const slimSchema = getSlimSchema({
-            schema: strippedSchema,
-            stripConfig: { stripDefaultValues: true },
-          })
-          return getNestedZodSchemasAtPath(slimSchema, p)
+          // Walk the ORIGINAL schema. The walker peels transparent
+          // wrappers (optional / nullable / default / effects /
+          // pipeline / readonly / branded) inline as it descends,
+          // preserving every check (`.min` / `.max` / `.length` /
+          // `.nonempty` / `.refine` / etc.) at the target path so
+          // path-targeted re-validation surfaces issues that depend
+          // on the schema node itself (e.g. an array's `.min(1)`
+          // after a structural mutation, or a leaf's `.min(1)` when
+          // the parent has a refine). The slim-schema pipeline used
+          // for default-value derivation deliberately strips checks
+          // at re-creation sites — appropriate for "here's a
+          // permissive shape to seed defaults," wrong for "here's
+          // the schema we should validate against."
+          return getNestedZodSchemasAtPath(_zodSchema, p)
         }
 
         function pathNotFound(p: Path): ValidationResponse<Form> {
@@ -665,10 +669,23 @@ const NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA = (path: (string | number)[], 
     },
   ] satisfies ValidationError[]
 
-// Note: this function assumes a sufficiently stripped schema.
 // Walks a canonical `Segment[]` directly — every literal-dot key is
 // treated as a single segment, so a field named `"user.email"` no
 // longer collides with the sibling pair `['user', 'email']`.
+//
+// Each iteration peels transparent wrappers (`peelV3Wrappers` —
+// optional / nullable / default / effects / pipeline / readonly /
+// branded) BEFORE checking the kind for descent. Peeling is what
+// lets the walker step through e.g. `z.object({...}).refine(...)`
+// (a `ZodEffects` at the root) into the inner shape without
+// requiring callers to pre-strip wrappers. Importantly the peel is
+// applied only when descending — once the loop exits, the schema
+// at the target segment is returned as-is (including its own
+// wrapper, since that wrapper carries semantic meaning at parse
+// time, e.g. `.optional()` admits `undefined`, `.default(x)`
+// substitutes, `.refine(...)` runs the predicate). For path = []
+// (no segments) the original schema is returned unchanged so
+// whole-form `validateAtPath` keeps the root's refine intact.
 function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
   zodSchema: Schema,
   segments: readonly (string | number)[]
@@ -693,6 +710,9 @@ function getNestedZodSchemasAtPath<Schema extends z.ZodSchema>(
 
   for (let index = 0; index < segments.length; index++) {
     const key = String(segments[index] ?? '')
+    if (currentSchema !== undefined) {
+      currentSchema = peelV3Wrappers(currentSchema) as z.ZodSchema
+    }
     if (isZodSchemaType(currentSchema, 'ZodObject')) {
       const shape = currentSchema._def.shape() as z.ZodRawShape
       // Own-property check: a bare `shape[key]` returns

@@ -1,6 +1,16 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
+/* Self-hosted webfonts — Inter (sans) + JetBrains Mono (mono). The
+   @font-face declarations live in `./fonts.css` and reference
+   .woff2 binaries committed under `public/fonts/`. Pulling these
+   ourselves (instead of letting `@nuxt/fonts` proxy from Google at
+   dev time + build time) removes the SPOF on fonts.gstatic.com that
+   previously 500'd the dev server when Google's CDN hiccuped.
+   Re-run `pnpm fonts:refresh` to regenerate the .woff2 + .css when
+   adding a weight or bumping the upstream font version. */
+@import './fonts.css';
+
 @variant dark (&:where(.dark, .dark *));
 
 /* ──────────────────────────────────────────────────────────────────

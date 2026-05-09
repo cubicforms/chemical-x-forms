@@ -106,7 +106,18 @@ function isFilteredBuildWarning(msg: string): boolean {
 }
 
 export default defineNuxtConfig({
-  modules: ['@nuxt/content', '@nuxt/fonts', '@nuxtjs/color-mode', '@nuxtjs/seo'],
+  // `@nuxt/fonts` was here previously to proxy Inter + JetBrains Mono
+  // through Google Fonts at dev time and build time. Removing it
+  // because that proxy was a single-point-of-failure: an
+  // intermittently slow `fonts.gstatic.com` 500'd the dev server
+  // (the page renderer can't resolve fonts → Nitro returns 500) and
+  // — separately — failed CI on the bad-luck day. The .woff2 files
+  // now live committed under `public/fonts/` and are referenced by
+  // the @font-face block in `assets/css/fonts.css` (imported by
+  // `tailwind.css`). `nuxt-og-image` still pulls Satori fonts from
+  // Google at build time, but a build-time failure there is loud
+  // and fixable — not a user-facing 500.
+  modules: ['@nuxt/content', '@nuxtjs/color-mode', '@nuxtjs/seo'],
   // @nuxtjs/seo is the umbrella that wires sitemap.xml + robots.txt +
   // per-page canonical links + nuxt-og-image (per-route social cards)
   // + nuxt-schema-org (JSON-LD) + nuxt-link-checker behind one module.
@@ -135,19 +146,15 @@ export default defineNuxtConfig({
   // below) to detect SSG and route to its `nitro-prerender`
   // compatibility profile.
   //
-  // `ogImage.fonts` is pinned to Inter explicitly so Satori only
-  // tries to load fonts it can actually serve. Without this, the
-  // module discovers font names from the global stack
-  // (`--font-sans` in tailwind.css includes 'Helvetica Neue',
-  // Arial, … as system-font fallbacks) and warns at every dev
-  // start that it can't resolve Arial through Google / Bunny /
-  // Fontsource — Satori needs real woff2 bytes, system fallbacks
-  // aren't fetchable. The OG cards themselves only ever use Inter
-  // (see components/OgImage/Default.satori.vue), so this constrains
-  // resolution to what's actually rendered.
-  ogImage: {
-    fonts: ['Inter:400', 'Inter:600', 'Inter:700'],
-  },
+  // No `fonts:` block here on purpose. nuxt-og-image v6 dropped
+  // that field in favour of reading from `@nuxt/fonts` (now gone
+  // in this app — see the `modules:` comment) or falling back to
+  // its `fontless` resolver. The fontless resolver fetches font
+  // bytes at PREVIEW / BUILD time only, so a Google CDN hiccup
+  // there is a build failure (loud, fixable in CI) rather than a
+  // user-facing dev-server 500. The OG cards themselves only ever
+  // use Inter (see `components/OgImage/Default.satori.vue`), so
+  // the resolver narrows to that family at render time.
   // nuxt-link-checker walks every prerendered HTML page and probes
   // each <a> + canonical / og:url for resolvability. With
   // `failOnError: true`, a broken internal link exits the build
@@ -223,25 +230,12 @@ export default defineNuxtConfig({
       },
     },
   },
-  // Webfonts are downloaded from Google Fonts at build time and emitted
-  // into the build output as woff2 + an inline @font-face block; pages
-  // reference local URLs only, so visitors never reach out to Google.
-  // We pin the families here (rather than relying on auto-detection
-  // from `--font-sans` / `--font-mono` in tailwind.css) for two
-  // reasons: 1) the auto-detector occasionally misses tokens behind
-  // CSS variables in @theme blocks, 2) explicit weights keep the
-  // bundle deterministic — Inter ships at 400/500/600/700 because
-  // those are the only weights the design system actually uses.
-  fonts: {
-    families: [
-      { name: 'Inter', provider: 'google', weights: [400, 500, 600, 700] },
-      { name: 'JetBrains Mono', provider: 'google', weights: [400, 500, 600] },
-    ],
-    defaults: {
-      subsets: ['latin', 'latin-ext'],
-      styles: ['normal'],
-    },
-  },
+  // Webfonts are committed to the repo (no runtime / build-time
+  // dependency on Google). The .woff2 binaries live under
+  // `public/fonts/` and the @font-face declarations are in
+  // `assets/css/fonts.css` (imported by `tailwind.css`). Run
+  // `pnpm fonts:refresh` to re-fetch from Google when adding a
+  // weight or bumping the font version.
   devtools: { enabled: true },
   compatibilityDate: '2025-01-28',
   // Public runtimeConfig values are read at build time from the actual

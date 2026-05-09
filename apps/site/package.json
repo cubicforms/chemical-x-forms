@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/clean-stale-cache.mjs && pnpm bundle:repl && pnpm index:search:dev && (pnpm bundle:repl:watch & nuxi dev)",
-    "build": "pnpm bundle:repl && nuxi build && pnpm index:search && pnpm index:bing",
-    "generate": "pnpm bundle:repl && nuxi generate && pnpm index:search && pnpm index:bing",
+    "build": "pnpm bundle:repl && NODE_ENV=production nuxi build && pnpm index:search && pnpm index:bing",
+    "generate": "pnpm bundle:repl && NODE_ENV=production nuxi generate && pnpm index:search && pnpm index:bing",
     "preview": "nuxi preview",
     "bundle:repl": "node scripts/bundle-repl-deps.mjs",
     "bundle:repl:watch": "node scripts/bundle-repl-deps.mjs --watch",

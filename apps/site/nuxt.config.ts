@@ -258,20 +258,30 @@ export default defineNuxtConfig({
       },
     },
   },
-  // Disable runtime payload extraction in dev only. Background:
-  // Nitro's `payloadCache` (mounted under `cache:nuxt:payload` with
-  // an fs base of `.nuxt/cache/nuxt/payload`) writes one cache entry
-  // per rendered route. For the root route `/`, unstorage normalizes
-  // the key down to an empty string, which the fs driver writes as
-  // a bare `payload` *file* at the cache base — collision with the
-  // directory it's supposed to be. Every subsequent route then 500s
-  // with `ENOTDIR: ... payload/docs-<hash>` when its payload tries
-  // to write to `payload/<safe-key>`.
+  // Payload extraction strategy: ON in build (full-static output
+  // benefits from prefetched `_payload.json` per route — SPA-style
+  // nav speed at zero runtime cost), OFF in dev.
   //
-  // Production keeps payload extraction on: prerendering writes
-  // `_payload.json` files directly to `.output/public/<route>/` via
-  // a different code path that doesn't go through the dev cache, so
-  // SPA-style hydration on the static build is unaffected.
+  // Why dev is excluded: Nitro's `payloadCache` (mounted under
+  // `cache:nuxt:payload` with an fs base of `.nuxt/cache/nuxt/payload`)
+  // writes one cache entry per rendered route. For the root route `/`,
+  // unstorage normalizes the key down to an empty string, which the
+  // fs driver writes as a bare `payload` *file* at the cache base —
+  // collision with the directory it's supposed to be. Every
+  // subsequent route then 500s with `ENOTDIR: ... payload/docs-<hash>`
+  // when its payload tries to write to `payload/<safe-key>`.
+  // Production prerendering writes `_payload.json` files directly to
+  // `.output/public/<route>/` via a different code path that doesn't
+  // touch the dev cache, so the static build is unaffected.
+  //
+  // The detection: `process.env.NODE_ENV` is read at config-eval time.
+  // `nuxi dev` runs with `NODE_ENV=development` (Vite dev server), so
+  // the gate evaluates to `false`. `nuxi build` doesn't pre-set
+  // NODE_ENV — package.json's `build` / `generate` scripts pin it to
+  // `production` explicitly so this gate (and any other `NODE_ENV`
+  // probes upstream) sees the right value. Without that prefix, Nuxt
+  // emits a "Payload extraction is recommended for full-static output"
+  // warning at every build.
   experimental: {
     payloadExtraction: process.env.NODE_ENV === 'production',
   },

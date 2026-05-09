@@ -35,9 +35,10 @@ export type FormKey = string
 /**
  * One validation failure. `path` points at the offending field as a
  * structured array — `['user', 'address', 0, 'line1']` for a nested
- * field, `[]` for a form-level error. `formKey` identifies which
- * form produced the error so a single error list can be routed to
- * multiple forms.
+ * field, `['']` (the empty-string path) for a form-level error
+ * (root `.refine()` messages, `setFormErrors()` entries, server-
+ * emitted form banners). `formKey` identifies which form produced
+ * the error so a single error list can be routed to multiple forms.
  *
  * Returned by `validate()` / `validateAsync()` / `handleSubmit`'s
  * `onError` callback, and by `parseApiErrors` for server responses.
@@ -45,7 +46,12 @@ export type FormKey = string
 export type ValidationError = {
   /** Human-readable message describing the failure. */
   message: string
-  /** Structured path of the offending field. Empty array means a form-level error. */
+  /**
+   * Structured path of the offending field. The empty-string path
+   * `['']` is the form-level bucket — the dedicated home for errors
+   * that don't belong to any specific field, distinct from the
+   * whole-form subtree address `[]`.
+   */
   path: (string | number)[]
   /** Identifies which form produced this error. */
   formKey: FormKey
@@ -2739,12 +2745,15 @@ export type UseFormReturnType<
    * if (result.ok) form.setFormErrors(result.errors)
    * ```
    *
-   * Form-level errors surface in `form.meta.errors` (alongside field
-   * errors) but are intentionally excluded from the path-keyed
-   * `form.errors` proxy (no key represents `[]` in a nested object) —
-   * read them via `meta.errors.filter(e => e.path.length === 0)` or
-   * `form.errors([])` (the call-form aggregates everywhere, including
-   * form-level errors at `path: []`).
+   * Form-level errors land at the empty-string path bucket
+   * (`path: ['']`). They surface in `form.meta.errors` (alongside
+   * field errors), in `form.errors()` / `form.errors([])` (whole-form
+   * subtree aggregates), and — uniquely — in `form.errors('')`,
+   * which returns ONLY the form-level bucket. They're excluded from
+   * the path-keyed `form.errors` drill proxy because no nested-object
+   * key represents the empty-string path. Read them via
+   * `meta.errors.filter(e => e.path.length === 1 && e.path[0] === '')`
+   * if you need a programmatic split.
    */
   setFormErrors: (errors: ReadonlyArray<Partial<ValidationError> & { message: string }>) => void
 
@@ -2868,6 +2877,27 @@ export type UseFormReturnType<
    * `options` is forwarded to `Element.scrollIntoView` unchanged.
    */
   scrollToFirstError: (options?: ScrollIntoViewOptions) => boolean
+
+  /**
+   * Programmatically mark fields as touched — the sticky flag the
+   * standard "show errors after interaction" pattern reads. Closes
+   * the gap when fields are populated without a DOM gesture (post-
+   * import, paste, autofill, server-seeded values you want to
+   * validate immediately).
+   *
+   * ```ts
+   * form.touch('email')                 // one leaf
+   * form.touch('profile')               // every leaf under profile
+   * form.touch(['profile', 'name'])     // segment-array form
+   * form.touch()                        // every leaf in the form
+   * ```
+   *
+   * Pure flag write — does not mutate value, focused, blurred, or
+   * trigger validation. Idempotent: re-calling on an already-touched
+   * field is a no-op. Touched is sticky-true; pair with
+   * `form.reset()` / `form.resetField()` to clear.
+   */
+  touch: (path?: FlatPath<Form> | (string | number)[]) => void
 
   // --- Field arrays ---
 

@@ -8,10 +8,12 @@ import type { ValidationError } from '../../src/runtime/types/types-api'
 
 /**
  * `form.setFormErrors` / `form.clearFormErrors` write and clear the
- * form-level errors (entries at `path: []`) without disturbing any
+ * form-level errors — entries at the empty-string path `['']`,
+ * stored in the `'[""]'` PathKey bucket — without disturbing any
  * field-level error. Form-level errors surface in `form.meta.errors`
- * but not in the path-keyed `form.errors` proxy (no key represents `[]`
- * in a nested object).
+ * and in `form.errors('')`; they're excluded from the path-keyed
+ * `form.errors` drill proxy because no nested-object key represents
+ * the empty-string path.
  */
 
 const schema = z.object({
@@ -37,7 +39,7 @@ function mount(): { app: App; api: Api } {
 }
 
 const formLevel = (errors: readonly ValidationError[]): readonly ValidationError[] =>
-  errors.filter((e) => e.path.length === 0)
+  errors.filter((e) => e.path.length === 1 && e.path[0] === '')
 
 describe('form.setFormErrors / clearFormErrors', () => {
   const apps: App[] = []
@@ -55,7 +57,7 @@ describe('form.setFormErrors / clearFormErrors', () => {
     expect(entries).toHaveLength(1)
     expect(entries[0]).toMatchObject({
       message: 'Capacity exceeded',
-      path: [],
+      path: [''],
       formKey: api.key,
       code: 'atta:form-error',
     })
@@ -69,7 +71,7 @@ describe('form.setFormErrors / clearFormErrors', () => {
 
     const entries = formLevel(api.meta.errors)
     expect(entries.map((e) => e.message)).toEqual(['a', 'b', 'c'])
-    for (const e of entries) expect(e.path).toEqual([])
+    for (const e of entries) expect(e.path).toEqual([''])
   })
 
   it('replaces (does not append) on each call', () => {
@@ -164,8 +166,8 @@ describe('form.setFormErrors / clearFormErrors', () => {
     apps.push(app)
 
     // Caller-provided path / formKey are ignored — `setFormErrors`
-    // forces path: [] and the owning formKey, so `parseApiErrors`
-    // output pipes in without mapping.
+    // forces the form-level path (['']) and the owning formKey, so
+    // `parseApiErrors` output pipes in without mapping.
     api.setFormErrors([
       {
         path: ['ignored', 'on', 'purpose'],
@@ -179,7 +181,7 @@ describe('form.setFormErrors / clearFormErrors', () => {
     expect(entries).toHaveLength(1)
     expect(entries[0]).toMatchObject({
       message: 'Capacity exceeded',
-      path: [],
+      path: [''],
       formKey: api.key,
       code: 'api:capacity',
     })

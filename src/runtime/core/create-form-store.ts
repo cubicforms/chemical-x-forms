@@ -14,6 +14,8 @@ import { applyChangedKeys, diffAndApply, structuralSnapshot, type Patch } from '
 import { AttaformErrorCode } from './error-codes'
 import {
   canonicalizePath,
+  FORM_ERRORS_PATH,
+  FORM_ERRORS_PATH_KEY,
   segmentsForPathKey,
   type Path,
   type PathKey,
@@ -21,6 +23,7 @@ import {
 } from './paths'
 import {
   getAtPath,
+  hasAtPath,
   isPlainRecord,
   mergeStructural,
   setAtPath,
@@ -372,6 +375,12 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   deregisterElement(path: Path, element: HTMLElement): number
   markFocused(path: Path, focused: boolean): void
   markTouched(path: Path): void
+  /**
+   * Walk every active-variant leaf under `segments` and flip
+   * `touched: true`. Powers `form.touch(path?)`. Idempotent;
+   * does not mutate value / focused / blurred or trigger validation.
+   */
+  touchAtPath(segments: Path): void
   /**
    * SSR-only optimistic mark: flip `connected: true` on the field
    * record without an actual DOM element. Called by the `vRegisterHint`
@@ -1560,12 +1569,35 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
    * obvious — Vue's collection handlers fire on `.set`, not on in-place
    * push.
    */
+  /**
+   * Form-level errors — entries whose absolute path is the empty
+   * tuple `[]` — live in the empty-string bucket (`'[""]'` PathKey,
+   * segments `['']`). The convention lets `errors('')` return ONLY
+   * the form-level bucket without sweeping every field error. Any
+   * write that arrives with `err.path: []` (top-level handleSubmit
+   * validation, root-scope `scheduleFieldValidation` re-stamping,
+   * user APIs piping `parseApiErrors`-style entries) gets rerouted
+   * here at the storage boundary.
+   */
+  function rerouteFormLevelEntry(err: ValidationError): ValidationError {
+    if (err.path.length === 0) {
+      return { ...err, path: [...FORM_ERRORS_PATH] }
+    }
+    return err
+  }
+
+  function pathKeyForEntry(err: ValidationError): PathKey {
+    if (err.path.length === 0) return FORM_ERRORS_PATH_KEY
+    return canonicalizePath(err.path as Path).key
+  }
+
   function appendErrorsTo(
     map: Map<PathKey, ValidationError[]>,
     entries: readonly ValidationError[]
   ): void {
-    for (const err of entries) {
-      const { key } = canonicalizePath(err.path as Path)
+    for (const raw of entries) {
+      const err = rerouteFormLevelEntry(raw)
+      const key = pathKeyForEntry(err)
       const current = map.get(key)
       if (current === undefined) {
         map.set(key, [err])
@@ -1629,14 +1661,22 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
    * their original slot.
    */
   function applySchemaErrorsForSubtree(path: Path, entries: ValidationError[]): void {
-    const { key: parentKey } = canonicalizePath(path)
-    // Group by each error's own canonical leaf path FIRST so we know
+    // Root-scope re-validation (path === []) of a schema with a
+    // top-level `.refine()` produces an absolute-path-empty entry.
+    // Reroute those to the form-level bucket so the parent-key check
+    // below reflects the storage convention; otherwise the dropped
+    // parent (`'[]'`) and the surviving form-level entry (`'[""]'`)
+    // never reconcile and the refine error gets nuked on every
+    // re-run.
+    const parentKey = path.length === 0 ? FORM_ERRORS_PATH_KEY : canonicalizePath(path).key
+    // Group by each error's own canonical storage key FIRST so we know
     // which keys survive this pass. Multiple issues at the same path
     // (e.g. two refinements failing the same leaf) merge into one
     // array — preserves adapter ordering within the leaf.
     const grouped = new Map<PathKey, ValidationError[]>()
-    for (const err of entries) {
-      const { key } = canonicalizePath(err.path as Path)
+    for (const raw of entries) {
+      const err = rerouteFormLevelEntry(raw)
+      const key = pathKeyForEntry(err)
       const list = grouped.get(key)
       if (list === undefined) grouped.set(key, [err])
       else list.push(err)
@@ -1646,8 +1686,13 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // Drop stale descendants: existing keys under `path` that the new
     // pass doesn't write (DU-variant leaves that disappeared on
     // reshape). Keys that DO appear in `grouped` stay where they are
-    // — the `set` below updates them in place.
+    // — the `set` below updates them in place. For root-scope passes
+    // (`path === []`) the form-level bucket is treated as the
+    // "parent" — `isPathKeyUnder('[""]', [])` would otherwise sweep
+    // it into the descendant set and clobber refine errors that the
+    // new pass also writes.
     for (const existingKey of [...schemaErrors.keys()]) {
+      if (existingKey === parentKey) continue
       if (isPathKeyUnder(existingKey, path) && !grouped.has(existingKey)) {
         schemaErrors.delete(existingKey)
       }
@@ -1769,6 +1814,43 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   function markTouched(path: Path): void {
     const { key } = canonicalizePath(path)
     touchFieldRecord(key, path, { touched: true })
+  }
+
+  /**
+   * Walk every active-variant leaf under `segments` and flip its
+   * `touched` flag to `true`. Powers the public `form.touch(path?)`
+   * API: leaf path → exactly that leaf; container path → every
+   * descendant leaf; root path `[]` → every leaf in the form.
+   *
+   * Idempotent: leaves already touched are skipped (no reactive
+   * notification). Inactive DU-variant leaves are filtered via
+   * `hasAtPath` against the live form value — same gate the
+   * field-state aggregation walk uses, so touch never marks a leaf
+   * the consumer can't see.
+   *
+   * Dev-warns when no leaves resolve under the path (typo'd input,
+   * empty container, dead variant). Does NOT mutate value, focused,
+   * blurred, or trigger validation — touched is the single sticky
+   * flag this helper writes.
+   */
+  function touchAtPath(segments: Path): void {
+    const formValue = form.value
+    let touchedAny = false
+    for (const [, entry] of originals) {
+      if (!isPathPrefix(segments, entry.segments)) continue
+      if (!hasAtPath(formValue, entry.segments)) continue
+      touchedAny = true
+      const leafKey = canonicalizePath(entry.segments).key
+      const current = fields.get(leafKey)
+      if (current?.touched === true) continue
+      touchFieldRecord(leafKey, entry.segments, { touched: true })
+    }
+    if (!touchedAny && __DEV__) {
+      console.warn(
+        `[attaform] form.touch(): no fields resolved at path ${JSON.stringify(segments)}. ` +
+          `Check the path matches an existing field or container.`
+      )
+    }
   }
 
   // --- Reset ---
@@ -2110,6 +2192,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     deregisterElement,
     markFocused,
     markTouched,
+    touchAtPath,
     markConnectedOptimistically,
 
     isPristineAtPath,

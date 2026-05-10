@@ -35,11 +35,13 @@ import { canonicalizePath, type Path, type PathKey } from '../core/paths'
 import { deleteAtPath, getAtPath, setAtPath, isPlainRecord } from '../core/path-walker'
 import { ensureAttaformInstalled } from '../core/plugin'
 import { kFormContext, kFormInstanceId, useRegistry } from '../core/registry'
+import { resolveShouldShowErrors } from '../core/should-show-errors'
 import { walkUnsetSentinels } from '../core/unset-walker'
 import type {
   AbstractSchema,
   AttaformDefaults,
   FormKey,
+  PersistConfig,
   PersistConfigOptions,
   UseFormReturnType,
   UseFormConfiguration,
@@ -152,6 +154,20 @@ export function useAbstractForm<
     // favour of the first's — matching what already happens (only
     // the first caller's config wires the FormStore).
     warnOnSchemaFingerprintMismatch(key, existing.schema, resolvedSchema)
+    // Persist is a single-IO-channel concern (one storage key, one
+    // debounce timer, one subscription). The first useForm call wires
+    // it; subsequent calls' `persist:` configurations are silently
+    // dropped. When the second caller passes a DIFFERENT persist
+    // config, that drop is a footgun: modal-team dev configures
+    // `'session'`, finds nothing in sessionStorage, debugs for an hour
+    // — the main-form team wired `'local'` first. Surface the divergence
+    // as a dev-warn so the surprise is explicit. `validateOn` /
+    // `debounceMs` / `coerce` / `rememberVariants` / `shouldShowErrors`
+    // are now per-instance, so they don't need this guard;
+    // `defaultValues` is intentionally first-wins (the live store
+    // state is what the modal should see); `strict` is construction-
+    // only and the seed has already fired.
+    warnOnPersistDivergence(key, existing, configuration.persist)
   }
   const state: FormStore<Form, GetValueFormType> =
     existing ?? buildFreshState<Form, GetValueFormType>(key, resolvedSchema, merged, registry)
@@ -279,6 +295,29 @@ export function useAbstractForm<
   const history = state.modules.get(HISTORY_MODULE_KEY) as HistoryModule | undefined
   if (history !== undefined) {
     apiOptions.history = history
+  }
+  // Per-instance config lifts: each `useForm()` callsite carries its
+  // own `validateOn` / `debounceMs` / `shouldShowErrors` / `coerce` /
+  // `rememberVariants`. These thread through `buildFormApi` into
+  // register's coerce closure, the field-state predicate, and store
+  // writes' WriteMeta — so two `useForm({ key })` calls (modal + main)
+  // can validate on different cadences and surface errors with
+  // different visibility rules even though they share a FormStore.
+  if (merged.validateOn !== undefined) {
+    apiOptions.validateOn = merged.validateOn
+  }
+  const mergedDebounceMs = (merged as { debounceMs?: number }).debounceMs
+  if (mergedDebounceMs !== undefined) {
+    apiOptions.debounceMs = mergedDebounceMs
+  }
+  if (merged.shouldShowErrors !== undefined) {
+    apiOptions.shouldShowErrors = resolveShouldShowErrors(merged.shouldShowErrors)
+  }
+  if (merged.coerce !== undefined) {
+    apiOptions.coerce = merged.coerce
+  }
+  if (merged.rememberVariants !== undefined) {
+    apiOptions.rememberVariants = merged.rememberVariants
   }
   return buildFormApi<Form, GetValueFormType>(state, formInstanceId, apiOptions)
 }
@@ -544,6 +583,53 @@ function warnOnSchemaFingerprintMismatch(
   console.warn(
     `[attaform] useForm() calls with key "${key}" use different schemas; first wins, second is ignored. Use identical schemas or unique keys.\n  existing: ${existingFp}\n  incoming: ${incomingFp}`
   )
+}
+
+/**
+ * Dev-only: warn when a second `useForm` lands on the same key with a
+ * `persist:` config that diverges from what the first call wired. The
+ * persist channel is single-IO (one storage key, one debounce timer);
+ * silent drop is a high-stakes footgun ("I configured persist but
+ * sessionStorage is empty"). Skipped when the second call passes no
+ * persist config (intentional inheritance), and when the comparison
+ * is deemed equivalent (same `storage` reference / kind, same `key`,
+ * same `debounceMs`). Custom adapter functions compare by reference
+ * — distinct closures look distinct, which is conservative but
+ * correct: distinct closures may persist to different backends.
+ */
+function warnOnPersistDivergence<F extends GenericForm>(
+  key: FormKey,
+  existing: FormStore<F>,
+  incomingPersist: PersistConfig | undefined
+): void {
+  if (incomingPersist === undefined) return
+  const wired = existing.modules.get(PERSISTENCE_MODULE_KEY) as PersistenceModule | undefined
+  const incomingNormalized = normalizePersistConfig(incomingPersist)
+  if (wired === undefined) {
+    console.warn(
+      `[attaform] useForm({ key: "${key}" }) passed a persist config but the first useForm({ key }) call didn't wire persistence; the new config is silently dropped. Pass persist on the first call, or remove persist here to make the inheritance explicit.`
+    )
+    return
+  }
+  if (persistConfigsEquivalent(wired.wiredConfig, incomingNormalized)) return
+  console.warn(
+    `[attaform] useForm({ key: "${key}" }) passed a persist config that differs from the first useForm({ key }) call's; first wins, this one is ignored.\n  wired:    ${describePersist(wired.wiredConfig)}\n  incoming: ${describePersist(incomingNormalized)}`
+  )
+}
+
+function persistConfigsEquivalent(a: PersistConfigOptions, b: PersistConfigOptions): boolean {
+  if (a.storage !== b.storage) return false
+  if ((a.key ?? undefined) !== (b.key ?? undefined)) return false
+  if ((a.debounceMs ?? undefined) !== (b.debounceMs ?? undefined)) return false
+  return true
+}
+
+function describePersist(config: PersistConfigOptions): string {
+  const storage = typeof config.storage === 'string' ? config.storage : 'custom-adapter'
+  const parts = [`storage=${storage}`]
+  if (config.key !== undefined) parts.push(`key=${config.key}`)
+  if (config.debounceMs !== undefined) parts.push(`debounceMs=${config.debounceMs}`)
+  return `{ ${parts.join(', ')} }`
 }
 
 /**
@@ -938,6 +1024,7 @@ function wirePersistence<F extends GenericForm>(
   }
 
   return {
+    wiredConfig: config,
     writePathImmediately,
     clearPersistedDraft,
     awaitPendingWrites,

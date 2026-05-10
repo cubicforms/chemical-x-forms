@@ -763,6 +763,20 @@ export type WriteMeta = {
     | { readonly kind: 'shift-range'; readonly fromIndex: number; readonly toIndex: number }
     | { readonly kind: 'swap'; readonly a: number; readonly b: number }
     | { readonly kind: 'replace-at'; readonly index: number }
+  /**
+   * Per-instance config overrides threaded through writes so each
+   * `useForm({ key })` callsite honors its own `validateOn` /
+   * `debounceMs` / `rememberVariants` even when sharing a FormStore
+   * with sibling calls (e.g., a modal and main form rendering the
+   * same logical form). Internal — set by `buildFormApi` from
+   * the per-instance options bag; the store reads each field with
+   * fallback to its construction-time defaults.
+   */
+  readonly instance?: {
+    readonly validateOn?: ValidateOn
+    readonly debounceMs?: number
+    readonly rememberVariants?: boolean
+  }
 }
 
 /**

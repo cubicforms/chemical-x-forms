@@ -1,5 +1,5 @@
 import { computed, type ComputedRef } from 'vue'
-import type { FieldState, FormMeta, ValidationError } from '../types/types-api'
+import type { FieldState, FormMeta, ShouldShowErrors, ValidationError } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { EMPTY_RESOLVED_FIELD_META } from './field-meta'
@@ -89,13 +89,15 @@ export type FormMetaBaseGetter = () => FormMetaBase
 
 export function buildFieldStateAccessor<F extends GenericForm>(
   state: FormStore<F>,
-  getFormMetaBase: FormMetaBaseGetter
+  getFormMetaBase: FormMetaBaseGetter,
+  options?: { readonly shouldShowErrors?: ShouldShowErrors }
 ) {
   // Per-path memoisation so `getFieldStateAt(p)` returns the same
   // `ComputedRef` reference on repeated reads with the same canonical
   // path. The Map's lifetime equals the form-store's; cleared
   // implicitly when the store is GC'd.
   const cache = new Map<PathKey, ComputedRef<FieldState<unknown>>>()
+  const predicate = options?.shouldShowErrors
 
   return function getFieldState(pathInput: string | Path): ComputedRef<FieldState<unknown>> {
     const { segments, key } = canonicalizePath(pathInput)
@@ -103,8 +105,8 @@ export function buildFieldStateAccessor<F extends GenericForm>(
     if (cached !== undefined) return cached
     const c = computed<FieldState<unknown>>(() =>
       state.schema.isLeafAtPath(segments)
-        ? buildLeafFieldState(state, segments, key, getFormMetaBase)
-        : buildContainerFieldState(state, segments, key, getFormMetaBase)
+        ? buildLeafFieldState(state, segments, key, getFormMetaBase, predicate)
+        : buildContainerFieldState(state, segments, key, getFormMetaBase, predicate)
     )
     cache.set(key, c)
     return c
@@ -201,10 +203,11 @@ function buildLeafFieldState<F extends GenericForm>(
   state: FormStore<F>,
   segments: Path,
   key: PathKey,
-  getFormMetaBase: FormMetaBaseGetter
+  getFormMetaBase: FormMetaBaseGetter,
+  shouldShowErrors?: ShouldShowErrors
 ): FieldState<unknown> {
   const base = buildLeafFieldStateBase(state, segments, key)
-  return decorateWithDerivedProps(base, state, getFormMetaBase)
+  return decorateWithDerivedProps(base, state, getFormMetaBase, shouldShowErrors)
 }
 
 /**
@@ -331,10 +334,11 @@ function buildContainerFieldState<F extends GenericForm>(
   state: FormStore<F>,
   segments: Path,
   key: PathKey,
-  getFormMetaBase: FormMetaBaseGetter
+  getFormMetaBase: FormMetaBaseGetter,
+  shouldShowErrors?: ShouldShowErrors
 ): FieldState<unknown> {
   const base = buildContainerFieldStateBase(state, segments, key)
-  return decorateWithDerivedProps(base, state, getFormMetaBase)
+  return decorateWithDerivedProps(base, state, getFormMetaBase, shouldShowErrors)
 }
 
 /**
@@ -354,10 +358,12 @@ function buildContainerFieldState<F extends GenericForm>(
 function decorateWithDerivedProps<F extends GenericForm>(
   base: FieldStateBase,
   state: FormStore<F>,
-  getFormMetaBase: FormMetaBaseGetter
+  getFormMetaBase: FormMetaBaseGetter,
+  shouldShowErrors?: ShouldShowErrors
 ): FieldState<unknown> {
   const firstError = base.errors[0]
-  const showErrors = base.errors.length > 0 && state.shouldShowErrors(base, getFormMetaBase())
+  const predicate = shouldShowErrors ?? state.shouldShowErrors
+  const showErrors = base.errors.length > 0 && predicate(base, getFormMetaBase())
   return { ...base, showErrors, firstError }
 }
 

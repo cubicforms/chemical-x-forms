@@ -1,5 +1,6 @@
 import { computed, ref, shallowReadonly, type Ref } from 'vue'
 import type {
+  CoercionRegistry,
   InternalRegisterValue,
   RegisterOptions,
   RegisterTransform,
@@ -13,7 +14,19 @@ import { AnonPersistError } from './errors'
 import { extractSchemaFields } from './extract-schema-fields'
 import { canonicalizePath, type Path, type PathKey } from './paths'
 import { PERSISTENCE_MODULE_KEY } from './persistence'
-import { buildCoerceFn, buildElementCoerceFn } from './schema-coerce'
+import { buildCoerceFn, buildElementCoerceFn, resolveCoercionIndex } from './schema-coerce'
+
+/**
+ * Per-`useForm()`-instance config that the API layer threads through
+ * register so each instance honors its own `validateOn` / `debounceMs`
+ * / `coerce` / `rememberVariants` even when sharing a FormStore with
+ * sibling instances. Anything omitted falls back to the store's
+ * construction-time captured values.
+ */
+export type InstanceRegisterConfig = {
+  readonly instanceMeta?: WriteMeta['instance']
+  readonly coerce?: boolean | CoercionRegistry
+}
 
 // Module-level frozen empty array — re-used as the transforms default
 // across every register() call that doesn't opt in. Avoids a per-call
@@ -55,12 +68,14 @@ type ElementWithListeners = HTMLElement & {
 function attachFocusListeners<F extends GenericForm>(
   state: FormStore<F>,
   segments: Path,
-  element: HTMLElement
+  element: HTMLElement,
+  instanceMeta: WriteMeta['instance'] | undefined
 ): void {
   const target = element as ElementWithListeners
   if (target[attaformListenersSymbol] !== undefined) return
-  const handleFocus = (): void => state.markFocused(segments, true)
-  const handleBlur = (): void => state.markFocused(segments, false)
+  const focusMeta = instanceMeta !== undefined ? { instance: instanceMeta } : undefined
+  const handleFocus = (): void => state.markFocused(segments, true, focusMeta)
+  const handleBlur = (): void => state.markFocused(segments, false, focusMeta)
   element.addEventListener('focus', handleFocus)
   element.addEventListener('blur', handleBlur)
   target[attaformListenersSymbol] = { handleFocus, handleBlur }
@@ -75,7 +90,30 @@ function detachFocusListeners(element: HTMLElement): void {
   delete target[attaformListenersSymbol]
 }
 
-export function buildRegister<F extends GenericForm>(state: FormStore<F>, formInstanceId: string) {
+export function buildRegister<F extends GenericForm>(
+  state: FormStore<F>,
+  formInstanceId: string,
+  instanceConfig?: InstanceRegisterConfig
+) {
+  // Per-instance coerce resolution: when a `useForm()` callsite passes
+  // its own `coerce` config, resolve to a fresh CoercionIndex local to
+  // this register factory. Sibling instances sharing the FormStore
+  // (modal + main) keep their own input-side coerce semantics — one's
+  // `'1' → 1` doesn't infect the other's. Falls through to the store's
+  // captured index when the per-call config is absent.
+  const coerceIndex =
+    instanceConfig?.coerce !== undefined
+      ? resolveCoercionIndex(instanceConfig.coerce)
+      : state.coerceIndex
+  const instanceMeta = instanceConfig?.instanceMeta
+  // `meta.instance` is forwarded into every store write below so the
+  // store's reads of `validateOn` / `debounceMs` / `rememberVariants`
+  // honor THIS instance's config. Composed with caller-supplied
+  // `meta` so the persist / blank flags ride through unchanged.
+  const withInstanceMeta = (meta?: WriteMeta): WriteMeta | undefined => {
+    if (instanceMeta === undefined) return meta
+    return meta === undefined ? { instance: instanceMeta } : { ...meta, instance: instanceMeta }
+  }
   // Path-keyed cache of typed-form refs. Lifted out of the per-call
   // closure so multiple `register(path)` invocations for the same
   // path — e.g. two `<input v-register>` bindings to `'numberText'`,
@@ -157,12 +195,12 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
     const coerce = buildCoerceFn(
       state.schema as Parameters<typeof buildCoerceFn>[0],
       segments,
-      state.coerceIndex
+      coerceIndex
     )
     const coerceElement = buildElementCoerceFn(
       state.schema as Parameters<typeof buildElementCoerceFn>[0],
       segments,
-      state.coerceIndex
+      coerceIndex
     )
 
     // Eager throw: opt-in declared but the form has no persistence wired.
@@ -209,10 +247,14 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
         // the empty state. The slim default keeps storage well-typed
         // (the schema's getDefaultAtPath returns 0 for z.number(), ''
         // for z.string(), false for z.boolean(), etc.).
-        return state.setValueAtPath(segments, slimDefault, {
-          blank: true,
-          persist,
-        })
+        return state.setValueAtPath(
+          segments,
+          slimDefault,
+          withInstanceMeta({
+            blank: true,
+            persist,
+          })
+        )
       },
 
       registerElement: (element: HTMLElement): void => {
@@ -221,7 +263,7 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
         // directive past the intended `<input>` / `<select>` / `<textarea>`.
         if (!INTERACTIVE_TAG_NAMES.has(element.tagName)) return
         const added = state.registerElement(segments, element, formInstanceId)
-        if (added) attachFocusListeners(state, segments, element)
+        if (added) attachFocusListeners(state, segments, element, instanceMeta)
       },
 
       deregisterElement: (element: HTMLElement): void => {
@@ -230,7 +272,7 @@ export function buildRegister<F extends GenericForm>(state: FormStore<F>, formIn
       },
 
       setValueWithInternalPath: (value: unknown, meta?: WriteMeta): boolean => {
-        return state.setValueAtPath(segments, value, meta)
+        return state.setValueAtPath(segments, value, withInstanceMeta(meta))
       },
 
       // Called by the `vRegisterHint` compile-time transform's wrapping

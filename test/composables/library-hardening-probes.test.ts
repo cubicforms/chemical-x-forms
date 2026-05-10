@@ -3097,7 +3097,15 @@ describe('chaos — two useForm calls with the same key in one app', () => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  it('does not silently corrupt either form when keys collide', async () => {
+  // Shared-key semantics are intentional (modal + main rendering the
+  // same logical form). The store IS shared; storage IS shared. What
+  // mustn't bleed is per-instance config — each useForm callsite
+  // honors its own validateOn / shouldShowErrors / coerce /
+  // rememberVariants / debounceMs. The first call's defaultValues
+  // wins; subsequent calls inherit the live store state, not their own
+  // seed (so opening a modal shows whatever the user typed in the
+  // main form).
+  it('shares store + first-call defaults wins; subsequent call sees live store state', () => {
     const schema = z.object({ x: z.string() })
     const handle: { a?: unknown; b?: unknown } = {}
     const App = defineComponent({
@@ -3118,25 +3126,97 @@ describe('chaos — two useForm calls with the same key in one app', () => {
     const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
+
+    const a = handle.a as { values: { x: string }; setValue: (p: string, v: unknown) => boolean }
+    const b = handle.b as { values: { x: string }; setValue: (p: string, v: unknown) => boolean }
+
+    // First call's defaultValues wins; both handles see the same live
+    // state. The second `defaultValues: { x: 'b' }` is a guess that
+    // should yield to the live store — exactly the modal-opens-on-
+    // partially-filled-main-form pattern.
+    expect(a.values.x).toBe('a')
+    expect(b.values.x).toBe('a')
+
+    // Writes through one handle land in the shared store; the other
+    // handle observes the same value. That's the feature, not a bug.
+    a.setValue('x', 'one')
+    expect(a.values.x).toBe('one')
+    expect(b.values.x).toBe('one')
+
+    b.setValue('x', 'two')
+    expect(a.values.x).toBe('two')
+    expect(b.values.x).toBe('two')
+  })
+
+  it("each instance honors its own validateOn — sibling's 'submit' doesn't suppress the other's 'change'", async () => {
+    // Two callsites, one shared store. Instance A starts in
+    // submit-only mode; instance B asks for change-mode. With a
+    // valid seed, neither has errors at mount. After a setValue
+    // through B, the change-mode pipeline should fire and surface
+    // 'bad email' even though the store's construction-time mode is
+    // 'submit'. Without the per-instance lift, B's writes would
+    // silently NOT validate (the store would only know A's submit
+    // mode).
+    const schema = z.object({ email: z.email('bad email') })
+    const handle: { a?: unknown; b?: unknown } = {}
+    const App = defineComponent({
+      setup() {
+        handle.a = useForm({
+          schema,
+          key: 'shared-validateOn',
+          validateOn: 'submit',
+          defaultValues: { email: 'seed@example.com' },
+          strict: false,
+        })
+        handle.b = useForm({
+          schema,
+          key: 'shared-validateOn',
+          validateOn: 'change',
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    app.mount(document.createElement('div'))
+    apps.push(app)
     await nextTick()
 
-    // The two forms must either both work independently OR one of
-    // them errored at construction. Silent state-mixing (b's setValue
-    // changes a's storage) is the bug.
     const a = handle.a as {
-      values: { x: string }
+      errors: Record<string, ReadonlyArray<{ message: string }> | undefined>
       setValue: (p: string, v: unknown) => boolean
     }
     const b = handle.b as {
-      values: { x: string }
+      errors: Record<string, ReadonlyArray<{ message: string }> | undefined>
       setValue: (p: string, v: unknown) => boolean
     }
-    a.setValue('x', 'one')
-    b.setValue('x', 'two')
-    await nextTick()
 
-    expect(a.values.x).toBe('one')
-    expect(b.values.x).toBe('two')
+    // Mount-time: lax + valid seed → no errors on either handle.
+    expect(a.errors.email).toBeUndefined()
+    expect(b.errors.email).toBeUndefined()
+
+    // Drain helper: schema.validateAtPath resolves through one
+    // microtask plus the adapter's own async (sync zod still returns
+    // through Promise.resolve), so a single nextTick isn't enough.
+    // setTimeout(0) flushes both microtask queue and the next macrotask.
+    const drain = async () => {
+      await nextTick()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await nextTick()
+    }
+
+    // A's submit-only write must NOT trigger change-mode validation.
+    a.setValue('email', 'first-bad-write')
+    await drain()
+    expect(a.errors.email).toBeUndefined()
+    expect(b.errors.email).toBeUndefined()
+
+    // B's change-mode write SHOULD trigger validation. The bad-email
+    // value in storage now produces a schema error.
+    b.setValue('email', 'second-bad-write')
+    await drain()
+    expect(b.errors.email?.[0]?.message).toBe('bad email')
+    // Errors are shared store state — A sees them too.
+    expect(a.errors.email?.[0]?.message).toBe('bad email')
   })
 })
 

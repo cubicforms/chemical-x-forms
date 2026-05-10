@@ -19,6 +19,15 @@ import { segmentsForPathKey, type Path, type PathKey, type Segment } from '../pa
  */
 export type PersistenceModule = {
   /**
+   * The normalized persist config that wired this module. Held so a
+   * second `useForm({ key, persist: ... })` call sharing the
+   * FormStore can detect divergence (e.g., the modal-team dev passed
+   * `'session'` but the main-form dev wired `'local'`) and emit a
+   * dev-warn. First call wins; subsequent values are dropped silently
+   * absent this readback.
+   */
+  readonly wiredConfig: PersistConfigOptions
+  /**
    * Read-merge-write a single path's current value. Flushes any pending
    * debounced write first so the imperative checkpoint can't be
    * overwritten by a stale-data write that fires immediately after.

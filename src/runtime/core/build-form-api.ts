@@ -1,13 +1,17 @@
 import { computed, reactive, readonly, type Ref } from 'vue'
 import type {
+  CoercionRegistry,
   FormErrorsSurface,
   FormMeta,
   OnInvalidSubmitPolicy,
   ReactiveValidationStatus,
   RegisterValue,
+  ShouldShowErrors,
   UseFormReturnType,
+  ValidateOn,
   ValidationError,
   ValidationResponseWithoutValue,
+  WriteMeta,
 } from '../types/types-api'
 import type { DeepPartial, DefaultValuesShape, GenericForm } from '../types/types-core'
 import { __DEV__ } from './dev'
@@ -52,6 +56,20 @@ export type BuildFormApiOptions = {
    * without opting into the feature.
    */
   history?: HistoryModule
+  /**
+   * Per-`useForm()`-instance config that the API layer threads through
+   * writes / register / field-state so each callsite honors its own
+   * `validateOn` / `debounceMs` / `shouldShowErrors` / `coerce` /
+   * `rememberVariants` even when sharing a FormStore with sibling
+   * instances (e.g., a modal and main form rendering the same logical
+   * form). Anything omitted falls through to the store's
+   * construction-time captured values.
+   */
+  validateOn?: ValidateOn
+  debounceMs?: number
+  shouldShowErrors?: ShouldShowErrors
+  coerce?: boolean | CoercionRegistry
+  rememberVariants?: boolean
 }
 
 /**
@@ -104,9 +122,40 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   formInstanceId: string,
   options: BuildFormApiOptions = {}
 ): UseFormReturnType<Form, GetValueFormType> {
-  const register = buildRegister(state, formInstanceId) as (
-    path: string | Path
-  ) => RegisterValue<unknown>
+  // Compose the per-instance write-meta bag once. Each public write
+  // method below splices `instance: instanceMeta` into its forwarded
+  // `meta` so the store's runtime reads of `validateOn` / `debounceMs`
+  // / `rememberVariants` honor THIS instance's config. Sibling
+  // instances sharing the same FormStore (modal + main) carry their
+  // own instanceMeta in their own buildFormApi closure.
+  const instanceMeta: WriteMeta['instance'] | undefined = (() => {
+    const bag: {
+      -readonly [K in keyof NonNullable<WriteMeta['instance']>]: NonNullable<
+        WriteMeta['instance']
+      >[K]
+    } = {}
+    if (options.validateOn !== undefined) bag.validateOn = options.validateOn
+    if (options.debounceMs !== undefined) bag.debounceMs = options.debounceMs
+    if (options.rememberVariants !== undefined) bag.rememberVariants = options.rememberVariants
+    return Object.keys(bag).length > 0 ? bag : undefined
+  })()
+  // Helper used by every internal `state.setValueAtPath` call below to
+  // splice the instance bag into the forwarded WriteMeta. Identity
+  // when no instance overrides are active.
+  const withInstanceMeta = (meta?: WriteMeta): WriteMeta | undefined => {
+    if (instanceMeta === undefined) return meta
+    return meta === undefined ? { instance: instanceMeta } : { ...meta, instance: instanceMeta }
+  }
+
+  const registerConfig = {
+    ...(instanceMeta !== undefined ? { instanceMeta } : {}),
+    ...(options.coerce !== undefined ? { coerce: options.coerce } : {}),
+  }
+  const register = buildRegister(
+    state,
+    formInstanceId,
+    Object.keys(registerConfig).length > 0 ? registerConfig : undefined
+  ) as (path: string | Path) => RegisterValue<unknown>
   // Don't set `onInvalidSubmit: undefined` — exactOptionalPropertyTypes
   // treats an explicit-undefined value differently from an omitted
   // property. Only pass the key when the consumer opted in.
@@ -158,7 +207,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
         next,
         state.schema as unknown as Parameters<typeof walkUnsetSentinels>[1]
       )
-      const ok = state.setValueAtPath([], walked.cleanedValues)
+      const ok = state.setValueAtPath([], walked.cleanedValues, withInstanceMeta())
       if (!ok) return false
       // Mark each blank path. `setValueAtPath` was just called
       // with cleaned values, so the gate hook's implicit-unmark would
@@ -167,9 +216,11 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       for (const pathKey of walked.paths) {
         const segments = segmentsForPathKey(pathKey)
         if (segments === null) continue
-        state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
-          blank: true,
-        })
+        state.setValueAtPath(
+          segments,
+          state.schema.getDefaultAtPath(segments),
+          withInstanceMeta({ blank: true })
+        )
       }
       return true
     }
@@ -192,12 +243,14 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
         if (parentDU?.discriminatorKey === last) {
           const slimDefault = state.schema.getDefaultAtPath(segments)
           const blank = blankForKind(slimDefault)
-          return state.setValueAtPath(segments, blank, { blank: true })
+          return state.setValueAtPath(segments, blank, withInstanceMeta({ blank: true }))
         }
       }
-      return state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
-        blank: true,
-      })
+      return state.setValueAtPath(
+        segments,
+        state.schema.getDefaultAtPath(segments),
+        withInstanceMeta({ blank: true })
+      )
     }
     // Path-form callback: when the slot at `segments` is unpopulated,
     // hand the consumer the schema's default at that path instead of
@@ -215,9 +268,11 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       // Callback returned `unset` — translate the same way as the
       // direct case above.
       if (isUnset(resolvedValue)) {
-        return state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
-          blank: true,
-        })
+        return state.setValueAtPath(
+          segments,
+          state.schema.getDefaultAtPath(segments),
+          withInstanceMeta({ blank: true })
+        )
       }
     } else {
       resolvedValue = maybeValue
@@ -238,7 +293,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       segments,
       state.schema as unknown as Parameters<typeof substituteUnsetSentinels>[2]
     )
-    const ok = state.setValueAtPath(segments, walked.cleanedValues)
+    const ok = state.setValueAtPath(segments, walked.cleanedValues, withInstanceMeta())
     if (!ok) return false
     // Mark each substituted leaf blank. Re-write the slim default
     // explicitly with `blank: true` so the gate hook adds the path
@@ -248,9 +303,11 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     for (const pathKey of walked.paths) {
       const blankSegments = segmentsForPathKey(pathKey)
       if (blankSegments === null) continue
-      state.setValueAtPath(blankSegments, state.schema.getDefaultAtPath(blankSegments), {
-        blank: true,
-      })
+      state.setValueAtPath(
+        blankSegments,
+        state.schema.getDefaultAtPath(blankSegments),
+        withInstanceMeta({ blank: true })
+      )
     }
     return true
   }
@@ -470,7 +527,15 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     }
   }
 
-  const getRootFieldStateAt = buildFieldStateAccessor(state, getFormMetaBase)
+  const fieldStateAccessorOptions =
+    options.shouldShowErrors !== undefined
+      ? { shouldShowErrors: options.shouldShowErrors }
+      : undefined
+  const getRootFieldStateAt = buildFieldStateAccessor(
+    state,
+    getFormMetaBase,
+    fieldStateAccessorOptions
+  )
   const rootFieldState = getRootFieldStateAt([] as Path)
   const formMeta = readonly(
     reactive({
@@ -570,9 +635,11 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       for (const pathKey of walked.paths) {
         const segments = segmentsForPathKey(pathKey)
         if (segments === null) continue
-        state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
-          blank: true,
-        })
+        state.setValueAtPath(
+          segments,
+          state.schema.getDefaultAtPath(segments),
+          withInstanceMeta({ blank: true })
+        )
         // Mirror the new baseline into originalBlankPaths so the
         // post-reset state is the dirty=false reference.
         state.originalBlankPaths.add(pathKey as PathKey)
@@ -677,7 +744,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // computed it reads through, so repeated access to the same path
   // (`form.fields.email` twice) returns the same object — useful
   // for downstream `===` checks and Vue's render diff.
-  const fieldStateProxy = buildFieldStateProxy(state, getFormMetaBase)
+  const fieldStateProxy = buildFieldStateProxy(state, getFormMetaBase, fieldStateAccessorOptions)
 
   return {
     handleSubmit,

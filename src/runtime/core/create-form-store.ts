@@ -442,7 +442,16 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    */
   registerElement(path: Path, element: HTMLElement, formInstanceId: string): boolean
   deregisterElement(path: Path, element: HTMLElement): number
-  markFocused(path: Path, focused: boolean): void
+  /**
+   * Optional `meta.instance` carries per-`useForm()`-instance overrides
+   * for `validateOn` / `debounceMs` so the blur-trigger respects the
+   * caller's config when sibling instances share a FormStore.
+   */
+  markFocused(
+    path: Path,
+    focused: boolean,
+    meta?: { readonly instance?: WriteMeta['instance'] }
+  ): void
   markTouched(path: Path): void
   /**
    * Walk every active-variant leaf under `segments` and flip
@@ -518,8 +527,18 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    * the adapter call on the next microtask. Internal callsites use this
    * for one-shot triggers; the per-keystroke writers pass `false` to
    * coalesce rapid mutations under the configured debounceMs.
+   *
+   * `override` carries per-`useForm()`-instance values: when provided,
+   * the scheduler honors `override.mode` instead of the store's
+   * captured `validateOn`, and `override.debounceMs` instead of the
+   * store's captured `debounceMs`. Used so sibling instances sharing a
+   * FormStore can each validate on their own cadence.
    */
-  scheduleFieldValidation(path: Path, immediate: boolean): void
+  scheduleFieldValidation(
+    path: Path,
+    immediate: boolean,
+    override?: { readonly mode?: ValidateOn; readonly debounceMs?: number }
+  ): void
 
   /**
    * Subscribe to every `applyFormReplacement`. Fires synchronously
@@ -1508,8 +1527,14 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     } else if (Array.isArray(value) && Array.isArray(currentValue)) {
       clearVariantMemoryUnderPath(path)
     }
-    if (fieldValidationMode === 'change') {
-      scheduleFieldValidation(path, false /* debounced */)
+    const effectiveModeAfterWrite = meta?.instance?.validateOn ?? fieldValidationMode
+    if (effectiveModeAfterWrite === 'change') {
+      scheduleFieldValidation(path, false /* debounced */, {
+        ...(meta?.instance?.validateOn !== undefined ? { mode: meta.instance.validateOn } : {}),
+        ...(meta?.instance?.debounceMs !== undefined
+          ? { debounceMs: meta.instance.debounceMs }
+          : {}),
+      })
     }
     return true
   }
@@ -1571,7 +1596,8 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // discriminator) — nothing meaningful to remember.
     let baseline: unknown = variantDefault
     let restoredBlanks: PathKey[] | undefined
-    if (rememberVariants && !sameDisc) {
+    const effectiveRemember = meta?.instance?.rememberVariants ?? rememberVariants
+    if (effectiveRemember && !sameDisc) {
       if (oldDiscValue !== undefined) {
         const currentValue: unknown = cloneVariantSnapshot(getAtPath(form.value, parentPath))
         const outgoingBlanks: PathKey[] = []
@@ -1676,7 +1702,8 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // we detect that with `instanceof Promise` and fall through to
     // the existing debounced async pipeline in that case.
     let appliedSync = false
-    if (fieldValidationMode === 'change') {
+    const reshapeMode = meta?.instance?.validateOn ?? fieldValidationMode
+    if (reshapeMode === 'change') {
       const syncOrPromise = schema.validateAtPath(finalValue, parentPath, { sync: true })
       if (!(syncOrPromise instanceof Promise)) {
         const reStamped = syncOrPromise.success
@@ -1700,8 +1727,13 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     }
     applyFormReplacement(nextForm, meta)
     for (const k of newBlankPaths) blankPaths.add(k)
-    if (fieldValidationMode === 'change' && !appliedSync) {
-      scheduleFieldValidation(parentPath, false /* debounced */)
+    if (reshapeMode === 'change' && !appliedSync) {
+      scheduleFieldValidation(parentPath, false /* debounced */, {
+        ...(meta?.instance?.validateOn !== undefined ? { mode: meta.instance.validateOn } : {}),
+        ...(meta?.instance?.debounceMs !== undefined
+          ? { debounceMs: meta.instance.debounceMs }
+          : {}),
+      })
     }
     return true
   }
@@ -1718,8 +1750,14 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
    * latest-keystroke value is what matters, not whichever value
    * tripped the timer scheduler N milliseconds ago.
    */
-  function scheduleFieldValidation(path: Path, immediate: boolean): void {
-    if (fieldValidationMode === 'submit') return
+  function scheduleFieldValidation(
+    path: Path,
+    immediate: boolean,
+    override?: { readonly mode?: ValidateOn; readonly debounceMs?: number }
+  ): void {
+    const effectiveMode = override?.mode ?? fieldValidationMode
+    if (effectiveMode === 'submit') return
+    const effectiveDebounce = override?.debounceMs ?? fieldValidationDebounceMs
     const { key } = canonicalizePath(path)
     const prev = fieldValidationState.get(key)
     if (prev !== undefined) {
@@ -1778,10 +1816,10 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // punt to the next macrotask (browsers also clamp to ~4 ms), and
     // the indirection serves no purpose when the consumer asked for
     // "no debounce." Run synchronously like the `immediate` branch.
-    if (immediate || fieldValidationDebounceMs === 0) {
+    if (immediate || effectiveDebounce === 0) {
       run()
     } else {
-      fresh.timer = setTimeout(run, fieldValidationDebounceMs)
+      fresh.timer = setTimeout(run, effectiveDebounce)
     }
   }
 
@@ -2110,7 +2148,11 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     touchFieldRecord(key, path, { connected: true })
   }
 
-  function markFocused(path: Path, focused: boolean): void {
+  function markFocused(
+    path: Path,
+    focused: boolean,
+    meta?: { readonly instance?: WriteMeta['instance'] }
+  ): void {
     const { key } = canonicalizePath(path)
     touchFieldRecord(key, path, {
       focused,
@@ -2122,8 +2164,14 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // On blur (focused → false), `validateOn: 'blur'` fires an
     // immediate (no-debounce) validation for this path. Ignored for
     // change/submit modes so behaviour matches the declared config.
-    if (!focused && fieldValidationMode === 'blur') {
-      scheduleFieldValidation(path, true /* immediate */)
+    const focusMode = meta?.instance?.validateOn ?? fieldValidationMode
+    if (!focused && focusMode === 'blur') {
+      scheduleFieldValidation(path, true /* immediate */, {
+        ...(meta?.instance?.validateOn !== undefined ? { mode: meta.instance.validateOn } : {}),
+        ...(meta?.instance?.debounceMs !== undefined
+          ? { debounceMs: meta.instance.debounceMs }
+          : {}),
+      })
     }
   }
 

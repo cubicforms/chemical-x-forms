@@ -61,6 +61,15 @@ export type BuildFormApiOptions = {
  * mutating methods and rebinds method/getter access to the underlying
  * Set so internal-slot accesses (e.g. `size`, `has`) keep working.
  */
+function blankForKind(slimDefault: unknown): unknown {
+  if (typeof slimDefault === 'string') return ''
+  if (typeof slimDefault === 'number') return 0
+  if (typeof slimDefault === 'bigint') return 0n
+  if (typeof slimDefault === 'boolean') return false
+  if (slimDefault === null) return null
+  return undefined
+}
+
 function readonlySetSnapshot<T>(source: Iterable<T>): ReadonlySet<T> {
   const snapshot = new Set(source)
   return new Proxy(snapshot, {
@@ -170,6 +179,22 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     // gets the well-typed default; the path is marked for the
     // displayValue / required-empty machinery.
     if (isUnset(maybeValue)) {
+      // Discriminator-path special case: the slim default at a disc
+      // path is the first variant's literal (e.g. 'email'). Seeding
+      // that here would silently activate a variant the consumer
+      // didn't pick. Use a kind-appropriate primitive blank instead so
+      // setValueAtPath's stub branch lands `{ [discKey]: blank }`
+      // with no variant body.
+      const last = segments.length > 0 ? segments[segments.length - 1] : undefined
+      if (typeof last === 'string') {
+        const parent = segments.slice(0, -1)
+        const parentDU = state.schema.getUnionDiscriminatorAtPath(parent)
+        if (parentDU?.discriminatorKey === last) {
+          const slimDefault = state.schema.getDefaultAtPath(segments)
+          const blank = blankForKind(slimDefault)
+          return state.setValueAtPath(segments, blank, { blank: true })
+        }
+      }
       return state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
         blank: true,
       })

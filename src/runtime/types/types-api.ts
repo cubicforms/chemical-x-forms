@@ -517,6 +517,14 @@ export type UnionDiscriminatorContext = {
    * skips the reshape and falls back to a plain write.
    */
   getVariantDefault(value: unknown): unknown
+  /**
+   * Returns `true` iff `value` is a literal recognised by one of the
+   * discriminator's variants. Used by reshape to decide whether to
+   * seek a variant default or emit a stub state. NOT used at the
+   * runtime write gate — consumer-side value validity is a
+   * validation-time concern.
+   */
+  isVariantSelected(value: unknown): boolean
 }
 
 /**

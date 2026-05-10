@@ -4,7 +4,7 @@ import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { EMPTY_RESOLVED_FIELD_META } from './field-meta'
 import { humanize } from './humanize'
-import { hasAtPath } from './path-walker'
+import { getAtPath, hasAtPath } from './path-walker'
 import {
   canonicalizePath,
   FORM_ERRORS_PATH_KEY,
@@ -13,6 +13,20 @@ import {
   type Path,
   type PathKey,
 } from './paths'
+
+function isUnderStubAncestor<F extends GenericForm>(state: FormStore<F>, segments: Path): boolean {
+  for (let i = 0; i < segments.length; i++) {
+    const ancestorPath = segments.slice(0, i)
+    const du = state.schema.getUnionDiscriminatorAtPath(ancestorPath)
+    if (du === undefined) continue
+    const ancestorValue = getAtPath(state.form.value, ancestorPath)
+    if (ancestorValue === null || typeof ancestorValue !== 'object') continue
+    const discValue = (ancestorValue as Record<string, unknown>)[du.discriminatorKey]
+    if (discValue === undefined) return true
+    if (!du.isVariantSelected(discValue)) return true
+  }
+  return false
+}
 
 /**
  * Reactive field-state accessor. Combines per-field records, DOM
@@ -128,7 +142,19 @@ function buildLeafFieldStateBase<F extends GenericForm>(
   // and clamping every such field to `false` at mount would defeat
   // the green-checkmark UX pattern that `field.valid` is built for.
   const gated = state.pathHasAsyncValidation(segments) && !state.firstValidationDone.value
-  const valid = !gated && errors.length === 0 && !validating
+  // Stub-state orphan gate: when a leaf is structurally absent from
+  // `form.value` AND any DU ancestor is in stub state (its disc value
+  // isn't a known variant), the surface MUST NOT report `valid: true`.
+  // The parent is broken; pretending the descendant is fine hides
+  // it from error-summary UIs. Inactive-variant siblings under a
+  // VALID disc are a different case — they read as stable stubs
+  // (`valid: true`, errors: []) so unconditional template bindings
+  // keep working across variants.
+  const isOrphan =
+    segments.length > 0 &&
+    !hasAtPath(state.form.value, segments) &&
+    isUnderStubAncestor(state, segments)
+  const valid = !gated && errors.length === 0 && !validating && !isOrphan
   const elementRecord = state.elements.get(key)
   const elementsArr: readonly HTMLElement[] = elementRecord
     ? Object.freeze([...elementRecord.elements])

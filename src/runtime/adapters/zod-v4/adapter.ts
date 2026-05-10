@@ -482,6 +482,14 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         const discKey = getDiscriminator(matchedUnion)
         if (discKey === undefined) return undefined
         const options = getDiscriminatedOptions(matchedUnion)
+        const literalSet = new Set<unknown>()
+        for (const opt of options) {
+          const shape = getObjectShape(opt)
+          const litSchema = shape[discKey]
+          if (litSchema === undefined) continue
+          if (kindOf(litSchema) !== 'literal') continue
+          for (const v of getLiteralValues(litSchema)) literalSet.add(v)
+        }
         return {
           discriminatorKey: discKey,
           getVariantDefault(value: unknown): unknown {
@@ -494,6 +502,9 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
               if (literalValues.includes(value)) return deriveDefault(opt, true)
             }
             return undefined
+          },
+          isVariantSelected(value: unknown): boolean {
+            return literalSet.has(value)
           },
         }
       },

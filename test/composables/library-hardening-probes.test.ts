@@ -87,19 +87,21 @@ describe('DU hardening — Case A invalid leaf discriminator write', () => {
     expect(isPreservedEmail || isHasOnlyDiscriminator).toBe(true)
   })
 
-  it('returns FALSE from setValue when the new discriminator value is not a valid variant', async () => {
+  it('returns TRUE and lands a disc-only stub when the new discriminator is not a known variant', async () => {
     const { app, api } = mountProfile()
     apps.push(app)
 
-    // The slim-primitive gate accepts any string at a string-literal
-    // discriminator path, so the write currently passes through. But
-    // semantically the write doesn't "succeed" — it leaves the form
-    // in an unrepresentable state. The return value should signal
-    // the rejection so callers can branch on it (mirrors how invalid
-    // slim primitives return false).
+    // Slim-primitive gate is type-only — it accepts any string at a
+    // string-literal disc. The stub-state contract: the write
+    // succeeds (returns true), storage at the union path collapses
+    // to `{ [discKey]: value }` only — prior variant body and any
+    // foreign keys are dropped. Validation is the authority on
+    // value-level correctness; it surfaces the issue at notify /
+    // notify.channel via Zod's natural invalid_union_discriminator.
     const ok = api.setValue('notify.channel', 'wat')
     await nextTick()
-    expect(ok).toBe(false)
+    expect(ok).toBe(true)
+    expect(api.values.notify).toEqual({ channel: 'wat' })
   })
 
   it('surfaces a discriminator-mismatch error via validateAsync after an invalid write', async () => {
@@ -211,28 +213,31 @@ describe('DU hardening — Case B invalid whole-union write', () => {
     expect(stayedEmail || validShape).toBe(true)
   })
 
-  it('returns FALSE from setValue on an invalid whole-union write', async () => {
+  it('returns TRUE and lands a disc-only stub on an invalid whole-union write', async () => {
     const { app, api } = mountProfile()
     apps.push(app)
 
     const ok = api.setValue('notify', { channel: 'wat' })
     await nextTick()
-    expect(ok).toBe(false)
+    expect(ok).toBe(true)
+    expect(api.values.notify).toEqual({ channel: 'wat' })
   })
 
-  it('whole-union write missing the discriminator entirely is also rejected', async () => {
+  it('whole-union write missing the discriminator entirely lands an empty stub', async () => {
     const { app, api } = mountProfile()
     apps.push(app)
 
-    // Consumer omits `channel`. Today this falls through to merge
-    // logic that picks the first variant by default and merges the
-    // consumer-supplied `address` on top — so the shape silently
-    // becomes `{channel:'email', address:'a@b.io'}` even though the
-    // consumer never asked for email. The contract this should pin:
-    // a Case B write at a DU MUST carry the discriminator.
+    // Consumer omits `channel`. The stub-state contract: storage
+    // collapses to `{}` (no discriminator to hold, every consumer key
+    // dropped — no auto-merge with the first-variant default).
+    // Validation surfaces the issue via Zod's natural invalid-union-
+    // discriminator on the next validateAsync.
     const ok = api.setValue('notify', { address: 'a@b.io' })
     await nextTick()
-    expect(ok).toBe(false)
+    expect(ok).toBe(true)
+    expect(api.values.notify).toEqual({})
+    const result = await api.validateAsync()
+    expect(result.success).toBe(false)
   })
 })
 
@@ -336,15 +341,16 @@ describe('DU hardening — slim-primitive gate at the discriminator key', () => 
     apps.push(app)
     const api = handle.api as NumericApi
 
-    // `99` is the right type but not a literal value. The slim
-    // gate doesn't know about literal sets — only the underlying
-    // type — so this passes the gate today and reaches the variant
-    // lookup. The variant lookup yields `undefined` (no match) and
-    // the write falls through, leaving `payload.kind = 99` and the
-    // old variant's `v` value alongside it.
-    expect(api.setValue('payload.kind', 99)).toBe(false)
+    // `99` is the right type but not a literal value. The slim gate
+    // is type-only (kinds, not literal sets), so the write reaches the
+    // disc reshape. With no matching variant, storage collapses to a
+    // disc-only stub `{ kind: 99 }` and validation surfaces the
+    // mismatch via Zod's natural error pipeline. setValue returns true
+    // — the write lands; it's validation, not the runtime gate, that
+    // flags the value as out-of-range.
+    expect(api.setValue('payload.kind', 99)).toBe(true)
     await nextTick()
-    expect(api.values.payload.kind).toBe(1)
+    expect(api.values.payload).toEqual({ kind: 99 })
   })
 })
 
@@ -395,15 +401,16 @@ describe('DU hardening — construction with invalid discriminator in defaultVal
     apps.push(app)
     await nextTick()
 
-    // Either coerce to a valid variant default or reject early. The
-    // accept-as-is outcome leaves `api.values.notify` as `{channel:'wat'}`
-    // — a shape no variant matches — and every downstream consumer
-    // (proxy, validation, persistence) inherits the broken state.
+    // Stub-state contract at construction: form mounts with the
+    // consumer's verbatim disc value at the DU path, no auto-fill from
+    // any variant default — storage is exactly `{channel:'wat'}`,
+    // foreign-variant fields are not invented. A one-shot dev warning
+    // (assertable separately) flags the bad disc; validation surfaces
+    // the mismatch on next validateAsync.
     const notify = api.values.notify as Record<string, unknown>
-    const isValidShape =
-      (notify.channel === 'email' && typeof notify.address === 'string') ||
-      (notify.channel === 'sms' && typeof notify.number === 'string')
-    expect(isValidShape).toBe(true)
+    expect(notify).toEqual({ channel: 'wat' })
+    const result = await api.validateAsync()
+    expect(result.success).toBe(false)
   })
 })
 
@@ -516,10 +523,14 @@ describe('DU hardening — invalid discriminator at an array element', () => {
 
     // Sibling unaffected.
     expect(api.values.events[1]).toEqual({ type: 'text', value: 'second' })
-    // Target element either preserved or in some valid variant —
-    // not in an invalid mixed shape.
+    // Target element collapses to a disc-only stub; foreign keys
+    // from the prior variant (e.g. `x`) are dropped. The stub-state
+    // outcome is also "representable" alongside the two valid-variant
+    // outcomes; what matters is no mixed shape.
     const e0 = api.values.events[0] as Record<string, unknown>
+    const isStub = Object.keys(e0).length === 1 && e0.type === 'unknown'
     const isValid =
+      isStub ||
       (e0.type === 'click' && typeof e0.x === 'string' && !('value' in e0)) ||
       (e0.type === 'text' && typeof e0.value === 'string' && !('x' in e0))
     expect(isValid).toBe(true)
@@ -574,10 +585,14 @@ describe('DU hardening — invalid discriminator at an inner nested DU', () => {
     // Outer step untouched.
     expect(api.values.flow.step).toBe('choose')
 
-    // Inner: either preserved-as-A or in a valid variant — not the
-    // mixed `{ kind: 'Z', a: 'value-a' }` shape.
+    // Inner collapses to a disc-only stub `{kind:'Z'}` — foreign
+    // `a` from the prior variant is dropped. The stub outcome
+    // joins the two valid-variant outcomes as "representable"; the
+    // mixed `{kind:'Z', a:'value-a'}` shape is what the bug looked like.
     const inner = (api.values.flow as Record<string, unknown>).inner as Record<string, unknown>
+    const isStub = Object.keys(inner).length === 1 && inner.kind === 'Z'
     const innerValid =
+      isStub ||
       (inner.kind === 'A' && typeof inner.a === 'string' && !('b' in inner)) ||
       (inner.kind === 'B' && typeof inner.b === 'string' && !('a' in inner))
     expect(innerValid).toBe(true)
@@ -628,7 +643,7 @@ describe('DU hardening — zod v3 adapter parity', () => {
     expect(isPreservedEmail || isHasOnlyDiscriminator).toBe(true)
   })
 
-  it('v3: returns FALSE for invalid Case A write', async () => {
+  it('v3: returns TRUE and lands a disc-only stub for invalid Case A write', async () => {
     const v3Schema = zV3.object({
       notify: zV3.discriminatedUnion('channel', [
         zV3.object({ channel: zV3.literal('email'), address: zV3.string() }),
@@ -655,7 +670,9 @@ describe('DU hardening — zod v3 adapter parity', () => {
     apps.push(app)
     const api = handle.api as V3Api
 
-    expect(api.setValue('notify.channel', 'nope')).toBe(false)
+    expect(api.setValue('notify.channel', 'nope')).toBe(true)
+    await nextTick()
+    expect(api.values.notify).toEqual({ channel: 'nope' })
   })
 })
 
@@ -946,13 +963,14 @@ describe('DU hardening — invalid OUTER discriminator with valid inner state', 
     api.setValue('flow.step', 'BAD_OUTER')
     await nextTick()
 
-    // The shape `{step:'BAD_OUTER', inner:{kind:'A', a:'typed-a'}}` is
-    // unrepresentable: no outer variant has step='BAD_OUTER', and even
-    // if it did the `inner` key only belongs to step='choose'. The
-    // expected outcomes mirror Case A: either reject (step stays
-    // 'choose') or reshape outer cleanly.
+    // Stub-state contract: outer collapses to a disc-only stub
+    // `{step:'BAD_OUTER'}` — the prior variant's `inner` subtree is
+    // dropped, so no orphan island survives under a non-variant
+    // parent. Validation flags the bad disc on next validateAsync.
     const flow = api.values.flow as Record<string, unknown>
+    const isStub = Object.keys(flow).length === 1 && flow.step === 'BAD_OUTER'
     const valid =
+      isStub ||
       (flow.step === 'choose' && typeof flow.inner === 'object') ||
       (flow.step === 'done' && typeof flow.notes === 'string')
     expect(valid).toBe(true)
@@ -965,12 +983,15 @@ describe('DU hardening — invalid OUTER discriminator with valid inner state', 
     api.setValue('flow', { step: 'choose', inner: { kind: 'BAD_INNER', a: 'x' } })
     await nextTick()
 
-    // Either the whole write rejects (storage stays 'choose'/A typed-a)
-    // or both layers reshape into something representable. The
-    // accept-as-is bug embeds an inner shape no inner variant matches.
+    // Outer reshape activates the choose variant; inner collapses to
+    // a disc-only stub `{kind:'BAD_INNER'}` — foreign `a` is dropped.
+    // The stub joins the two valid-variant outcomes as "representable";
+    // the mixed `{kind:'BAD_INNER', a:'x'}` shape is the bug.
     const flow = api.values.flow as Record<string, unknown>
     const inner = flow.inner as Record<string, unknown>
+    const isStub = Object.keys(inner).length === 1 && inner.kind === 'BAD_INNER'
     const innerValid =
+      isStub ||
       (inner.kind === 'A' && typeof inner.a === 'string' && !('b' in inner)) ||
       (inner.kind === 'B' && typeof inner.b === 'string' && !('a' in inner))
     expect(innerValid).toBe(true)
@@ -1068,12 +1089,17 @@ describe('DU hardening — field metadata side-effects of an invalid discriminat
     await api.validateAsync()
     await nextTick()
 
-    const notifyField = (
+    // Container proxies aren't leaf-views — `api.fields.notify.valid`
+    // descends; the boolean lives on the call-form `api.fields.notify()`
+    // (or `api.fields('notify')`). Stub-state contract: validation
+    // surfaces a Zod disc-mismatch error AT or UNDER the union path,
+    // so the aggregated `valid` is FALSE.
+    const notifyState = (
       api as unknown as {
-        fields: { notify: { valid: boolean } }
+        fields: (path: string) => { valid: boolean; errors: unknown[] }
       }
-    ).fields.notify
-    expect(notifyField.valid).toBe(false)
+    ).fields('notify')
+    expect(notifyState.valid).toBe(false)
   })
 
   it("the discriminator leaf's `valid` flag is FALSE after the invalid write", async () => {
@@ -1505,15 +1531,17 @@ describe('DU hardening — array index Case A/B with invalid discriminator', () 
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  it('Case B at an array index with an invalid discriminator is rejected', async () => {
+  it('Case B at an array index with an invalid discriminator lands a disc-only stub', async () => {
     const api = mountArr()
 
     const ok = api.setValue('events.0', { type: 'unknown', x: 'foo' })
     await nextTick()
 
-    expect(ok).toBe(false)
-    // Element shape unchanged.
-    expect(api.values.events[0]).toEqual({ type: 'click', x: 'first' })
+    expect(ok).toBe(true)
+    // Stub holds only the disc; consumer's foreign `x` is dropped so
+    // form.values can't carry non-variant fields. Validation flags
+    // the bad disc via Zod's natural error flow.
+    expect(api.values.events[0]).toEqual({ type: 'unknown' })
   })
 
   it('Case B at an array index with an unknown EXTRA key is also rejected', async () => {
@@ -1565,25 +1593,25 @@ describe('DU hardening — array index Case A/B with invalid discriminator', () 
     }
   })
 
-  it('write past current length with invalid discriminator does not silently grow the array', async () => {
+  it('write past current length with invalid discriminator grows cleanly with stub at target', async () => {
     const api = mountArr()
 
     // Pre: length 2; this would create indices 2-4 to reach index 5.
     const ok = api.setValue('events.5', { type: 'BAD' })
     await nextTick()
 
-    // The expected outcome: either rejection (length 2) or a clean
-    // grow with a valid variant at index 5 + valid defaults filling
-    // 2-4. The bug outcome: length 6 with junk and gaps filled by
-    // first-variant defaults despite the consumer asking for 'BAD'.
+    // Stub-state contract: target index lands a disc-only stub
+    // `{type:'BAD'}`; gap indices 2-4 are padded with the schema's
+    // element default (a valid first-variant default). No
+    // first-variant fields leak onto the consumer-targeted index.
     if (ok === true && api.values.events.length > 2) {
-      // If it grew, every element must have a valid shape.
-      for (const el of api.values.events) {
-        const e = el as Record<string, unknown>
-        const valid =
+      for (let i = 0; i < api.values.events.length; i++) {
+        const e = api.values.events[i] as Record<string, unknown>
+        const isTargetStub = i === 5 && Object.keys(e).length === 1 && e.type === 'BAD'
+        const isValidVariant =
           (e.type === 'click' && typeof e.x === 'string') ||
           (e.type === 'text' && typeof e.value === 'string')
-        expect(valid).toBe(true)
+        expect(isTargetStub || isValidVariant).toBe(true)
       }
     } else {
       expect(api.values.events.length).toBe(2)
@@ -1965,9 +1993,11 @@ describe('chaos — NaN at the discriminator', () => {
     apps.push(app)
     const api = handle.api as Api
 
-    expect(api.setValue('payload.kind', Number.NaN)).toBe(false)
+    expect(api.setValue('payload.kind', Number.NaN)).toBe(true)
     await nextTick()
-    expect(api.values.payload.kind).toBe(1)
+    // Stub holds the consumer's NaN; validation flags the mismatch
+    // (no NaN literal in any variant) on next validateAsync.
+    expect(api.values.payload).toEqual({ kind: Number.NaN })
   })
 })
 
@@ -2584,16 +2614,22 @@ describe('chaos — writing through register binding for an inactive variant', (
     const { app, api } = mountProfile()
     apps.push(app)
 
-    api.setValue('notify.number', 'stale-from-sms-binding')
+    const ok = api.setValue('notify.number', 'stale-from-sms-binding')
     await nextTick()
 
     const notify = api.values.notify as Record<string, unknown>
-    // Active variant is email — `number` doesn't belong here. Either
-    // the write is rejected, or it gets coerced into a variant switch
-    // (which would surprise the consumer). The accept-as-is bug:
-    // `{channel:'email', address:'old@example.com', number:'stale...'}`.
+    // Active variant is email; `number` doesn't belong on the active
+    // variant's shape. Either the slim gate / cross-variant guard
+    // rejects the write (storage unchanged on email + valid address)
+    // or the runtime coerces a variant switch (sms with `number`
+    // typed). The accept-as-is bug —
+    // `{channel:'email', address:'old@example.com', number:'stale...'}`
+    // — is the only outcome the contract forbids.
     const valid =
-      (notify.channel === 'email' && typeof notify.address === 'string' && !('number' in notify)) ||
+      (ok === false &&
+        notify.channel === 'email' &&
+        typeof notify.address === 'string' &&
+        !('number' in notify)) ||
       (notify.channel === 'sms' && typeof notify.number === 'string')
     expect(valid).toBe(true)
   })

@@ -447,6 +447,13 @@ export function zodAdapter<
         const options = (
           matchedUnion as z.ZodDiscriminatedUnion<string, z.ZodDiscriminatedUnionOption<string>[]>
         )._def.options
+        const literalSet = new Set<unknown>()
+        for (const opt of options) {
+          const litSchema = opt.shape[discKey] as z.ZodTypeAny | undefined
+          if (!litSchema) continue
+          if (!isZodSchemaType(litSchema, 'ZodLiteral')) continue
+          literalSet.add(litSchema._def.value)
+        }
         return {
           discriminatorKey: discKey,
           getVariantDefault(value: unknown): unknown {
@@ -459,6 +466,9 @@ export function zodAdapter<
               }
             }
             return undefined
+          },
+          isVariantSelected(value: unknown): boolean {
+            return literalSet.has(value)
           },
         }
       },

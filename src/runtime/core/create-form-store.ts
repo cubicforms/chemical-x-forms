@@ -103,6 +103,61 @@ function warnMalformedHydration(formKey: FormKey, kind: string, rawKey: string):
   )
 }
 
+function applyDuStubs(
+  schema: AbstractSchema<unknown, unknown>,
+  data: unknown,
+  options: { warn?: boolean; basePath?: Path } = {}
+): unknown {
+  const warned = options.warn === true ? new Set<string>() : undefined
+  return walkDuStubs(schema, data, options.basePath ?? [], warned)
+}
+
+function walkDuStubs(
+  schema: AbstractSchema<unknown, unknown>,
+  value: unknown,
+  path: Path,
+  warned: Set<string> | undefined
+): unknown {
+  if (value === null || value === undefined || typeof value !== 'object') return value
+  if (
+    value instanceof Date ||
+    value instanceof RegExp ||
+    value instanceof Map ||
+    value instanceof Set ||
+    typeof value === 'function'
+  ) {
+    return value
+  }
+  if (Array.isArray(value)) {
+    return value.map((item, i) => walkDuStubs(schema, item, [...path, i], warned))
+  }
+  const rec = value as Record<string, unknown>
+  const du = schema.getUnionDiscriminatorAtPath(path)
+  if (du !== undefined) {
+    const discValue = rec[du.discriminatorKey]
+    if (discValue !== undefined && !du.isVariantSelected(discValue)) {
+      if (warned !== undefined && __DEV__) {
+        const dotted = path.map((s) => String(s)).join('.') || '(root)'
+        const key = `${dotted}::${String(discValue)}`
+        if (!warned.has(key)) {
+          warned.add(key)
+          console.warn(
+            `[attaform] defaultValues at '${dotted}' carries discriminator ` +
+              `'${du.discriminatorKey}=${JSON.stringify(discValue)}' which isn't a known variant. ` +
+              `Form mounts in a stub holding only the discriminator key. Validation will surface the mismatch.`
+          )
+        }
+      }
+      return { [du.discriminatorKey]: discValue }
+    }
+  }
+  const out: Record<string, unknown> = {}
+  for (const k of Object.keys(rec)) {
+    out[k] = walkDuStubs(schema, rec[k], [...path, k], warned)
+  }
+  return out
+}
+
 /** Per-path DOM element tracking. Client-only. */
 export type ElementRecord = {
   /**
@@ -820,7 +875,18 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   const initialData: F =
     hydration !== undefined ? (hydration.form as F) : (structuralSnapshot(schemaInitialData) as F)
 
-  const form = ref(initialData) as Ref<F>
+  // Construction-time DU stub walk: every DU path whose disc value
+  // isn't a known variant literal collapses to a stub holding only
+  // the discriminator key. Drops any first-variant fields that snuck
+  // in via `mergeStructural` / `getDefaultValues` when the consumer's
+  // `defaultValues` (or hydration payload) carried a bad discriminator.
+  // Mirrors the runtime stub-state contract `setValueAtPath` uses for
+  // bad-disc Case A/B writes; emits a one-shot dev warning per bad path.
+  const stubbedInitialData = applyDuStubs(schema as AbstractSchema<unknown, unknown>, initialData, {
+    warn: true,
+  }) as F
+
+  const form = ref(stubbedInitialData) as Ref<F>
 
   // Per-path state. `reactive(new Map())` uses Vue's collection handlers —
   // reads of specific keys track those keys only, so a change to one field
@@ -1209,6 +1275,41 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     if (!isSlimPrimitiveValid(schema, form, path, value)) {
       return false
     }
+    // Cross-variant write guard: walking the path, if any ancestor is
+    // a DU whose ACTIVE disc value resolves to a known variant that
+    // doesn't contain the next path segment, the write targets an
+    // inactive-variant key (e.g. `setValue('notify.number', ...)`
+    // while the active channel is 'email'). Or the ancestor is in
+    // stub state (disc isn't a known variant). Reject so foreign
+    // sibling-variant fields can't leak into form.values.
+    //
+    // The DU's own disc key is always reachable — writes to it
+    // recover the form from stub state by selecting a valid variant
+    // — so the guard skips when the next path segment IS the disc.
+    if (path.length >= 2) {
+      for (let i = 0; i < path.length - 1; i++) {
+        const ancestorPath = path.slice(0, i + 1)
+        const du = schema.getUnionDiscriminatorAtPath(ancestorPath)
+        if (du === undefined) continue
+        const nextSeg = path[i + 1]
+        if (nextSeg === du.discriminatorKey) continue
+        const ancestorValue = getAtPath(form.value, ancestorPath)
+        if (!isPlainRecord(ancestorValue)) continue
+        const discValue = (ancestorValue as Record<string, unknown>)[du.discriminatorKey]
+        if (discValue === undefined) {
+          return false
+        }
+        if (!du.isVariantSelected(discValue)) {
+          return false
+        }
+        const variantDefault = du.getVariantDefault(discValue)
+        if (!isPlainRecord(variantDefault)) continue
+        if (typeof nextSeg !== 'string') continue
+        if (!(nextSeg in (variantDefault as Record<string, unknown>))) {
+          return false
+        }
+      }
+    }
 
     // Discriminated-union variant transitions. Writing a discriminator
     // — whether as a leaf write to the discriminator key or as a
@@ -1250,6 +1351,19 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
                   meta
                 )
               }
+              // Disc value isn't a known variant literal. Storage at
+              // the union path becomes a stub holding only the disc
+              // key — prior variant body dropped, no first-variant-
+              // default leak. Validation surfaces the issue via Zod's
+              // natural invalid_union_discriminator at parentPath.
+              return reshapeUnionVariant(
+                parentPath,
+                oldValue,
+                value,
+                { [last]: value },
+                undefined,
+                meta
+              )
             }
           }
         }
@@ -1259,14 +1373,15 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
         const selfDU = schema.getUnionDiscriminatorAtPath(path)
         if (selfDU !== undefined) {
           const valueRecord = value as Record<string, unknown>
-          const discValue = valueRecord[selfDU.discriminatorKey]
+          const discKey = selfDU.discriminatorKey
+          const discValue = valueRecord[discKey]
+          const currentUnionValue = getAtPath(form.value, path)
+          const oldDiscValue = isPlainRecord(currentUnionValue)
+            ? (currentUnionValue as Record<string, unknown>)[discKey]
+            : undefined
           if (discValue !== undefined) {
             const variantDefault = selfDU.getVariantDefault(discValue)
             if (variantDefault !== undefined && isPlainRecord(variantDefault)) {
-              const currentUnionValue = getAtPath(form.value, path)
-              const oldDiscValue = isPlainRecord(currentUnionValue)
-                ? (currentUnionValue as Record<string, unknown>)[selfDU.discriminatorKey]
-                : undefined
               return reshapeUnionVariant(
                 path,
                 oldDiscValue,
@@ -1276,7 +1391,24 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
                 meta
               )
             }
+            // Consumer supplied a disc value that's not a known
+            // variant. Stub holds only the disc key; non-disc consumer
+            // keys are dropped (consumerOverrides = undefined) so
+            // foreign fields don't leak into form.values.
+            return reshapeUnionVariant(
+              path,
+              oldDiscValue,
+              discValue,
+              { [discKey]: discValue },
+              undefined,
+              meta
+            )
           }
+          // Consumer wrote a whole-union value with NO discriminator.
+          // The form is "between selections" — empty stub {} ; every
+          // consumer key is dropped (no auto-merge with the first-
+          // variant default).
+          return reshapeUnionVariant(path, oldDiscValue, undefined, {}, undefined, meta)
         }
       }
     }
@@ -1417,10 +1549,19 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // Layer consumer overrides on top of the baseline (Case B).
     // For Case A (`consumerOverrides === undefined`), the baseline
     // is the final value.
-    const finalValue: unknown =
+    const layered: unknown =
       consumerOverrides !== undefined
         ? { ...(baseline as Record<string, unknown>), ...consumerOverrides }
         : baseline
+    // Stub-correct any nested DU paths inside `layered` whose disc
+    // value isn't a known variant — the consumer's Case B payload may
+    // carry a valid outer disc but a bad inner disc (e.g.
+    // `{step:'choose', inner:{kind:'BAD_INNER', a:'x'}}`). Without
+    // this, the inner mixed shape leaks through reshape; with it,
+    // every level ends in either a real variant or a disc-only stub.
+    const finalValue: unknown = applyDuStubs(schema as AbstractSchema<unknown, unknown>, layered, {
+      basePath: parentPath,
+    })
 
     // New blanks: restored from memory (preserves the user's prior
     // explicit blanks + numeric auto-marks together) or recomputed

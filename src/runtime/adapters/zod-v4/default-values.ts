@@ -142,10 +142,14 @@ function defaultForKind(kind: ZodKind, schema: z.ZodType, useDefault: boolean): 
     case 'promise':
     case 'custom':
     case 'template-literal':
+    case 'transform':
       // `promise`/`custom`/`template-literal` are rejected by
       // `assertSupportedKinds` at adapter construction, so this branch
-      // is unreachable through the public surface. Kept for exhaustive
-      // switch safety when `deriveDefault` is called directly in tests.
+      // is unreachable through the public surface. `transform` is the
+      // input side of a `z.preprocess(fn, inner)` and has no own
+      // default — callers walk to `inner` via the surrounding pipe.
+      // Kept for exhaustive switch safety when `deriveDefault` is
+      // called directly in tests.
       return undefined
     default: {
       const _exhaustive: never = kind

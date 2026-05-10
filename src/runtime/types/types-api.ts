@@ -239,6 +239,38 @@ export type AbstractSchema<Form, GetValueFormType> = {
    */
   getDefaultAtPath(path: Path): unknown
   /**
+   * Give the schema a chance to normalize the consumer's write value
+   * before it lands in storage / hits the slim-primitive gate. Each
+   * schema library exposes this concept differently — Zod calls it
+   * `z.preprocess(fn, inner)`, Yup calls it `.transform()`, Valibot
+   * spells it `pipe(transform(fn), inner)` — but the shape is the
+   * same: "this input shape gets coerced into that storage shape at
+   * the boundary."
+   *
+   * Runs SYNCHRONOUSLY at the write boundary so storage holds the
+   * post-normalization shape. Without this, a schema like `notify:
+   * z.preprocess(v => v == null ? defaultVar : v, innerDU)` would
+   * let the consumer write `null` and lock storage into `null` —
+   * because the gate sees the raw input (which the preprocess wrapper
+   * accepts as `unknown`) and storage holds a shape no variant
+   * matches.
+   *
+   * Adapters MUST:
+   *   - Return `value` unchanged when no normalization is declared at
+   *     the path.
+   *   - Return `value` unchanged when the user's normalization fn
+   *     returns a `Promise` (async coercion can't run at write time —
+   *     validation handles it during parse).
+   *   - Let user-thrown errors propagate (the user wrote the fn; we
+   *     just tag the path in the wrapper error for diagnostics).
+   *
+   * Normalization runs when `path` equals the wrapper's exact
+   * location. Writes deeper than the wrapper bypass it (a wrapper
+   * over the whole subtree can't be invoked from a partial leaf
+   * write).
+   */
+  normalizeWriteValueAtPath(value: unknown, path: Path): unknown
+  /**
    * Distinguish a tuple (fixed-length, position-typed) from an
    * unbounded array at `path`. The runtime calls this on every
    * `mergeStructural` / `setAtPathWithSchemaFill` write that descends

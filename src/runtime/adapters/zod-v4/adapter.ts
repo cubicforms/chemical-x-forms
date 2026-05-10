@@ -34,9 +34,12 @@ import {
   getTupleItems,
   getUnionOptions,
   kindOf,
+  readTransformFn,
   unwrapInner,
   unwrapLazy,
   unwrapPipe,
+  unwrapPipeIn,
+  unwrapPipeOut,
 } from './introspect'
 import { getNestedZodSchemasAtPath } from './path-walker'
 import { slimPrimitivesOf } from './slim-primitives'
@@ -338,6 +341,60 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         // a partially-valid initial state is preferable to a mount-time
         // exception. Matches v3's lax semantics.
         return { data, errors: undefined, success: true, formKey }
+      },
+
+      normalizeWriteValueAtPath(value, path) {
+        // Zod expresses input normalization as `z.preprocess(fn,
+        // inner)`, which desugars to a pipe whose `def.in` is a bare
+        // ZodTransform (no schema constraint) and `def.out` is the
+        // inner schema. We walk to the schema at `path` and apply
+        // each preprocess wrapper found there, descending through
+        // nested stacks. Post-validation transforms (e.g.
+        // `z.string().transform(fn)`) have `def.out` as the transform
+        // and `def.in` as the real schema — those aren't input
+        // normalizations and are left untouched.
+        const candidates =
+          path.length === 0 ? [rootSchema] : getNestedZodSchemasAtPath(rootSchema, path)
+        // Multi-candidate paths (union descent) — pick the first; the
+        // adapter's first-success convention matches getDefaultAtPath.
+        const [first] = candidates
+        if (first === undefined) return value
+        let current: z.ZodType = first
+        let result: unknown = value
+        // Bounded loop matches unwrapToDiscriminatedUnion's 64-step
+        // cap — a deeper preprocess stack is almost certainly a
+        // recursive z.lazy cycle, not legitimate.
+        for (let i = 0; i < 64; i++) {
+          if (kindOf(current) !== 'pipe') break
+          const pipeIn = unwrapPipeIn(current)
+          if (pipeIn === undefined || kindOf(pipeIn) !== 'transform') break
+          const fn = readTransformFn(pipeIn)
+          if (typeof fn !== 'function') break
+          let next: unknown
+          try {
+            next = fn(result)
+          } catch (cause) {
+            // User's normalization fn threw. Don't silently swallow —
+            // wrap with a path-tagged message and re-raise so the
+            // caller (setValueAtPath) sees it. The user wrote the
+            // fn, they own the bug; we just make it diagnosable.
+            throw new Error(
+              `[attaform] input normalization at path "${path.join('.')}" threw — write rejected.`,
+              { cause }
+            )
+          }
+          if (next instanceof Promise) {
+            // Async preprocess can't run at write time (setValue is
+            // sync). Leave the input as-is; validation will run the
+            // preprocess properly during parse.
+            return value
+          }
+          result = next
+          const out = unwrapPipeOut(current)
+          if (out === undefined) break
+          current = out
+        }
+        return result
       },
 
       getDefaultAtPath(path) {
@@ -801,6 +858,7 @@ function walkForMeta(
       case 'promise':
       case 'custom':
       case 'template-literal':
+      case 'transform':
         return
     }
   } finally {

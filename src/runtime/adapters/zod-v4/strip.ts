@@ -172,6 +172,7 @@ export function stripRefinements(schema: z.ZodType): z.ZodType {
     case 'promise':
     case 'custom':
     case 'template-literal':
+    case 'transform':
       return schema
     default: {
       // Compile-time exhaustiveness pin. If `ZodKind` grows a new
@@ -339,6 +340,7 @@ export function stripAsyncChecks(schema: z.ZodType): z.ZodType {
       case 'promise':
       case 'custom':
       case 'template-literal':
+      case 'transform':
         return s
       default: {
         const _exhaustive: never = kind
@@ -511,6 +513,12 @@ export function getSlimSchema(schema: z.ZodType, stripConfig: StripConfig): z.Zo
       // the declared fallback — stripping it would discard user intent.
       return (slimmedInner as z.ZodType).catch(getCatchDefault(schema) as never)
     }
+    case 'transform':
+      // ZodTransform is the input side of `z.preprocess(fn, inner)` and
+      // never appears as a top-level schema reachable from the slim path
+      // (the surrounding pipe descends into `.out` for the inner shape).
+      // Pass through unchanged for exhaustive switch safety.
+      return schema
     default: {
       const _exhaustive: never = kind
       throw new Error(`getSlimSchema: unhandled ZodKind '${_exhaustive as string}'`)

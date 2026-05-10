@@ -48,6 +48,7 @@ export type ZodKind =
   | 'promise'
   | 'custom'
   | 'template-literal'
+  | 'transform'
 
 // Narrow accessor for the unstable `def` surface. All reads from this
 // object go through helpers below — never inline.
@@ -76,6 +77,10 @@ interface ZodInternalShape {
     right?: unknown
     catchValue?: (ctx: { error: unknown; input: unknown }) => unknown
     parts?: readonly unknown[]
+    // ZodTransform's user-supplied function (preprocess uses this
+    // shape internally — `z.preprocess(fn, inner)` desugars to a pipe
+    // whose `def.in` is a ZodTransform with `def.transform = fn`).
+    transform?: unknown
   }
 }
 
@@ -156,6 +161,8 @@ export function kindOf(schema: unknown): ZodKind {
       return 'intersection'
     case 'catch':
       return 'catch'
+    case 'transform':
+      return 'transform'
     case 'promise':
       return 'promise'
     case 'custom':
@@ -228,6 +235,31 @@ export function unwrapInner(schema: z.ZodType): z.ZodType | undefined {
 export function unwrapPipe(schema: z.ZodType): z.ZodType | undefined {
   const def = readDef(schema)
   return (def?.in as z.ZodType | undefined) ?? (def?.out as z.ZodType | undefined)
+}
+
+/** Input side of a pipe — for preprocess detection, this is the transform. */
+export function unwrapPipeIn(schema: z.ZodType): z.ZodType | undefined {
+  const def = readDef(schema)
+  return def?.in as z.ZodType | undefined
+}
+
+/** Output side of a pipe — the inner schema in `z.preprocess(fn, inner)`. */
+export function unwrapPipeOut(schema: z.ZodType): z.ZodType | undefined {
+  const def = readDef(schema)
+  return def?.out as z.ZodType | undefined
+}
+
+/**
+ * Extract the user-supplied preprocess function from a ZodTransform.
+ * `z.preprocess(fn, inner)` desugars to `z.pipe(z.transform(fn), inner)`;
+ * the transform's `def.transform` is the original `fn`. Returns
+ * `undefined` for non-transform schemas.
+ */
+export function readTransformFn(schema: z.ZodType): ((input: unknown) => unknown) | undefined {
+  const def = readDef(schema) as { transform?: unknown } | undefined
+  return typeof def?.transform === 'function'
+    ? (def.transform as (input: unknown) => unknown)
+    : undefined
 }
 
 /**

@@ -136,6 +136,10 @@ function walkSegments(schema: z.ZodType, segments: readonly string[]): z.ZodType
     case 'promise':
     case 'custom':
     case 'template-literal':
+    case 'transform':
+      // ZodTransform is the input side of `z.preprocess(fn, inner)` and
+      // not directly walkable; callers reach `inner` through the
+      // surrounding pipe.
       return []
     default: {
       const _exhaustive: never = kind

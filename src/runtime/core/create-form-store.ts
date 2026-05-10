@@ -1327,6 +1327,18 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // surface in `Object.getOwnPropertySymbols(values.x)` and break
     // downstream JSON serialization (persistence) + variant memory.
     value = stripSymbolsDeep(value)
+    // Give the schema a chance to normalize the consumer's input
+    // before it hits the slim-primitive gate or storage. Zod expresses
+    // this via `z.preprocess(fn, inner)`; other adapters expose
+    // analogous constructs. Without this hook, a schema like `notify:
+    // z.preprocess(v => v == null ? defaultVar : v, innerDU)` would
+    // let the consumer write `null` and lock storage into `null` —
+    // the preprocess wrapper accepts `unknown` at the input side, the
+    // slim-gate has nothing to reject against, and the input lands
+    // verbatim. Running the normalization at the write boundary means
+    // storage holds the shape the user declared, and validation sees
+    // a consistent value.
+    value = schema.normalizeWriteValueAtPath(value, path)
     // Slim-primitive write gate: every leaf in the value must match
     // the schema's slim primitive set at its sub-path. Refinement-level
     // constraints (.email/.min/enum membership/etc.) are NOT enforced

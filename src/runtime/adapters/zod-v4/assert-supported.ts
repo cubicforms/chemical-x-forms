@@ -143,6 +143,7 @@ export function assertSupportedKinds(
     case 'promise':
     case 'custom':
     case 'template-literal':
+    case 'transform':
       return
     default: {
       const _exhaustive: never = kind

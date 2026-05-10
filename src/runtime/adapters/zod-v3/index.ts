@@ -342,6 +342,19 @@ export function zodAdapter<
           formKey: _formKey,
         }
       },
+      normalizeWriteValueAtPath(value) {
+        // v3 parity stub: returns the value unchanged. Zod v3 expresses
+        // input normalization via `z.preprocess(fn, inner)` as well
+        // (internally a ZodEffects with `_def.effect.type ===
+        // 'preprocess'`), but the introspection helpers for that
+        // structure aren't wired into the v3 adapter yet. Until then,
+        // v3 consumers fall back to the prior status quo: preprocess
+        // runs at parse time only, not at write time. The runtime
+        // gate's slim-primitive set for the wrapped path is
+        // PERMISSIVE (any input shape accepted), so writes still
+        // land in storage and validation surfaces issues.
+        return value
+      },
       getDefaultAtPath(path) {
         // Empty path → root default. Reuses the same generator used at
         // form construction so refines / wrappers behave consistently.

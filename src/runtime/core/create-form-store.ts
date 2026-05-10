@@ -1457,10 +1457,16 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       for (const k of newBlankPaths) blankPaths.add(k)
       return true
     }
+    // `setAtPathWithSchemaFill` (not the plain `setAtPath`) so that
+    // writing to an array index past current length pads positions in
+    // between with the schema's element default — otherwise a
+    // `setValue('events.10', { type: 'text', value: 'far' })` on a
+    // length-1 array would leave `events[1..9]` as `undefined` holes,
+    // which break downstream iteration and validation.
     const nextForm =
       parentPath.length === 0
         ? (finalValue as F)
-        : (setAtPath(form.value, parentPath, finalValue) as F)
+        : (setAtPathWithSchemaFill(form.value, schema, parentPath, finalValue) as F)
     // Sync-validate AHEAD of the form mutation when the schema
     // permits it. Both writes (schemaErrors + form.value) then land
     // in the same Vue reactive batch, so a single render emits the

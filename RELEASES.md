@@ -1,5 +1,20 @@
 # Releases
 
+## v0.16.4 — 2026-05-10
+
+## What's Changed
+* fix(zod-v3): array .min and parent .refine no longer break per-field revalidation by @ozzyfromspace in https://github.com/attaform/Attaform/pull/183
+* chore(site): ship raster favicons for Bing SERP + iOS by @ozzyfromspace in https://github.com/attaform/Attaform/pull/185
+* feat(form): add form.touch(path?) and disambiguate '' from root path by @ozzyfromspace in https://github.com/attaform/Attaform/pull/184
+* feat(form): add field.showErrors + field.firstError + shouldShowErrors predicate by @ozzyfromspace in https://github.com/attaform/Attaform/pull/186
+* chore(site): self-host Inter + JetBrains Mono webfonts by @ozzyfromspace in https://github.com/attaform/Attaform/pull/187
+* chore(site): clear pre-existing build warnings by @ozzyfromspace in https://github.com/attaform/Attaform/pull/188
+
+
+**Full Changelog**: https://github.com/attaform/Attaform/compare/v0.16.3...v0.16.4
+
+---
+
 ## v0.16.3 — 2026-05-09
 
 ## What's Changed

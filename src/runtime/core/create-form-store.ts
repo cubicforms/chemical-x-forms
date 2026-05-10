@@ -982,6 +982,46 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   }
   const variantMemory = new Map<PathKey, Map<unknown, VariantSnapshot>>()
 
+  function clearVariantMemoryUnderPath(arrayPath: Path): void {
+    for (const memKey of [...variantMemory.keys()]) {
+      const segs = segmentsForPathKey(memKey)
+      if (segs === null) continue
+      if (isPathPrefix(arrayPath, segs)) variantMemory.delete(memKey)
+    }
+  }
+
+  function clearVariantMemoryAtArrayIndices(
+    arrayPath: Path,
+    indexFilter: (idx: number) => boolean
+  ): void {
+    for (const memKey of [...variantMemory.keys()]) {
+      const segs = segmentsForPathKey(memKey)
+      if (segs === null) continue
+      if (!isPathPrefix(arrayPath, segs)) continue
+      if (segs.length <= arrayPath.length) continue
+      const idxSeg = segs[arrayPath.length]
+      if (typeof idxSeg !== 'number') continue
+      if (indexFilter(idxSeg)) variantMemory.delete(memKey)
+    }
+  }
+
+  function applyArrayOpToMemory(arrayPath: Path, op: NonNullable<WriteMeta['arrayOp']>): void {
+    switch (op.kind) {
+      case 'shift-from':
+        clearVariantMemoryAtArrayIndices(arrayPath, (i) => i >= op.index)
+        return
+      case 'shift-range':
+        clearVariantMemoryAtArrayIndices(arrayPath, (i) => i >= op.fromIndex && i <= op.toIndex)
+        return
+      case 'swap':
+        clearVariantMemoryAtArrayIndices(arrayPath, (i) => i === op.a || i === op.b)
+        return
+      case 'replace-at':
+        clearVariantMemoryAtArrayIndices(arrayPath, (i) => i === op.index)
+        return
+    }
+  }
+
   // Schema-declaration ordinal map for `form.meta.errors` sort order.
   // Plain (non-reactive) Map: it's mutated lazily from inside the
   // `metaErrors` computed when an unseen path appears, and a reactive
@@ -1456,6 +1496,18 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     }
     const nextForm = setAtPathWithSchemaFill(form.value, schema, path, completedValue) as F
     applyFormReplacement(nextForm, meta)
+    // Variant-memory bookkeeping for array structural mutations. The
+    // field-array helpers tag each op with an `arrayOp` describing
+    // which indices shifted; raw whole-array setValues (`setValue
+    // ('events', [...])`) clear all memory under the array path
+    // because identity bookkeeping was lost wholesale. Memory keyed
+    // by absolute index would otherwise bleed onto new occupants of
+    // those indices on a future variant switch.
+    if (meta?.arrayOp !== undefined) {
+      applyArrayOpToMemory(path, meta.arrayOp)
+    } else if (Array.isArray(value) && Array.isArray(currentValue)) {
+      clearVariantMemoryUnderPath(path)
+    }
     if (fieldValidationMode === 'change') {
       scheduleFieldValidation(path, false /* debounced */)
     }

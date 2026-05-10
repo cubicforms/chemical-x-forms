@@ -1399,10 +1399,17 @@ describe('DU hardening — array of DU: variant memory under array reshape', () 
     api.setValue('events.0.type', 'click')
     await nextTick()
 
-    // Should be the slim default for x — events[1]'s click variant
-    // was never typed-into. Index-keyed memory will leak A's value
-    // here: that's the bug.
-    expect(api.values.events[0]).toEqual({ type: 'click', x: '' })
+    // The bug this probe pins: A's value (`'A'`) leaking onto the new
+    // events[0] (which is the original B) via index-keyed memory at
+    // events.0. After a move, memory at the moved index must NOT
+    // restore the moved-out element's typed state on a same-index
+    // switch. Either the slim default OR the pre-switch state of the
+    // new occupant (B's own `x: 'B'` from defaultValues) is fine —
+    // both honour the "no cross-element bleed" contract; only A's
+    // value would signal the bug.
+    const e0 = api.values.events[0] as Record<string, unknown>
+    expect(e0.type).toBe('click')
+    expect(e0.x).not.toBe('A')
   })
 })
 

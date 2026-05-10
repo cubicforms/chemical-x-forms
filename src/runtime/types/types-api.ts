@@ -750,6 +750,19 @@ export type WriteMeta = {
    * an infinite loop. Don't set from consumer code.
    */
   readonly skipDiscriminatorReshape?: boolean
+  /**
+   * Hint about an array structural mutation, set by `field-arrays.ts`
+   * helpers so `setValueAtPath` can surgically clear variant memory
+   * for indices the operation invalidated. Without this hint, a raw
+   * whole-array `setValue(arrayPath, [...])` clears all memory under
+   * the array (the runtime can't tell which indices stayed put).
+   * Internal — don't set from consumer code.
+   */
+  readonly arrayOp?:
+    | { readonly kind: 'shift-from'; readonly index: number }
+    | { readonly kind: 'shift-range'; readonly fromIndex: number; readonly toIndex: number }
+    | { readonly kind: 'swap'; readonly a: number; readonly b: number }
+    | { readonly kind: 'replace-at'; readonly index: number }
 }
 
 /**

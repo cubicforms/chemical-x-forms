@@ -1,4 +1,4 @@
-import { computed, markRaw, reactive, ref, watch, type ComputedRef, type Ref } from 'vue'
+import { computed, markRaw, reactive, ref, toRaw, watch, type ComputedRef, type Ref } from 'vue'
 import type {
   AbstractSchema,
   CoercionRegistry,
@@ -666,6 +666,41 @@ function isPathKeyUnder(existingKey: PathKey, parentPath: Path): boolean {
   return true
 }
 
+/**
+ * Deep-clone a value read out of the live reactive form tree, for the
+ * variant-memory snapshot. Calls `toRaw` at every level to bypass
+ * Vue's on-demand reactivity wrapping, preserves `BigInt`, `Date`,
+ * `Map`, `Set` natively (Zod can validate these at leaves), and
+ * recurses through plain arrays + objects. Detached from the form's
+ * reactive graph, so a later `form.value = nextForm` doesn't mutate
+ * the snapshot.
+ */
+function cloneVariantSnapshot(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') return value
+  const raw = toRaw(value as object)
+  if (raw instanceof Date) return new Date(raw.getTime())
+  if (raw instanceof Map) {
+    const out = new Map<unknown, unknown>()
+    for (const [k, v] of raw.entries()) out.set(cloneVariantSnapshot(k), cloneVariantSnapshot(v))
+    return out
+  }
+  if (raw instanceof Set) {
+    const out = new Set<unknown>()
+    for (const v of raw) out.add(cloneVariantSnapshot(v))
+    return out
+  }
+  if (raw instanceof RegExp) return new RegExp(raw.source, raw.flags)
+  if (Array.isArray(raw)) {
+    const out: unknown[] = new Array(raw.length)
+    for (let i = 0; i < raw.length; i++) out[i] = cloneVariantSnapshot(raw[i])
+    return out
+  }
+  const src = raw as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const k of Object.keys(src)) out[k] = cloneVariantSnapshot(src[k])
+  return out
+}
+
 export function createFormStore<F extends GenericForm, G extends GenericForm = F>(
   options: CreateFormStoreOptions<F, G>
 ): FormStore<F, G> {
@@ -1292,18 +1327,21 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // parentPath)` returns a Vue reactive proxy into the live tree
     // (form is `ref(initialData)`); after the upcoming `form.value =
     // nextForm` overwrites the union path, the proxy still points to
-    // the orphaned raw target. JSON-cycle through the proxy reads to
-    // produce a plain-object copy detached from reactivity — form
-    // values are JSON-serializable by construction (slim primitive
-    // write gate enforces this). `structuredClone` does NOT work
-    // here: it rejects Vue's Proxy with `DataCloneError`. Skip when
-    // `oldDiscValue` is undefined (initial state had no
+    // the orphaned raw target. `cloneVariantSnapshot` walks the
+    // subtree, calling `toRaw` at each level to bypass Vue reactivity
+    // and preserves `BigInt`, `Date`, `Map`, `Set` natively — types
+    // Zod schemas can validate at leaves but the prior `JSON.parse(
+    // JSON.stringify(...))` cycle either crashed on (BigInt) or
+    // silently degraded (Date → ISO string, Map/Set → `{}`).
+    // `structuredClone` won't work as a one-shot replacement: nested
+    // reactive children stored as Proxies cause `DataCloneError`.
+    // Skip when `oldDiscValue` is undefined (initial state had no
     // discriminator) — nothing meaningful to remember.
     let baseline: unknown = variantDefault
     let restoredBlanks: PathKey[] | undefined
     if (rememberVariants && !sameDisc) {
       if (oldDiscValue !== undefined) {
-        const currentValue: unknown = JSON.parse(JSON.stringify(getAtPath(form.value, parentPath)))
+        const currentValue: unknown = cloneVariantSnapshot(getAtPath(form.value, parentPath))
         const outgoingBlanks: PathKey[] = []
         for (const k of blankPaths) {
           if (isPathKeyUnder(k, parentPath)) outgoingBlanks.push(k)

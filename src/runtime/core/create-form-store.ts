@@ -667,6 +667,48 @@ function isPathKeyUnder(existingKey: PathKey, parentPath: Path): boolean {
 }
 
 /**
+ * Walk a consumer-supplied value and drop Symbol-keyed properties
+ * recursively. Form values are string-keyed by schema design — symbols
+ * at any level would trip JSON serialization (persistence adapters),
+ * the variant-memory snapshot, and surface as
+ * `Object.getOwnPropertySymbols(values.x).length > 0`.
+ *
+ * Fast path: returns the input unchanged when the tree contains no
+ * symbols at any level. Only allocates a new object/array on the
+ * spine that contains a stripped node, so the common no-symbol
+ * case has zero allocation cost.
+ */
+function stripSymbolsDeep(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') return value
+  if (Array.isArray(value)) {
+    let mutated = false
+    const out: unknown[] = new Array(value.length)
+    for (let i = 0; i < value.length; i++) {
+      const cleaned = stripSymbolsDeep(value[i])
+      out[i] = cleaned
+      if (cleaned !== value[i]) mutated = true
+    }
+    return mutated ? out : value
+  }
+  // Skip non-plain objects (Date, Map, Set, RegExp, class instances) —
+  // their semantics aren't "key:value" and stripping would corrupt
+  // them. Symbol-keyed properties on these are a consumer concern.
+  const proto = Object.getPrototypeOf(value)
+  if (proto !== Object.prototype && proto !== null) return value
+  const symKeys = Object.getOwnPropertySymbols(value)
+  const stringKeys = Object.keys(value)
+  let mutated = symKeys.length > 0
+  const out: Record<string, unknown> = {}
+  const src = value as Record<string, unknown>
+  for (const k of stringKeys) {
+    const cleaned = stripSymbolsDeep(src[k])
+    out[k] = cleaned
+    if (cleaned !== src[k]) mutated = true
+  }
+  return mutated ? out : value
+}
+
+/**
  * Deep-clone a value read out of the live reactive form tree, for the
  * variant-memory snapshot. Calls `toRaw` at every level to bypass
  * Vue's on-demand reactivity wrapping, preserves `BigInt`, `Date`,
@@ -1154,6 +1196,12 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   }
 
   function setValueAtPath(path: Path, value: unknown, meta?: WriteMeta): boolean {
+    // Drop any Symbol-keyed properties before the value flows through
+    // the gate, DU reshape, or storage. Form values are string-keyed
+    // by schema design and the consumer-side leak would otherwise
+    // surface in `Object.getOwnPropertySymbols(values.x)` and break
+    // downstream JSON serialization (persistence) + variant memory.
+    value = stripSymbolsDeep(value)
     // Slim-primitive write gate: every leaf in the value must match
     // the schema's slim primitive set at its sub-path. Refinement-level
     // constraints (.email/.min/enum membership/etc.) are NOT enforced

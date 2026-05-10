@@ -5261,7 +5261,11 @@ describe('chaos — empty z.object({}) schema', () => {
 
     if (api === undefined) throw new Error('mount failed')
 
-    expect(api.values).toEqual({})
+    // `api.values` is a callable proxy (call form for dynamic paths,
+    // dot access for static paths). Vitest deep-equal treats callable
+    // proxies as functions, so compare against the called form which
+    // returns the readonly root.
+    expect(api.values()).toEqual({})
     const result = await api.validateAsync()
     expect(result.success).toBe(true)
   })

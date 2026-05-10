@@ -3295,6 +3295,88 @@ describe('chaos — two useForm calls with the same key in one app', () => {
     await submitB()
     expect(bCalls).toBe(1)
   })
+
+  it("when A's onSubmit throws, the shared lifecycle clears cleanly and B can submit again", async () => {
+    // Symmetric to the success-path probe: a throw inside A's
+    // onSubmit must release the shared re-entry guard AND populate
+    // `submitError` on the shared store, so both siblings see the
+    // captured error and B's next submit can fire. The finally block
+    // in process-form.ts runs regardless of throw vs. success — this
+    // probe pins that invariant across instances. Without it, a
+    // failing submit on the modal could leave the main form stuck in
+    // `submitting: true` forever.
+    const schema = z.object({ name: z.string().min(1) })
+    const handle: { a?: unknown; b?: unknown } = {}
+    const App = defineComponent({
+      setup() {
+        handle.a = useForm({
+          schema,
+          key: 'shared-submit-throw',
+          defaultValues: { name: 'Ada' },
+        })
+        handle.b = useForm({
+          schema,
+          key: 'shared-submit-throw',
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    await nextTick()
+
+    type SubmitApi = {
+      handleSubmit: (onSubmit: () => unknown, onError?: () => unknown) => () => Promise<void>
+      meta: { submitting: boolean; submitError: unknown; submitCount: number }
+    }
+    const a = handle.a as SubmitApi
+    const b = handle.b as SubmitApi
+
+    let bCalls = 0
+    let rejectA!: (err: Error) => void
+    const aBlocker = new Promise<void>((_, reject) => {
+      rejectA = reject
+    })
+    const boom = new Error('onSubmit blew up')
+    const submitA = a.handleSubmit(async () => {
+      await aBlocker
+    })
+    const submitB = b.handleSubmit(() => {
+      bCalls++
+    })
+
+    // Fire A; it suspends on aBlocker. Both siblings observe
+    // submitting=true.
+    const aPromise = submitA()
+    await nextTick()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(a.meta.submitting).toBe(true)
+    expect(b.meta.submitting).toBe(true)
+
+    // Reject A — its onSubmit rethrows the error.
+    rejectA(boom)
+    await expect(aPromise).rejects.toBe(boom)
+    await nextTick()
+
+    // Lifecycle clears across BOTH siblings: submitting flips false,
+    // submitError captures the throw, submitCount increments once.
+    expect(a.meta.submitting).toBe(false)
+    expect(b.meta.submitting).toBe(false)
+    expect(a.meta.submitError).toBe(boom)
+    expect(b.meta.submitError).toBe(boom)
+    expect(a.meta.submitCount).toBe(1)
+    expect(b.meta.submitCount).toBe(1)
+
+    // B's next submit can fire — the re-entry guard released along
+    // with the throw. A fresh successful submit clears submitError.
+    await submitB()
+    await nextTick()
+    expect(bCalls).toBe(1)
+    expect(b.meta.submitError).toBeNull()
+    expect(a.meta.submitError).toBeNull()
+    expect(b.meta.submitCount).toBe(2)
+  })
 })
 
 // -------------------- 9.11 setValue after unmount --------------------

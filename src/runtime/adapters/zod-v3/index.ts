@@ -342,18 +342,47 @@ export function zodAdapter<
           formKey: _formKey,
         }
       },
-      normalizeWriteValueAtPath(value) {
-        // v3 parity stub: returns the value unchanged. Zod v3 expresses
-        // input normalization via `z.preprocess(fn, inner)` as well
-        // (internally a ZodEffects with `_def.effect.type ===
-        // 'preprocess'`), but the introspection helpers for that
-        // structure aren't wired into the v3 adapter yet. Until then,
-        // v3 consumers fall back to the prior status quo: preprocess
-        // runs at parse time only, not at write time. The runtime
-        // gate's slim-primitive set for the wrapped path is
-        // PERMISSIVE (any input shape accepted), so writes still
-        // land in storage and validation surfaces issues.
-        return value
+      normalizeWriteValueAtPath(value, path) {
+        // v3 parity for the v4 adapter's normalize hook. Zod v3
+        // expresses `z.preprocess(fn, inner)` as a ZodEffects whose
+        // `_def.effect.type === 'preprocess'` and `_def.effect.transform`
+        // is the user-supplied fn; `_def.schema` is the inner schema.
+        // Walk to the schema at `path`, apply each preprocess wrapper
+        // found there, and descend through nested stacks. Sync only —
+        // a fn returning a Promise short-circuits and leaves the value
+        // unchanged (parse-time handles async). User throws propagate
+        // with a path-tagged wrapper for diagnostics.
+        const candidates =
+          path.length === 0 ? [_zodSchema] : getNestedZodSchemasAtPath(_zodSchema, path)
+        const [first] = candidates
+        if (first === undefined) return value
+        let current: z.ZodTypeAny = first as z.ZodTypeAny
+        let result: unknown = value
+        for (let i = 0; i < 64; i++) {
+          if (!isZodSchemaType(current, 'ZodEffects')) break
+          const def = current._def as {
+            effect?: { type?: string; transform?: unknown }
+            schema?: z.ZodTypeAny
+          }
+          const effect = def.effect
+          if (effect?.type !== 'preprocess') break
+          const fn = effect.transform
+          if (typeof fn !== 'function') break
+          let next: unknown
+          try {
+            next = (fn as (input: unknown) => unknown)(result)
+          } catch (cause) {
+            throw new Error(
+              `[attaform] input normalization at path "${path.join('.')}" threw — write rejected.`,
+              { cause }
+            )
+          }
+          if (next instanceof Promise) return value
+          result = next
+          if (def.schema === undefined) break
+          current = def.schema
+        }
+        return result
       },
       getDefaultAtPath(path) {
         // Empty path → root default. Reuses the same generator used at

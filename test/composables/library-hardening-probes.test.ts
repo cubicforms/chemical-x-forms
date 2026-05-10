@@ -2821,6 +2821,50 @@ describe('chaos — z.preprocess() wrapping a discriminated union', () => {
       (notify.channel === 'sms' && typeof notify.number === 'string')
     expect(valid).toBe(true)
   })
+
+  it("v3: preprocess that defaults `null` to a valid variant doesn't smuggle null into storage", async () => {
+    // Zod v3 parity for the v4 B6 fix above. v3 expresses
+    // `z.preprocess(fn, inner)` as a ZodEffects whose
+    // `_def.effect.type === 'preprocess'`; the v3 adapter's
+    // `normalizeWriteValueAtPath` detects it and applies the fn at
+    // write time, so storage holds the post-preprocess shape — not
+    // the raw input.
+    const inner = zV3.discriminatedUnion('channel', [
+      zV3.object({ channel: zV3.literal('email'), address: zV3.string() }),
+      zV3.object({ channel: zV3.literal('sms'), number: zV3.string() }),
+    ])
+    const schema = zV3.object({
+      notify: zV3.preprocess((v) => (v == null ? { channel: 'email', address: '' } : v), inner),
+    })
+    const handle: { api?: unknown } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useFormV3({
+          schema,
+          key: `v3-chaos-preprocess-du-${Math.random().toString(36).slice(2)}`,
+          defaultValues: { notify: { channel: 'email', address: '' } },
+        } as never)
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    const api = handle.api as {
+      setValue: (p: string, v: unknown) => boolean
+      values: { notify: { channel: string } & Record<string, unknown> }
+    }
+
+    api.setValue('notify', null)
+    await nextTick()
+
+    expect(api.values.notify).not.toBeNull()
+    const notify = api.values.notify
+    const valid =
+      (notify['channel'] === 'email' && typeof notify['address'] === 'string') ||
+      (notify['channel'] === 'sms' && typeof notify['number'] === 'string')
+    expect(valid).toBe(true)
+  })
 })
 
 // -------------------- 9.3 z.transform at a leaf inside a variant --------------------

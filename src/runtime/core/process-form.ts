@@ -77,14 +77,20 @@ export function buildProcessForm<F extends GenericForm>(
       // against the effect — the activeEffect stack is empty here —
       // so writing to `activeValidations` / `result` can't re-trigger
       // the watchEffect below.
-      state.activeValidations.value += 1
-      result.value = {
-        pending: true,
-        errors: undefined,
-        success: false,
-        formKey: state.formKey,
-      }
+      //
+      // The lifecycle setup (counter increment + `pending: true` write)
+      // lives INSIDE the try block so a sync watcher on
+      // `meta.validating` or on the returned `result` ref that throws
+      // can't leak the counter — the finally still decrements (Math.max
+      // clamps the partial-increment underflow case at zero).
       try {
+        state.activeValidations.value += 1
+        result.value = {
+          pending: true,
+          errors: undefined,
+          success: false,
+          formKey: state.formKey,
+        }
         const refinement = await runRefinementValidation(data, path)
         if (captured !== gen) return
         result.value = settled(composeWithDerivedBlank(refinement, path))
@@ -159,8 +165,12 @@ export function buildProcessForm<F extends GenericForm>(
   ): Promise<ValidationResponseWithoutValue<F>> {
     const segments = pathInput === undefined ? undefined : toSegments(pathInput)
     const dataAtPath = segments === undefined ? state.form.value : state.getValueAtPath(segments)
-    state.activeValidations.value += 1
+    // Increment lives INSIDE the try so a sync watcher on
+    // `meta.validating` that throws can't leak `activeValidations`. The
+    // finally still decrements (Math.max guards the partial-increment
+    // underflow case).
     try {
+      state.activeValidations.value += 1
       const refinement = await runRefinementValidation(dataAtPath, segments)
       return stripData(composeWithDerivedBlank(refinement, segments))
     } finally {
@@ -257,16 +267,24 @@ export function buildProcessForm<F extends GenericForm>(
       // capture only when a `reset()` hasn't fired between entry and
       // throw (see the catch block).
       const genAtEntry = state.submissionGeneration.value
-      state.activeSubmissions.value += 1
-      state.submitting.value = true
-      state.submitError.value = null
-      // Abort any in-flight per-field validation runs so their late
-      // writes can't clobber the authoritative submit result. Also
-      // clears debounce timers that never fired.
-      state.cancelFieldValidation()
-      state.activeValidations.value += 1
       let validationSettled = false
       try {
+        // All lifecycle setup happens inside the try so a throw from
+        // any of the setters (e.g. a sync `watch` on `meta.submitting`
+        // that rejects, or a defensive throw from
+        // `cancelFieldValidation`) still lands in the finally block.
+        // Without this, an early-setup throw would leak
+        // `activeSubmissions` at 1 forever and silently block every
+        // subsequent submit. Math.max in the finally already clamps
+        // partial-increment underflow at zero.
+        state.activeSubmissions.value += 1
+        state.submitting.value = true
+        state.submitError.value = null
+        // Abort any in-flight per-field validation runs so their late
+        // writes can't clobber the authoritative submit result. Also
+        // clears debounce timers that never fired.
+        state.cancelFieldValidation()
+        state.activeValidations.value += 1
         const refinement = await runRefinementValidation(state.form.value, undefined)
         const merged = composeWithDerivedBlank(refinement, undefined)
         state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)

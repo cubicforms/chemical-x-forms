@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createApp, defineComponent, h, nextTick, type App } from 'vue'
+import { createApp, defineComponent, h, nextTick, watch, type App } from 'vue'
 import { z } from 'zod'
 import { z as zV3 } from 'zod-v3'
 import { unset, useForm } from '../../src/zod'
@@ -3376,6 +3376,244 @@ describe('chaos — two useForm calls with the same key in one app', () => {
     expect(b.meta.submitError).toBeNull()
     expect(a.meta.submitError).toBeNull()
     expect(b.meta.submitCount).toBe(2)
+  })
+
+  it('a sync watcher on meta.submitting that throws does not desync activeSubmissions', async () => {
+    // Pressure test for the lifecycle setup ordering in
+    // process-form.ts:handleSubmit. If `state.submitting.value = true`
+    // sits OUTSIDE the try/finally block AND a sync watcher on the
+    // submitting flag throws, the finally never runs and the counter
+    // is stuck at 1 forever — every subsequent submit is silently
+    // dropped by the re-entry guard. The fix is to lift the increment
+    // and the rest of the lifecycle setup inside the try block so the
+    // finally always cleans up (Math.max already guards underflow).
+    const schema = z.object({ name: z.string().min(1) })
+    const handle: { api?: unknown; watcherFired?: { count: number } } = {}
+    const App = defineComponent({
+      setup() {
+        const api = useForm({
+          schema,
+          key: `submit-watcher-${Math.random().toString(36).slice(2)}`,
+          defaultValues: { name: 'Ada' },
+        })
+        const watcherFired = { count: 0 }
+        // Sync watcher INSIDE setup so it binds to this component
+        // instance. Vue's handleError consults the app-level
+        // errorHandler via the instance's appContext, so bare
+        // `watch()` outside setup wouldn't route through our trap.
+        // `flush: 'sync'` dispatches at the setter call site —
+        // exposing the pre-try-block leak directly.
+        watch(
+          () => api.meta.submitting,
+          (next) => {
+            if (next === true) {
+              watcherFired.count++
+              throw new Error('watcher boom on submitting=true')
+            }
+          },
+          { flush: 'sync' }
+        )
+        handle.api = api
+        handle.watcherFired = watcherFired
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    // Capture watcher errors via Vue's errorHandler so Vitest's
+    // unhandled-error trap doesn't fail the test. We only care that
+    // the counter recovers, not how the error surfaces.
+    const capturedVueErrors: unknown[] = []
+    app.config.errorHandler = (err) => {
+      capturedVueErrors.push(err)
+    }
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    await nextTick()
+
+    type SubmitApi = {
+      handleSubmit: (onSubmit: () => unknown) => () => Promise<void>
+      meta: { submitting: boolean; submitCount: number }
+    }
+    const api = handle.api as SubmitApi
+    const watcherFired = handle.watcherFired as { count: number }
+
+    let secondCallCount = 0
+    const submit1 = api.handleSubmit(() => {})
+    const submit2 = api.handleSubmit(() => {
+      secondCallCount++
+    })
+
+    // First submit: the watcher throws when submitting flips true. Vue
+    // routes the throw to the app's errorHandler (captured above);
+    // whether process-form also rethrows is incidental. The critical
+    // invariant is counter recovery.
+    try {
+      await submit1()
+    } catch {
+      // accepted on the rethrow path
+    }
+    await nextTick()
+    expect(watcherFired.count).toBeGreaterThanOrEqual(1)
+    expect(capturedVueErrors.length).toBeGreaterThanOrEqual(1)
+    // The critical invariant: submitting clears so the next submit
+    // isn't blocked by the re-entry guard.
+    expect(api.meta.submitting).toBe(false)
+
+    // Second submit MUST be allowed — the counter cleaned up after
+    // the throw. Without the fix, this is a silent no-op forever.
+    await submit2()
+    await nextTick()
+    expect(secondCallCount).toBe(1)
+  })
+
+  it("a sync watcher on a field's validating flag that throws does not desync the per-path counter", async () => {
+    // Pressure test for `scheduleFieldValidation`'s `run` closure. The
+    // increments (`activeValidations.value += 1` and
+    // `incFieldValidation(key)`) sit BEFORE the Promise chain whose
+    // `.finally` is the only decrement path. If a sync watcher on
+    // `api.fields.X.validating` (or `api.meta.validating`) throws as
+    // the increment fires, the Promise chain never starts and the
+    // counter is leaked — `validating` stays true forever and the
+    // mount-gate `pathHasAsyncValidation` reports a permanently-
+    // pending state. Fix: wrap the increments + chain start in a try
+    // that ensures the decrements still fire on a sync throw.
+    const schema = z.object({ email: z.email('bad email') })
+    const handle: { api?: unknown; watcherFired?: { count: number } } = {}
+    const App = defineComponent({
+      setup() {
+        const api = useForm({
+          schema,
+          key: `validating-watcher-${Math.random().toString(36).slice(2)}`,
+          defaultValues: { email: 'seed@x.com' },
+        })
+        const watcherFired = { count: 0 }
+        // Sync watcher on the leaf's validating flag — throws on
+        // first transition to true.
+        watch(
+          () => api.fields.email.validating,
+          (next) => {
+            if (next === true) {
+              watcherFired.count++
+              throw new Error('watcher boom on email.validating=true')
+            }
+          },
+          { flush: 'sync' }
+        )
+        handle.api = api
+        handle.watcherFired = watcherFired
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    const capturedVueErrors: unknown[] = []
+    app.config.errorHandler = (err) => {
+      capturedVueErrors.push(err)
+    }
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    await nextTick()
+
+    type Api = {
+      setValue: (p: string, v: unknown) => boolean
+      fields: { email: { validating: boolean } }
+      meta: { validating: boolean }
+    }
+    const api = handle.api as Api
+    const watcherFired = handle.watcherFired as { count: number }
+
+    // setValue triggers `scheduleFieldValidation` (change mode, the
+    // default), which fires the increments inside `run`. The watcher's
+    // throw races with the per-path counter.
+    api.setValue('email', 'bad-email')
+    // Drain microtasks + macrotask so any deferred .finally landed.
+    await nextTick()
+    await new Promise((r) => setTimeout(r, 0))
+    await nextTick()
+
+    expect(watcherFired.count).toBeGreaterThanOrEqual(1)
+    expect(capturedVueErrors.length).toBeGreaterThanOrEqual(1)
+    // The critical invariant: validating clears after the throw — the
+    // per-path counter MUST decrement in the .finally even if the
+    // increment's reactive subscriber threw. Without this, the
+    // mount-gate keeps fields reporting validating: true forever.
+    expect(api.fields.email.validating).toBe(false)
+    expect(api.meta.validating).toBe(false)
+
+    // A subsequent setValue should validate cleanly — the per-path
+    // counter is back to zero, no double-count from the leak.
+    api.setValue('email', 'good@example.com')
+    await nextTick()
+    await new Promise((r) => setTimeout(r, 0))
+    await nextTick()
+    expect(api.fields.email.validating).toBe(false)
+    expect(api.meta.validating).toBe(false)
+  })
+
+  it('a sync watcher on meta.validating that throws does not desync validateAsync', async () => {
+    // Same defense-in-depth invariant for the imperative validateAsync
+    // path. Its single counter increment (`activeValidations.value +=
+    // 1`) sits before the try block in the original code; a sync
+    // watcher on meta.validating that throws at that setter would
+    // leak the counter and hang meta.validating: true forever. With
+    // the fix, the increment lives inside the try and the finally
+    // decrements regardless.
+    const schema = z.object({ name: z.string().min(1) })
+    const handle: { api?: unknown; watcherFired?: { count: number } } = {}
+    const App = defineComponent({
+      setup() {
+        const api = useForm({
+          schema,
+          key: `validate-async-watcher-${Math.random().toString(36).slice(2)}`,
+          defaultValues: { name: 'Ada' },
+        })
+        const watcherFired = { count: 0 }
+        watch(
+          () => api.meta.validating,
+          (next) => {
+            if (next === true) {
+              watcherFired.count++
+              throw new Error('watcher boom on meta.validating=true')
+            }
+          },
+          { flush: 'sync' }
+        )
+        handle.api = api
+        handle.watcherFired = watcherFired
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    const capturedVueErrors: unknown[] = []
+    app.config.errorHandler = (err) => {
+      capturedVueErrors.push(err)
+    }
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    await nextTick()
+
+    type Api = {
+      validateAsync: () => Promise<unknown>
+      meta: { validating: boolean }
+    }
+    const api = handle.api as Api
+    const watcherFired = handle.watcherFired as { count: number }
+
+    // Fire validateAsync — the watcher throws when validating flips
+    // true. Counter must clear regardless of where the throw surfaces.
+    try {
+      await api.validateAsync()
+    } catch {
+      // accepted
+    }
+    await nextTick()
+    expect(watcherFired.count).toBeGreaterThanOrEqual(1)
+    expect(api.meta.validating).toBe(false)
+
+    // Subsequent validateAsync MUST work — the counter recovered.
+    const response = await api.validateAsync()
+    await nextTick()
+    expect(api.meta.validating).toBe(false)
+    expect(response).toBeDefined()
   })
 })
 

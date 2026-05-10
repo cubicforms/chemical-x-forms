@@ -1772,8 +1772,29 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       fresh.timer = null
       if (controller.signal.aborted) return
       const data = getAtPath(form.value, path)
-      activeValidations.value += 1
-      incFieldValidation(key)
+      // Defense-in-depth: the increments below trigger reactive
+      // subscribers (sync watchers on `api.meta.validating` or
+      // `api.fields.X.validating`). If one of those subscribers throws,
+      // the Promise chain whose `.finally` does the decrements never
+      // starts, leaking the per-path counter — `validating` would
+      // stay true forever, and the mount-gate's
+      // `pathHasAsyncValidation` would report a permanently-pending
+      // verdict. Roll back the increments that succeeded on a sync
+      // throw before letting the error propagate.
+      let activeIncremented = false
+      let fieldIncremented = false
+      try {
+        activeValidations.value += 1
+        activeIncremented = true
+        incFieldValidation(key)
+        fieldIncremented = true
+      } catch (err) {
+        if (fieldIncremented) decFieldValidation(key)
+        if (activeIncremented) {
+          activeValidations.value = Math.max(0, activeValidations.value - 1)
+        }
+        throw err
+      }
       void Promise.resolve()
         .then(() => schema.validateAtPath(data, path))
         .then((response) => {

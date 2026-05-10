@@ -88,7 +88,7 @@ describe('regression: 16b — `<input v-register.trim>` spacebar after content',
     })
 
     app = createApp(App)
-    app.use(createAttaform({ override: false }))
+    app.use(createAttaform({ ssr: false }))
     app.mount(root)
     await waitUntil(() => root.querySelector<HTMLInputElement>('input.probe'))
 
@@ -137,7 +137,7 @@ describe('regression: 16b — `<input v-register.trim>` spacebar after content',
     })
 
     app = createApp(App)
-    app.use(createAttaform({ override: false }))
+    app.use(createAttaform({ ssr: false }))
     app.mount(root)
     await waitUntil(() => root.querySelector<HTMLInputElement>('input.probe'))
 
@@ -192,7 +192,7 @@ describe('regression: 16e — `<input type="number">` backspace-to-empty', () =>
     })
 
     app = createApp(App)
-    app.use(createAttaform({ override: false }))
+    app.use(createAttaform({ ssr: false }))
     app.mount(root)
     await waitUntil(() => root.querySelector<HTMLInputElement>('input.probe'))
 

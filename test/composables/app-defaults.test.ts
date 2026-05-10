@@ -66,7 +66,6 @@ function mountWithDefaults(
   })
   const app = createApp(App).use(
     createAttaform({
-      override: true,
       ...(defaults !== undefined ? { defaults } : {}),
     })
   )
@@ -222,7 +221,7 @@ describe('app-level defaults — anonymous + multi-form', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true, defaults: { strict: false } }))
+    const app = createApp(App).use(createAttaform({ defaults: { strict: false } }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -260,7 +259,7 @@ describe('app-level defaults — v3 wrapper regression', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true, defaults: { strict: false } }))
+    const app = createApp(App).use(createAttaform({ defaults: { strict: false } }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

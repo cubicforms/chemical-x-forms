@@ -37,7 +37,7 @@ function mountWith(config: { keyValue?: unknown; provideKey: boolean }): Promise
       },
     })
     const app = createSSRApp(App)
-    app.use(createAttaform({ override: true }))
+    app.use(createAttaform())
     void renderToString(app)
   })
 }
@@ -112,7 +112,7 @@ describe('useForm — key is captured once at setup', () => {
       },
     })
     const app = createApp(App)
-    app.use(createAttaform({ override: false }))
+    app.use(createAttaform({ ssr: false }))
     app.mount(root)
 
     if (captured === undefined) throw new Error('unreachable')
@@ -156,7 +156,7 @@ describe('useForm — key is captured once at setup', () => {
     })
 
     const app = createApp(Owner)
-    app.use(createAttaform({ override: false }))
+    app.use(createAttaform({ ssr: false }))
     app.mount(root)
 
     // The owner's useForm bound to 'form-original'.
@@ -201,7 +201,7 @@ describe('useForm — key is captured once at setup', () => {
     })
 
     const app = createApp(Parent)
-    app.use(createAttaform({ override: false }))
+    app.use(createAttaform({ ssr: false }))
     app.mount(root)
 
     expect(apiHistory).toEqual([{ key: 'form-a' }])

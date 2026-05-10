@@ -55,7 +55,7 @@ function mountProfile(options: { defaultValues?: unknown } = {}): {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform())
   app.mount(document.createElement('div'))
   return { app, api: handle.api as ProfileApi }
 }
@@ -304,7 +304,7 @@ describe('DU hardening — slim-primitive gate at the discriminator key', () => 
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as NumericApi
@@ -336,7 +336,7 @@ describe('DU hardening — slim-primitive gate at the discriminator key', () => 
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as NumericApi
@@ -456,7 +456,7 @@ describe('DU hardening — undo across an invalid intermediate', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as ProfileApi
@@ -513,7 +513,7 @@ describe('DU hardening — invalid discriminator at an array element', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as ArrayApi
@@ -574,7 +574,7 @@ describe('DU hardening — invalid discriminator at an inner nested DU', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as FlowApi
@@ -628,7 +628,7 @@ describe('DU hardening — zod v3 adapter parity', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as V3Api
@@ -665,7 +665,7 @@ describe('DU hardening — zod v3 adapter parity', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as V3Api
@@ -719,7 +719,7 @@ describe('DU hardening — `unset` on the discriminator (no-selection-yet UX)', 
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as ProfileApi
@@ -752,7 +752,7 @@ describe('DU hardening — `unset` on the discriminator (no-selection-yet UX)', 
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as ProfileApi
@@ -848,7 +848,7 @@ describe('DU hardening — bad default values at the union path', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as ProfileApi
@@ -882,7 +882,7 @@ describe('DU hardening — bad default values at the union path', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as ProfileApi
@@ -903,7 +903,7 @@ describe('DU hardening — bad default values at the union path', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as ProfileApi
@@ -947,7 +947,7 @@ describe('DU hardening — invalid OUTER discriminator with valid inner state', 
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     return { app, api: handle.api as FlowApi }
   }
@@ -1247,7 +1247,7 @@ describe('DU hardening — array of DU: variant memory under array reshape', () 
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     return handle.api as ArrayApi
@@ -1440,7 +1440,7 @@ describe('DU hardening — DU containing an array variant: round-trip preservati
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     return handle.api as ContainerApi
@@ -1528,7 +1528,7 @@ describe('DU hardening — array index Case A/B with invalid discriminator', () 
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     return handle.api as ArrayApi
@@ -1661,7 +1661,7 @@ describe('DU hardening — array element invalid disc: container-level error rep
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as ArrayApi
@@ -1753,7 +1753,7 @@ describe('chaos — prototype pollution attempts via path & value', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as RecordApi
@@ -1788,7 +1788,7 @@ describe('chaos — prototype pollution attempts via path & value', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as RecordApi
@@ -1831,7 +1831,7 @@ describe('chaos — values that break JSON.stringify (variant memory snapshot)',
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as BigApi
@@ -1871,7 +1871,7 @@ describe('chaos — values that break JSON.stringify (variant memory snapshot)',
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as BigApi
@@ -1919,7 +1919,7 @@ describe('chaos — exotic discriminator literal types', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as BoolApi
@@ -1953,7 +1953,7 @@ describe('chaos — exotic discriminator literal types', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as BoolApi
@@ -1995,7 +1995,7 @@ describe('chaos — NaN at the discriminator', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -2037,7 +2037,7 @@ describe('chaos — `-0` written over `0` at a numeric leaf', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -2090,7 +2090,7 @@ describe('chaos — DU with two variants sharing the same literal value', () => 
           return () => h('div')
         },
       })
-      const app = createApp(App).use(createAttaform({ override: true }))
+      const app = createApp(App).use(createAttaform())
       app.mount(document.createElement('div'))
       apps.push(app)
       constructed = handle.api !== undefined
@@ -2144,7 +2144,7 @@ describe('chaos — recursive DU via z.lazy (tree of nodes)', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as TreeApi
@@ -2179,7 +2179,7 @@ describe('chaos — recursive DU via z.lazy (tree of nodes)', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as TreeApi
@@ -2243,7 +2243,7 @@ describe('chaos — setValue re-entry inside listener callbacks', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -2388,7 +2388,7 @@ describe('chaos — DU variant with no fields beyond the discriminator', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -2436,7 +2436,7 @@ describe('chaos — two DUs with the same discriminator key at different paths',
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -2498,7 +2498,7 @@ describe('chaos — array of DU mutated via proxy length / direct index assignme
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as ArrApi
@@ -2545,7 +2545,7 @@ describe('chaos — non-data value types passed to setValue', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -2587,7 +2587,7 @@ describe('chaos — exotic path inputs', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -2720,7 +2720,7 @@ describe('chaos — z.coerce at the discriminator', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -2757,7 +2757,7 @@ describe('chaos — z.coerce at the discriminator', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -2803,7 +2803,7 @@ describe('chaos — z.preprocess() wrapping a discriminated union', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -2852,7 +2852,7 @@ describe('chaos — z.transform() at a leaf changes the output type', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -2897,7 +2897,7 @@ describe('chaos — non-JSON-friendly types in DU subtree', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -2945,7 +2945,7 @@ describe('chaos — numeric-string write at a z.number() leaf', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -2980,7 +2980,7 @@ describe('chaos — null at a nullable string leaf', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -3045,7 +3045,7 @@ describe('chaos — performance: large array of DU', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     await nextTick()
@@ -3115,7 +3115,7 @@ describe('chaos — two useForm calls with the same key in one app', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     await nextTick()
@@ -3253,7 +3253,7 @@ describe('chaos — non-discriminated z.union with literal variants', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -3308,7 +3308,7 @@ describe('chaos — array of arrays of discriminated unions', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -3351,7 +3351,7 @@ describe('chaos — stringified JSON written at an object-typed leaf', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -3393,7 +3393,7 @@ describe('chaos — branded literal at the discriminator', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -3439,7 +3439,7 @@ describe('chaos — zod v3 ZodEffects wrapping a discriminatedUnion', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -3486,7 +3486,7 @@ describe('chaos — z.intersection of a DU and a sibling schema', () => {
           return () => h('div')
         },
       })
-      const app = createApp(App).use(createAttaform({ override: true }))
+      const app = createApp(App).use(createAttaform())
       app.mount(document.createElement('div'))
       apps.push(app)
       api = handle.api as Api
@@ -3553,7 +3553,7 @@ describe('chaos — preprocess on the discriminator leaf inside a variant', () =
           return () => h('div')
         },
       })
-      const app = createApp(App).use(createAttaform({ override: true }))
+      const app = createApp(App).use(createAttaform())
       app.mount(document.createElement('div'))
       apps.push(app)
     } catch {
@@ -3632,7 +3632,7 @@ describe('chaos — persistence: hydrate with invalid discriminator in stored pa
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     await nextTick()
@@ -3676,7 +3676,7 @@ describe('chaos — persistence: hydrate with invalid discriminator in stored pa
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     await nextTick()
@@ -3706,7 +3706,7 @@ describe('chaos — persistence: hydrate with invalid discriminator in stored pa
           return () => h('div')
         },
       })
-      const app = createApp(App).use(createAttaform({ override: true }))
+      const app = createApp(App).use(createAttaform())
       app.mount(document.createElement('div'))
       apps.push(app)
       await nextTick()
@@ -3752,7 +3752,7 @@ describe('chaos — persistence: hydrate with invalid discriminator in stored pa
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     await nextTick()
@@ -3795,7 +3795,7 @@ describe('chaos — persistence: hydrate with invalid discriminator in stored pa
             })
         },
       })
-      const app = createApp(App).use(createAttaform({ override: true }))
+      const app = createApp(App).use(createAttaform())
       app.mount(document.createElement('div'))
       apps.push(app)
 
@@ -3842,7 +3842,7 @@ describe('chaos — persistence: hydrate with invalid discriminator in stored pa
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     await nextTick()
@@ -3886,7 +3886,7 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     return { app, api: handle.api as ProfileApi }
   }
@@ -4082,7 +4082,7 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as ArrApi
@@ -4133,7 +4133,7 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as ProfileApi
@@ -4184,7 +4184,7 @@ describe('chaos — persistence + history together', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -4244,7 +4244,7 @@ describe('chaos — z.record() with DU values', () => {
           return () => h('div')
         },
       })
-      const app = createApp(App).use(createAttaform({ override: true }))
+      const app = createApp(App).use(createAttaform())
       app.mount(document.createElement('div'))
       apps.push(app)
       api = handle.api as Api
@@ -4285,7 +4285,7 @@ describe('chaos — z.record() with DU values', () => {
           return () => h('div')
         },
       })
-      const app = createApp(App).use(createAttaform({ override: true }))
+      const app = createApp(App).use(createAttaform())
       app.mount(document.createElement('div'))
       apps.push(app)
       api = handle.api as Api
@@ -4341,7 +4341,7 @@ describe('chaos — z.tuple containing a discriminated union', () => {
           return () => h('div')
         },
       })
-      const app = createApp(App).use(createAttaform({ override: true }))
+      const app = createApp(App).use(createAttaform())
       app.mount(document.createElement('div'))
       apps.push(app)
       api = handle.api as Api
@@ -4389,7 +4389,7 @@ describe('chaos — Map / Set values at leaves', () => {
           return () => h('div')
         },
       })
-      const app = createApp(App).use(createAttaform({ override: true }))
+      const app = createApp(App).use(createAttaform())
       app.mount(document.createElement('div'))
       apps.push(app)
       api = handle.api as Api
@@ -4439,7 +4439,7 @@ describe('chaos — Map / Set values at leaves', () => {
           return () => h('div')
         },
       })
-      const app = createApp(App).use(createAttaform({ override: true }))
+      const app = createApp(App).use(createAttaform())
       app.mount(document.createElement('div'))
       apps.push(app)
       api = handle.api as Api
@@ -4568,9 +4568,7 @@ describe('chaos — installing createAttaform twice on one app', () => {
     })
     let threw = false
     try {
-      const app = createApp(App)
-        .use(createAttaform({ override: true }))
-        .use(createAttaform({ override: true })) // ← second install
+      const app = createApp(App).use(createAttaform()).use(createAttaform()) // ← second install
       app.mount(document.createElement('div'))
       apps.push(app)
       await nextTick()
@@ -4640,7 +4638,7 @@ describe('chaos — extremely long string at a slim leaf', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -4696,7 +4694,7 @@ describe('chaos — two <input> elements registered to the same path', () => {
           ])
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -4733,7 +4731,7 @@ describe('chaos — SSR rendering with discriminated-union schemas', () => {
           return () => h('div', [h('input', { value: 'Ada' }), h('input', { value: 'a@b.io' })])
         },
       })
-      const ssrApp = createSSRApp(App).use(createAttaform({ override: true }))
+      const ssrApp = createSSRApp(App).use(createAttaform())
       html = await renderToString(ssrApp)
     } catch {
       threw = true
@@ -4756,7 +4754,7 @@ describe('chaos — SSR rendering with discriminated-union schemas', () => {
           return () => h('div')
         },
       })
-      const ssrApp = createSSRApp(App).use(createAttaform({ override: true }))
+      const ssrApp = createSSRApp(App).use(createAttaform())
       await renderToString(ssrApp)
     } catch {
       threw = true
@@ -4782,7 +4780,7 @@ describe('chaos — SSR rendering with discriminated-union schemas', () => {
           return () => h('div')
         },
       })
-      const ssrApp = createSSRApp(App).use(createAttaform({ override: true }))
+      const ssrApp = createSSRApp(App).use(createAttaform())
       await renderToString(ssrApp)
     } catch {
       threw = true
@@ -4829,7 +4827,7 @@ describe('chaos — server/client default-value divergence on a DU', () => {
         return () => h('div')
       },
     })
-    // Client-side mount: NOT `override: true` (which forces SSR mode and
+    // Client-side mount: NOT `ssr: true` (which forces SSR mode and
     // gates off persistence wiring). Probe simulates the post-hydration
     // browser pass where persistence reads from storage.
     const app = createApp(App).use(createAttaform())
@@ -4870,7 +4868,7 @@ describe('chaos — multi-tab persistence via the storage event', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     await nextTick()
@@ -4924,7 +4922,7 @@ describe('chaos — multi-tab persistence via the storage event', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     await nextTick()
@@ -4967,7 +4965,7 @@ describe('chaos — multi-tab persistence via the storage event', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     await nextTick()
@@ -5014,7 +5012,7 @@ describe('chaos — SSR id allocator collision when two forms share a parent', (
         return () => h('div')
       },
     })
-    const ssrApp = createSSRApp(App).use(createAttaform({ override: true }))
+    const ssrApp = createSSRApp(App).use(createAttaform())
     await renderToString(ssrApp)
 
     expect(key1).toBeDefined()
@@ -5051,7 +5049,7 @@ describe('chaos — dev warning surface for construction-time issues', () => {
           return () => h('div')
         },
       })
-      const app = createApp(App).use(createAttaform({ override: true }))
+      const app = createApp(App).use(createAttaform())
       app.mount(document.createElement('div'))
       apps.push(app)
       await nextTick()
@@ -5147,7 +5145,7 @@ describe('chaos — plugin defaults with a throwing predicate', () => {
         },
       })
       const app = createApp(App).use(
-        createAttaform({ override: true, defaults: { shouldShowErrors: explosivePredicate } })
+        createAttaform({ defaults: { shouldShowErrors: explosivePredicate } })
       )
       app.mount(document.createElement('div'))
       apps.push(app)
@@ -5214,7 +5212,7 @@ describe('chaos — mount then immediately unmount during async hydration', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -5258,7 +5256,7 @@ describe('chaos — JSON.stringify(form.values()) with a BigInt-typed leaf', () 
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -5303,7 +5301,7 @@ describe('chaos — empty z.object({}) schema', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     await nextTick()
@@ -5354,7 +5352,7 @@ describe('crash — BigInt-in-DU surfaces as a thrown error to the Vue app', () 
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.config.errorHandler = (err): void => {
       captured.push(err)
     }
@@ -5409,7 +5407,7 @@ describe('crash — recursive z.lazy + DU at construction', () => {
 
     let crashed = false
     try {
-      const app = createApp(App).use(createAttaform({ override: true }))
+      const app = createApp(App).use(createAttaform())
       app.mount(document.createElement('div'))
       app.unmount()
     } catch {
@@ -5468,7 +5466,7 @@ describe('crash — infinite reactivity loop via setValue inside a computed', ()
           }
         },
       })
-      const app = createApp(App).use(createAttaform({ override: true }))
+      const app = createApp(App).use(createAttaform())
       app.mount(document.createElement('div'))
       apps.push(app)
 
@@ -5516,7 +5514,7 @@ describe('crash — extremely deep path setValue', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as Api
@@ -5617,7 +5615,7 @@ describe('crash — render template chain access into an inactive-variant subtre
         }
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     await nextTick()
@@ -5641,7 +5639,7 @@ describe('crash — SSR / prerender stability with misconfigured forms', () => {
           return () => h('div')
         },
       })
-      const ssrApp = createSSRApp(App).use(createAttaform({ override: true }))
+      const ssrApp = createSSRApp(App).use(createAttaform())
       await renderToString(ssrApp)
     } catch {
       threw = true

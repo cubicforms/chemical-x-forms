@@ -47,7 +47,7 @@ function mountWithZod(options: { strict?: boolean; defaultValues?: Partial<Tight
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform({ ssr: true }))
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -89,7 +89,7 @@ describe('initial validation seed — strict mode', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform({ ssr: true }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -257,9 +257,9 @@ describe('initial validation seed — async-refine schema', () => {
       },
     })
     // Override the registry to SSR mode — `createAttaform({
-    // override: true })` flips `detectSSR` to true, matching what
+    // ssr: true })` flips `detectSSR` to true, matching what
     // happens during a Nuxt server pass.
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform({ ssr: true }))
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

@@ -69,7 +69,7 @@ function makeAppWithTemplate(template: string, mode: TransformMode) {
     render,
   })
   const app = createSSRApp(App)
-  app.use(createAttaform({ override: true /* SSR */ }))
+  app.use(createAttaform({ ssr: true /* SSR */ }))
   return app
 }
 
@@ -124,7 +124,7 @@ describe('SSR connected via vRegisterHintTransform', () => {
       },
     })
     const app = createSSRApp(App)
-    app.use(createAttaform({ override: true }))
+    app.use(createAttaform({ ssr: true }))
     await renderToString(app)
     const registry = getRegistryFromApp(app)
     const state = registry.forms.get('setup-only')
@@ -319,7 +319,7 @@ describe('SSR connected — cross-component sync via shared form key', () => {
       render: compileTemplate(`<div><Writer /><Reader /></div>`, 'preamble+hint'),
     })
     const app = createSSRApp(Parent)
-    app.use(createAttaform({ override: true }))
+    app.use(createAttaform({ ssr: true }))
 
     const html = await renderToString(app)
     // Reader's div serialises the email field state. Both forms are
@@ -411,7 +411,7 @@ describe('SSR connected — cross-component sync via shared form key', () => {
       render: compileTemplate(`<div><Binder /><SetupOnlyReader /></div>`, 'preamble+hint'),
     })
     const app = createSSRApp(Parent)
-    app.use(createAttaform({ override: true }))
+    app.use(createAttaform({ ssr: true }))
 
     const html = await renderToString(app)
     const readerMatch = html.match(/<div class="setup-only-reader">([\s\S]*?)<\/div>/)
@@ -490,7 +490,7 @@ describe('SSR connected — cross-component sync via shared form key', () => {
       render: compileTemplate(`<div><SetupOnlyA /><SetupOnlyB /><Reader /></div>`, 'preamble+hint'),
     })
     const app = createSSRApp(Parent)
-    app.use(createAttaform({ override: true }))
+    app.use(createAttaform({ ssr: true }))
 
     const html = await renderToString(app)
     const readerMatch = html.match(/<div class="case-b-reader">([\s\S]*?)<\/div>/)

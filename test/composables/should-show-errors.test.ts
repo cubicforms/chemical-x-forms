@@ -37,7 +37,7 @@ afterEach(() => {
 
 function mountWithApp<T>(
   setup: () => T,
-  pluginOptions: Parameters<typeof createAttaform>[0] = { override: true }
+  pluginOptions: Parameters<typeof createAttaform>[0] = {}
 ): T {
   const handle: { captured?: T } = {}
   const App = defineComponent({
@@ -46,7 +46,7 @@ function mountWithApp<T>(
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true, ...pluginOptions }))
+  const app = createApp(App).use(createAttaform({ ...pluginOptions }))
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -311,9 +311,7 @@ describeOverrideTier('shouldShowErrors override resolution — zod-v3', (pluginD
             ? {}
             : ({ shouldShowErrors: perForm } as { shouldShowErrors: typeof perForm })),
         }),
-      pluginDefault === undefined
-        ? { override: true }
-        : { override: true, defaults: { shouldShowErrors: pluginDefault } as never }
+      pluginDefault === undefined ? {} : { defaults: { shouldShowErrors: pluginDefault } as never }
     )
   )
 )
@@ -359,9 +357,7 @@ describeOverrideTier('shouldShowErrors override resolution — zod-v4', (pluginD
             ? {}
             : ({ shouldShowErrors: perForm } as { shouldShowErrors: typeof perForm })),
         }),
-      pluginDefault === undefined
-        ? { override: true }
-        : { override: true, defaults: { shouldShowErrors: pluginDefault } as never }
+      pluginDefault === undefined ? {} : { defaults: { shouldShowErrors: pluginDefault } as never }
     )
   )
 )

@@ -45,7 +45,7 @@ describe('injectForm — ambient provide/inject', () => {
       },
     })
 
-    const app = createApp(Parent).use(createAttaform({ override: true }))
+    const app = createApp(Parent).use(createAttaform())
     const root = document.createElement('div')
     app.mount(root)
 
@@ -79,7 +79,7 @@ describe('injectForm — ambient provide/inject', () => {
       },
     })
 
-    const app = createApp(Parent).use(createAttaform({ override: true }))
+    const app = createApp(Parent).use(createAttaform())
     app.mount(document.createElement('div'))
     expect(shared.parent).toBeDefined()
     expect(shared.parent?.startsWith(ANONYMOUS_FORM_KEY_PREFIX)).toBe(true)
@@ -110,7 +110,7 @@ describe('injectForm — ambient provide/inject', () => {
         },
       })
 
-      // No `override: true` — the warn is suppressed in SSR mode (see
+      // No `ssr: true` — the warn is suppressed in SSR mode (see
       // warnMiss in use-form-context.ts). JSDOM has `window`, so the
       // default detectSSR resolves to false and the warn fires as
       // intended for client-side coverage.
@@ -197,7 +197,7 @@ describe('injectForm — ambient provide/inject', () => {
         return () => h(Child)
       },
     })
-    const app = createApp(Parent).use(createAttaform({ override: true }))
+    const app = createApp(Parent).use(createAttaform())
     app.mount(document.createElement('div'))
     expect(shared.childKey).toBeDefined()
     expect(shared.childKey?.startsWith(ANONYMOUS_FORM_KEY_PREFIX)).toBe(true)
@@ -238,7 +238,7 @@ describe('injectForm — ambient provide/inject', () => {
       },
     })
 
-    const app = createApp(Grandparent).use(createAttaform({ override: true }))
+    const app = createApp(Grandparent).use(createAttaform())
     app.mount(document.createElement('div'))
 
     // Grandchild resolves to the PARENT (closer), not the grandparent.
@@ -294,7 +294,7 @@ describe('injectForm — ambient provide/inject', () => {
       },
     })
 
-    const app = createApp(Grandparent).use(createAttaform({ override: true }))
+    const app = createApp(Grandparent).use(createAttaform())
     app.mount(document.createElement('div'))
 
     expect(shared.grandparent).toBeDefined()
@@ -351,7 +351,7 @@ describe('injectForm — ambient provide/inject', () => {
       setup: () => () => h('div', [h(LeftBranch), h(RightBranch)]),
     })
 
-    const app = createApp(Root).use(createAttaform({ override: true }))
+    const app = createApp(Root).use(createAttaform())
     app.mount(document.createElement('div'))
 
     expect(shared.leftParent?.key).not.toBe(shared.rightParent?.key)
@@ -393,7 +393,7 @@ describe('injectForm — explicit key resolution', () => {
       },
     })
 
-    const app = createApp(Root).use(createAttaform({ override: true }))
+    const app = createApp(Root).use(createAttaform())
     app.mount(document.createElement('div'))
 
     expect(shared.sibling).toBeDefined()
@@ -452,7 +452,7 @@ describe('injectForm — consumer ref-counting', () => {
       },
     })
 
-    const app = createApp(Parent).use(createAttaform({ override: true }))
+    const app = createApp(Parent).use(createAttaform())
     const root = document.createElement('div')
     app.mount(root)
 

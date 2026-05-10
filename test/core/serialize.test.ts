@@ -12,7 +12,7 @@ type Signup = { email: string; password: string }
 
 function seedServerApp(formKey: string, initialEmail: string) {
   const app = createApp({ render: () => null })
-  app.use(createAttaform({ override: true }))
+  app.use(createAttaform({ ssr: true }))
   const registry = getRegistryFromApp(app)
   const state = createFormStore<Signup>({
     formKey,

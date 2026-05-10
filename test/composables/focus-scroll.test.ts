@@ -93,7 +93,7 @@ function mountWith(options: {
     },
   })
 
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform())
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -379,7 +379,7 @@ describe('focusFirstError — shared-key form isolation', () => {
       setup: () => () => h('div', [h(SidebarForm), h(MainForm)]),
     })
 
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -430,7 +430,7 @@ describe('focusFirstError — shared-key form isolation', () => {
     const App = defineComponent({
       setup: () => () => h('div', [h(FormA), h(FormB)]),
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -521,7 +521,7 @@ describe('focusFirstError — sort cache invalidation', () => {
       },
     })
 
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -615,7 +615,7 @@ describe('focusFirstError — instanceId inheritance through injectForm', () => 
       },
     })
 
-    const app = createApp(Parent).use(createAttaform({ override: true }))
+    const app = createApp(Parent).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
@@ -693,7 +693,7 @@ describe('focusFirstError — instanceId inheritance through injectForm', () => 
       },
     })
 
-    const app = createApp(Grandparent).use(createAttaform({ override: true }))
+    const app = createApp(Grandparent).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

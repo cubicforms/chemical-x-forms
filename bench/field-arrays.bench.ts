@@ -52,7 +52,7 @@ function mountAndCaptureForm(seedCount: number) {
     },
   })
   const app = createSSRApp(App)
-  app.use(createAttaform({ override: true }))
+  app.use(createAttaform({ ssr: true }))
   // renderToString drives setup(); we don't care about the HTML itself.
   void renderToString(app)
   if (captured === undefined) throw new Error('useForm setup did not run')

@@ -64,7 +64,7 @@ function mountForm(): { app: App; api: Api } {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform())
   app.mount(document.createElement('div'))
   return { app, api: handle.api as Api }
 }
@@ -316,7 +316,7 @@ describe('FUTURE — multi-tab persistence sync (not yet implemented)', () => {
           )
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)

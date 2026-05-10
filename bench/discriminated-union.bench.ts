@@ -33,7 +33,7 @@ function mount() {
     },
   })
   const app = createSSRApp(App)
-  app.use(createAttaform({ override: true }))
+  app.use(createAttaform({ ssr: true }))
   void renderToString(app)
   if (captured === undefined) throw new Error('useForm setup did not run')
   return captured

@@ -258,12 +258,32 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // error" need is served by `form.meta.errors` (flat ValidationError[]).
   const errorsProxy = buildErrorsProxy(state)
 
+  function filterToOwnFormKey(
+    errors: ValidationError[],
+    op: 'setFieldErrors' | 'addFieldErrors'
+  ): ValidationError[] {
+    const own: ValidationError[] = []
+    let dropped = 0
+    for (const e of errors) {
+      if (e.formKey === state.formKey) own.push(e)
+      else dropped++
+    }
+    if (__DEV__ && dropped > 0) {
+      console.warn(
+        `[attaform] ${op}: dropped ${dropped} error(s) with non-matching formKey ` +
+          `(this form's key is "${String(state.formKey)}"). Errors are scoped to ` +
+          `the form that produced them — pass them to the matching form instance.`
+      )
+    }
+    return own
+  }
+
   function setFieldErrors(errors: ValidationError[]): void {
-    state.setAllUserErrors(errors)
+    state.setAllUserErrors(filterToOwnFormKey(errors, 'setFieldErrors'))
   }
 
   function addFieldErrors(errors: ValidationError[]): void {
-    state.addUserErrors(errors)
+    state.addUserErrors(filterToOwnFormKey(errors, 'addFieldErrors'))
   }
 
   function clearFieldErrors(path?: string | (string | number)[]): void {

@@ -3584,7 +3584,10 @@ import { hashStableString } from '../../src/runtime/core/hash'
 import { waitUntil } from '../utils/form-harness'
 
 function persistKeyFor<S extends z.ZodType>(schema: S, formKey: string): string {
-  return `${formKey}:${hashStableString(fingerprintZodSchema(schema))}`
+  // Mirror `wirePersistence`'s key shape: `attaform:${formKey}:${fingerprintHash}`.
+  // Without the prefix, seeded localStorage entries write to a different
+  // key than the lib reads from — hydration silently no-ops.
+  return `attaform:${formKey}:${hashStableString(fingerprintZodSchema(schema))}`
 }
 
 describe('chaos — persistence: hydrate with invalid discriminator in stored payload', () => {
@@ -4826,7 +4829,10 @@ describe('chaos — server/client default-value divergence on a DU', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    // Client-side mount: NOT `override: true` (which forces SSR mode and
+    // gates off persistence wiring). Probe simulates the post-hydration
+    // browser pass where persistence reads from storage.
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
 

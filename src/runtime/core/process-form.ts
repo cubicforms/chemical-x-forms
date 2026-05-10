@@ -241,12 +241,21 @@ export function buildProcessForm<F extends GenericForm>(
       ) {
         event.preventDefault()
       }
-      // Use the in-flight counter on FormStore so two overlapping submit
-      // handlers don't clobber each other: the first completion only
-      // flips submitting to false when the counter reaches zero, not
-      // unconditionally. submitError is shared across runs by design — a
-      // later run's success / failure replaces the earlier capture,
-      // UNLESS a `reset()` fired between entry and throw (see below).
+      // Re-entry guard: a submission is already in flight. The classic
+      // double-click case — `submit()` fires while a prior call is still
+      // awaiting validation or the consumer's onSuccess — would otherwise
+      // drive `onSuccess` twice and duplicate side-effects (POSTs, etc).
+      // `preventDefault` already ran above, so a duplicate browser submit
+      // is suppressed even when this branch returns early.
+      if (state.activeSubmissions.value > 0) {
+        return
+      }
+      // Track in-flight via a counter (not a flag) so that a generation
+      // bump during the run can still distinguish "I'm the live submission"
+      // from "a stale prior submission winding down" via the early
+      // generation snapshot. submitError is shared with the prior call's
+      // capture only when a `reset()` hasn't fired between entry and
+      // throw (see the catch block).
       const genAtEntry = state.submissionGeneration.value
       state.activeSubmissions.value += 1
       state.submitting.value = true

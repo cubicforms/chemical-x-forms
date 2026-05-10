@@ -2782,6 +2782,32 @@ export type UseFormReturnType<
    */
   validateAsync: (path?: FlatPath<Form>) => Promise<ValidationResponseWithoutValue<Form>>
   /**
+   * Imperative one-shot parse. Same pipeline as `validateAsync` —
+   * runs refinements, applies `.transform()`s, composes blank-required
+   * errors — but RETAINS the parsed data instead of stripping it.
+   *
+   * Storage holds the "honest input view" — values you wrote, with
+   * preprocess normalization applied but `.transform()` deferred. For
+   * schemas where the input type differs from the output type (e.g.,
+   * `z.string().transform(v => v.length > 10)`), `form.values.X` is
+   * the input shape and `(await form.process()).data?.X` is the
+   * output shape.
+   *
+   * ```ts
+   * const result = await form.process()
+   * if (result.success) {
+   *   // result.data matches z.output<typeof schema>
+   * } else {
+   *   // result.errors is the validation failure list
+   * }
+   * ```
+   *
+   * Pass a path to parse a subtree only. Async because refinements may
+   * be async. `meta.validating` flips `true` while the promise is in
+   * flight (shared with validateAsync).
+   */
+  process: (path?: FlatPath<Form>) => Promise<ValidationResponse<GetValueFormType>>
+  /**
    * Bind a path to a native input via `v-register`. Returns a
    * `RegisterValue` carrying the live ref and event handlers the
    * directive needs.

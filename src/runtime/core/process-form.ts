@@ -179,6 +179,38 @@ export function buildProcessForm<F extends GenericForm>(
   }
 
   /**
+   * Imperative one-shot parse — same pipeline as `validateAsync` but
+   * RETAINS the parsed data. Returns what `form.values` WOULD be if
+   * every refinement passed and every transform fired. Useful when
+   * the form's storage holds the pre-transform input view (the
+   * "honest input view" — Attaform doesn't run `.transform()` at
+   * write time, only preprocess) and the consumer wants the
+   * post-transform output on demand.
+   *
+   * For a schema like `z.object({ email: z.string().transform(v =>
+   * v.length > 10) })`, `form.values.email` is the string the user
+   * wrote, while `(await form.process()).data?.email` is the boolean
+   * the transform produces. handleSubmit's callback already receives
+   * this same shape (it's what the parse pipeline emits before
+   * onSubmit runs); `process()` is the standalone read-only form.
+   *
+   * Async because refinements may be async (`.refine(async ...)`).
+   * The path-scoped variant mirrors `validateAsync(path?)` —
+   * `process('email')` returns the parsed value at that path only.
+   */
+  async function process(pathInput?: string | Path): Promise<ValidationResponse<F>> {
+    const segments = pathInput === undefined ? undefined : toSegments(pathInput)
+    const dataAtPath = segments === undefined ? state.form.value : state.getValueAtPath(segments)
+    try {
+      state.activeValidations.value += 1
+      const refinement = await runRefinementValidation(dataAtPath, segments)
+      return composeWithDerivedBlank(refinement, segments)
+    } finally {
+      state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
+    }
+  }
+
+  /**
    * Refinement-only adapter pass-through. Returns the schema's
    * refinement-class result without touching the blank-required class
    * — that lives reactively on `state.derivedBlankErrors`. Callers
@@ -376,7 +408,7 @@ export function buildProcessForm<F extends GenericForm>(
     return submitHandler
   }
 
-  return { validate, validateAsync, handleSubmit }
+  return { validate, validateAsync, process, handleSubmit }
 }
 
 function toSegments(pathInput: string | Path): Path {

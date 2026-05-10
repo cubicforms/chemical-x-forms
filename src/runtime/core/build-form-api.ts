@@ -10,6 +10,7 @@ import type {
   UseFormReturnType,
   ValidateOn,
   ValidationError,
+  ValidationResponse,
   ValidationResponseWithoutValue,
   WriteMeta,
 } from '../types/types-api'
@@ -164,6 +165,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   const {
     validate: validateBuilt,
     validateAsync: validateAsyncBuilt,
+    process: processBuilt,
     handleSubmit,
   } = buildProcessForm(state, formInstanceId, processOptions)
 
@@ -172,6 +174,9 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
 
   const validateAsync = (pathInput?: string) =>
     validateAsyncBuilt(pathInput) as Promise<ValidationResponseWithoutValue<Form>>
+
+  const process = (pathInput?: string) =>
+    processBuilt(pathInput) as Promise<ValidationResponse<GetValueFormType>>
 
   // --- toRef escape hatch — Readonly<Ref<...>> for the rare case
   // a consumer needs ref-shaped interop (external composables that
@@ -758,6 +763,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     setValue: setValueImpl as UseFormReturnType<Form, GetValueFormType>['setValue'],
     validate: validate as UseFormReturnType<Form, GetValueFormType>['validate'],
     validateAsync: validateAsync as UseFormReturnType<Form, GetValueFormType>['validateAsync'],
+    process: process as UseFormReturnType<Form, GetValueFormType>['process'],
     register: register as UseFormReturnType<Form, GetValueFormType>['register'],
     key: state.formKey,
     errors: errorsProxy as unknown as FormErrorsSurface<Form>,

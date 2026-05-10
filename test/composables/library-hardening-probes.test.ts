@@ -2907,8 +2907,70 @@ describe('chaos — z.transform() at a leaf changes the output type', () => {
     // The user typed '  ada  '; storage should preserve their input
     // (so the input element shows what they typed, not 'ADA'). The bug
     // case: the form pre-applies the transform and the user sees their
-    // text reformatted on every keystroke.
+    // text reformatted on every keystroke. The post-transform OUTPUT
+    // is reachable via `form.process()` below — keeps storage as the
+    // honest input view, exposes the output on demand.
     expect(api.values.name).toBe('  ada  ')
+  })
+
+  it('form.process() returns the post-transform OUTPUT shape while form.values stays as input', async () => {
+    // The input/output asymmetry contract: storage (and form.values)
+    // holds the pre-transform value the consumer wrote;
+    // `form.process()` runs the full parse pipeline (refinements +
+    // transforms) and returns the post-transform value. handleSubmit's
+    // callback already receives this same shape — `process()` is the
+    // standalone way to ask for it.
+    const schema = z.object({
+      isLongEmail: z.string().transform((v) => v.length > 10),
+      count: z.string().transform((v) => Number(v)),
+    })
+    type Api = Omit<UseFormReturnType<z.output<typeof schema>>, 'setValue'> & {
+      setValue: (path: string, value: unknown) => boolean
+      values: { isLongEmail: unknown; count: unknown }
+      process: () => Promise<{
+        success: boolean
+        data?: { isLongEmail: boolean; count: number }
+        errors?: ReadonlyArray<{ message: string }>
+      }>
+    }
+    const handle: { api?: Api } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema,
+          key: `chaos-process-transform-${Math.random().toString(36).slice(2)}`,
+          defaultValues: { isLongEmail: 'a@b.co', count: '42' } as never,
+        }) as unknown as Api
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    const api = handle.api as Api
+
+    // After setValue, storage holds the PRE-transform input
+    // (`.transform()` doesn't run at write time, only at parse time).
+    api.setValue('isLongEmail', 'a@b.co')
+    api.setValue('count', '42')
+    await nextTick()
+    expect(api.values.isLongEmail).toBe('a@b.co')
+    expect(api.values.count).toBe('42')
+
+    // process() runs the full parse pipeline (refinements + transforms)
+    // and returns the POST-transform output. This is the same shape
+    // handleSubmit's callback receives.
+    const result = await api.process()
+    expect(result.success).toBe(true)
+    expect(result.data?.isLongEmail).toBe(false) // 'a@b.co' is 6 chars, < 10 → false
+    expect(result.data?.count).toBe(42) // string '42' → number 42
+
+    // Mutating + re-processing reflects the latest input.
+    api.setValue('isLongEmail', 'a-really-long-email@example.com')
+    await nextTick()
+    expect(api.values.isLongEmail).toBe('a-really-long-email@example.com')
+    const result2 = await api.process()
+    expect(result2.data?.isLongEmail).toBe(true) // 31 chars, > 10 → true
   })
 })
 

@@ -21,7 +21,7 @@ import type { UseFormReturnType } from '../../src/runtime/types/types-api'
  * The asymmetry this file documents is intentional but unintuitive:
  *
  *   ┌─ Lives directly on `api` ───────────────────────────────┐
- *   │  setValue, handleSubmit, validateAsync, reset,          │
+ *   │  setValue, handleSubmit, validateAsync, process, reset, │
  *   │  resetField, undo, redo, register, fields, errors,      │
  *   │  values, key, meta, …                                   │
  *   └─────────────────────────────────────────────────────────┘
@@ -119,6 +119,7 @@ describe('API surface contract — actions on `api`, status on `api.meta`', () =
     expect(typeof api.resetField).toBe('function')
     expect(typeof api.handleSubmit).toBe('function')
     expect(typeof api.validateAsync).toBe('function')
+    expect(typeof api.process).toBe('function')
   })
 
   it('form-level reactive flags live on `api.meta` (not `api`)', () => {

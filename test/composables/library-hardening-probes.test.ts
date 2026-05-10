@@ -3218,6 +3218,83 @@ describe('chaos — two useForm calls with the same key in one app', () => {
     // Errors are shared store state — A sees them too.
     expect(a.errors.email?.[0]?.message).toBe('bad email')
   })
+
+  it("handleSubmit re-entry guard protects across siblings — B's submit is a no-op while A's is in flight", async () => {
+    // The double-click guard at `state.activeSubmissions.value > 0`
+    // reads from the FormStore, which is shared across every
+    // `useForm({ key })` callsite. So an in-flight submission through
+    // instance A should suppress a same-key submission through
+    // instance B — they're working on the same logical form. Without
+    // this guarantee, a button in the modal could double-fire the
+    // form's onSubmit while the main form's submit is still awaiting
+    // validation, duplicating POSTs.
+    const schema = z.object({ name: z.string().min(1) })
+    const handle: { a?: unknown; b?: unknown } = {}
+    const App = defineComponent({
+      setup() {
+        handle.a = useForm({
+          schema,
+          key: 'shared-submit-dedup',
+          defaultValues: { name: 'Ada' },
+        })
+        handle.b = useForm({
+          schema,
+          key: 'shared-submit-dedup',
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    await nextTick()
+
+    type SubmitApi = {
+      handleSubmit: (onSubmit: () => unknown, onError?: () => unknown) => () => Promise<void>
+      meta: { submitting: boolean }
+    }
+    const a = handle.a as SubmitApi
+    const b = handle.b as SubmitApi
+
+    let aCalls = 0
+    let bCalls = 0
+    let releaseA!: () => void
+    const aBlocker = new Promise<void>((resolve) => {
+      releaseA = resolve
+    })
+    const submitA = a.handleSubmit(async () => {
+      aCalls++
+      await aBlocker
+    })
+    const submitB = b.handleSubmit(() => {
+      bCalls++
+    })
+
+    // Fire A first; it'll block on aBlocker until we release.
+    const aPromise = submitA()
+    await nextTick()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(aCalls).toBe(1)
+    expect(a.meta.submitting).toBe(true)
+    // Both A and B observe submitting=true — meta is shared.
+    expect(b.meta.submitting).toBe(true)
+
+    // While A is in flight, B's submit must be a no-op.
+    await submitB()
+    expect(bCalls).toBe(0)
+    expect(a.meta.submitting).toBe(true)
+    expect(b.meta.submitting).toBe(true)
+
+    // Release A — once it completes, B's next submit can run.
+    releaseA()
+    await aPromise
+    await nextTick()
+    expect(a.meta.submitting).toBe(false)
+    expect(b.meta.submitting).toBe(false)
+
+    await submitB()
+    expect(bCalls).toBe(1)
+  })
 })
 
 // -------------------- 9.11 setValue after unmount --------------------

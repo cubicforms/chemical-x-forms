@@ -168,11 +168,18 @@ export function buildProcessForm<F extends GenericForm>(
     // Increment lives INSIDE the try so a sync watcher on
     // `meta.validating` that throws can't leak `activeValidations`. The
     // finally still decrements (Math.max guards the partial-increment
-    // underflow case).
+    // underflow case). Adapter throws (or any throw inside the
+    // pipeline — sync watcher boom, malformed schema) get translated
+    // into a structured failure response with the `AdapterThrew` code
+    // instead of rejecting the promise. A misbehaving adapter must not
+    // be allowed to wreck the consumer's await chain or leak a raw
+    // exception into UI code.
     try {
       state.activeValidations.value += 1
       const refinement = await runRefinementValidation(dataAtPath, segments)
       return stripData(composeWithDerivedBlank(refinement, segments))
+    } catch (err) {
+      return adapterThrowResponse(err)
     } finally {
       state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
     }
@@ -197,6 +204,11 @@ export function buildProcessForm<F extends GenericForm>(
    * Async because refinements may be async (`.refine(async ...)`).
    * The path-scoped variant mirrors `validateAsync(path?)` —
    * `process('email')` returns the parsed value at that path only.
+   *
+   * Like `validateAsync`, this never rejects on adapter misbehavior:
+   * a throwing adapter (or any pipeline failure) lands in the
+   * response as a `success: false, errors: [{ code: AdapterThrew }]`
+   * shape so the library stays robust against a bad adapter.
    */
   async function process(pathInput?: string | Path): Promise<ValidationResponse<F>> {
     const segments = pathInput === undefined ? undefined : toSegments(pathInput)
@@ -205,8 +217,35 @@ export function buildProcessForm<F extends GenericForm>(
       state.activeValidations.value += 1
       const refinement = await runRefinementValidation(dataAtPath, segments)
       return composeWithDerivedBlank(refinement, segments)
+    } catch (err) {
+      return adapterThrowResponse(err)
     } finally {
       state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
+    }
+  }
+
+  /**
+   * Build an adapter-threw failure response. Shared between
+   * `validateAsync`, `process`, and the reactive `validate()`'s
+   * kickoff so every imperative validation surface presents the same
+   * shape on adapter misbehavior: `{ success: false, errors: [{ code
+   * AdapterThrew, message: adapterThrowMessage(err), path: [],
+   * formKey }] }`. The `data` field is `undefined` so the
+   * ValidationResponse union resolves to ErrorWithoutData.
+   */
+  function adapterThrowResponse(err: unknown): ValidationResponse<F> {
+    return {
+      success: false,
+      data: undefined,
+      errors: [
+        {
+          message: adapterThrowMessage(err),
+          path: [],
+          formKey: state.formKey,
+          code: AttaformErrorCode.AdapterThrew,
+        },
+      ],
+      formKey: state.formKey,
     }
   }
 

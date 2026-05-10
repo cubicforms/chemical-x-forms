@@ -66,7 +66,7 @@ type ElementWithListeners = HTMLElement & {
 }
 
 function attachFocusListeners<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   segments: Path,
   element: HTMLElement,
   instanceMeta: WriteMeta['instance'] | undefined
@@ -91,7 +91,7 @@ function detachFocusListeners(element: HTMLElement): void {
 }
 
 export function buildRegister<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   formInstanceId: string,
   instanceConfig?: InstanceRegisterConfig
 ) {

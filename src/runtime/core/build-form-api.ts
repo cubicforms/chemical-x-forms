@@ -119,7 +119,7 @@ function readonlySetSnapshot<T>(source: Iterable<T>): ReadonlySet<T> {
  * function is pure over (FormStore, options) → api.
  */
 export function buildFormApi<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
-  state: FormStore<Form>,
+  state: FormStore<Form, GetValueFormType>,
   formInstanceId: string,
   options: BuildFormApiOptions = {}
 ): UseFormReturnType<Form, GetValueFormType> {
@@ -167,7 +167,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     validateAsync: validateAsyncBuilt,
     process: processBuilt,
     handleSubmit,
-  } = buildProcessForm(state, formInstanceId, processOptions)
+  } = buildProcessForm<Form, GetValueFormType>(state, formInstanceId, processOptions)
 
   const validate = (pathInput?: string) =>
     validateBuilt(pathInput) as Ref<ReactiveValidationStatus<Form>>

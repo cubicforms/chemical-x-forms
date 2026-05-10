@@ -50,8 +50,8 @@ export type BuildProcessFormOptions = {
   onInvalidSubmit?: OnInvalidSubmitPolicy
 }
 
-export function buildProcessForm<F extends GenericForm>(
-  state: FormStore<F>,
+export function buildProcessForm<F extends GenericForm, Out extends GenericForm = F>(
+  state: FormStore<F, Out>,
   formInstanceId: string,
   options: BuildProcessFormOptions = {}
 ) {
@@ -210,7 +210,7 @@ export function buildProcessForm<F extends GenericForm>(
    * response as a `success: false, errors: [{ code: AdapterThrew }]`
    * shape so the library stays robust against a bad adapter.
    */
-  async function process(pathInput?: string | Path): Promise<ValidationResponse<F>> {
+  async function process(pathInput?: string | Path): Promise<ValidationResponse<Out>> {
     const segments = pathInput === undefined ? undefined : toSegments(pathInput)
     const dataAtPath = segments === undefined ? state.form.value : state.getValueAtPath(segments)
     try {
@@ -233,7 +233,7 @@ export function buildProcessForm<F extends GenericForm>(
    * formKey }] }`. The `data` field is `undefined` so the
    * ValidationResponse union resolves to ErrorWithoutData.
    */
-  function adapterThrowResponse(err: unknown): ValidationResponse<F> {
+  function adapterThrowResponse(err: unknown): ValidationResponse<Out> {
     return {
       success: false,
       data: undefined,
@@ -261,8 +261,8 @@ export function buildProcessForm<F extends GenericForm>(
   async function runRefinementValidation(
     data: unknown,
     path: Path | undefined
-  ): Promise<ValidationResponse<F>> {
-    return (await state.schema.validateAtPath(data, path)) as ValidationResponse<F>
+  ): Promise<ValidationResponse<Out>> {
+    return await state.schema.validateAtPath(data, path)
   }
 
   /**
@@ -272,9 +272,9 @@ export function buildProcessForm<F extends GenericForm>(
    * tick.
    */
   function composeWithDerivedBlank(
-    refinement: ValidationResponse<F>,
+    refinement: ValidationResponse<Out>,
     scope: Path | undefined
-  ): ValidationResponse<F> {
+  ): ValidationResponse<Out> {
     const blankErrors = collectScopedBlankErrors(state, scope)
     if (blankErrors.length === 0) return refinement
     if (refinement.success) {
@@ -313,7 +313,7 @@ export function buildProcessForm<F extends GenericForm>(
    * `validating` ref (backed by `state.activeValidations`) is true
    * for the validation window.
    */
-  const handleSubmit: HandleSubmit<F> = (onSubmit: OnSubmit<F>, onError?: OnError) => {
+  const handleSubmit: HandleSubmit<Out> = (onSubmit: OnSubmit<Out>, onError?: OnError) => {
     const submitHandler: SubmitHandler = async (event?: Event): Promise<void> => {
       if (
         event !== undefined &&
@@ -486,7 +486,7 @@ function adapterThrowMessage(err: unknown): string {
  * the store's computed builds a fresh map per recompute.
  */
 function collectScopedBlankErrors<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   scope: Path | undefined
 ): ValidationError[] {
   const derived = state.derivedBlankErrors.value
@@ -523,7 +523,7 @@ function pathStartsWith(target: Path, prefix: Path): boolean {
 }
 
 function applyInvalidSubmitPolicy<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   formInstanceId: string,
   policy: OnInvalidSubmitPolicy
 ): void {

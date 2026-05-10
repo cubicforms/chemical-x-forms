@@ -111,7 +111,11 @@ export function injectForm<Form extends GenericForm, GetValueFormType extends Ge
     (getCurrentInstance() !== null
       ? useId()
       : `atta:form-instance-injected:${injectedInstanceCounter++}`)
-  return buildFormApi<Form, GetValueFormType>(state, formInstanceId, apiOptions)
+  return buildFormApi<Form, GetValueFormType>(
+    state as FormStore<Form, GetValueFormType>,
+    formInstanceId,
+    apiOptions
+  )
 }
 
 /**

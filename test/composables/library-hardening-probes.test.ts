@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it } from 'vitest'
 import { createApp, defineComponent, h, nextTick, watch, type App } from 'vue'
 import { z } from 'zod'
 import { z as zV3 } from 'zod-v3'
@@ -7,6 +7,7 @@ import { unset, useForm } from '../../src/zod'
 import { useForm as useFormV3 } from '../../src/zod-v3'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType } from '../../src/runtime/types/types-api'
+import type { PathInput, PathOutput } from '../../src/runtime/adapters/zod-v4'
 
 /**
  * Discriminated-union HARDENING — what happens when a caller forces
@@ -2971,6 +2972,57 @@ describe('chaos — z.transform() at a leaf changes the output type', () => {
     expect(api.values.isLongEmail).toBe('a-really-long-email@example.com')
     const result2 = await api.process()
     expect(result2.data?.isLongEmail).toBe(true) // 31 chars, > 10 → true
+  })
+
+  it('TYPES: input/output asymmetry threads through useForm — values stays z.input, handleSubmit/process resolve to z.output', () => {
+    // Type-level probe. The body is a no-op at runtime — `expectTypeOf`
+    // assertions run at compile time, not at runtime — but the test
+    // function still has to exist for Vitest to report the file's
+    // status. Failure here is a tsc error caught by `pnpm typecheck`.
+    // Underscore prefix marks the `const` as type-only for the
+    // `no-unused-vars` linter; we read it via `typeof _schema` below.
+    const _schema = z.object({
+      // Different input vs output types — the trickier case.
+      isLongEmail: z.string().transform((v) => v.length > 10),
+      count: z.string().transform((v) => Number(v)),
+      // Same input/output (no transform) — the common case still works.
+      name: z.string(),
+    })
+
+    // PathInput<Schema, Path> resolves to z.input shape at the path.
+    expectTypeOf<PathInput<typeof _schema, 'isLongEmail'>>().toEqualTypeOf<string>()
+    expectTypeOf<PathInput<typeof _schema, 'count'>>().toEqualTypeOf<string>()
+    expectTypeOf<PathInput<typeof _schema, 'name'>>().toEqualTypeOf<string>()
+
+    // PathOutput<Schema, Path> resolves to z.output shape at the path.
+    expectTypeOf<PathOutput<typeof _schema, 'isLongEmail'>>().toEqualTypeOf<boolean>()
+    expectTypeOf<PathOutput<typeof _schema, 'count'>>().toEqualTypeOf<number>()
+    expectTypeOf<PathOutput<typeof _schema, 'name'>>().toEqualTypeOf<string>()
+
+    // Inside the form API, the same asymmetry threads through. Type-
+    // assert directly off `useForm`'s return without any `as Api` cast
+    // so the public TS surface is what's under test.
+    type FormApi = ReturnType<typeof useForm<typeof _schema>>
+
+    // form.values reflects storage — the pre-transform z.input view.
+    type FlagAtValues = FormApi['values']['isLongEmail']
+    type CountAtValues = FormApi['values']['count']
+    expectTypeOf<FlagAtValues>().toEqualTypeOf<string>()
+    expectTypeOf<CountAtValues>().toEqualTypeOf<string>()
+
+    // form.handleSubmit's onSubmit callback receives z.output (post-
+    // transform). Extract via Parameters<...>[0] off the OnSubmit fn
+    // shape — `(data: z.output) => void | Promise<void>`.
+    type OnSubmitParam = Parameters<Parameters<FormApi['handleSubmit']>[0]>[0]
+    expectTypeOf<OnSubmitParam['isLongEmail']>().toEqualTypeOf<boolean>()
+    expectTypeOf<OnSubmitParam['count']>().toEqualTypeOf<number>()
+    expectTypeOf<OnSubmitParam['name']>().toEqualTypeOf<string>()
+
+    // form.process()'s `.data` payload resolves to z.output too.
+    type ProcessResult = Awaited<ReturnType<FormApi['process']>>
+    type ProcessSuccess = Extract<ProcessResult, { success: true }>
+    expectTypeOf<ProcessSuccess['data']['isLongEmail']>().toEqualTypeOf<boolean>()
+    expectTypeOf<ProcessSuccess['data']['count']>().toEqualTypeOf<number>()
   })
 })
 

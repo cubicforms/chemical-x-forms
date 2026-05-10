@@ -56,20 +56,18 @@ import type { DeepPartial, DefaultValuesShape, GenericForm } from '../../types/t
 export function useForm<Schema extends z.ZodObject>(
   configuration: Omit<
     UseFormConfiguration<
-      z.output<Schema> extends GenericForm ? z.output<Schema> : never,
+      z.input<Schema> extends GenericForm ? z.input<Schema> : never,
       z.output<Schema> extends GenericForm ? z.output<Schema> : never,
       AbstractSchema<
-        z.output<Schema> extends GenericForm ? z.output<Schema> : never,
+        z.input<Schema> extends GenericForm ? z.input<Schema> : never,
         z.output<Schema> extends GenericForm ? z.output<Schema> : never
       >,
-      DeepPartial<
-        DefaultValuesShape<z.output<Schema> extends GenericForm ? z.output<Schema> : never>
-      >
+      DeepPartial<DefaultValuesShape<z.input<Schema> extends GenericForm ? z.input<Schema> : never>>
     >,
     'schema' | 'validateOn' | 'debounceMs'
   > & { schema: Schema } & ValidateOnConfig
 ): UseFormReturnType<
-  z.output<Schema> extends GenericForm ? z.output<Schema> : never,
+  z.input<Schema> extends GenericForm ? z.input<Schema> : never,
   z.output<Schema> extends GenericForm ? z.output<Schema> : never
 > {
   // Foot-gun guard mirrors the typed wrappers'.

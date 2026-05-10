@@ -599,7 +599,7 @@ function warnOnSchemaFingerprintMismatch(
  */
 function warnOnPersistDivergence<F extends GenericForm>(
   key: FormKey,
-  existing: FormStore<F>,
+  existing: FormStore<F, GenericForm>,
   incomingPersist: PersistConfig | undefined
 ): void {
   if (incomingPersist === undefined) return
@@ -650,7 +650,7 @@ function describePersist(config: PersistConfigOptions): string {
  *      teardown.
  */
 function wirePersistence<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   config: PersistConfigOptions
 ): PersistenceModule {
   // Fingerprint the schema once and bake it into the storage key. Any

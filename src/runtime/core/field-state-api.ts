@@ -14,7 +14,10 @@ import {
   type PathKey,
 } from './paths'
 
-function isUnderStubAncestor<F extends GenericForm>(state: FormStore<F>, segments: Path): boolean {
+function isUnderStubAncestor<F extends GenericForm>(
+  state: FormStore<F, GenericForm>,
+  segments: Path
+): boolean {
   for (let i = 0; i < segments.length; i++) {
     const ancestorPath = segments.slice(0, i)
     const du = state.schema.getUnionDiscriminatorAtPath(ancestorPath)
@@ -88,7 +91,7 @@ export type FormMetaBase = Omit<FormMeta<unknown>, 'showErrors' | 'firstError'>
 export type FormMetaBaseGetter = () => FormMetaBase
 
 export function buildFieldStateAccessor<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   getFormMetaBase: FormMetaBaseGetter,
   options?: { readonly shouldShowErrors?: ShouldShowErrors }
 ) {
@@ -120,7 +123,7 @@ export function buildFieldStateAccessor<F extends GenericForm>(
  * `buildLeafFieldState`).
  */
 function buildLeafFieldStateBase<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   segments: Path,
   key: PathKey
 ): FieldStateBase {
@@ -200,7 +203,7 @@ function buildLeafFieldStateBase<F extends GenericForm>(
  * vs vanilla-JS.
  */
 function buildLeafFieldState<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   segments: Path,
   key: PathKey,
   getFormMetaBase: FormMetaBaseGetter,
@@ -231,7 +234,7 @@ function buildLeafFieldState<F extends GenericForm>(
  * root path's own `showErrors` computation.
  */
 export function buildContainerFieldStateBase<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   segments: Path,
   _key: PathKey
 ): FieldStateBase {
@@ -331,7 +334,7 @@ export function buildContainerFieldStateBase<F extends GenericForm>(
  * derived predicate-fed props.
  */
 function buildContainerFieldState<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   segments: Path,
   key: PathKey,
   getFormMetaBase: FormMetaBaseGetter,
@@ -357,7 +360,7 @@ function buildContainerFieldState<F extends GenericForm>(
  */
 function decorateWithDerivedProps<F extends GenericForm>(
   base: FieldStateBase,
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   getFormMetaBase: FormMetaBaseGetter,
   shouldShowErrors?: ShouldShowErrors
 ): FieldState<unknown> {
@@ -378,7 +381,7 @@ function decorateWithDerivedProps<F extends GenericForm>(
  * — one helper, three call sites, no drift.
  */
 export function aggregateErrorsAt<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   prefix: Path
 ): ValidationError[] {
   const formValue = state.form.value

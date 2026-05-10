@@ -34,7 +34,9 @@ export type FieldArrayApi = {
   replace(path: string, index: number, value: unknown): boolean
 }
 
-export function buildFieldArrayApi<F extends GenericForm>(state: FormStore<F>): FieldArrayApi {
+export function buildFieldArrayApi<F extends GenericForm>(
+  state: FormStore<F, GenericForm>
+): FieldArrayApi {
   function readArray(path: string): unknown[] {
     const segments = canonicalizePath(path).segments
     const current = state.getValueAtPath(segments)

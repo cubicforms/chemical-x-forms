@@ -76,7 +76,7 @@ const FIELD_STATE_KEYS: ReadonlySet<string> = new Set<keyof FieldState<unknown>>
  *   object read against the resulting `FieldState`.
  */
 export function buildFieldStateProxy<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   getFormMetaBase: FormMetaBaseGetter,
   options?: { readonly shouldShowErrors?: ShouldShowErrors }
 ): SurfaceProxy {
@@ -183,7 +183,7 @@ export function buildFieldStateProxy<F extends GenericForm>(
  * whenever the form data or any per-leaf field state changes.
  */
 function materializeFields<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   containerSegments: readonly Segment[],
   snapshotFieldStateAt: (path: Path) => Record<string, unknown>
 ): unknown {

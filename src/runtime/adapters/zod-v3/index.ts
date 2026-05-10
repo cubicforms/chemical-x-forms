@@ -79,7 +79,7 @@ let warnedZodCodeMissing = false
  */
 export function zodAdapter<
   FormSchema extends z.ZodSchema,
-  Form extends z.infer<FormSchema>,
+  Form extends z.input<FormSchema>,
   GetValueFormType extends TypeWithNullableDynamicKeys<FormSchema>,
 >(zodSchema: FormSchema): (formKey: FormKey) => AbstractSchema<Form, GetValueFormType> {
   function getAbstractSchema(
@@ -571,7 +571,7 @@ export function zodAdapter<
         }
         return runAsync()
 
-        function runSync(): ValidationResponse<Form> {
+        function runSync(): ValidationResponse<GetValueFormType> {
           if (path === undefined) {
             const { success, data: successData, error } = _zodSchema.safeParse(data)
             return success
@@ -597,7 +597,7 @@ export function zodAdapter<
           return aggregatedFailure(accumulatedErrors)
         }
 
-        async function runAsync(): Promise<ValidationResponse<Form>> {
+        async function runAsync(): Promise<ValidationResponse<GetValueFormType>> {
           if (path === undefined) {
             const { success, data: successData, error } = await _zodSchema.safeParseAsync(data)
             return success
@@ -642,7 +642,7 @@ export function zodAdapter<
           return getNestedZodSchemasAtPath(_zodSchema, p)
         }
 
-        function pathNotFound(p: Path): ValidationResponse<Form> {
+        function pathNotFound(p: Path): ValidationResponse<GetValueFormType> {
           return {
             data: undefined,
             errors: NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA([...p], _formKey),
@@ -651,7 +651,9 @@ export function zodAdapter<
           }
         }
 
-        function aggregatedFailure(errors: z.ZodError<unknown>[]): ValidationResponse<Form> {
+        function aggregatedFailure(
+          errors: z.ZodError<unknown>[]
+        ): ValidationResponse<GetValueFormType> {
           const allIssues = errors.reduce<z.ZodIssue[]>((acc, e) => [...acc, ...e.issues], [])
           return {
             data: undefined,

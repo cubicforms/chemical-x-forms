@@ -334,7 +334,7 @@ export type AbstractSchema<Form, GetValueFormType> = {
     data: unknown,
     path: Path | undefined,
     options?: ValidateOptions
-  ): MaybePromise<ValidationResponse<Form>>
+  ): MaybePromise<ValidationResponse<GetValueFormType>>
   /**
    * Sync sister to `getSchemasAtPath` / `validateAtPath`. Returns the
    * set of primitive `typeof`-style kinds the path's leaf schema
@@ -2587,6 +2587,22 @@ export type FormMeta<F = unknown> = FieldState<F> & {
  * form.handleSubmit(onSubmit)   // returns a submit handler
  * form.meta.submitting        // form-level reactive flag
  * ```
+ *
+ * Two generic slots split the input view from the output view:
+ *
+ * - `Form` — the **input / storage shape** (`z.input<Schema>`). Used
+ *   by `setValue`, `defaultValues`, `values`, `fields`, `register`,
+ *   `toRef`, and every path-addressed API. Storage holds values as
+ *   the consumer wrote them; preprocess normalization runs at the
+ *   write boundary, but `.transform()`s are deferred to parse-time.
+ *
+ * - `GetValueFormType` — the **output / parsed shape**
+ *   (`z.output<Schema>`). Used by `handleSubmit`'s `onSubmit`
+ *   callback and by `form.process()`'s success payload. This is the
+ *   shape after refinements have fired and transforms have run.
+ *
+ * For schemas without transforms the two are identical, and the
+ * default `GetValueFormType = Form` keeps the surface ergonomic.
  */
 export type UseFormReturnType<
   Form extends GenericForm,
@@ -2603,10 +2619,13 @@ export type UseFormReturnType<
    * ```
    *
    * `data` is the strictly-typed parsed value — refinements have
-   * fired, so every leaf is guaranteed to satisfy its schema-level
-   * format / range / membership constraints.
+   * fired and `.transform()`s have run, so the payload matches
+   * `z.output<Schema>` (the post-parse output shape). For schemas
+   * where the input type differs from the output type (e.g.
+   * `z.string().transform(v => v.length > 10)`), `data` is the
+   * output shape while `form.values` stays the input shape.
    */
-  handleSubmit: HandleSubmit<Form>
+  handleSubmit: HandleSubmit<GetValueFormType>
 
   /**
    * Reactive readonly proxy over the form's storage value. Read
@@ -2630,10 +2649,13 @@ export type UseFormReturnType<
    *
    * Reads reflect what's storable: enum-typed slots widen to their
    * primitive supertype (`string`), so refinement-invalid but
-   * structurally-valid values are visible. Use `handleSubmit` /
-   * `validateAsync()` when you need the post-validation strict type.
+   * structurally-valid values are visible. Storage holds the
+   * `z.input<Schema>` shape — `.transform()`s have NOT run, so for
+   * a schema like `z.string().transform(v => v.length > 10)` the
+   * value reads as `string`, not `boolean`. Use `handleSubmit` or
+   * `form.process()` when you need the post-transform output shape.
    */
-  values: ValuesSurface<WriteShape<GetValueFormType>>
+  values: ValuesSurface<WriteShape<Form>>
 
   /**
    * Reactive per-field state proxy. Pinia-style nested object — read
@@ -2652,8 +2674,9 @@ export type UseFormReturnType<
    * descends into the nested leaf.
    *
    * Leaf values follow the slim WriteShape contract: enum-typed leaves
-   * widen to their primitive supertype. The errors array, dirty flag,
-   * focus state, etc. are unaffected.
+   * widen to their primitive supertype, and the leaf value reflects
+   * the `z.input<Schema>` shape (transforms deferred until parse).
+   * The errors array, dirty flag, focus state, etc. are unaffected.
    *
    * Shadowing: at depth 2+, FieldState keys (`dirty`, `touched`,
    * `errors`, `blank`, `focused`, `blurred`, `value`,
@@ -2662,7 +2685,7 @@ export type UseFormReturnType<
    * Document edge case; rename the offending schema field if the
    * collision matters.
    */
-  fields: FieldStateMap<WriteShape<GetValueFormType>>
+  fields: FieldStateMap<WriteShape<Form>>
 
   /**
    * Write to the form programmatically. Two forms:
@@ -2903,12 +2926,10 @@ export type UseFormReturnType<
    * scripts; `toRef` is for ref-shaped interop only.
    */
   toRef: {
-    <Path extends FlatPath<Form>>(
-      path: Path
-    ): Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
+    <Path extends FlatPath<Form>>(path: Path): Readonly<Ref<NestedReadType<WriteShape<Form>, Path>>>
     <const S extends ReadonlyArray<string | number>>(
       segments: S & ([JoinSegments<S>] extends [FlatPath<Form>] ? unknown : never)
-    ): Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, JoinSegments<S>>>>
+    ): Readonly<Ref<NestedReadType<WriteShape<Form>, JoinSegments<S>>>>
   }
 
   /**

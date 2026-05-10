@@ -156,7 +156,11 @@ describe('setValue — path-form callback `prev` is the schema element default w
     let receivedPrev: unknown
     form.setValue('people.0', (prev) => {
       receivedPrev = prev
-      return { ...prev, age: prev.age + 1 }
+      // `prev` is typed at the storage / input shape, so `.default()`-
+      // wrapped leaves widen to `T | undefined` in the type system. The
+      // runtime hands us the existing value (age=99) so the coalesce is
+      // a no-op here; it satisfies tsc without changing the assertion.
+      return { ...prev, age: (prev.age ?? 0) + 1 }
     })
 
     expect(receivedPrev).toEqual({ name: 'Existing', age: 99 })

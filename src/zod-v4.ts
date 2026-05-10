@@ -28,6 +28,7 @@
  */
 
 export { UnsupportedSchemaError, useForm, zodAdapter } from './runtime/adapters/zod-v4'
+export type { PathInput, PathOutput } from './runtime/adapters/zod-v4'
 export { assertZodVersion, kindOf } from './runtime/adapters/zod-v4/introspect'
 export type { ZodKind } from './runtime/adapters/zod-v4/introspect'
 // injectForm is schema-agnostic — the consumer supplies the Form

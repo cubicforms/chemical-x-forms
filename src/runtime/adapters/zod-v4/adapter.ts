@@ -242,16 +242,18 @@ function isLeafRequired(schema: z.ZodType, depth = 0): boolean {
  * cannot represent (`z.promise`, `z.custom`, `z.templateLiteral`,
  * recursive `z.lazy(...)`).
  */
-export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infer<FormSchema>>(
-  rootSchema: FormSchema
-): (formKey: FormKey) => AbstractSchema<Form, Form> {
+export function zodV4Adapter<
+  FormSchema extends z.ZodObject,
+  Form extends z.input<FormSchema>,
+  GetValueFormType extends z.output<FormSchema> = z.output<FormSchema>,
+>(rootSchema: FormSchema): (formKey: FormKey) => AbstractSchema<Form, GetValueFormType> {
   assertZodVersion(rootSchema)
   // Fail fast at adapter construction if the schema uses kinds we can't
   // represent (z.promise / z.custom / z.templateLiteral) or a recursive
   // z.lazy(). Errors carry the dotted path to the offending node.
   assertSupportedKinds(rootSchema)
 
-  return (formKey: FormKey): AbstractSchema<Form, Form> => {
+  return (formKey: FormKey): AbstractSchema<Form, GetValueFormType> => {
     // Per-adapter `isLeafAtPath` cache. Lifetime = one adapter instance
     // (one per `useForm()` call). Memoises the slim-primitive walk so the
     // leaf-aware proxy traps don't re-walk the schema on every read.
@@ -269,7 +271,9 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         return asyncValidationFlag
       },
 
-      getDefaultValues(config): ReturnType<AbstractSchema<Form, Form>['getDefaultValues']> {
+      getDefaultValues(
+        config
+      ): ReturnType<AbstractSchema<Form, GetValueFormType>['getDefaultValues']> {
         const { data } = getDefaultValuesFromZodSchema<Form>({
           schema: rootSchema,
           useDefaultSchemaValues: config.useDefaultSchemaValues,
@@ -288,9 +292,18 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
           // let the runtime's first mutation kick off `validateAtPath`,
           // which uses `safeParseAsync`.
           try {
-            const strictResult = rootSchema.safeParse(data) as z.ZodSafeParseResult<Form>
+            const strictResult = rootSchema.safeParse(
+              data
+            ) as z.ZodSafeParseResult<GetValueFormType>
             if (strictResult.success) {
-              return { data: strictResult.data, errors: undefined, success: true, formKey }
+              // Storage holds the pre-transform `z.input` view, so we
+              // return the original `data` (already filled by
+              // `getDefaultValuesFromZodSchema`) rather than
+              // `strictResult.data` (the post-transform `z.output`).
+              // For schemas without `.transform()` the two coincide;
+              // for schemas with one the storage stays the honest input
+              // view that `form.values` reflects.
+              return { data, errors: undefined, success: true, formKey }
             }
             return {
               data,
@@ -310,7 +323,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
             // regardless).
             try {
               const syncOnly = stripAsyncChecks(rootSchema)
-              const syncResult = syncOnly.safeParse(data) as z.ZodSafeParseResult<Form>
+              const syncResult = syncOnly.safeParse(data) as z.ZodSafeParseResult<GetValueFormType>
               if (syncResult.success) {
                 // Sync portion is clean; only async refines could
                 // fail. Mount cleanly and let the post-mount async
@@ -459,7 +472,9 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
                   formKey,
                 }
               },
-            }) as unknown as ReturnType<AbstractSchema<Form, Form>['getSchemasAtPath']>[number]
+            }) as unknown as ReturnType<
+              AbstractSchema<Form, GetValueFormType>['getSchemasAtPath']
+            >[number]
         )
       },
 
@@ -570,7 +585,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         data,
         path,
         options
-      ): ReturnType<AbstractSchema<Form, Form>['validateAtPath']> {
+      ): ReturnType<AbstractSchema<Form, GetValueFormType>['validateAtPath']> {
         // Sync attempt: when `options.sync === true`, try `safeParse`
         // (synchronous). It throws on async refines / pipes /
         // transforms; we catch and fall through to `safeParseAsync`.
@@ -586,9 +601,9 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         }
         return runAsync()
 
-        function runSync(): ValidationResponse<Form> {
+        function runSync(): ValidationResponse<GetValueFormType> {
           if (path === undefined) {
-            const result = rootSchema.safeParse(data) as z.ZodSafeParseResult<Form>
+            const result = rootSchema.safeParse(data) as z.ZodSafeParseResult<GetValueFormType>
             return result.success
               ? { data: result.data, errors: undefined, success: true, formKey }
               : {
@@ -604,16 +619,23 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
           for (const candidate of resolved) {
             const result = candidate.safeParse(data)
             if (result.success) {
-              return { data: result.data as Form, errors: undefined, success: true, formKey }
+              return {
+                data: result.data as GetValueFormType,
+                errors: undefined,
+                success: true,
+                formKey,
+              }
             }
             aggregated.push(...zodIssuesToValidationErrors(result.error.issues, formKey))
           }
           return { data: undefined, errors: aggregated, success: false, formKey }
         }
 
-        async function runAsync(): Promise<ValidationResponse<Form>> {
+        async function runAsync(): Promise<ValidationResponse<GetValueFormType>> {
           if (path === undefined) {
-            const result = (await rootSchema.safeParseAsync(data)) as z.ZodSafeParseResult<Form>
+            const result = (await rootSchema.safeParseAsync(
+              data
+            )) as z.ZodSafeParseResult<GetValueFormType>
             return result.success
               ? { data: result.data, errors: undefined, success: true, formKey }
               : {
@@ -632,14 +654,19 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
           for (const candidate of resolved) {
             const result = await candidate.safeParseAsync(data)
             if (result.success) {
-              return { data: result.data as Form, errors: undefined, success: true, formKey }
+              return {
+                data: result.data as GetValueFormType,
+                errors: undefined,
+                success: true,
+                formKey,
+              }
             }
             aggregated.push(...zodIssuesToValidationErrors(result.error.issues, formKey))
           }
           return { data: undefined, errors: aggregated, success: false, formKey }
         }
 
-        function pathNotFound(p: Path): ValidationResponse<Form> {
+        function pathNotFound(p: Path): ValidationResponse<GetValueFormType> {
           return {
             data: undefined,
             errors: [

@@ -49,7 +49,7 @@ export type HistoryModule = {
 }
 
 export function createHistoryModule<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   config: HistoryConfig
 ): HistoryModule {
   const max =

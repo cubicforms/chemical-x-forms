@@ -40,7 +40,9 @@ import { buildSurfaceProxy, type SurfaceProxy } from './surface-proxy'
  * leaf form (`form.errors.bogus.somePath`) which terminates only at
  * schema-leaves.
  */
-export function buildErrorsProxy<F extends GenericForm>(state: FormStore<F>): SurfaceProxy {
+export function buildErrorsProxy<F extends GenericForm>(
+  state: FormStore<F, GenericForm>
+): SurfaceProxy {
   return buildSurfaceProxy<ValidationError[] | undefined>({
     schema: state.schema as unknown as Parameters<typeof buildSurfaceProxy>[0]['schema'],
     resolveLeaf: (path) => {
@@ -98,7 +100,7 @@ export function buildErrorsProxy<F extends GenericForm>(state: FormStore<F>): Su
  * object — there is no staleness.
  */
 function materializeErrors<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   containerSegments: readonly Segment[]
 ): Record<string, unknown> | unknown[] {
   // Mirror the live-data shape at the container: array container →

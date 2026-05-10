@@ -13,13 +13,58 @@ import type {
   UseFormReturnType,
   UseFormConfiguration,
 } from '../../types/types-api'
-import type { DeepPartial, DefaultValuesShape, GenericForm } from '../../types/types-core'
+import type {
+  DeepPartial,
+  DefaultValuesShape,
+  FlatPath,
+  GenericForm,
+  NestedType,
+} from '../../types/types-core'
 import { zodV4Adapter } from './adapter'
 
 export { zodV4Adapter as zodAdapter } from './adapter'
 export { UnsupportedSchemaError } from './errors'
 export { assertZodVersion, kindOf } from './introspect'
 export type { ZodKind } from './introspect'
+
+/**
+ * Type of the value accepted at `Path` for `setValue` / `defaultValues`
+ * — the schema's `z.input<Schema>` shape at that path. Matches what
+ * `form.values.X` returns at runtime (the honest input view storage
+ * holds before transforms run).
+ *
+ * ```ts
+ * const schema = z.object({
+ *   flag: z.string().transform((v) => v.length > 10),
+ * })
+ * type FlagWriteIn = PathInput<typeof schema, 'flag'> // string
+ * ```
+ */
+export type PathInput<Schema extends z.ZodType, Path extends string> =
+  z.input<Schema> extends GenericForm
+    ? Path extends FlatPath<z.input<Schema>>
+      ? NestedType<z.input<Schema>, Path>
+      : never
+    : never
+
+/**
+ * Type produced at `Path` after the full parse pipeline — the schema's
+ * `z.output<Schema>` shape at that path. Matches the `data` payload of
+ * `form.process()` and the value handed to `handleSubmit`'s callback.
+ *
+ * ```ts
+ * const schema = z.object({
+ *   flag: z.string().transform((v) => v.length > 10),
+ * })
+ * type FlagParsedOut = PathOutput<typeof schema, 'flag'> // boolean
+ * ```
+ */
+export type PathOutput<Schema extends z.ZodType, Path extends string> =
+  z.output<Schema> extends GenericForm
+    ? Path extends FlatPath<z.output<Schema>>
+      ? NestedType<z.output<Schema>, Path>
+      : never
+    : never
 
 /**
  * Create a form bound to a Zod v4 schema.
@@ -47,20 +92,18 @@ export type { ZodKind } from './introspect'
 export function useForm<Schema extends z.ZodObject>(
   configuration: Omit<
     UseFormConfiguration<
-      z.output<Schema> extends GenericForm ? z.output<Schema> : never,
+      z.input<Schema> extends GenericForm ? z.input<Schema> : never,
       z.output<Schema> extends GenericForm ? z.output<Schema> : never,
       AbstractSchema<
-        z.output<Schema> extends GenericForm ? z.output<Schema> : never,
+        z.input<Schema> extends GenericForm ? z.input<Schema> : never,
         z.output<Schema> extends GenericForm ? z.output<Schema> : never
       >,
-      DeepPartial<
-        DefaultValuesShape<z.output<Schema> extends GenericForm ? z.output<Schema> : never>
-      >
+      DeepPartial<DefaultValuesShape<z.input<Schema> extends GenericForm ? z.input<Schema> : never>>
     >,
     'schema' | 'validateOn' | 'debounceMs'
   > & { schema: Schema } & ValidateOnConfig
 ): UseFormReturnType<
-  z.output<Schema> extends GenericForm ? z.output<Schema> : never,
+  z.input<Schema> extends GenericForm ? z.input<Schema> : never,
   z.output<Schema> extends GenericForm ? z.output<Schema> : never
 > {
   // Foot-gun guard: catches `useForm(z.object({...}))` (raw schema as
@@ -77,16 +120,22 @@ export function useForm<Schema extends z.ZodObject>(
   ) {
     throw new InvalidUseFormConfigError()
   }
-  type Form = z.output<Schema> extends GenericForm ? z.output<Schema> : never
+  // Two-slot generic split: `Form` is the storage / write shape
+  // (z.input — pre-transform), `Out` is the parsed output shape
+  // (z.output — post-transform). `handleSubmit` and `form.process()`
+  // resolve to `Out`; every write- and path-addressed API resolves
+  // to `Form`.
+  type Form = z.input<Schema> extends GenericForm ? z.input<Schema> : never
+  type Out = z.output<Schema> extends GenericForm ? z.output<Schema> : never
   // `zodV4Adapter` returns a factory `(formKey: FormKey) => AbstractSchema`;
   // `UseFormConfiguration.schema` accepts `Schema | ((key) => Schema)`, so
   // the factory is a first-class input — previously the call site cast it
   // through `unknown as AbstractSchema`, which converted a function to an
   // object type and hid the mismatch. The narrower cast below preserves
   // the factory shape at the boundary.
-  const adapter: (key: FormKey) => AbstractSchema<Form, Form> = zodV4Adapter(
+  const adapter: (key: FormKey) => AbstractSchema<Form, Out> = zodV4Adapter(
     configuration.schema
-  ) as (key: FormKey) => AbstractSchema<Form, Form>
+  ) as (key: FormKey) => AbstractSchema<Form, Out>
   // The discriminated `ValidateOnConfig` doesn't narrow cleanly through
   // `Omit` + spread — TS picks the wrong variant after the structural
   // rebuild. The runtime input is genuinely the right shape (the
@@ -94,8 +143,8 @@ export function useForm<Schema extends z.ZodObject>(
   // `configuration` before we got here), so cast to the parameter
   // type to side-step the structural disagreement.
   // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-  return useAbstractForm<Form, Form>({
+  return useAbstractForm<Form, Out>({
     ...configuration,
     schema: adapter,
-  } as Parameters<typeof useAbstractForm<Form, Form>>[0])
+  } as Parameters<typeof useAbstractForm<Form, Out>>[0])
 }

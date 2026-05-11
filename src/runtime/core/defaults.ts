@@ -108,41 +108,85 @@ export const ANONYMOUS_FORM_KEY_PREFIX = `${RESERVED_KEY_PREFIX}anon:`
 export const DEFAULT_MAX_RECURSION_DEPTH = 64
 
 /**
- * Normalise a consumer-supplied `maxRecursionDepth` before threading
- * it into the adapter walks. The walks compare integer descent depths
- * via `>=`, which interacts poorly with three categories of input:
+ * Normalise a consumer-supplied numeric option before threading it
+ * into runtime logic. Library options typed as `number` (recursion
+ * caps, debounce intervals, history ceiling, parse-error caps) all
+ * share the same input-sanitisation problem: invalid values reach
+ * the runtime and produce silent footguns.
  *
- *   - `NaN` — every comparison yields `false`, so walks never bail and
- *     pathological self-referencing schemas exhaust the call stack.
- *   - Negative numbers — `0 >= -1` is `true`, so walks bail on the
- *     very first lazy crossing. The likely user intent (negative =
- *     unlimited) is the opposite of the runtime behaviour.
- *   - Non-integers — `5.7` effectively caps at 5 via floor-comparison.
- *     Works, but is imprecise; the visible value doesn't match the
- *     effective depth.
+ * Categories the runtime mishandles without sanitisation:
  *
- * Sanitisation rules:
+ *   - `NaN` — comparison-based gates (`>=`, `>`) yield `false` against
+ *     `NaN`, so caps never trip and pathological inputs run unbounded.
+ *     `setTimeout(fn, NaN)` fires synchronously, defeating debounce.
+ *   - Negative numbers — comparison gates trip too eagerly; the
+ *     visible value doesn't match consumer intent.
+ *   - Non-integers — `>=` against `5.7` works but is imprecise and
+ *     surprising at the call site.
+ *   - Non-numbers (JS callers defying TS) — undefined behaviour at
+ *     every comparison and arithmetic site.
  *
- *   - `Infinity` passes through (disables the cap by design).
- *   - Non-numbers, `NaN`, `-Infinity` → fall back to the library
- *     default and emit a dev-mode warning so the misuse is visible.
- *   - Negative finite numbers → `0` (closest valid intent).
- *   - Non-integer positives → floored to the next-lower integer.
+ * Sanitisation:
  *
- * The fallback path doesn't throw — a bad option shouldn't be fatal
- * at construction. Dev-warn is enough; production simply degrades
- * to the library default.
+ *   - `Infinity` passes through when `allowInfinity` is `true`
+ *     (e.g. `maxRecursionDepth` disables the cap by design). When
+ *     `allowInfinity` is `false` (e.g. `debounceMs`, where `Infinity`
+ *     stalls the event loop), it falls back to the default with a
+ *     dev-warn.
+ *   - `NaN`, `-Infinity`, non-numbers → fall back to `defaultValue`
+ *     with a dev-warn naming the source.
+ *   - Negative finite numbers → clamped to `min`.
+ *   - Non-integer positives → floored.
+ *
+ * The fallback path never throws — a bad option shouldn't be fatal
+ * at construction. The dev-warn surfaces the misuse without
+ * breaking production.
  */
-export function normalizeRecursionDepth(value: number, source: string): number {
-  if (value === Infinity) return Infinity
-  if (typeof value !== 'number' || Number.isNaN(value) || value === -Infinity) {
+export interface NormalizeNumericOptionConfig {
+  /** The consumer-supplied value to validate. */
+  value: number
+  /**
+   * Human-readable identifier for the dev warning. Format like
+   * `useForm.debounceMs` or `parseApiErrors.maxEntries` so the warning
+   * tells the consumer which option carried the bad value.
+   */
+  source: string
+  /**
+   * Whether `Infinity` is a semantically valid input. `true` for
+   * options whose "no cap" sentinel is sensible (recursion depth);
+   * `false` for options where unbounded values cause real problems
+   * (debounce intervals, history caps, parse-error caps).
+   */
+  allowInfinity: boolean
+  /** Lower bound applied via `Math.max(min, ...)` after `Math.floor`. */
+  min: number
+  /**
+   * Library default returned when the input is invalid (`NaN`,
+   * `-Infinity`, non-number, or `Infinity` under `allowInfinity:
+   * false`).
+   */
+  defaultValue: number
+}
+
+export function normalizeNumericOption(config: NormalizeNumericOptionConfig): number {
+  const { value, source, allowInfinity, min, defaultValue } = config
+  if (allowInfinity && value === Infinity) return Infinity
+  if (
+    typeof value !== 'number' ||
+    Number.isNaN(value) ||
+    value === Infinity ||
+    value === -Infinity
+  ) {
     if (__DEV__) {
+      const acceptedDescription = allowInfinity
+        ? 'a non-negative integer or Infinity'
+        : 'a non-negative finite integer'
       console.warn(
-        `[attaform] ${source}.maxRecursionDepth must be a non-negative integer or Infinity; ` +
-          `got ${String(value)}. Falling back to ${DEFAULT_MAX_RECURSION_DEPTH}.`
+        `[attaform] ${source} must be ${acceptedDescription}; ` +
+          `got ${String(value)}. Falling back to ${String(defaultValue)}.`
       )
     }
-    return DEFAULT_MAX_RECURSION_DEPTH
+    return defaultValue
   }
-  return Math.max(0, Math.floor(value))
+  return Math.max(min, Math.floor(value))
 }

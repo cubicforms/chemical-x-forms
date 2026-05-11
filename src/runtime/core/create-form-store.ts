@@ -12,7 +12,7 @@ import type {
 } from '../types/types-api'
 import { resolveShouldShowErrors } from './should-show-errors'
 import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
-import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS } from './defaults'
+import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS, normalizeNumericOption } from './defaults'
 import { applyChangedKeys, diffAndApply, structuralSnapshot, type Patch } from './diff-apply'
 import { AttaformErrorCode } from './error-codes'
 import {
@@ -824,8 +824,18 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   const ssr = options.ssr === true
   const rememberVariants: boolean = options.rememberVariants !== false
   const fieldValidationMode: ValidateOn = options.validateOn ?? 'change'
-  const fieldValidationDebounceMs: number =
-    options.debounceMs ?? DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS
+  // Sanitise the debounce value before threading it into `setTimeout`.
+  // `NaN` would fire synchronously (defeating the debounce); negatives
+  // clamp to 0 (consumer intent: "no debounce"); `Infinity` would stall
+  // the event loop for ~24.8 days then wrap, so it falls back to the
+  // library default.
+  const fieldValidationDebounceMs = normalizeNumericOption({
+    value: options.debounceMs ?? DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS,
+    source: 'useForm.debounceMs',
+    allowInfinity: false,
+    min: 0,
+    defaultValue: DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS,
+  })
 
   type FieldValidationEntry = {
     controller: AbortController

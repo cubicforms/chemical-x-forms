@@ -5,7 +5,7 @@ import {
   ANONYMOUS_FORM_KEY_PREFIX,
   DEFAULT_MAX_RECURSION_DEPTH,
   DEFAULT_PERSISTENCE_DEBOUNCE_MS,
-  normalizeRecursionDepth,
+  normalizeNumericOption,
   PERSISTENCE_KEY_PREFIX,
   RESERVED_KEY_PREFIX,
 } from '../core/defaults'
@@ -130,13 +130,18 @@ export function useAbstractForm<
   // receives the resolved per-form options (`maxRecursionDepth`) so the
   // adapter can bake them into its walk closures.
   //
-  // `normalizeRecursionDepth` sanitises the consumer-supplied value:
-  // `NaN` / `-Infinity` / non-numbers fall back to the library default
-  // with a dev-warn; negatives clamp to 0; non-integers floor. The
-  // adapter's `>=` comparisons assume integer depth, so the
-  // normalisation prevents footguns at the boundary.
-  const requestedDepth = merged.maxRecursionDepth ?? DEFAULT_MAX_RECURSION_DEPTH
-  const maxRecursionDepth = normalizeRecursionDepth(requestedDepth, 'useForm')
+  // Sanitise the consumer-supplied value: `NaN` / `-Infinity` /
+  // non-numbers fall back to the library default with a dev-warn;
+  // negatives clamp to 0; non-integers floor; `Infinity` is allowed
+  // (disables the cap). The adapter's `>=` comparisons assume integer
+  // depth, so the normalisation prevents footguns at the boundary.
+  const maxRecursionDepth = normalizeNumericOption({
+    value: merged.maxRecursionDepth ?? DEFAULT_MAX_RECURSION_DEPTH,
+    source: 'useForm.maxRecursionDepth',
+    allowInfinity: true,
+    min: 0,
+    defaultValue: DEFAULT_MAX_RECURSION_DEPTH,
+  })
   const resolvedSchema = getComputedSchema(key, configuration.schema, { maxRecursionDepth })
 
   // Eager throw: persistence configured without an explicit `key:`. An
@@ -684,7 +689,16 @@ function wirePersistence<F extends GenericForm>(
   const fingerprint = hashStableString(state.schema.fingerprint())
   const base = resolveStorageKeyBase(config, state.formKey)
   const key = `${base}:${fingerprint}`
-  const debounceMs = config.debounceMs ?? DEFAULT_PERSISTENCE_DEBOUNCE_MS
+  // Sanitise the persistence debounce — same rules as field validation:
+  // `NaN` would fire synchronously, `Infinity` would stall the event
+  // loop for ~24.8 days then wrap. Both fall back to the library default.
+  const debounceMs = normalizeNumericOption({
+    value: config.debounceMs ?? DEFAULT_PERSISTENCE_DEBOUNCE_MS,
+    source: 'useForm.persist.debounceMs',
+    allowInfinity: false,
+    min: 0,
+    defaultValue: DEFAULT_PERSISTENCE_DEBOUNCE_MS,
+  })
   const include = config.include ?? 'form'
   const clearOnSubmitSuccess = config.clearOnSubmitSuccess ?? true
 

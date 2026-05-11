@@ -5,10 +5,6 @@ import { z } from 'zod'
 import { useForm } from '../../../src/zod'
 import { createAttaform } from '../../../src/runtime/core/plugin'
 import {
-  DEFAULT_MAX_RECURSION_DEPTH,
-  normalizeRecursionDepth,
-} from '../../../src/runtime/core/defaults'
-import {
   deriveDefault,
   getDefaultValuesFromZodSchema,
 } from '../../../src/runtime/adapters/zod-v4/default-values'
@@ -302,96 +298,6 @@ describe('maxRecursionDepth — counter bumps on lazy only', () => {
   })
 })
 
-/**
- * `normalizeRecursionDepth` sanitises consumer-supplied values before
- * threading them into the adapter walks. The walks compare integer
- * descent depths via `>=`, which interacts poorly with `NaN`,
- * negative numbers, non-numbers, and non-integers. These tests pin
- * the normalisation contract so future refactors can't silently
- * change the foot-gun behaviour.
- */
-describe('normalizeRecursionDepth — sanitiser for invalid inputs', () => {
-  it('passes positive integers through unchanged', () => {
-    expect(normalizeRecursionDepth(0, 'useForm')).toBe(0)
-    expect(normalizeRecursionDepth(1, 'useForm')).toBe(1)
-    expect(normalizeRecursionDepth(64, 'useForm')).toBe(64)
-    expect(normalizeRecursionDepth(1024, 'useForm')).toBe(1024)
-  })
-
-  it('passes Infinity through unchanged (cap disabled)', () => {
-    expect(normalizeRecursionDepth(Infinity, 'useForm')).toBe(Infinity)
-  })
-
-  it('floors non-integer positives', () => {
-    expect(normalizeRecursionDepth(5.7, 'useForm')).toBe(5)
-    expect(normalizeRecursionDepth(0.9, 'useForm')).toBe(0)
-    expect(normalizeRecursionDepth(64.999, 'useForm')).toBe(64)
-  })
-
-  it('clamps negative finites to 0', () => {
-    expect(normalizeRecursionDepth(-1, 'useForm')).toBe(0)
-    expect(normalizeRecursionDepth(-64, 'useForm')).toBe(0)
-    expect(normalizeRecursionDepth(-0.5, 'useForm')).toBe(0)
-  })
-
-  it('falls back to the library default for NaN and emits a dev warn', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    try {
-      expect(normalizeRecursionDepth(NaN, 'useForm')).toBe(DEFAULT_MAX_RECURSION_DEPTH)
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('maxRecursionDepth must be a non-negative integer or Infinity')
-      )
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('NaN'))
-    } finally {
-      warnSpy.mockRestore()
-    }
-  })
-
-  it('falls back to the library default for -Infinity', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    try {
-      expect(normalizeRecursionDepth(-Infinity, 'useForm')).toBe(DEFAULT_MAX_RECURSION_DEPTH)
-      expect(warnSpy).toHaveBeenCalled()
-    } finally {
-      warnSpy.mockRestore()
-    }
-  })
-
-  it('falls back to the library default for non-number values', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    try {
-      // TS rejects these but JS callers can defy the signature. The
-      // sanitiser is the boundary that catches them.
-      expect(normalizeRecursionDepth('64' as unknown as number, 'useForm')).toBe(
-        DEFAULT_MAX_RECURSION_DEPTH
-      )
-      expect(normalizeRecursionDepth(null as unknown as number, 'useForm')).toBe(
-        DEFAULT_MAX_RECURSION_DEPTH
-      )
-      expect(normalizeRecursionDepth(undefined as unknown as number, 'useForm')).toBe(
-        DEFAULT_MAX_RECURSION_DEPTH
-      )
-      expect(normalizeRecursionDepth({} as unknown as number, 'useForm')).toBe(
-        DEFAULT_MAX_RECURSION_DEPTH
-      )
-    } finally {
-      warnSpy.mockRestore()
-    }
-  })
-
-  it('uses the source label in the warning message for diagnosability', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    try {
-      normalizeRecursionDepth(NaN, 'createAttaform.defaults')
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('createAttaform.defaults.maxRecursionDepth')
-      )
-    } finally {
-      warnSpy.mockRestore()
-    }
-  })
-})
-
 describe('useForm — passes sanitised maxRecursionDepth into walks', () => {
   const apps: App[] = []
   afterEach(() => {
@@ -430,7 +336,8 @@ describe('useForm — passes sanitised maxRecursionDepth into walks', () => {
       apps.push(app)
       const api = handle.api as Api
       // Form mounted without exhausting the stack.
-      expect(api.values.root.value).toBe('top')
+      const values = api.values as { root: { value: string } }
+      expect(values.root.value).toBe('top')
       // Dev-warn fired.
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('maxRecursionDepth must be a non-negative integer or Infinity')

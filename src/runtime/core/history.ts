@@ -2,7 +2,7 @@ import { computed, shallowRef, type ComputedRef } from 'vue'
 import type { HistoryConfig, ValidationError } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
-import { DEFAULT_HISTORY_MAX_SNAPSHOTS } from './defaults'
+import { DEFAULT_HISTORY_MAX_SNAPSHOTS, normalizeNumericOption } from './defaults'
 import { structuralSnapshot } from './diff-apply'
 import type { PathKey } from './paths'
 
@@ -52,10 +52,22 @@ export function createHistoryModule<F extends GenericForm>(
   state: FormStore<F, GenericForm>,
   config: HistoryConfig
 ): HistoryModule {
-  const max =
-    typeof config === 'object'
-      ? (config.max ?? DEFAULT_HISTORY_MAX_SNAPSHOTS)
-      : DEFAULT_HISTORY_MAX_SNAPSHOTS
+  // Sanitise the snapshot cap. `NaN` would make `length > max` always
+  // false (unbounded memory growth); `Infinity` likewise; negatives
+  // and non-integers produce confusing slice behaviour. Falls back to
+  // the library default on garbage. `max: 0` is preserved — it's a
+  // legitimate "keep no history" override (equivalent in effect to
+  // not enabling history, but consumers may set it explicitly).
+  const max = normalizeNumericOption({
+    value:
+      typeof config === 'object'
+        ? (config.max ?? DEFAULT_HISTORY_MAX_SNAPSHOTS)
+        : DEFAULT_HISTORY_MAX_SNAPSHOTS,
+    source: 'useForm.history.max',
+    allowInfinity: false,
+    min: 0,
+    defaultValue: DEFAULT_HISTORY_MAX_SNAPSHOTS,
+  })
 
   // undoStack[-1] is the CURRENT state. undo() pops that onto redo
   // and restores undoStack[-2]. redoStack[-1] is the next-available

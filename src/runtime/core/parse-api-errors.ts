@@ -5,6 +5,7 @@ import type {
   FormKey,
   ValidationError,
 } from '../types/types-api'
+import { normalizeNumericOption } from './defaults'
 import { InvalidPathError } from './errors'
 import { canonicalizePath } from './paths'
 
@@ -139,9 +140,33 @@ export function parseApiErrors(
   payload: ApiErrorEnvelope | ApiErrorDetails | null | undefined | unknown,
   options: ParseApiErrorsOptions
 ): ParseApiErrorsResult {
-  const maxEntries = options.maxEntries ?? PARSE_API_ERRORS_DEFAULTS.maxEntries
-  const maxPathDepth = options.maxPathDepth ?? PARSE_API_ERRORS_DEFAULTS.maxPathDepth
-  const maxTotalSegments = options.maxTotalSegments ?? PARSE_API_ERRORS_DEFAULTS.maxTotalSegments
+  // Sanitise the caps. Comparison gates (`>` against the count /
+  // depth) yield `false` for `NaN`, so without sanitisation a
+  // hostile or malformed `NaN` cap would let pathological payloads
+  // run unbounded. `Infinity` would do the same. Negatives and
+  // non-integers would discard legitimate entries. Falls back to
+  // the library default on garbage.
+  const maxEntries = normalizeNumericOption({
+    value: options.maxEntries ?? PARSE_API_ERRORS_DEFAULTS.maxEntries,
+    source: 'parseApiErrors.maxEntries',
+    allowInfinity: false,
+    min: 0,
+    defaultValue: PARSE_API_ERRORS_DEFAULTS.maxEntries,
+  })
+  const maxPathDepth = normalizeNumericOption({
+    value: options.maxPathDepth ?? PARSE_API_ERRORS_DEFAULTS.maxPathDepth,
+    source: 'parseApiErrors.maxPathDepth',
+    allowInfinity: false,
+    min: 0,
+    defaultValue: PARSE_API_ERRORS_DEFAULTS.maxPathDepth,
+  })
+  const maxTotalSegments = normalizeNumericOption({
+    value: options.maxTotalSegments ?? PARSE_API_ERRORS_DEFAULTS.maxTotalSegments,
+    source: 'parseApiErrors.maxTotalSegments',
+    allowInfinity: false,
+    min: 0,
+    defaultValue: PARSE_API_ERRORS_DEFAULTS.maxTotalSegments,
+  })
   const defaultCode = options.defaultCode ?? PARSE_API_ERRORS_DEFAULTS.defaultCode
 
   if (payload === null || payload === undefined) {

@@ -147,12 +147,40 @@ export default defineNuxtConfig({
   // crawler hits redirects, wasting crawl budget and signaling
   // duplicate content. The canonical host is www; everything we ship
   // points there directly.
+  //
+  // `indexable` gates the ENTIRE SEO-discovery surface on a single
+  // env flag — same gate the IndexNow ping uses
+  // (`scripts/indexnow-ping.mjs`). When `false`:
+  //
+  //   - `robots.txt` flips to `User-agent: * \n Disallow: /`
+  //   - The sitemap.xml route is suppressed
+  //   - Every page emits `<meta name="robots" content="noindex, nofollow">`
+  //   - Schema.org JSON-LD `url` resolution stays internally consistent
+  //     but crawlers honoring the meta tag won't follow.
+  //
+  // Default posture is `false` — sandboxed branches, preview deploys,
+  // local builds, and CI all produce non-indexable output. Only a
+  // Vercel **production** deploy (`VERCEL_ENV === 'production'`) flips
+  // to `true`. There is intentionally no force-override flag: the
+  // production gate is the single source of truth, matching the
+  // IndexNow script's posture. If you need to manually test the
+  // indexable variant locally, set `VERCEL_ENV=production` explicitly
+  // on the `pnpm build` command line.
+  //
+  // Belt + suspenders: the static output may still be reachable at
+  // its deploy URL, but search engines that respect `robots.txt` AND
+  // the `noindex` meta tag will skip it. Bing's IndexNow endpoint is
+  // never pinged (separate gate in the index:bing script). The
+  // attack surface for "sandbox URL appears in Google" collapses to
+  // direct backlinks from indexable pages — which production never
+  // emits to preview hostnames.
   site: {
     url: 'https://www.attaform.com',
     name: 'Attaform',
     description:
       'A type-safe, schema-driven form library for Vue 3 and Nuxt with first-class Zod support.',
     defaultLocale: 'en',
+    indexable: process.env.VERCEL_ENV === 'production',
   },
   // nuxt-og-image renders Vue components to 1200×630 PNGs at build
   // time via Satori. We're on the generic Nitro `static` preset

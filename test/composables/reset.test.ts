@@ -328,6 +328,69 @@ describe('useForm — reset() re-derives schema errors against the post-reset st
     expect(form.fields.email.valid).toBe(true)
   })
 
+  it('reset() re-derives errors at descendant leaves; container aggregation reflects them', async () => {
+    // Demo-faithful repro: a multi-step form with container paths whose
+    // descendant leaves violate the schema in their defaults. The
+    // stepper UI reads `form.fields(containerPath).valid` for each
+    // step's paths; if container aggregation doesn't reflect descendant
+    // errors after reset, step titles flip green incorrectly.
+    const { useForm } = await import('../../src/zod')
+    const { createAttaform } = await import('../../src/runtime/core/plugin')
+    const { z } = await import('zod')
+
+    const addressSchema = z.object({
+      line1: z.string().min(1),
+      city: z.string().min(1),
+      region: z.string().min(2),
+      country: z.string(),
+    })
+
+    const schema = z.object({
+      reference: z.string(),
+      pickup: addressSchema,
+      delivery: addressSchema,
+    })
+
+    let captured!: ReturnType<typeof useForm<typeof schema>>
+    const Probe = defineComponent({
+      setup() {
+        captured = useForm({
+          schema,
+          key: `reset-container-${Math.random().toString(36).slice(2)}`,
+          defaultValues: {
+            reference: 'SHP-100001',
+            pickup: { country: 'US' },
+            delivery: { country: 'US' },
+          },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(Probe).use(createAttaform())
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    const form = captured
+
+    // Mount: pickup + delivery container fields are INVALID because
+    // their descendant line1/city/region defaults are empty. Use the
+    // call-form (`form.fields('path')`) for container reads — the
+    // property-access form descends to leaves only.
+    expect(form.fields('pickup').valid).toBe(false)
+    expect(form.fields('delivery').valid).toBe(false)
+
+    // Trigger an unrelated value tick.
+    form.setValue('reference', 'SHP-999')
+
+    form.reset()
+
+    // Container fields must STILL be invalid — descendants are still
+    // empty. This is the bug surface: pre-fix, container `.valid`
+    // came up `true` because aggregateErrorsAt walked an empty
+    // schemaErrors map.
+    expect(form.fields('pickup').valid).toBe(false)
+    expect(form.fields('delivery').valid).toBe(false)
+  })
+
   it('reset() with `strict: false` leaves schemaErrors empty (opt-out preserved)', async () => {
     // Construction-time validation is gated on `strict: true` (the
     // default). A form that explicitly opted out of strict mounts

@@ -1072,16 +1072,16 @@ ${'</'}script>
           <button
             type="button"
             class="ghost"
-            :disabled="!form.meta.canUndo"
-            @click="form.undo()"
+            :disabled="!form.history.canUndo"
+            @click="form.history.undo()"
           >
             ↶ Undo
           </button>
           <button
             type="button"
             class="ghost"
-            :disabled="!form.meta.canRedo"
-            @click="form.redo()"
+            :disabled="!form.history.canRedo"
+            @click="form.history.redo()"
           >
             ↷ Redo
           </button>

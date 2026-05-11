@@ -42,6 +42,19 @@ import zodPkg from 'zod/package.json'
 //      and listing the entries explicitly in our config doesn't help
 //      (they'd just add their own unresolvable copies). Filtered
 //      narrowly to the @nuxtjs/mdc prefix.
+//
+//   4. "Payload extraction is recommended for full-static output. You can
+//      enable it by setting experimental.payloadExtraction to true or
+//      'client'."
+//      — Fires during `nuxi dev` because we INTENTIONALLY disable payload
+//      extraction in development to dodge the ENOTDIR Nitro cache collision
+//      documented in the `experimental:` block below. The warning is correct
+//      for production (we DO want payload extraction in static output), but
+//      our `experimental.payloadExtraction` gate already does the right thing
+//      based on NODE_ENV — the warning fires in dev anyway because Nitro
+//      reads `nitro.static: true` and assumes the warning applies regardless
+//      of mode. Filter narrowly to the exact string so any unrelated payload
+//      warning still surfaces.
 function isFilteredBuildWarning(msg: string): boolean {
   if (msg.includes('Sourcemap is likely to be incorrect')) return true
   if (
@@ -51,6 +64,9 @@ function isFilteredBuildWarning(msg: string): boolean {
     return true
   }
   if (msg.includes('Unresolvable optimizeDeps.include entries') && msg.includes('@nuxtjs/mdc')) {
+    return true
+  }
+  if (msg.includes('Payload extraction is recommended for full-static output')) {
     return true
   }
   return false
@@ -145,6 +161,19 @@ export default defineNuxtConfig({
   // og-image module reads `nitro.static` (set in the `nitro:` block
   // below) to detect SSG and route to its `nitro-prerender`
   // compatibility profile.
+  //
+  // `zeroRuntime: true` disables dynamic image generation entirely —
+  // every OG image is prerendered at build time, no runtime image
+  // generation endpoint is served. Two effects:
+  //   1. The "OG image URLs are not signed. Anyone can craft arbitrary
+  //      image generation requests" warning goes away. Pure SSG: there
+  //      IS no runtime to sign requests against.
+  //   2. The static output excludes the dynamic-generation entry, so the
+  //      attack surface (request forgery → free CPU on a server we
+  //      don't have) collapses to nothing.
+  // Setting a NUXT_OG_IMAGE_SECRET would also silence the warning, but
+  // we'd be paying for a runtime we don't ship.
+  ogImage: { zeroRuntime: true },
   //
   // No `fonts:` block here on purpose. nuxt-og-image v6 dropped
   // that field in favour of reading from `@nuxt/fonts` (now gone

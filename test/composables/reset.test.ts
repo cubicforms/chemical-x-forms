@@ -378,10 +378,37 @@ describe('useForm — reset() re-derives schema errors against the post-reset st
     expect(form.fields('pickup').valid).toBe(false)
     expect(form.fields('delivery').valid).toBe(false)
 
+    // Snapshot the mount-time validity so we can assert post-reset
+    // matches exactly. Capture descendant values too — the
+    // `aggregateErrorsAt` filter drops errors at paths that don't
+    // exist in `form.value`, so any post-reset disappearance of the
+    // descendant keys (line1 / city / region absent from
+    // form.values.pickup) would silently mask the error count.
+    const mountedErrorCount = form.meta.errors.length
+    const mountedDescendantsExist =
+      typeof form.values.pickup.line1 === 'string' &&
+      typeof form.values.pickup.city === 'string' &&
+      typeof form.values.pickup.region === 'string'
+    expect(mountedErrorCount).toBeGreaterThan(0)
+    expect(mountedDescendantsExist).toBe(true)
+
     // Trigger an unrelated value tick.
     form.setValue('reference', 'SHP-999')
 
     form.reset()
+
+    // Post-reset: descendant leaves must STILL exist in form.values
+    // so the schemaErrors at those leaves don't get filtered out
+    // by `aggregateErrorsAt`'s `hasAtPath` gate.
+    const postResetDescendantsExist =
+      typeof form.values.pickup.line1 === 'string' &&
+      typeof form.values.pickup.city === 'string' &&
+      typeof form.values.pickup.region === 'string'
+    expect(postResetDescendantsExist).toBe(true)
+
+    // Error count after reset must match mount exactly — same
+    // defaults, same validation verdict.
+    expect(form.meta.errors.length).toBe(mountedErrorCount)
 
     // Container fields must STILL be invalid — descendants are still
     // empty. This is the bug surface: pre-fix, container `.valid`
@@ -389,6 +416,51 @@ describe('useForm — reset() re-derives schema errors against the post-reset st
     // schemaErrors map.
     expect(form.fields('pickup').valid).toBe(false)
     expect(form.fields('delivery').valid).toBe(false)
+  })
+
+  it('reset() re-derives errors for array-min violations (demo step 2 shape)', async () => {
+    // Demo step 2 has just ['cargo'] in STEP_PATHS; cargo.items is
+    // `z.array(...).min(1)` with default `[]`. The empty array
+    // violates `.min(1)` → error at path `['cargo', 'items']`.
+    // Container `'cargo'` should aggregate this error → invalid.
+    const { useForm } = await import('../../src/zod')
+    const { createAttaform } = await import('../../src/runtime/core/plugin')
+    const { z } = await import('zod')
+
+    const itemSchema = z.object({ sku: z.string().min(1), qty: z.number().min(1) })
+    const schema = z.object({
+      cargo: z.object({
+        items: z.array(itemSchema).min(1),
+        details: z.object({ type: z.string(), fragile: z.boolean() }),
+      }),
+    })
+
+    let captured!: ReturnType<typeof useForm<typeof schema>>
+    const Probe = defineComponent({
+      setup() {
+        captured = useForm({
+          schema,
+          key: `reset-arrmin-${Math.random().toString(36).slice(2)}`,
+          defaultValues: {
+            cargo: { items: [], details: { type: 'dry', fragile: false } },
+          },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(Probe).use(createAttaform())
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    const form = captured
+
+    expect(form.fields('cargo').valid).toBe(false)
+    const mountedErrorCount = form.meta.errors.length
+    expect(mountedErrorCount).toBeGreaterThan(0)
+
+    form.reset()
+
+    expect(form.fields('cargo').valid).toBe(false)
+    expect(form.meta.errors.length).toBe(mountedErrorCount)
   })
 
   it('reset() with `strict: false` leaves schemaErrors empty (opt-out preserved)', async () => {

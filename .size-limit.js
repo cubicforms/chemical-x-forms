@@ -131,7 +131,30 @@ export default [
     //   - getSchemasAtPath-driven per-path validity in adapters
     // Measured at 28.77 KB; 1.23 KB headroom for the follow-up
     // docs / test commit.
-    limit: '30 KB',
+    //
+    // Raised 30 → 36 KB on the library-hardening + multi-tab branch:
+    //   - multi-tab-sync.ts (~450 LOC): leader-election handshake
+    //     (hello / announce / requestSnapshot / snapshot / patches),
+    //     per-module senderId + protocol v: 1, inbound validation
+    //     (path-segment safety, sensitive-path reject, per-patch type
+    //     check, post-apply schema validate + rollback)
+    //   - WriteMeta.crossTab + WriteMeta.persist meta flags threaded
+    //     through applyFormReplacement, history listener, persistence
+    //     writer, and every array helper
+    //   - state.noSyncPaths Set<PathKey> + register-time opt-out
+    //   - DEFAULT_SENSITIVE_NAMES exported frozen array + factories
+    //     (createIsSensitivePath, createSegmentMatchesSensitive) with
+    //     resolved closures threaded through persistence, sync, and
+    //     devtools redaction walks
+    //   - insecure-context-warn.ts: warnOnceInsecureContext(feature)
+    //     shared dedup helper, isSecureContext() cross-runtime probe
+    //   - reset() 4-part hardening: pre-merge through mergeStructural,
+    //     schemaErrors re-derivation, sync validateAtPath rescue, and
+    //     firstValidationDone gate restoration (the load-bearing fix
+    //     for the post-reset valid:true flash on async-refining
+    //     schemas)
+    // Measured at 35.47 KB; ~0.5 KB headroom.
+    limit: '36 KB',
     gzip: true,
     modifyEsbuildConfig: asEsm,
   },
@@ -183,7 +206,13 @@ export default [
     // "no Vite plugin" fallback path. Explicit-subpath consumers
     // (other bundlers) still get a lean ~30 KB v3 or v4 bundle.
     // Measured at 40.55 KB; 4.45 KB headroom.
-    limit: '45 KB',
+    //
+    // Raised 45 → 48 KB tracking index.mjs's library-hardening +
+    // multi-tab bump (same shared core chunk: multi-tab sync module,
+    // WriteMeta.crossTab/persist threading, noSyncPaths opt-out,
+    // sensitive-names factory refactor, insecure-context-warn helper,
+    // reset() 4-part hardening). Measured at 47.5 KB.
+    limit: '48 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
@@ -200,7 +229,10 @@ export default [
     // unified-entry shared code into v4's closure on this branch,
     // adding ~5 KB over the pre-rework single-adapter baseline.
     // Measured at 34.89 KB.
-    limit: '36 KB',
+    //
+    // Raised 36 → 42 KB tracking index.mjs's library-hardening +
+    // multi-tab bump (same shared core chunk). Measured at 41.62 KB.
+    limit: '42 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
@@ -246,7 +278,10 @@ export default [
     // shared chunk pulls extra symbols into v3's closure that
     // weren't there when zod.mjs was a single-adapter v4 bundle.
     // Measured at 34.49 KB; 1.51 KB headroom.
-    limit: '36 KB',
+    //
+    // Raised 36 → 42 KB tracking index.mjs's library-hardening +
+    // multi-tab bump (same shared core chunk). Measured at 41.03 KB.
+    limit: '42 KB',
     gzip: true,
     ignore: ['zod', 'lodash-es'],
     modifyEsbuildConfig: asEsm,

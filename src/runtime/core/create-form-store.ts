@@ -2435,6 +2435,31 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     if (strict && !resetResponse.success) {
       setAllSchemaErrors(resetResponse.errors)
     }
+    // TODO(diagnostic): remove after live-demo reset-revalidate bug
+    // root-cause is confirmed. Logs what the fix actually produces in
+    // the consumer's browser so the gap between green tests and
+    // observed-buggy demo can be closed.
+    if (
+      typeof console !== 'undefined' &&
+      typeof window !== 'undefined' &&
+      (window as unknown as { __ATTAFORM_DEBUG_RESET__?: boolean }).__ATTAFORM_DEBUG_RESET__ ===
+        true
+    ) {
+      const errorPaths = resetResponse.success
+        ? []
+        : resetResponse.errors.map((e) => e.path.join('.'))
+      const schemaErrorKeys = [...schemaErrors.keys()]
+      // eslint-disable-next-line no-console
+      console.log('[attaform reset diagnostic]', {
+        strict,
+        resetResponseSuccess: resetResponse.success,
+        resetResponseErrorCount: resetResponse.success ? 0 : resetResponse.errors.length,
+        resetResponseErrorPaths: errorPaths,
+        schemaErrorMapSize: schemaErrors.size,
+        schemaErrorKeys,
+        formValueShape: JSON.parse(JSON.stringify(form.value)),
+      })
+    }
     // Blow away touched/focused/blurred per field. connected stays as-is
     // (the DOM elements haven't detached — that's a separate concern from
     // form state) and updatedAt stamps to now.

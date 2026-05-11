@@ -555,7 +555,38 @@
   )
 
   function resetAll() {
+    // TODO(diagnostic): remove after live-demo reset bug is root-caused.
+    // Tag every line with [attaform demo reset] so the user (and the
+    // logs they paste back) can filter cleanly in DevTools.
+    ;(window as any).__ATTAFORM_DEBUG_RESET__ = true
+    const beforeErrCount = form.meta.errors.length
+    const beforeStep1Paths = ['reference', 'pickup', 'delivery'].map((p) => ({
+      path: p,
+      valid: form.fields(p).valid,
+      errorCount: form.fields(p).errors.length,
+    }))
+    console.log('[attaform demo reset] BEFORE reset()', {
+      beforeErrCount,
+      beforeStep1Paths,
+      pickupValue: JSON.parse(JSON.stringify(form.values.pickup)),
+    })
+
     form.reset()
+
+    const afterErrCount = form.meta.errors.length
+    const afterStep1Paths = ['reference', 'pickup', 'delivery'].map((p) => ({
+      path: p,
+      valid: form.fields(p).valid,
+      errorCount: form.fields(p).errors.length,
+    }))
+    console.log('[attaform demo reset] AFTER reset()', {
+      afterErrCount,
+      afterStep1Paths,
+      pickupValue: JSON.parse(JSON.stringify(form.values.pickup)),
+      pickupLine1Error: form.fields('pickup.line1').errors,
+    })
+    ;(window as any).__ATTAFORM_DEBUG_RESET__ = false
+
     step.value = 1
     submitError.value = null
   }

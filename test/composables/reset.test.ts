@@ -416,6 +416,14 @@ describe('useForm — reset() re-derives schema errors against the post-reset st
     // schemaErrors map.
     expect(form.fields('pickup').valid).toBe(false)
     expect(form.fields('delivery').valid).toBe(false)
+
+    // CRITICAL no-flash property: errors must be populated
+    // SYNCHRONOUSLY by reset() — not on a deferred microtask. If
+    // they only arrive async, the UI flashes "valid" between reset
+    // and the async pass settling (the docs-site stepper turns
+    // green for ~600ms before going back to red). Pin that the
+    // count is correct the instant reset() returns.
+    expect(form.meta.errors.length).toBeGreaterThan(0)
   })
 
   it('reset() re-derives errors for array-min violations (demo step 2 shape)', async () => {
@@ -461,6 +469,137 @@ describe('useForm — reset() re-derives schema errors against the post-reset st
 
     expect(form.fields('cargo').valid).toBe(false)
     expect(form.meta.errors.length).toBe(mountedErrorCount)
+  })
+
+  it('reset() restores the firstValidationDone gate — no `valid: true` flash on async-refining schemas', async () => {
+    // Live-demo bug surface (confirmed by JSON-stringified diagnostic
+    // dump):
+    //
+    //   BEFORE      : pickup.valid=false (5 errors from mount async pass)
+    //   AFTER sync  : pickup.valid=TRUE  (0 errors, flash window — BUG)
+    //   AFTER +1.5s : pickup.valid=false (5 errors, async pass landed)
+    //
+    // The window is ~600ms–1.5s in real browsers — long enough for
+    // the user to read step titles flipping green and even click
+    // Next.
+    //
+    // Why the post-reset sync re-derive can't surface refinement
+    // errors here:
+    //   - zod-v4 adapter's `getDefaultValues` STRIPS refinements
+    //     (slim parse) → returns success:true with no .min / .email
+    //     errors.
+    //   - `schema.validateAtPath(form, undefined, { sync: true })`
+    //     calls `rootSchema.safeParse(data)` which THROWS when the
+    //     schema contains an always-running async refine (the
+    //     demo's `cargo.items.superRefine(async ...)`). The
+    //     adapter's catch falls through to async-only — returns
+    //     Promise — and the library's sync-validate skips.
+    //
+    // So `schemaErrors` stays empty between sync reset() return and
+    // the re-queued async pass landing. The ONLY thing keeping
+    // container `.valid` false during that window is the
+    // `firstValidationDone` gate, which mount inits to `false` and
+    // the watch flips to `true` after activeValidations returns to
+    // 0. Reset must restore the flag to its construction-time
+    // value; otherwise the gate stays lifted → flash.
+    const { useForm } = await import('../../src/zod')
+    const { createAttaform } = await import('../../src/runtime/core/plugin')
+    const { waitUntil } = await import('../utils/form-harness')
+    const { z } = await import('zod')
+
+    // Schema with an async refine whose precondition (sync .email
+    // check) is ALWAYS satisfied by the defaults — so the async
+    // refine runs at mount, produces an error, and forces safeParse
+    // to throw on every subsequent sync pass. Mirrors the property
+    // pinned by `initial-validation-seed.test.ts` for the
+    // construction-time seed.
+    const schema = z.object({
+      email: z
+        .email()
+        .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
+    })
+
+    let captured!: ReturnType<typeof useForm<typeof schema>>
+    const Probe = defineComponent({
+      setup() {
+        captured = useForm({
+          schema,
+          key: `reset-flash-${Math.random().toString(36).slice(2)}`,
+          defaultValues: { email: 'taken@example.com' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(Probe).use(createAttaform())
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    const form = captured
+
+    // Mount's construction-time async pass populates the refine
+    // error and flips firstValidationDone to `true` — the
+    // precondition for the bug.
+    await waitUntil(() => (form.meta.errors.length > 0 ? true : null))
+    expect(form.fields.email.valid).toBe(false)
+
+    form.reset()
+    // SYNCHRONOUS read. With the gate restored on reset (the fix),
+    // `email.valid` reads `false` because the gate covers it.
+    // Without the fix, `firstValidationDone` stays `true` and the
+    // gate is lifted; errors are empty (sync re-derive can't
+    // surface async-only verdicts); leaf reads `valid: true`.
+    expect(form.fields.email.valid).toBe(false)
+    expect(form.meta.valid).toBe(false)
+  })
+
+  it('reset() re-queues the async validation pass so async errors return', async () => {
+    // Demo's pickup.postalCode has both `.min(3)` (sync) and
+    // `.refine(async lookupPostalCode)` (async). At MOUNT the sync
+    // pass populates `.min(3)` errors AND a queued async pass
+    // populates `.refine` errors. Reset() must re-queue the async
+    // pass too — otherwise async-only verdicts vanish post-reset
+    // (the live-demo "step titles flip green" bug — sync errors
+    // didn't exist in the demo's defaults; the only thing making the
+    // form invalid was the async refines that mount surfaced).
+    //
+    // Schema pattern + default mirror `initial-validation-seed.test.ts`
+    // which pins the construction-time seed for the same shape.
+    const { useForm } = await import('../../src/zod')
+    const { createAttaform } = await import('../../src/runtime/core/plugin')
+    const { waitUntil } = await import('../utils/form-harness')
+    const { z } = await import('zod')
+
+    const schema = z.object({
+      email: z
+        .email()
+        .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
+    })
+
+    let captured!: ReturnType<typeof useForm<typeof schema>>
+    const Probe = defineComponent({
+      setup() {
+        captured = useForm({
+          schema,
+          key: `reset-async-${Math.random().toString(36).slice(2)}`,
+          defaultValues: { email: 'taken@example.com' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(Probe).use(createAttaform())
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    const form = captured
+
+    // Wait for the construction-time async pass to settle.
+    const mountErr = await waitUntil(() => form.errors.email?.[0]?.message ?? null)
+    expect(mountErr).toBe('That email is already registered.')
+
+    form.reset()
+    // Async re-queue lands on the next microtask. The error should
+    // come back without any user input — same property
+    // `initial-validation-seed.test.ts` pins at mount.
+    const postResetErr = await waitUntil(() => form.errors.email?.[0]?.message ?? null)
+    expect(postResetErr).toBe('That email is already registered.')
   })
 
   it('reset() with `strict: false` leaves schemaErrors empty (opt-out preserved)', async () => {

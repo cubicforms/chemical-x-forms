@@ -2451,30 +2451,51 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     if (strict && !resetResponse.success) {
       setAllSchemaErrors(resetResponse.errors)
     }
-    // TODO(diagnostic): remove after live-demo reset-revalidate bug
-    // root-cause is confirmed. Logs what the fix actually produces in
-    // the consumer's browser so the gap between green tests and
-    // observed-buggy demo can be closed.
-    if (
-      typeof console !== 'undefined' &&
-      typeof window !== 'undefined' &&
-      (window as unknown as { __ATTAFORM_DEBUG_RESET__?: boolean }).__ATTAFORM_DEBUG_RESET__ ===
-        true
-    ) {
-      const errorPaths = resetResponse.success
-        ? []
-        : resetResponse.errors.map((e) => e.path.join('.'))
-      const schemaErrorKeys = [...schemaErrors.keys()]
-      // eslint-disable-next-line no-console
-      console.log('[attaform reset diagnostic]', {
-        strict,
-        resetResponseSuccess: resetResponse.success,
-        resetResponseErrorCount: resetResponse.success ? 0 : resetResponse.errors.length,
-        resetResponseErrorPaths: errorPaths,
-        schemaErrorMapSize: schemaErrors.size,
-        schemaErrorKeys,
-        formValueShape: JSON.parse(JSON.stringify(form.value)),
-      })
+    // `getDefaultValues` strips refinements before parsing (see
+    // `adapters/zod-v4/default-values.ts:290`) — it produces usable
+    // starting data, not refinement-level verdicts. So `.min(1)` /
+    // `.email()` / etc. failures on the post-reset defaults DON'T
+    // surface via the sync re-derive above. Run a synchronous
+    // full-schema parse against the post-reset form value to populate
+    // refinement errors IMMEDIATELY (no flash where step titles flip
+    // green between reset() returning and the async pass landing).
+    // Async-only verdicts can't surface this way (adapter returns a
+    // Promise) — they're handled by the queueMicrotask below.
+    //
+    // Construction has the same gap mount-side, but the flash is
+    // invisible: the form mounts before the user is looking, errors
+    // land within a microtask, and the UI never has time to render
+    // the empty-errors state.
+    if (strict) {
+      const syncResult = schema.validateAtPath(form.value, undefined, { sync: true })
+      if (!(syncResult instanceof Promise) && !syncResult.success) {
+        applySchemaErrorsForSubtree([], syncResult.errors)
+      }
+    }
+    // Restore the `firstValidationDone` gate to its construction-time
+    // value (line ~1233). Async-validating schemas init this flag to
+    // `false`, gating container `.valid` until the construction-time
+    // async pass completes. After mount the flag flips `true` via the
+    // watch on `activeValidations`. Across reset, leaving it `true`
+    // removes the gate AND clears errors AND the sync re-derive
+    // can't fill them (the zod-v4 adapter strips refinements in
+    // `getDefaultValues`, returns `success: true`; sync
+    // `validateAtPath` throws on schemas with always-running async
+    // refines and falls through to async-only). The window between
+    // `reset()` returning and the re-queued async pass landing reads
+    // `valid: true` for every container — the docs-site stepper
+    // demo's step titles turn green for ~600ms-1.5s. Restoring the
+    // gate keeps containers `valid: false` throughout that window.
+    firstValidationDone.value = !strict || schema.needsAsyncValidation?.() !== true
+    // Re-queue the async validation pass on the same gate construction
+    // uses (line ~1371). Picks up async-only verdicts the sync pass
+    // above can't reach (`.refine(async ...)` on
+    // `pickup.postalCode`, etc.). SSR skip mirrors construction —
+    // microtasks don't await before `renderToString` and would stamp
+    // `validating: true` into HTML the client won't reproduce.
+    const needsAsync = !ssr && strict && schema.needsAsyncValidation?.() === true
+    if (needsAsync) {
+      queueMicrotask(() => scheduleFieldValidation([], true /* immediate */))
     }
     // Blow away touched/focused/blurred per field. connected stays as-is
     // (the DOM elements haven't detached — that's a separate concern from

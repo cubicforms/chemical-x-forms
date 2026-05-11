@@ -1,5 +1,5 @@
 import { computed, shallowRef, type ComputedRef } from 'vue'
-import type { HistoryConfig, ValidationError } from '../types/types-api'
+import type { HistoryConfig, ValidationError, WriteMeta } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { DEFAULT_HISTORY_MAX_SNAPSHOTS, normalizeNumericOption } from './defaults'
@@ -124,9 +124,22 @@ export function createHistoryModule<F extends GenericForm>(
   // entry, enabling `undo()`.
   pushSnapshot(captureSnapshot())
 
-  const unsubscribeChange = state.onFormChange(() => {
+  const unsubscribeChange = state.onFormChange((_next, meta?: WriteMeta) => {
     if (suppressNext) {
       suppressNext = false
+      return
+    }
+    // Persistence hydration is the floor: the transient pre-hydration
+    // default (briefly held between mount and hydrate-apply) is library
+    // plumbing, not state the user ever saw. Replace both stacks with a
+    // fresh seed of the post-hydration snapshot so `undo()` can't reach
+    // back into a state the consumer never produced. Any in-flight
+    // mutations that landed in the race window between mount and
+    // hydration are also dropped — pre-hydration writes were operating
+    // against stale defaults anyway.
+    if (meta?.hydration === true) {
+      undoStack.value = [captureSnapshot()]
+      redoStack.value = []
       return
     }
     pushSnapshot(captureSnapshot())

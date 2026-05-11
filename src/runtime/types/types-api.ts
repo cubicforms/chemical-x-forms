@@ -810,6 +810,16 @@ export type WriteMeta = {
     readonly debounceMs?: number
     readonly rememberVariants?: boolean
   }
+  /**
+   * When `true`, marks this `applyFormReplacement` call as the
+   * persistence hydration step. Modules that snapshot the form state
+   * (notably the history module) treat hydration as the baseline:
+   * stacks reset to a single seed of the post-hydration value, so a
+   * subsequent `undo()` can't recover the transient pre-hydration
+   * default. Internal — set by `wirePersistence`. Don't set from
+   * consumer code.
+   */
+  readonly hydration?: boolean
 }
 
 /**
@@ -818,8 +828,11 @@ export type WriteMeta = {
  * - `true` — enable with the default snapshot cap (`max: 50`).
  * - `{ max }` — enable and tune the bounded snapshot stack size.
  *
- * When enabled, every mutation pushes a snapshot; `undo()` /
- * `redo()` walk the stacks. `reset()` clears history.
+ * When enabled, every mutation pushes a snapshot; `undo()` / `redo()`
+ * walk the stacks. `reset()` is itself a mutation — the pre-reset
+ * state stays one undo away. Persistence hydration is the floor:
+ * after hydrate applies, the stacks reseed with the hydrated value
+ * and `undo()` cannot reach the transient pre-hydration default.
  */
 export type HistoryConfig = true | { max?: number }
 

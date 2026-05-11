@@ -845,7 +845,12 @@ function wirePersistence<F extends GenericForm>(
         payload.data.form,
         state.schema as unknown as Parameters<typeof mergeSparseHydration>[2]
       )
-      state.applyFormReplacement(merged)
+      // `hydration: true` tells listeners (notably the history module)
+      // that this replacement is the baseline, not a user mutation —
+      // history wipes its stacks and reseeds with the post-hydration
+      // snapshot so `undo()` can't reach the transient pre-hydration
+      // default the form briefly held between mount and hydrate.
+      state.applyFormReplacement(merged, { hydration: true })
       // payload. Persistence is per-element opt-in, so the persisted
       // payload only covers paths within the opt-in scope (the leaf
       // paths populated in `payload.data.form`). Construction-time

@@ -12,7 +12,9 @@ import { createAttaform } from '../../src/runtime/core/plugin'
  * `history: true` enables the default bounded stack (max 50);
  * `history: { max: N }` tunes it. `undo()` / `redo()` restore the
  * prior form value (and the error map). `canUndo` / `canRedo` gate
- * consumer UI. `reset()` clears both stacks.
+ * consumer UI. `reset()` is treated as an ordinary mutation — the
+ * pre-reset state stays one undo away. Persistence hydration is the
+ * floor (the pre-hydration default isn't recoverable).
  */
 
 const schema = z.object({
@@ -95,15 +97,20 @@ describe('history — default (history: true)', () => {
     expect(api.redo()).toBe(false)
   })
 
-  it('reset() clears both stacks', () => {
+  it('reset() is itself undoable — the pre-reset state stays recoverable', () => {
     const { app, api } = mountForm(true)
     apps.push(app)
     api.setValue('email', 'a@example.com')
     api.setValue('email', 'b@example.com')
     expect(api.meta.canUndo).toBe(true)
     api.reset()
-    expect(api.meta.canUndo).toBe(false)
+    // reset() is captured as a normal mutation. The pre-reset value
+    // sits one undo away — consumers who hit reset by accident recover
+    // with a single undo() instead of losing their input.
+    expect(api.meta.canUndo).toBe(true)
     expect(api.meta.canRedo).toBe(false)
+    api.undo()
+    expect(api.values.email).toBe('b@example.com')
   })
 
   it('restores errors alongside the form on undo', () => {

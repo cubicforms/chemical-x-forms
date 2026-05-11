@@ -25,6 +25,48 @@ import type { PathInput, PathOutput } from '../../src/runtime/adapters/zod-v4'
  * just illuminate what's broken so we can pick.
  */
 
+// -------------------- shared test-local relaxed shapes --------------------
+// These probes deliberately land the form in unrepresentable states
+// (invalid discriminators, foreign keys, JSON-cycle artefacts), so the
+// shape can't be the schema's strict discriminated-union image. Each
+// field is `unknown` so the test bodies can branch via JS-level
+// `===` / `typeof` / `in` narrowing without TS4111 noise on index-
+// signature access.
+type AnyNotify = {
+  channel?: unknown
+  address?: unknown
+  number?: unknown
+  email?: unknown
+}
+type AnyEvent = {
+  type?: unknown
+  x?: unknown
+  value?: unknown
+}
+type AnyInner = {
+  kind?: unknown
+  a?: unknown
+  b?: unknown
+}
+type AnyFlow = {
+  step?: unknown
+  inner?: AnyInner
+  notes?: unknown
+}
+type AnyPayload = {
+  kind?: unknown
+  items?: unknown
+  v?: unknown
+  w?: unknown
+  data?: unknown
+  tags?: unknown
+  at?: unknown
+  a?: unknown
+}
+type AnyTree = {
+  kind?: unknown
+}
+
 // -------------------- shared profile fixture --------------------
 const profileSchema = z.object({
   name: z.string(),
@@ -81,7 +123,7 @@ describe('DU hardening — Case A invalid leaf discriminator write', () => {
     // — is the bug: no variant has `channel='wat'` so this shape is
     // not in the schema's image. Whatever the remedy, this assertion
     // pins the contract.
-    const notify = api.values.notify as Record<string, unknown>
+    const notify = api.values.notify as AnyNotify
     const isPreservedEmail =
       notify.channel === 'email' && typeof notify.address === 'string' && !('number' in notify)
     const isHasOnlyDiscriminator = Object.keys(notify).length === 1 && notify.channel === 'wat'
@@ -200,7 +242,7 @@ describe('DU hardening — Case B invalid whole-union write', () => {
     // Either reject (storage unchanged at the email variant) or
     // reshape to a valid variant. The accept-as-is outcome
     // (`{channel:'wat', someJunk:1, address:''}` etc.) is the bug.
-    const notify = api.values.notify as Record<string, unknown>
+    const notify = api.values.notify as AnyNotify
     const stayedEmail = notify.channel === 'email'
     const validShape =
       (notify.channel === 'email' &&
@@ -408,7 +450,7 @@ describe('DU hardening — construction with invalid discriminator in defaultVal
     // foreign-variant fields are not invented. A one-shot dev warning
     // (assertable separately) flags the bad disc; validation surfaces
     // the mismatch on next validateAsync.
-    const notify = api.values.notify as Record<string, unknown>
+    const notify = api.values.notify as AnyNotify
     expect(notify).toEqual({ channel: 'wat' })
     const result = await api.validateAsync()
     expect(result.success).toBe(false)
@@ -470,7 +512,7 @@ describe('DU hardening — undo across an invalid intermediate', () => {
     // After undo, the form is whatever it was before the invalid
     // write. The pre-write state is `{channel:'email', address:'kept@x.io'}`,
     // i.e. a valid variant.
-    const notify = api.values.notify as Record<string, unknown>
+    const notify = api.values.notify as AnyNotify
     const isValid =
       (notify.channel === 'email' && typeof notify.address === 'string') ||
       (notify.channel === 'sms' && typeof notify.number === 'string')
@@ -528,7 +570,7 @@ describe('DU hardening — invalid discriminator at an array element', () => {
     // from the prior variant (e.g. `x`) are dropped. The stub-state
     // outcome is also "representable" alongside the two valid-variant
     // outcomes; what matters is no mixed shape.
-    const e0 = api.values.events[0] as Record<string, unknown>
+    const e0 = api.values.events[0] as AnyEvent
     const isStub = Object.keys(e0).length === 1 && e0.type === 'unknown'
     const isValid =
       isStub ||
@@ -590,7 +632,7 @@ describe('DU hardening — invalid discriminator at an inner nested DU', () => {
     // `a` from the prior variant is dropped. The stub outcome
     // joins the two valid-variant outcomes as "representable"; the
     // mixed `{kind:'Z', a:'value-a'}` shape is what the bug looked like.
-    const inner = (api.values.flow as Record<string, unknown>).inner as Record<string, unknown>
+    const inner = (api.values.flow as AnyFlow).inner as AnyInner
     const isStub = Object.keys(inner).length === 1 && inner.kind === 'Z'
     const innerValid =
       isStub ||
@@ -637,7 +679,7 @@ describe('DU hardening — zod v3 adapter parity', () => {
     api.setValue('notify.channel', 'wat')
     await nextTick()
 
-    const notify = api.values.notify as Record<string, unknown>
+    const notify = api.values.notify as AnyNotify
     const isPreservedEmail =
       notify.channel === 'email' && typeof notify.address === 'string' && !('number' in notify)
     const isHasOnlyDiscriminator = Object.keys(notify).length === 1 && notify.channel === 'wat'
@@ -733,7 +775,7 @@ describe('DU hardening — `unset` on the discriminator (no-selection-yet UX)', 
     // The accept-as-is outcome is the bug — `{channel:''}` plus
     // first-variant `address` keys is structurally identical to a half-
     // built variant whose validation pretends to know which one.
-    const notify = api.values.notify as Record<string, unknown>
+    const notify = api.values.notify as AnyNotify
     const validShape =
       (notify.channel === 'email' && typeof notify.address === 'string') ||
       (notify.channel === 'sms' && typeof notify.number === 'string') ||
@@ -786,7 +828,7 @@ describe('DU hardening — `unset` on the discriminator (no-selection-yet UX)', 
     api.setValue('notify.channel', unset)
     await nextTick()
 
-    const notify = api.values.notify as Record<string, unknown>
+    const notify = api.values.notify as AnyNotify
     expect('address' in notify).toBe(false)
   })
 
@@ -817,7 +859,7 @@ describe('DU hardening — `unset` on the discriminator (no-selection-yet UX)', 
     // serializes fine but represents nothing the schema accepts — and
     // the consumer can't tell from the JSON whether the form is "no
     // choice" or "broken email choice".
-    const json = JSON.parse(JSON.stringify(api.values.notify)) as Record<string, unknown>
+    const json = JSON.parse(JSON.stringify(api.values.notify)) as AnyNotify
     const consistent =
       (json.channel === '' && Object.keys(json).length === 1) ||
       (json.channel === 'email' && typeof json.address === 'string') ||
@@ -858,7 +900,7 @@ describe('DU hardening — bad default values at the union path', () => {
     // Whatever the runtime decides, the result must MATCH a real
     // variant. If we accept-as-is into `{address:'…'}` (no channel),
     // every downstream path breaks.
-    const notify = api.values.notify as Record<string, unknown>
+    const notify = api.values.notify as AnyNotify
     const matches =
       (notify.channel === 'email' && typeof notify.address === 'string') ||
       (notify.channel === 'sms' && typeof notify.number === 'string')
@@ -889,7 +931,7 @@ describe('DU hardening — bad default values at the union path', () => {
     const api = handle.api as ProfileApi
     await nextTick()
 
-    expect('number' in (api.values.notify as Record<string, unknown>)).toBe(false)
+    expect('number' in (api.values.notify as AnyNotify)).toBe(false)
   })
 
   it('defaultValues missing the union path entirely yields the first variant default cleanly', async () => {
@@ -910,7 +952,7 @@ describe('DU hardening — bad default values at the union path', () => {
     const api = handle.api as ProfileApi
     await nextTick()
 
-    const notify = api.values.notify as Record<string, unknown>
+    const notify = api.values.notify as AnyNotify
     const matches =
       (notify.channel === 'email' && typeof notify.address === 'string') ||
       (notify.channel === 'sms' && typeof notify.number === 'string')
@@ -968,7 +1010,7 @@ describe('DU hardening — invalid OUTER discriminator with valid inner state', 
     // `{step:'BAD_OUTER'}` — the prior variant's `inner` subtree is
     // dropped, so no orphan island survives under a non-variant
     // parent. Validation flags the bad disc on next validateAsync.
-    const flow = api.values.flow as Record<string, unknown>
+    const flow = api.values.flow as AnyFlow
     const isStub = Object.keys(flow).length === 1 && flow.step === 'BAD_OUTER'
     const valid =
       isStub ||
@@ -988,8 +1030,8 @@ describe('DU hardening — invalid OUTER discriminator with valid inner state', 
     // a disc-only stub `{kind:'BAD_INNER'}` — foreign `a` is dropped.
     // The stub joins the two valid-variant outcomes as "representable";
     // the mixed `{kind:'BAD_INNER', a:'x'}` shape is the bug.
-    const flow = api.values.flow as Record<string, unknown>
-    const inner = flow.inner as Record<string, unknown>
+    const flow = api.values.flow as AnyFlow
+    const inner = flow.inner as AnyInner
     const isStub = Object.keys(inner).length === 1 && inner.kind === 'BAD_INNER'
     const innerValid =
       isStub ||
@@ -1010,7 +1052,7 @@ describe('DU hardening — invalid OUTER discriminator with valid inner state', 
     // The valid `done` variant has only `notes`. After this sequence,
     // we expect the standard sms-style slim default — `notes: ''` —
     // and no leftover `inner` key, no leftover `step:'BAD_OUTER'`.
-    const flow = api.values.flow as Record<string, unknown>
+    const flow = api.values.flow as AnyFlow
     expect(flow.step).toBe('done')
     expect('inner' in flow).toBe(false)
     expect(typeof flow.notes).toBe('string')
@@ -1034,7 +1076,7 @@ describe('DU hardening — reset / resetField after an invalid discriminator wri
     api.resetField('notify.channel')
     await nextTick()
 
-    const notify = api.values.notify as Record<string, unknown>
+    const notify = api.values.notify as AnyNotify
     expect(notify.channel).toBe('email')
     // Clean shape — no orphan/invalid leftover.
     expect(typeof notify.address).toBe('string')
@@ -1050,7 +1092,7 @@ describe('DU hardening — reset / resetField after an invalid discriminator wri
     api.resetField('notify')
     await nextTick()
 
-    const notify = api.values.notify as Record<string, unknown>
+    const notify = api.values.notify as AnyNotify
     const valid =
       (notify.channel === 'email' && typeof notify.address === 'string') ||
       (notify.channel === 'sms' && typeof notify.number === 'string')
@@ -1067,7 +1109,7 @@ describe('DU hardening — reset / resetField after an invalid discriminator wri
     api.reset()
     await nextTick()
 
-    const notify = api.values.notify as Record<string, unknown>
+    const notify = api.values.notify as AnyNotify
     const valid =
       (notify.channel === 'email' && typeof notify.address === 'string') ||
       (notify.channel === 'sms' && typeof notify.number === 'string')
@@ -1282,7 +1324,7 @@ describe('DU hardening — array of DU: variant memory under array reshape', () 
     api.setValue('events.0.type', 'click')
     await nextTick()
 
-    const e0 = api.values.events[0] as Record<string, unknown>
+    const e0 = api.values.events[0] as AnyEvent
     expect(e0).toEqual({ type: 'click', x: '' })
   })
 
@@ -1370,8 +1412,8 @@ describe('DU hardening — array of DU: variant memory under array reshape', () 
     // The newly-occupying elements must restore from THEIR identities'
     // memory, not whatever happened to be at the index before. Or, if
     // memory just clears on swap, both should fall back to slim defaults.
-    const e0 = api.values.events[0] as Record<string, unknown>
-    const e1 = api.values.events[1] as Record<string, unknown>
+    const e0 = api.values.events[0] as AnyEvent
+    const e1 = api.values.events[1] as AnyEvent
     const cleanFallback = e0.x === '' && e1.value === ''
     const identityRestore = e0.x === 'one-value' && e1.value === 'zero-x'
     expect(cleanFallback || identityRestore).toBe(true)
@@ -1408,7 +1450,7 @@ describe('DU hardening — array of DU: variant memory under array reshape', () 
     // new occupant (B's own `x: 'B'` from defaultValues) is fine —
     // both honour the "no cross-element bleed" contract; only A's
     // value would signal the bug.
-    const e0 = api.values.events[0] as Record<string, unknown>
+    const e0 = api.values.events[0] as AnyEvent
     expect(e0.type).toBe('click')
     expect(e0.x).not.toBe('A')
   })
@@ -1489,7 +1531,7 @@ describe('DU hardening — DU containing an array variant: round-trip preservati
     // be either the originally-typed `[{sku:'S-1'}]` (restored from
     // pre-invalid memory) or the slim default `[]`. The accept-as-is
     // outcome would surface the invalid intermediate's frozen state.
-    const payload = api.values.payload as Record<string, unknown>
+    const payload = api.values.payload as AnyPayload
     expect(payload.kind).toBe('list')
     expect(Array.isArray(payload.items)).toBe(true)
     const items = payload.items as Array<{ sku?: string }>
@@ -1568,7 +1610,7 @@ describe('DU hardening — array index Case A/B with invalid discriminator', () 
     api.setValue('events.0.type', unset)
     await nextTick()
 
-    const e0 = api.values.events[0] as Record<string, unknown>
+    const e0 = api.values.events[0] as AnyEvent
     // Either the element collapses to `{type:''}` (with x cleaned
     // up + the disc path tracked as blank) or the element retains a
     // valid variant. The accept-as-is `{type:'', x:'first'}` shape is
@@ -1591,7 +1633,7 @@ describe('DU hardening — array index Case A/B with invalid discriminator', () 
     // is coerced to a valid variant (length grew but the new element
     // has a real shape). The bug outcome: length grew with junk.
     if (api.values.events.length === 3) {
-      const newElement = api.values.events[2] as Record<string, unknown>
+      const newElement = api.values.events[2] as AnyEvent
       const valid =
         (newElement.type === 'click' && typeof newElement.x === 'string') ||
         (newElement.type === 'text' && typeof newElement.value === 'string')
@@ -1614,7 +1656,7 @@ describe('DU hardening — array index Case A/B with invalid discriminator', () 
     // first-variant fields leak onto the consumer-targeted index.
     if (ok === true && api.values.events.length > 2) {
       for (let i = 0; i < api.values.events.length; i++) {
-        const e = api.values.events[i] as Record<string, unknown>
+        const e = api.values.events[i] as AnyEvent
         const isTargetStub = i === 5 && Object.keys(e).length === 1 && e.type === 'BAD'
         const isValidVariant =
           (e.type === 'click' && typeof e.x === 'string') ||
@@ -1766,9 +1808,9 @@ describe('chaos — prototype pollution attempts via path & value', () => {
     // object in the JS realm gets the property — that's prototype
     // pollution.
     const fresh = {} as Record<string, unknown>
-    expect(fresh.polluted).toBeUndefined()
+    expect(fresh['polluted']).toBeUndefined()
     // Cleanup if pollution did occur, so subsequent tests aren't flaky.
-    delete (Object.prototype as unknown as Record<string, unknown>).polluted
+    delete (Object.prototype as unknown as Record<string, unknown>)['polluted']
   })
 
   it('setValue at a nested path with `constructor` does not clobber the global', async () => {
@@ -1798,8 +1840,8 @@ describe('chaos — prototype pollution attempts via path & value', () => {
     await nextTick()
 
     // Object.prototype.x must remain untouched.
-    expect(({} as Record<string, unknown>).x).toBeUndefined()
-    delete (Object.prototype as unknown as Record<string, unknown>).x
+    expect(({} as Record<string, unknown>)['x']).toBeUndefined()
+    delete (Object.prototype as unknown as Record<string, unknown>)['x']
   })
 })
 
@@ -2048,7 +2090,7 @@ describe('chaos — `-0` written over `0` at a numeric leaf', () => {
 
     // Either treated as no-op (kept v) or reshaped (variant default).
     // Whatever happens, the form must NOT enter an inconsistent shape.
-    const payload = api.values.payload as Record<string, unknown>
+    const payload = api.values.payload as AnyPayload
     const valid =
       (payload.kind === 0 && typeof payload.v === 'string') ||
       (payload.kind === 1 && typeof payload.w === 'string')
@@ -2188,7 +2230,7 @@ describe('chaos — recursive DU via z.lazy (tree of nodes)', () => {
     expect(() => api.setValue('tree.kind', 'branch')).not.toThrow()
     await nextTick()
 
-    const tree = api.values.tree as Record<string, unknown>
+    const tree = api.values.tree as AnyTree
     expect(tree.kind).toBe('branch')
   })
 })
@@ -2324,7 +2366,7 @@ describe('chaos — Vue ref / reactive object passed as setValue value', () => {
     // Either rejection (storage unchanged from the email default) or
     // unwrap (sms applied). What it must NOT do: store the Ref object
     // wholesale (a Ref has `.value` — that key isn't in the schema).
-    const notify = api.values.notify as Record<string, unknown>
+    const notify = api.values.notify as AnyNotify
     const acceptedAndUnwrapped = notify.channel === 'sms' && typeof notify.number === 'string'
     const rejectedKeptEmail = notify.channel === 'email'
     expect(acceptedAndUnwrapped || rejectedKeptEmail).toBe(true)
@@ -2461,7 +2503,7 @@ describe('chaos — two DUs with the same discriminator key at different paths',
     api.setValue('outer.inner.kind', 'X')
     await nextTick()
 
-    expect((api.values.outer as Record<string, unknown>).inner).toEqual({
+    expect((api.values.outer as { inner?: unknown }).inner).toEqual({
       kind: 'X',
       x: 'typed-x',
     })
@@ -2625,7 +2667,7 @@ describe('chaos — writing through register binding for an inactive variant', (
     const ok = api.setValue('notify.number', 'stale-from-sms-binding')
     await nextTick()
 
-    const notify = api.values.notify as Record<string, unknown>
+    const notify = api.values.notify as AnyNotify
     // Active variant is email; `number` doesn't belong on the active
     // variant's shape. Either the slim gate / cross-variant guard
     // rejects the write (storage unchanged on email + valid address)
@@ -2667,7 +2709,7 @@ describe('chaos — leaf write while the parent discriminator is invalid', () =>
     if (ok === true) {
       // If accepted, the form must be in some valid shape now (i.e.
       // the runtime auto-recovered). Document via assertion.
-      const notify = api.values.notify as Record<string, unknown>
+      const notify = api.values.notify as AnyNotify
       const valid =
         (notify.channel === 'email' && typeof notify.address === 'string') ||
         (notify.channel === 'sms' && typeof notify.number === 'string')
@@ -2734,7 +2776,7 @@ describe('chaos — z.coerce at the discriminator', () => {
     api.setValue('payload.kind', '1')
     await nextTick()
 
-    const payload = api.values.payload as Record<string, unknown>
+    const payload = api.values.payload as AnyPayload
     const valid =
       (payload.kind === 1 && typeof payload.v === 'string') ||
       (payload.kind === 2 && typeof payload.w === 'string')
@@ -2816,7 +2858,7 @@ describe('chaos — z.preprocess() wrapping a discriminated union', () => {
     await nextTick()
 
     expect(api.values.notify).not.toBeNull()
-    const notify = api.values.notify as Record<string, unknown>
+    const notify = api.values.notify as AnyNotify
     const valid =
       (notify.channel === 'email' && typeof notify.address === 'string') ||
       (notify.channel === 'sms' && typeof notify.number === 'string')
@@ -3074,7 +3116,7 @@ describe('chaos — non-JSON-friendly types in DU subtree', () => {
     // not a Date. `instanceof Date` fails — and the consumer's code
     // that expects `at.getTime()` crashes silently the next time it
     // runs.
-    const at = (api.values.payload as Record<string, unknown>).at
+    const at = (api.values.payload as AnyPayload).at
     expect(at instanceof Date).toBe(true)
   })
 })
@@ -3241,7 +3283,10 @@ describe("chaos — resetField with the form-level errors path ''", () => {
     expect(api.values.name).toBe('Ada')
     expect(api.errors('')).toHaveLength(1)
 
-    api.resetField('')
+    // Cast loose: this probe deliberately calls `resetField` with an
+    // empty-string path to assert it's NOT a "reset everything" alias.
+    // The typed signature only accepts known schema paths.
+    ;(api.resetField as (path: string) => void)('')
     await nextTick()
 
     // Named field is untouched — `''` is a distinct path, not an
@@ -3369,11 +3414,11 @@ describe('chaos — two useForm calls with the same key in one app', () => {
     await nextTick()
 
     const a = handle.a as {
-      errors: Record<string, ReadonlyArray<{ message: string }> | undefined>
+      errors: { email?: ReadonlyArray<{ message: string }> }
       setValue: (p: string, v: unknown) => boolean
     }
     const b = handle.b as {
-      errors: Record<string, ReadonlyArray<{ message: string }> | undefined>
+      errors: { email?: ReadonlyArray<{ message: string }> }
       setValue: (p: string, v: unknown) => boolean
     }
 
@@ -3841,7 +3886,7 @@ describe('chaos — direct mutation through api.values proxy', () => {
 
     let threw = false
     try {
-      ;(api.values.notify as Record<string, unknown>).channel = 'wat'
+      ;(api.values.notify as AnyNotify).channel = 'wat'
     } catch {
       threw = true
     }
@@ -3851,7 +3896,7 @@ describe('chaos — direct mutation through api.values proxy', () => {
     // write is allowed but the gate runs. What it must NOT do: silently
     // corrupt storage with no validation.
     if (!threw) {
-      const notify = api.values.notify as Record<string, unknown>
+      const notify = api.values.notify as AnyNotify
       // If accepted, behavior should mirror setValue. If rejected
       // silently, channel stays 'email'.
       expect(notify.channel === 'email' || notify.channel === 'wat').toBe(true)
@@ -4189,7 +4234,7 @@ describe('chaos — z.intersection of a DU and a sibling schema', () => {
 
     api.setValue('payload.kind', 'B')
     await nextTick()
-    const payload = api.values.payload as Record<string, unknown>
+    const payload = api.values.payload as AnyPayload
     // After the switch, `b` should be present, `a` gone, `shared`
     // preserved.
     expect(payload.kind).toBe('B')
@@ -4324,7 +4369,7 @@ describe('chaos — persistence: hydrate with invalid discriminator in stored pa
     apps.push(app)
     await nextTick()
 
-    const notify = api(handle).values.notify as Record<string, unknown>
+    const notify = api(handle).values.notify as AnyNotify
     const valid =
       (notify.channel === 'email' && typeof notify.address === 'string') ||
       (notify.channel === 'sms' && typeof notify.number === 'string')
@@ -4534,7 +4579,7 @@ describe('chaos — persistence: hydrate with invalid discriminator in stored pa
     apps.push(app)
     await nextTick()
 
-    const notify = handle.api!.values.notify as Record<string, unknown>
+    const notify = handle.api!.values.notify as AnyNotify
     const valid =
       (notify.channel === 'email' && typeof notify.address === 'string') ||
       (notify.channel === 'sms' && typeof notify.number === 'string')
@@ -4759,7 +4804,7 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
     await submit()
     await nextTick()
 
-    expect((submitted as Record<string, unknown> | null)?.name).toBe('Ada')
+    expect((submitted as { name?: unknown } | null)?.name).toBe('Ada')
   })
 
   it('undo across an array.remove on a DU array does not bleed memory between positions', async () => {
@@ -4969,8 +5014,8 @@ describe('chaos — z.record() with DU values', () => {
     api.setValue('bag.foo.kind', 'B')
     await nextTick()
 
-    expect(api.values.bag.foo).toEqual({ kind: 'B', b: '' })
-    expect(api.values.bag.bar).toEqual({ kind: 'B', b: 'bar-B' })
+    expect(api.values.bag['foo']).toEqual({ kind: 'B', b: '' })
+    expect(api.values.bag['bar']).toEqual({ kind: 'B', b: 'bar-B' })
   })
 
   it('does not pollute Object.prototype via z.record(z.string(), du) with a __proto__ key', async () => {
@@ -5009,9 +5054,9 @@ describe('chaos — z.record() with DU values', () => {
     api.setValue('bag.__proto__.a', 'PWNED')
     await nextTick()
 
-    expect(({} as Record<string, unknown>).a).toBeUndefined()
-    delete (Object.prototype as unknown as Record<string, unknown>).a
-    delete (Object.prototype as unknown as Record<string, unknown>).kind
+    expect(({} as Record<string, unknown>)['a']).toBeUndefined()
+    delete (Object.prototype as unknown as Record<string, unknown>)['a']
+    delete (Object.prototype as unknown as Record<string, unknown>)['kind']
   })
 })
 
@@ -5122,7 +5167,7 @@ describe('chaos — Map / Set values at leaves', () => {
     // JSON-cycle in variant memory drops Map → empty object {}. After
     // round-trip we should still have a Map instance — or at minimum
     // the type kind was preserved.
-    const data = (api.values.payload as Record<string, unknown>).data
+    const data = (api.values.payload as AnyPayload).data
     expect(data instanceof Map).toBe(true)
   })
 
@@ -5167,7 +5212,7 @@ describe('chaos — Map / Set values at leaves', () => {
     api.setValue('payload.kind', 'seqed')
     await nextTick()
 
-    const tags = (api.values.payload as Record<string, unknown>).tags
+    const tags = (api.values.payload as AnyPayload).tags
     expect(tags instanceof Set).toBe(true)
   })
 })
@@ -5547,9 +5592,7 @@ describe('chaos — server/client default-value divergence on a DU', () => {
 
     const api = handle.api as ProfileApi
     // Hydration is async — poll until the persisted shape lands.
-    await waitUntil(() =>
-      (api.values.notify as Record<string, unknown>).channel === 'sms' ? true : null
-    )
+    await waitUntil(() => ((api.values.notify as AnyNotify).channel === 'sms' ? true : null))
     expect(api.values.notify).toEqual({ channel: 'sms', number: '5551234' })
   })
 })
@@ -6315,10 +6358,10 @@ describe('crash — render template chain access into an inactive-variant subtre
           // component fails to render — Vue marks the parent as
           // errored and the subtree disappears.
           try {
-            const _val = (api.fields as unknown as Record<string, unknown>).notify
+            const _val = (api.fields as unknown as Record<string, unknown>)['notify']
             const notifyObj = _val as Record<string, unknown>
-            const addr = notifyObj.address as Record<string, unknown> | undefined
-            void addr?.value
+            const addr = notifyObj['address'] as Record<string, unknown> | undefined
+            void addr?.['value']
           } catch (err) {
             captured = err
           }

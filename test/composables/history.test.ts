@@ -9,7 +9,7 @@ import { createAttaform } from '../../src/runtime/core/plugin'
 /**
  * Phase 5.9 — undo/redo.
  *
- * `history: true` enables the default bounded stack (max 50);
+ * `history: true` enables the default bounded stack (max 128);
  * `history: { max: N }` tunes it. `undo()` / `redo()` restore the
  * prior form value (and the error map). `canUndo` / `canRedo` gate
  * consumer UI. `reset()` is treated as an ordinary mutation — the
@@ -252,6 +252,98 @@ describe('history — blankPaths preservation', () => {
     expect(api.redo()).toBe(true)
     expect(api.values.count).toBe(12)
     expect(api.blankPaths.value.has(countKey)).toBe(false)
+  })
+})
+
+describe('history — delta round-trip', () => {
+  const apps: App[] = []
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+  })
+
+  // History stores forward deltas keyed to a moving "current" anchor,
+  // so the patch-apply / patch-invert path has to be precisely
+  // symmetric. This probe drives a longer sequence of mutations across
+  // multiple paths and walks back step-by-step, asserting that each
+  // intermediate value materialises exactly. Off-by-one or
+  // wrong-direction bugs in the inverse application would surface as a
+  // mid-sequence divergence; full snapshots wouldn't catch this
+  // because they ignore the chain order.
+  const nestedSchema = z.object({
+    profile: z.object({
+      name: z.string(),
+      tags: z.array(z.string()),
+    }),
+    email: z.string(),
+  })
+  type NestedApi = ReturnType<typeof useForm<typeof nestedSchema>>
+
+  function mountNested(): { app: App; api: NestedApi } {
+    const handle: { api?: NestedApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: nestedSchema,
+          key: `history-roundtrip-${Math.random().toString(36).slice(2)}`,
+          history: true,
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    return { app, api: handle.api as NestedApi }
+  }
+
+  it('every intermediate state restores exactly under step-by-step undo', () => {
+    const { app, api } = mountNested()
+    apps.push(app)
+
+    // Capture a fingerprint of the full form value at each step so the
+    // assertion can compare structural equality, not just one leaf.
+    const fingerprints: Array<{ profile: { name: string; tags: string[] }; email: string }> = []
+    // JSON round-trip frees us from Vue's reactive proxy; the form is
+    // JSON-safe by construction in this schema.
+    const snap = () => JSON.parse(JSON.stringify(api.values())) as (typeof fingerprints)[number]
+    fingerprints.push(snap())
+
+    api.setValue('email', 'a@example.com')
+    fingerprints.push(snap())
+
+    api.setValue('profile.name', 'alice')
+    fingerprints.push(snap())
+
+    api.setValue('profile.tags', ['one', 'two'])
+    fingerprints.push(snap())
+
+    api.setValue('profile.tags', ['one', 'two', 'three'])
+    fingerprints.push(snap())
+
+    // Mutate a nested array element — tests the `setAtPath` spine
+    // through an index segment.
+    api.setValue('profile.tags.1', 'two-updated')
+    fingerprints.push(snap())
+
+    api.setValue('email', 'b@example.com')
+    fingerprints.push(snap())
+
+    // Walk back. Each undo() must land on the immediately-prior
+    // fingerprint — not eventually-correct, but step-correct.
+    for (let i = fingerprints.length - 2; i >= 0; i--) {
+      expect(api.undo()).toBe(true)
+      expect(api.values()).toEqual(fingerprints[i])
+    }
+    expect(api.undo()).toBe(false)
+    expect(api.values()).toEqual(fingerprints[0])
+
+    // Walk forward again — redo must reproduce every fingerprint.
+    for (let i = 1; i < fingerprints.length; i++) {
+      expect(api.redo()).toBe(true)
+      expect(api.values()).toEqual(fingerprints[i])
+    }
+    expect(api.redo()).toBe(false)
   })
 })
 

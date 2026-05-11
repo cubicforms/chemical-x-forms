@@ -4531,7 +4531,7 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  function mountWithHistory(overrides: { history?: true | { capacity?: number } } = {}): {
+  function mountWithHistory(overrides: { history?: true | { max?: number } } = {}): {
     app: App
     api: ProfileApi
   } {
@@ -4645,10 +4645,12 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
     expect(api.values.notify).toEqual({ channel: 'email', address: 'pre-undo@x.io' })
   })
 
-  it('history capacity is enforced (51st snapshot evicts the oldest)', async () => {
-    // Default capacity = 50. After 60 mutations and 60 undos, we
-    // should fall short of restoring the very first state.
-    const { app, api } = mountWithHistory()
+  it('history capacity is enforced (oldest delta is folded into the base once cap is exceeded)', async () => {
+    // Pinned to max:50 (NOT the library default) so this test stays a
+    // probe of the eviction mechanism, not of the chosen default.
+    // After 60 mutations, the historySize is bounded at 50 and the
+    // earliest restorable state isn't the original empty default.
+    const { app, api } = mountWithHistory({ history: { max: 50 } })
     apps.push(app)
 
     for (let i = 0; i < 60; i++) {
@@ -4656,7 +4658,7 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
       await nextTick()
     }
 
-    // historySize bounded at the capacity (50 + redo room).
+    // historySize bounded at the capacity (50 reachable positions).
     expect(api.meta.historySize).toBeLessThanOrEqual(50)
 
     // Undo as far as we can. The earliest state the form can restore

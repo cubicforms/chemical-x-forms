@@ -825,14 +825,14 @@ export type WriteMeta = {
 /**
  * Undo/redo configuration passed via `useForm({ history })`.
  *
- * - `true` — enable with the default snapshot cap (`max: 50`).
- * - `{ max }` — enable and tune the bounded snapshot stack size.
+ * - `true` — enable with the default position cap (`max: 128`).
+ * - `{ max }` — enable and tune the bounded history size.
  *
- * When enabled, every mutation pushes a snapshot; `undo()` / `redo()`
- * walk the stacks. `reset()` is itself a mutation — the pre-reset
- * state stays one undo away. Persistence hydration is the floor:
- * after hydrate applies, the stacks reseed with the hydrated value
- * and `undo()` cannot reach the transient pre-hydration default.
+ * When enabled, every mutation records a forward delta; `undo()` /
+ * `redo()` walk the chain. `reset()` is itself a mutation — the
+ * pre-reset state stays one undo away. Persistence hydration is the
+ * floor: after hydrate applies, the chain reseeds with the hydrated
+ * value and `undo()` cannot reach the transient pre-hydration default.
  */
 export type HistoryConfig = true | { max?: number }
 
@@ -1065,13 +1065,14 @@ export type UseFormConfiguration<
   persist?: PersistConfig
 
   /**
-   * Opt-in undo/redo. Off by default. `true` enables with a 50-snapshot
+   * Opt-in undo/redo. Off by default. `true` enables with a 128-position
    * cap; `{ max: N }` tunes the cap.
    *
-   * Every mutation pushes a snapshot. `undo()` pops one; `redo()`
-   * replays it. `reset()` clears history. Reactive flags
-   * `state.canUndo` / `state.canRedo` / `state.historySize` reflect
-   * the current stack.
+   * Every mutation records a forward delta. `undo()` walks one step
+   * back; `redo()` walks one step forward. `reset()` is itself a
+   * mutation, so the pre-reset state stays one undo away. Reactive
+   * flags `state.canUndo` / `state.canRedo` / `state.historySize`
+   * reflect the current chain.
    */
   history?: HistoryConfig
 

@@ -3,36 +3,61 @@ import type { HistoryConfig, ValidationError, WriteMeta } from '../types/types-a
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { DEFAULT_HISTORY_MAX_SNAPSHOTS, normalizeNumericOption } from './defaults'
-import { structuralSnapshot } from './diff-apply'
+import {
+  applyPatchesForward,
+  applyPatchesInverse,
+  diffAndApply,
+  structuralSnapshot,
+  type Patch,
+} from './diff-apply'
 import type { PathKey } from './paths'
 
 /**
- * Bounded undo/redo snapshot stack for a FormStore. Subscribes to
- * `onFormChange` to push a snapshot on every mutation; `undo` /
- * `redo` restore via `applyFormReplacement` plus the schema + user
- * error writers. `reset()` is treated as an ordinary mutation —
- * `applyFormReplacement` fires `onFormChange`, the post-reset snapshot
- * lands on the undo stack, and the pre-reset state remains one
- * position earlier (so `undo()` recovers it).
+ * Bounded undo/redo history for a FormStore, stored as one base
+ * snapshot plus a linear chain of forward deltas. Subscribes to
+ * `onFormChange` to record a `Delta` between the prior state and the
+ * post-mutation state on every form change; `undo` walks the chain
+ * backward by applying each delta in inverse, `redo` walks forward
+ * by re-applying.
  *
- * Snapshots include:
- *  - `form` — the whole form value, captured by reference. Vue's
- *    form ref is replaced wholesale on every mutation, so the
- *    snapshot reference is stable: old references don't mutate.
- *  - `blankPaths` — set membership at capture time. A numeric field
- *    can be in two visually-distinct states with the same storage
- *    value (`0` typed vs `0` cleared); the blank set is what
- *    distinguishes them. Replaying form alone strands a cleared
- *    field on the screen as `0`.
- *  - `schemaErrors` + `userErrors` — shallow-cloned Map entries from
- *    each source-segregated store. Captured separately so undo
- *    preserves the lifecycle distinction (schema errors are validation
- *    output; user errors are consumer-owned).
+ * Storage shape:
+ *  - `base` — full `HistorySnapshot<F>` at the oldest reachable
+ *    position. Initially the form's mount-time state. Advanced
+ *    forward when the chain exceeds the capacity cap (the oldest
+ *    delta is folded into `base` and dropped).
+ *  - `undoDeltas` — forward deltas from `base` up to the current
+ *    state. `undo()` consumes the tail; new mutations append.
+ *  - `redoDeltas` — forward deltas from the current state up to
+ *    redoable states. Populated by `undo()`; cleared by any fresh
+ *    mutation.
+ *  - `currentSnapshot` — materialised state at the current position.
+ *    Acts as the diff anchor for the next mutation (we diff against
+ *    this, not the live `state.form.value` ref, because the live
+ *    ref mutates in-place during `applyFormReplacement`).
+ *
+ * Each `Delta` carries:
+ *  - `formPatches` — `Patch[]` from `diffAndApply`. Each `changed`
+ *    patch holds BOTH `oldValue` and `newValue`, making the patch
+ *    list self-invertible — no separate inverse-diff storage needed.
+ *  - `blankPathsAdded` / `blankPathsRemoved` — symmetric set diff.
+ *    Forward applies removed-then-added; inverse swaps them.
+ *  - `schemaErrors` / `userErrors` — present only when the errors
+ *    changed between snapshots. Each carries before+after entry
+ *    snapshots so undo/redo can restore either side without
+ *    walking back through the chain.
+ *
+ * `reset()` is treated as an ordinary mutation: `applyFormReplacement`
+ * fires `onFormChange`, the resulting delta lands on `undoDeltas`,
+ * and the pre-reset state stays one undo away. Persistence hydration
+ * (`meta.hydration === true`) is the floor — both delta arrays wipe
+ * and `base` re-seeds from the post-hydration snapshot, so `undo()`
+ * can't reach back into a pre-hydration default the consumer never
+ * saw.
  *
  * Field record state (touched / focused / blurred / connected) is
- * deliberately NOT snapshotted. Those flags represent UI
- * interaction history and shouldn't rewind when the user hits
- * undo — a field that was touched stays touched.
+ * deliberately NOT snapshotted. Those flags represent UI interaction
+ * history and shouldn't rewind when the user hits undo — a field that
+ * was touched stays touched.
  */
 
 export type HistorySnapshot<F> = {
@@ -51,16 +76,98 @@ export type HistoryModule = {
   dispose(): void
 }
 
+type ErrorEntries = ReadonlyArray<readonly [PathKey, ValidationError[]]>
+
+type Delta = {
+  readonly formPatches: ReadonlyArray<Patch>
+  readonly blankPathsAdded: ReadonlyArray<PathKey>
+  readonly blankPathsRemoved: ReadonlyArray<PathKey>
+  readonly schemaErrors?: { readonly before: ErrorEntries; readonly after: ErrorEntries }
+  readonly userErrors?: { readonly before: ErrorEntries; readonly after: ErrorEntries }
+}
+
+function captureErrorEntries(map: Map<PathKey, ValidationError[]>): ErrorEntries {
+  const out: Array<readonly [PathKey, ValidationError[]]> = []
+  for (const [k, v] of map) out.push([k, [...v]] as const)
+  return out
+}
+
+function errorsEqual(a: ErrorEntries, b: ErrorEntries): boolean {
+  if (a.length !== b.length) return false
+  const bMap = new Map<PathKey, ValidationError[]>()
+  for (const [k, v] of b) bMap.set(k, v)
+  for (const [k, v] of a) {
+    const bv = bMap.get(k)
+    if (bv === undefined) return false
+    if (v.length !== bv.length) return false
+    for (let i = 0; i < v.length; i++) {
+      const av = v[i] as ValidationError
+      const bvi = bv[i] as ValidationError
+      // Identity-equal: ValidationError objects pass by reference through
+      // the snapshot chain (not cloned), so most comparisons short-circuit
+      // here. Fall back to field-by-field compare only on identity miss.
+      if (av === bvi) continue
+      if (av.message !== bvi.message) return false
+      if (av.code !== bvi.code) return false
+      if (av.formKey !== bvi.formKey) return false
+      if (av.path !== bvi.path) {
+        if (av.path.length !== bvi.path.length) return false
+        for (let j = 0; j < av.path.length; j++) {
+          if (av.path[j] !== bvi.path[j]) return false
+        }
+      }
+    }
+  }
+  return true
+}
+
+function diffBlankPaths(
+  prev: ReadonlySet<PathKey>,
+  curr: ReadonlySet<PathKey>
+): { added: PathKey[]; removed: PathKey[] } {
+  const added: PathKey[] = []
+  const removed: PathKey[] = []
+  for (const k of curr) if (!prev.has(k)) added.push(k)
+  for (const k of prev) if (!curr.has(k)) removed.push(k)
+  return { added, removed }
+}
+
+function applyDeltaForward<F>(snap: HistorySnapshot<F>, d: Delta): HistorySnapshot<F> {
+  const nextForm = applyPatchesForward(snap.form, d.formPatches) as F
+  const nextBlank = new Set(snap.blankPaths)
+  for (const k of d.blankPathsRemoved) nextBlank.delete(k)
+  for (const k of d.blankPathsAdded) nextBlank.add(k)
+  return {
+    form: nextForm,
+    blankPaths: [...nextBlank],
+    schemaErrors: d.schemaErrors !== undefined ? d.schemaErrors.after : snap.schemaErrors,
+    userErrors: d.userErrors !== undefined ? d.userErrors.after : snap.userErrors,
+  }
+}
+
+function applyDeltaInverse<F>(snap: HistorySnapshot<F>, d: Delta): HistorySnapshot<F> {
+  const prevForm = applyPatchesInverse(snap.form, d.formPatches) as F
+  const prevBlank = new Set(snap.blankPaths)
+  for (const k of d.blankPathsAdded) prevBlank.delete(k)
+  for (const k of d.blankPathsRemoved) prevBlank.add(k)
+  return {
+    form: prevForm,
+    blankPaths: [...prevBlank],
+    schemaErrors: d.schemaErrors !== undefined ? d.schemaErrors.before : snap.schemaErrors,
+    userErrors: d.userErrors !== undefined ? d.userErrors.before : snap.userErrors,
+  }
+}
+
 export function createHistoryModule<F extends GenericForm>(
   state: FormStore<F, GenericForm>,
   config: HistoryConfig
 ): HistoryModule {
-  // Sanitise the snapshot cap. `NaN` would make `length > max` always
+  // Sanitise the capacity cap. `NaN` would make `total > max` always
   // false (unbounded memory growth); `Infinity` likewise; negatives
   // and non-integers produce confusing slice behaviour. Falls back to
-  // the library default on garbage. `max: 0` is preserved — it's a
-  // legitimate "keep no history" override (equivalent in effect to
-  // not enabling history, but consumers may set it explicitly).
+  // the library default on garbage. `max: 0` is preserved — equivalent
+  // in effect to disabling history (no undo/redo positions retained),
+  // but consumers may set it explicitly.
   const max = normalizeNumericOption({
     value:
       typeof config === 'object'
@@ -72,57 +179,57 @@ export function createHistoryModule<F extends GenericForm>(
     defaultValue: DEFAULT_HISTORY_MAX_SNAPSHOTS,
   })
 
-  // undoStack[-1] is the CURRENT state. undo() pops that onto redo
-  // and restores undoStack[-2]. redoStack[-1] is the next-available
-  // redo target. This layout keeps `canUndo = undoStack.length > 1`
-  // and `canRedo = redoStack.length > 0` trivially.
-  // shallowRef avoids Vue's UnwrapRef recursion: the stacks are
-  // replaced wholesale on every mutation (spread into a new array),
-  // so deep reactivity would only add overhead and produce weird
-  // typing around `HistorySnapshot<F>` (UnwrapRef<F> !== F for
-  // generic constraints).
-  const undoStack = shallowRef<HistorySnapshot<F>[]>([])
-  const redoStack = shallowRef<HistorySnapshot<F>[]>([])
-
-  // When `undo()` / `redo()` calls `applyFormReplacement`, the
-  // resulting `onFormChange` must NOT push a new snapshot (that
-  // would duplicate the restored state and break the stack
-  // ordering). This flag suppresses the next change event.
-  let suppressNext = false
-
   function captureSnapshot(): HistorySnapshot<F> {
-    // Clone `form.value` so the snapshot is frozen at this moment.
-    // `applyFormReplacement` mutates `form.value` in place on every
-    // setValue (so deep-watch dependencies fire only for paths that
-    // genuinely changed); without the clone, every entry on the
-    // undo stack would alias the live form ref and silently follow
-    // subsequent mutations.
-    //
-    // Vue's Ref<F> unwraps via UnwrapRef<F>; at runtime this is just F
-    // for all plain object shapes, but the compile-time types differ.
-    // Cast through unknown to reassure TS the snapshot shape matches
-    // the generic parameter the caller bound.
     return {
       form: structuralSnapshot(state.form.value) as unknown as F,
       blankPaths: [...state.blankPaths],
-      schemaErrors: [...state.schemaErrors.entries()].map(([k, v]) => [k, [...v]] as const),
-      userErrors: [...state.userErrors.entries()].map(([k, v]) => [k, [...v]] as const),
+      schemaErrors: captureErrorEntries(state.schemaErrors),
+      userErrors: captureErrorEntries(state.userErrors),
     }
   }
 
-  function pushSnapshot(snap: HistorySnapshot<F>): void {
-    const next = [...undoStack.value, snap]
-    // Trim FIFO so the OLDEST snapshot is evicted when the stack
-    // exceeds max. The user's most recent history is the one worth
-    // keeping.
-    undoStack.value = next.length > max ? next.slice(-max) : next
-    redoStack.value = []
-  }
+  // shallowRef avoids Vue's UnwrapRef recursion: the snapshots / delta
+  // arrays are replaced wholesale on every mutation (spread into a new
+  // array), so deep reactivity would only add overhead and produce
+  // weird typing around `HistorySnapshot<F>` (UnwrapRef<F> !== F for
+  // generic constraints).
+  const initial = captureSnapshot()
+  const base = shallowRef<HistorySnapshot<F>>(initial)
+  const currentSnapshot = shallowRef<HistorySnapshot<F>>(initial)
+  const undoDeltas = shallowRef<Delta[]>([])
+  const redoDeltas = shallowRef<Delta[]>([])
 
-  // Seed with the initial state so `undoStack[-1]` always equals
-  // the current form. The first user mutation pushes a second
-  // entry, enabling `undo()`.
-  pushSnapshot(captureSnapshot())
+  // When `undo()` / `redo()` calls `applyFormReplacement`, the
+  // resulting `onFormChange` must NOT record a new delta (that would
+  // duplicate the restored state and break the chain ordering). This
+  // flag suppresses the next change event.
+  let suppressNext = false
+
+  function appendDelta(delta: Delta, newCurrent: HistorySnapshot<F>): void {
+    // max: 0 — no positions retained beyond `base`. Advance base
+    // forward in lockstep with the mutation; never grow the undo chain.
+    // canUndo / canRedo stay false. Equivalent in effect to history
+    // disabled, but a legitimate explicit override.
+    if (max === 0) {
+      base.value = newCurrent
+      currentSnapshot.value = newCurrent
+      redoDeltas.value = []
+      return
+    }
+    undoDeltas.value = [...undoDeltas.value, delta]
+    redoDeltas.value = []
+    currentSnapshot.value = newCurrent
+    // Cap on TOTAL reachable positions (= 1 + undoDeltas + redoDeltas).
+    // After a fresh push, redoDeltas is empty, so the cap is enforced
+    // by folding the oldest undo delta into `base`. This matches the
+    // FIFO-eviction semantics of the prior stack model (oldest position
+    // dropped when capacity is exceeded).
+    while (1 + undoDeltas.value.length > max && undoDeltas.value.length > 0) {
+      const oldest = undoDeltas.value[0] as Delta
+      base.value = applyDeltaForward(base.value, oldest)
+      undoDeltas.value = undoDeltas.value.slice(1)
+    }
+  }
 
   const unsubscribeChange = state.onFormChange((_next, meta?: WriteMeta) => {
     if (suppressNext) {
@@ -131,32 +238,47 @@ export function createHistoryModule<F extends GenericForm>(
     }
     // Persistence hydration is the floor: the transient pre-hydration
     // default (briefly held between mount and hydrate-apply) is library
-    // plumbing, not state the user ever saw. Replace both stacks with a
-    // fresh seed of the post-hydration snapshot so `undo()` can't reach
-    // back into a state the consumer never produced. Any in-flight
-    // mutations that landed in the race window between mount and
-    // hydration are also dropped — pre-hydration writes were operating
-    // against stale defaults anyway.
+    // plumbing, not state the user ever saw. Re-seed `base` from the
+    // post-hydration snapshot and wipe both delta arrays so `undo()`
+    // can't reach back into a state the consumer never produced. Any
+    // in-flight mutations that landed in the race window between mount
+    // and hydration are also dropped — pre-hydration writes were
+    // operating against stale defaults anyway.
     if (meta?.hydration === true) {
-      undoStack.value = [captureSnapshot()]
-      redoStack.value = []
+      const fresh = captureSnapshot()
+      base.value = fresh
+      currentSnapshot.value = fresh
+      undoDeltas.value = []
+      redoDeltas.value = []
       return
     }
-    pushSnapshot(captureSnapshot())
+
+    const newSnap = captureSnapshot()
+    const prevSnap = currentSnapshot.value
+
+    const formPatches: Patch[] = []
+    diffAndApply(prevSnap.form, newSnap.form, [], (p) => formPatches.push(p))
+
+    const prevBlankSet = new Set(prevSnap.blankPaths)
+    const currBlankSet = new Set(newSnap.blankPaths)
+    const blankDiff = diffBlankPaths(prevBlankSet, currBlankSet)
+
+    const delta: Delta = {
+      formPatches,
+      blankPathsAdded: blankDiff.added,
+      blankPathsRemoved: blankDiff.removed,
+      ...(errorsEqual(prevSnap.schemaErrors, newSnap.schemaErrors)
+        ? {}
+        : { schemaErrors: { before: prevSnap.schemaErrors, after: newSnap.schemaErrors } }),
+      ...(errorsEqual(prevSnap.userErrors, newSnap.userErrors)
+        ? {}
+        : { userErrors: { before: prevSnap.userErrors, after: newSnap.userErrors } }),
+    }
+
+    appendDelta(delta, newSnap)
   })
 
-  // `reset()` is a mutation like any other from the history module's
-  // point of view: `applyFormReplacement` fires `onFormChange`, which
-  // pushes the post-reset state onto the undo stack. The pre-reset
-  // state already sits one position earlier, so a subsequent `undo()`
-  // recovers the form exactly as it was before the reset. We do NOT
-  // subscribe to `onReset` and clear the stacks here — that would
-  // forfeit a real recovery path for users who hit reset by mistake.
-  // Consumers who genuinely want a clean slate can pop a confirmation
-  // dialog in their UI before calling reset(), or (future B18 work)
-  // call `form.history.clear()` explicitly after.
-
-  function restore(snap: HistorySnapshot<F>): void {
+  function restoreCurrent(snap: HistorySnapshot<F>): void {
     suppressNext = true
     // Re-seed `blankPaths` BEFORE the form replacement fires. Listeners
     // on `onFormChange` (persistence's onFormChange tap, devtools, the
@@ -176,10 +298,7 @@ export function createHistoryModule<F extends GenericForm>(
       persist: !state.persistOptIns.isEmpty(),
     })
     // Rebuild both error stores from the snapshot. Each writer clears +
-    // repopulates its own Map; the two sources stay isolated. Order is
-    // arbitrary because the writers touch separate Maps with no
-    // cross-dependency, but writing schema first keeps the per-key
-    // insertion order matching the schema-first iteration invariant.
+    // repopulates its own Map; the two sources stay isolated.
     const schemaFlat = snap.schemaErrors.flatMap(([, errs]) => errs)
     const userFlat = snap.userErrors.flatMap(([, errs]) => errs)
     state.setAllSchemaErrors(schemaFlat)
@@ -187,29 +306,30 @@ export function createHistoryModule<F extends GenericForm>(
   }
 
   function undo(): boolean {
-    if (undoStack.value.length <= 1) return false
-    const current = undoStack.value[undoStack.value.length - 1]
-    const prev = undoStack.value[undoStack.value.length - 2]
-    if (current === undefined || prev === undefined) return false
-    redoStack.value = [...redoStack.value, current]
-    undoStack.value = undoStack.value.slice(0, -1)
-    restore(prev)
+    if (undoDeltas.value.length === 0) return false
+    const d = undoDeltas.value[undoDeltas.value.length - 1] as Delta
+    const restored = applyDeltaInverse(currentSnapshot.value, d)
+    redoDeltas.value = [...redoDeltas.value, d]
+    undoDeltas.value = undoDeltas.value.slice(0, -1)
+    currentSnapshot.value = restored
+    restoreCurrent(restored)
     return true
   }
 
   function redo(): boolean {
-    if (redoStack.value.length === 0) return false
-    const next = redoStack.value[redoStack.value.length - 1]
-    if (next === undefined) return false
-    redoStack.value = redoStack.value.slice(0, -1)
-    undoStack.value = [...undoStack.value, next]
-    restore(next)
+    if (redoDeltas.value.length === 0) return false
+    const d = redoDeltas.value[redoDeltas.value.length - 1] as Delta
+    const next = applyDeltaForward(currentSnapshot.value, d)
+    undoDeltas.value = [...undoDeltas.value, d]
+    redoDeltas.value = redoDeltas.value.slice(0, -1)
+    currentSnapshot.value = next
+    restoreCurrent(next)
     return true
   }
 
-  const canUndo = computed(() => undoStack.value.length > 1)
-  const canRedo = computed(() => redoStack.value.length > 0)
-  const historySize = computed(() => undoStack.value.length + redoStack.value.length)
+  const canUndo = computed(() => undoDeltas.value.length > 0)
+  const canRedo = computed(() => redoDeltas.value.length > 0)
+  const historySize = computed(() => 1 + undoDeltas.value.length + redoDeltas.value.length)
 
   return {
     undo,
@@ -219,8 +339,8 @@ export function createHistoryModule<F extends GenericForm>(
     historySize,
     dispose() {
       unsubscribeChange()
-      undoStack.value = []
-      redoStack.value = []
+      undoDeltas.value = []
+      redoDeltas.value = []
     },
   }
 }

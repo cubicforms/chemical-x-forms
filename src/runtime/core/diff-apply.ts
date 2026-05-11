@@ -1,3 +1,4 @@
+import { deleteAtPath, setAtPath } from './path-walker'
 import type { Path, Segment } from './paths'
 
 /**
@@ -236,6 +237,79 @@ export function applyChangedKeys(target: unknown, source: unknown): boolean {
     }
   }
   return true
+}
+
+/**
+ * Apply a `Patch[]` forward to `root`, returning a fresh root with each
+ * patch's `newValue` (or `path` deletion) realised. Uses `setAtPath` /
+ * `deleteAtPath` from `path-walker.ts`, which are copy-on-write — each
+ * step rebuilds only the spine from root to the touched path, leaving
+ * sibling subtrees reference-equal with the input. The result is a
+ * structurally-shared successor suitable for use as a history snapshot.
+ *
+ * Patch semantics:
+ * - `added` — set the path to `newValue`. Intermediate containers are
+ *   created on demand (`setAtPath` handles this).
+ * - `removed` — delete the path (array splice / object key deletion).
+ * - `changed` — set the path to `newValue`. A root-level `changed`
+ *   (path: []) replaces `root` wholesale; this matches `diffAndApply`'s
+ *   "object ↔ array mismatch at root" emission.
+ *
+ * Patches are applied in their emitted order. `diffAndApply` emits
+ * array patches in index order, so a sequence like
+ * `[changed@1, removed@2]` collapses to the correct final array shape
+ * (set then splice).
+ */
+export function applyPatchesForward(root: unknown, patches: readonly Patch[]): unknown {
+  let current = root
+  for (const patch of patches) {
+    if (patch.path.length === 0) {
+      current = patch.kind === 'removed' ? undefined : patch.newValue
+      continue
+    }
+    if (patch.kind === 'removed') {
+      current = deleteAtPath(current, patch.path)
+    } else {
+      current = setAtPath(current, patch.path, patch.newValue)
+    }
+  }
+  return current
+}
+
+/**
+ * Apply a `Patch[]` in reverse, restoring `root` to its pre-patch state.
+ * Walks patches back-to-front and inverts each one's direction:
+ * - `added` (forward set) → `deleteAtPath` (remove what was added).
+ * - `removed` (forward delete) → `setAtPath` with `oldValue`.
+ * - `changed` (forward set newValue) → `setAtPath` with `oldValue`.
+ *
+ * Reverse traversal matters because `diffAndApply` emits array patches
+ * in index order. A forward sequence `[changed@1, removed@2]` applied
+ * forward yields the new array; to invert, the splice at index 2 must
+ * un-splice FIRST (extending the array back to length 3 by setting
+ * index 2 to its `oldValue`), then the `changed@1` patch restores
+ * index 1 to its `oldValue`. Going the other direction would leave a
+ * hole.
+ */
+export function applyPatchesInverse(root: unknown, patches: readonly Patch[]): unknown {
+  let current = root
+  for (let i = patches.length - 1; i >= 0; i--) {
+    const patch = patches[i] as Patch
+    if (patch.path.length === 0) {
+      if (patch.kind === 'added') {
+        current = undefined
+      } else {
+        current = patch.oldValue
+      }
+      continue
+    }
+    if (patch.kind === 'added') {
+      current = deleteAtPath(current, patch.path)
+    } else {
+      current = setAtPath(current, patch.path, patch.oldValue)
+    }
+  }
+  return current
 }
 
 /**

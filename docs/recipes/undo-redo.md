@@ -8,7 +8,7 @@ description: 'Time-travel through Attaform form edits: undo and redo across ever
 const form = useForm({
   schema,
   key: 'signup',
-  history: true, // default: 50-snapshot bounded stack
+  history: true, // default: 128-snapshot bounded stack
 })
 ```
 
@@ -22,11 +22,11 @@ useForm({ schema, key: 'signup', history: { max: 200 } })
 
 | Member             | Type            | What it does                                                            |
 | ------------------ | --------------- | ----------------------------------------------------------------------- |
-| `undo()`           | `() => boolean` | Revert to the previous snapshot. `false` at baseline (nothing to undo). |
-| `redo()`           | `() => boolean` | Replay a previously-undone snapshot. `false` when nothing's queued.     |
+| `undo()`           | `() => boolean` | Step back to the previous state. `false` at baseline (nothing to undo). |
+| `redo()`           | `() => boolean` | Replay the next state after an undo. `false` when nothing's queued.     |
 | `meta.canUndo`     | `boolean`       | Gate an "Undo" button on this.                                          |
 | `meta.canRedo`     | `boolean`       | Gate a "Redo" button on this.                                           |
-| `meta.historySize` | `number`        | Total snapshots across both stacks — useful for debug overlays.         |
+| `meta.historySize` | `number`        | Reachable positions across the chain — useful for debug overlays.       |
 
 `undo()` and `redo()` are top-level methods; the three flags live
 on the `meta` reactive bundle alongside the rest of the form-level
@@ -89,17 +89,24 @@ mutation's snapshot.
 
 ## Interactions
 
-- **`reset()`** clears both stacks and uses the reset state as the
-  new baseline. A reset is a "new session".
+- **`reset()`** is itself a mutation — the pre-reset state stays
+  one undo away. Consumers who want a hard wipe can pop a
+  confirmation dialog in their UI before calling `reset()`.
 - **Live field validation** still runs on undo / redo — the
   restored state validates like any other.
 - **Persistence** picks up each undo / redo as a normal mutation
   and writes the restored state to your chosen backend.
+- **Persistence hydration** is the floor: once the hydrated value
+  applies, the chain reseeds and `undo()` can't reach back into
+  the transient pre-hydration default.
 
 ## Memory
 
-Default `max: 50` keeps at most 50 past + 50 redo snapshots. Bump
-it for editors with long histories; drop it for memory-constrained
-targets. Each snapshot holds a reference to the form value (not a
-deep copy) plus a shallow copy of the error map — cost scales
-linearly, not quadratically.
+Default `max: 128` keeps at most 128 reachable positions across the
+undo + redo halves combined. Bump it for editors with long
+histories; drop it for memory-constrained targets. Internally
+history stores one base snapshot plus a chain of forward deltas
+(per-mutation `Patch[]` from the diff machinery), so each
+additional position costs `O(changed-leaf-count)` — typing one
+character into one field allocates a single patch, not a clone of
+the whole form.

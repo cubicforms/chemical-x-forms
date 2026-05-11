@@ -49,12 +49,16 @@ export const DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS = 0
 export const DEFAULT_PERSISTENCE_DEBOUNCE_MS = 300
 
 /**
- * Undo/redo stack ceiling (`history.max`). 50 covers a generous
- * editing session without unbounded memory growth from long-lived
- * forms. Snapshots are shallow, so the per-snapshot cost is small;
- * the cap exists more for predictability than memory pressure.
+ * Undo/redo stack ceiling (`history.max`). 128 covers an extended
+ * editing session — long-form text inputs, multi-page wizard flows,
+ * heavy iteration on a complex form — without unbounded memory
+ * growth from long-lived forms. History is stored as one base
+ * snapshot plus per-mutation forward deltas; each delta typically
+ * carries only the leaves that changed, so the per-mutation cost
+ * is `O(changed-leaf-count)` rather than `O(form-leaf-count)`.
+ * The cap exists more for predictability than memory pressure.
  */
-export const DEFAULT_HISTORY_MAX_SNAPSHOTS = 50
+export const DEFAULT_HISTORY_MAX_SNAPSHOTS = 128
 
 /**
  * Storage-key namespace for persistence. Resolved once at

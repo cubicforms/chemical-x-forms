@@ -201,7 +201,7 @@ describe('normalizeNumericOption', () => {
       expect(DEFAULT_MAX_RECURSION_DEPTH).toBe(64)
       expect(DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS).toBe(0)
       expect(DEFAULT_PERSISTENCE_DEBOUNCE_MS).toBe(300)
-      expect(DEFAULT_HISTORY_MAX_SNAPSHOTS).toBe(50)
+      expect(DEFAULT_HISTORY_MAX_SNAPSHOTS).toBe(128)
     })
   })
 })

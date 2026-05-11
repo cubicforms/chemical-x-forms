@@ -464,7 +464,7 @@ describe('DU hardening — undo across an invalid intermediate', () => {
 
     api.setValue('notify.channel', 'wat')
     await nextTick()
-    api.undo()
+    api.history.undo()
     await nextTick()
 
     // After undo, the form is whatever it was before the invalid
@@ -4566,7 +4566,7 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
     api.setValue('notify.channel', 'wat') // invalid intermediate
     await nextTick()
 
-    api.undo()
+    api.history.undo()
     await nextTick()
 
     // Pre-invalid state was email + kept@x.io. After undo, the form
@@ -4583,11 +4583,11 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
     await nextTick()
     expect(api.values.notify).toEqual({ channel: 'sms', number: '' })
 
-    api.undo()
+    api.history.undo()
     await nextTick()
     expect(api.values.notify).toEqual({ channel: 'email', address: 'first@x.io' })
 
-    api.redo()
+    api.history.redo()
     await nextTick()
     expect(api.values.notify).toEqual({ channel: 'sms', number: '' })
   })
@@ -4600,14 +4600,14 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
     await nextTick()
     api.setValue('name', 'two')
     await nextTick()
-    api.undo()
+    api.history.undo()
     await nextTick()
-    expect(api.meta.canRedo).toBe(true)
+    expect(api.history.canRedo).toBe(true)
 
     api.setValue('name', 'three')
     await nextTick()
-    expect(api.meta.canRedo).toBe(false)
-    const stillCanRedo = api.redo()
+    expect(api.history.canRedo).toBe(false)
+    const stillCanRedo = api.history.redo()
     expect(stillCanRedo).toBe(false)
     expect(api.values.name).toBe('three')
   })
@@ -4615,8 +4615,8 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
   it('undo/redo at history extremes returns false cleanly', async () => {
     const { app, api } = mountWithHistory()
     apps.push(app)
-    expect(api.undo()).toBe(false) // empty undo stack
-    expect(api.redo()).toBe(false) // empty redo stack
+    expect(api.history.undo()).toBe(false) // empty undo stack
+    expect(api.history.redo()).toBe(false) // empty redo stack
   })
 
   it('history snapshots do NOT capture variant memory (memory is a side channel)', async () => {
@@ -4633,7 +4633,7 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
 
     // Undo the switch. Form value goes back to the pre-switch state
     // (email + 'pre-undo@x.io'). Memory is untouched per the contract.
-    api.undo()
+    api.history.undo()
     await nextTick()
     expect(api.values.notify).toEqual({ channel: 'email', address: 'pre-undo@x.io' })
 
@@ -4659,12 +4659,12 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
     }
 
     // historySize bounded at the capacity (50 reachable positions).
-    expect(api.meta.historySize).toBeLessThanOrEqual(50)
+    expect(api.history.size).toBeLessThanOrEqual(50)
 
     // Undo as far as we can. The earliest state the form can restore
     // is bounded by the capacity, NOT the original empty default.
-    while (api.meta.canUndo) {
-      api.undo()
+    while (api.history.canUndo) {
+      api.history.undo()
       await nextTick()
     }
     // The first 10 names were evicted; we can't reach `n-0` or even
@@ -4692,7 +4692,7 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
     api.setValue('name', 'a')
     api.setValue('name', 'b')
     await nextTick()
-    expect(api.meta.canUndo).toBe(true)
+    expect(api.history.canUndo).toBe(true)
     expect(api.values.name).toBe('b')
 
     api.reset()
@@ -4701,15 +4701,15 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
     // After reset: form is back at the default (empty string), and the
     // pre-reset state is one undo step away.
     expect(api.values.name).toBe('')
-    expect(api.meta.canUndo).toBe(true)
-    expect(api.meta.canRedo).toBe(false)
+    expect(api.history.canUndo).toBe(true)
+    expect(api.history.canRedo).toBe(false)
 
-    api.undo()
+    api.history.undo()
     await nextTick()
 
     // The pre-reset state ('b') is recovered.
     expect(api.values.name).toBe('b')
-    expect(api.meta.canRedo).toBe(true)
+    expect(api.history.canRedo).toBe(true)
   })
 
   it('handleSubmit operates on the post-undo form value (not the pre-undo)', async () => {
@@ -4723,7 +4723,7 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
     api.setValue('name', 'Beth') // bumps history
     await nextTick()
 
-    api.undo() // back to 'Ada'
+    api.history.undo() // back to 'Ada'
     await nextTick()
 
     let submitted: Record<string, unknown> | null = null
@@ -4779,7 +4779,7 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
     await nextTick()
     expect(api.values.events.length).toBe(1)
 
-    api.undo()
+    api.history.undo()
     await nextTick()
 
     // After undo, the array is restored. Both elements should be in
@@ -4799,7 +4799,7 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
     await nextTick()
 
     const pending = api.validateAsync()
-    api.undo() // back to email/email-default; the in-flight validation is for the sms state
+    api.history.undo() // back to email/email-default; the in-flight validation is for the sms state
     await pending
     await nextTick()
 
@@ -4829,11 +4829,11 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
     api.setValue('name', 'Ada')
     await nextTick()
 
-    expect(api.meta.canUndo).toBe(false)
-    expect(api.meta.canRedo).toBe(false)
-    expect(api.meta.historySize).toBe(0)
-    expect(api.undo()).toBe(false)
-    expect(api.redo()).toBe(false)
+    expect(api.history.canUndo).toBe(false)
+    expect(api.history.canRedo).toBe(false)
+    expect(api.history.size).toBe(0)
+    expect(api.history.undo()).toBe(false)
+    expect(api.history.redo()).toBe(false)
   })
 })
 
@@ -4881,10 +4881,10 @@ describe('chaos — persistence + history together', () => {
     // rather than relying on a single nextTick.
     await waitUntil(() => (api.values.name === 'persisted' ? true : null))
     expect(api.values.name).toBe('persisted')
-    expect(api.meta.canUndo).toBe(false)
+    expect(api.history.canUndo).toBe(false)
     // Calling undo on an empty stack must NOT silently revert to the
     // pre-hydration default.
-    api.undo()
+    api.history.undo()
     await nextTick()
     expect(api.values.name).toBe('persisted')
   })

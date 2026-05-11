@@ -55,9 +55,9 @@ describe('history — default (history: true)', () => {
   it('canUndo starts false and flips true after first mutation', () => {
     const { app, api } = mountForm(true)
     apps.push(app)
-    expect(api.meta.canUndo).toBe(false)
+    expect(api.history.canUndo).toBe(false)
     api.setValue('email', 'a@example.com')
-    expect(api.meta.canUndo).toBe(true)
+    expect(api.history.canUndo).toBe(true)
   })
 
   it('undo restores the prior form value', () => {
@@ -66,12 +66,12 @@ describe('history — default (history: true)', () => {
     api.setValue('email', 'first@example.com')
     api.setValue('email', 'second@example.com')
     expect(api.values.email).toBe('second@example.com')
-    expect(api.undo()).toBe(true)
+    expect(api.history.undo()).toBe(true)
     expect(api.values.email).toBe('first@example.com')
-    expect(api.undo()).toBe(true)
+    expect(api.history.undo()).toBe(true)
     expect(api.values.email).toBe('')
     // One more undo bottoms out at the initial snapshot.
-    expect(api.undo()).toBe(false)
+    expect(api.history.undo()).toBe(false)
     expect(api.values.email).toBe('')
   })
 
@@ -80,9 +80,9 @@ describe('history — default (history: true)', () => {
     apps.push(app)
     api.setValue('email', 'one@example.com')
     api.setValue('email', 'two@example.com')
-    api.undo()
-    expect(api.meta.canRedo).toBe(true)
-    expect(api.redo()).toBe(true)
+    api.history.undo()
+    expect(api.history.canRedo).toBe(true)
+    expect(api.history.redo()).toBe(true)
     expect(api.values.email).toBe('two@example.com')
   })
 
@@ -90,11 +90,11 @@ describe('history — default (history: true)', () => {
     const { app, api } = mountForm(true)
     apps.push(app)
     api.setValue('email', 'one@example.com')
-    api.undo()
-    expect(api.meta.canRedo).toBe(true)
+    api.history.undo()
+    expect(api.history.canRedo).toBe(true)
     api.setValue('email', 'two@example.com')
-    expect(api.meta.canRedo).toBe(false)
-    expect(api.redo()).toBe(false)
+    expect(api.history.canRedo).toBe(false)
+    expect(api.history.redo()).toBe(false)
   })
 
   it('reset() is itself undoable — the pre-reset state stays recoverable', () => {
@@ -102,14 +102,14 @@ describe('history — default (history: true)', () => {
     apps.push(app)
     api.setValue('email', 'a@example.com')
     api.setValue('email', 'b@example.com')
-    expect(api.meta.canUndo).toBe(true)
+    expect(api.history.canUndo).toBe(true)
     api.reset()
     // reset() is captured as a normal mutation. The pre-reset value
     // sits one undo away — consumers who hit reset by accident recover
     // with a single undo() instead of losing their input.
-    expect(api.meta.canUndo).toBe(true)
-    expect(api.meta.canRedo).toBe(false)
-    api.undo()
+    expect(api.history.canUndo).toBe(true)
+    expect(api.history.canRedo).toBe(false)
+    api.history.undo()
     expect(api.values.email).toBe('b@example.com')
   })
 
@@ -132,7 +132,7 @@ describe('history — default (history: true)', () => {
     expect(api.errors.email).toBeUndefined()
     // Undo once — snapshot taken at the 'b' mutation carried the
     // errors that were set just before it.
-    api.undo()
+    api.history.undo()
     expect(api.values.email).toBe('b')
     expect(api.errors.email?.[0]?.message).toBe('bad')
   })
@@ -154,7 +154,7 @@ describe('history — bounded stack', () => {
     // Undo until we can't anymore. The oldest retained snapshot is
     // `value-2` (value-0 and initial were trimmed).
     let depth = 0
-    while (api.undo()) depth++
+    while (api.history.undo()) depth++
     // Stack had 3 entries; undo from the current settles us on the
     // oldest-retained — we can undo (max - 1) times.
     expect(depth).toBe(2)
@@ -166,10 +166,10 @@ describe('history — bounded stack', () => {
     apps.push(app)
     api.setValue('email', 'a')
     api.setValue('email', 'b')
-    expect(api.meta.historySize).toBe(3) // initial + 2 mutations
-    api.undo()
+    expect(api.history.size).toBe(3) // initial + 2 mutations
+    api.history.undo()
     // One moved from undo stack to redo stack — total is still 3.
-    expect(api.meta.historySize).toBe(3)
+    expect(api.history.size).toBe(3)
   })
 })
 
@@ -227,7 +227,7 @@ describe('history — blankPaths preservation', () => {
     expect(api.blankPaths.value.has(countKey)).toBe(false)
 
     // 4. Undo — the snapshot we land on captured storage = 0 with blankPaths = {count}.
-    expect(api.undo()).toBe(true)
+    expect(api.history.undo()).toBe(true)
     expect(api.values.count).toBe(0)
     // The bug: blankPaths was reset along the redo path (step 3 above)
     // and applyFormReplacement does not touch the set, so the restored
@@ -245,11 +245,11 @@ describe('history — blankPaths preservation', () => {
     api.setValue('count', unset)
     api.setValue('count', 12)
 
-    api.undo()
+    api.history.undo()
     expect(api.values.count).toBe(0)
     expect(api.blankPaths.value.has(countKey)).toBe(true)
 
-    expect(api.redo()).toBe(true)
+    expect(api.history.redo()).toBe(true)
     expect(api.values.count).toBe(12)
     expect(api.blankPaths.value.has(countKey)).toBe(false)
   })
@@ -332,18 +332,66 @@ describe('history — delta round-trip', () => {
     // Walk back. Each undo() must land on the immediately-prior
     // fingerprint — not eventually-correct, but step-correct.
     for (let i = fingerprints.length - 2; i >= 0; i--) {
-      expect(api.undo()).toBe(true)
+      expect(api.history.undo()).toBe(true)
       expect(api.values()).toEqual(fingerprints[i])
     }
-    expect(api.undo()).toBe(false)
+    expect(api.history.undo()).toBe(false)
     expect(api.values()).toEqual(fingerprints[0])
 
     // Walk forward again — redo must reproduce every fingerprint.
     for (let i = 1; i < fingerprints.length; i++) {
-      expect(api.redo()).toBe(true)
+      expect(api.history.redo()).toBe(true)
       expect(api.values()).toEqual(fingerprints[i])
     }
-    expect(api.redo()).toBe(false)
+    expect(api.history.redo()).toBe(false)
+  })
+})
+
+describe('history — clear()', () => {
+  const apps: App[] = []
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+  })
+
+  it('wipes both branches and reseeds — current form state is preserved', () => {
+    const { app, api } = mountForm(true)
+    apps.push(app)
+
+    // Build up a chain: 2 mutations + 1 undo so both branches are populated.
+    api.setValue('email', 'a@example.com')
+    api.setValue('email', 'b@example.com')
+    expect(api.history.canUndo).toBe(true)
+    expect(api.history.size).toBe(3) // initial + 2 mutations
+    api.history.undo()
+    expect(api.history.canRedo).toBe(true) // redo branch is populated
+
+    // Clear.
+    api.history.clear()
+    // Current form value is untouched — clear() is history-only.
+    expect(api.values.email).toBe('a@example.com')
+    // Both branches gone; only the current position is reachable.
+    expect(api.history.canUndo).toBe(false)
+    expect(api.history.canRedo).toBe(false)
+    expect(api.history.size).toBe(1)
+
+    // History keeps working post-clear — clear() didn't disable the
+    // feature, just wiped the chain. Subsequent mutations record
+    // normally, anchored to the new baseline.
+    api.setValue('email', 'c@example.com')
+    expect(api.history.canUndo).toBe(true)
+    expect(api.history.size).toBe(2)
+    api.history.undo()
+    expect(api.values.email).toBe('a@example.com') // back to the clear-time baseline, not the original empty default
+  })
+
+  it('clear() is a no-op when history is not configured', () => {
+    const { app, api } = mountForm(undefined)
+    apps.push(app)
+    api.setValue('email', 'mutated')
+    expect(() => api.history.clear()).not.toThrow()
+    // State is otherwise unchanged.
+    expect(api.values.email).toBe('mutated')
+    expect(api.history.size).toBe(0)
   })
 })
 
@@ -357,11 +405,11 @@ describe('history — disabled (no config)', () => {
     const { app, api } = mountForm(undefined)
     apps.push(app)
     api.setValue('email', 'mutated')
-    expect(api.undo()).toBe(false)
-    expect(api.redo()).toBe(false)
-    expect(api.meta.canUndo).toBe(false)
-    expect(api.meta.canRedo).toBe(false)
-    expect(api.meta.historySize).toBe(0)
+    expect(api.history.undo()).toBe(false)
+    expect(api.history.redo()).toBe(false)
+    expect(api.history.canUndo).toBe(false)
+    expect(api.history.canRedo).toBe(false)
+    expect(api.history.size).toBe(0)
     expect(api.values.email).toBe('mutated')
   })
 })

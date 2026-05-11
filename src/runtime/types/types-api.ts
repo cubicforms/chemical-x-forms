@@ -828,13 +828,63 @@ export type WriteMeta = {
  * - `true` — enable with the default position cap (`max: 128`).
  * - `{ max }` — enable and tune the bounded history size.
  *
- * When enabled, every mutation records a forward delta; `undo()` /
- * `redo()` walk the chain. `reset()` is itself a mutation — the
- * pre-reset state stays one undo away. Persistence hydration is the
- * floor: after hydrate applies, the chain reseeds with the hydrated
- * value and `undo()` cannot reach the transient pre-hydration default.
+ * When enabled, every mutation records a forward delta; `form.history.undo()`
+ * / `form.history.redo()` walk the chain. `reset()` is itself a mutation —
+ * the pre-reset state stays one undo away. Persistence hydration is the
+ * floor: after hydrate applies, the chain reseeds with the hydrated value
+ * and `undo()` cannot reach the transient pre-hydration default.
  */
 export type HistoryConfig = true | { max?: number }
+
+/**
+ * Consolidated undo/redo namespace at `form.history`. All history-related
+ * surface lives here — methods and reactive flags both — so consumers
+ * have one canonical address to read from.
+ *
+ * Always present on `useForm()` return whether or not `history` was
+ * configured. When history isn't enabled, methods are no-ops returning
+ * `false` (or `void`), `canUndo` / `canRedo` read `false`, and `size`
+ * reads `0`. Consumer templates don't need conditional logic.
+ *
+ * Reactivity: built as `readonly(reactive({...}))`, so `canUndo` / `canRedo`
+ * / `size` auto-unwrap on access (plain `boolean` / `number`, not refs).
+ * Method fields (`undo`, `redo`, `clear`) pass through as plain functions.
+ */
+export type FormHistoryNamespace = {
+  /**
+   * Step back one position in the history chain. Returns `true` when a
+   * step was taken, `false` when already at the oldest reachable
+   * position (or when history isn't configured).
+   */
+  readonly undo: () => boolean
+  /**
+   * Replay the next step forward in the chain. Returns `true` on
+   * success, `false` when there's nothing queued (or history isn't
+   * configured). The forward branch is dropped as soon as a new
+   * mutation lands.
+   */
+  readonly redo: () => boolean
+  /**
+   * Wipe the undo and redo branches; reseed the chain with the current
+   * form state as the new baseline. The form value, errors, and
+   * blankPaths all stay where they are — only the past/future history
+   * resets. After `clear()`: `canUndo === false`, `canRedo === false`,
+   * `size === 1`. No-op when history isn't configured.
+   */
+  readonly clear: () => void
+  /** `true` when there is at least one undo step available. */
+  readonly canUndo: boolean
+  /** `true` when `undo()` has been called and a `redo()` would replay. */
+  readonly canRedo: boolean
+  /**
+   * Total reachable positions in the history chain (the current
+   * position plus everything reachable via `undo()` / `redo()`).
+   * Useful for debug overlays; UI driving undo/redo buttons should
+   * gate on `canUndo` / `canRedo` instead. Reads `0` when history
+   * isn't configured.
+   */
+  readonly size: number
+}
 
 /**
  * Full options bag for `useForm({ persist })`. Use this when you need
@@ -1068,11 +1118,11 @@ export type UseFormConfiguration<
    * Opt-in undo/redo. Off by default. `true` enables with a 128-position
    * cap; `{ max: N }` tunes the cap.
    *
-   * Every mutation records a forward delta. `undo()` walks one step
-   * back; `redo()` walks one step forward. `reset()` is itself a
-   * mutation, so the pre-reset state stays one undo away. Reactive
-   * flags `state.canUndo` / `state.canRedo` / `state.historySize`
-   * reflect the current chain.
+   * Every mutation records a forward delta. `form.history.undo()` walks
+   * one step back; `form.history.redo()` walks one step forward.
+   * `reset()` is itself a mutation, so the pre-reset state stays one
+   * undo away. The consolidated `form.history` namespace also exposes
+   * `clear()`, `canUndo`, `canRedo`, and `size`.
    */
   history?: HistoryConfig
 
@@ -2691,19 +2741,6 @@ export type FormMeta<F = unknown> = FieldState<F> & {
    */
   readonly submitError: unknown
 
-  /** `true` when there is at least one undo step available. Always present (false when history is disabled). */
-  readonly canUndo: boolean
-
-  /** `true` when `undo()` has been called and a `redo()` would replay. Always present (false when history is disabled). */
-  readonly canRedo: boolean
-
-  /**
-   * Total snapshots across the undo and redo stacks. Useful for
-   * debug overlays; UI driving undo/redo buttons should gate on
-   * `canUndo` / `canRedo` instead.
-   */
-  readonly historySize: number
-
   /**
    * Per-`useForm()`-call identity. Stable for the lifetime of one
    * `useForm()` call; new on every fresh mount. Orthogonal to
@@ -3157,12 +3194,13 @@ export type UseFormReturnType<
 
   /**
    * Form-level reactive flags, counters, and aggregates (`dirty`,
-   * `valid`, `submitting`, `submitCount`, `canUndo`,
-   * `historySize`, and the flat `errors` array). See `FormMeta` for
-   * the full shape. Read leaves directly with no `.value`.
+   * `valid`, `submitting`, `submitCount`, and the flat `errors`
+   * array). See `FormMeta` for the full shape. Read leaves directly
+   * with no `.value`.
    *
    * For per-field state (touched, focused, blurred, errors at one
-   * path), use `form.fields.<path>` instead.
+   * path), use `form.fields.<path>` instead. Undo/redo state lives at
+   * `form.history` (see `FormHistoryNamespace`).
    */
   meta: FormMeta<Form>
 
@@ -3232,18 +3270,12 @@ export type UseFormReturnType<
   // --- Undo / redo ---
 
   /**
-   * Revert the form to the previous snapshot. Returns `true` when a
-   * snapshot was restored, `false` when there's nothing to undo.
-   * No-op (returns `false`) when `useForm({ history })` wasn't configured.
+   * Consolidated undo/redo namespace — `form.history.{undo, redo,
+   * clear, canUndo, canRedo, size}`. Always present; inert when
+   * `useForm({ history })` wasn't configured. See `FormHistoryNamespace`
+   * for field-by-field semantics.
    */
-  undo: () => boolean
-
-  /**
-   * Replay a previously-undone snapshot. Returns `true` on success,
-   * `false` when the redo stack is empty. The redo stack clears as
-   * soon as a new mutation lands.
-   */
-  redo: () => boolean
+  history: FormHistoryNamespace
 
   // --- Focus / scroll to first error ---
 

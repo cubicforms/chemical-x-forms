@@ -159,9 +159,6 @@ templates and scripts — no `.value`.
 | `meta.submitting`  | `boolean` | `true` while the submit handler is running.                                                                                                                                                |
 | `meta.submitCount` | `number`  | Incremented once per call, regardless of outcome.                                                                                                                                          |
 | `meta.submitError` | `unknown` | Whatever the callback threw; `null` on success. Cleared on every new submission.                                                                                                           |
-| `meta.canUndo`     | `boolean` | Gate an "Undo" button on this. Always present; `false` when `history` is off.                                                                                                              |
-| `meta.canRedo`     | `boolean` | Gate a "Redo" button on this. Always present; `false` when `history` is off.                                                                                                               |
-| `meta.historySize` | `number`  | Total snapshots across both stacks. `0` when `history` is off.                                                                                                                             |
 | `meta.instanceId`  | `string`  | Per-`useForm()`-call identity. Stable for one mount, new on remount; orthogonal to `form.key`. Use for DevTools, telemetry, E2E selectors (`data-form-id`), and Vue `:key`. Opaque format. |
 
 `meta` is read-only — assignments are rejected at runtime with a
@@ -204,15 +201,21 @@ opt-in model these APIs sit on top of.
 
 ## Undo / redo
 
-| Member   | Type            | What it does                         |
-| -------- | --------------- | ------------------------------------ |
-| `undo()` | `() => boolean` | Revert to the previous snapshot.     |
-| `redo()` | `() => boolean` | Replay a previously-undone snapshot. |
+Everything undo/redo lives under `form.history` — methods and
+reactive flags both, on one namespace.
 
-`undo()` and `redo()` are top-level methods. The matching flags
-(`meta.canUndo`, `meta.canRedo`, `meta.historySize`) live on the
-`meta` bundle above. Inert stubs when `history` isn't
-configured — consistent API shape, zero overhead.
+| Member                 | Type            | What it does                                                          |
+| ---------------------- | --------------- | --------------------------------------------------------------------- |
+| `form.history.undo()`  | `() => boolean` | Step back to the previous state. `false` at baseline.                 |
+| `form.history.redo()`  | `() => boolean` | Replay the next state after an undo. `false` when nothing's queued.   |
+| `form.history.clear()` | `() => void`    | Wipe the undo/redo branches; reseed the chain with the current state. |
+| `form.history.canUndo` | `boolean`       | Gate an "Undo" button on this.                                        |
+| `form.history.canRedo` | `boolean`       | Gate a "Redo" button on this.                                         |
+| `form.history.size`    | `number`        | Reachable positions across the chain.                                 |
+
+Always present, whether or not `history` was configured. When off,
+methods are inert no-ops and flags read `false` / `0`. See the
+[undo / redo recipe](/docs/recipes/undo-redo) for the full surface.
 
 ## Field arrays (typed)
 

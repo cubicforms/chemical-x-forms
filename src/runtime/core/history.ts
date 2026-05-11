@@ -70,6 +70,15 @@ export type HistorySnapshot<F> = {
 export type HistoryModule = {
   undo(): boolean
   redo(): boolean
+  /**
+   * Wipe both delta arrays and reseed `base` from the current state.
+   * The form value, errors, and blankPaths all stay where they are —
+   * only the undo/redo chain resets. After `clear()`: `canUndo = false`,
+   * `canRedo = false`, `historySize = 1`. Semantically equivalent to
+   * the internal hydration-floor behaviour, exposed for consumers who
+   * want a hard wipe after a "save successful" milestone or similar.
+   */
+  clear(): void
   canUndo: Readonly<ComputedRef<boolean>>
   canRedo: Readonly<ComputedRef<boolean>>
   historySize: Readonly<ComputedRef<number>>
@@ -245,11 +254,7 @@ export function createHistoryModule<F extends GenericForm>(
     // and hydration are also dropped — pre-hydration writes were
     // operating against stale defaults anyway.
     if (meta?.hydration === true) {
-      const fresh = captureSnapshot()
-      base.value = fresh
-      currentSnapshot.value = fresh
-      undoDeltas.value = []
-      redoDeltas.value = []
+      clear()
       return
     }
 
@@ -327,6 +332,14 @@ export function createHistoryModule<F extends GenericForm>(
     return true
   }
 
+  function clear(): void {
+    const fresh = captureSnapshot()
+    base.value = fresh
+    currentSnapshot.value = fresh
+    undoDeltas.value = []
+    redoDeltas.value = []
+  }
+
   const canUndo = computed(() => undoDeltas.value.length > 0)
   const canRedo = computed(() => redoDeltas.value.length > 0)
   const historySize = computed(() => 1 + undoDeltas.value.length + redoDeltas.value.length)
@@ -334,6 +347,7 @@ export function createHistoryModule<F extends GenericForm>(
   return {
     undo,
     redo,
+    clear,
     canUndo,
     canRedo,
     historySize,

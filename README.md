@@ -105,10 +105,11 @@ It catches stale `form.values.contacts[N]` reads at compile time. Nuxt 3 / 4 set
 - **`form.values`** — current values. `form.values.username`, `form.values.address.city`.
 - **`form.errors`** — per-field errors, keyed by dotted path. `form.errors.username?.[0]?.message`.
 - **`form.fields`** — per-field flags (`dirty`, `touched`, `errors`, `blank`, …). `form.fields.username.dirty`.
-- **`form.meta`** — form-level flags + counters (`isSubmitting`, `isValid`, `canUndo`, `submitCount`, the flat `meta.errors` aggregate, the per-mount `instanceId`, …).
+- **`form.meta`** — form-level flags + counters (`isSubmitting`, `isValid`, `submitCount`, the flat `meta.errors` aggregate, the per-mount `instanceId`, …).
+- **`form.history`** — consolidated undo/redo namespace (`undo()`, `redo()`, `clear()`, `canUndo`, `canRedo`, `size`).
 - **`form.register(path)`** — typed two-way binding; pair with `v-register` on `<input>` / `<textarea>` / `<select>`.
 - **`form.handleSubmit(onValid, onInvalid?)`** — runs validation, dispatches. The valid callback receives the strict zod-inferred type.
-- **`form.setValue(path, value)`**, **`form.reset()`**, field-array helpers, undo / redo, persistence — see the [API reference](./docs/api.md).
+- **`form.setValue(path, value)`**, **`form.reset()`**, field-array helpers, persistence — see the [API reference](./docs/api.md).
 
 ## Features
 

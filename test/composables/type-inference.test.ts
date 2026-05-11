@@ -561,9 +561,9 @@ describe('useForm type inference — form-level state bundle', () => {
     expectTypeOf(form.meta.validating).toEqualTypeOf<boolean>()
     expectTypeOf(form.meta.submitCount).toEqualTypeOf<number>()
     expectTypeOf(form.meta.submitError).toEqualTypeOf<unknown>()
-    expectTypeOf(form.meta.canUndo).toEqualTypeOf<boolean>()
-    expectTypeOf(form.meta.canRedo).toEqualTypeOf<boolean>()
-    expectTypeOf(form.meta.historySize).toEqualTypeOf<number>()
+    expectTypeOf(form.history.canUndo).toEqualTypeOf<boolean>()
+    expectTypeOf(form.history.canRedo).toEqualTypeOf<boolean>()
+    expectTypeOf(form.history.size).toEqualTypeOf<number>()
   })
 
   it('rejects writes (state is readonly at the type level)', () => {

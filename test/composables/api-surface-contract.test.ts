@@ -10,32 +10,31 @@ import type { UseFormReturnType } from '../../src/runtime/types/types-api'
  * Pins the public surface of `useForm()`'s return value against
  * accidental drift. Two failure modes this guards against:
  *
- *   1. A property silently moves between `api` and `api.meta` (or
- *      disappears entirely) — types vs. runtime drift, the bug class
- *      that surfaced during the persistence-history probe round when
- *      `api.canUndo` returned `undefined` because the property lives
- *      at `api.meta.canUndo`.
+ *   1. A property silently moves between `api`, `api.meta`, and
+ *      `api.history` — types vs. runtime drift.
  *   2. A method is introduced/removed/renamed without the surface
  *      contract being updated.
  *
- * The asymmetry this file documents is intentional but unintuitive:
+ * The architecture:
  *
  *   ┌─ Lives directly on `api` ───────────────────────────────┐
  *   │  setValue, handleSubmit, validateAsync, process, reset, │
- *   │  resetField, undo, redo, register, fields, errors,      │
- *   │  values, key, meta, …                                   │
+ *   │  resetField, register, fields, errors, values, key,     │
+ *   │  meta, history, …                                       │
  *   └─────────────────────────────────────────────────────────┘
  *
  *   ┌─ Lives on `api.meta` ───────────────────────────────────┐
- *   │  canUndo, canRedo, historySize, dirty, valid,           │
- *   │  submitting, submitCount, submitError, showErrors,      │
- *   │  firstError, …                                          │
+ *   │  dirty, valid, submitting, submitCount, submitError,    │
+ *   │  showErrors, firstError, …                              │
  *   └─────────────────────────────────────────────────────────┘
  *
- * Actions sit at the top level; status flags sit on `meta`. If a
- * future refactor consolidates the surface (e.g. `form.history.{undo,
- * redo, canUndo, canRedo, size}` as a cohesive namespace), this test
- * breaks loudly and intentionally — update it as part of the refactor.
+ *   ┌─ Lives on `api.history` ────────────────────────────────┐
+ *   │  undo(), redo(), clear(), canUndo, canRedo, size        │
+ *   └─────────────────────────────────────────────────────────┘
+ *
+ * Form-level actions and field accessors sit at the top level;
+ * form-level status flags sit on `meta`; undo/redo lives entirely
+ * on `history`.
  *
  * Absence checks use type-level assertions (`@ts-expect-error`) rather
  * than runtime `=== undefined`, because the FieldState proxy returns a
@@ -69,46 +68,53 @@ function mountForm(): { app: App; api: Api } {
   return { app, api: handle.api as Api }
 }
 
-describe('API surface contract — actions on `api`, status on `api.meta`', () => {
-  it('history actions live directly on `api`', () => {
+describe('API surface contract — actions on `api`, status on `api.meta`, history on `api.history`', () => {
+  it('undo/redo + flags live on `api.history` — both methods and reactive flags', () => {
     const { api } = mountForm()
 
-    expect(typeof api.undo).toBe('function')
-    expect(typeof api.redo).toBe('function')
+    // Runtime — methods are functions, flags are unwrapped primitives
+    // (the `readonly(reactive({...}))` bundle auto-unwraps ComputedRef
+    // fields on access).
+    expect(typeof api.history.undo).toBe('function')
+    expect(typeof api.history.redo).toBe('function')
+    expect(typeof api.history.clear).toBe('function')
+    expect(typeof api.history.canUndo).toBe('boolean')
+    expect(typeof api.history.canRedo).toBe('boolean')
+    expect(typeof api.history.size).toBe('number')
 
-    // Type-level pins: undo / redo are `() => boolean`. If a refactor
-    // moves them under a namespace (e.g. `api.history.undo`), these
-    // expectTypeOf calls fail and force a deliberate update of this
-    // contract test.
-    expectTypeOf(api.undo).toEqualTypeOf<() => boolean>()
-    expectTypeOf(api.redo).toEqualTypeOf<() => boolean>()
+    // Type-level pin — same shape.
+    expectTypeOf(api.history.undo).toEqualTypeOf<() => boolean>()
+    expectTypeOf(api.history.redo).toEqualTypeOf<() => boolean>()
+    expectTypeOf(api.history.clear).toEqualTypeOf<() => void>()
+    expectTypeOf(api.history.canUndo).toEqualTypeOf<boolean>()
+    expectTypeOf(api.history.canRedo).toEqualTypeOf<boolean>()
+    expectTypeOf(api.history.size).toEqualTypeOf<number>()
   })
 
-  it('history STATUS lives on `api.meta`, NOT directly on `api`', () => {
+  it('history surface does NOT leak onto `api` or `api.meta` (consolidation is exclusive)', () => {
     const { api } = mountForm()
 
-    // Where the props actually live — runtime check.
-    expect(typeof api.meta.canUndo).toBe('boolean')
-    expect(typeof api.meta.canRedo).toBe('boolean')
-    expect(typeof api.meta.historySize).toBe('number')
-
-    // Type-level pin.
-    expectTypeOf(api.meta.canUndo).toEqualTypeOf<boolean>()
-    expectTypeOf(api.meta.canRedo).toEqualTypeOf<boolean>()
-    expectTypeOf(api.meta.historySize).toEqualTypeOf<number>()
-
-    // Type-level absence. If a future refactor promotes these to
-    // top-level, the @ts-expect-error stops being needed and the
-    // `Unused @ts-expect-error directive` lint trips. Either way,
-    // the maintainer is forced to consciously update this contract.
-    // The `void` prefix appeases the no-unused-expressions lint
-    // without changing the type-check semantics.
-    // @ts-expect-error api.canUndo must NOT exist; use api.meta.canUndo
+    // The pre-consolidation addresses must not resurrect. If a future
+    // change accidentally restores them (e.g. by re-adding `undo` to
+    // `UseFormReturnType`), the @ts-expect-error stops being needed and
+    // the `Unused @ts-expect-error directive` lint trips, forcing the
+    // contract update.
+    // @ts-expect-error api.undo lives at api.history.undo now
+    void api.undo
+    // @ts-expect-error api.redo lives at api.history.redo now
+    void api.redo
+    // @ts-expect-error api.canUndo lives at api.history.canUndo now
     void api.canUndo
-    // @ts-expect-error api.canRedo must NOT exist; use api.meta.canRedo
+    // @ts-expect-error api.canRedo lives at api.history.canRedo now
     void api.canRedo
-    // @ts-expect-error api.historySize must NOT exist; use api.meta.historySize
+    // @ts-expect-error api.historySize lives at api.history.size now
     void api.historySize
+    // @ts-expect-error api.meta.canUndo lives at api.history.canUndo now
+    void api.meta.canUndo
+    // @ts-expect-error api.meta.canRedo lives at api.history.canRedo now
+    void api.meta.canRedo
+    // @ts-expect-error api.meta.historySize lives at api.history.size now
+    void api.meta.historySize
   })
 
   it('mutating actions live directly on `api`', () => {
@@ -125,7 +131,7 @@ describe('API surface contract — actions on `api`, status on `api.meta`', () =
   it('form-level reactive flags live on `api.meta` (not `api`)', () => {
     const { api } = mountForm()
 
-    // Status flags. Same architectural pattern as canUndo/canRedo.
+    // Status flags — the canonical `meta` surface.
     expect(typeof api.meta.dirty).toBe('boolean')
     expect(typeof api.meta.valid).toBe('boolean')
     expect(typeof api.meta.submitting).toBe('boolean')
@@ -201,16 +207,6 @@ describe('API surface contract — actions on `api`, status on `api.meta`', () =
     // type-level absence above is the canonical contract; runtime
     // probing here would fail-positive.
   })
-
-  it('there is no `api.history` namespace today (pinned for the consolidation question)', () => {
-    const { api } = mountForm()
-
-    // Type-level absence. If we consolidate to `form.history.{undo,
-    // redo, canUndo, canRedo, size, clear}`, this @ts-expect-error
-    // becomes unused and trips the lint, forcing the contract update.
-    // @ts-expect-error consolidated `api.history` namespace does not exist today
-    void api.history
-  })
 })
 
 /**
@@ -226,29 +222,6 @@ describe('API surface contract — actions on `api`, status on `api.meta`', () =
  * semantics live in the implementing PR's tests; this file's job is
  * to keep the commitment visible.
  */
-describe('FUTURE — form.history namespace (not yet implemented)', () => {
-  it('form.history exposes undo/redo + canUndo/canRedo/size + clear', () => {
-    const { api } = mountForm()
-    const history = (api as unknown as { history?: unknown }).history as
-      | {
-          undo: () => boolean
-          redo: () => boolean
-          canUndo: boolean
-          canRedo: boolean
-          size: number
-          clear: () => void
-        }
-      | undefined
-
-    expect(history).toBeDefined()
-    expect(typeof history?.undo).toBe('function')
-    expect(typeof history?.redo).toBe('function')
-    expect(typeof history?.canUndo).toBe('boolean')
-    expect(typeof history?.canRedo).toBe('boolean')
-    expect(typeof history?.size).toBe('number')
-    expect(typeof history?.clear).toBe('function')
-  })
-})
 
 /**
  * FUTURE — multi-tab persistence sync (not yet implemented).

@@ -1328,7 +1328,7 @@ describe('variant memory — history (undo/redo) interaction', () => {
     // Memory now holds email = { address: 'h1@example.com' }.
     // Undo restores form value to the pre-switch state. Memory is
     // not on the history stack — it stays as it is.
-    api.undo()
+    api.history.undo()
     await nextTick()
     expect(api.values.notify).toEqual({ channel: 'email', address: 'h1@example.com' })
 

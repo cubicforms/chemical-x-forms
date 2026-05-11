@@ -2,6 +2,7 @@ import { computed, reactive, readonly, type Ref } from 'vue'
 import type {
   CoercionRegistry,
   FormErrorsSurface,
+  FormHistoryNamespace,
   FormMeta,
   OnInvalidSubmitPolicy,
   ReactiveValidationStatus,
@@ -51,10 +52,10 @@ export type BuildFormApiOptions = {
   /** Forwarded to buildProcessForm. See `UseFormConfiguration.onInvalidSubmit`. */
   onInvalidSubmit?: OnInvalidSubmitPolicy
   /**
-   * Pre-wired history module for undo/redo. When omitted, the public
-   * `undo` / `redo` / `canUndo` / `canRedo` / `historySize` fields
-   * are inert no-op stubs — consumers get a consistent API shape
-   * without opting into the feature.
+   * Pre-wired history module backing `form.history.{undo, redo, clear,
+   * canUndo, canRedo, size}`. When omitted, the namespace's methods
+   * are inert no-ops and its reactive flags read `false` / `0` —
+   * consumers get a consistent API shape without opting into the feature.
    */
   history?: HistoryModule
   /**
@@ -475,14 +476,20 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
 
   // --- History (undo/redo) ---
   // When the consumer doesn't configure history, fall back to inert
-  // stubs so the public API shape stays consistent whether or not
-  // the feature is enabled.
+  // stubs so the `form.history.*` namespace shape stays consistent
+  // whether or not the feature is enabled. Templates can read
+  // `form.history.canUndo` etc. unconditionally.
   const history = options.history
-  const undo = history?.undo ?? (() => false)
-  const redo = history?.redo ?? (() => false)
-  const canUndo = history?.canUndo ?? computed(() => false)
-  const canRedo = history?.canRedo ?? computed(() => false)
-  const historySize = history?.historySize ?? computed(() => 0)
+  const formHistory = readonly(
+    reactive({
+      undo: history?.undo ?? (() => false),
+      redo: history?.redo ?? (() => false),
+      clear: history?.clear ?? (() => {}),
+      canUndo: history?.canUndo ?? computed(() => false),
+      canRedo: history?.canRedo ?? computed(() => false),
+      size: history?.historySize ?? computed(() => 0),
+    })
+  ) as FormHistoryNamespace
 
   // --- Form-level meta aggregate ---
   // `metaErrors` flattens the three reactive error stores into a single
@@ -543,9 +550,6 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       submitting: state.submitting.value,
       submitCount: state.submitCount.value,
       submitError: state.submitError.value,
-      canUndo: canUndo.value,
-      canRedo: canRedo.value,
-      historySize: historySize.value,
       instanceId: formInstanceId,
     }
   }
@@ -611,9 +615,6 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       submitting,
       submitCount,
       submitError,
-      canUndo,
-      canRedo,
-      historySize,
       // Per-`useForm()`-call identity. Stable for one mount; new on
       // re-mount; orthogonal to `form.key` (which is the user-supplied
       // shared identifier). Useful for devtools panels disambiguating
@@ -802,8 +803,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     focusFirstError,
     scrollToFirstError,
     touch: touch as UseFormReturnType<Form, GetValueFormType>['touch'],
-    undo,
-    redo,
+    history: formHistory,
     append: fieldArrays.append as UseFormReturnType<Form, GetValueFormType>['append'],
     prepend: fieldArrays.prepend as UseFormReturnType<Form, GetValueFormType>['prepend'],
     insert: fieldArrays.insert as UseFormReturnType<Form, GetValueFormType>['insert'],

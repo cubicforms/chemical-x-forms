@@ -82,8 +82,8 @@ custom bundler pipeline.
 
 The reactive object returned by every `useForm()` call —
 `values`, `errors`, `fields`, `setValue`, `register`, `validate*`,
-`handleSubmit`, `meta`, `reset`, undo/redo, field-array helpers,
-imperative persistence.
+`handleSubmit`, `meta`, `history` (undo/redo), `reset`, field-array
+helpers, imperative persistence.
 
 → [Read the useForm return value](/docs/api/use-form-return)
 

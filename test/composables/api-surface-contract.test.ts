@@ -401,7 +401,7 @@ describe('multi-tab sync — BroadcastChannel', () => {
       name: zod.string(),
       password: zod.string(),
     })
-    type SecretApi = UseFormReturnType<zod.output<typeof secretSchema>>
+    type SecretApi = UseFormReturnType<z.output<typeof secretSchema>>
 
     const formKey = `b19-sensitive-${Math.random().toString(36).slice(2)}`
     const channelName = `attaform:sync:${formKey}:${hashStableString(fingerprintZodSchema(secretSchema))}`
@@ -476,7 +476,7 @@ describe('multi-tab sync — BroadcastChannel', () => {
       blankPathsRemoved: [],
     })
     await wait(100)
-    expect((Object.prototype as Record<string, unknown>).polluted).toBeUndefined()
+    expect((Object.prototype as Record<string, unknown>)['polluted']).toBeUndefined()
 
     external.close()
     app.unmount()
@@ -749,7 +749,7 @@ describe('multi-tab sync — BroadcastChannel', () => {
     const { z: zod } = await import('zod')
 
     const medSchema = zod.object({ name: zod.string(), mrn: zod.string() })
-    type MedApi = UseFormReturnType<zod.output<typeof medSchema>>
+    type MedApi = UseFormReturnType<z.output<typeof medSchema>>
 
     const formKey = `b19-custom-sn-${Math.random().toString(36).slice(2)}`
     const channelName = `attaform:sync:${formKey}:${hashStableString(fingerprintZodSchema(medSchema))}`

@@ -167,6 +167,63 @@ lifecycle fields, so `form.meta.showErrors` and
 </div>
 ```
 
+## Form-level errors
+
+Messages that aren't tied to a single field — "capacity exceeded",
+"this combination already exists", server-side failures from a
+submit handler — live in a dedicated bucket at the empty-string
+path `['']`. Write them with `form.setFormErrors`, clear them with
+`form.clearFormErrors`:
+
+```ts
+form.setFormErrors([{ message: 'Capacity exceeded' }])
+form.setFormErrors([{ message: 'Network unreachable', code: 'api:network' }])
+form.clearFormErrors() // or setFormErrors([])
+```
+
+Render them above (or below) the form by reading the empty-path
+bucket directly:
+
+```vue
+<template>
+  <div v-if="form.errors('')" role="alert" class="form-banner">
+    <p v-for="e in form.errors('')" :key="e.message">{{ e.message }}</p>
+  </div>
+
+  <input v-register="form.register('email')" />
+  <!-- field errors as usual -->
+</template>
+```
+
+Three read paths surface the bucket:
+
+- `form.errors('')` — call-form with the empty-string path, returns
+  `ValidationError[] | undefined`. Use this in templates and script.
+- `form.errors['']` — bracket access on the drill proxy.
+- `form.meta.errors` — the flat aggregate (all errors at every
+  depth, form-level included).
+
+`form.errors.<field>` dot-access skips the bucket because there's no
+`''` property in JS dot-notation. That's the only surface where the
+bucket is invisible; iteration / `JSON.stringify(form.errors)` /
+template interpolation all show it at the empty-string key.
+
+Form-level entries:
+
+- **Survive `setFieldErrors`** — the two surfaces own logically
+  distinct slots, so writing field errors doesn't wipe the form
+  banner and vice versa.
+- **Survive `clearFieldErrors()`** — the no-path "clear all field
+  errors" call leaves the form-level bucket alone. Pass
+  `clearFormErrors()` to drop them explicitly.
+- **Are NOT cleared on schema revalidation** — they're user-owned
+  data; the consumer manages their lifetime.
+- **ARE cleared by `reset()`** — reset returns the form to its
+  initial state, which has no errors.
+
+For surfacing server-returned failures from a submit handler, see
+[server errors > non-field errors](/docs/recipes/server-errors#non-field-errors).
+
 ## Predicate signature
 
 ```ts

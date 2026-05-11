@@ -90,18 +90,35 @@ APIs below). The public surfaces below merge both transparently
 revalidation and successful submits — the consumer owns their lifecycle
 explicitly.
 
-| Member                    | Type                                                                                                                                                                                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `errors`                  | `FormErrorsSurface<Form>` — drillable callable Proxy. Dot-access descends; call-form aggregates and returns `readonly ValidationError[] \| undefined` at any path. Active-variant (DU) filtered, sorted by schema-declaration order. Schema entries first, user entries second. |
-| `setFieldErrors(errors)`  | `(ValidationError[]) => void` — replaces the user-error store. For server / API responses, parse the payload via `parseApiErrors` (top-level helper) and feed the result here. See [server-errors recipe](/docs/recipes/server-errors).                                         |
-| `addFieldErrors(errors)`  | `(ValidationError[]) => void` — appends to the user-error store.                                                                                                                                                                                                                |
-| `clearFieldErrors(path?)` | `(path?) => void` — clears BOTH stores at the given path (or all paths if omitted). With live validation, the schema half re-populates on the next mutation if the value is still invalid.                                                                                      |
+| Member                    | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `errors`                  | `FormErrorsSurface<Form>` — drillable callable Proxy. Dot-access descends; call-form aggregates and returns `readonly ValidationError[] \| undefined` at any path. Active-variant (DU) filtered for schema errors. User errors surface unconditionally — including at paths the schema doesn't know about. Sorted by schema-declaration order. Schema entries first, user entries second.                                                                                                                                                                                           |
+| `setFieldErrors(errors)`  | `(ValidationError[]) => void` — replaces every FIELD entry in the user-error store. The form-level bucket (see `setFormErrors`) is preserved. For server / API responses, parse the payload via `parseApiErrors` (top-level helper) and feed the result here. See [server-errors recipe](/docs/recipes/server-errors).                                                                                                                                                                                                                                                              |
+| `addFieldErrors(errors)`  | `(ValidationError[]) => void` — appends to the user-error store.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `clearFieldErrors(path?)` | `(path?) => void` — clears BOTH stores at the given path (or all field paths if omitted). The form-level bucket is preserved by the no-arg form; pass `clearFormErrors()` to clear it explicitly. With live validation, the schema half re-populates on the next mutation if the value is still invalid.                                                                                                                                                                                                                                                                            |
+| `setFormErrors(errors)`   | `(Array<{ message: string; code?: string }>) => void` — sets the form-level error bucket (entries at the empty-string path `['']`). The dedicated home for messages that aren't tied to a single field: "capacity exceeded", "this combination already exists", post-submit failures from the network or the server. Each entry's `path` is forced to `['']` and `formKey` to this form's key; consumer-supplied path / formKey on the input are ignored. `code` defaults to `'atta:form-error'`. Replaces (not appends); call `setFormErrors([])` or `clearFormErrors()` to clear. |
+| `clearFormErrors()`       | `() => void` — clears the form-level bucket without touching field errors. Equivalent to `setFormErrors([])`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+
+Form-level errors are reachable from every read surface:
+
+- `form.errors('')` — call-form with the empty-string path, returns
+  the `ValidationError[]` at the bucket (or `undefined` when empty).
+- `form.errors['']` — bracket access on the drill proxy.
+- `JSON.stringify(form.errors)` — the empty-string key appears in the
+  serialised tree alongside field-keyed entries, so debug-prints in
+  templates (`{{ form.errors }}`) don't silently drop them.
+- `form.meta.errors` — the flat aggregate, unfiltered.
+
+The path-keyed drill `form.errors.<field>` still resolves schema field
+names (`form.errors.` has no `''` property by JS dot-notation), so
+form-level entries are reached via the call form, bracket form, or
+iteration — not dot-access.
 
 For a "show all errors" UI (path-keyed, form-level, unmapped server,
 cross-field-refine), use `form.meta.errors` — the root-level aggregate
-(active-variant filtered, schema-declaration ordered). Equivalent to
-`form.errors()` and `form.fields().errors`; same computed under the
-hood.
+(active-variant filtered for schema errors, schema-declaration
+ordered). Equivalent to `form.errors()` and `form.fields().errors`;
+same computed under the hood.
 
 ### `field.showErrors` and `field.firstError`
 

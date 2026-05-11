@@ -3892,13 +3892,24 @@ describe('chaos — handleSubmit re-entry inside onSuccess', () => {
 })
 
 // -------------------- 9.14 z.union (non-discriminated) --------------------
-describe('chaos — non-discriminated z.union with literal variants', () => {
+describe('non-discriminated z.union with literal variants', () => {
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  it('a non-discriminated literal union still gates writes by literal-set', async () => {
+  it('accepts any-string write; validation surfaces the literal-set mismatch', async () => {
+    // Design call (per project convention): the slim-primitive write
+    // gate is a TYPE-SHAPE check, not a value-content check. A union
+    // of string literals slim-resolves to `string`, so writing any
+    // string SUCCEEDS at the gate — storage receives what the user
+    // produced. The literal-set membership is a REFINEMENT, surfaced
+    // by schema validation (which runs by default on every change).
+    //
+    // Rejecting at the gate would be a silent-UX failure: user types,
+    // nothing happens, no error explains why. Forms exist to receive
+    // information — including invalid information that needs to flow
+    // to a validation error the user can act on.
     const schema = z.object({
       role: z.union([z.literal('admin'), z.literal('viewer')]),
     })
@@ -3922,12 +3933,24 @@ describe('chaos — non-discriminated z.union with literal variants', () => {
     apps.push(app)
     const api = handle.api as Api
 
-    // 'wat' is a string and string-literal union accepts string at the
-    // gate level — but 'wat' isn't in the literal set. Without literal-
-    // set awareness, this passes the gate.
-    expect(api.setValue('role', 'wat')).toBe(false)
+    // Storage accepts: 'wat' is a string, slim-shape matches.
+    expect(api.setValue('role', 'wat')).toBe(true)
     await nextTick()
-    expect(api.values.role).toBe('admin')
+    expect(api.values.role).toBe('wat')
+
+    // Validation surfaces the literal-set mismatch — the consumer
+    // path: bind on `form.errors.role` (or `fields.role.errors`)
+    // and the user sees the actionable error.
+    const result = await api.validateAsync('role')
+    expect(result.success).toBe(false)
+
+    // Writing a value that IS in the literal set clears the error
+    // on the next validation cycle.
+    expect(api.setValue('role', 'viewer')).toBe(true)
+    await nextTick()
+    expect(api.values.role).toBe('viewer')
+    const cleared = await api.validateAsync('role')
+    expect(cleared.success).toBe(true)
   })
 })
 

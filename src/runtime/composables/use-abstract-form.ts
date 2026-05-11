@@ -5,6 +5,7 @@ import {
   ANONYMOUS_FORM_KEY_PREFIX,
   DEFAULT_MAX_RECURSION_DEPTH,
   DEFAULT_PERSISTENCE_DEBOUNCE_MS,
+  normalizeRecursionDepth,
   PERSISTENCE_KEY_PREFIX,
   RESERVED_KEY_PREFIX,
 } from '../core/defaults'
@@ -128,9 +129,15 @@ export function useAbstractForm<
   // shape (e.g. an adapter that narrows via a transform). The factory
   // receives the resolved per-form options (`maxRecursionDepth`) so the
   // adapter can bake them into its walk closures.
-  const resolvedSchema = getComputedSchema(key, configuration.schema, {
-    maxRecursionDepth: merged.maxRecursionDepth ?? DEFAULT_MAX_RECURSION_DEPTH,
-  })
+  //
+  // `normalizeRecursionDepth` sanitises the consumer-supplied value:
+  // `NaN` / `-Infinity` / non-numbers fall back to the library default
+  // with a dev-warn; negatives clamp to 0; non-integers floor. The
+  // adapter's `>=` comparisons assume integer depth, so the
+  // normalisation prevents footguns at the boundary.
+  const requestedDepth = merged.maxRecursionDepth ?? DEFAULT_MAX_RECURSION_DEPTH
+  const maxRecursionDepth = normalizeRecursionDepth(requestedDepth, 'useForm')
+  const resolvedSchema = getComputedSchema(key, configuration.schema, { maxRecursionDepth })
 
   // Eager throw: persistence configured without an explicit `key:`. An
   // anonymous synthetic key (`__atta:anon:*`) drifts across mounts (HMR /

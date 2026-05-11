@@ -11,6 +11,8 @@
  * two: per-form > app-level > library default.
  */
 
+import { __DEV__ } from './dev'
+
 /**
  * Validation debounce (`useForm({ debounceMs })`) — ms to wait after
  * the LAST input event before running validation. Default `0`
@@ -104,3 +106,43 @@ export const ANONYMOUS_FORM_KEY_PREFIX = `${RESERVED_KEY_PREFIX}anon:`
  * edit beyond it.
  */
 export const DEFAULT_MAX_RECURSION_DEPTH = 64
+
+/**
+ * Normalise a consumer-supplied `maxRecursionDepth` before threading
+ * it into the adapter walks. The walks compare integer descent depths
+ * via `>=`, which interacts poorly with three categories of input:
+ *
+ *   - `NaN` — every comparison yields `false`, so walks never bail and
+ *     pathological self-referencing schemas exhaust the call stack.
+ *   - Negative numbers — `0 >= -1` is `true`, so walks bail on the
+ *     very first lazy crossing. The likely user intent (negative =
+ *     unlimited) is the opposite of the runtime behaviour.
+ *   - Non-integers — `5.7` effectively caps at 5 via floor-comparison.
+ *     Works, but is imprecise; the visible value doesn't match the
+ *     effective depth.
+ *
+ * Sanitisation rules:
+ *
+ *   - `Infinity` passes through (disables the cap by design).
+ *   - Non-numbers, `NaN`, `-Infinity` → fall back to the library
+ *     default and emit a dev-mode warning so the misuse is visible.
+ *   - Negative finite numbers → `0` (closest valid intent).
+ *   - Non-integer positives → floored to the next-lower integer.
+ *
+ * The fallback path doesn't throw — a bad option shouldn't be fatal
+ * at construction. Dev-warn is enough; production simply degrades
+ * to the library default.
+ */
+export function normalizeRecursionDepth(value: number, source: string): number {
+  if (value === Infinity) return Infinity
+  if (typeof value !== 'number' || Number.isNaN(value) || value === -Infinity) {
+    if (__DEV__) {
+      console.warn(
+        `[attaform] ${source}.maxRecursionDepth must be a non-negative integer or Infinity; ` +
+          `got ${String(value)}. Falling back to ${DEFAULT_MAX_RECURSION_DEPTH}.`
+      )
+    }
+    return DEFAULT_MAX_RECURSION_DEPTH
+  }
+  return Math.max(0, Math.floor(value))
+}

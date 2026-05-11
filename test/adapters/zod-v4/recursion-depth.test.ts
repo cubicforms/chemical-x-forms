@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../../src/zod'
 import { createAttaform } from '../../../src/runtime/core/plugin'
+import {
+  DEFAULT_MAX_RECURSION_DEPTH,
+  normalizeRecursionDepth,
+} from '../../../src/runtime/core/defaults'
 import {
   deriveDefault,
   getDefaultValuesFromZodSchema,
@@ -295,5 +299,169 @@ describe('maxRecursionDepth — counter bumps on lazy only', () => {
       const api = handle.api as Api
       expect(api.values.a.b.c.d).toBe('')
     })
+  })
+})
+
+/**
+ * `normalizeRecursionDepth` sanitises consumer-supplied values before
+ * threading them into the adapter walks. The walks compare integer
+ * descent depths via `>=`, which interacts poorly with `NaN`,
+ * negative numbers, non-numbers, and non-integers. These tests pin
+ * the normalisation contract so future refactors can't silently
+ * change the foot-gun behaviour.
+ */
+describe('normalizeRecursionDepth — sanitiser for invalid inputs', () => {
+  it('passes positive integers through unchanged', () => {
+    expect(normalizeRecursionDepth(0, 'useForm')).toBe(0)
+    expect(normalizeRecursionDepth(1, 'useForm')).toBe(1)
+    expect(normalizeRecursionDepth(64, 'useForm')).toBe(64)
+    expect(normalizeRecursionDepth(1024, 'useForm')).toBe(1024)
+  })
+
+  it('passes Infinity through unchanged (cap disabled)', () => {
+    expect(normalizeRecursionDepth(Infinity, 'useForm')).toBe(Infinity)
+  })
+
+  it('floors non-integer positives', () => {
+    expect(normalizeRecursionDepth(5.7, 'useForm')).toBe(5)
+    expect(normalizeRecursionDepth(0.9, 'useForm')).toBe(0)
+    expect(normalizeRecursionDepth(64.999, 'useForm')).toBe(64)
+  })
+
+  it('clamps negative finites to 0', () => {
+    expect(normalizeRecursionDepth(-1, 'useForm')).toBe(0)
+    expect(normalizeRecursionDepth(-64, 'useForm')).toBe(0)
+    expect(normalizeRecursionDepth(-0.5, 'useForm')).toBe(0)
+  })
+
+  it('falls back to the library default for NaN and emits a dev warn', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(normalizeRecursionDepth(NaN, 'useForm')).toBe(DEFAULT_MAX_RECURSION_DEPTH)
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('maxRecursionDepth must be a non-negative integer or Infinity')
+      )
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('NaN'))
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('falls back to the library default for -Infinity', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(normalizeRecursionDepth(-Infinity, 'useForm')).toBe(DEFAULT_MAX_RECURSION_DEPTH)
+      expect(warnSpy).toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('falls back to the library default for non-number values', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      // TS rejects these but JS callers can defy the signature. The
+      // sanitiser is the boundary that catches them.
+      expect(normalizeRecursionDepth('64' as unknown as number, 'useForm')).toBe(
+        DEFAULT_MAX_RECURSION_DEPTH
+      )
+      expect(normalizeRecursionDepth(null as unknown as number, 'useForm')).toBe(
+        DEFAULT_MAX_RECURSION_DEPTH
+      )
+      expect(normalizeRecursionDepth(undefined as unknown as number, 'useForm')).toBe(
+        DEFAULT_MAX_RECURSION_DEPTH
+      )
+      expect(normalizeRecursionDepth({} as unknown as number, 'useForm')).toBe(
+        DEFAULT_MAX_RECURSION_DEPTH
+      )
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('uses the source label in the warning message for diagnosability', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      normalizeRecursionDepth(NaN, 'createAttaform.defaults')
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('createAttaform.defaults.maxRecursionDepth')
+      )
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+})
+
+describe('useForm — passes sanitised maxRecursionDepth into walks', () => {
+  const apps: App[] = []
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+  })
+
+  it('NaN at the useForm callsite does not infinite-loop on a self-referencing lazy', () => {
+    // Without sanitisation, `NaN` would make `lazyDepth >= maxDepth`
+    // permanently false, infinite-recursing on a self-referencing
+    // lazy. The sanitiser maps it to the library default (64),
+    // bounding the walk.
+    type Node = { value: string; child: Node }
+    const Node: z.ZodType<Node> = z.lazy(() => z.object({ value: z.string(), child: Node }))
+    const schema = z.object({ root: Node })
+    type Api = ReturnType<typeof useForm<typeof schema>>
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const handle: { api?: Api } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema,
+          key: `recursion-nan-${Math.random().toString(36).slice(2)}`,
+          // Defy the TS signature via the `as` cast — the runtime
+          // must still terminate.
+          maxRecursionDepth: NaN as unknown as number,
+          defaultValues: {
+            root: { value: 'top', child: { value: 'inner', child: undefined as never } },
+          },
+        })
+        return () => h('div')
+      },
+    })
+    try {
+      const app = createApp(App).use(createAttaform())
+      app.mount(document.createElement('div'))
+      apps.push(app)
+      const api = handle.api as Api
+      // Form mounted without exhausting the stack.
+      expect(api.values.root.value).toBe('top')
+      // Dev-warn fired.
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('maxRecursionDepth must be a non-negative integer or Infinity')
+      )
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('a negative cap clamps to 0 (rejects any lazy crossing in the slim gate)', () => {
+    const schema = z.object({
+      name: z.string(),
+    })
+    type Api = ReturnType<typeof useForm<typeof schema>>
+    const handle: { api?: Api } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema,
+          key: `recursion-negative-${Math.random().toString(36).slice(2)}`,
+          maxRecursionDepth: -100,
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    const api = handle.api as Api
+    // Form mounts with the sanitised cap (0). The non-recursive
+    // schema is unaffected — the cap is dormant.
+    expect(api.values.name).toBe('')
   })
 })

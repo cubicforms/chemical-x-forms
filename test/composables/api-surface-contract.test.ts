@@ -192,8 +192,8 @@ describe('API surface contract — actions on `api`, status on `api.meta`, histo
     const emailField = api.fields.email
 
     // Type-level absence — future per-field history (e.g.
-    // `api.fields.email.history.{undo, redo, canUndo}`) breaks these
-    // @ts-expect-error directives intentionally.
+    // `api.fields.email.history.{undo, redo, canUndo}`) is meant to
+    // break the directives below intentionally.
     // @ts-expect-error per-field history is not part of the contract today
     void emailField.history
     // @ts-expect-error per-field undo is not part of the contract today

@@ -14,6 +14,7 @@ import type {
   ValidationResponse,
 } from '../../types/types-api'
 import { getAtPath } from '../../core/path-walker'
+import type { SchemaFactoryOptions } from '../../core/get-computed-schema'
 import { humanize } from '../../core/humanize'
 import { canonicalizePath, type Path, type PathKey } from '../../core/paths'
 import { slimKindOf } from '../../core/slim-primitive-gate'
@@ -81,7 +82,9 @@ export function zodAdapter<
   FormSchema extends z.ZodSchema,
   Form extends z.input<FormSchema>,
   GetValueFormType extends TypeWithNullableDynamicKeys<FormSchema>,
->(zodSchema: FormSchema): (formKey: FormKey) => AbstractSchema<Form, GetValueFormType> {
+>(
+  zodSchema: FormSchema
+): (formKey: FormKey, options: SchemaFactoryOptions) => AbstractSchema<Form, GetValueFormType> {
   function getAbstractSchema(
     _formKey: FormKey,
     _zodSchema: FormSchema,
@@ -668,7 +671,14 @@ export function zodAdapter<
     return abstractSchema
   }
 
-  return (formKey: FormKey) => getAbstractSchema(formKey, zodSchema, true)
+  // `options.maxRecursionDepth` is accepted for parity with the v4
+  // adapter and the typed entry-point factory contract. The v3 walks
+  // already carry their own bounded loops (`MAX_UNWRAP_STEPS`), so
+  // today the cap doesn't drive different behaviour — wiring it
+  // through keeps the option-bag honest for future v3 walks that
+  // descend through `z.lazy()`.
+  return (formKey: FormKey, _options: SchemaFactoryOptions) =>
+    getAbstractSchema(formKey, zodSchema, true)
 }
 
 function zodIssuesToValidationErrors(issues: z.ZodIssue[], formKey: FormKey): ValidationError[] {

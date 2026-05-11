@@ -20,13 +20,17 @@ const arbRootSchema = buildZodRootObjectArbitrary(z, 3, (inner) => z.record(inne
 
 describe('zod v3 adapter — fuzz over arbitrary supported schemas', () => {
   test.prop([arbRootSchema])('adapter construction never throws on supported schemas', (schema) => {
-    expect(() => zodAdapter(schema as z.ZodObject<z.ZodRawShape>)('f')).not.toThrow()
+    expect(() =>
+      zodAdapter(schema as z.ZodObject<z.ZodRawShape>)('f', { maxRecursionDepth: 64 })
+    ).not.toThrow()
   })
 
   test.prop([arbRootSchema])(
     'getDefaultValues returns a success response in lax mode',
     (schema) => {
-      const adapter = zodAdapter(schema as z.ZodObject<z.ZodRawShape>)('f')
+      const adapter = zodAdapter(schema as z.ZodObject<z.ZodRawShape>)('f', {
+        maxRecursionDepth: 64,
+      })
       const result = adapter.getDefaultValues({
         useDefaultSchemaValues: true,
         strict: false,
@@ -40,7 +44,7 @@ describe('zod v3 adapter — fuzz over arbitrary supported schemas', () => {
   )
 
   test.prop([arbRootSchema])('validateAtPath is total — never rejects', async (schema) => {
-    const adapter = zodAdapter(schema as z.ZodObject<z.ZodRawShape>)('f')
+    const adapter = zodAdapter(schema as z.ZodObject<z.ZodRawShape>)('f', { maxRecursionDepth: 64 })
     // Fuzz random values through validateAtPath without requiring a
     // valid initial state. The contract is "resolves to a
     // ValidationResponse (success or error), does not reject". Covers
@@ -58,7 +62,9 @@ describe('zod v3 adapter — fuzz over arbitrary supported schemas', () => {
   test.prop([arbRootSchema, fc.string({ minLength: 1, maxLength: 8 })])(
     'validateAtPath error responses carry the right formKey',
     async (schema, formKey) => {
-      const adapter = zodAdapter(schema as z.ZodObject<z.ZodRawShape>)(formKey)
+      const adapter = zodAdapter(schema as z.ZodObject<z.ZodRawShape>)(formKey, {
+        maxRecursionDepth: 64,
+      })
       // Use a value guaranteed to fail shape-check — null — so we're on
       // the error branch of validateAtPath.
       const result = await adapter.validateAtPath(null, undefined)

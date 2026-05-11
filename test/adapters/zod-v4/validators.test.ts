@@ -15,7 +15,7 @@ describe('zod v4 adapter — refine / superRefine error paths', () => {
     const schema = z.object({
       username: z.string().refine((v) => v.length > 3, 'too short'),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const result = await adapter.validateAtPath({ username: 'ab' }, undefined)
     expect(result.success).toBe(false)
     expect(result.errors).toHaveLength(1)
@@ -36,7 +36,7 @@ describe('zod v4 adapter — refine / superRefine error paths', () => {
         message: 'passwords differ',
         path: ['confirm'],
       })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const result = await adapter.validateAtPath({ password: 'abc', confirm: 'xyz' }, undefined)
     expect(result.success).toBe(false)
     expect(result.errors).toHaveLength(1)
@@ -59,7 +59,7 @@ describe('zod v4 adapter — refine / superRefine error paths', () => {
         })
       }),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const result = await adapter.validateAtPath(
       { items: [{ name: 'a' }, { name: '' }, { name: '' }] },
       undefined
@@ -82,7 +82,7 @@ describe('zod v4 adapter — refine / superRefine error paths', () => {
         .refine((v) => v.length >= 8, 'min 8')
         .refine((v) => /[0-9]/.test(v), 'needs a digit'),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const result = await adapter.validateAtPath({ password: 'abc' }, undefined)
     // zod short-circuits after the first failing refinement on a single
     // value — we assert that at least one fires and the path is correct.
@@ -96,7 +96,7 @@ describe('zod v4 adapter — transform / pipe', () => {
     const schema = z.object({
       email: z.string().transform((v) => v.trim().toLowerCase()),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const result = await adapter.validateAtPath({ email: '  HI@X.CO  ' }, undefined)
     expect(result.success).toBe(true)
     expect(result.data).toEqual({ email: 'hi@x.co' })
@@ -113,7 +113,7 @@ describe('zod v4 adapter — transform / pipe', () => {
         .transform((s) => Number(s))
         .pipe(z.number().refine((n) => !Number.isNaN(n), 'must be numeric')),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const bad = await adapter.validateAtPath({ ageStr: 'not-a-number' }, undefined)
     expect(bad.success).toBe(false)
     expect(bad.errors?.[0]?.path).toEqual(['ageStr'])
@@ -126,7 +126,7 @@ describe('zod v4 adapter — transform / pipe', () => {
         .transform((s) => Number(s))
         .pipe(z.number()),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const ok = await adapter.validateAtPath({ ageStr: '42' }, undefined)
     expect(ok.success).toBe(true)
     expect(ok.data).toEqual({ ageStr: 42 })
@@ -144,7 +144,7 @@ describe('zod v4 adapter — discriminated union with per-branch refinement', ()
         z.object({ kind: z.literal('scroll'), delta: z.number() }),
       ]),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const result = await adapter.validateAtPath({ event: { kind: 'click', x: -1 } }, undefined)
     expect(result.success).toBe(false)
     const pathMatch = result.errors?.some((e) => {
@@ -173,7 +173,7 @@ describe('zod v4 adapter — validateAtPath forwards issue paths under a prefix'
         age: z.number().refine((v) => v >= 0, 'non-negative'),
       }),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const result = await adapter.validateAtPath({ age: -1 }, ['profile'])
     expect(result.success).toBe(false)
     expect(result.errors?.[0]?.path).toEqual(['age'])

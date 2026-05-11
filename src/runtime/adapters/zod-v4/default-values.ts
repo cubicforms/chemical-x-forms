@@ -30,25 +30,43 @@ import { getSlimSchema } from './strip'
  * skipped so the walker produces the underlying leaf's empty value
  * instead — useful when the caller wants a "blank" initial state rather
  * than the schema's declared defaults.
+ *
+ * `maxRecursionDepth` caps descent through `z.lazy()`: the counter
+ * bumps only when the walker crosses a lazy boundary, so non-recursive
+ * deep structural nesting is unaffected. Once `lazyDepth > maxDepth`
+ * the walker returns `undefined` for the recursive node — the seed
+ * value comes from `defaultValues` instead.
  */
-export function deriveDefault(schema: z.ZodType, useDefault: boolean): unknown {
-  return defaultForKind(kindOf(schema), schema, useDefault)
+export function deriveDefault(
+  schema: z.ZodType,
+  useDefault: boolean,
+  maxRecursionDepth: number
+): unknown {
+  return defaultForKind(kindOf(schema), schema, useDefault, maxRecursionDepth, 0)
 }
 
-function defaultForKind(kind: ZodKind, schema: z.ZodType, useDefault: boolean): unknown {
+function defaultForKind(
+  kind: ZodKind,
+  schema: z.ZodType,
+  useDefault: boolean,
+  maxDepth: number,
+  lazyDepth: number
+): unknown {
   switch (kind) {
     case 'object': {
       const shape = getObjectShape(schema as z.ZodObject)
       const out: Record<string, unknown> = {}
       for (const [key, subSchema] of Object.entries(shape)) {
-        out[key] = deriveDefault(subSchema, useDefault)
+        out[key] = defaultForKind(kindOf(subSchema), subSchema, useDefault, maxDepth, lazyDepth)
       }
       return out
     }
     case 'default': {
       if (useDefault) return getDefaultValue(schema)
       const inner = unwrapInner(schema)
-      return inner === undefined ? undefined : deriveDefault(inner, useDefault)
+      return inner === undefined
+        ? undefined
+        : defaultForKind(kindOf(inner), inner, useDefault, maxDepth, lazyDepth)
     }
     case 'optional':
       return undefined
@@ -56,11 +74,15 @@ function defaultForKind(kind: ZodKind, schema: z.ZodType, useDefault: boolean): 
       return null
     case 'readonly': {
       const inner = unwrapInner(schema)
-      return inner === undefined ? undefined : deriveDefault(inner, useDefault)
+      return inner === undefined
+        ? undefined
+        : defaultForKind(kindOf(inner), inner, useDefault, maxDepth, lazyDepth)
     }
     case 'pipe': {
       const inner = unwrapPipe(schema)
-      return inner === undefined ? undefined : deriveDefault(inner, useDefault)
+      return inner === undefined
+        ? undefined
+        : defaultForKind(kindOf(inner), inner, useDefault, maxDepth, lazyDepth)
     }
     case 'array':
       return []
@@ -70,16 +92,22 @@ function defaultForKind(kind: ZodKind, schema: z.ZodType, useDefault: boolean): 
       return {}
     case 'tuple': {
       const items = getTupleItems(schema)
-      return items.map((item) => deriveDefault(item, useDefault))
+      return items.map((item) =>
+        defaultForKind(kindOf(item), item, useDefault, maxDepth, lazyDepth)
+      )
     }
     case 'union': {
       const options = getUnionOptions(schema)
       const first = options[0]
-      return first === undefined ? undefined : deriveDefault(first, useDefault)
+      return first === undefined
+        ? undefined
+        : defaultForKind(kindOf(first), first, useDefault, maxDepth, lazyDepth)
     }
     case 'discriminated-union': {
       const first = getDiscriminatedUnionFirstOption(schema)
-      return first === undefined ? undefined : deriveDefault(first, useDefault)
+      return first === undefined
+        ? undefined
+        : defaultForKind(kindOf(first), first, useDefault, maxDepth, lazyDepth)
     }
     case 'string':
       return ''
@@ -109,14 +137,28 @@ function defaultForKind(kind: ZodKind, schema: z.ZodType, useDefault: boolean): 
     case 'nan':
       return NaN
     case 'lazy': {
+      // Bump the lazy counter ONLY here — structural recursion doesn't
+      // accumulate. Past the cap, return undefined so a recursive node
+      // ends in a non-fatal blank; `defaultValues` (consumer-supplied)
+      // is the authority for what the seed should be at the recursive
+      // boundary anyway.
+      if (lazyDepth >= maxDepth) return undefined
       const inner = unwrapLazy(schema)
-      return inner === undefined ? undefined : deriveDefault(inner, useDefault)
+      return inner === undefined
+        ? undefined
+        : defaultForKind(kindOf(inner), inner, useDefault, maxDepth, lazyDepth + 1)
     }
     case 'intersection': {
       const left = getIntersectionLeft(schema)
       const right = getIntersectionRight(schema)
-      const l = left === undefined ? undefined : deriveDefault(left, useDefault)
-      const r = right === undefined ? undefined : deriveDefault(right, useDefault)
+      const l =
+        left === undefined
+          ? undefined
+          : defaultForKind(kindOf(left), left, useDefault, maxDepth, lazyDepth)
+      const r =
+        right === undefined
+          ? undefined
+          : defaultForKind(kindOf(right), right, useDefault, maxDepth, lazyDepth)
       // `mergeDeep` prefers `right` where both sides carry a plain-record
       // value at a key, and returns `right` wholesale when either side is
       // a leaf. That matches parse-time semantics: an intersection of
@@ -133,7 +175,9 @@ function defaultForKind(kind: ZodKind, schema: z.ZodType, useDefault: boolean): 
       // prefault branch's semantics).
       if (useDefault) return getCatchDefault(schema)
       const inner = unwrapInner(schema)
-      return inner === undefined ? undefined : deriveDefault(inner, useDefault)
+      return inner === undefined
+        ? undefined
+        : defaultForKind(kindOf(inner), inner, useDefault, maxDepth, lazyDepth)
     }
     case 'any':
     case 'unknown':
@@ -200,6 +244,7 @@ export type GetDefaultValuesOptions = {
   schema: z.ZodObject
   useDefaultSchemaValues: boolean
   constraints: unknown
+  maxRecursionDepth: number
 }
 
 export type DefaultValuesResult<Form> = {
@@ -228,8 +273,8 @@ export type DefaultValuesResult<Form> = {
 export function getDefaultValuesFromZodSchema<Form>(
   opts: GetDefaultValuesOptions
 ): DefaultValuesResult<Form> {
-  const { schema, useDefaultSchemaValues, constraints } = opts
-  const initial = deriveDefault(schema, useDefaultSchemaValues)
+  const { schema, useDefaultSchemaValues, constraints, maxRecursionDepth } = opts
+  const initial = deriveDefault(schema, useDefaultSchemaValues, maxRecursionDepth)
   const merged = mergeDeep(initial, constraints) as unknown
 
   // Strip wrappers, including refinements. The slim schema is for
@@ -242,11 +287,15 @@ export function getDefaultValuesFromZodSchema<Form>(
   // the schema contains an async refine (zod's "Encountered Promise
   // during synchronous parse" error) — which would otherwise crash
   // construction for any strict-mode form with `z.string().refine(async …)`.
-  const slimSchema = getSlimSchema(schema, {
-    stripDefaultValues: true,
-    stripPipe: true,
-    stripRefinements: true,
-  })
+  const slimSchema = getSlimSchema(
+    schema,
+    {
+      stripDefaultValues: true,
+      stripPipe: true,
+      stripRefinements: true,
+    },
+    maxRecursionDepth
+  )
 
   const firstParse = slimSchema.safeParse(merged)
   if (firstParse.success) {
@@ -277,14 +326,14 @@ export function getDefaultValuesFromZodSchema<Form>(
     // Pass the structured path directly — joining with '.' would merge
     // a literal-dot key (`['profile.name']`) into two segments and
     // target the wrong sub-schema during fix-up.
-    const candidates = getNestedZodSchemasAtPath(slimSchema, pathSegments)
+    const candidates = getNestedZodSchemasAtPath(slimSchema, pathSegments, maxRecursionDepth)
     if (candidates.length === 0) continue
     const candidate = candidates[0]
     if (candidate === undefined) continue
 
     // Refinement-vs-primitive classification.
     const valueAtPath = getAtPath(merged, pathSegments)
-    const slimKinds = slimPrimitivesOf(candidate)
+    const slimKinds = slimPrimitivesOf(candidate, maxRecursionDepth)
     if (slimKinds.size > 0 && slimKinds.has(slimKindOf(valueAtPath))) {
       // Refinement-level: pass through unchanged.
       continue
@@ -292,7 +341,7 @@ export function getDefaultValuesFromZodSchema<Form>(
 
     // Some issues don't carry a type path: fall back to deriving a default
     // for the schema at that location.
-    const fixValue = defaultFromIssue(issue, candidate, useDefaultSchemaValues)
+    const fixValue = defaultFromIssue(issue, candidate, useDefaultSchemaValues, maxRecursionDepth)
     if (fixValue === SKIP) continue
     fixedData = (
       pathSegments.length === 0 ? fixValue : setAtPath(fixedData, pathSegments, fixValue)
@@ -319,7 +368,8 @@ const SKIP = Symbol('atta:skip-fix')
 function defaultFromIssue(
   issue: z.core.$ZodIssue,
   candidate: z.ZodType,
-  useDefaultSchemaValues: boolean
+  useDefaultSchemaValues: boolean,
+  maxRecursionDepth: number
 ): unknown {
   if (issue.code === 'invalid_type') {
     // If the candidate is (or wraps) a discriminated union, prefer the
@@ -327,18 +377,19 @@ function defaultFromIssue(
     const du = unwrapToDiscriminatedUnion(candidate)
     if (du !== undefined) {
       const first = getDiscriminatedUnionFirstOption(du)
-      if (first !== undefined) return deriveDefault(first, useDefaultSchemaValues)
+      if (first !== undefined)
+        return deriveDefault(first, useDefaultSchemaValues, maxRecursionDepth)
     }
-    return deriveDefault(candidate, useDefaultSchemaValues)
+    return deriveDefault(candidate, useDefaultSchemaValues, maxRecursionDepth)
   }
   if (issue.code === 'invalid_value') {
     const values = (issue as unknown as { values?: readonly unknown[] }).values
     if (values !== undefined && values.length > 0) return values[0]
-    return deriveDefault(candidate, useDefaultSchemaValues)
+    return deriveDefault(candidate, useDefaultSchemaValues, maxRecursionDepth)
   }
   // Other issue codes (too_small/too_big/invalid_format) only fire in strict
   // mode since lax mode strips refinements. Fall back to the walker default.
-  return deriveDefault(candidate, useDefaultSchemaValues)
+  return deriveDefault(candidate, useDefaultSchemaValues, maxRecursionDepth)
 }
 
 /**

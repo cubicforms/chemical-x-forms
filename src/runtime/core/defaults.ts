@@ -82,3 +82,25 @@ export const RESERVED_KEY_PREFIX = '__atta:'
  * `RESERVED_KEY_PREFIX` for the enforcement story.
  */
 export const ANONYMOUS_FORM_KEY_PREFIX = `${RESERVED_KEY_PREFIX}anon:`
+
+/**
+ * Recursion ceiling for schema walks that descend through recursive
+ * schemas (Zod's `z.lazy(...)` today, equivalent constructs in any
+ * future adapter). Adapter walks that follow a recursive boundary —
+ * default derivation, slim-primitive type gates, path resolution,
+ * refinement stripping — track their descent depth and bail with a
+ * permissive fallback once `depth > maxRecursionDepth`.
+ *
+ * Default `64`. Tunable per-form via `useForm({ maxRecursionDepth })`
+ * and app-wide via `createAttaform({ defaults: { maxRecursionDepth } })`;
+ * per-form > app-level > this library default. `Infinity` disables
+ * the cap entirely — see `AttaformDefaults.maxRecursionDepth`.
+ *
+ * "Permissive fallback" means the gate stops type-checking past the
+ * cap (storage accepts the consumer's value; runtime validation
+ * still runs against the real schema). Practical effect: forms with
+ * trees deeper than the cap still work, but writes at deeper nodes
+ * skip the slim-primitive type-gate. Raise the cap if you regularly
+ * edit beyond it.
+ */
+export const DEFAULT_MAX_RECURSION_DEPTH = 64

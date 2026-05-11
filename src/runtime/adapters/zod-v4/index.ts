@@ -6,6 +6,7 @@
 import type { z } from 'zod'
 import { useAbstractForm } from '../../composables/use-abstract-form'
 import { InvalidUseFormConfigError } from '../../core/errors'
+import type { SchemaFactoryOptions } from '../../core/get-computed-schema'
 import type {
   AbstractSchema,
   FormKey,
@@ -127,15 +128,19 @@ export function useForm<Schema extends z.ZodObject>(
   // to `Form`.
   type Form = z.input<Schema> extends GenericForm ? z.input<Schema> : never
   type Out = z.output<Schema> extends GenericForm ? z.output<Schema> : never
-  // `zodV4Adapter` returns a factory `(formKey: FormKey) => AbstractSchema`;
-  // `UseFormConfiguration.schema` accepts `Schema | ((key) => Schema)`, so
-  // the factory is a first-class input — previously the call site cast it
+  // `zodV4Adapter` returns a factory
+  // `(formKey, options: SchemaFactoryOptions) => AbstractSchema`;
+  // `UseFormConfiguration.schema` accepts `Schema | ((key, options) => Schema)`,
+  // so the factory is a first-class input — previously the call site cast it
   // through `unknown as AbstractSchema`, which converted a function to an
-  // object type and hid the mismatch. The narrower cast below preserves
-  // the factory shape at the boundary.
-  const adapter: (key: FormKey) => AbstractSchema<Form, Out> = zodV4Adapter(
-    configuration.schema
-  ) as (key: FormKey) => AbstractSchema<Form, Out>
+  // object type and hid the mismatch. The narrower cast below preserves the
+  // factory shape at the boundary so per-form `maxRecursionDepth` threads
+  // through cleanly.
+  const adapter: (key: FormKey, options: SchemaFactoryOptions) => AbstractSchema<Form, Out> =
+    zodV4Adapter(configuration.schema) as (
+      key: FormKey,
+      options: SchemaFactoryOptions
+    ) => AbstractSchema<Form, Out>
   // The discriminated `ValidateOnConfig` doesn't narrow cleanly through
   // `Omit` + spread — TS picks the wrong variant after the structural
   // rebuild. The runtime input is genuinely the right shape (the

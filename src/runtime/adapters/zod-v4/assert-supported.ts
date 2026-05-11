@@ -34,10 +34,15 @@ function labelPath(path: readonly string[]): string {
 }
 
 /**
- * Walk the schema tree and fail fast on unsupported kinds. Detects
- * recursive `z.lazy(...)` by tracking the *getter function identity*
- * of each lazy on the descent stack — a repeated getter means the
- * factory resolves back into itself (directly or through a detour).
+ * Walk the schema tree and fail fast on unsupported kinds.
+ *
+ * Recursive `z.lazy(...)` is detected (via getter identity on the
+ * descent stack) and the descent stops at the second encounter — but
+ * does NOT throw. Recursive schemas are supported: downstream walks
+ * (default derivation, slim-primitive gate, path resolution) cap their
+ * own descent via `maxRecursionDepth`. The assert step exists only to
+ * surface kinds the adapter has no semantics for (`z.promise`, etc.);
+ * recursive lazies are a fine shape.
  *
  * This runs once, at adapter construction time, so the cost is paid
  * at app startup rather than per keystroke.
@@ -103,11 +108,12 @@ export function assertSupportedKinds(
     }
     case 'lazy': {
       const getter = getLazyGetter(schema)
-      if (getter !== undefined && lazyGetters.includes(getter)) {
-        throw new UnsupportedSchemaError(
-          `[attaform/zod] Recursive z.lazy() at '${labelPath(path)}'`
-        )
-      }
+      // Stop descending on the second encounter of a getter — that's
+      // a recursive `z.lazy()`. The construction-time walk only needs
+      // to verify the *shape* (kinds) of the schema; downstream walks
+      // handle recursion via `maxRecursionDepth`. Returning here leaves
+      // recursive schemas free to mount.
+      if (getter !== undefined && lazyGetters.includes(getter)) return
       const inner = unwrapLazy(schema)
       if (inner !== undefined) {
         assertSupportedKinds(

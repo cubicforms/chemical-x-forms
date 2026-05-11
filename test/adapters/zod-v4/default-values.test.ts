@@ -13,6 +13,7 @@ function run<T extends z.ZodObject>(schema: T, opts: Options = {}) {
     schema,
     useDefaultSchemaValues: opts.useDefaultSchemaValues ?? false,
     constraints: opts.constraints,
+    maxRecursionDepth: 64,
   })
 }
 
@@ -110,7 +111,7 @@ describe('zodAdapter.getDefaultValues — strict-mode refinement enforcement', (
     // defaults fail, errors flow back so `createFormStore` can seed
     // `schemaErrors` at construction.
     const schema = z.object({ email: z.string().email() })
-    const adapter = zodAdapter(schema)('test-form')
+    const adapter = zodAdapter(schema)('test-form', { maxRecursionDepth: 64 })
     const result = adapter.getDefaultValues({
       useDefaultSchemaValues: true,
       strict: true,
@@ -129,7 +130,7 @@ describe('zodAdapter.getDefaultValues — strict-mode refinement enforcement', (
     const schema = z.object({
       email: z.email().refine(async () => Promise.resolve(true), 'taken'),
     })
-    const adapter = zodAdapter(schema)('test-form')
+    const adapter = zodAdapter(schema)('test-form', { maxRecursionDepth: 64 })
     const result = adapter.getDefaultValues({
       useDefaultSchemaValues: true,
       strict: true,

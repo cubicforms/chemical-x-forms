@@ -18,7 +18,10 @@ import type { CoercionRegistry, AbstractSchema } from '../../src/runtime/types/t
  */
 
 function adapter(schema: z.ZodObject): AbstractSchema<unknown, unknown> {
-  return zodV4Adapter(schema)('f') as unknown as AbstractSchema<unknown, unknown>
+  return zodV4Adapter(schema)('f', { maxRecursionDepth: 64 }) as unknown as AbstractSchema<
+    unknown,
+    unknown
+  >
 }
 
 afterEach(() => {

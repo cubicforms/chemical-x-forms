@@ -11,6 +11,7 @@ import type {
 } from '../../types/types-api'
 import { AttaformErrorCode } from '../../core/error-codes'
 import { getFieldMeta, getFieldMetaList } from './field-meta'
+import type { SchemaFactoryOptions } from '../../core/get-computed-schema'
 import { humanize } from '../../core/humanize'
 import { canonicalizePath, type Path, type PathKey } from '../../core/paths'
 import type { DeepPartial, GenericForm } from '../../types/types-core'
@@ -238,22 +239,35 @@ function isLeafRequired(schema: z.ZodType, depth = 0): boolean {
  * data with the same library used elsewhere in the form runtime, or
  * exposing the adapter to a custom integration).
  *
- * Throws if the schema isn't Zod v4, or contains kinds the adapter
- * cannot represent (`z.promise`, `z.custom`, `z.templateLiteral`,
- * recursive `z.lazy(...)`).
+ * The returned factory accepts per-form `SchemaFactoryOptions` (notably
+ * `maxRecursionDepth`); the adapter closure bakes them into every
+ * downstream walk so a per-form override can lift the cap without
+ * touching the app-level default.
+ *
+ * Throws if the schema isn't Zod v4 or contains kinds the adapter
+ * cannot represent (`z.promise`, `z.custom`, `z.templateLiteral`).
+ * Recursive `z.lazy(...)` is supported — the runtime walks bound their
+ * descent via `maxRecursionDepth`.
  */
 export function zodV4Adapter<
   FormSchema extends z.ZodObject,
   Form extends z.input<FormSchema>,
   GetValueFormType extends z.output<FormSchema> = z.output<FormSchema>,
->(rootSchema: FormSchema): (formKey: FormKey) => AbstractSchema<Form, GetValueFormType> {
+>(
+  rootSchema: FormSchema
+): (formKey: FormKey, options: SchemaFactoryOptions) => AbstractSchema<Form, GetValueFormType> {
   assertZodVersion(rootSchema)
   // Fail fast at adapter construction if the schema uses kinds we can't
-  // represent (z.promise / z.custom / z.templateLiteral) or a recursive
-  // z.lazy(). Errors carry the dotted path to the offending node.
+  // represent (z.promise / z.custom / z.templateLiteral). Errors carry
+  // the dotted path to the offending node. Recursive lazies pass — the
+  // runtime walks cap their descent via `maxRecursionDepth`.
   assertSupportedKinds(rootSchema)
 
-  return (formKey: FormKey): AbstractSchema<Form, GetValueFormType> => {
+  return (
+    formKey: FormKey,
+    options: SchemaFactoryOptions
+  ): AbstractSchema<Form, GetValueFormType> => {
+    const maxRecursionDepth = options.maxRecursionDepth
     // Per-adapter `isLeafAtPath` cache. Lifetime = one adapter instance
     // (one per `useForm()` call). Memoises the slim-primitive walk so the
     // leaf-aware proxy traps don't re-walk the schema on every read.
@@ -278,6 +292,7 @@ export function zodV4Adapter<
           schema: rootSchema,
           useDefaultSchemaValues: config.useDefaultSchemaValues,
           constraints: config.constraints,
+          maxRecursionDepth,
         })
 
         if (config.strict !== false) {
@@ -367,7 +382,9 @@ export function zodV4Adapter<
         // and `def.in` as the real schema — those aren't input
         // normalizations and are left untouched.
         const candidates =
-          path.length === 0 ? [rootSchema] : getNestedZodSchemasAtPath(rootSchema, path)
+          path.length === 0
+            ? [rootSchema]
+            : getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
         // Multi-candidate paths (union descent) — pick the first; the
         // adapter's first-success convention matches getDefaultAtPath.
         const [first] = candidates
@@ -414,8 +431,8 @@ export function zodV4Adapter<
         // For empty path, the "default at root" is the schema's full
         // default — return the deriveDefault of the root, not the slim-
         // schema validate-then-fix loop (that's getDefaultValues' job).
-        if (path.length === 0) return deriveDefault(rootSchema, true)
-        const [first] = getNestedZodSchemasAtPath(rootSchema, path)
+        if (path.length === 0) return deriveDefault(rootSchema, true, maxRecursionDepth)
+        const [first] = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
         if (first === undefined) return undefined
         // STRUCTURAL default: peel `.optional()` / `.nullable()` so the
         // result is the inner shape's default (`''` for an optional
@@ -429,12 +446,12 @@ export function zodV4Adapter<
         // First candidate matches validateAtPath's first-success semantic
         // and getDefaultValuesFromZodSchema's line-256 first-candidate
         // behavior.
-        return deriveDefault(unwrapStructuralWrappers(first), true)
+        return deriveDefault(unwrapStructuralWrappers(first), true, maxRecursionDepth)
       },
 
       arrayShapeAtPath(path) {
         if (path.length === 0) return undefined
-        const [first] = getNestedZodSchemasAtPath(rootSchema, path)
+        const [first] = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
         if (first === undefined) return undefined
         const peeled = peelAllWrappers(first)
         const kind = kindOf(peeled)
@@ -444,14 +461,14 @@ export function zodV4Adapter<
       },
 
       getSchemasAtPath(path) {
-        const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+        const resolved = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
         return resolved.map(
           (schema) =>
             ({
               fingerprint: () => fingerprintZodSchema(schema),
               needsAsyncValidation: () => containsAsyncRefine(schema),
               getDefaultValues: () => ({
-                data: deriveDefault(schema, true),
+                data: deriveDefault(schema, true, maxRecursionDepth),
                 errors: undefined,
                 success: true,
                 formKey,
@@ -483,14 +500,14 @@ export function zodV4Adapter<
         // multiple) and union their slim-primitive sets. Empty path
         // is the root form: always an object.
         if (path.length === 0) return new Set(['object'])
-        const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+        const resolved = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
         // Path doesn't resolve in the schema → no kinds accepted.
         // The gate's membership check rejects every kind against an
         // empty set, blocking writes to typo / unknown paths.
         if (resolved.length === 0) return new Set()
         const out = new Set<SlimPrimitiveKind>()
         for (const candidate of resolved) {
-          for (const k of slimPrimitivesOf(candidate)) out.add(k)
+          for (const k of slimPrimitivesOf(candidate, maxRecursionDepth)) out.add(k)
         }
         return out
       },
@@ -520,7 +537,7 @@ export function zodV4Adapter<
         // check never sees the root path in `blankPaths`
         // (the set tracks primitive leaves), so the value is academic.
         if (path.length === 0) return true
-        const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+        const resolved = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
         if (resolved.length === 0) return false
         // Every candidate must be required for the path overall to be
         // required — matches the union "any-branch-permissive" rule
@@ -529,7 +546,7 @@ export function zodV4Adapter<
       },
 
       getFieldMetaAtPath(path): ResolvedFieldMeta {
-        return resolveFieldMetaAtPath(rootSchema, path)
+        return resolveFieldMetaAtPath(rootSchema, path, maxRecursionDepth)
       },
 
       getUnionDiscriminatorAtPath(path): UnionDiscriminatorContext | undefined {
@@ -542,7 +559,7 @@ export function zodV4Adapter<
         const candidates =
           path.length === 0
             ? [rootSchema as z.ZodType]
-            : getNestedZodSchemasAtPath(rootSchema, path)
+            : getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
         let matchedUnion: z.ZodType | undefined
         for (const candidate of candidates) {
           const du = unwrapToDiscriminatedUnion(candidate)
@@ -571,7 +588,7 @@ export function zodV4Adapter<
               if (litSchema === undefined) continue
               if (kindOf(litSchema) !== 'literal') continue
               const literalValues = getLiteralValues(litSchema)
-              if (literalValues.includes(value)) return deriveDefault(opt, true)
+              if (literalValues.includes(value)) return deriveDefault(opt, true, maxRecursionDepth)
             }
             return undefined
           },
@@ -613,7 +630,7 @@ export function zodV4Adapter<
                   formKey,
                 }
           }
-          const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+          const resolved = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
           if (resolved.length === 0) return pathNotFound(path)
           const aggregated: ValidationError[] = []
           for (const candidate of resolved) {
@@ -645,7 +662,7 @@ export function zodV4Adapter<
                   formKey,
                 }
           }
-          const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+          const resolved = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
           if (resolved.length === 0) return pathNotFound(path)
           // Sequential await — parallel parses would run every
           // branch's async side effects on a value only one branch
@@ -931,9 +948,16 @@ function consumePayload(
  * registration order matches tree-walk order, and the mapping pairs
  * correctly.
  */
-function resolveFieldMetaAtPath(rootSchema: z.ZodType, path: Path): ResolvedFieldMeta {
+function resolveFieldMetaAtPath(
+  rootSchema: z.ZodType,
+  path: Path,
+  maxRecursionDepth: number
+): ResolvedFieldMeta {
   const lastSegment = path.length === 0 ? '' : (path[path.length - 1] as string | number)
-  const candidates = path.length === 0 ? [rootSchema] : getNestedZodSchemasAtPath(rootSchema, path)
+  const candidates =
+    path.length === 0
+      ? [rootSchema]
+      : getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
   const target = candidates[0]
   if (target === undefined) {
     return {

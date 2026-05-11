@@ -1,5 +1,6 @@
 import type { ComputedRef, ObjectDirective, Ref } from 'vue'
 import type { FieldMetaPayload, ResolvedFieldMeta } from '../core/field-meta'
+import type { SchemaFactoryOptions } from '../core/get-computed-schema'
 import type { Path, PathKey } from '../core/paths'
 import type { PersistOptInRegistry } from '../core/persistence/opt-in-registry'
 
@@ -930,10 +931,15 @@ export type UseFormConfiguration<
    * abstract entry point accepts any object implementing
    * `AbstractSchema`.
    *
-   * For schemas that depend on the form's identity, pass a factory
-   * `(key) => schema` instead — the library calls it once per form.
+   * For schemas that depend on the form's identity or per-form
+   * options, pass a factory `(key, options) => schema` instead — the
+   * library calls it once per form, after `mergeWithDefaults` has
+   * resolved the options bag (`maxRecursionDepth`, etc.). Most
+   * adapters ignore the options argument; the typed Zod entry points
+   * use it to thread the resolved recursion cap into the adapter
+   * closure.
    */
-  schema: Schema | ((key: FormKey) => Schema)
+  schema: Schema | ((key: FormKey, options: SchemaFactoryOptions) => Schema)
   /**
    * Optional identifier for this form. Omit for one-off forms; the
    * library allocates a unique key automatically (SSR-safe, stable
@@ -1110,6 +1116,31 @@ export type UseFormConfiguration<
    * `false` → never show.
    */
   shouldShowErrors?: ShouldShowErrorsConfig
+  /**
+   * Recursion ceiling for schema walks that descend through recursive
+   * schemas (Zod's `z.lazy(...)` today). Default `64`. Per-form value
+   * overrides `AttaformDefaults.maxRecursionDepth`, which overrides
+   * the library default.
+   *
+   * Schemas that don't include a recursive boundary ignore this knob
+   * entirely — it's read only at the descent step through a recursive
+   * wrapper. Set it on the specific form whose schema is recursive
+   * (a comment tree, a category tree, a nested-rule editor):
+   *
+   * ```ts
+   * useForm({ schema: commentTreeSchema, maxRecursionDepth: 128 })
+   * ```
+   *
+   * Past the cap, the slim-primitive type gate falls back to permissive
+   * (write-time type checks skip; full schema validation still runs).
+   * Storage and reads work at any depth; only the per-write type gate
+   * stops short of the cap. Raise the cap if you regularly edit nodes
+   * beyond the default depth.
+   *
+   * See `AttaformDefaults.maxRecursionDepth` for the resolution rules
+   * and the broader description of where the cap is read.
+   */
+  maxRecursionDepth?: number
 }
 
 /**
@@ -1204,6 +1235,56 @@ export type AttaformDefaults = {
    * predicate, so reading them inside would be a self-reference.
    */
   shouldShowErrors?: ShouldShowErrorsConfig
+  /**
+   * Default for `useForm({ maxRecursionDepth })`. Recursion ceiling
+   * for schema walks that descend through recursive schemas (Zod's
+   * `z.lazy(...)` today, equivalent constructs in any future adapter).
+   * Library default: `64`.
+   *
+   * Resolution order (per-form wins):
+   *
+   *   useForm({ maxRecursionDepth })  >  AttaformDefaults  >  library default (64)
+   *
+   * Read at every step of a schema walk that crosses a recursive
+   * boundary — default-value derivation at construction, slim-primitive
+   * type gates on each write, path-by-path schema resolution. Walks
+   * track their descent depth and switch to a permissive fallback once
+   * `depth > maxRecursionDepth`.
+   *
+   * "Permissive fallback" means storage and reads keep working at any
+   * depth; only the per-write type gate stops checking past the cap.
+   * Full schema validation (`validateAsync`, `handleSubmit`) still runs
+   * against the real schema, so refinement errors at any depth still
+   * surface — the cap only affects the *write-time gate*.
+   *
+   * Forms with no recursive schemas ignore this entirely — the cap is
+   * read only at the descent step through a recursive wrapper. Setting
+   * it app-wide is the right move when you have multiple recursive
+   * forms that should share one ceiling:
+   *
+   * ```ts
+   * createAttaform({
+   *   defaults: { maxRecursionDepth: 128 },
+   * })
+   * ```
+   *
+   * Per-form override stays available for the one tree-shaped form
+   * whose depth is unusual:
+   *
+   * ```ts
+   * useForm({ schema: deepCategoryTreeSchema, maxRecursionDepth: 256 })
+   * ```
+   *
+   * Setting this app-wide costs nothing for non-recursive forms — the
+   * walks that read the cap never run for them.
+   *
+   * Pass `Infinity` to disable the cap entirely. Walks will then
+   * descend through recursive boundaries until they terminate
+   * structurally; a schema with no structural terminator will exhaust
+   * the JS call stack. Reserve for schemas whose authors are
+   * confident the recursion is bounded by the actual data shape.
+   */
+  maxRecursionDepth?: number
 }
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>

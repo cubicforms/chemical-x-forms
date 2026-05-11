@@ -45,13 +45,13 @@ describe('stripRefinements', () => {
 describe('getSlimSchema — stripRefinements flag', () => {
   it('strips refinements from nested leaves when true', () => {
     const schema = z.object({ email: z.string().email() })
-    const slim = getSlimSchema(schema, { stripRefinements: true })
+    const slim = getSlimSchema(schema, { stripRefinements: true }, 64)
     expect(slim.safeParse({ email: '' }).success).toBe(true)
   })
 
   it('keeps refinements when flag is false', () => {
     const schema = z.object({ email: z.string().email() })
-    const slim = getSlimSchema(schema, { stripRefinements: false })
+    const slim = getSlimSchema(schema, { stripRefinements: false }, 64)
     expect(slim.safeParse({ email: '' }).success).toBe(false)
   })
 })
@@ -59,7 +59,7 @@ describe('getSlimSchema — stripRefinements flag', () => {
 describe('getSlimSchema — stripDefaultValues flag', () => {
   it('strips `.default()` wrapper when true', () => {
     const schema = z.string().default('hello')
-    const slim = getSlimSchema(schema, { stripDefaultValues: true })
+    const slim = getSlimSchema(schema, { stripDefaultValues: true }, 64)
     // With default stripped, parsing undefined should fail.
     expect(slim.safeParse(undefined).success).toBe(false)
     expect(slim.safeParse('explicit').success).toBe(true)
@@ -67,7 +67,7 @@ describe('getSlimSchema — stripDefaultValues flag', () => {
 
   it('keeps `.default()` when flag is false (or omitted)', () => {
     const schema = z.string().default('hello')
-    const slim = getSlimSchema(schema, {})
+    const slim = getSlimSchema(schema, {}, 64)
     // With default kept, undefined should resolve to the default.
     const parsed = slim.safeParse(undefined)
     expect(parsed.success).toBe(true)
@@ -80,7 +80,7 @@ describe('getSlimSchema — stripDefaultValues flag', () => {
     // stripRefinements / stripPipe flags never reached the inner schema.
     // Now we re-apply .default(slimmedInner) so the chain is honoured.
     const schema = z.string().email().default('seed@example.com')
-    const slim = getSlimSchema(schema, { stripRefinements: true })
+    const slim = getSlimSchema(schema, { stripRefinements: true }, 64)
     // The default still resolves on undefined.
     const onUndefined = slim.safeParse(undefined)
     expect(onUndefined.success).toBe(true)
@@ -91,7 +91,7 @@ describe('getSlimSchema — stripDefaultValues flag', () => {
 
   it('default-wrapped enum: `.default(value)` survives + slimming runs through', () => {
     const schema = z.enum(['a', 'b', 'c']).default('a')
-    const slim = getSlimSchema(schema, { stripRefinements: true })
+    const slim = getSlimSchema(schema, { stripRefinements: true }, 64)
     const onUndefined = slim.safeParse(undefined)
     expect(onUndefined.success).toBe(true)
     if (onUndefined.success) expect(onUndefined.data).toBe('a')
@@ -101,21 +101,21 @@ describe('getSlimSchema — stripDefaultValues flag', () => {
 describe('getSlimSchema — stripOptional / stripNullable flags', () => {
   it('stripOptional=true rejects undefined', () => {
     const schema = z.string().optional()
-    const slim = getSlimSchema(schema, { stripOptional: true })
+    const slim = getSlimSchema(schema, { stripOptional: true }, 64)
     expect(slim.safeParse(undefined).success).toBe(false)
     expect(slim.safeParse('x').success).toBe(true)
   })
 
   it('stripNullable=true rejects null', () => {
     const schema = z.string().nullable()
-    const slim = getSlimSchema(schema, { stripNullable: true })
+    const slim = getSlimSchema(schema, { stripNullable: true }, 64)
     expect(slim.safeParse(null).success).toBe(false)
     expect(slim.safeParse('x').success).toBe(true)
   })
 
   it('defaults preserve optionality/nullability', () => {
-    const optional = getSlimSchema(z.string().optional(), {})
-    const nullable = getSlimSchema(z.string().nullable(), {})
+    const optional = getSlimSchema(z.string().optional(), {}, 64)
+    const nullable = getSlimSchema(z.string().nullable(), {}, 64)
     expect(optional.safeParse(undefined).success).toBe(true)
     expect(nullable.safeParse(null).success).toBe(true)
   })
@@ -124,14 +124,14 @@ describe('getSlimSchema — stripOptional / stripNullable flags', () => {
 describe('getSlimSchema — container-level constraints survive strict mode', () => {
   it('preserves array .min() when stripRefinements is false', () => {
     const schema = z.array(z.string()).min(1)
-    const slim = getSlimSchema(schema, { stripRefinements: false })
+    const slim = getSlimSchema(schema, { stripRefinements: false }, 64)
     expect(slim.safeParse([]).success).toBe(false)
     expect(slim.safeParse(['x']).success).toBe(true)
   })
 
   it('drops array .min() when stripRefinements is true', () => {
     const schema = z.array(z.string()).min(1)
-    const slim = getSlimSchema(schema, { stripRefinements: true })
+    const slim = getSlimSchema(schema, { stripRefinements: true }, 64)
     // With refinements stripped, the empty array should now pass.
     expect(slim.safeParse([]).success).toBe(true)
   })
@@ -140,7 +140,7 @@ describe('getSlimSchema — container-level constraints survive strict mode', ()
     const schema = z
       .object({ a: z.number(), b: z.number() })
       .refine((v) => v.a < v.b, 'a must be less than b')
-    const slim = getSlimSchema(schema, { stripRefinements: false })
+    const slim = getSlimSchema(schema, { stripRefinements: false }, 64)
     expect(slim.safeParse({ a: 2, b: 1 }).success).toBe(false)
     expect(slim.safeParse({ a: 1, b: 2 }).success).toBe(true)
   })

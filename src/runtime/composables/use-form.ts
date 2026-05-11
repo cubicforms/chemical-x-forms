@@ -1,6 +1,7 @@
 import type { z } from 'zod-v3'
 import { zodAdapter } from '../adapters/zod-v3'
 import { InvalidUseFormConfigError } from '../core/errors'
+import type { SchemaFactoryOptions } from '../core/get-computed-schema'
 import type {
   AbstractSchema,
   FormKey,
@@ -132,7 +133,7 @@ export function useForm<
     // the structural disagreement doesn't reach the caller.
     schema: abstractSchema as
       | AbstractSchema<Form, GetValueFormType>
-      | ((key: FormKey) => AbstractSchema<Form, GetValueFormType>),
+      | ((key: FormKey, options: SchemaFactoryOptions) => AbstractSchema<Form, GetValueFormType>),
     defaultValues: configuration.defaultValues as DeepPartial<DefaultValuesShape<Form>>,
   })
 }

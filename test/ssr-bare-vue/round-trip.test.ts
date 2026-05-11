@@ -32,7 +32,7 @@ function makeApp(opts: { ssr: boolean; initialEmail?: string }) {
     },
   })
   const app = createSSRApp(App)
-  app.use(createAttaform({ override: opts.ssr }))
+  app.use(createAttaform({ ssr: opts.ssr }))
   return app
 }
 

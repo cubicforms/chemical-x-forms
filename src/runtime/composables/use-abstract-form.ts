@@ -3,6 +3,7 @@ import { buildFormApi } from '../core/build-form-api'
 import { createFormStore, type FormStore } from '../core/create-form-store'
 import {
   ANONYMOUS_FORM_KEY_PREFIX,
+  DEFAULT_MAX_RECURSION_DEPTH,
   DEFAULT_PERSISTENCE_DEBOUNCE_MS,
   PERSISTENCE_KEY_PREFIX,
   RESERVED_KEY_PREFIX,
@@ -97,29 +98,6 @@ export function useAbstractForm<
 
   const key = resolveFormKey(configuration.key)
 
-  // Resolve the schema (accepts either an AbstractSchema or a factory).
-  // Preserve both generics — dropping `GetValueFormType` here would make
-  // `state.schema.getSchemasAtPath(...)` return `AbstractSchema<_, Form>[]`
-  // for consumers whose schema intentionally produces a different runtime
-  // shape (e.g. an adapter that narrows via a transform).
-  const resolvedSchema = getComputedSchema(key, configuration.schema)
-
-  // Eager throw: persistence configured without an explicit `key:`. An
-  // anonymous synthetic key (`__atta:anon:*`) drifts across mounts (HMR /
-  // route changes / SSR↔CSR) and can collide between unrelated forms —
-  // refusing here keeps the namespace stable and forecloses on the
-  // future encrypted-backend case where collision becomes a key-derivation
-  // overlap. Throws in dev and prod alike. The error body carries the
-  // schema's top-level fields and a captured call-site so the offender
-  // is identifiable from the message alone.
-  if (configuration.persist !== undefined && configuration.key === undefined) {
-    throw new AnonPersistError({
-      cause: 'no-key',
-      schemaFields: extractSchemaFields(resolvedSchema),
-      callSite: captureUserCallSite(),
-    })
-  }
-
   // One FormStore per (app, formKey). Multiple useForm calls with the same
   // key resolve to the same instance — that's the shared-store semantic
   // for forms that explicitly opt in to a stable key.
@@ -138,8 +116,37 @@ export function useAbstractForm<
   // Per-form values always win for scalars; `validateOn` and `debounceMs`
   // resolve independently so consumers can set `debounceMs` globally
   // and override `validateOn` per-form. Every downstream read uses
-  // `merged` so the merge happens exactly once.
+  // `merged` so the merge happens exactly once. Runs BEFORE schema
+  // resolution so the merged `maxRecursionDepth` can thread into the
+  // adapter factory.
   const merged = mergeWithDefaults(registry.defaults, configuration)
+
+  // Resolve the schema (accepts either an AbstractSchema or a factory).
+  // Preserve both generics — dropping `GetValueFormType` here would make
+  // `state.schema.getSchemasAtPath(...)` return `AbstractSchema<_, Form>[]`
+  // for consumers whose schema intentionally produces a different runtime
+  // shape (e.g. an adapter that narrows via a transform). The factory
+  // receives the resolved per-form options (`maxRecursionDepth`) so the
+  // adapter can bake them into its walk closures.
+  const resolvedSchema = getComputedSchema(key, configuration.schema, {
+    maxRecursionDepth: merged.maxRecursionDepth ?? DEFAULT_MAX_RECURSION_DEPTH,
+  })
+
+  // Eager throw: persistence configured without an explicit `key:`. An
+  // anonymous synthetic key (`__atta:anon:*`) drifts across mounts (HMR /
+  // route changes / SSR↔CSR) and can collide between unrelated forms —
+  // refusing here keeps the namespace stable and forecloses on the
+  // future encrypted-backend case where collision becomes a key-derivation
+  // overlap. Throws in dev and prod alike. The error body carries the
+  // schema's top-level fields and a captured call-site so the offender
+  // is identifiable from the message alone.
+  if (configuration.persist !== undefined && configuration.key === undefined) {
+    throw new AnonPersistError({
+      cause: 'no-key',
+      schemaFields: extractSchemaFields(resolvedSchema),
+      callSite: captureUserCallSite(),
+    })
+  }
 
   const existing = registry.forms.get(key) as FormStore<Form, GetValueFormType> | undefined
   if (__DEV__ && existing !== undefined) {
@@ -355,6 +362,7 @@ function mergeWithDefaults<
   // the value under non-`'change'` modes regardless.
   const debounceMs = (configuration as { debounceMs?: number }).debounceMs ?? defaults.debounceMs
   const shouldShowErrors = configuration.shouldShowErrors ?? defaults.shouldShowErrors
+  const maxRecursionDepth = configuration.maxRecursionDepth ?? defaults.maxRecursionDepth
   return {
     ...configuration,
     ...(strict === undefined ? {} : { strict }),
@@ -365,6 +373,7 @@ function mergeWithDefaults<
     ...(validateOn === undefined ? {} : { validateOn }),
     ...(debounceMs === undefined ? {} : { debounceMs }),
     ...(shouldShowErrors === undefined ? {} : { shouldShowErrors }),
+    ...(maxRecursionDepth === undefined ? {} : { maxRecursionDepth }),
   } as UseFormConfiguration<Form, GetValueFormType, Schema, Defaults>
 }
 

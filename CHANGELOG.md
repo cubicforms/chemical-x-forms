@@ -111,6 +111,9 @@ Pre-1.0 rip-and-replace; no compat shims.
   preview / sandbox deploys emit `noindex` + suppressed
   sitemap, mirroring the IndexNow ping gate.
 
+## v0.16.4
+_No unreleased changes yet._
+
 ## v0.16.3
 _No unreleased changes yet._
 

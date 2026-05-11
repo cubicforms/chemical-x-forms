@@ -420,6 +420,88 @@ describe('useForm type inference — handleSubmit', () => {
   })
 })
 
+describe('useForm type inference — setValue at preprocess-input paths', () => {
+  // Schemas whose path-resolved input type is `unknown` (z.preprocess,
+  // z.any, z.unknown) need special handling on the setValue surface.
+  // The standard `SetValuePayload<Write, Read>` collapses to `unknown`
+  // when `Write = unknown` (TS union absorption: `unknown | X = unknown`),
+  // which erases the callback union member and forces TS to give up on
+  // contextual `prev` inference — so the callback's `prev` decays to
+  // implicit `any` under `noImplicitAny`. The `PathSetValuePayload`
+  // helper substitutes `{} | null | undefined` on the value branch
+  // (structurally equivalent to `unknown` but doesn't trigger
+  // absorption) and `unknown` on the callback's prev branch — so the
+  // callback shape stays alive in the union and `prev` infers cleanly.
+  //
+  // The user-facing payoff: a consumer writing
+  // `form.setValue('age', (prev) => parse(prev))` is forced to narrow
+  // `prev` before using it, the same as if they wrote `let x: unknown`.
+  // No silent `any` slipping through under noImplicitAny.
+
+  const _preprocessSchema = z.object({
+    age: z.preprocess((v) => Number(v), z.number()),
+    name: z.string(),
+    bag: z.unknown(),
+    anyThing: z.any(),
+  })
+  type PreprocessSchema = typeof _preprocessSchema
+  type PreprocessForm = ReturnType<typeof useForm<PreprocessSchema>>
+  const preprocessForm: PreprocessForm = (() => {
+    const handler: ProxyHandler<() => unknown> = { get: () => proxy, apply: () => proxy }
+    const proxy: unknown = new Proxy(() => undefined, handler)
+    return proxy as PreprocessForm
+  })()
+
+  it('accepts any value at a preprocess path (no rejection at the type level)', () => {
+    // The schema's input is `unknown`; the runtime accepts whatever the
+    // consumer hands it (preprocess will coerce). Type system mirrors
+    // that.
+    preprocessForm.setValue('age', 42)
+    preprocessForm.setValue('age', '42')
+    preprocessForm.setValue('age', null)
+    preprocessForm.setValue('age', undefined)
+    preprocessForm.setValue('age', { something: 'else' })
+  })
+
+  it('callback `prev` is `unknown`, not `any` (forces narrowing)', () => {
+    preprocessForm.setValue('age', (prev) => {
+      // The whole point — `prev` must be `unknown` so the consumer
+      // can't accidentally treat it as any other type. Reading a
+      // property off it should compile-error until narrowed.
+      expectTypeOf(prev).toEqualTypeOf<unknown>()
+      return prev
+    })
+  })
+
+  it('callback `prev` for z.unknown / z.any is also `unknown`', () => {
+    preprocessForm.setValue('bag', (prev) => {
+      expectTypeOf(prev).toEqualTypeOf<unknown>()
+      return prev
+    })
+    preprocessForm.setValue('anyThing', (prev) => {
+      expectTypeOf(prev).toEqualTypeOf<unknown>()
+      return prev
+    })
+  })
+
+  it('strict paths in the same schema still infer their concrete leaf type', () => {
+    // Mixing preprocess fields with strict fields in one schema must
+    // not infect the strict path's inference — `prev: string` for
+    // `name`, not `unknown`.
+    preprocessForm.setValue('name', (prev) => {
+      expectTypeOf(prev).toEqualTypeOf<string>()
+      return prev.trim()
+    })
+  })
+
+  it('tuple-segment form mirrors the dotted-string form at preprocess paths', () => {
+    preprocessForm.setValue(['age'], (prev) => {
+      expectTypeOf(prev).toEqualTypeOf<unknown>()
+      return prev
+    })
+  })
+})
+
 describe('useForm type inference — fields + errors', () => {
   it('form.fields exposes a typed errors array on each path', () => {
     expectTypeOf(form.fields.email.errors).toMatchTypeOf<ReadonlyArray<{ message: string }>>()

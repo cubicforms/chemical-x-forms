@@ -2086,6 +2086,47 @@ export type SetValueCallback<Read, Write = Read> = (prev: Read) => Read | Write
 export type SetValuePayload<Write, Read = Write> = Write | SetValueCallback<Read, Write>
 
 /**
+ * Resolves `setValue`'s `value` argument type at a single `Path` leaf.
+ *
+ * Most leaves flow through unchanged via
+ * `SetValuePayload<DefaultValuesShape<Leaf>, NonNullable<WriteShape<Leaf>>>`.
+ *
+ * The `unknown extends Leaf` branch is the preprocess / `z.any()` /
+ * `z.unknown()` case: the schema's input type at the path is genuinely
+ * unconstrained, so the consumer must supply ANY value and the
+ * callback's `prev` must be `unknown` (not `any` — the whole point of
+ * "honest input typing" is to push the consumer to narrow before
+ * touching the value). Three details make that branch necessary:
+ *
+ *   1. **Union absorption** — `unknown | X` collapses to `unknown` in
+ *      TS, which would erase the callback union member. With the
+ *      callback shape gone from the constraint, TS has no contextual
+ *      type to infer `prev` from, and under `noImplicitAny` it
+ *      decays to `any`. The triple `{} | null | undefined` is
+ *      structurally equivalent to `unknown` (it accepts the same
+ *      value space) but is NOT subject to absorption, so the
+ *      callback branch survives the union and `prev` infers
+ *      cleanly to `unknown`.
+ *
+ *   2. **`NonNullable<unknown> = {}`** — applying `NonNullable` to
+ *      the read slot for an unknown leaf would narrow `prev` to
+ *      `{}`. That's looser than `unknown` (it allows ad-hoc property
+ *      access without narrowing); this branch keeps the read slot
+ *      as `unknown` directly so the consumer is forced to narrow.
+ *
+ *   3. **`Unset`-widening doesn't apply** — `DefaultValuesShape`
+ *      widens primitive leaves to admit `unset`; for an unknown
+ *      leaf there's no primitive to widen. Returning the open-form
+ *      triple keeps the surface honest about what the runtime
+ *      actually accepts (any value, including `unset` — `unset` is a
+ *      symbol, symbols are `{}`).
+ */
+export type PathSetValuePayload<Leaf> = unknown extends Leaf
+  ? // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+      ({} | null | undefined) | ((prev: unknown) => unknown)
+  : SetValuePayload<DefaultValuesShape<Leaf>, NonNullable<WriteShape<Leaf>>>
+
+/**
  * Focus / blur / touched flags for a registered field.
  *
  * - `focused` — `true` while the user is interacting with the field;
@@ -2825,13 +2866,7 @@ export type UseFormReturnType<
      * it blank (storage holds the slim default; UI displays
      * empty; submit raises "No value supplied" for required schemas).
      */
-    <
-      Path extends FlatPath<Form>,
-      Value extends SetValuePayload<
-        DefaultValuesShape<NestedType<Form, Path>>,
-        NonNullable<WriteShape<NestedType<Form, Path>>>
-      >,
-    >(
+    <Path extends FlatPath<Form>, Value extends PathSetValuePayload<NestedType<Form, Path>>>(
       path: Path,
       value: Value
     ): boolean
@@ -2843,10 +2878,7 @@ export type UseFormReturnType<
      */
     <
       const S extends ReadonlyArray<string | number>,
-      Value extends SetValuePayload<
-        DefaultValuesShape<NestedType<Form, JoinSegments<S>>>,
-        NonNullable<WriteShape<NestedType<Form, JoinSegments<S>>>>
-      >,
+      Value extends PathSetValuePayload<NestedType<Form, JoinSegments<S>>>,
     >(
       segments: S & ([JoinSegments<S>] extends [FlatPath<Form>] ? unknown : never),
       value: Value

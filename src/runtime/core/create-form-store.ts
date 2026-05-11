@@ -2379,11 +2379,12 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // `useForm({ defaultValues: ... })`. The structural-completeness
     // invariant covers post-write correctness; preserving construction
     // defaults across reset is a separate semantic the consumer expects.
-    const next = schema.getDefaultValues({
+    const resetResponse = schema.getDefaultValues({
       useDefaultSchemaValues: true,
       constraints: nextDefaultValues ?? defaultValues,
       strict,
-    }).data
+    })
+    const next = resetResponse.data
     // Replace form in one shot — applyFormReplacement will emit diffAndApply
     // patches and touch field records for every changed leaf.
     applyFormReplacement(next)
@@ -2419,6 +2420,21 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // which preserves them).
     schemaErrors.clear()
     userErrors.clear()
+    // Re-derive schemaErrors from the post-reset state under strict mode,
+    // mirroring construction-time validation (line ~1338). Without this,
+    // reset clears the error store but never re-runs validation — so a
+    // form mounted with invalid defaults (e.g. empty required strings)
+    // would surface as `valid: true` immediately after reset even though
+    // the values it landed back on are the same INVALID defaults it
+    // mounted with. `field.valid` aggregates over schemaErrors and would
+    // otherwise come up empty, flipping every leaf green.
+    //
+    // Gated on `strict` to honor the same opt-out construction uses:
+    // a non-strict form opted out of construction-time validation
+    // explicitly, and post-reset behaviour follows suit.
+    if (strict && !resetResponse.success) {
+      setAllSchemaErrors(resetResponse.errors)
+    }
     // Blow away touched/focused/blurred per field. connected stays as-is
     // (the DOM elements haven't detached — that's a separate concern from
     // form state) and updatedAt stamps to now.

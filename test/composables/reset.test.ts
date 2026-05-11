@@ -210,3 +210,158 @@ describe('useForm — resetField(path)', () => {
     expect(form.errors('')).toBeUndefined()
   })
 })
+
+describe('useForm — reset() re-derives schema errors against the post-reset state', () => {
+  const apps: App[] = []
+  afterEach(() => {
+    while (apps.length > 0) apps.pop()?.unmount()
+  })
+
+  it('reset() to invalid defaults re-populates schemaErrors (not silent-clear)', async () => {
+    // Bug surfaced via the docs-site stepper demo: open the form
+    // (gray step titles because defaults are invalid), press reset,
+    // step titles flip green. Reset clears schemaErrors but never
+    // re-runs validation — the form is sitting on the same INVALID
+    // defaults it mounted with, but the error store is empty.
+    // `field.valid` falls through to `true` because errors aggregate
+    // over an empty schemaErrors map.
+    //
+    // Pre-fix: errors empty after reset → `valid: true` on every leaf.
+    // Post-fix: validation re-derives against post-reset defaults →
+    // errors match construction-time output.
+    const { useForm } = await import('../../src/zod')
+    const { createAttaform } = await import('../../src/runtime/core/plugin')
+    const { z } = await import('zod')
+
+    const schema = z.object({
+      name: z.string().min(1),
+      email: z.email(),
+    })
+
+    let captured!: ReturnType<typeof useForm<typeof schema>>
+    const Probe = defineComponent({
+      setup() {
+        captured = useForm({
+          schema,
+          key: `reset-revalidate-${Math.random().toString(36).slice(2)}`,
+          defaultValues: { name: '', email: '' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(Probe).use(createAttaform())
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    const form = captured
+
+    // Mount baseline: defaults are invalid (empty strings fail
+    // `.min(1)` / email format). Construction-time validation
+    // populated schemaErrors at mount.
+    expect(form.fields.name.valid).toBe(false)
+    expect(form.fields.email.valid).toBe(false)
+    const mountedErrorCount = form.meta.errors.length
+    expect(mountedErrorCount).toBeGreaterThan(0)
+
+    // User types something (still invalid — under min length / not
+    // an email yet). The exact intermediate state doesn't matter;
+    // what matters is what reset() produces below.
+    form.setValue('name', 'x')
+
+    form.reset()
+
+    // The defaults are STILL invalid. Every leaf-level validity
+    // and the aggregated form-level meta must reflect that.
+    expect(form.fields.name.valid).toBe(false)
+    expect(form.fields.email.valid).toBe(false)
+    expect(form.meta.valid).toBe(false)
+    // Error count after reset matches what mount produced — same
+    // defaults, same validation verdict.
+    expect(form.meta.errors.length).toBe(mountedErrorCount)
+  })
+
+  it('reset(payload) re-derives schemaErrors against the payload, not construction defaults', async () => {
+    // The fix routes through `schema.getDefaultValues({ constraints })`,
+    // and `constraints` is `nextDefaultValues ?? defaultValues` — so
+    // a reset payload IS what gets validated. Two arms:
+    //   (a) invalid payload over invalid defaults → errors re-derived
+    //       against THE PAYLOAD (not silently empty, not stale from
+    //       mount).
+    //   (b) valid payload → errors clear (no spurious errors clinging
+    //       from the pre-reset state).
+    const { useForm } = await import('../../src/zod')
+    const { createAttaform } = await import('../../src/runtime/core/plugin')
+    const { z } = await import('zod')
+
+    const schema = z.object({
+      name: z.string().min(3),
+      email: z.email(),
+    })
+
+    let captured!: ReturnType<typeof useForm<typeof schema>>
+    const Probe = defineComponent({
+      setup() {
+        captured = useForm({
+          schema,
+          key: `reset-payload-${Math.random().toString(36).slice(2)}`,
+          defaultValues: { name: '', email: '' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(Probe).use(createAttaform())
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    const form = captured
+
+    // Arm (a): payload is still invalid (name='xx' fails .min(3)).
+    form.reset({ name: 'xx' })
+    expect(form.meta.errors.length).toBeGreaterThan(0)
+    // The post-reset value reflects the payload merge over defaults.
+    expect(form.values.name).toBe('xx')
+    expect(form.fields.name.valid).toBe(false)
+
+    // Arm (b): fully-valid payload — every required field satisfied.
+    form.reset({ name: 'Alice', email: 'a@example.com' })
+    expect(form.meta.errors).toEqual([])
+    expect(form.meta.valid).toBe(true)
+    expect(form.fields.name.valid).toBe(true)
+    expect(form.fields.email.valid).toBe(true)
+  })
+
+  it('reset() with `strict: false` leaves schemaErrors empty (opt-out preserved)', async () => {
+    // Construction-time validation is gated on `strict: true` (the
+    // default). A form that explicitly opted out of strict mounts
+    // without populated schemaErrors. Reset must honor the same gate
+    // — re-running validation post-reset would violate the explicit
+    // opt-out. Pins that the re-derive fix in the other probe is
+    // strict-gated correctly.
+    const { useForm } = await import('../../src/zod')
+    const { createAttaform } = await import('../../src/runtime/core/plugin')
+    const { z } = await import('zod')
+
+    const schema = z.object({ name: z.string().min(1) })
+
+    let captured!: ReturnType<typeof useForm<typeof schema>>
+    const Probe = defineComponent({
+      setup() {
+        captured = useForm({
+          schema,
+          key: `reset-nonstrict-${Math.random().toString(36).slice(2)}`,
+          strict: false,
+          defaultValues: { name: '' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(Probe).use(createAttaform())
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    const form = captured
+
+    expect(form.meta.errors.length).toBe(0)
+    form.setValue('name', 'something')
+    form.reset()
+    // Still empty — strict: false opts out of the re-derive too.
+    expect(form.meta.errors.length).toBe(0)
+  })
+})

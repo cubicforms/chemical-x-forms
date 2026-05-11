@@ -2,7 +2,418 @@
 
 ## Unreleased
 
-_No unreleased changes yet._
+This release lands the library-hardening campaign (52 failing
+probes → 0, 19 root-cause buckets resolved) plus a headline
+feature in multi-tab sync. Everything below is pre-1.0
+rip-and-replace — no deprecation shims, no back-compat aliases.
+
+### Headline feature
+
+- **Multi-tab sync via `BroadcastChannel`.** Same-keyed `useForm`
+  callsites in same-origin tabs now auto-pair and mirror every
+  mutation in near real-time. Closes the invisible-data-loss
+  footgun: user submits in tab A while tab B holds stale state,
+  then edits the stale tab. With sync on, every same-keyed tab
+  converges within a microtask.
+
+  Identity is `form.key` + schema fingerprint — the channel name
+  is `attaform:sync:${formKey}:${hashStableString(schema.fingerprint())}`.
+  No opt-in flag; the only switch is `multiTab: false` to disable.
+  Anonymous (auto-keyed) forms skip the module entirely (no
+  shared identity → no channel to join).
+
+  **Mount-time handshake uses leader-election.** A joining tab
+  posts `{kind: 'hello'}`; established tabs respond with
+  `{kind: 'announce', senderId}` (UUID only, no payload). The
+  joining tab collects announces for ~50ms, sorts the roster, and
+  posts `{kind: 'requestSnapshot', targetId: <lowest senderId>}`.
+  Only the leader replies with a full snapshot. Bandwidth on an
+  N-tab join is N tiny announces + 1 snapshot, regardless of N
+  — vs the naive "everyone responds with a snapshot" design which
+  would be O(N) full snapshots. Bounded retry (3 attempts) handles
+  leader-died-between-announce-and-request.
+
+  Steady state broadcasts `Patch[]` (the same diff machinery
+  history uses), applied via `applyPatchesForward` +
+  `state.applyFormReplacement` with `{ crossTab: true, persist:
+  false }` meta. History and persistence listeners gate on the
+  meta so cross-tab applies don't push undo deltas and don't
+  re-persist.
+
+  **Three-level `multiTab` cascade:** `register(path, { multiTab:
+  false })` > `useForm({ multiTab: false })` >
+  `createAttaform({ defaults: { multiTab: false } })` > library
+  default `true`. Downgrade-only — a more-specific level can opt
+  OUT but cannot opt back IN once a broader scope has disabled.
+
+  **Security defenses baked into v1, not optional:**
+
+  - **Secure-context gate.** Module instantiates only when
+    `window.isSecureContext === true` (HTTPS in production OR
+    localhost in development). Plain HTTP on a real hostname
+    silently noops with a one-shot dev warning. Same gate
+    also applies to built-in persistence storage adapters
+    (`'local'`, `'session'`); custom storage adapters bypass
+    (the consumer owns that layer's security posture).
+  - **Sensitive-path filtering — outbound AND inbound.** Paths
+    matching the resolved `sensitiveNames` list are stripped
+    before posting AND rejected on receive. Defense in depth —
+    the wire is never trusted, even when the originating tab
+    "should have" stripped them. Same list gates persistence
+    writes and the DevTools redact walk.
+  - **Prototype-pollution defense.** Inbound patches with
+    `__proto__`, `constructor`, or `prototype` segments in their
+    path are rejected before `applyPatchesForward` ever touches
+    the form.
+  - **Echo drop via per-module `senderId` (crypto.randomUUID).**
+    Defends intra-tab self-loops (two `useForm({ key })` instances
+    in one page) and any UA echo behaviour.
+  - **Protocol versioning (`v: 1`).** Unknown versions dropped
+    silently — lets the wire format evolve across rolling deploys
+    without corrupting older tabs.
+  - **Post-apply schema validate + rollback** (gated on the
+    pre-state being valid, so forms mounting with intentionally-
+    invalid defaults don't reject every remote update).
+  - **No errors / submit lifecycle on the wire** — error messages
+    can contain sensitive context (`"invalid SSN: 123-45-6789"`).
+    Validation re-runs locally on the receiver; error maps are
+    not synced.
+
+  Recipe at `docs/recipes/multi-tab-sync.md` includes the full
+  threat model + data-flow audit table for security review. XSS-
+  style HTML sanitization is deliberately NOT applied — form
+  values are data, not markup; schema-driven validation is
+  strictly stronger and lossless.
+
+### New API
+
+- **Configurable sensitive-name heuristic.** The path-segment
+  matcher that gates persistence writes, multi-tab broadcasts,
+  AND the DevTools redact walk is now consumer-extensible.
+  `DEFAULT_SENSITIVE_NAMES` is exported as a frozen string-stem
+  array (`password`, `pwd`, `ssn`, `cvv`, `token`, `mfa_*`, etc.);
+  `createIsSensitivePath(list)` and
+  `createSegmentMatchesSensitive(list)` are factory helpers that
+  build per-form closures from any consumer list.
+
+  Compose to extend:
+
+  ```ts
+  import { createAttaform, DEFAULT_SENSITIVE_NAMES } from 'attaform'
+
+  createAttaform({
+    defaults: {
+      sensitiveNames: [...DEFAULT_SENSITIVE_NAMES, 'mrn', 'tax_id'],
+    },
+  })
+  ```
+
+  Resolution: `useForm({ sensitiveNames })` > global default >
+  library default. Empty array `[]` is the explicit "nothing is
+  sensitive" override for fully-trusted internal tooling. The
+  resolved closure threads through state for persistence
+  enforcement, the multi-tab module, AND the DevTools redact walk
+  — one configurable source of truth across every surface.
+
+- **`form.history` namespace consolidation.** Undo/redo methods
+  and reactive flags previously sat at three different addresses
+  (`form.undo`/`form.redo` at top-level, `form.meta.canUndo`/
+  `canRedo`/`historySize` on meta). All moved under one
+  namespace:
+
+  | Member                 | Type            | What it does                                                            |
+  | ---------------------- | --------------- | ----------------------------------------------------------------------- |
+  | `form.history.undo()`  | `() => boolean` | Step back to the previous state. `false` at baseline.                   |
+  | `form.history.redo()`  | `() => boolean` | Replay the next state after an undo. `false` when nothing's queued.     |
+  | `form.history.clear()` | `() => void`    | Wipe the undo/redo branches; reseed the chain with the current state.   |
+  | `form.history.canUndo` | `boolean`       | Gate an "Undo" button on this.                                          |
+  | `form.history.canRedo` | `boolean`       | Gate a "Redo" button on this.                                           |
+  | `form.history.size`    | `number`        | Reachable positions across the chain.                                   |
+
+  The reactive bundle is built as `readonly(reactive({...}))`, so
+  ComputedRef fields auto-unwrap to plain booleans/numbers on
+  access. The namespace is always present whether or not
+  `history` was configured — inert no-ops + `false`/`0` flags
+  when off. **Breaking:** `form.undo`/`form.redo` and
+  `form.meta.canUndo`/`canRedo`/`historySize` deleted outright.
+
+  New `form.history.clear()` method: wipes both delta arrays and
+  reseeds `base` from the current snapshot. The form value,
+  errors, and blankPaths all stay where they are — only the past/
+  future history resets. Useful after a "save successful"
+  milestone where consumers want to lose access to the prior
+  chain without disturbing the rendered form.
+
+- **`form.process()` — on-demand post-transform snapshot.** Runs
+  the schema's transform pipeline against the current form value
+  and returns the typed output shape. Pairs with the new
+  write-boundary input normalization (below): consumers can read
+  `form.values()` for the as-typed-by-user view, or `form.process()`
+  for the as-the-server-will-see-it view. Awaits any async
+  refinements before returning.
+
+- **Run input normalization (preprocess) at the write boundary.**
+  Zod's `z.preprocess(fn, inner)` (and the Valibot / ArkType
+  equivalents) now run synchronously at `setValue` time, so
+  storage holds the post-normalization shape. Previously a schema
+  like `notify: z.preprocess(v => v == null ? defaultVar : v,
+  innerDU)` would let the consumer write `null` and lock storage
+  into an invalid shape — the gate saw the raw input, and storage
+  held a value no variant matched. The write boundary now runs
+  `schema.normalizeWriteValueAtPath(value, path)` first; async
+  preprocess returns the original value unchanged (parse-time
+  handles those).
+
+- **`form.touch(path?)` — programmatic touched-flag flip.** Marks
+  a leaf, every leaf under a container, or every leaf in the form
+  (no arg) as `touched: true`. Closes the post-import / paste /
+  autofill gap where there's no DOM blur to drive the standard
+  gesture-based touched flow. Touched is the sticky-true flag the
+  default `shouldShowErrors` heuristic reads — `form.touch()`
+  after a programmatic seed surfaces every error the schema is
+  ready to report.
+
+- **`field.showErrors` + `field.firstError` + `shouldShowErrors`
+  predicate.** Centralised "should I render this field's errors
+  right now" heuristic, configurable per-form and globally.
+
+  - `field.showErrors` — boolean that gates whether a path's
+    errors are *ready* to render. Library default reads "show
+    after the first submit attempt OR after the field has been
+    interacted with AND changed."
+  - `field.firstError` — the first error in the field's list iff
+    `showErrors` is true, else `undefined`. Sugar for the very
+    common single-error template binding.
+  - `useForm({ shouldShowErrors })` / `createAttaform({ defaults:
+    { shouldShowErrors } })` — replace the heuristic. Boolean
+    shorthand (`true` = always show when errors exist; `false` =
+    never show) or a `(field, formMeta) => boolean` predicate.
+    Public `defaultShouldShowErrors` export for compose-with-
+    library-default patterns.
+
+- **`form.setFormErrors` / `form.clearFormErrors`** — see the
+  v0.15.0 entry; surface confirmed and recipe expanded.
+
+- **`maxRecursionDepth` knob for recursive schemas.** Schemas
+  using `z.lazy(...)` (and equivalent constructs in any future
+  adapter) now have a tunable recursion ceiling. Defaults: per-
+  form > `AttaformDefaults.maxRecursionDepth` > library default
+  (`64`). Pass `Infinity` to disable the cap entirely (caller
+  owns termination).
+
+  The cap is read at every step of a schema walk that crosses a
+  recursive boundary — default-value derivation at construction,
+  slim-primitive type gates on each write, path-by-path schema
+  resolution. Walks track descent depth and switch to a
+  permissive fallback once `depth > maxRecursionDepth`. Full
+  schema validation (`validateAsync`, `handleSubmit`) still runs
+  against the real schema at any depth.
+
+- **`z.input` / `z.output` split across the API for transform
+  schemas.** `defaultValues` + `setValue` accept `z.input<Schema>`
+  at path; `form.values()` and `form.process()` return
+  `z.output<Schema>` at path. Closes the "storage holds input
+  type" probe and matches the consumer mental model: type what
+  the user can write, read what the server expects.
+
+### Behaviour changes
+
+- **`reset()` re-derives schemaErrors against post-reset state.**
+  Bug surfaced via the docs-site stepper demo: open the form
+  (gray step titles because defaults are invalid), press reset,
+  step titles flip green — implying the form is valid when its
+  values haven't changed. Root cause: `reset()` cleared
+  `schemaErrors` then never re-ran validation. The form ended up
+  sitting on the same INVALID defaults it mounted with, but the
+  error store was empty, so `field.valid` aggregated empty and
+  came up `true` everywhere.
+
+  Fix: capture the full `getDefaultValues` response, and after
+  clearing the error stores re-seed `schemaErrors` from
+  `resetResponse.errors` when `strict && !resetResponse.success`.
+  Mirrors construction-time logic exactly. Gated on `strict` to
+  honor the same opt-out: a non-strict form opted out of
+  construction-time validation explicitly, so reset doesn't
+  re-run either. Works in both call shapes:
+  `form.reset()` (validates construction defaults) and
+  `form.reset({ payload })` (validates the payload merged over
+  defaults).
+
+- **`reset()` is undoable.** `reset()` is now treated as an
+  ordinary mutation — `applyFormReplacement` fires `onFormChange`
+  and the post-reset snapshot lands on the undo stack, so
+  `form.history.undo()` recovers the pre-reset form. Consumers
+  who want a hard wipe call `form.history.clear()` after
+  `reset()`, or pop a confirmation dialog before calling
+  `reset()`.
+
+- **Persistence hydration is the history floor.**
+  `WriteMeta.hydration: true` (set by `wirePersistence`) signals
+  the history module to wipe both stacks and reseed with the
+  post-hydration snapshot. The transient pre-hydration default is
+  no longer recoverable via `undo()` — it was library plumbing,
+  not state the user ever saw. Race-window mutations between
+  mount and hydrate are also dropped (they were operating against
+  stale defaults anyway).
+
+- **`resetField('')` is the form-level error path, not a "reset
+  everything" alias.** `''` is the form-level error bucket — the
+  canonical home for errors that don't belong to any specific
+  field (root `.refine()` messages, `setFormErrors` entries,
+  server-emitted form errors). It's one path among many.
+  `resetField('')` clears that bucket only; named fields stay
+  untouched. Use `reset()` to wipe everything.
+
+- **`handleSubmit` rejects re-entry while a submission is in
+  flight.** A second `submit()` call during an in-flight
+  submission's `await` window returns the existing promise (no-op
+  re-entry) rather than starting a parallel submission. Stops
+  the "double-click triggers two submits" footgun without
+  consumer-side guards.
+
+- **`setFieldErrors` / `addFieldErrors` filter to the form's own
+  `formKey`.** Entries whose `formKey` doesn't match the
+  receiving form's key are dropped with a dev warning. Closes a
+  silent-cross-form-write footgun where a `parseApiErrors` result
+  from one form's submission could land on a sibling form sharing
+  the path namespace.
+
+- **Per-instance config lift (`validateOn`, `debounceMs`,
+  `shouldShowErrors`, `coerce`, `rememberVariants`).** When two
+  `useForm({ key: 'signup' })` callsites share a FormStore (the
+  modal/sidebar pattern), each instance now honors its OWN
+  `validateOn` / `debounceMs` / etc. via `WriteMeta.instance` +
+  the buildFormApi options bag. `persist` and `strict` remain
+  store-level (first-call wins) — those configure the store
+  itself.
+
+- **`reset()` clears variant memory.** The per-variant typed-data
+  cache (used to restore typed values across DU switches) is
+  wiped on reset — a fresh start drops it. Without this, a
+  post-reset variant switch would surface stale values from
+  before the reset.
+
+- **`Symbol`-keyed properties are stripped at the `setValue`
+  boundary.** Form values are string-keyed by schema design;
+  symbols leaked into storage by consumer-supplied objects would
+  break JSON serialization (persistence), the variant-memory
+  snapshot, and surface as
+  `Object.getOwnPropertySymbols(values.x).length > 0`. The
+  stripper is recursive but fast-paths a no-symbol tree (zero
+  allocation when nothing to strip).
+
+- **Non-discriminated `z.union` of literals: writes accept any
+  type-shape match; literal-set mismatches surface via
+  validation, not gate rejection.** A schema like `role:
+  z.union([z.literal('admin'), z.literal('viewer')])` slim-
+  resolves to `string` at the write gate — writing `'wat'`
+  SUCCEEDS at the gate and storage receives it. The literal-set
+  membership is a refinement, surfaced by schema validation
+  (default `validateOn: 'change'`). Rejecting at the gate would
+  be a silent-UX failure: user types, nothing happens, no error
+  explains why. Consistent with the library's "forms exist to
+  receive information; invalid information flows to a validation
+  error the user can act on" stance.
+
+### Discriminated-union hardening
+
+- **Unknown discriminator values land in a stub state.** Writing
+  a non-variant value to a DU discriminator (e.g. `'wat'` for a
+  `z.literal('email') | z.literal('sms')` channel) leaves the
+  union path holding only the discriminator value — every other
+  leaf reads as a stable stub (`value: undefined`, `errors: []`,
+  `valid: true`). Validation surfaces the mismatch via the
+  schema's natural error. Construction walker + reshape walker
+  apply stubs at every DU path; the cross-variant write guard
+  rejects sibling-variant / under-stub writes. Resolves ~21
+  probes spanning DU edge cases.
+
+- **Surgical variant-memory clearing per array op.** Field-array
+  helpers now thread `WriteMeta.arrayOp` hints so the runtime
+  clears variant memory for indices the op actually invalidated:
+  `append` clears nothing, `prepend`/`insert`/`remove` shifts,
+  `swap` pinpoint-clears the swapped pair, `move` shifts the
+  affected range, raw whole-array `setValue` clears all. Without
+  the hint, every array mutation would have to clear everything
+  under the array (the runtime can't tell which indices stayed
+  put from the post-write shape alone).
+
+- **`z.intersection` peels in DU unwrap.** Schemas like
+  `z.intersection(z.discriminatedUnion('kind', [...]), z.object({
+  meta: z.string() }))` are now recognised as DUs at the
+  reshape boundary. Ambiguous (DU on both sides of the
+  intersection) returns undefined.
+
+- **Array gaps pad with element defaults during DU reshape.**
+  Variant-switching into an array branch that introduces new
+  indices now fills the gaps via `setAtPathWithSchemaFill`
+  instead of leaving holes.
+
+### Bug fixes
+
+- **`z.any()` paths preserve `any` (not narrowed to `unknown`) on
+  `setValue`.** Splits the type-only narrowing applied to
+  preprocess paths from the typing for bare `z.any()` paths.
+- **`setValue` with preprocess path types `prev` as `unknown`
+  (not `any`).** Closes a type-only DX hole where the consumer's
+  callback param widened past the schema-declared input shape.
+- **`maxRecursionDepth` sanitisation at the injection site.**
+  `NaN` / negative / `Infinity` / non-integer values now fall back
+  to the library default with a dev-warn (instead of producing
+  unbounded walks or silent off-by-ones in the `>=` comparisons).
+- **All public-API numeric options sanitised at injection.**
+  Symmetric treatment for `debounceMs`, `history.max`, etc.
+- **DU-aware persistence hydration merge.** Persisted variants
+  with a known discriminator land cleanly; foreign-variant keys
+  are dropped; unknown disc emits a stub.
+- **`zod-v3` adapter parity for `normalizeWriteValueAtPath`.**
+  Preprocess at the write boundary now runs in v3 schemas too.
+- **Counter-desync vector closed in submit + validation
+  lifecycles.** `activeSubmissions` / `activeValidations` can no
+  longer drift positive across an abort-during-flight scenario.
+- **`form.errors` template / JSON / form-level-visibility
+  parity.** All three surfaces read identically through the same
+  aggregator helper.
+- **Adapter-throw handling harmonised across `validateAsync` +
+  `form.process()`.** An adapter that throws during a
+  one-shot parse no longer leaves either entry point in an
+  inconsistent state.
+
+### Internal refactors
+
+- **History stored as base + forward deltas** (refactor from per-
+  mutation full snapshots). Each delta carries `Patch[]`,
+  `blankPathsAdded`/`Removed`, and (when changed) error-store
+  diffs. Default `max: 128` reachable positions; each additional
+  position costs `O(changed-leaf-count)` instead of a full clone.
+- **`SSRDetectOptions.override` renamed to `.ssr`.** Internal /
+  test-only knob; consumer surface unchanged.
+- **`fakeSchema` (test utility) preserves checks at the target
+  path during re-validation.**
+
+### Docs + site
+
+- **New recipe — Multi-tab sync** (`docs/recipes/multi-tab-sync.md`).
+  Full design + required Security section (data-flow audit,
+  threat model, defenses, recommended posture for regulated data,
+  iframe behavior, CSP guidance).
+- **Persistence recipe gains a `## Security` block.** Documents
+  the sensitive-names cascade (with the new
+  `DEFAULT_SENSITIVE_NAMES` export and composition example) AND
+  the secure-context gate for built-in storage adapters. Cross-
+  links to the multi-tab recipe for the symmetric gate.
+- **`setFormErrors` / `clearFormErrors` reference + form-level
+  error surface** documented end-to-end.
+- **SEO discovery now gated on `VERCEL_ENV === 'production'`.**
+  Sandboxed branches, preview deploys, local builds, and CI all
+  emit non-indexable output (`robots.txt → Disallow: /`,
+  suppressed sitemap, `<meta name="robots" content="noindex,
+  nofollow">` on every page). Mirrors the existing IndexNow ping
+  gate so the two surfaces share one source of truth for "this
+  is a deploy that should reach search engines."
+- **Intentional dev-mode Nuxt warnings silenced.** The site's
+  zero-runtime OG image config + the payload-extraction warning
+  pattern both flow through the existing build-warning filter.
 
 ## v0.16.3
 _No unreleased changes yet._

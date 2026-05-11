@@ -2375,7 +2375,14 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       }
     }
 
-    // Leaf shortcut: direct originals hit means one setValueAtPath does it.
+    // Storage restore: leaf > container > nothing.
+    //
+    // Leaf shortcut: direct originals hit means one setValueAtPath does
+    // it. A miss falls through to the container case, which assembles a
+    // subtree from every original under the prefix. When neither
+    // matches — e.g. `resetField('')` (the form-level error path, never
+    // a storage slot) or `resetField('unknownPath')` — storage stays
+    // untouched but the cleanup below still runs.
     const leafEntry = originals.get(targetKey)
     if (leafEntry !== undefined) {
       const wrote = setValueAtPath(targetSegments, leafEntry.value)
@@ -2389,53 +2396,53 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
             `This is a bug in the construction pipeline.`
         )
       }
-      schemaErrors.delete(targetKey)
-      userErrors.delete(targetKey)
-      clearFieldRecordFlags(targetKey)
-      return
-    }
-
-    // Container case — reconstruct the subtree by walking originals for
-    // every leaf whose path is a descendant of `targetSegments`. We assemble
-    // the subtree first, then apply it in one setValueAtPath so diffAndApply
-    // sees a single coherent replacement (rather than N mutations).
-    //
-    // The iteration reads `entry.segments` directly; the alternative
-    // (JSON.parse on the Map key) both allocates and pays a parse cost per
-    // entry even on cold paths.
-    let subtree: unknown = undefined
-    let anyMatch = false
-    for (const [, entry] of originals) {
-      const leafSegments = entry.segments
-      if (!isPathPrefix(targetSegments, leafSegments)) continue
-      if (leafSegments.length === targetSegments.length) continue // covered by the leaf shortcut above
-      anyMatch = true
-      const relative = leafSegments.slice(targetSegments.length)
-      if (subtree === undefined) {
-        // Seed root container type from the first relative segment. Numeric
-        // index → array; string key → plain object. setAtPath will stay
-        // consistent with that choice for the rest of the walk.
-        subtree = typeof relative[0] === 'number' ? [] : {}
+    } else {
+      // Container case — reconstruct the subtree by walking originals for
+      // every leaf whose path is a descendant of `targetSegments`. We assemble
+      // the subtree first, then apply it in one setValueAtPath so diffAndApply
+      // sees a single coherent replacement (rather than N mutations).
+      //
+      // The iteration reads `entry.segments` directly; the alternative
+      // (JSON.parse on the Map key) both allocates and pays a parse cost per
+      // entry even on cold paths.
+      let subtree: unknown = undefined
+      let anyMatch = false
+      for (const [, entry] of originals) {
+        const leafSegments = entry.segments
+        if (!isPathPrefix(targetSegments, leafSegments)) continue
+        if (leafSegments.length === targetSegments.length) continue // would have hit the leaf shortcut
+        anyMatch = true
+        const relative = leafSegments.slice(targetSegments.length)
+        if (subtree === undefined) {
+          // Seed root container type from the first relative segment. Numeric
+          // index → array; string key → plain object. setAtPath will stay
+          // consistent with that choice for the rest of the walk.
+          subtree = typeof relative[0] === 'number' ? [] : {}
+        }
+        subtree = setAtPath(subtree, relative, entry.value)
       }
-      subtree = setAtPath(subtree, relative, entry.value)
+      if (anyMatch) {
+        const wroteSubtree = setValueAtPath(targetSegments, subtree)
+        if (!wroteSubtree) {
+          console.error(
+            `[attaform] resetField: subtree write rejected at path '${targetKey}' — ` +
+              `originals contain values that don't satisfy the slim primitive shape. ` +
+              `This is a bug in the construction pipeline.`
+          )
+        }
+      }
     }
-    if (!anyMatch) return // nothing tracked under this prefix; no-op
 
-    const wroteSubtree = setValueAtPath(targetSegments, subtree)
-    if (!wroteSubtree) {
-      console.error(
-        `[attaform] resetField: subtree write rejected at path '${targetKey}' — ` +
-          `originals contain values that don't satisfy the slim primitive shape. ` +
-          `This is a bug in the construction pipeline.`
-      )
-    }
-
-    // Clear errors and reset field-record flags for the target + every
-    // descendant. Segments come from the stored records (each ValidationError
-    // carries its own `path`, each FieldRecord carries `path`), so neither
-    // loop has to `JSON.parse` the Map key. Both error stores walk in
-    // parallel — resetField is "fresh start at this subtree" semantics, so
-    // user-injected errors under the prefix go too.
+    // Cleanup runs regardless of whether storage was restored. Clears
+    // errors and field-record flags for the target path AND every
+    // descendant. `deleteErrorsUnderPrefix` covers the exact-path entry
+    // too (an array is a prefix of itself), so a leaf reset clears the
+    // single matching entry and a container reset sweeps the subtree.
+    // Crucially, this also makes `resetField('')` a usable form-level-
+    // error wipe: there's no storage at `''`, but errors do live there,
+    // and a consumer who calls resetField on that path expects them
+    // cleared. Same reasoning applies to consumer-set errors at any
+    // path the schema doesn't model.
     deleteErrorsUnderPrefix(schemaErrors, targetSegments)
     deleteErrorsUnderPrefix(userErrors, targetSegments)
     for (const [fieldKey, record] of Array.from(fields.entries())) {

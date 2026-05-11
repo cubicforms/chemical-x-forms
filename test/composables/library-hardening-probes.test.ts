@@ -3215,36 +3215,65 @@ describe('chaos — performance: large array of DU', () => {
   })
 })
 
-// -------------------- 9.9 resetField('') / root --------------------
-describe('chaos — resetField with the root path', () => {
+// -------------------- 9.9 resetField('') is the form-level-errors path --------------------
+describe("chaos — resetField with the form-level errors path ''", () => {
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()
   })
 
-  it("resetField with the empty-string path '' does something sensible (or rejects cleanly)", async () => {
+  it("resetField('') clears form-level errors but leaves named fields untouched", async () => {
+    // `''` is the form-level error bucket — the path where errors that
+    // don't belong to any specific field live (`setFormErrors`, root
+    // `.refine()` messages, server-emitted form errors). It is NOT a
+    // "reset everything" alias. `resetField('')` resets the field at
+    // that path: storage at `''` typically doesn't exist (schemas don't
+    // name a field `''`), so nothing in `form.values` changes, but
+    // errors at `''` are cleared — matching the consumer model where
+    // every path-addressed API treats `''` as one path among many.
     const { app, api } = mountProfile()
     apps.push(app)
 
-    api.setValue('name', 'changed')
+    api.setValue('name', 'Ada')
+    api.setFormErrors([{ message: 'capacity exceeded', code: 'api:capacity' }])
     await nextTick()
 
-    // What does resetField('') mean? The recent commit `eb28614 0.16.2`
-    // was about disambiguating '' from root. Probe expected: either
-    // throws cleanly or treats as root reset (whole form back to defaults).
-    let threw = false
-    try {
-      api.resetField('')
-    } catch {
-      threw = true
-    }
+    expect(api.values.name).toBe('Ada')
+    expect(api.errors('')).toHaveLength(1)
+
+    api.resetField('')
     await nextTick()
 
-    if (!threw) {
-      // If accepted, form is at default values. Otherwise, no-op or
-      // error — but never an inconsistent state.
-      expect(api.values.name).toBe('')
-    }
+    // Named field is untouched — `''` is a distinct path, not an
+    // alias for the whole form.
+    expect(api.values.name).toBe('Ada')
+    // Form-level errors at `''` are cleared.
+    expect(api.errors('')).toBeUndefined()
+  })
+
+  it('resetField on a container path broadcasts the reset to descendants', async () => {
+    // Mirrors the read-side pattern: `form.fields(containerPath)` and
+    // `form.values(containerPath)` aggregate the subtree, so a write-
+    // side `resetField(containerPath)` reverts every leaf in the
+    // subtree to its construction-time original.
+    const { app, api } = mountProfile()
+    apps.push(app)
+
+    api.setValue('name', 'Ada')
+    api.setValue('notify.address', 'a@b.c')
+    await nextTick()
+    expect(api.values.name).toBe('Ada')
+    expect(api.values.notify.channel === 'email' && api.values.notify.address).toBe('a@b.c')
+
+    api.resetField('notify')
+    await nextTick()
+
+    // notify subtree reverts to construction-time defaults
+    // (`{ channel: 'email', address: 'old@example.com' }` for this
+    // profile harness); siblings outside the prefix survive.
+    expect(api.values.name).toBe('Ada')
+    expect(api.values.notify.channel).toBe('email')
+    expect(api.values.notify.address).toBe('old@example.com')
   })
 })
 

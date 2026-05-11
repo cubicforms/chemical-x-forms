@@ -185,4 +185,28 @@ describe('useForm — resetField(path)', () => {
     form.resetField('nope')
     expect(form.values()).toEqual(before)
   })
+
+  it("resetField('') clears form-level errors but leaves named fields untouched", () => {
+    // `''` is the form-level error bucket — the canonical home for
+    // errors that don't belong to any specific field (root `.refine()`
+    // messages, `setFormErrors` entries, server-emitted form errors).
+    // It is one path among many, NOT a "reset everything" alias —
+    // resetField on it clears that bucket only.
+    const { app, form } = harness()
+    apps.push(app)
+    form.setValue('email', 'kept@example.com')
+    form.setFormErrors([{ message: 'capacity exceeded', code: 'api:capacity' }])
+
+    expect(form.errors('')).toHaveLength(1)
+
+    // @ts-expect-error - `''` (form-level error bucket) is not enumerated
+    // in this schema's FlatPath. The runtime accepts it as a real path —
+    // see the `setFormErrors` API note that errors land at `path: ['']`.
+    form.resetField('')
+
+    // Named field untouched — `''` is its own path.
+    expect(form.values.email).toBe('kept@example.com')
+    // Form-level bucket cleared.
+    expect(form.errors('')).toBeUndefined()
+  })
 })

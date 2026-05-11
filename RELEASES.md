@@ -1,5 +1,15 @@
 # Releases
 
+## v0.17.0 — 2026-05-11
+
+## What's Changed
+* feat(form): library hardening + multi-tab sync via BroadcastChannel by @ozzyfromspace in https://github.com/attaform/Attaform/pull/189
+
+
+**Full Changelog**: https://github.com/attaform/Attaform/compare/v0.16.4...v0.17.0
+
+---
+
 ## v0.16.4 — 2026-05-10
 
 ## What's Changed

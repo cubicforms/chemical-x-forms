@@ -4642,7 +4642,19 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
     expect(api.values.name).not.toBe('')
   })
 
-  it('reset() drops the history stacks', async () => {
+  it('reset() is itself undoable — the pre-reset state is recoverable', async () => {
+    // Reset is a mutation from the history module's point of view, not
+    // a stack-wipe. `applyFormReplacement` (inside `reset()`) fires
+    // `onFormChange`, which pushes the post-reset snapshot. The user's
+    // previous value sits one position earlier in the undo stack, so
+    // calling `undo()` after a reset recovers the form as it was just
+    // before the reset.
+    //
+    // Why this beats the "fresh start" semantic: a consumer who hits
+    // "Reset" by mistake can recover with one undo. Consumers who want
+    // a non-recoverable reset can pop a confirmation modal in their UI
+    // before calling `reset()` (or, post B18, call `history.clear()`
+    // after the reset).
     const { app, api } = mountWithHistory()
     apps.push(app)
 
@@ -4650,13 +4662,23 @@ describe('chaos — history (undo/redo) × discriminated unions', () => {
     api.setValue('name', 'b')
     await nextTick()
     expect(api.meta.canUndo).toBe(true)
+    expect(api.values.name).toBe('b')
 
     api.reset()
     await nextTick()
 
-    expect(api.meta.canUndo).toBe(false)
+    // After reset: form is back at the default (empty string), and the
+    // pre-reset state is one undo step away.
+    expect(api.values.name).toBe('')
+    expect(api.meta.canUndo).toBe(true)
     expect(api.meta.canRedo).toBe(false)
-    expect(api.meta.historySize).toBe(0)
+
+    api.undo()
+    await nextTick()
+
+    // The pre-reset state ('b') is recovered.
+    expect(api.values.name).toBe('b')
+    expect(api.meta.canRedo).toBe(true)
   })
 
   it('handleSubmit operates on the post-undo form value (not the pre-undo)', async () => {

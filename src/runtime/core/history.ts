@@ -10,7 +10,10 @@ import type { PathKey } from './paths'
  * Bounded undo/redo snapshot stack for a FormStore. Subscribes to
  * `onFormChange` to push a snapshot on every mutation; `undo` /
  * `redo` restore via `applyFormReplacement` plus the schema + user
- * error writers. `onReset` clears both stacks and seeds a fresh baseline.
+ * error writers. `reset()` is treated as an ordinary mutation —
+ * `applyFormReplacement` fires `onFormChange`, the post-reset snapshot
+ * lands on the undo stack, and the pre-reset state remains one
+ * position earlier (so `undo()` recovers it).
  *
  * Snapshots include:
  *  - `form` — the whole form value, captured by reference. Vue's
@@ -129,16 +132,16 @@ export function createHistoryModule<F extends GenericForm>(
     pushSnapshot(captureSnapshot())
   })
 
-  const unsubscribeReset = state.onReset(() => {
-    // reset() fires onFormChange first (applyFormReplacement
-    // emits it), then onReset. By the time we land here, a
-    // snapshot for the reset state has already been pushed.
-    // Clear both stacks and re-seed so the reset state becomes
-    // the new baseline.
-    undoStack.value = []
-    redoStack.value = []
-    pushSnapshot(captureSnapshot())
-  })
+  // `reset()` is a mutation like any other from the history module's
+  // point of view: `applyFormReplacement` fires `onFormChange`, which
+  // pushes the post-reset state onto the undo stack. The pre-reset
+  // state already sits one position earlier, so a subsequent `undo()`
+  // recovers the form exactly as it was before the reset. We do NOT
+  // subscribe to `onReset` and clear the stacks here — that would
+  // forfeit a real recovery path for users who hit reset by mistake.
+  // Consumers who genuinely want a clean slate can pop a confirmation
+  // dialog in their UI before calling reset(), or (future B18 work)
+  // call `form.history.clear()` explicitly after.
 
   function restore(snap: HistorySnapshot<F>): void {
     suppressNext = true
@@ -203,7 +206,6 @@ export function createHistoryModule<F extends GenericForm>(
     historySize,
     dispose() {
       unsubscribeChange()
-      unsubscribeReset()
       undoStack.value = []
       redoStack.value = []
     },

@@ -1912,14 +1912,16 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       // verdict. Roll back the increments that succeeded on a sync
       // throw before letting the error propagate.
       let activeIncremented = false
-      let fieldIncremented = false
       try {
         activeValidations.value += 1
         activeIncremented = true
         incFieldValidation(key)
-        fieldIncremented = true
       } catch (err) {
-        if (fieldIncremented) decFieldValidation(key)
+        // `incFieldValidation` is the last statement above and is
+        // structurally a `Map.set` — if it throws, it threw before the
+        // map entry was written, so there's nothing to roll back on the
+        // field counter. The only rollback that matters is the global
+        // `activeValidations` increment that happened on the first line.
         if (activeIncremented) {
           activeValidations.value = Math.max(0, activeValidations.value - 1)
         }

@@ -2086,45 +2086,65 @@ export type SetValueCallback<Read, Write = Read> = (prev: Read) => Read | Write
 export type SetValuePayload<Write, Read = Write> = Write | SetValueCallback<Read, Write>
 
 /**
+ * Detect `any` distinctly from `unknown`. The trick: `1 & any` is `any`
+ * and `0 extends any` is `true`; `1 & unknown` is `1` and `0 extends 1`
+ * is `false`. Used to fork `PathSetValuePayload` so `z.any()` paths
+ * resolve to `any` (matching the read-side surface) and `z.unknown()` /
+ * preprocess paths resolve to `unknown` (matching Zod's input typing).
+ */
+type IsAny<T> = 0 extends 1 & T ? true : false
+
+/**
  * Resolves `setValue`'s `value` argument type at a single `Path` leaf.
  *
- * Most leaves flow through unchanged via
- * `SetValuePayload<DefaultValuesShape<Leaf>, NonNullable<WriteShape<Leaf>>>`.
+ * Three branches, one per Zod input-typing case:
  *
- * The `unknown extends Leaf` branch is the preprocess / `z.any()` /
- * `z.unknown()` case: the schema's input type at the path is genuinely
- * unconstrained, so the consumer must supply ANY value and the
- * callback's `prev` must be `unknown` (not `any` — the whole point of
- * "honest input typing" is to push the consumer to narrow before
- * touching the value). Three details make that branch necessary:
+ *   1. **`any` leaf (`z.any()`)** — schema input type is `any`; the
+ *      whole form API surface (read, register, fields) is `any` at
+ *      this path. This branch returns raw `any` so `setValue` stays
+ *      consistent with the rest. Callsites that pass an unannotated
+ *      `(prev) => ...` may surface `noImplicitAny` under the
+ *      consumer's tsconfig — annotate `(prev: any) => ...` to opt
+ *      into the looser shape explicitly.
  *
- *   1. **Union absorption** — `unknown | X` collapses to `unknown` in
- *      TS, which would erase the callback union member. With the
- *      callback shape gone from the constraint, TS has no contextual
- *      type to infer `prev` from, and under `noImplicitAny` it
- *      decays to `any`. The triple `{} | null | undefined` is
- *      structurally equivalent to `unknown` (it accepts the same
- *      value space) but is NOT subject to absorption, so the
- *      callback branch survives the union and `prev` infers
- *      cleanly to `unknown`.
+ *   2. **`unknown` leaf (`z.unknown()`, `z.preprocess()` input)** —
+ *      schema input is unconstrained; consumers narrow before use.
+ *      The branch returns `({} | null | undefined) | ((prev: unknown)
+ *      => unknown)` instead of a `SetValuePayload<unknown, ...>`-style
+ *      union for three reasons:
  *
- *   2. **`NonNullable<unknown> = {}`** — applying `NonNullable` to
- *      the read slot for an unknown leaf would narrow `prev` to
- *      `{}`. That's looser than `unknown` (it allows ad-hoc property
- *      access without narrowing); this branch keeps the read slot
- *      as `unknown` directly so the consumer is forced to narrow.
+ *      a. **Union absorption** — `unknown | X` collapses to `unknown`,
+ *         erasing the callback union member. With the callback shape
+ *         gone, TS has no contextual type for `prev` and decays it to
+ *         implicit `any` under `noImplicitAny`. The triple
+ *         `{} | null | undefined` is structurally equivalent to
+ *         `unknown` (covers the same value space) but is NOT subject
+ *         to absorption — the callback branch survives the union and
+ *         `prev` infers cleanly to `unknown`.
  *
- *   3. **`Unset`-widening doesn't apply** — `DefaultValuesShape`
- *      widens primitive leaves to admit `unset`; for an unknown
- *      leaf there's no primitive to widen. Returning the open-form
- *      triple keeps the surface honest about what the runtime
- *      actually accepts (any value, including `unset` — `unset` is a
- *      symbol, symbols are `{}`).
+ *      b. **`NonNullable<unknown> = {}`** — applying `NonNullable` to
+ *         the read slot for an unknown leaf narrows `prev` to `{}`,
+ *         which is looser than `unknown` (allows ad-hoc property
+ *         access). This branch keeps the read slot as `unknown`
+ *         directly so the consumer is forced to narrow.
+ *
+ *      c. **`Unset`-widening doesn't apply** — `DefaultValuesShape`
+ *         widens primitive leaves to admit `unset`; for an unknown
+ *         leaf there's no primitive to widen. The open-form triple
+ *         covers the same value space the runtime accepts (any
+ *         value, including `unset` — symbols are `{}`).
+ *
+ *   3. **All other leaves** — flow through unchanged via
+ *      `SetValuePayload<DefaultValuesShape<Leaf>, NonNullable<WriteShape<Leaf>>>`.
  */
-export type PathSetValuePayload<Leaf> = unknown extends Leaf
-  ? // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-      ({} | null | undefined) | ((prev: unknown) => unknown)
-  : SetValuePayload<DefaultValuesShape<Leaf>, NonNullable<WriteShape<Leaf>>>
+export type PathSetValuePayload<Leaf> =
+  IsAny<Leaf> extends true
+    ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      any
+    : unknown extends Leaf
+      ? // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+          ({} | null | undefined) | ((prev: unknown) => unknown)
+      : SetValuePayload<DefaultValuesShape<Leaf>, NonNullable<WriteShape<Leaf>>>
 
 /**
  * Focus / blur / touched flags for a registered field.

@@ -420,82 +420,105 @@ describe('useForm type inference — handleSubmit', () => {
   })
 })
 
-describe('useForm type inference — setValue at preprocess-input paths', () => {
-  // Schemas whose path-resolved input type is `unknown` (z.preprocess,
-  // z.any, z.unknown) need special handling on the setValue surface.
-  // The standard `SetValuePayload<Write, Read>` collapses to `unknown`
-  // when `Write = unknown` (TS union absorption: `unknown | X = unknown`),
-  // which erases the callback union member and forces TS to give up on
-  // contextual `prev` inference — so the callback's `prev` decays to
-  // implicit `any` under `noImplicitAny`. The `PathSetValuePayload`
-  // helper substitutes `{} | null | undefined` on the value branch
-  // (structurally equivalent to `unknown` but doesn't trigger
-  // absorption) and `unknown` on the callback's prev branch — so the
-  // callback shape stays alive in the union and `prev` infers cleanly.
+describe('useForm type inference — setValue at honest-input paths', () => {
+  // Three schema shapes produce a non-strict leaf at the write side:
+  // `z.any()`, `z.unknown()`, and `z.preprocess(fn, X)`. Each maps to
+  // a distinct setValue callback `prev` typing:
   //
-  // The user-facing payoff: a consumer writing
-  // `form.setValue('age', (prev) => parse(prev))` is forced to narrow
-  // `prev` before using it, the same as if they wrote `let x: unknown`.
-  // No silent `any` slipping through under noImplicitAny.
+  //   - `z.any()`   — schema input is `any`; the entire form API
+  //                   surface (`form.values`, `register`, `fields`,
+  //                   setValue) stays `any` at this path. Callsites
+  //                   that pass an unannotated `(prev) => ...` may
+  //                   surface `noImplicitAny` under the consumer's
+  //                   tsconfig — annotate `(prev: any) => ...` to opt
+  //                   into the looser shape explicitly.
+  //
+  //   - `z.unknown()`, `z.preprocess(fn, X)` — schema input is
+  //                   `unknown`. The setValue callback's `prev` is
+  //                   `unknown` so reading a property off it
+  //                   compile-errors until narrowed.
+  //
+  // Implementation detail: TS union absorption (`unknown | X = unknown`)
+  // would erase the callback shape from `SetValuePayload<unknown, ...>`
+  // and decay `prev` to implicit `any`. `PathSetValuePayload` sidesteps
+  // that with an open-form triple `{} | null | undefined` on the value
+  // branch (same value space as `unknown`, doesn't absorb) and
+  // `unknown` directly on the callback's `prev` branch.
 
-  const _preprocessSchema = z.object({
+  const _honestSchema = z.object({
     age: z.preprocess((v) => Number(v), z.number()),
     name: z.string(),
     bag: z.unknown(),
     anyThing: z.any(),
   })
-  type PreprocessSchema = typeof _preprocessSchema
-  type PreprocessForm = ReturnType<typeof useForm<PreprocessSchema>>
-  const preprocessForm: PreprocessForm = (() => {
+  type HonestSchema = typeof _honestSchema
+  type HonestForm = ReturnType<typeof useForm<HonestSchema>>
+  const honestForm: HonestForm = (() => {
     const handler: ProxyHandler<() => unknown> = { get: () => proxy, apply: () => proxy }
     const proxy: unknown = new Proxy(() => undefined, handler)
-    return proxy as PreprocessForm
+    return proxy as HonestForm
   })()
 
   it('accepts any value at a preprocess path (no rejection at the type level)', () => {
     // The schema's input is `unknown`; the runtime accepts whatever the
     // consumer hands it (preprocess will coerce). Type system mirrors
     // that.
-    preprocessForm.setValue('age', 42)
-    preprocessForm.setValue('age', '42')
-    preprocessForm.setValue('age', null)
-    preprocessForm.setValue('age', undefined)
-    preprocessForm.setValue('age', { something: 'else' })
+    honestForm.setValue('age', 42)
+    honestForm.setValue('age', '42')
+    honestForm.setValue('age', null)
+    honestForm.setValue('age', undefined)
+    honestForm.setValue('age', { something: 'else' })
   })
 
-  it('callback `prev` is `unknown`, not `any` (forces narrowing)', () => {
-    preprocessForm.setValue('age', (prev) => {
-      // The whole point — `prev` must be `unknown` so the consumer
-      // can't accidentally treat it as any other type. Reading a
-      // property off it should compile-error until narrowed.
+  it('z.preprocess input: callback `prev` is `unknown` (forces narrowing)', () => {
+    honestForm.setValue('age', (prev) => {
       expectTypeOf(prev).toEqualTypeOf<unknown>()
       return prev
     })
   })
 
-  it('callback `prev` for z.unknown / z.any is also `unknown`', () => {
-    preprocessForm.setValue('bag', (prev) => {
+  it('z.unknown(): callback `prev` is `unknown` (forces narrowing)', () => {
+    honestForm.setValue('bag', (prev) => {
       expectTypeOf(prev).toEqualTypeOf<unknown>()
       return prev
     })
-    preprocessForm.setValue('anyThing', (prev) => {
-      expectTypeOf(prev).toEqualTypeOf<unknown>()
+  })
+
+  it('z.any(): the entire path API stays `any` end-to-end', () => {
+    // The `any` usages below are intentional — they pin that the
+    // resolved type at a z.any() path is literally `any` (the dev's
+    // explicit schema choice), not `unknown` or anything narrower.
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    // Read side: `any` (no narrowing needed).
+    expectTypeOf(honestForm.values.anyThing).toEqualTypeOf<any>()
+    expectTypeOf(honestForm.register('anyThing').innerRef.value).toEqualTypeOf<any>()
+
+    // Write side: accepts anything (same as `unknown`-leaf paths).
+    honestForm.setValue('anyThing', 42)
+    honestForm.setValue('anyThing', null)
+
+    // Callback `prev` is `any` when annotated explicitly. Unannotated
+    // `(prev) => ...` callsites may surface noImplicitAny under the
+    // consumer's tsconfig — the annotation opts into the `any` shape.
+    honestForm.setValue('anyThing', (prev: any) => {
+      expectTypeOf(prev).toEqualTypeOf<any>()
       return prev
     })
+    /* eslint-enable @typescript-eslint/no-explicit-any */
   })
 
   it('strict paths in the same schema still infer their concrete leaf type', () => {
-    // Mixing preprocess fields with strict fields in one schema must
-    // not infect the strict path's inference — `prev: string` for
-    // `name`, not `unknown`.
-    preprocessForm.setValue('name', (prev) => {
+    // Mixing honest-input fields with strict fields in one schema
+    // doesn't bleed into the strict path's inference — `prev: string`
+    // for `name`, not `unknown`.
+    honestForm.setValue('name', (prev) => {
       expectTypeOf(prev).toEqualTypeOf<string>()
       return prev.trim()
     })
   })
 
   it('tuple-segment form mirrors the dotted-string form at preprocess paths', () => {
-    preprocessForm.setValue(['age'], (prev) => {
+    honestForm.setValue(['age'], (prev) => {
       expectTypeOf(prev).toEqualTypeOf<unknown>()
       return prev
     })

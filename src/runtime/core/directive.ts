@@ -437,8 +437,41 @@ function syncPersistOptIn(el: HTMLElement, value: unknown, oldValue: unknown): v
   // the act of OPTING IN that crosses the compliance threshold.
   if (wantsOptIn) {
     const v = value as RegisterValue
-    enforceSensitiveCheck(v.path, v.acknowledgeSensitive)
+    enforceSensitiveCheck(v.path, v.acknowledgeSensitive, v.isSensitivePath)
     v.persistOptIns.add(elementId, v.path)
+  }
+}
+
+/**
+ * Reconcile the multi-tab sync OPT-OUT (`register('path',
+ * { multiTab: false })`) across binding lifecycle transitions.
+ * Symmetric with `syncPersistOptIn` for the multi-tab dimension.
+ *
+ * The RV's `markNoSync` / `unmarkNoSync` closures are pre-bound to
+ * the canonical path key + the FormStore's ref-counted opt-out
+ * registry (see `state.incrementNoSyncOptOut`). When `multiTab !==
+ * false`, both closures are `undefined` and this function noops on
+ * the hot path.
+ *
+ * Handles every transition:
+ *   - undefined → opted-out: increment
+ *   - opted-out → undefined: decrement
+ *   - opted-out → opted-out (same path): no-op (idempotent)
+ *   - opted-out → opted-out (path changed): decrement old, increment new
+ */
+function syncMultiTabOptOut(value: unknown, oldValue: unknown): void {
+  const wasOptedOut = isRegisterValue(oldValue) && oldValue.unmarkNoSync !== undefined
+  const wantsOptOut = isRegisterValue(value) && value.markNoSync !== undefined
+  if (!wasOptedOut && !wantsOptOut) return
+  if (wasOptedOut) {
+    const old = oldValue as RegisterValue
+    const samePath = wantsOptOut && (value as RegisterValue).path === old.path
+    if (!samePath) old.unmarkNoSync?.()
+  }
+  if (wantsOptOut) {
+    const v = value as RegisterValue
+    const samePathOld = wasOptedOut && (oldValue as RegisterValue).path === v.path
+    if (!samePathOld) v.markNoSync?.()
   }
 }
 
@@ -1315,6 +1348,10 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
     // Per-element persist opt-in is reconciled at the dynamic level so
     // the per-tag variants stay focused on their input semantics.
     syncPersistOptIn(el, binding.value, undefined)
+    // Per-path multi-tab opt-out lives at the dynamic level too —
+    // ref-counted on the FormStore so multiple bindings on the same
+    // path balance correctly across conditional renders.
+    syncMultiTabOptOut(binding.value, undefined)
 
     // Always run the per-tag variant's `created` — listener-body bail
     // (`shouldBailListener`) prevents the bubbled-write bug on
@@ -1361,6 +1398,8 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
     // prior RegisterValue so the helper can diff persist / path / registry
     // and migrate the entry without thrashing.
     syncPersistOptIn(el, binding.value, binding.oldValue)
+    // Reactive multi-tab opt-out toggling — same diff strategy.
+    syncMultiTabOptOut(binding.value, binding.oldValue)
     // Same diff for the form's element map. Catches the
     // `useRegister`-driven swap (binding mounted with `undefined`,
     // a real RV arrives on the next render), the dynamic-path case,
@@ -1385,6 +1424,10 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
     // hunt for the latest entry.
     if (isRegisterValue(value)) {
       value.persistOptIns.removeAllFor(getOrAssignElementId(el))
+      // Mirror cleanup for multi-tab opt-out — decrement ref count so
+      // the path doesn't stay tab-local after every opted-out binding
+      // unmounts.
+      value.unmarkNoSync?.()
     }
 
     if (!isRegisterValue(value)) return

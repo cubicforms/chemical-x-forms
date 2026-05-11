@@ -820,6 +820,24 @@ export type WriteMeta = {
    * consumer code.
    */
   readonly hydration?: boolean
+  /**
+   * When `true`, this write originated from a sibling tab's
+   * BroadcastChannel broadcast (the multi-tab sync module's inbound
+   * apply). Listeners that initiate side effects check this flag to
+   * avoid amplification loops and spurious side effects:
+   *
+   * - The multi-tab sync OUTBOUND broadcaster skips so a remote-driven
+   *   write doesn't echo back across the channel.
+   * - The history module updates its diff anchor but does NOT push a
+   *   delta — remote writes aren't part of the local user's undo
+   *   timeline.
+   * - The persistence writer skips so the receiving tab doesn't
+   *   double-persist a value the originating tab already wrote.
+   *
+   * Internal — set by `createMultiTabSyncModule`. Don't set from
+   * consumer code.
+   */
+  readonly crossTab?: boolean
 }
 
 /**
@@ -1205,6 +1223,46 @@ export type UseFormConfiguration<
    * and the broader description of where the cap is read.
    */
   maxRecursionDepth?: number
+  /**
+   * Override the path-segment name stems treated as sensitive for this
+   * form. Sensitive paths are excluded from persistence writes,
+   * multi-tab sync broadcasts, AND the DevTools redact walk.
+   *
+   * Resolution: per-form value (this field) > global default
+   * (`createAttaform({ defaults: { sensitiveNames } })`) > library
+   * default (`DEFAULT_SENSITIVE_NAMES`).
+   *
+   * Pass an empty array `[]` as the explicit opt-out — "nothing is
+   * sensitive on this form" — for fully-trusted internal tooling.
+   * See `AttaformDefaults.sensitiveNames` for composition examples.
+   */
+  sensitiveNames?: readonly string[]
+  /**
+   * Cross-tab synchronisation via BroadcastChannel. Defaults to `true`
+   * (when the browser supports it and the page is in a secure
+   * context): a keyed `useForm` callsite auto-pairs with same-keyed
+   * siblings in other same-origin tabs and mirrors their mutations
+   * in near real-time.
+   *
+   * **Resolution order (per-register override > per-form > global > library):**
+   *
+   *   register(path, { multiTab })  >  useForm({ multiTab })  >  AttaformDefaults.multiTab  >  library default (`true`)
+   *
+   * **When to set `false`:** forms holding PII / PHI, contexts where
+   * tab isolation is required by policy, or any flow where conflicting
+   * tab edits could corrupt user intent. Sensitive-named paths (via
+   * `sensitiveNames`) are always stripped from outbound broadcasts
+   * regardless of this setting.
+   *
+   * **Secure-context requirement.** Multi-tab sync is silently disabled
+   * outside `window.isSecureContext === true` (HTTPS or localhost). On
+   * plain HTTP a one-shot dev warning fires and the module noops.
+   *
+   * **Anonymous (auto-keyed) forms skip sync entirely** — without a
+   * consumer-supplied `key`, cross-tab identity is undefined and the
+   * channel would be solo by construction.
+   */
+  multiTab?: boolean
 }
 
 /**
@@ -1349,6 +1407,52 @@ export type AttaformDefaults = {
    * confident the recursion is bounded by the actual data shape.
    */
   maxRecursionDepth?: number
+  /**
+   * Override the path-segment name stems treated as sensitive.
+   * Sensitive paths are excluded from persistence writes, multi-tab
+   * sync broadcasts, AND the DevTools redact walk — one configurable
+   * source of truth across every surface.
+   *
+   * Library default is `DEFAULT_SENSITIVE_NAMES` (exported from
+   * `attaform`); compose to extend:
+   *
+   * ```ts
+   * import { DEFAULT_SENSITIVE_NAMES, createAttaform } from 'attaform'
+   *
+   * createAttaform({
+   *   defaults: { sensitiveNames: [...DEFAULT_SENSITIVE_NAMES, 'mrn', 'tax_id'] }
+   * })
+   * ```
+   *
+   * Pass an empty array `[]` as the explicit opt-out — "nothing is
+   * sensitive" — for fully-trusted internal tooling. When present at
+   * the per-form level via `useForm({ sensitiveNames })`, the per-form
+   * list REPLACES the global one (consumers compose their own
+   * additive lists via the exported default).
+   */
+  sensitiveNames?: readonly string[]
+  /**
+   * App-wide default for `useForm({ multiTab })`. Default `true` when
+   * the runtime supports `BroadcastChannel` AND `window.isSecureContext`
+   * is true (HTTPS in production, localhost in development) — same gate
+   * browsers apply to other sensitive APIs (clipboard, geolocation,
+   * push, web crypto subtle).
+   *
+   * Set to `false` once at the plugin level for a multi-tenant
+   * deployment that prefers tab-isolation by default; individual forms
+   * can still opt back in via `useForm({ multiTab: true })`.
+   *
+   * **Resolution order (per-form wins):**
+   *
+   *   useForm({ multiTab })  >  AttaformDefaults.multiTab  >  library default (`true`)
+   *
+   * **Secure-context gate.** Multi-tab sync only activates over HTTPS
+   * or localhost. On plain HTTP, the module silently noops with a
+   * one-shot dev-mode warning — production deployments MUST be served
+   * over HTTPS for sync to function. See the multi-tab-sync recipe's
+   * Security section for the threat model.
+   */
+  multiTab?: boolean
 }
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>
@@ -1692,6 +1796,25 @@ export type RegisterOptions = {
    */
   acknowledgeSensitive?: boolean
   /**
+   * Opt this field OUT of multi-tab sync. The form-level cascade
+   * activates sync by default; passing `multiTab: false` on a single
+   * register call keeps that path tab-local — outbound patches at
+   * the path are stripped, and inbound patches at the path are
+   * rejected (symmetric tab-local behaviour).
+   *
+   * The opt-out is downgrade-only — you cannot pass `multiTab: true`
+   * to bring sync back on a form whose form-level `multiTab` is
+   * `false` (in that case the sync module never instantiated; there's
+   * no broadcaster to opt back into).
+   *
+   * Use for fields that hold transient per-tab UI state inside an
+   * otherwise-synced form (e.g. an editor's cursor position field
+   * mirrored into the form for save-on-blur), or for individual
+   * paths the consumer wants to scope to the originating tab without
+   * disabling sync globally.
+   */
+  multiTab?: boolean
+  /**
    * Sync transformation pipeline applied to user-typed values before
    * they reach form state. Composes left-to-right: each transform
    * receives the previous transform's output (or the directive-
@@ -1828,6 +1951,40 @@ export type RegisterValue<Value = unknown> = Readonly<{
    * @internal
    */
   persistOptIns: PersistOptInRegistry
+  /**
+   * Resolved sensitive-path predicate honoring this form's
+   * `sensitiveNames` cascade. The directive calls this through
+   * `enforceSensitiveCheck` when a `register('path', { persist: true })`
+   * binding mounts so a per-form custom list (e.g. extending with
+   * `'mrn'`) gates persistence enrolment correctly.
+   * @internal
+   */
+  isSensitivePath: (path: Path | PathKey | string) => boolean
+  /**
+   * Whether this binding declared `register('path', { multiTab: false })`.
+   * Drives the directive's mount/unmount lifecycle: when `false`, the
+   * directive's `created` hook bumps `state.noSyncPaths` for this
+   * path, and `beforeUnmount` decrements. When `true` (the default),
+   * the binding rides the form-level cascade.
+   * @internal
+   */
+  multiTab: boolean
+  /**
+   * Pre-bound mount hook for `multiTab: false` bindings — calls
+   * `state.incrementNoSyncOptOut(path)` with this binding's path.
+   * `undefined` when `multiTab !== false`. The directive invokes
+   * during the mount lifecycle.
+   * @internal
+   */
+  markNoSync?: () => void
+  /**
+   * Pre-bound unmount hook for `multiTab: false` bindings — calls
+   * `state.decrementNoSyncOptOut(path)`. Paired with `markNoSync`;
+   * the directive invokes on `beforeUnmount` (and on `beforeUpdate`
+   * when the binding transitions out of opt-out).
+   * @internal
+   */
+  unmarkNoSync?: () => void
   /**
    * Sync transform pipeline applied by the directive's assigner to
    * user-typed values before they reach form state. See

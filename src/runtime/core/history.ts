@@ -257,6 +257,16 @@ export function createHistoryModule<F extends GenericForm>(
       clear()
       return
     }
+    // Cross-tab apply: a sibling tab's broadcast landed via the
+    // multi-tab sync module. Refresh the diff anchor so the next
+    // LOCAL mutation diffs against the post-cross-tab state (correct
+    // patch contents), but DON'T push a delta — remote writes aren't
+    // part of THIS user's undo timeline. Each tab's history walks
+    // its own user's intent, not a sibling's.
+    if (meta?.crossTab === true) {
+      currentSnapshot.value = captureSnapshot()
+      return
+    }
 
     const newSnap = captureSnapshot()
     const prevSnap = currentSnapshot.value

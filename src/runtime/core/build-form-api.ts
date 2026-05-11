@@ -692,7 +692,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     options?: { acknowledgeSensitive?: boolean }
   ): Promise<void> => {
     const segments = canonicalizePath(pathInput).segments
-    enforceSensitiveCheck(segments, options?.acknowledgeSensitive === true)
+    enforceSensitiveCheck(segments, options?.acknowledgeSensitive === true, state.isSensitivePath)
     if (persistence === undefined) return // persist: not configured → silent no-op
     await persistence.writePathImmediately(segments)
   }

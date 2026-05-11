@@ -224,49 +224,447 @@ describe('API surface contract — actions on `api`, status on `api.meta`, histo
  */
 
 /**
- * FUTURE — multi-tab persistence sync (not yet implemented).
+ * Multi-tab sync via BroadcastChannel.
  *
- * The user-impact concern: a user with N open tabs of the same form
- * can submit on one tab while the others quietly hold stale state.
- * The "stale tab" looks live (no error), so subsequent edits there
- * race against / overwrite the just-submitted truth. The data-loss
- * mode is invisible to the user.
+ * The user-impact concern (the B19 footgun): a user with N open tabs
+ * of the same keyed form submits on one tab while the others quietly
+ * hold stale state. Subsequent edits on a stale tab race against /
+ * overwrite the just-submitted truth — invisible data loss.
  *
- * Minimum viable contract: when another tab writes to the form's
- * persistence key, the storage event fires and the receiving tab's
- * form.values reflect the cross-tab update. Implementation may use
- * `addEventListener('storage', …)` (free, browser-native), a
- * BroadcastChannel (richer signalling), or the same dynamic adapter
- * the `persist:` config already loads. Whatever the mechanism, this
- * test pins the user-visible end state: form values converge across
- * tabs without explicit reload.
+ * Resolution: same-keyed `useForm` callsites in same-origin tabs
+ * auto-pair over a `BroadcastChannel` derived from `key + schema
+ * fingerprint`. Every local mutation broadcasts `Patch[]`; receivers
+ * apply via `applyPatchesForward` with `crossTab: true` meta.
  *
- * This test fixture mounts a form WITH per-input opt-in (the
- * documented persistence-enable pattern) so the form's own writer
- * doesn't wipe the seeded payload — that's the silent-wipe footgun
- * documented separately. The test simulates a cross-tab write by
- * directly setting localStorage and dispatching a `storage` event,
- * which is what real browsers do for OTHER-tab writes.
+ * Tests below pin the surface and the load-bearing security gates.
+ * See `docs/recipes/multi-tab-sync.md` for the full design + threat
+ * model.
  */
-describe('FUTURE — multi-tab persistence sync (not yet implemented)', () => {
-  it('a cross-tab write propagates to all open tabs of the same form', async () => {
-    const { fingerprintZodSchema } = await import('../../src/runtime/adapters/zod-v4/fingerprint')
+describe('multi-tab sync — BroadcastChannel', () => {
+  /**
+   * Helper: wait for the form's multi-tab sync module to transition
+   * out of the joining-flow lifecycle (`'joining'` → `'established'`).
+   * Without this, external `postMessage` sent before the join
+   * collection window elapses races against the module's
+   * lifecycle-gated handlers and gets silently dropped.
+   */
+  async function waitForSyncEstablished(app: App, formKey: string): Promise<void> {
+    const { MULTI_TAB_SYNC_MODULE_KEY } = await import('../../src/runtime/core/multi-tab-sync')
+    const { waitUntil } = await import('../utils/form-harness')
+    const reg = (
+      app as unknown as {
+        _attaform: { forms: Map<string, { modules: Map<string, { lifecycle: () => string }> }> }
+      }
+    )._attaform
+    const state = reg.forms.get(formKey)
+    const syncMod = state?.modules.get(MULTI_TAB_SYNC_MODULE_KEY)
+    if (syncMod === undefined) return
+    await waitUntil(() => (syncMod.lifecycle() === 'established' ? true : null), 500)
+  }
+
+  it('live convergence: a local mutation propagates to a sibling tab via the channel', async () => {
     const { hashStableString } = await import('../../src/runtime/core/hash')
-    const { vRegister } = await import('../../src/runtime/core/directive')
-    const { withDirectives, nextTick } = await import('vue')
+    const { fingerprintZodSchema } = await import('../../src/runtime/adapters/zod-v4/fingerprint')
     const { waitUntil } = await import('../utils/form-harness')
 
-    const formKey = `future-multitab-${Math.random().toString(36).slice(2)}`
-    const storageKey = `${formKey}:${hashStableString(fingerprintZodSchema(schema))}`
+    const formKey = `b19-live-${Math.random().toString(36).slice(2)}`
+    const channelName = `attaform:sync:${formKey}:${hashStableString(fingerprintZodSchema(schema))}`
 
-    // Clean slate.
-    localStorage.removeItem(storageKey)
+    // Mount Tab A (acts as the "established" peer).
+    const handleA: { api?: Api } = {}
+    const App = defineComponent({
+      setup() {
+        handleA.api = useForm({ schema, key: formKey, defaultValues: { name: '', email: '' } })
+        return () => h('div')
+      },
+    })
+    const appA = createApp(App).use(createAttaform())
+    appA.mount(document.createElement('div'))
+    const apiA = handleA.api as Api
+    await waitForSyncEstablished(appA, formKey)
 
-    // Mount Tab A with per-input opt-in (so the writer doesn't wipe
-    // the seeded payload below — that's the documented enable
-    // pattern). Type a baseline so the persistence layer materialises
-    // an envelope.
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>>; el?: HTMLInputElement } = {}
+    // Simulate Tab B's outbound patches via a raw external channel —
+    // this models "a sibling tab made a write." Tab A should converge.
+    const externalChannel = new BroadcastChannel(channelName)
+    externalChannel.postMessage({
+      v: 1,
+      kind: 'patches',
+      senderId: 'external-tab-B',
+      formPatches: [{ kind: 'changed', path: ['name'], oldValue: '', newValue: 'from-tab-B' }],
+      blankPathsAdded: [],
+      blankPathsRemoved: [],
+    })
+
+    const converged = await waitUntil(() => (apiA.values.name === 'from-tab-B' ? true : null), 500)
+    expect(converged).toBe(true)
+    expect(apiA.values.name).toBe('from-tab-B')
+
+    externalChannel.close()
+    appA.unmount()
+  })
+
+  it('echo drop: own outbound messages do NOT mutate own state on receive', async () => {
+    const { hashStableString } = await import('../../src/runtime/core/hash')
+    const { fingerprintZodSchema } = await import('../../src/runtime/adapters/zod-v4/fingerprint')
+    const { wait } = await import('../utils/form-harness')
+
+    const formKey = `b19-echo-${Math.random().toString(36).slice(2)}`
+    const channelName = `attaform:sync:${formKey}:${hashStableString(fingerprintZodSchema(schema))}`
+
+    const handle: { api?: Api } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({ schema, key: formKey, defaultValues: { name: '', email: '' } })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    app.mount(document.createElement('div'))
+    const api = handle.api as Api
+    await waitForSyncEstablished(app, formKey)
+
+    // Read the sync module's own senderId, then fabricate a message
+    // claiming to come from it. The echo-drop guard rejects.
+    const { MULTI_TAB_SYNC_MODULE_KEY } = await import('../../src/runtime/core/multi-tab-sync')
+    const reg = (
+      app as unknown as {
+        _attaform: { forms: Map<string, { modules: Map<string, { senderId: string }> }> }
+      }
+    )._attaform
+    const state = reg.forms.get(formKey)
+    expect(state).toBeDefined()
+    const syncMod = state!.modules.get(MULTI_TAB_SYNC_MODULE_KEY)
+    expect(syncMod).toBeDefined()
+    const ownSenderId = syncMod!.senderId
+    expect(typeof ownSenderId).toBe('string')
+    expect(ownSenderId.length).toBeGreaterThan(0)
+
+    const external = new BroadcastChannel(channelName)
+    external.postMessage({
+      v: 1,
+      kind: 'patches',
+      senderId: ownSenderId,
+      formPatches: [{ kind: 'changed', path: ['name'], oldValue: '', newValue: 'echo-injected' }],
+      blankPathsAdded: [],
+      blankPathsRemoved: [],
+    })
+    await wait(100)
+    expect(api.values.name).toBe('')
+
+    external.close()
+    app.unmount()
+  })
+
+  it('protocol-version drop: messages with unknown `v` are ignored', async () => {
+    const { hashStableString } = await import('../../src/runtime/core/hash')
+    const { fingerprintZodSchema } = await import('../../src/runtime/adapters/zod-v4/fingerprint')
+    const { wait } = await import('../utils/form-harness')
+
+    const formKey = `b19-vdrop-${Math.random().toString(36).slice(2)}`
+    const channelName = `attaform:sync:${formKey}:${hashStableString(fingerprintZodSchema(schema))}`
+
+    const handle: { api?: Api } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({ schema, key: formKey, defaultValues: { name: '', email: '' } })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    app.mount(document.createElement('div'))
+    const api = handle.api as Api
+    await waitForSyncEstablished(app, formKey)
+
+    const external = new BroadcastChannel(channelName)
+    external.postMessage({
+      v: 999,
+      kind: 'patches',
+      senderId: 'future-tab',
+      formPatches: [{ kind: 'changed', path: ['name'], oldValue: '', newValue: 'from-future' }],
+      blankPathsAdded: [],
+      blankPathsRemoved: [],
+    })
+    await wait(100)
+    expect(api.values.name).toBe('')
+
+    external.close()
+    app.unmount()
+  })
+
+  it('inbound sensitive-path REJECTION — hostile sibling cannot inject a `password` write', async () => {
+    const { hashStableString } = await import('../../src/runtime/core/hash')
+    const { fingerprintZodSchema } = await import('../../src/runtime/adapters/zod-v4/fingerprint')
+    const { wait } = await import('../utils/form-harness')
+    const { z: zod } = await import('zod')
+
+    const secretSchema = zod.object({
+      name: zod.string(),
+      password: zod.string(),
+    })
+    type SecretApi = UseFormReturnType<zod.output<typeof secretSchema>>
+
+    const formKey = `b19-sensitive-${Math.random().toString(36).slice(2)}`
+    const channelName = `attaform:sync:${formKey}:${hashStableString(fingerprintZodSchema(secretSchema))}`
+
+    const handle: { api?: SecretApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: secretSchema,
+          key: formKey,
+          defaultValues: { name: '', password: '' },
+        }) as SecretApi
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    app.mount(document.createElement('div'))
+    const api = handle.api as SecretApi
+    await waitForSyncEstablished(app, formKey)
+
+    // Hostile-source scenario: fabricate a patches message that writes
+    // a value to the `password` path. The receiving tab's inbound
+    // sensitive-path filter rejects it — even though the wire format
+    // is otherwise valid.
+    const external = new BroadcastChannel(channelName)
+    external.postMessage({
+      v: 1,
+      kind: 'patches',
+      senderId: 'hostile-tab',
+      formPatches: [
+        { kind: 'changed', path: ['password'], oldValue: '', newValue: 'p4ssw0rd-pwned' },
+        { kind: 'changed', path: ['name'], oldValue: '', newValue: 'name-ok' },
+      ],
+      blankPathsAdded: [],
+      blankPathsRemoved: [],
+    })
+    await wait(100)
+    // `password` was filtered; `name` (non-sensitive) was applied.
+    expect(api.values.password).toBe('')
+    expect(api.values.name).toBe('name-ok')
+
+    external.close()
+    app.unmount()
+  })
+
+  it('inbound prototype-pollution defense — patch with `__proto__` segment rejected', async () => {
+    const { hashStableString } = await import('../../src/runtime/core/hash')
+    const { fingerprintZodSchema } = await import('../../src/runtime/adapters/zod-v4/fingerprint')
+    const { wait } = await import('../utils/form-harness')
+
+    const formKey = `b19-proto-${Math.random().toString(36).slice(2)}`
+    const channelName = `attaform:sync:${formKey}:${hashStableString(fingerprintZodSchema(schema))}`
+
+    const handle: { api?: Api } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({ schema, key: formKey, defaultValues: { name: '', email: '' } })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    app.mount(document.createElement('div'))
+    await waitForSyncEstablished(app, formKey)
+
+    const external = new BroadcastChannel(channelName)
+    external.postMessage({
+      v: 1,
+      kind: 'patches',
+      senderId: 'hostile-tab',
+      formPatches: [{ kind: 'added', path: ['__proto__', 'polluted'], newValue: 'yes' }],
+      blankPathsAdded: [],
+      blankPathsRemoved: [],
+    })
+    await wait(100)
+    expect((Object.prototype as Record<string, unknown>).polluted).toBeUndefined()
+
+    external.close()
+    app.unmount()
+  })
+
+  it('form-level `multiTab: false` — module never instantiates; hand-crafted broadcast cannot mutate', async () => {
+    const { hashStableString } = await import('../../src/runtime/core/hash')
+    const { fingerprintZodSchema } = await import('../../src/runtime/adapters/zod-v4/fingerprint')
+    const { MULTI_TAB_SYNC_MODULE_KEY } = await import('../../src/runtime/core/multi-tab-sync')
+    const { wait } = await import('../utils/form-harness')
+
+    const formKey = `b19-form-off-${Math.random().toString(36).slice(2)}`
+    const channelName = `attaform:sync:${formKey}:${hashStableString(fingerprintZodSchema(schema))}`
+
+    const handle: { api?: Api } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema,
+          key: formKey,
+          multiTab: false,
+          defaultValues: { name: '', email: '' },
+        })
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    app.mount(document.createElement('div'))
+    const api = handle.api as Api
+
+    const reg = (
+      app as unknown as { _attaform: { forms: Map<string, { modules: Map<string, unknown> }> } }
+    )._attaform
+    const state = reg.forms.get(formKey)
+    expect(state).toBeDefined()
+    expect(state!.modules.has(MULTI_TAB_SYNC_MODULE_KEY)).toBe(false)
+
+    const external = new BroadcastChannel(channelName)
+    external.postMessage({
+      v: 1,
+      kind: 'patches',
+      senderId: 'external-tab',
+      formPatches: [{ kind: 'changed', path: ['name'], oldValue: '', newValue: 'no-sync' }],
+      blankPathsAdded: [],
+      blankPathsRemoved: [],
+    })
+    await wait(100)
+    expect(api.values.name).toBe('')
+
+    external.close()
+    app.unmount()
+  })
+
+  it('secure-context gate — sync noop when `window.isSecureContext === false`', async () => {
+    const { hashStableString } = await import('../../src/runtime/core/hash')
+    const { fingerprintZodSchema } = await import('../../src/runtime/adapters/zod-v4/fingerprint')
+    const { MULTI_TAB_SYNC_MODULE_KEY } = await import('../../src/runtime/core/multi-tab-sync')
+    const { wait } = await import('../utils/form-harness')
+
+    const formKey = `b19-insecure-${Math.random().toString(36).slice(2)}`
+    const channelName = `attaform:sync:${formKey}:${hashStableString(fingerprintZodSchema(schema))}`
+
+    const prior = window.isSecureContext
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: false })
+    try {
+      const handle: { api?: Api } = {}
+      const App = defineComponent({
+        setup() {
+          handle.api = useForm({
+            schema,
+            key: formKey,
+            multiTab: true,
+            defaultValues: { name: '', email: '' },
+          })
+          return () => h('div')
+        },
+      })
+      const app = createApp(App).use(createAttaform())
+      app.mount(document.createElement('div'))
+      const api = handle.api as Api
+
+      const reg = (
+        app as unknown as { _attaform: { forms: Map<string, { modules: Map<string, unknown> }> } }
+      )._attaform
+      const state = reg.forms.get(formKey)
+      expect(state).toBeDefined()
+      expect(state!.modules.has(MULTI_TAB_SYNC_MODULE_KEY)).toBe(false)
+
+      const external = new BroadcastChannel(channelName)
+      external.postMessage({
+        v: 1,
+        kind: 'patches',
+        senderId: 'external-tab',
+        formPatches: [
+          { kind: 'changed', path: ['name'], oldValue: '', newValue: 'should-not-apply' },
+        ],
+        blankPathsAdded: [],
+        blankPathsRemoved: [],
+      })
+      await wait(100)
+      expect(api.values.name).toBe('')
+
+      external.close()
+      app.unmount()
+    } finally {
+      Object.defineProperty(window, 'isSecureContext', { configurable: true, value: prior })
+    }
+  })
+
+  it('per-register `multiTab: false` (inbound) — opted-out path rejects incoming patches', async () => {
+    const { hashStableString } = await import('../../src/runtime/core/hash')
+    const { fingerprintZodSchema } = await import('../../src/runtime/adapters/zod-v4/fingerprint')
+    const { vRegister } = await import('../../src/runtime/core/directive')
+    const { MULTI_TAB_SYNC_MODULE_KEY } = await import('../../src/runtime/core/multi-tab-sync')
+    const { withDirectives } = await import('vue')
+    const { wait, waitUntil } = await import('../utils/form-harness')
+
+    const formKey = `b19-reg-off-${Math.random().toString(36).slice(2)}`
+    const channelName = `attaform:sync:${formKey}:${hashStableString(fingerprintZodSchema(schema))}`
+
+    const handle: { api?: Api } = {}
+    const App = defineComponent({
+      setup() {
+        const api = useForm({ schema, key: formKey, defaultValues: { name: '', email: '' } })
+        handle.api = api
+        return () =>
+          h('div', [
+            withDirectives(h('input', { 'data-field': 'name' }), [
+              [vRegister, api.register('name', { multiTab: false })],
+            ]),
+            withDirectives(h('input', { 'data-field': 'email' }), [
+              [vRegister, api.register('email')],
+            ]),
+          ])
+      },
+    })
+    const app = createApp(App).use(createAttaform())
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    app.mount(root)
+    const api = handle.api as Api
+
+    // Wait for the sync module's join window to elapse (solo-tab → established).
+    const reg = (
+      app as unknown as {
+        _attaform: { forms: Map<string, { modules: Map<string, { lifecycle: () => string }> }> }
+      }
+    )._attaform
+    const syncMod = reg.forms.get(formKey)!.modules.get(MULTI_TAB_SYNC_MODULE_KEY)!
+    await waitUntil(() => (syncMod.lifecycle() === 'established' ? true : null), 500)
+
+    const external = new BroadcastChannel(channelName)
+    external.postMessage({
+      v: 1,
+      kind: 'patches',
+      senderId: 'external-tab',
+      formPatches: [
+        { kind: 'changed', path: ['name'], oldValue: '', newValue: 'should-NOT-sync' },
+        { kind: 'changed', path: ['email'], oldValue: '', newValue: 'a@b.co' },
+      ],
+      blankPathsAdded: [],
+      blankPathsRemoved: [],
+    })
+    await wait(50)
+    // `name` was opted out of sync via the register call → rejected.
+    expect(api.values.name).toBe('')
+    // `email` rode the form-level default (multiTab on) → applied.
+    expect(api.values.email).toBe('a@b.co')
+
+    external.close()
+    app.unmount()
+    document.body.removeChild(root)
+  })
+
+  it('persistence skip on crossTab meta — sibling-driven writes do NOT re-persist locally', async () => {
+    const { hashStableString } = await import('../../src/runtime/core/hash')
+    const { fingerprintZodSchema } = await import('../../src/runtime/adapters/zod-v4/fingerprint')
+    const { vRegister } = await import('../../src/runtime/core/directive')
+    const { withDirectives, nextTick } = await import('vue')
+    const { wait, waitUntil } = await import('../utils/form-harness')
+
+    const formKey = `b19-persist-skip-${Math.random().toString(36).slice(2)}`
+    const channelName = `attaform:sync:${formKey}:${hashStableString(fingerprintZodSchema(schema))}`
+    const persistKey = `attaform:${formKey}:${hashStableString(fingerprintZodSchema(schema))}`
+
+    localStorage.removeItem(persistKey)
+
+    const handle: { api?: Api; el?: HTMLInputElement } = {}
     const App = defineComponent({
       setup() {
         const api = useForm({
@@ -294,42 +692,107 @@ describe('FUTURE — multi-tab persistence sync (not yet implemented)', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     app.mount(root)
+    const api = handle.api as Api
 
-    // Type into the input so the writer materialises a payload.
+    await waitForSyncEstablished(app, formKey)
+
+    // Type locally first to ensure persistence is live + the writer fires.
     const el = handle.el as HTMLInputElement
-    el.value = 'tab-A-typed'
+    el.value = 'local-typed'
     el.dispatchEvent(new Event('input', { bubbles: true }))
     await nextTick()
-    await waitUntil(() => (localStorage.getItem(storageKey) !== null ? true : null))
+    await waitUntil(() => (localStorage.getItem(persistKey) !== null ? true : null))
+    expect(api.values.name).toBe('local-typed')
 
-    const api = handle.api as ReturnType<typeof useForm<typeof schema>>
-    expect(api.values.name).toBe('tab-A-typed')
+    // Wipe storage to a sentinel, then push a sibling-driven write.
+    const sentinel = JSON.stringify({ v: 4, data: { form: { name: 'sentinel' } } })
+    localStorage.setItem(persistKey, sentinel)
 
-    // Simulate Tab B writing to the same key. Cross-tab writes fire
-    // a `storage` event on every OTHER tab — Tab A here.
-    const newPayload = JSON.stringify({
-      v: 4,
-      data: { form: { name: 'tab-B-typed' } },
+    const external = new BroadcastChannel(channelName)
+    external.postMessage({
+      v: 1,
+      kind: 'patches',
+      senderId: 'external-tab',
+      formPatches: [
+        { kind: 'changed', path: ['name'], oldValue: 'local-typed', newValue: 'from-tab-B' },
+      ],
+      blankPathsAdded: [],
+      blankPathsRemoved: [],
     })
-    localStorage.setItem(storageKey, newPayload)
-    window.dispatchEvent(
-      new StorageEvent('storage', {
-        key: storageKey,
-        newValue: newPayload,
-        oldValue: null,
-        storageArea: localStorage,
-      })
-    )
+    await waitUntil(() => (api.values.name === 'from-tab-B' ? true : null), 500)
 
-    // Tab A's form value should converge to the cross-tab write
-    // within a small window. Today: it doesn't (no storage-event
-    // listener wired). When a future PR wires the subscription,
-    // this assertion passes and CI goes green.
-    await waitUntil(() => (api.values.name === 'tab-B-typed' ? true : null), 500)
-    expect(api.values.name).toBe('tab-B-typed')
+    // Persistence listener skipped on crossTab apply — the sentinel
+    // we set above is untouched.
+    await wait(100)
+    expect(localStorage.getItem(persistKey)).toBe(sentinel)
 
+    external.close()
     app.unmount()
     document.body.removeChild(root)
-    localStorage.removeItem(storageKey)
+    localStorage.removeItem(persistKey)
+  })
+
+  it('DEFAULT_SENSITIVE_NAMES — exported and frozen', async () => {
+    const { DEFAULT_SENSITIVE_NAMES } = await import('../../src/index')
+    expect(Array.isArray(DEFAULT_SENSITIVE_NAMES)).toBe(true)
+    expect(DEFAULT_SENSITIVE_NAMES.length).toBeGreaterThan(20)
+    expect(Object.isFrozen(DEFAULT_SENSITIVE_NAMES)).toBe(true)
+    // Type-level pin — readonly array of string.
+    expectTypeOf(DEFAULT_SENSITIVE_NAMES).toEqualTypeOf<readonly string[]>()
+  })
+
+  it('custom `sensitiveNames` (global) — gates outbound + inbound multi-tab broadcasts', async () => {
+    const { hashStableString } = await import('../../src/runtime/core/hash')
+    const { fingerprintZodSchema } = await import('../../src/runtime/adapters/zod-v4/fingerprint')
+    const { DEFAULT_SENSITIVE_NAMES } = await import('../../src/index')
+    const { wait } = await import('../utils/form-harness')
+    const { z: zod } = await import('zod')
+
+    const medSchema = zod.object({ name: zod.string(), mrn: zod.string() })
+    type MedApi = UseFormReturnType<zod.output<typeof medSchema>>
+
+    const formKey = `b19-custom-sn-${Math.random().toString(36).slice(2)}`
+    const channelName = `attaform:sync:${formKey}:${hashStableString(fingerprintZodSchema(medSchema))}`
+
+    const handle: { api?: MedApi } = {}
+    const App = defineComponent({
+      setup() {
+        handle.api = useForm({
+          schema: medSchema,
+          key: formKey,
+          defaultValues: { name: '', mrn: '' },
+        }) as MedApi
+        return () => h('div')
+      },
+    })
+    const app = createApp(App).use(
+      createAttaform({
+        defaults: { sensitiveNames: [...DEFAULT_SENSITIVE_NAMES, 'mrn'] },
+      })
+    )
+    app.mount(document.createElement('div'))
+    const api = handle.api as MedApi
+    await waitForSyncEstablished(app, formKey)
+
+    const external = new BroadcastChannel(channelName)
+    external.postMessage({
+      v: 1,
+      kind: 'patches',
+      senderId: 'external-tab',
+      formPatches: [
+        { kind: 'changed', path: ['mrn'], oldValue: '', newValue: 'P-12345' },
+        { kind: 'changed', path: ['name'], oldValue: '', newValue: 'Alice' },
+      ],
+      blankPathsAdded: [],
+      blankPathsRemoved: [],
+    })
+    await wait(100)
+    // Custom global sensitiveNames added `'mrn'` → filtered. `name`
+    // passes through.
+    expect(api.values.mrn).toBe('')
+    expect(api.values.name).toBe('Alice')
+
+    external.close()
+    app.unmount()
   })
 })

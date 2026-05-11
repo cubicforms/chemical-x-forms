@@ -3,8 +3,7 @@ import type { FormStore } from './create-form-store'
 import type { AttaformRegistry } from './registry'
 import type { GenericForm } from '../types/types-core'
 import type { FormKey } from '../types/types-api'
-import { canonicalizePath } from './paths'
-import { isSensitivePath, segmentMatchesSensitive } from './persistence/sensitive-names'
+import { canonicalizePath, type Segment } from './paths'
 
 /**
  * Vue DevTools plugin wiring for attaform. Lazy-imported by
@@ -57,11 +56,18 @@ const REDACTED = '[redacted]'
  * with whole-subtree short-circuit when sensitive ancestors are
  * found early.
  */
-function redactSensitiveLeaves(value: unknown): unknown {
-  return redactImpl(value, false)
+function redactSensitiveLeaves(
+  value: unknown,
+  matchSensitive: (segment: Segment) => boolean
+): unknown {
+  return redactImpl(value, false, matchSensitive)
 }
 
-function redactImpl(value: unknown, inSensitiveSubtree: boolean): unknown {
+function redactImpl(
+  value: unknown,
+  inSensitiveSubtree: boolean,
+  matchSensitive: (segment: Segment) => boolean
+): unknown {
   if (value === null || value === undefined) return value
   if (typeof value !== 'object') {
     return inSensitiveSubtree ? REDACTED : value
@@ -70,7 +76,7 @@ function redactImpl(value: unknown, inSensitiveSubtree: boolean): unknown {
     // Numeric segments never match the sensitive-name heuristic
     // (segmentMatchesSensitive rejects non-string segments), so the
     // flag passes through unchanged when descending into arrays.
-    return value.map((item) => redactImpl(item, inSensitiveSubtree))
+    return value.map((item) => redactImpl(item, inSensitiveSubtree, matchSensitive))
   }
   // Non-plain object (Map / Set / Date / class instance) — redact
   // wholesale if we're already in a sensitive subtree; otherwise pass
@@ -81,8 +87,8 @@ function redactImpl(value: unknown, inSensitiveSubtree: boolean): unknown {
   }
   const out: Record<string, unknown> = {}
   for (const key of Object.keys(value as Record<string, unknown>)) {
-    const childSensitive = inSensitiveSubtree || segmentMatchesSensitive(key)
-    out[key] = redactImpl((value as Record<string, unknown>)[key], childSensitive)
+    const childSensitive = inSensitiveSubtree || matchSensitive(key)
+    out[key] = redactImpl((value as Record<string, unknown>)[key], childSensitive, matchSensitive)
   }
   return out
 }
@@ -211,7 +217,12 @@ function wire(api: UnsafeDevtoolsApi, app: App, registry: AttaformRegistry): voi
           // session and a screen-share / paired-debugging session
           // would otherwise expose any password / token / etc. the
           // user typed since DevTools was opened.
-          data: { form: redactSensitiveLeaves(state.form.value) as Record<string, unknown> },
+          data: {
+            form: redactSensitiveLeaves(state.form.value, state.segmentMatchesSensitive) as Record<
+              string,
+              unknown
+            >,
+          },
         },
       })
     })
@@ -222,7 +233,12 @@ function wire(api: UnsafeDevtoolsApi, app: App, registry: AttaformRegistry): voi
           time: Date.now(),
           title: 'submit.success',
           subtitle: state.formKey,
-          data: { form: redactSensitiveLeaves(state.form.value) as Record<string, unknown> },
+          data: {
+            form: redactSensitiveLeaves(state.form.value, state.segmentMatchesSensitive) as Record<
+              string,
+              unknown
+            >,
+          },
         },
       })
     })
@@ -287,7 +303,11 @@ function wire(api: UnsafeDevtoolsApi, app: App, registry: AttaformRegistry): voi
     // can't accidentally write the literal string `'[redacted]'` over
     // a real value.
     payload.state['Form value'] = [
-      { key: 'form', value: redactSensitiveLeaves(state.form.value), editable: true },
+      {
+        key: 'form',
+        value: redactSensitiveLeaves(state.form.value, state.segmentMatchesSensitive),
+        editable: true,
+      },
     ]
     // Schema-driven and user-injected errors land in separate inspector
     // sections so devs can see the source distinction at a glance — a
@@ -335,7 +355,7 @@ function wire(api: UnsafeDevtoolsApi, app: App, registry: AttaformRegistry): voi
     // them as `'[redacted]'`, so a dev who confirms the field would
     // overwrite the real value with the literal masked string. Edits
     // to sensitive paths must go through the bound input element.
-    if (isSensitivePath([...canonicalPath])) return
+    if (state.isSensitivePath([...canonicalPath])) return
     // A devtools edit on a path that any element has opted in to should
     // persist (matches the user's expectation: editing via the inspector
     // should be indistinguishable from typing into the bound input).

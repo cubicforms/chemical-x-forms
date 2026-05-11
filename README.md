@@ -120,6 +120,7 @@ It catches stale `form.values.contacts[N]` reads at compile time. Nuxt 3 / 4 set
 - **Discriminated-union variant memory** — switching a discriminator (`notify.channel: 'email' → 'sms' → 'email'`) restores the previous variant's typed subtree by default. Set `useForm({ rememberVariants: false })` to drop on switch.
 - **Field arrays** — `append` / `prepend` / `insert` / `remove` / `swap` / `move` / `replace`, fully typed at the call site.
 - **Drafts + undo / redo** — per-field opt-in persistence (`localStorage` / `sessionStorage` / IndexedDB / [custom backend](./docs/recipes/persistence.md#picking-a-backend)) and a bounded undo stack.
+- **Multi-tab sync** — same-keyed `useForm` callsites in same-origin tabs auto-pair over `BroadcastChannel` and mirror every mutation in near real-time. Sensitive paths filtered both directions; HTTPS-or-localhost required. See [recipe](./docs/recipes/multi-tab-sync.md).
 - **Server errors** — `parseApiErrors(payload)` normalises a `{ message, code }[]` wire format; pair with `form.setFieldErrors(...)`. User errors survive schema revalidation.
 - **Stable error codes** — every `ValidationError` carries `code: string`. Library codes (`atta:`) live on the exported `AttaformErrorCode` enum; adapter codes use a `zod:` prefix; consumers pick their own (`api:`, `auth:`, …).
 - **Clearable required fields** — the `unset` sentinel marks a field displayed-empty while storage holds the schema's slim default. Submit fails with `'No value supplied'` for required schemas; `.optional()` / `.nullable()` / `.default(N)` opt out.

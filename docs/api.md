@@ -91,7 +91,8 @@ helpers, imperative persistence.
 [Dynamic field arrays](/docs/recipes/dynamic-field-arrays) ·
 [Undo / redo](/docs/recipes/undo-redo) ·
 [Focus on error](/docs/recipes/focus-on-error) ·
-[Persistence](/docs/recipes/persistence)
+[Persistence](/docs/recipes/persistence) ·
+[Multi-tab sync](/docs/recipes/multi-tab-sync)
 
 ## Types
 

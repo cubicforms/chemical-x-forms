@@ -5,12 +5,12 @@ import { getNestedZodSchemasAtPath } from '../../../src/runtime/adapters/zod-v4/
 describe('getNestedZodSchemasAtPath', () => {
   it('returns the root schema for an empty path', () => {
     const schema = z.object({ name: z.string() })
-    expect(getNestedZodSchemasAtPath(schema, '')).toEqual([schema])
+    expect(getNestedZodSchemasAtPath(schema, '', 64)).toEqual([schema])
   })
 
   it('walks through object → leaf', () => {
     const schema = z.object({ name: z.string() })
-    const resolved = getNestedZodSchemasAtPath(schema, 'name')
+    const resolved = getNestedZodSchemasAtPath(schema, 'name', 64)
     expect(resolved).toHaveLength(1)
     expect(resolved[0]?.safeParse('hello').success).toBe(true)
   })
@@ -19,19 +19,19 @@ describe('getNestedZodSchemasAtPath', () => {
     const schema = z.object({
       items: z.array(z.object({ label: z.string() })),
     })
-    const resolved = getNestedZodSchemasAtPath(schema, 'items.0.label')
+    const resolved = getNestedZodSchemasAtPath(schema, 'items.0.label', 64)
     expect(resolved).toHaveLength(1)
     expect(resolved[0]?.safeParse('x').success).toBe(true)
   })
 
   it('returns empty array for a non-existent path', () => {
     const schema = z.object({ name: z.string() })
-    expect(getNestedZodSchemasAtPath(schema, 'nope')).toEqual([])
+    expect(getNestedZodSchemasAtPath(schema, 'nope', 64)).toEqual([])
   })
 
   it('returns empty array when descending into a leaf', () => {
     const schema = z.object({ name: z.string() })
-    expect(getNestedZodSchemasAtPath(schema, 'name.middle')).toEqual([])
+    expect(getNestedZodSchemasAtPath(schema, 'name.middle', 64)).toEqual([])
   })
 
   it('returns multiple subschemas for a union branch', () => {
@@ -41,7 +41,7 @@ describe('getNestedZodSchemasAtPath', () => {
         z.object({ kind: z.literal('b'), x: z.number() }),
       ]),
     })
-    const resolved = getNestedZodSchemasAtPath(schema, 'value.x')
+    const resolved = getNestedZodSchemasAtPath(schema, 'value.x', 64)
     // Both union branches have an x — both resolve.
     expect(resolved.length).toBeGreaterThanOrEqual(1)
   })
@@ -54,14 +54,14 @@ describe('getNestedZodSchemasAtPath', () => {
       ]),
     })
     // "value" only lives in the ok branch — expect exactly one match.
-    const resolved = getNestedZodSchemasAtPath(schema, 'result.value')
+    const resolved = getNestedZodSchemasAtPath(schema, 'result.value', 64)
     expect(resolved).toHaveLength(1)
     expect(resolved[0]?.safeParse('x').success).toBe(true)
   })
 
   it('transparently walks through optional wrappers', () => {
     const schema = z.object({ inner: z.string().optional() })
-    const resolved = getNestedZodSchemasAtPath(schema, 'inner')
+    const resolved = getNestedZodSchemasAtPath(schema, 'inner', 64)
     expect(resolved).toHaveLength(1)
     // Optional preserves undefined.
     expect(resolved[0]?.safeParse(undefined).success).toBe(true)
@@ -71,8 +71,8 @@ describe('getNestedZodSchemasAtPath', () => {
     const schema = z.object({
       profile: z.object({ name: z.string() }),
     })
-    const byString = getNestedZodSchemasAtPath(schema, 'profile.name')
-    const byArray = getNestedZodSchemasAtPath(schema, ['profile', 'name'])
+    const byString = getNestedZodSchemasAtPath(schema, 'profile.name', 64)
+    const byArray = getNestedZodSchemasAtPath(schema, ['profile', 'name'], 64)
     expect(byString).toHaveLength(1)
     expect(byArray).toHaveLength(1)
   })
@@ -84,7 +84,7 @@ describe('getNestedZodSchemasAtPath', () => {
   // skipped element coercion entirely.
   it('walks z.set(z.number()) → element schema', () => {
     const schema = z.object({ tags: z.set(z.number()) })
-    const resolved = getNestedZodSchemasAtPath(schema, ['tags', 0])
+    const resolved = getNestedZodSchemasAtPath(schema, ['tags', 0], 64)
     expect(resolved).toHaveLength(1)
     expect(resolved[0]?.safeParse(42).success).toBe(true)
     expect(resolved[0]?.safeParse('42').success).toBe(false)
@@ -92,7 +92,7 @@ describe('getNestedZodSchemasAtPath', () => {
 
   it('walks z.set(z.boolean()) → element schema', () => {
     const schema = z.object({ flags: z.set(z.boolean()) })
-    const resolved = getNestedZodSchemasAtPath(schema, ['flags', 0])
+    const resolved = getNestedZodSchemasAtPath(schema, ['flags', 0], 64)
     expect(resolved).toHaveLength(1)
     expect(resolved[0]?.safeParse(true).success).toBe(true)
     expect(resolved[0]?.safeParse('true').success).toBe(false)
@@ -102,7 +102,7 @@ describe('getNestedZodSchemasAtPath', () => {
     const schema = z.object({
       tags: z.set(z.object({ label: z.string() })),
     })
-    const resolved = getNestedZodSchemasAtPath(schema, ['tags', 0, 'label'])
+    const resolved = getNestedZodSchemasAtPath(schema, ['tags', 0, 'label'], 64)
     expect(resolved).toHaveLength(1)
     expect(resolved[0]?.safeParse('x').success).toBe(true)
   })

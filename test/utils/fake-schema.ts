@@ -53,6 +53,12 @@ export function fakeSchema<F extends GenericForm>(
         formKey: '',
       }
     },
+    normalizeWriteValueAtPath(value) {
+      // fakeSchema doesn't model preprocess/transform — input
+      // normalization is a real-adapter concern. Pass through
+      // unchanged so the runtime's write path stays a single line.
+      return value
+    },
     getDefaultAtPath(path) {
       // fakeSchema is data-keyed, not schema-keyed — it can't distinguish
       // tuple from unbounded array. To keep the structural-completeness

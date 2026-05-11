@@ -18,7 +18,7 @@ describe('zod v4: isLeafAtPath — primitives are leaves', () => {
       agreed: z.boolean(),
       big: z.bigint(),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     expect(adapter.isLeafAtPath(['name'])).toBe(true)
     expect(adapter.isLeafAtPath(['age'])).toBe(true)
     expect(adapter.isLeafAtPath(['agreed'])).toBe(true)
@@ -27,19 +27,19 @@ describe('zod v4: isLeafAtPath — primitives are leaves', () => {
 
   it('returns true for Date (Date is a leaf — never drilled into)', () => {
     const schema = z.object({ created: z.date() })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     expect(adapter.isLeafAtPath(['created'])).toBe(true)
   })
 
   it('returns true for literal types', () => {
     const schema = z.object({ kind: z.literal('admin') })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     expect(adapter.isLeafAtPath(['kind'])).toBe(true)
   })
 
   it('returns true for string enums', () => {
     const schema = z.object({ role: z.enum(['admin', 'user', 'guest']) })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     expect(adapter.isLeafAtPath(['role'])).toBe(true)
   })
 })
@@ -47,19 +47,19 @@ describe('zod v4: isLeafAtPath — primitives are leaves', () => {
 describe('zod v4: isLeafAtPath — wrappers are transparent', () => {
   it('returns true for .optional() over a primitive', () => {
     const schema = z.object({ note: z.string().optional() })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     expect(adapter.isLeafAtPath(['note'])).toBe(true)
   })
 
   it('returns true for .nullable() over a primitive', () => {
     const schema = z.object({ count: z.number().nullable() })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     expect(adapter.isLeafAtPath(['count'])).toBe(true)
   })
 
   it('returns true for .default() over a primitive', () => {
     const schema = z.object({ count: z.number().default(0) })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     expect(adapter.isLeafAtPath(['count'])).toBe(true)
   })
 })
@@ -69,7 +69,7 @@ describe('zod v4: isLeafAtPath — containers descend', () => {
     const schema = z.object({
       address: z.object({ city: z.string(), zip: z.string() }),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     expect(adapter.isLeafAtPath(['address'])).toBe(false)
     expect(adapter.isLeafAtPath(['address', 'city'])).toBe(true)
     expect(adapter.isLeafAtPath(['address', 'zip'])).toBe(true)
@@ -80,7 +80,7 @@ describe('zod v4: isLeafAtPath — containers descend', () => {
       tags: z.array(z.string()),
       users: z.array(z.object({ name: z.string() })),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     expect(adapter.isLeafAtPath(['tags'])).toBe(false)
     expect(adapter.isLeafAtPath(['tags', 0])).toBe(true)
     expect(adapter.isLeafAtPath(['users'])).toBe(false)
@@ -90,7 +90,7 @@ describe('zod v4: isLeafAtPath — containers descend', () => {
 
   it('returns false for the root form (empty path)', () => {
     const schema = z.object({ x: z.number() })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     expect(adapter.isLeafAtPath([])).toBe(false)
   })
 
@@ -100,7 +100,7 @@ describe('zod v4: isLeafAtPath — containers descend', () => {
         avatar: z.object({ url: z.string(), size: z.number() }),
       }),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     expect(adapter.isLeafAtPath(['profile'])).toBe(false)
     expect(adapter.isLeafAtPath(['profile', 'avatar'])).toBe(false)
     expect(adapter.isLeafAtPath(['profile', 'avatar', 'url'])).toBe(true)
@@ -115,7 +115,7 @@ describe('zod v4: isLeafAtPath — discriminated unions', () => {
       z.object({ channel: z.literal('sms'), number: z.string() }),
     ]),
   })
-  const adapter = zodAdapter(schema)('f')
+  const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
 
   it('returns false at the DU root (variants are objects)', () => {
     expect(adapter.isLeafAtPath(['notify'])).toBe(false)
@@ -143,7 +143,7 @@ describe('zod v4: isLeafAtPath — discriminated unions', () => {
         z.object({ step: z.literal('review'), notes: z.string() }),
       ]),
     })
-    const a = zodAdapter(nested)('f')
+    const a = zodAdapter(nested)('f', { maxRecursionDepth: 64 })
     expect(a.isLeafAtPath(['flow'])).toBe(false)
     expect(a.isLeafAtPath(['flow', 'step'])).toBe(true)
     expect(a.isLeafAtPath(['flow', 'type'])).toBe(false)
@@ -157,7 +157,7 @@ describe('zod v4: isLeafAtPath — discriminated unions', () => {
 describe('zod v4: isLeafAtPath — non-existent paths', () => {
   it('returns false for unknown paths (descend permissively)', () => {
     const schema = z.object({ name: z.string() })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     expect(adapter.isLeafAtPath(['unknown'])).toBe(false)
     expect(adapter.isLeafAtPath(['name', 'whatever'])).toBe(false)
   })
@@ -166,7 +166,7 @@ describe('zod v4: isLeafAtPath — non-existent paths', () => {
 describe('zod v4: isLeafAtPath — cache behaviour', () => {
   it('memoises so the second call skips the slim-primitive walk', () => {
     const schema = z.object({ email: z.string(), address: z.object({ city: z.string() }) })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     // The cache short-circuits before calling
     // `getSlimPrimitiveTypesAtPath`. Spy on it: after the cold call,
     // the spy should record one invocation; after the warm call on
@@ -189,7 +189,7 @@ describe('zod v4: isLeafAtPath — cache behaviour', () => {
 
   it('canonicalises so dotted-form and array-form share the cache', () => {
     const schema = z.object({ users: z.array(z.object({ name: z.string() })) })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const spy = vi.spyOn(adapter, 'getSlimPrimitiveTypesAtPath')
 
     // Array-form first — populates the cache under the canonical key.

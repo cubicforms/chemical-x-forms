@@ -140,6 +140,89 @@ describe('buildProcessForm', () => {
       await pending
       expect(state.activeValidations.value).toBe(0)
     })
+
+    it('translates an adapter throw into an AdapterThrew failure response (does NOT reject)', async () => {
+      // A misbehaving adapter throws from validateAtPath — contract
+      // forbids this, but the library must NOT rely on the adapter
+      // doing its thing. The promise resolves with a structured
+      // failure response carrying the AdapterThrew code; the consumer
+      // never sees a raw rejection from the adapter.
+      const throwingValidator = (_data: unknown, _path: Path | undefined): never => {
+        throw new Error('adapter boom')
+      }
+      const state = createFormStore<Signup>({
+        formKey: 'pf',
+        schema: fakeSchema<Signup>({ email: '', password: '' }, throwingValidator),
+      })
+      const { validateAsync } = buildProcessForm(state, 'test:inst')
+
+      const response = await validateAsync()
+      expect(response.success).toBe(false)
+      expect(response.errors?.[0]?.code).toBe('atta:adapter-threw')
+      expect(response.errors?.[0]?.message).toContain('adapter boom')
+      // Counter still drains cleanly.
+      expect(state.activeValidations.value).toBe(0)
+    })
+  })
+
+  describe('process', () => {
+    it('resolves with the parsed data on success', async () => {
+      const state = alwaysValid()
+      const { process } = buildProcessForm(state, 'test:inst')
+      const response = await process()
+      expect(response.success).toBe(true)
+      if (response.success) {
+        expect(response.data).toEqual({ email: 'a@b', password: 'secret1!' })
+      }
+    })
+
+    it('resolves with a failure response when the schema rejects (errors + no data)', async () => {
+      const state = alwaysInvalid()
+      const { process } = buildProcessForm(state, 'test:inst')
+      const response = await process()
+      expect(response.success).toBe(false)
+      expect(response.errors).toEqual([
+        {
+          message: 'Enter a valid email',
+          path: ['email'],
+          formKey: 'pf',
+          code: 'atta:test-fixture',
+        },
+      ])
+    })
+
+    it('translates an adapter throw into an AdapterThrew failure response (does NOT reject)', async () => {
+      // Symmetric with validateAsync's adapter-throw test. process()
+      // must also defend against bad adapters — a throwing adapter
+      // can't be allowed to wreck consumer await chains, especially
+      // when process() is invoked imperatively from UI handlers.
+      const throwingValidator = (_data: unknown, _path: Path | undefined): never => {
+        throw new Error('process adapter boom')
+      }
+      const state = createFormStore<Signup>({
+        formKey: 'pf',
+        schema: fakeSchema<Signup>({ email: '', password: '' }, throwingValidator),
+      })
+      const { process } = buildProcessForm(state, 'test:inst')
+
+      const response = await process()
+      expect(response.success).toBe(false)
+      expect(response.errors?.[0]?.code).toBe('atta:adapter-threw')
+      expect(response.errors?.[0]?.message).toContain('process adapter boom')
+      // data field present on the union but undefined for adapter-throw shape.
+      expect(response.data).toBeUndefined()
+      // Counter still drains cleanly.
+      expect(state.activeValidations.value).toBe(0)
+    })
+
+    it('decrements activeValidations back to 0 on completion', async () => {
+      const state = alwaysValid()
+      const { process } = buildProcessForm(state, 'test:inst')
+      const pending = process()
+      expect(state.activeValidations.value).toBe(1)
+      await pending
+      expect(state.activeValidations.value).toBe(0)
+    })
   })
 
   describe('handleSubmit', () => {
@@ -307,50 +390,50 @@ describe('buildProcessForm', () => {
       expect(state.submitError.value).toBeNull()
     })
 
-    it('keeps submitting true across overlapping submissions until all complete', async () => {
-      // Regression: previously each handler invocation set submitting
-      // = false on its own completion, so the FIRST resolution prematurely
-      // flipped the flag while a later submission was still in flight.
-      // The fix maintains an in-flight counter on FormStore; submitting
-      // is true iff the counter is > 0.
+    it('rejects re-entry: a second submit fired while one is in flight is a no-op', async () => {
+      // Re-entry guard: classic double-click case — `submit()` fires
+      // while a prior call is still awaiting validation or onSuccess.
+      // The second call returns early so onSuccess fires once and
+      // side-effects (POSTs, etc) don't duplicate. `submitting` stays
+      // true for the duration of the live call only; `submitCount`
+      // increments by exactly one.
       const state = alwaysValid()
       const { handleSubmit } = buildProcessForm(state, 'test:inst')
 
+      let firstCalls = 0
+      let secondCalls = 0
       let resolveFirst!: () => void
-      let resolveSecond!: () => void
       const firstStarted = new Promise<void>((resolve) => {
         const blocker = new Promise<void>((r) => (resolveFirst = r))
         void handleSubmit(async () => {
+          firstCalls++
           resolve()
           await blocker
         })()
       })
-      const secondStarted = new Promise<void>((resolve) => {
-        const blocker = new Promise<void>((r) => (resolveSecond = r))
-        void handleSubmit(async () => {
-          resolve()
-          await blocker
-        })()
-      })
-
-      await Promise.all([firstStarted, secondStarted])
-      expect(state.submitting.value).toBe(true)
-      expect(state.activeSubmissions.value).toBe(2)
-
-      // Resolve the first submission — counter drops to 1, flag stays true.
-      resolveFirst()
-      await Promise.resolve() // microtask drain so the finally block runs
-      await Promise.resolve()
+      await firstStarted
       expect(state.submitting.value).toBe(true)
       expect(state.activeSubmissions.value).toBe(1)
 
-      // Resolve the second — counter drops to 0, flag flips false.
-      resolveSecond()
+      // Second submit while the first is in flight — returns immediately
+      // without invoking the user's callback.
+      await handleSubmit(() => {
+        secondCalls++
+        return Promise.resolve()
+      })()
+      expect(secondCalls).toBe(0)
+      expect(state.submitting.value).toBe(true)
+      expect(state.activeSubmissions.value).toBe(1)
+
+      // Resolve the first — counter drops to 0, flag flips false.
+      resolveFirst()
       await Promise.resolve()
       await Promise.resolve()
+      expect(firstCalls).toBe(1)
       expect(state.submitting.value).toBe(false)
       expect(state.activeSubmissions.value).toBe(0)
-      expect(state.submitCount.value).toBe(2)
+      // submitCount counts only the live submission, not the rejected one.
+      expect(state.submitCount.value).toBe(1)
     })
   })
 

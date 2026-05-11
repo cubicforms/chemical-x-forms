@@ -90,18 +90,35 @@ APIs below). The public surfaces below merge both transparently
 revalidation and successful submits — the consumer owns their lifecycle
 explicitly.
 
-| Member                    | Type                                                                                                                                                                                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `errors`                  | `FormErrorsSurface<Form>` — drillable callable Proxy. Dot-access descends; call-form aggregates and returns `readonly ValidationError[] \| undefined` at any path. Active-variant (DU) filtered, sorted by schema-declaration order. Schema entries first, user entries second. |
-| `setFieldErrors(errors)`  | `(ValidationError[]) => void` — replaces the user-error store. For server / API responses, parse the payload via `parseApiErrors` (top-level helper) and feed the result here. See [server-errors recipe](/docs/recipes/server-errors).                                         |
-| `addFieldErrors(errors)`  | `(ValidationError[]) => void` — appends to the user-error store.                                                                                                                                                                                                                |
-| `clearFieldErrors(path?)` | `(path?) => void` — clears BOTH stores at the given path (or all paths if omitted). With live validation, the schema half re-populates on the next mutation if the value is still invalid.                                                                                      |
+| Member                    | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `errors`                  | `FormErrorsSurface<Form>` — drillable callable Proxy. Dot-access descends; call-form aggregates and returns `readonly ValidationError[] \| undefined` at any path. Active-variant (DU) filtered for schema errors. User errors surface unconditionally — including at paths the schema doesn't know about. Sorted by schema-declaration order. Schema entries first, user entries second.                                                                                                                                                                                           |
+| `setFieldErrors(errors)`  | `(ValidationError[]) => void` — replaces every FIELD entry in the user-error store. The form-level bucket (see `setFormErrors`) is preserved. For server / API responses, parse the payload via `parseApiErrors` (top-level helper) and feed the result here. See [server-errors recipe](/docs/recipes/server-errors).                                                                                                                                                                                                                                                              |
+| `addFieldErrors(errors)`  | `(ValidationError[]) => void` — appends to the user-error store.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `clearFieldErrors(path?)` | `(path?) => void` — clears BOTH stores at the given path (or all field paths if omitted). The form-level bucket is preserved by the no-arg form; pass `clearFormErrors()` to clear it explicitly. With live validation, the schema half re-populates on the next mutation if the value is still invalid.                                                                                                                                                                                                                                                                            |
+| `setFormErrors(errors)`   | `(Array<{ message: string; code?: string }>) => void` — sets the form-level error bucket (entries at the empty-string path `['']`). The dedicated home for messages that aren't tied to a single field: "capacity exceeded", "this combination already exists", post-submit failures from the network or the server. Each entry's `path` is forced to `['']` and `formKey` to this form's key; consumer-supplied path / formKey on the input are ignored. `code` defaults to `'atta:form-error'`. Replaces (not appends); call `setFormErrors([])` or `clearFormErrors()` to clear. |
+| `clearFormErrors()`       | `() => void` — clears the form-level bucket without touching field errors. Equivalent to `setFormErrors([])`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+
+Form-level errors are reachable from every read surface:
+
+- `form.errors('')` — call-form with the empty-string path, returns
+  the `ValidationError[]` at the bucket (or `undefined` when empty).
+- `form.errors['']` — bracket access on the drill proxy.
+- `JSON.stringify(form.errors)` — the empty-string key appears in the
+  serialised tree alongside field-keyed entries, so debug-prints in
+  templates (`{{ form.errors }}`) don't silently drop them.
+- `form.meta.errors` — the flat aggregate, unfiltered.
+
+The path-keyed drill `form.errors.<field>` still resolves schema field
+names (`form.errors.` has no `''` property by JS dot-notation), so
+form-level entries are reached via the call form, bracket form, or
+iteration — not dot-access.
 
 For a "show all errors" UI (path-keyed, form-level, unmapped server,
 cross-field-refine), use `form.meta.errors` — the root-level aggregate
-(active-variant filtered, schema-declaration ordered). Equivalent to
-`form.errors()` and `form.fields().errors`; same computed under the
-hood.
+(active-variant filtered for schema errors, schema-declaration
+ordered). Equivalent to `form.errors()` and `form.fields().errors`;
+same computed under the hood.
 
 ### `field.showErrors` and `field.firstError`
 
@@ -142,9 +159,6 @@ templates and scripts — no `.value`.
 | `meta.submitting`  | `boolean` | `true` while the submit handler is running.                                                                                                                                                |
 | `meta.submitCount` | `number`  | Incremented once per call, regardless of outcome.                                                                                                                                          |
 | `meta.submitError` | `unknown` | Whatever the callback threw; `null` on success. Cleared on every new submission.                                                                                                           |
-| `meta.canUndo`     | `boolean` | Gate an "Undo" button on this. Always present; `false` when `history` is off.                                                                                                              |
-| `meta.canRedo`     | `boolean` | Gate a "Redo" button on this. Always present; `false` when `history` is off.                                                                                                               |
-| `meta.historySize` | `number`  | Total snapshots across both stacks. `0` when `history` is off.                                                                                                                             |
 | `meta.instanceId`  | `string`  | Per-`useForm()`-call identity. Stable for one mount, new on remount; orthogonal to `form.key`. Use for DevTools, telemetry, E2E selectors (`data-form-id`), and Vue `:key`. Opaque format. |
 
 `meta` is read-only — assignments are rejected at runtime with a
@@ -187,15 +201,21 @@ opt-in model these APIs sit on top of.
 
 ## Undo / redo
 
-| Member   | Type            | What it does                         |
-| -------- | --------------- | ------------------------------------ |
-| `undo()` | `() => boolean` | Revert to the previous snapshot.     |
-| `redo()` | `() => boolean` | Replay a previously-undone snapshot. |
+Everything undo/redo lives under `form.history` — methods and
+reactive flags both, on one namespace.
 
-`undo()` and `redo()` are top-level methods. The matching flags
-(`meta.canUndo`, `meta.canRedo`, `meta.historySize`) live on the
-`meta` bundle above. Inert stubs when `history` isn't
-configured — consistent API shape, zero overhead.
+| Member                 | Type            | What it does                                                          |
+| ---------------------- | --------------- | --------------------------------------------------------------------- |
+| `form.history.undo()`  | `() => boolean` | Step back to the previous state. `false` at baseline.                 |
+| `form.history.redo()`  | `() => boolean` | Replay the next state after an undo. `false` when nothing's queued.   |
+| `form.history.clear()` | `() => void`    | Wipe the undo/redo branches; reseed the chain with the current state. |
+| `form.history.canUndo` | `boolean`       | Gate an "Undo" button on this.                                        |
+| `form.history.canRedo` | `boolean`       | Gate a "Redo" button on this.                                         |
+| `form.history.size`    | `number`        | Reachable positions across the chain.                                 |
+
+Always present, whether or not `history` was configured. When off,
+methods are inert no-ops and flags read `false` / `0`. See the
+[undo / redo recipe](/docs/recipes/undo-redo) for the full surface.
 
 ## Field arrays (typed)
 

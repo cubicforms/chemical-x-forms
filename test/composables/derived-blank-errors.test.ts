@@ -45,7 +45,7 @@ function mountNumeric(): { app: App; api: NumericApi } {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform())
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
@@ -140,7 +140,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -159,7 +159,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -178,7 +178,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -218,7 +218,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -240,7 +240,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -258,7 +258,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -287,7 +287,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -305,7 +305,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -323,7 +323,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -346,7 +346,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -415,7 +415,7 @@ describe('derivedBlankErrors — independent of imperative writers', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
 

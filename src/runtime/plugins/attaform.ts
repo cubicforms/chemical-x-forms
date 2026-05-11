@@ -30,7 +30,7 @@ export default defineNuxtPlugin({
     const { defaults } = (useRuntimeConfig().public as { attaform: { defaults: AttaformDefaults } })
       .attaform
 
-    nuxtApp.vueApp.use(createAttaform({ override: isServer, defaults }))
+    nuxtApp.vueApp.use(createAttaform({ ssr: isServer, defaults }))
 
     if (isServer) {
       // After the app renders, capture every FormStore into the Nuxt payload

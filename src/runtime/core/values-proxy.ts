@@ -64,6 +64,17 @@ export function buildValuesProxy<F extends GenericForm>(form: Ref<F>): ValuesPro
   // ownKeys Proxy invariant.
   const target = (() => {}) as unknown as ValuesProxy<F>
 
+  // Coerce-to-primitive: Vue's `toDisplayString` (powering `{{ expr }}`)
+  // falls back to `String(val)` whenever `typeof val === 'function'`,
+  // which is true for our callable-proxy target. Without this trap,
+  // `{{ form.values }}` lands at `Function.prototype.toString` and
+  // renders `"() => {}"`. JSON.stringify already works via `toJSON`
+  // below; this trap reaches the SAME data through the template path
+  // (and `String(form.values)`), so the two surfaces agree.
+  const valuesToString = (): string => JSON.stringify(inner.value)
+  const valuesToPrimitive = (hint: string): string | number =>
+    hint === 'number' ? NaN : valuesToString()
+
   return new Proxy(target, {
     apply(_, __, args: unknown[]): unknown {
       const arg = args[0] as string | Path | undefined
@@ -82,11 +93,25 @@ export function buildValuesProxy<F extends GenericForm>(form: Ref<F>): ValuesPro
     },
     get(_, key: string | symbol): unknown {
       // Symbol passthrough — Vue's reactivity sigils resolve here.
-      if (typeof key === 'symbol') return Reflect.get(target, key)
+      // `Symbol.toPrimitive` is the one symbol we intercept: it's
+      // what `String(proxy)` / template-literal coercion / Vue's
+      // `toDisplayString` end up calling for callables.
+      if (typeof key === 'symbol') {
+        if (key === Symbol.toPrimitive) return valuesToPrimitive
+        return Reflect.get(target, key)
+      }
       // toJSON: serialise the inner readonly proxy. JSON.stringify
       // checks for toJSON before checking typeof, so the callable
       // proxy serialises to the actual form data.
       if (key === 'toJSON') return () => inner.value
+      // toString / valueOf: direct method-call coercion. Mirrors the
+      // Symbol.toPrimitive path so `form.values.toString()` and
+      // `String(form.values)` produce the same JSON snapshot.
+      if (key === 'toString') return valuesToString
+      if (key === 'valueOf')
+        return function (this: unknown): unknown {
+          return this
+        }
       // Property access: delegate to the readonly proxy. Vue's
       // dependency tracking captures the read inside the consumer's
       // active effect.

@@ -228,6 +228,7 @@ function computeFingerprint(
     case 'promise':
     case 'custom':
     case 'template-literal':
+    case 'transform':
       return `${kind}:*`
 
     default: {

@@ -40,7 +40,7 @@ function mountForm<Schema extends z.ZodObject>(schema: Schema): { app: App; api:
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform())
   app.config.warnHandler = () => {}
   app.config.errorHandler = () => {}
   app.mount(document.createElement('div'))

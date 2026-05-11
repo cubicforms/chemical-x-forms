@@ -1,10 +1,10 @@
 import { computed, type ComputedRef } from 'vue'
-import type { FieldState, FormMeta, ValidationError } from '../types/types-api'
+import type { FieldState, FormMeta, ShouldShowErrors, ValidationError } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import { EMPTY_RESOLVED_FIELD_META } from './field-meta'
 import { humanize } from './humanize'
-import { hasAtPath } from './path-walker'
+import { getAtPath, hasAtPath } from './path-walker'
 import {
   canonicalizePath,
   FORM_ERRORS_PATH_KEY,
@@ -13,6 +13,23 @@ import {
   type Path,
   type PathKey,
 } from './paths'
+
+function isUnderStubAncestor<F extends GenericForm>(
+  state: FormStore<F, GenericForm>,
+  segments: Path
+): boolean {
+  for (let i = 0; i < segments.length; i++) {
+    const ancestorPath = segments.slice(0, i)
+    const du = state.schema.getUnionDiscriminatorAtPath(ancestorPath)
+    if (du === undefined) continue
+    const ancestorValue = getAtPath(state.form.value, ancestorPath)
+    if (ancestorValue === null || typeof ancestorValue !== 'object') continue
+    const discValue = (ancestorValue as Record<string, unknown>)[du.discriminatorKey]
+    if (discValue === undefined) return true
+    if (!du.isVariantSelected(discValue)) return true
+  }
+  return false
+}
 
 /**
  * Reactive field-state accessor. Combines per-field records, DOM
@@ -74,14 +91,16 @@ export type FormMetaBase = Omit<FormMeta<unknown>, 'showErrors' | 'firstError'>
 export type FormMetaBaseGetter = () => FormMetaBase
 
 export function buildFieldStateAccessor<F extends GenericForm>(
-  state: FormStore<F>,
-  getFormMetaBase: FormMetaBaseGetter
+  state: FormStore<F, GenericForm>,
+  getFormMetaBase: FormMetaBaseGetter,
+  options?: { readonly shouldShowErrors?: ShouldShowErrors }
 ) {
   // Per-path memoisation so `getFieldStateAt(p)` returns the same
   // `ComputedRef` reference on repeated reads with the same canonical
   // path. The Map's lifetime equals the form-store's; cleared
   // implicitly when the store is GC'd.
   const cache = new Map<PathKey, ComputedRef<FieldState<unknown>>>()
+  const predicate = options?.shouldShowErrors
 
   return function getFieldState(pathInput: string | Path): ComputedRef<FieldState<unknown>> {
     const { segments, key } = canonicalizePath(pathInput)
@@ -89,8 +108,8 @@ export function buildFieldStateAccessor<F extends GenericForm>(
     if (cached !== undefined) return cached
     const c = computed<FieldState<unknown>>(() =>
       state.schema.isLeafAtPath(segments)
-        ? buildLeafFieldState(state, segments, key, getFormMetaBase)
-        : buildContainerFieldState(state, segments, key, getFormMetaBase)
+        ? buildLeafFieldState(state, segments, key, getFormMetaBase, predicate)
+        : buildContainerFieldState(state, segments, key, getFormMetaBase, predicate)
     )
     cache.set(key, c)
     return c
@@ -104,7 +123,7 @@ export function buildFieldStateAccessor<F extends GenericForm>(
  * `buildLeafFieldState`).
  */
 function buildLeafFieldStateBase<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   segments: Path,
   key: PathKey
 ): FieldStateBase {
@@ -128,7 +147,19 @@ function buildLeafFieldStateBase<F extends GenericForm>(
   // and clamping every such field to `false` at mount would defeat
   // the green-checkmark UX pattern that `field.valid` is built for.
   const gated = state.pathHasAsyncValidation(segments) && !state.firstValidationDone.value
-  const valid = !gated && errors.length === 0 && !validating
+  // Stub-state orphan gate: when a leaf is structurally absent from
+  // `form.value` AND any DU ancestor is in stub state (its disc value
+  // isn't a known variant), the surface MUST NOT report `valid: true`.
+  // The parent is broken; pretending the descendant is fine hides
+  // it from error-summary UIs. Inactive-variant siblings under a
+  // VALID disc are a different case — they read as stable stubs
+  // (`valid: true`, errors: []) so unconditional template bindings
+  // keep working across variants.
+  const isOrphan =
+    segments.length > 0 &&
+    !hasAtPath(state.form.value, segments) &&
+    isUnderStubAncestor(state, segments)
+  const valid = !gated && errors.length === 0 && !validating && !isOrphan
   const elementRecord = state.elements.get(key)
   const elementsArr: readonly HTMLElement[] = elementRecord
     ? Object.freeze([...elementRecord.elements])
@@ -172,13 +203,14 @@ function buildLeafFieldStateBase<F extends GenericForm>(
  * vs vanilla-JS.
  */
 function buildLeafFieldState<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   segments: Path,
   key: PathKey,
-  getFormMetaBase: FormMetaBaseGetter
+  getFormMetaBase: FormMetaBaseGetter,
+  shouldShowErrors?: ShouldShowErrors
 ): FieldState<unknown> {
   const base = buildLeafFieldStateBase(state, segments, key)
-  return decorateWithDerivedProps(base, state, getFormMetaBase)
+  return decorateWithDerivedProps(base, state, getFormMetaBase, shouldShowErrors)
 }
 
 /**
@@ -202,7 +234,7 @@ function buildLeafFieldState<F extends GenericForm>(
  * root path's own `showErrors` computation.
  */
 export function buildContainerFieldStateBase<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   segments: Path,
   _key: PathKey
 ): FieldStateBase {
@@ -302,13 +334,14 @@ export function buildContainerFieldStateBase<F extends GenericForm>(
  * derived predicate-fed props.
  */
 function buildContainerFieldState<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   segments: Path,
   key: PathKey,
-  getFormMetaBase: FormMetaBaseGetter
+  getFormMetaBase: FormMetaBaseGetter,
+  shouldShowErrors?: ShouldShowErrors
 ): FieldState<unknown> {
   const base = buildContainerFieldStateBase(state, segments, key)
-  return decorateWithDerivedProps(base, state, getFormMetaBase)
+  return decorateWithDerivedProps(base, state, getFormMetaBase, shouldShowErrors)
 }
 
 /**
@@ -327,11 +360,13 @@ function buildContainerFieldState<F extends GenericForm>(
  */
 function decorateWithDerivedProps<F extends GenericForm>(
   base: FieldStateBase,
-  state: FormStore<F>,
-  getFormMetaBase: FormMetaBaseGetter
+  state: FormStore<F, GenericForm>,
+  getFormMetaBase: FormMetaBaseGetter,
+  shouldShowErrors?: ShouldShowErrors
 ): FieldState<unknown> {
   const firstError = base.errors[0]
-  const showErrors = base.errors.length > 0 && state.shouldShowErrors(base, getFormMetaBase())
+  const predicate = shouldShowErrors ?? state.shouldShowErrors
+  const showErrors = base.errors.length > 0 && predicate(base, getFormMetaBase())
   return { ...base, showErrors, firstError }
 }
 
@@ -346,7 +381,7 @@ function decorateWithDerivedProps<F extends GenericForm>(
  * — one helper, three call sites, no drift.
  */
 export function aggregateErrorsAt<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   prefix: Path
 ): ValidationError[] {
   const formValue = state.form.value

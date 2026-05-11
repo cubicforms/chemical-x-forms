@@ -64,7 +64,7 @@ function mountProfile(): { app: App; api: ProfileApi } {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform())
   app.mount(document.createElement('div'))
   return { app, api: handle.api as ProfileApi }
 }
@@ -254,7 +254,7 @@ describe('discriminated-union variant switch — numeric variant blank auto-mark
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     return handle.api as NumericApi
@@ -348,7 +348,7 @@ describe('discriminated-union variant switch — wrapped DU', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as WrappedApi
@@ -399,7 +399,7 @@ describe('discriminated-union variant switch — DU inside an array', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as ArrayApi
@@ -442,7 +442,7 @@ describe('discriminated-union variant switch — zod v3 adapter', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     return handle.api as V3Api
@@ -510,7 +510,7 @@ function mountProfileWith(options: { rememberVariants?: boolean } = {}): {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform())
   app.mount(document.createElement('div'))
   return { app, api: handle.api as ProfileApi }
 }
@@ -573,7 +573,7 @@ describe('variant memory — round-trip preserves typed data', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as TriApi
@@ -852,7 +852,7 @@ function mountFlow(): { app: App; api: FlowApi } {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform())
   app.mount(document.createElement('div'))
   return { app, api: handle.api as FlowApi }
 }
@@ -1084,7 +1084,7 @@ describe('variant memory — DU nested inside an array element', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     return handle.api as ArrayApi
@@ -1209,7 +1209,7 @@ describe('variant memory — nested DUs (depth 3)', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     return handle.api as WizardApi
@@ -1316,7 +1316,7 @@ describe('variant memory — history (undo/redo) interaction', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as ProfileApi
@@ -1328,7 +1328,7 @@ describe('variant memory — history (undo/redo) interaction', () => {
     // Memory now holds email = { address: 'h1@example.com' }.
     // Undo restores form value to the pre-switch state. Memory is
     // not on the history stack — it stays as it is.
-    api.undo()
+    api.history.undo()
     await nextTick()
     expect(api.values.notify).toEqual({ channel: 'email', address: 'h1@example.com' })
 
@@ -1538,7 +1538,7 @@ function mountCargoLift(): { app: App; api: CargoLiftApi } {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform())
   app.mount(document.createElement('div'))
   return { app, api: handle.api as CargoLiftApi }
 }
@@ -1671,7 +1671,7 @@ describe('discriminated-union variant switch — whole-union write with unset se
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     app.mount(document.createElement('div'))
     apps.push(app)
     return handle.api as CargoApi

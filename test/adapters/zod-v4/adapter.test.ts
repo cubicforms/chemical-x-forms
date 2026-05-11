@@ -10,7 +10,7 @@ describe('zod v4 adapter', () => {
         age: z.number(),
         active: z.boolean(),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
       expect(result.success).toBe(true)
       expect(result.data).toEqual({ email: '', age: 0, active: false })
@@ -21,7 +21,7 @@ describe('zod v4 adapter', () => {
         role: z.string().default('user'),
         count: z.number().default(5),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
       expect(result.data).toEqual({ role: 'user', count: 5 })
     })
@@ -31,27 +31,27 @@ describe('zod v4 adapter', () => {
         email: z.string(),
         nickname: z.string().optional(),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
       expect(result.data).toEqual({ email: '', nickname: undefined })
     })
 
     it('nullable fields default to null', () => {
       const schema = z.object({ profile: z.string().nullable() })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
       expect(result.data).toEqual({ profile: null })
     })
 
     it('arrays default to empty', () => {
       const schema = z.object({ tags: z.array(z.string()) })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({ tags: [] })
     })
 
     it('enums default to the first value', () => {
       const schema = z.object({ color: z.enum(['red', 'green', 'blue']) })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({
         color: 'red',
       })
@@ -59,7 +59,7 @@ describe('zod v4 adapter', () => {
 
     it('literal fields default to the literal value', () => {
       const schema = z.object({ kind: z.literal('user') })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({
         kind: 'user',
       })
@@ -72,7 +72,7 @@ describe('zod v4 adapter', () => {
           age: z.number(),
         }),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultValues({ useDefaultSchemaValues: true }).data).toEqual({
         profile: { name: '', age: 0 },
       })
@@ -83,7 +83,7 @@ describe('zod v4 adapter', () => {
         email: z.string(),
         count: z.number(),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       const result = adapter.getDefaultValues({
         useDefaultSchemaValues: true,
         constraints: { email: 'seeded@x' },
@@ -101,7 +101,7 @@ describe('zod v4 adapter', () => {
           word: z.string().refine((v) => v.length > 0, 'word required'),
           email: z.email().refine(async (v) => Promise.resolve(v !== 'taken@x.com'), 'taken'),
         })
-        const adapter = zodAdapter(schema)('f')
+        const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
         const result = adapter.getDefaultValues({
           useDefaultSchemaValues: false,
           constraints: { word: '', email: 'a@b.com' },
@@ -123,7 +123,7 @@ describe('zod v4 adapter', () => {
           word: z.string().refine((v) => v.length > 0, 'word required'),
           email: z.email().refine(async (v) => Promise.resolve(v !== 'taken@x.com'), 'taken'),
         })
-        const adapter = zodAdapter(schema)('f')
+        const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
         const result = adapter.getDefaultValues({
           useDefaultSchemaValues: false,
           constraints: { word: 'hello', email: 'a@b.com' },
@@ -140,7 +140,7 @@ describe('zod v4 adapter', () => {
           word: z.string().refine((v) => v.length > 0, 'word required'),
           email: z.email().refine(async (v) => Promise.resolve(v !== 'taken@x.com'), 'taken'),
         })
-        const adapter = zodAdapter(schema)('f')
+        const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
         const result = adapter.getDefaultValues({
           useDefaultSchemaValues: false,
           constraints: { word: '', email: 'a@b.com' },
@@ -158,7 +158,7 @@ describe('zod v4 adapter', () => {
         const schema = z.object({
           email: z.email().refine(async () => Promise.resolve(true), 'never fires'),
         })
-        const adapter = zodAdapter(schema)('f')
+        const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
         const result = adapter.getDefaultValues({
           useDefaultSchemaValues: false,
           constraints: { email: 'a@b.com' },
@@ -172,14 +172,14 @@ describe('zod v4 adapter', () => {
   describe('validateAtPath', () => {
     it('returns success for a valid full-form value', async () => {
       const schema = z.object({ email: z.email() })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       const result = await adapter.validateAtPath({ email: 'a@b.co' }, undefined)
       expect(result.success).toBe(true)
     })
 
     it('returns ValidationError[] for invalid input', async () => {
       const schema = z.object({ email: z.email() })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       const result = await adapter.validateAtPath({ email: 'not-an-email' }, undefined)
       expect(result.success).toBe(false)
       expect(result.errors).toHaveLength(1)
@@ -188,7 +188,7 @@ describe('zod v4 adapter', () => {
 
     it('validates at a specific path', async () => {
       const schema = z.object({ email: z.email(), name: z.string() })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       const good = await adapter.validateAtPath('a@b.co', ['email'])
       expect(good.success).toBe(true)
       const bad = await adapter.validateAtPath('nope', ['email'])
@@ -201,7 +201,7 @@ describe('zod v4 adapter', () => {
       const schema = z.object({
         user: z.object({ email: z.string() }),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       const schemas = adapter.getSchemasAtPath(['user', 'email'])
       expect(schemas).toHaveLength(1)
       // Validate that the resolved schema is the inner string schema.
@@ -211,13 +211,13 @@ describe('zod v4 adapter', () => {
 
     it('returns empty for a non-existent path', () => {
       const schema = z.object({ a: z.string() })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getSchemasAtPath(['b'])).toHaveLength(0)
     })
 
     it('descends through arrays by index', () => {
       const schema = z.object({ items: z.array(z.object({ name: z.string() })) })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       const schemas = adapter.getSchemasAtPath(['items', 0, 'name'])
       expect(schemas).toHaveLength(1)
     })
@@ -233,7 +233,7 @@ describe('zod v4 adapter', () => {
         'user.name': z.number(),
         user: z.object({ name: z.string() }),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       const literalKey = adapter.getSchemasAtPath(['user.name'])
       const siblingPair = adapter.getSchemasAtPath(['user', 'name'])
       expect(literalKey).toHaveLength(1)

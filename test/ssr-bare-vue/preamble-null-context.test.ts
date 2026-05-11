@@ -71,7 +71,7 @@ describe('SSR preamble null-safety', () => {
       render,
     })
     const app = createSSRApp(App)
-    app.use(createAttaform({ override: true }))
+    app.use(createAttaform({ ssr: true }))
 
     // The catchable failure mode pre-fix was an unhandled rejection
     // bubbling out of `_sfc_ssrRender`. If that ever returns, this
@@ -118,7 +118,7 @@ describe('SSR preamble null-safety', () => {
       render,
     })
     const app = createSSRApp(App)
-    app.use(createAttaform({ override: true }))
+    app.use(createAttaform({ ssr: true }))
 
     const html = await renderToString(app)
     expect(html).toContain('<input')

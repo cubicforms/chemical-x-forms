@@ -2,7 +2,114 @@
 
 ## Unreleased
 
-_No unreleased changes yet._
+Library-hardening campaign closeout (52 failing probes → 0,
+19 buckets resolved) + multi-tab sync as a headline feature.
+Pre-1.0 rip-and-replace; no compat shims.
+
+### Features
+
+- **Multi-tab sync via `BroadcastChannel`.** Same-keyed
+  `useForm` callsites in same-origin tabs auto-pair and mirror
+  mutations in near real-time. Identity = `form.key` + schema
+  fingerprint; no opt-in flag. Mount uses leader-election
+  handshake (O(N) tiny announces + 1 snapshot). Cascade:
+  `register({ multiTab })` > `useForm({ multiTab })` > global >
+  library default `true`. Defenses: same-origin + secure-context
+  gate (HTTPS or localhost — also gates built-in persistence
+  storage adapters), bidirectional sensitive-path filter,
+  prototype-pollution rejection, `senderId` echo drop, `v: 1`
+  protocol versioning, post-apply schema validation. See
+  `docs/recipes/multi-tab-sync.md` for the threat model.
+- **Configurable sensitive-name heuristic.** Exported
+  `DEFAULT_SENSITIVE_NAMES` (frozen) + `sensitiveNames` config
+  at global / per-form. Resolved closure threads through
+  persistence, multi-tab sync, AND DevTools redact walk.
+- **`form.history` namespace.** Undo / redo / new `clear()`
+  method + reactive `canUndo` / `canRedo` / `size` flags all
+  under one bundle. **Breaking:** `form.undo` / `form.redo` and
+  `form.meta.canUndo` / `canRedo` / `historySize` removed.
+- **`form.process()`** — on-demand post-transform snapshot.
+- **`form.touch(path?)`** — programmatic touched-flag flip.
+- **`field.showErrors` + `field.firstError`** with configurable
+  `shouldShowErrors` predicate (per-form / global).
+- **`form.setFormErrors` / `form.clearFormErrors`** — formal
+  surface for the form-level error bucket at `path: []`.
+- **`maxRecursionDepth` knob** for recursive `z.lazy(...)`
+  schemas. Library default 64; pass `Infinity` to disable.
+- **Input/output type split** — `defaultValues` + `setValue`
+  accept `z.input<Schema>`; `form.values()` returns
+  `z.output<Schema>`. Write-boundary input normalization
+  (preprocess) runs at `setValue` time.
+
+### Behaviour changes
+
+- **`reset()` re-derives schemaErrors AND re-runs validation
+  against post-reset state.** Pre-fix, reset cleared errors
+  and never re-validated → form sat invalid with empty error
+  store, or (for async-refining schemas) container `.valid`
+  read `true` for 600ms–1.5s before the async pass landed (the
+  docs-site stepper demo flashed green on Reset). Four-part
+  fix: pre-merge constraints via `mergeStructural`, run sync
+  re-derive, restore `firstValidationDone` gate to its
+  construction-time value, re-queue the async validation pass.
+- **`reset()` is undoable.** Pre-reset state stays one
+  `history.undo()` away; call `form.history.clear()` for a
+  hard wipe.
+- **Persistence hydration is the history floor.** Stacks
+  reseed from the post-hydration snapshot.
+- **`resetField('')` is the form-level path**, not "reset
+  everything." Clears the form-level error bucket only.
+- **`handleSubmit` rejects re-entry** while a submission is in
+  flight (no double-click parallel submits).
+- **`setFieldErrors` / `addFieldErrors` filter to own
+  `formKey`** — cross-form entries dropped with dev warning.
+- **Per-instance config lift.** Shared-key `useForm` callsites
+  honor their own `validateOn` / `debounceMs` /
+  `shouldShowErrors` / `coerce` / `rememberVariants`.
+- **`Symbol`-keyed properties stripped at `setValue` boundary.**
+- **Non-discriminated `z.union` of literals: writes accept,
+  validation surfaces mismatches** (slim-primitive gate is
+  type-shape, not value-content).
+
+### Discriminated-union hardening
+
+- Unknown discriminator values land in a stub state (~21
+  probes resolved).
+- Surgical variant-memory clearing per array op via
+  `WriteMeta.arrayOp` hints.
+- `z.intersection` peels in DU unwrap.
+- Array gaps pad with element defaults during DU reshape.
+
+### Bug fixes
+
+- `z.any()` paths preserve `any` (not `unknown`) on `setValue`.
+- `setValue` callback's `prev` types as `unknown` (not `any`)
+  at preprocess paths.
+- All public-API numeric options sanitised at injection
+  (`NaN` / `Infinity` / negatives clamp to library defaults).
+- DU-aware persistence hydration merge.
+- `zod-v3` adapter preprocess parity at the write boundary.
+- Counter-desync vector closed in submit + validation
+  lifecycles.
+- `form.errors` template / JSON / form-level visibility parity.
+- Adapter-throw harmonised across `validateAsync` /
+  `form.process()`.
+
+### Internal
+
+- History stored as base + forward deltas (was per-mutation
+  full snapshots).
+- `SSRDetectOptions.override` renamed to `.ssr`.
+
+### Docs + site
+
+- New recipe: `docs/recipes/multi-tab-sync.md` with required
+  `## Security` section.
+- Persistence recipe: secure-context-gate documentation +
+  `sensitiveNames` composition example.
+- SEO discovery gated on `VERCEL_ENV === 'production'` —
+  preview / sandbox deploys emit `noindex` + suppressed
+  sitemap, mirroring the IndexNow ping gate.
 
 ## v0.16.4
 _No unreleased changes yet._

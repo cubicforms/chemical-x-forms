@@ -1,13 +1,19 @@
 import { computed, reactive, readonly, type Ref } from 'vue'
 import type {
+  CoercionRegistry,
   FormErrorsSurface,
+  FormHistoryNamespace,
   FormMeta,
   OnInvalidSubmitPolicy,
   ReactiveValidationStatus,
   RegisterValue,
+  ShouldShowErrors,
   UseFormReturnType,
+  ValidateOn,
   ValidationError,
+  ValidationResponse,
   ValidationResponseWithoutValue,
+  WriteMeta,
 } from '../types/types-api'
 import type { DeepPartial, DefaultValuesShape, GenericForm } from '../types/types-core'
 import { __DEV__ } from './dev'
@@ -46,12 +52,26 @@ export type BuildFormApiOptions = {
   /** Forwarded to buildProcessForm. See `UseFormConfiguration.onInvalidSubmit`. */
   onInvalidSubmit?: OnInvalidSubmitPolicy
   /**
-   * Pre-wired history module for undo/redo. When omitted, the public
-   * `undo` / `redo` / `canUndo` / `canRedo` / `historySize` fields
-   * are inert no-op stubs — consumers get a consistent API shape
-   * without opting into the feature.
+   * Pre-wired history module backing `form.history.{undo, redo, clear,
+   * canUndo, canRedo, size}`. When omitted, the namespace's methods
+   * are inert no-ops and its reactive flags read `false` / `0` —
+   * consumers get a consistent API shape without opting into the feature.
    */
   history?: HistoryModule
+  /**
+   * Per-`useForm()`-instance config that the API layer threads through
+   * writes / register / field-state so each callsite honors its own
+   * `validateOn` / `debounceMs` / `shouldShowErrors` / `coerce` /
+   * `rememberVariants` even when sharing a FormStore with sibling
+   * instances (e.g., a modal and main form rendering the same logical
+   * form). Anything omitted falls through to the store's
+   * construction-time captured values.
+   */
+  validateOn?: ValidateOn
+  debounceMs?: number
+  shouldShowErrors?: ShouldShowErrors
+  coerce?: boolean | CoercionRegistry
+  rememberVariants?: boolean
 }
 
 /**
@@ -61,6 +81,15 @@ export type BuildFormApiOptions = {
  * mutating methods and rebinds method/getter access to the underlying
  * Set so internal-slot accesses (e.g. `size`, `has`) keep working.
  */
+function blankForKind(slimDefault: unknown): unknown {
+  if (typeof slimDefault === 'string') return ''
+  if (typeof slimDefault === 'number') return 0
+  if (typeof slimDefault === 'bigint') return 0n
+  if (typeof slimDefault === 'boolean') return false
+  if (slimDefault === null) return null
+  return undefined
+}
+
 function readonlySetSnapshot<T>(source: Iterable<T>): ReadonlySet<T> {
   const snapshot = new Set(source)
   return new Proxy(snapshot, {
@@ -91,13 +120,44 @@ function readonlySetSnapshot<T>(source: Iterable<T>): ReadonlySet<T> {
  * function is pure over (FormStore, options) → api.
  */
 export function buildFormApi<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
-  state: FormStore<Form>,
+  state: FormStore<Form, GetValueFormType>,
   formInstanceId: string,
   options: BuildFormApiOptions = {}
 ): UseFormReturnType<Form, GetValueFormType> {
-  const register = buildRegister(state, formInstanceId) as (
-    path: string | Path
-  ) => RegisterValue<unknown>
+  // Compose the per-instance write-meta bag once. Each public write
+  // method below splices `instance: instanceMeta` into its forwarded
+  // `meta` so the store's runtime reads of `validateOn` / `debounceMs`
+  // / `rememberVariants` honor THIS instance's config. Sibling
+  // instances sharing the same FormStore (modal + main) carry their
+  // own instanceMeta in their own buildFormApi closure.
+  const instanceMeta: WriteMeta['instance'] | undefined = (() => {
+    const bag: {
+      -readonly [K in keyof NonNullable<WriteMeta['instance']>]: NonNullable<
+        WriteMeta['instance']
+      >[K]
+    } = {}
+    if (options.validateOn !== undefined) bag.validateOn = options.validateOn
+    if (options.debounceMs !== undefined) bag.debounceMs = options.debounceMs
+    if (options.rememberVariants !== undefined) bag.rememberVariants = options.rememberVariants
+    return Object.keys(bag).length > 0 ? bag : undefined
+  })()
+  // Helper used by every internal `state.setValueAtPath` call below to
+  // splice the instance bag into the forwarded WriteMeta. Identity
+  // when no instance overrides are active.
+  const withInstanceMeta = (meta?: WriteMeta): WriteMeta | undefined => {
+    if (instanceMeta === undefined) return meta
+    return meta === undefined ? { instance: instanceMeta } : { ...meta, instance: instanceMeta }
+  }
+
+  const registerConfig = {
+    ...(instanceMeta !== undefined ? { instanceMeta } : {}),
+    ...(options.coerce !== undefined ? { coerce: options.coerce } : {}),
+  }
+  const register = buildRegister(
+    state,
+    formInstanceId,
+    Object.keys(registerConfig).length > 0 ? registerConfig : undefined
+  ) as (path: string | Path) => RegisterValue<unknown>
   // Don't set `onInvalidSubmit: undefined` — exactOptionalPropertyTypes
   // treats an explicit-undefined value differently from an omitted
   // property. Only pass the key when the consumer opted in.
@@ -106,14 +166,18 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   const {
     validate: validateBuilt,
     validateAsync: validateAsyncBuilt,
+    process: processBuilt,
     handleSubmit,
-  } = buildProcessForm(state, formInstanceId, processOptions)
+  } = buildProcessForm<Form, GetValueFormType>(state, formInstanceId, processOptions)
 
   const validate = (pathInput?: string) =>
     validateBuilt(pathInput) as Ref<ReactiveValidationStatus<Form>>
 
   const validateAsync = (pathInput?: string) =>
     validateAsyncBuilt(pathInput) as Promise<ValidationResponseWithoutValue<Form>>
+
+  const process = (pathInput?: string) =>
+    processBuilt(pathInput) as Promise<ValidationResponse<GetValueFormType>>
 
   // --- toRef escape hatch — Readonly<Ref<...>> for the rare case
   // a consumer needs ref-shaped interop (external composables that
@@ -149,7 +213,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
         next,
         state.schema as unknown as Parameters<typeof walkUnsetSentinels>[1]
       )
-      const ok = state.setValueAtPath([], walked.cleanedValues)
+      const ok = state.setValueAtPath([], walked.cleanedValues, withInstanceMeta())
       if (!ok) return false
       // Mark each blank path. `setValueAtPath` was just called
       // with cleaned values, so the gate hook's implicit-unmark would
@@ -158,9 +222,11 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       for (const pathKey of walked.paths) {
         const segments = segmentsForPathKey(pathKey)
         if (segments === null) continue
-        state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
-          blank: true,
-        })
+        state.setValueAtPath(
+          segments,
+          state.schema.getDefaultAtPath(segments),
+          withInstanceMeta({ blank: true })
+        )
       }
       return true
     }
@@ -170,9 +236,27 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     // gets the well-typed default; the path is marked for the
     // displayValue / required-empty machinery.
     if (isUnset(maybeValue)) {
-      return state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
-        blank: true,
-      })
+      // Discriminator-path special case: the slim default at a disc
+      // path is the first variant's literal (e.g. 'email'). Seeding
+      // that here would silently activate a variant the consumer
+      // didn't pick. Use a kind-appropriate primitive blank instead so
+      // setValueAtPath's stub branch lands `{ [discKey]: blank }`
+      // with no variant body.
+      const last = segments.length > 0 ? segments[segments.length - 1] : undefined
+      if (typeof last === 'string') {
+        const parent = segments.slice(0, -1)
+        const parentDU = state.schema.getUnionDiscriminatorAtPath(parent)
+        if (parentDU?.discriminatorKey === last) {
+          const slimDefault = state.schema.getDefaultAtPath(segments)
+          const blank = blankForKind(slimDefault)
+          return state.setValueAtPath(segments, blank, withInstanceMeta({ blank: true }))
+        }
+      }
+      return state.setValueAtPath(
+        segments,
+        state.schema.getDefaultAtPath(segments),
+        withInstanceMeta({ blank: true })
+      )
     }
     // Path-form callback: when the slot at `segments` is unpopulated,
     // hand the consumer the schema's default at that path instead of
@@ -190,9 +274,11 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       // Callback returned `unset` — translate the same way as the
       // direct case above.
       if (isUnset(resolvedValue)) {
-        return state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
-          blank: true,
-        })
+        return state.setValueAtPath(
+          segments,
+          state.schema.getDefaultAtPath(segments),
+          withInstanceMeta({ blank: true })
+        )
       }
     } else {
       resolvedValue = maybeValue
@@ -213,7 +299,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       segments,
       state.schema as unknown as Parameters<typeof substituteUnsetSentinels>[2]
     )
-    const ok = state.setValueAtPath(segments, walked.cleanedValues)
+    const ok = state.setValueAtPath(segments, walked.cleanedValues, withInstanceMeta())
     if (!ok) return false
     // Mark each substituted leaf blank. Re-write the slim default
     // explicitly with `blank: true` so the gate hook adds the path
@@ -223,9 +309,11 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     for (const pathKey of walked.paths) {
       const blankSegments = segmentsForPathKey(pathKey)
       if (blankSegments === null) continue
-      state.setValueAtPath(blankSegments, state.schema.getDefaultAtPath(blankSegments), {
-        blank: true,
-      })
+      state.setValueAtPath(
+        blankSegments,
+        state.schema.getDefaultAtPath(blankSegments),
+        withInstanceMeta({ blank: true })
+      )
     }
     return true
   }
@@ -258,12 +346,42 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // error" need is served by `form.meta.errors` (flat ValidationError[]).
   const errorsProxy = buildErrorsProxy(state)
 
+  function filterToOwnFormKey(
+    errors: ValidationError[],
+    op: 'setFieldErrors' | 'addFieldErrors'
+  ): ValidationError[] {
+    const own: ValidationError[] = []
+    let dropped = 0
+    for (const e of errors) {
+      if (e.formKey === state.formKey) own.push(e)
+      else dropped++
+    }
+    if (__DEV__ && dropped > 0) {
+      console.warn(
+        `[attaform] ${op}: dropped ${dropped} error(s) with non-matching formKey ` +
+          `(this form's key is "${String(state.formKey)}"). Errors are scoped to ` +
+          `the form that produced them — pass them to the matching form instance.`
+      )
+    }
+    return own
+  }
+
   function setFieldErrors(errors: ValidationError[]): void {
-    state.setAllUserErrors(errors)
+    // `setAllUserErrors` clears the entire user-error map before
+    // writing, which would also wipe the form-level bucket
+    // (`FORM_ERRORS_PATH_KEY`). The form-level slot is owned by
+    // `setFormErrors` / `clearFormErrors` and is logically separate
+    // from field errors — replace-all field-error writes must not
+    // touch it. Preserve the bucket across the call.
+    const preserved = state.userErrors.get(FORM_ERRORS_PATH_KEY)
+    state.setAllUserErrors(filterToOwnFormKey(errors, 'setFieldErrors'))
+    if (preserved !== undefined && preserved.length > 0) {
+      state.userErrors.set(FORM_ERRORS_PATH_KEY, preserved)
+    }
   }
 
   function addFieldErrors(errors: ValidationError[]): void {
-    state.addUserErrors(errors)
+    state.addUserErrors(filterToOwnFormKey(errors, 'addFieldErrors'))
   }
 
   function clearFieldErrors(path?: string | (string | number)[]): void {
@@ -274,8 +392,16 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     // and confined to "before the next keystroke / submit." See
     // docs/migration/0.11-to-0.12.md for the rationale.
     if (path === undefined) {
+      // Same logical separation as `setFieldErrors`: a no-arg
+      // `clearFieldErrors()` clears every FIELD error but must NOT
+      // wipe the form-level bucket. Form-level lifecycle belongs to
+      // `clearFormErrors()`.
+      const preserved = state.userErrors.get(FORM_ERRORS_PATH_KEY)
       state.clearSchemaErrors()
       state.clearUserErrors()
+      if (preserved !== undefined && preserved.length > 0) {
+        state.userErrors.set(FORM_ERRORS_PATH_KEY, preserved)
+      }
       return
     }
     const segments = canonicalizePath(path as string | Path).segments
@@ -350,14 +476,20 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
 
   // --- History (undo/redo) ---
   // When the consumer doesn't configure history, fall back to inert
-  // stubs so the public API shape stays consistent whether or not
-  // the feature is enabled.
+  // stubs so the `form.history.*` namespace shape stays consistent
+  // whether or not the feature is enabled. Templates can read
+  // `form.history.canUndo` etc. unconditionally.
   const history = options.history
-  const undo = history?.undo ?? (() => false)
-  const redo = history?.redo ?? (() => false)
-  const canUndo = history?.canUndo ?? computed(() => false)
-  const canRedo = history?.canRedo ?? computed(() => false)
-  const historySize = history?.historySize ?? computed(() => 0)
+  const formHistory = readonly(
+    reactive({
+      undo: history?.undo ?? (() => false),
+      redo: history?.redo ?? (() => false),
+      clear: history?.clear ?? (() => {}),
+      canUndo: history?.canUndo ?? computed(() => false),
+      canRedo: history?.canRedo ?? computed(() => false),
+      size: history?.historySize ?? computed(() => 0),
+    })
+  ) as FormHistoryNamespace
 
   // --- Form-level meta aggregate ---
   // `metaErrors` flattens the three reactive error stores into a single
@@ -418,14 +550,19 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       submitting: state.submitting.value,
       submitCount: state.submitCount.value,
       submitError: state.submitError.value,
-      canUndo: canUndo.value,
-      canRedo: canRedo.value,
-      historySize: historySize.value,
       instanceId: formInstanceId,
     }
   }
 
-  const getRootFieldStateAt = buildFieldStateAccessor(state, getFormMetaBase)
+  const fieldStateAccessorOptions =
+    options.shouldShowErrors !== undefined
+      ? { shouldShowErrors: options.shouldShowErrors }
+      : undefined
+  const getRootFieldStateAt = buildFieldStateAccessor(
+    state,
+    getFormMetaBase,
+    fieldStateAccessorOptions
+  )
   const rootFieldState = getRootFieldStateAt([] as Path)
   const formMeta = readonly(
     reactive({
@@ -478,9 +615,6 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       submitting,
       submitCount,
       submitError,
-      canUndo,
-      canRedo,
-      historySize,
       // Per-`useForm()`-call identity. Stable for one mount; new on
       // re-mount; orthogonal to `form.key` (which is the user-supplied
       // shared identifier). Useful for devtools panels disambiguating
@@ -525,9 +659,11 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       for (const pathKey of walked.paths) {
         const segments = segmentsForPathKey(pathKey)
         if (segments === null) continue
-        state.setValueAtPath(segments, state.schema.getDefaultAtPath(segments), {
-          blank: true,
-        })
+        state.setValueAtPath(
+          segments,
+          state.schema.getDefaultAtPath(segments),
+          withInstanceMeta({ blank: true })
+        )
         // Mirror the new baseline into originalBlankPaths so the
         // post-reset state is the dirty=false reference.
         state.originalBlankPaths.add(pathKey as PathKey)
@@ -556,7 +692,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     options?: { acknowledgeSensitive?: boolean }
   ): Promise<void> => {
     const segments = canonicalizePath(pathInput).segments
-    enforceSensitiveCheck(segments, options?.acknowledgeSensitive === true)
+    enforceSensitiveCheck(segments, options?.acknowledgeSensitive === true, state.isSensitivePath)
     if (persistence === undefined) return // persist: not configured → silent no-op
     await persistence.writePathImmediately(segments)
   }
@@ -632,7 +768,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // computed it reads through, so repeated access to the same path
   // (`form.fields.email` twice) returns the same object — useful
   // for downstream `===` checks and Vue's render diff.
-  const fieldStateProxy = buildFieldStateProxy(state, getFormMetaBase)
+  const fieldStateProxy = buildFieldStateProxy(state, getFormMetaBase, fieldStateAccessorOptions)
 
   return {
     handleSubmit,
@@ -646,6 +782,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     setValue: setValueImpl as UseFormReturnType<Form, GetValueFormType>['setValue'],
     validate: validate as UseFormReturnType<Form, GetValueFormType>['validate'],
     validateAsync: validateAsync as UseFormReturnType<Form, GetValueFormType>['validateAsync'],
+    process: process as UseFormReturnType<Form, GetValueFormType>['process'],
     register: register as UseFormReturnType<Form, GetValueFormType>['register'],
     key: state.formKey,
     errors: errorsProxy as unknown as FormErrorsSurface<Form>,
@@ -666,8 +803,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     focusFirstError,
     scrollToFirstError,
     touch: touch as UseFormReturnType<Form, GetValueFormType>['touch'],
-    undo,
-    redo,
+    history: formHistory,
     append: fieldArrays.append as UseFormReturnType<Form, GetValueFormType>['append'],
     prepend: fieldArrays.prepend as UseFormReturnType<Form, GetValueFormType>['prepend'],
     insert: fieldArrays.insert as UseFormReturnType<Form, GetValueFormType>['insert'],

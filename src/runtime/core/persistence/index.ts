@@ -19,6 +19,15 @@ import { segmentsForPathKey, type Path, type PathKey, type Segment } from '../pa
  */
 export type PersistenceModule = {
   /**
+   * The normalized persist config that wired this module. Held so a
+   * second `useForm({ key, persist: ... })` call sharing the
+   * FormStore can detect divergence (e.g., the modal-team dev passed
+   * `'session'` but the main-form dev wired `'local'`) and emit a
+   * dev-warn. First call wins; subsequent values are dropped silently
+   * absent this readback.
+   */
+  readonly wiredConfig: PersistConfigOptions
+  /**
    * Read-merge-write a single path's current value. Flushes any pending
    * debounced write first so the imperative checkpoint can't be
    * overwritten by a stale-data write that fires immediately after.
@@ -553,27 +562,46 @@ function mergeDeep(
   if (source === null || typeof source !== 'object') return source
   if (Array.isArray(source)) return source
   if (!isPlainRecord(source)) return source
-  // DU rebase: if this path is a discriminated union AND target/
-  // source describe different variants, rebase target onto the
-  // matching variant's slim default before merging. Skips when no
-  // schema is provided (callers without an adapter handle, including
-  // tests) or when the DU info isn't available at this path.
-  let mergeTarget = target
+  // DU-aware merge at a discriminated-union path. Three sub-cases the
+  // plain deep-merge below can't get right on its own:
+  //   1. source's disc selects a different variant than target's →
+  //      rebase target onto the matched variant's slim default so the
+  //      prior variant's keys don't bleed alongside the new ones.
+  //   2. source's disc is unknown to the schema → collapse to a
+  //      disc-only stub `{ [discKey]: discValue }` (mirrors the
+  //      runtime stub-state contract; validation surfaces the
+  //      mismatch on first validateAsync).
+  //   3. source carries foreign keys (sibling-variant fields the
+  //      active variant doesn't declare) → drop them; the merge only
+  //      keeps source keys that exist in the matched variant default.
+  // Skipped when no schema is provided (callers without an adapter
+  // handle, including older tests) — those fall through to plain
+  // deep-merge.
   if (schema !== undefined) {
     const du = schema.getUnionDiscriminatorAtPath(path as Segment[])
     if (du !== undefined) {
-      const sourceDisc = (source as Record<string, unknown>)[du.discriminatorKey]
-      const targetDisc = isPlainRecord(target)
-        ? (target as Record<string, unknown>)[du.discriminatorKey]
-        : undefined
-      if (sourceDisc !== undefined && !Object.is(sourceDisc, targetDisc)) {
+      const sourceRecord = source as Record<string, unknown>
+      const sourceDisc = sourceRecord[du.discriminatorKey]
+      if (sourceDisc !== undefined && !du.isVariantSelected(sourceDisc)) {
+        return { [du.discriminatorKey]: sourceDisc }
+      }
+      if (sourceDisc !== undefined) {
         const variantDefault = du.getVariantDefault(sourceDisc)
         if (isPlainRecord(variantDefault)) {
-          mergeTarget = variantDefault
+          const out: Record<string, unknown> = { ...variantDefault }
+          for (const key of Object.keys(sourceRecord)) {
+            if (!(key in variantDefault) && key !== du.discriminatorKey) continue
+            out[key] = mergeDeep(out[key], sourceRecord[key], [...path, key], schema)
+          }
+          return out
         }
       }
+      // No disc in source — empty stub keeps the slot in a "between
+      // selections" state so a subsequent disc write reshapes cleanly.
+      return {}
     }
   }
+  const mergeTarget = target
   const out: Record<string, unknown> = isPlainRecord(mergeTarget) ? { ...mergeTarget } : {}
   for (const key of Object.keys(source)) {
     out[key] = mergeDeep(out[key], (source as Record<string, unknown>)[key], [...path, key], schema)

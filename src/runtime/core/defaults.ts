@@ -11,6 +11,8 @@
  * two: per-form > app-level > library default.
  */
 
+import { __DEV__ } from './dev'
+
 /**
  * Validation debounce (`useForm({ debounceMs })`) — ms to wait after
  * the LAST input event before running validation. Default `0`
@@ -47,12 +49,16 @@ export const DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS = 0
 export const DEFAULT_PERSISTENCE_DEBOUNCE_MS = 300
 
 /**
- * Undo/redo stack ceiling (`history.max`). 50 covers a generous
- * editing session without unbounded memory growth from long-lived
- * forms. Snapshots are shallow, so the per-snapshot cost is small;
- * the cap exists more for predictability than memory pressure.
+ * Undo/redo stack ceiling (`history.max`). 128 covers an extended
+ * editing session — long-form text inputs, multi-page wizard flows,
+ * heavy iteration on a complex form — without unbounded memory
+ * growth from long-lived forms. History is stored as one base
+ * snapshot plus per-mutation forward deltas; each delta typically
+ * carries only the leaves that changed, so the per-mutation cost
+ * is `O(changed-leaf-count)` rather than `O(form-leaf-count)`.
+ * The cap exists more for predictability than memory pressure.
  */
-export const DEFAULT_HISTORY_MAX_SNAPSHOTS = 50
+export const DEFAULT_HISTORY_MAX_SNAPSHOTS = 128
 
 /**
  * Storage-key namespace for persistence. Resolved once at
@@ -82,3 +88,109 @@ export const RESERVED_KEY_PREFIX = '__atta:'
  * `RESERVED_KEY_PREFIX` for the enforcement story.
  */
 export const ANONYMOUS_FORM_KEY_PREFIX = `${RESERVED_KEY_PREFIX}anon:`
+
+/**
+ * Recursion ceiling for schema walks that descend through recursive
+ * schemas (Zod's `z.lazy(...)` today, equivalent constructs in any
+ * future adapter). Adapter walks that follow a recursive boundary —
+ * default derivation, slim-primitive type gates, path resolution,
+ * refinement stripping — track their descent depth and bail with a
+ * permissive fallback once `depth > maxRecursionDepth`.
+ *
+ * Default `64`. Tunable per-form via `useForm({ maxRecursionDepth })`
+ * and app-wide via `createAttaform({ defaults: { maxRecursionDepth } })`;
+ * per-form > app-level > this library default. `Infinity` disables
+ * the cap entirely — see `AttaformDefaults.maxRecursionDepth`.
+ *
+ * "Permissive fallback" means the gate stops type-checking past the
+ * cap (storage accepts the consumer's value; runtime validation
+ * still runs against the real schema). Practical effect: forms with
+ * trees deeper than the cap still work, but writes at deeper nodes
+ * skip the slim-primitive type-gate. Raise the cap if you regularly
+ * edit beyond it.
+ */
+export const DEFAULT_MAX_RECURSION_DEPTH = 64
+
+/**
+ * Normalise a consumer-supplied numeric option before threading it
+ * into runtime logic. Library options typed as `number` (recursion
+ * caps, debounce intervals, history ceiling, parse-error caps) all
+ * share the same input-sanitisation problem: invalid values reach
+ * the runtime and produce silent footguns.
+ *
+ * Categories the runtime mishandles without sanitisation:
+ *
+ *   - `NaN` — comparison-based gates (`>=`, `>`) yield `false` against
+ *     `NaN`, so caps never trip and pathological inputs run unbounded.
+ *     `setTimeout(fn, NaN)` fires synchronously, defeating debounce.
+ *   - Negative numbers — comparison gates trip too eagerly; the
+ *     visible value doesn't match consumer intent.
+ *   - Non-integers — `>=` against `5.7` works but is imprecise and
+ *     surprising at the call site.
+ *   - Non-numbers (JS callers defying TS) — undefined behaviour at
+ *     every comparison and arithmetic site.
+ *
+ * Sanitisation:
+ *
+ *   - `Infinity` passes through when `allowInfinity` is `true`
+ *     (e.g. `maxRecursionDepth` disables the cap by design). When
+ *     `allowInfinity` is `false` (e.g. `debounceMs`, where `Infinity`
+ *     stalls the event loop), it falls back to the default with a
+ *     dev-warn.
+ *   - `NaN`, `-Infinity`, non-numbers → fall back to `defaultValue`
+ *     with a dev-warn naming the source.
+ *   - Negative finite numbers → clamped to `min`.
+ *   - Non-integer positives → floored.
+ *
+ * The fallback path never throws — a bad option shouldn't be fatal
+ * at construction. The dev-warn surfaces the misuse without
+ * breaking production.
+ */
+export interface NormalizeNumericOptionConfig {
+  /** The consumer-supplied value to validate. */
+  value: number
+  /**
+   * Human-readable identifier for the dev warning. Format like
+   * `useForm.debounceMs` or `parseApiErrors.maxEntries` so the warning
+   * tells the consumer which option carried the bad value.
+   */
+  source: string
+  /**
+   * Whether `Infinity` is a semantically valid input. `true` for
+   * options whose "no cap" sentinel is sensible (recursion depth);
+   * `false` for options where unbounded values cause real problems
+   * (debounce intervals, history caps, parse-error caps).
+   */
+  allowInfinity: boolean
+  /** Lower bound applied via `Math.max(min, ...)` after `Math.floor`. */
+  min: number
+  /**
+   * Library default returned when the input is invalid (`NaN`,
+   * `-Infinity`, non-number, or `Infinity` under `allowInfinity:
+   * false`).
+   */
+  defaultValue: number
+}
+
+export function normalizeNumericOption(config: NormalizeNumericOptionConfig): number {
+  const { value, source, allowInfinity, min, defaultValue } = config
+  if (allowInfinity && value === Infinity) return Infinity
+  if (
+    typeof value !== 'number' ||
+    Number.isNaN(value) ||
+    value === Infinity ||
+    value === -Infinity
+  ) {
+    if (__DEV__) {
+      const acceptedDescription = allowInfinity
+        ? 'a non-negative integer or Infinity'
+        : 'a non-negative finite integer'
+      console.warn(
+        `[attaform] ${source} must be ${acceptedDescription}; ` +
+          `got ${String(value)}. Falling back to ${String(defaultValue)}.`
+      )
+    }
+    return defaultValue
+  }
+  return Math.max(min, Math.floor(value))
+}

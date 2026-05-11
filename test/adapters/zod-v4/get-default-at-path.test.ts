@@ -13,13 +13,13 @@ describe('zod v4: getDefaultAtPath', () => {
   describe('basic paths', () => {
     it('returns the form root default for empty path', () => {
       const schema = z.object({ email: z.string(), age: z.number() })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath([])).toEqual({ email: '', age: 0 })
     })
 
     it('returns property default for object property path', () => {
       const schema = z.object({ email: z.string(), age: z.number() })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['email'])).toBe('')
       expect(adapter.getDefaultAtPath(['age'])).toBe(0)
     })
@@ -29,14 +29,14 @@ describe('zod v4: getDefaultAtPath', () => {
         role: z.string().default('user'),
         count: z.number().default(5),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['role'])).toBe('user')
       expect(adapter.getDefaultAtPath(['count'])).toBe(5)
     })
 
     it('returns undefined for paths that do not exist', () => {
       const schema = z.object({ email: z.string() })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['nope'])).toBeUndefined()
       expect(adapter.getDefaultAtPath(['email', 'nested'])).toBeUndefined()
     })
@@ -47,14 +47,14 @@ describe('zod v4: getDefaultAtPath', () => {
       const schema = z.object({
         posts: z.array(z.object({ title: z.string(), views: z.number() })),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['posts', 0])).toEqual({ title: '', views: 0 })
       expect(adapter.getDefaultAtPath(['posts', 21])).toEqual({ title: '', views: 0 })
     })
 
     it('returns scalar element default for primitive arrays', () => {
       const schema = z.object({ tags: z.array(z.string()) })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['tags', 0])).toBe('')
       expect(adapter.getDefaultAtPath(['tags', 99])).toBe('')
     })
@@ -68,7 +68,7 @@ describe('zod v4: getDefaultAtPath', () => {
           })
         ),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['people', 0, 'name'])).toBe('')
       expect(adapter.getDefaultAtPath(['people', 0, 'addresses', 0])).toEqual({
         street: '',
@@ -83,7 +83,7 @@ describe('zod v4: getDefaultAtPath', () => {
       const schema = z.object({
         coords: z.tuple([z.string(), z.number(), z.boolean()]),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['coords', 0])).toBe('')
       expect(adapter.getDefaultAtPath(['coords', 1])).toBe(0)
       expect(adapter.getDefaultAtPath(['coords', 2])).toBe(false)
@@ -91,7 +91,7 @@ describe('zod v4: getDefaultAtPath', () => {
 
     it('returns undefined for out-of-range tuple positions', () => {
       const schema = z.object({ pair: z.tuple([z.string(), z.number()]) })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['pair', 5])).toBeUndefined()
     })
   })
@@ -101,7 +101,7 @@ describe('zod v4: getDefaultAtPath', () => {
       const schema = z.object({
         profile: z.object({ name: z.string(), age: z.number() }).optional(),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['profile', 'name'])).toBe('')
       expect(adapter.getDefaultAtPath(['profile', 'age'])).toBe(0)
     })
@@ -110,7 +110,7 @@ describe('zod v4: getDefaultAtPath', () => {
       const schema = z.object({
         meta: z.object({ note: z.string() }).nullable(),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['meta', 'note'])).toBe('')
     })
 
@@ -118,7 +118,7 @@ describe('zod v4: getDefaultAtPath', () => {
       const schema = z.object({
         prefs: z.object({ theme: z.string() }).default({ theme: 'dark' }),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       // The leaf inside the .default is unwrapped; theme as a property
       // returns its primitive default. The .default value applies at the
       // wrapper level (path ['prefs']), not below it.
@@ -135,7 +135,7 @@ describe('zod v4: getDefaultAtPath', () => {
       const schema = z.object({
         profile: z.object({ name: z.string(), age: z.number() }).optional(),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       // Structural default at the wrapper level: inner shape's default.
       expect(adapter.getDefaultAtPath(['profile'])).toEqual({ name: '', age: 0 })
       // Sub-paths also resolve through the wrapper.
@@ -154,7 +154,7 @@ describe('zod v4: getDefaultAtPath', () => {
         score: z.number().optional(),
         active: z.boolean().optional(),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['notes'])).toBeUndefined()
       expect(adapter.getDefaultAtPath(['score'])).toBeUndefined()
       expect(adapter.getDefaultAtPath(['active'])).toBeUndefined()
@@ -166,7 +166,7 @@ describe('zod v4: getDefaultAtPath', () => {
       // let mergeStructural overwrite an honest null with an empty
       // string when filling sibling keys at a parent object.
       const schema = z.object({ name: z.string().nullable() })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['name'])).toBeNull()
     })
 
@@ -177,7 +177,7 @@ describe('zod v4: getDefaultAtPath', () => {
       const schema = z.object({
         user: z.object({ name: z.string(), age: z.number() }).nullable(),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['user'])).toEqual({ name: '', age: 0 })
     })
 
@@ -186,7 +186,7 @@ describe('zod v4: getDefaultAtPath', () => {
       const schema = z.object({
         prefs: z.object({ theme: z.string() }).default({ theme: 'dark' }),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['prefs'])).toEqual({ theme: 'dark' })
     })
   })
@@ -199,7 +199,7 @@ describe('zod v4: getDefaultAtPath', () => {
           z.object({ kind: z.literal('b'), y: z.string() }),
         ]),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['event'])).toEqual({ kind: 'a', x: 0 })
     })
 
@@ -210,7 +210,7 @@ describe('zod v4: getDefaultAtPath', () => {
           z.object({ kind: z.literal('b'), y: z.string() }),
         ]),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['event', 'x'])).toBe(0)
       expect(adapter.getDefaultAtPath(['event', 'y'])).toBe('')
     })
@@ -221,7 +221,7 @@ describe('zod v4: getDefaultAtPath', () => {
       const schema = z.object({
         users: z.record(z.string(), z.object({ name: z.string(), age: z.number() })),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       expect(adapter.getDefaultAtPath(['users', 'alice'])).toEqual({ name: '', age: 0 })
       expect(adapter.getDefaultAtPath(['users', 'bob', 'name'])).toBe('')
     })
@@ -232,7 +232,7 @@ describe('zod v4: getDefaultAtPath', () => {
       const schema = z.object({
         posts: z.array(z.object({ title: z.string() })),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       // 'nope' isn't in the post shape.
       expect(adapter.getDefaultAtPath(['posts', 0, 'nope'])).toBeUndefined()
     })
@@ -244,7 +244,7 @@ describe('zod v4: getDefaultAtPath', () => {
       const schema = z.object({
         posts: z.array(z.object({ title: z.string().default('untitled') })),
       })
-      const adapter = zodAdapter(schema)('f')
+      const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
       const def = adapter.getDefaultAtPath(['posts', 7])
       expect(def).toEqual({ title: 'untitled' })
     })

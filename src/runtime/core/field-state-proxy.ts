@@ -1,3 +1,4 @@
+import type { ShouldShowErrors } from '../types/types-api'
 import type { GenericForm } from '../types/types-core'
 import type { FormStore } from './create-form-store'
 import {
@@ -75,10 +76,17 @@ const FIELD_STATE_KEYS: ReadonlySet<string> = new Set<keyof FieldState<unknown>>
  *   object read against the resulting `FieldState`.
  */
 export function buildFieldStateProxy<F extends GenericForm>(
-  state: FormStore<F>,
-  getFormMetaBase: FormMetaBaseGetter
+  state: FormStore<F, GenericForm>,
+  getFormMetaBase: FormMetaBaseGetter,
+  options?: { readonly shouldShowErrors?: ShouldShowErrors }
 ): SurfaceProxy {
-  const getFieldStateAt = buildFieldStateAccessor(state, getFormMetaBase)
+  const getFieldStateAt = buildFieldStateAccessor(
+    state,
+    getFormMetaBase,
+    options?.shouldShowErrors !== undefined
+      ? { shouldShowErrors: options.shouldShowErrors }
+      : undefined
+  )
   const snapshotFieldStateAt = (path: Path): Record<string, unknown> => {
     const view = getFieldStateAt(path as Parameters<typeof getFieldStateAt>[0]).value
     const snapshot: Record<string, unknown> = {}
@@ -175,7 +183,7 @@ export function buildFieldStateProxy<F extends GenericForm>(
  * whenever the form data or any per-leaf field state changes.
  */
 function materializeFields<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   containerSegments: readonly Segment[],
   snapshotFieldStateAt: (path: Path) => Record<string, unknown>
 ): unknown {

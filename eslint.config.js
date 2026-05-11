@@ -7,6 +7,16 @@ import vueParser from 'vue-eslint-parser'
 
 import fs from 'fs'
 import path from 'path'
+import { fileURLToPath } from 'url'
+
+// Anchor file lookups (e.g. `.nuxt/imports.d.ts`) on the config file's
+// location rather than `process.cwd()`. eslint runs both from the repo
+// root (`pnpm lint`) and from `apps/site` (when the site build calls
+// `pnpm exec eslint ...` after `cd apps/site`); the cwd-relative
+// version silently dropped Nuxt globals in the latter case, producing
+// false-positive `no-undef` errors for auto-imports like `ref` /
+// `computed` / `useRuntimeConfig`.
+const repoRoot = path.dirname(fileURLToPath(import.meta.url))
 
 /**
  * Decide whether to skip cache based on --no-cache flag
@@ -36,7 +46,7 @@ function getNuxtGlobals() {
   }
 
   const finalGlobals = {}
-  const filePath = path.resolve(process.cwd(), 'apps', 'site', '.nuxt', 'imports.d.ts')
+  const filePath = path.resolve(repoRoot, 'apps', 'site', '.nuxt', 'imports.d.ts')
   if (!fs.existsSync(filePath)) {
     cachedNuxtGlobals = finalGlobals
     return finalGlobals

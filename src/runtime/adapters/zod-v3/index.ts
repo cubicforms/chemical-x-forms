@@ -14,6 +14,7 @@ import type {
   ValidationResponse,
 } from '../../types/types-api'
 import { getAtPath } from '../../core/path-walker'
+import type { SchemaFactoryOptions } from '../../core/get-computed-schema'
 import { humanize } from '../../core/humanize'
 import { canonicalizePath, type Path, type PathKey } from '../../core/paths'
 import { slimKindOf } from '../../core/slim-primitive-gate'
@@ -79,9 +80,11 @@ let warnedZodCodeMissing = false
  */
 export function zodAdapter<
   FormSchema extends z.ZodSchema,
-  Form extends z.infer<FormSchema>,
+  Form extends z.input<FormSchema>,
   GetValueFormType extends TypeWithNullableDynamicKeys<FormSchema>,
->(zodSchema: FormSchema): (formKey: FormKey) => AbstractSchema<Form, GetValueFormType> {
+>(
+  zodSchema: FormSchema
+): (formKey: FormKey, options: SchemaFactoryOptions) => AbstractSchema<Form, GetValueFormType> {
   function getAbstractSchema(
     _formKey: FormKey,
     _zodSchema: FormSchema,
@@ -342,6 +345,48 @@ export function zodAdapter<
           formKey: _formKey,
         }
       },
+      normalizeWriteValueAtPath(value, path) {
+        // v3 parity for the v4 adapter's normalize hook. Zod v3
+        // expresses `z.preprocess(fn, inner)` as a ZodEffects whose
+        // `_def.effect.type === 'preprocess'` and `_def.effect.transform`
+        // is the user-supplied fn; `_def.schema` is the inner schema.
+        // Walk to the schema at `path`, apply each preprocess wrapper
+        // found there, and descend through nested stacks. Sync only —
+        // a fn returning a Promise short-circuits and leaves the value
+        // unchanged (parse-time handles async). User throws propagate
+        // with a path-tagged wrapper for diagnostics.
+        const candidates =
+          path.length === 0 ? [_zodSchema] : getNestedZodSchemasAtPath(_zodSchema, path)
+        const [first] = candidates
+        if (first === undefined) return value
+        let current: z.ZodTypeAny = first as z.ZodTypeAny
+        let result: unknown = value
+        for (let i = 0; i < 64; i++) {
+          if (!isZodSchemaType(current, 'ZodEffects')) break
+          const def = current._def as {
+            effect?: { type?: string; transform?: unknown }
+            schema?: z.ZodTypeAny
+          }
+          const effect = def.effect
+          if (effect?.type !== 'preprocess') break
+          const fn = effect.transform
+          if (typeof fn !== 'function') break
+          let next: unknown
+          try {
+            next = (fn as (input: unknown) => unknown)(result)
+          } catch (cause) {
+            throw new Error(
+              `[attaform] input normalization at path "${path.join('.')}" threw — write rejected.`,
+              { cause }
+            )
+          }
+          if (next instanceof Promise) return value
+          result = next
+          if (def.schema === undefined) break
+          current = def.schema
+        }
+        return result
+      },
       getDefaultAtPath(path) {
         // Empty path → root default. Reuses the same generator used at
         // form construction so refines / wrappers behave consistently.
@@ -447,6 +492,13 @@ export function zodAdapter<
         const options = (
           matchedUnion as z.ZodDiscriminatedUnion<string, z.ZodDiscriminatedUnionOption<string>[]>
         )._def.options
+        const literalSet = new Set<unknown>()
+        for (const opt of options) {
+          const litSchema = opt.shape[discKey] as z.ZodTypeAny | undefined
+          if (!litSchema) continue
+          if (!isZodSchemaType(litSchema, 'ZodLiteral')) continue
+          literalSet.add(litSchema._def.value)
+        }
         return {
           discriminatorKey: discKey,
           getVariantDefault(value: unknown): unknown {
@@ -459,6 +511,9 @@ export function zodAdapter<
               }
             }
             return undefined
+          },
+          isVariantSelected(value: unknown): boolean {
+            return literalSet.has(value)
           },
         }
       },
@@ -519,7 +574,7 @@ export function zodAdapter<
         }
         return runAsync()
 
-        function runSync(): ValidationResponse<Form> {
+        function runSync(): ValidationResponse<GetValueFormType> {
           if (path === undefined) {
             const { success, data: successData, error } = _zodSchema.safeParse(data)
             return success
@@ -545,7 +600,7 @@ export function zodAdapter<
           return aggregatedFailure(accumulatedErrors)
         }
 
-        async function runAsync(): Promise<ValidationResponse<Form>> {
+        async function runAsync(): Promise<ValidationResponse<GetValueFormType>> {
           if (path === undefined) {
             const { success, data: successData, error } = await _zodSchema.safeParseAsync(data)
             return success
@@ -590,7 +645,7 @@ export function zodAdapter<
           return getNestedZodSchemasAtPath(_zodSchema, p)
         }
 
-        function pathNotFound(p: Path): ValidationResponse<Form> {
+        function pathNotFound(p: Path): ValidationResponse<GetValueFormType> {
           return {
             data: undefined,
             errors: NO_SCHEMAS_FOUND_AT_PATH_OF_CONCRETE_SCHEMA([...p], _formKey),
@@ -599,7 +654,9 @@ export function zodAdapter<
           }
         }
 
-        function aggregatedFailure(errors: z.ZodError<unknown>[]): ValidationResponse<Form> {
+        function aggregatedFailure(
+          errors: z.ZodError<unknown>[]
+        ): ValidationResponse<GetValueFormType> {
           const allIssues = errors.reduce<z.ZodIssue[]>((acc, e) => [...acc, ...e.issues], [])
           return {
             data: undefined,
@@ -614,7 +671,14 @@ export function zodAdapter<
     return abstractSchema
   }
 
-  return (formKey: FormKey) => getAbstractSchema(formKey, zodSchema, true)
+  // `options.maxRecursionDepth` is accepted for parity with the v4
+  // adapter and the typed entry-point factory contract. The v3 walks
+  // already carry their own bounded loops (`MAX_UNWRAP_STEPS`), so
+  // today the cap doesn't drive different behaviour — wiring it
+  // through keeps the option-bag honest for future v3 walks that
+  // descend through `z.lazy()`.
+  return (formKey: FormKey, _options: SchemaFactoryOptions) =>
+    getAbstractSchema(formKey, zodSchema, true)
 }
 
 function zodIssuesToValidationErrors(issues: z.ZodIssue[], formKey: FormKey): ValidationError[] {

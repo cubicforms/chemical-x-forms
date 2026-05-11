@@ -75,7 +75,7 @@ function mountAsync(): { app: App; api: AsyncApi } {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform({ ssr: true }))
   app.mount(document.createElement('div'))
   return { app, api: handle.api as AsyncApi }
 }
@@ -96,7 +96,7 @@ function mountSync(opts: { strict?: boolean } = {}): { app: App; api: SyncApi } 
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform({ ssr: true }))
   app.mount(document.createElement('div'))
   return { app, api: handle.api as SyncApi }
 }
@@ -146,7 +146,7 @@ describe('initial validity gating — async-refinement schema (the demo case)', 
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform({ ssr: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
 
@@ -240,7 +240,7 @@ describe('initial validity gating — asymmetry between isValid and field.valid'
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform({ ssr: true }))
     app.mount(document.createElement('div'))
     return { app, api: handle.api as MixedApi }
   }
@@ -311,7 +311,7 @@ describe('initial validity gating — asymmetry between isValid and field.valid'
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform({ ssr: true }))
     app.mount(document.createElement('div'))
     apps.push(app)
     const api = handle.api as MixedApi

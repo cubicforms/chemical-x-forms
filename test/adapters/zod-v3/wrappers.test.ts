@@ -23,7 +23,7 @@ describe('zod v3 adapter — bounded wrapper recursion', () => {
     // Each layer of `.refine()` produces a ZodEffects wrapper. Pre-fix
     // these recursed unbounded through `unwrapDefault` and
     // `_stripRefinements`; with a 64-step cap we now bail conservatively.
-    const adapter = zodAdapter(root)('f')
+    const adapter = zodAdapter(root)('f', { maxRecursionDepth: 64 })
     expect(() => adapter.getDefaultValues({ useDefaultSchemaValues: true })).not.toThrow()
   })
 
@@ -33,7 +33,7 @@ describe('zod v3 adapter — bounded wrapper recursion', () => {
       schema = schema.refine(() => true)
     }
     const root = z.object({ token: schema })
-    const adapter = zodAdapter(root)('f')
+    const adapter = zodAdapter(root)('f', { maxRecursionDepth: 64 })
     const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
     expect(result.success).toBe(true)
     expect(result.data).toEqual({ token: 'seed' })
@@ -45,7 +45,7 @@ describe('zod v3 adapter — bounded wrapper recursion', () => {
       schema = schema.optional().nullable() as z.ZodTypeAny
     }
     const root = z.object({ chained: schema })
-    const adapter = zodAdapter(root)('f')
+    const adapter = zodAdapter(root)('f', { maxRecursionDepth: 64 })
     expect(() => adapter.getDefaultValues({ useDefaultSchemaValues: true })).not.toThrow()
   })
 
@@ -55,7 +55,7 @@ describe('zod v3 adapter — bounded wrapper recursion', () => {
       schema = schema.optional()
     }
     const root = z.object({ deep: schema })
-    const adapter = zodAdapter(root)('f')
+    const adapter = zodAdapter(root)('f', { maxRecursionDepth: 64 })
     const fp = adapter.fingerprint()
     expect(typeof fp).toBe('string')
     expect(fp.length).toBeGreaterThan(0)
@@ -68,7 +68,7 @@ describe('zod v3 adapter — transparent wrapper kinds', () => {
       handle: z.string().readonly(),
       count: z.number().readonly(),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
     expect(result.success).toBe(true)
     expect(result.data).toEqual({ handle: '', count: 0 })
@@ -79,7 +79,7 @@ describe('zod v3 adapter — transparent wrapper kinds', () => {
       id: z.string().brand<'Id'>(),
       seq: z.number().brand<'Seq'>(),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
     expect(result.success).toBe(true)
     expect(result.data).toEqual({ id: '', seq: 0 })
@@ -89,7 +89,7 @@ describe('zod v3 adapter — transparent wrapper kinds', () => {
     const schema = z.object({
       email: z.string().pipe(z.string().email()),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     // Pass `strict: false` so the slim-parse rebuilds a checks-free
     // copy for default extraction. Strict mode (the default) would
     // surface the `email` validation rejection of `''`.
@@ -103,7 +103,7 @@ describe('zod v3 adapter — transparent wrapper kinds', () => {
     const schema = z.object({
       role: z.string().default('user').readonly(),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
     expect(result.data).toEqual({ role: 'user' })
   })
@@ -112,7 +112,7 @@ describe('zod v3 adapter — transparent wrapper kinds', () => {
     const schema = z.object({
       handle: z.string().default('anon').brand<'Handle'>(),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
     expect(result.data).toEqual({ handle: 'anon' })
   })
@@ -125,7 +125,7 @@ describe('zod v3 adapter — transparent wrapper kinds', () => {
         })
         .readonly(),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     expect(adapter.getDefaultAtPath(['profile', 'name'])).toBe('Ada')
   })
 })
@@ -136,7 +136,7 @@ describe('zod v3 adapter — ZodCatch fallback', () => {
       handle: z.string().catch('anonymous'),
       count: z.number().catch(42),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
     expect(result.success).toBe(true)
     expect(result.data).toEqual({ handle: 'anonymous', count: 42 })
@@ -151,7 +151,7 @@ describe('zod v3 adapter — ZodCatch fallback', () => {
     const schema = z.object({
       role: z.string().default('user').catch('guest'),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const result = adapter.getDefaultValues({ useDefaultSchemaValues: true })
     expect(result.data).toEqual({ role: 'guest' })
   })
@@ -160,7 +160,7 @@ describe('zod v3 adapter — ZodCatch fallback', () => {
     const schema = z.object({
       handle: z.string().catch('anonymous'),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const result = adapter.getDefaultValues({ useDefaultSchemaValues: false })
     // .catch() is an explicit consumer statement; suppressing schema
     // defaults shouldn't suppress it.
@@ -175,7 +175,7 @@ describe('zod v3 adapter — ZodCatch fallback', () => {
         })
         .catch({ name: 'fallback' }),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     // Catch's fallback object IS the default at that path.
     expect(adapter.getDefaultAtPath(['profile'])).toEqual({ name: 'fallback' })
   })
@@ -200,7 +200,7 @@ describe('zod v3 adapter — symbol-segment coercion in ValidationError.path', (
         }
       }),
     })
-    const adapter = zodAdapter(schema)('f')
+    const adapter = zodAdapter(schema)('f', { maxRecursionDepth: 64 })
     const result = await adapter.validateAtPath({ handle: '' }, [])
     expect(result.success).toBe(false)
     if (result.success) return

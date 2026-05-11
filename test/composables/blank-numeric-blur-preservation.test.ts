@@ -59,7 +59,7 @@ function mountNumericInput() {
         )
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform())
   app.mount(root)
   return { app, root }
 }
@@ -169,7 +169,7 @@ describe('blank-marked number leaf — blank flag survives blur', () => {
           )
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     apps.push(app)
     app.mount(root)
     const lengthKey = canonicalizePath('lengthCm').key

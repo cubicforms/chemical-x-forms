@@ -19,6 +19,56 @@ Defaults are "nothing persists" — every persisted field must opt
 in at its `register()` call site, and sensitive-named paths throw
 at mount unless acknowledged.
 
+### Sensitive-name heuristic
+
+Built-in path matchers cover the common-case footguns
+(`password`, `passwd`, `pwd`, `pin`, `cvv`, `cvc`, `card_number`,
+`ssn`, `dob`, `token`, `secret`, `api_key`, `oauth`, `mfa_*`,
+`2fa`, etc. — see `DEFAULT_SENSITIVE_NAMES` for the full list).
+Compose your own list by extending the exported default:
+
+```ts
+import { createAttaform, DEFAULT_SENSITIVE_NAMES } from 'attaform'
+
+createAttaform({
+  defaults: {
+    sensitiveNames: [...DEFAULT_SENSITIVE_NAMES, 'mrn', 'tax_id'],
+  },
+})
+```
+
+The resolved list also gates multi-tab sync broadcasts and the
+DevTools redact walk — one configurable source of truth for "what
+counts as sensitive."
+
+### Secure-context gate (HTTPS or localhost)
+
+Built-in storage adapters (`'local'`, `'session'`, future
+`'indexeddb'`) require a secure context — they activate only when
+`window.isSecureContext === true`, which the browser defines as
+HTTPS in production OR localhost in development. On plain HTTP
+served from a real hostname, the persistence module silently
+noops with a one-shot dev warning.
+
+This matches the same gate browsers apply to other sensitive
+APIs (clipboard, geolocation, push, web crypto subtle). The
+threat: a network observer on plain HTTP can MITM-inject script
+that reads `localStorage` for any same-origin site — persisting
+form drafts there leaks invisibly.
+
+**Production deployments must be HTTPS for built-in persistence
+to function.** If sync isn't working in prod, check the protocol
+first.
+
+**Custom storage adapters bypass the gate.** Pass `persist: {
+storage: customAdapter }` (any `FormStorage`-shaped object) to
+opt out of the gate — the consumer owns that storage layer's
+security posture. Use this path for encrypted, server-side, or
+tunneled storage where the gate's reasoning doesn't apply.
+
+See also [Multi-tab sync — Security](./multi-tab-sync) for the
+matching gate on cross-tab broadcasts.
+
 ## Setup
 
 Configure `useForm` with the operational settings (backend, key,

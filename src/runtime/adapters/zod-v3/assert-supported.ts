@@ -129,11 +129,10 @@ export function assertSupportedKinds(
 
   if (isZodSchemaType(schema, 'ZodLazy')) {
     const getter = (schema._def as { getter?: () => z.ZodTypeAny }).getter
-    if (getter !== undefined && lazyGetters.includes(getter)) {
-      throw new UnsupportedSchemaError(
-        `[attaform/zod-v3] Recursive z.lazy() at '${labelPath(path)}'`
-      )
-    }
+    // Recursive z.lazy() is supported. Stop descending on the second
+    // encounter (the shape walk only needs each unique getter once);
+    // downstream walks cap their descent via `maxRecursionDepth`.
+    if (getter !== undefined && lazyGetters.includes(getter)) return
     const inner = getter?.()
     if (inner !== undefined) {
       assertSupportedKinds(

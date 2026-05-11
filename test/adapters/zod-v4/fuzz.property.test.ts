@@ -19,11 +19,11 @@ const arbRootSchema = buildZodRootObjectArbitrary(z, 3, (inner) => z.record(z.st
 
 describe('zod v4 adapter — fuzz over arbitrary supported schemas', () => {
   test.prop([arbRootSchema])('adapter construction never throws on supported schemas', (schema) => {
-    expect(() => zodAdapter(schema as z.ZodObject)('f')).not.toThrow()
+    expect(() => zodAdapter(schema as z.ZodObject)('f', { maxRecursionDepth: 64 })).not.toThrow()
   })
 
   test.prop([arbRootSchema])('getDefaultValues returns a success response', (schema) => {
-    const adapter = zodAdapter(schema as z.ZodObject)('f')
+    const adapter = zodAdapter(schema as z.ZodObject)('f', { maxRecursionDepth: 64 })
     const result = adapter.getDefaultValues({
       useDefaultSchemaValues: true,
       strict: false,
@@ -43,7 +43,7 @@ describe('zod v4 adapter — fuzz over arbitrary supported schemas', () => {
       // Since the arbitrary doesn't produce refinements, this reduces to
       // "does the shape match the shape" — any failure is a bug in the
       // default-values derivation.
-      const adapter = zodAdapter(schema as z.ZodObject)('f')
+      const adapter = zodAdapter(schema as z.ZodObject)('f', { maxRecursionDepth: 64 })
       const initial = adapter.getDefaultValues({
         useDefaultSchemaValues: true,
         strict: false,
@@ -57,7 +57,7 @@ describe('zod v4 adapter — fuzz over arbitrary supported schemas', () => {
   test.prop([arbRootSchema, fc.string({ minLength: 1, maxLength: 8 })])(
     'every produced ValidationError (when constraints violate strict mode) carries the right formKey',
     (schema, formKey) => {
-      const adapter = zodAdapter(schema as z.ZodObject)(formKey)
+      const adapter = zodAdapter(schema as z.ZodObject)(formKey, { maxRecursionDepth: 64 })
       // Strict-mode getDefaultValues may surface errors for refinements that
       // a derived blank shape doesn't satisfy. Since we don't generate
       // refinements the success path is the common outcome, but if the

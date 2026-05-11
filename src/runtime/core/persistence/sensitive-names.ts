@@ -2,148 +2,240 @@ import { SensitivePersistFieldError } from '../errors'
 import type { Path, PathKey, Segment } from '../paths'
 
 /**
- * Sensitive-name heuristic: a small, intentionally conservative set of
- * regexes that flag a path segment as "this looks like data the consumer
- * almost certainly does not want serialised to client-side storage."
+ * The library's built-in conservative set of identifier name stems that
+ * flag a path segment as "this looks like data the consumer almost
+ * certainly does not want serialised to client-side storage or
+ * broadcast across tabs."
  *
- * The check fires when a binding opts into persistence
- * (`register(path, { persist: true })`) or when an imperative
- * `form.persist(path)` is called — the binding can override with
- * `{ acknowledgeSensitive: true }` if the persistence is genuinely
- * intentional.
+ * Each entry is a NAME STEM, not a regex. Matching is case-insensitive
+ * and tolerant of separator variants — `'card_number'` matches the
+ * segments `'card_number'`, `'card-number'`, `'cardNumber'`, and
+ * `'cardnumber'`. Short stems (compact length ≤ 5) get word-boundary
+ * anchors to avoid common false positives — `'pin'` matches `'pin'`
+ * and `'user_pin'` but not `'pinned'`; `'token'` matches `'token'` but
+ * not `'tokenizer'`. Longer stems match anywhere (`'password'` matches
+ * `'password'`, `'passwords'`, `'userPassword'`).
+ *
+ * Consumers extend or replace via per-form or global config:
+ *
+ * ```ts
+ * createAttaform({
+ *   defaults: { sensitiveNames: [...DEFAULT_SENSITIVE_NAMES, 'mrn', 'tax_id'] }
+ * })
+ * ```
+ *
+ * The same resolved predicate gates persistence writes, multi-tab sync
+ * broadcasts, AND the DevTools redact walk — one source of truth for
+ * "what counts as sensitive" across every surface.
  *
  * **Non-goals.** This is not a soundness guarantee. Adversarial paths
- * (`'pswd'`, `'cred'`, `'sensitive_data'`) can slip through; misnamed
- * fields (`'CCV'` instead of `'CVV'`, `'social-sec-num'`) may not match
- * depending on locale or naming convention. The intent is a code-review
- * trigger for the common-case footgun: a developer adds a `password`
- * field to a form that already has `persist: { storage: 'local' }` and
- * doesn't notice that the existing persistence config now reaches the
- * new field. The per-element opt-in model already requires explicit
- * intent for each field; the sensitive-name heuristic adds a second
- * speed bump for the names everyone agrees never belong in localStorage.
- *
- * Word-boundary anchors (`\b`) on short tokens prevent false positives:
- * `'description'` does not match `pwd`; `'tokenizer'` does not match
- * `token`. Multi-word forms (`api[_\s-]?key`) tolerate snake_case,
- * kebab-case, and space-separated variants for path segments emitted
- * by humans.
+ * (`'sensitive_data'`, `'CCV'` instead of `'CVV'`) can slip through.
+ * The intent is a code-review trigger for the common-case footgun
+ * plus a defense-in-depth filter on the cross-tab and DevTools
+ * surfaces.
  */
-export const SENSITIVE_NAME_PATTERNS: readonly RegExp[] = [
-  // Passwords and PIN-like
-  /password/i,
-  /passwd/i,
-  /passwords/i,
-  /\bpwd\b/i,
-  /\bpin\b/i,
+export const DEFAULT_SENSITIVE_NAMES: readonly string[] = Object.freeze([
+  // Passwords + PIN-like
+  'password',
+  'passwd',
+  'pwd',
+  'pin',
   // Card / payment
-  /\bcvv\b/i,
-  /\bcvc\b/i,
-  /card[_\s-]?(?:number|num)/i,
-  /\bcard\b/i,
-  /\biban\b/i,
-  /routing[_\s-]?number/i,
-  /account[_\s-]?number/i,
+  'cvv',
+  'cvc',
+  'card_number',
+  'card_num',
+  'card',
+  'iban',
+  'routing_number',
+  'account_number',
   // Government / identity
-  /\bssn\b/i,
-  /social[_\s-]?security/i,
-  /\bdob\b/i,
-  /date[_\s-]?of[_\s-]?birth/i,
-  /passport/i,
-  /driver[_\s-]?license/i,
-  // Tax IDs (US + international common variants)
-  /\btin\b/i,
-  /\bein\b/i,
-  /\bitin\b/i,
-  /tax[_\s-]?id/i,
-  // Tokens, secrets, API/auth credentials
-  /\btoken\b/i,
-  /\btokens\b/i,
-  /secret/i,
-  /secrets/i,
-  /api[_\s-]?key/i,
-  /api[_\s-]?secret/i,
-  /api[_\s-]?token/i,
-  /private[_\s-]?key/i,
-  /\bbearer\b/i,
-  /\boauth\b/i,
-  /auth[_\s-]?token/i,
-  /access[_\s-]?token/i,
-  /refresh[_\s-]?token/i,
-  /session[_\s-]?(?:id|key|token)/i,
+  'ssn',
+  'social_security',
+  'dob',
+  'date_of_birth',
+  'passport',
+  'driver_license',
+  // Tax IDs
+  'tin',
+  'ein',
+  'itin',
+  'tax_id',
+  // Tokens / secrets / API auth
+  'token',
+  'tokens',
+  'secret',
+  'secrets',
+  'api_key',
+  'api_secret',
+  'api_token',
+  'private_key',
+  'bearer',
+  'oauth',
+  'auth_token',
+  'access_token',
+  'refresh_token',
+  'session_id',
+  'session_key',
+  'session_token',
   // MFA / OTP
-  /\botp\b/i,
-  /one[_\s-]?time[_\s-]?(?:password|code)/i,
-  /mfa[_\s-]?(?:secret|seed|code|token)/i,
-  /two[_\s-]?factor[_\s-]?(?:code|token)/i,
-  /\b2fa[_\s-]?(?:code|token)?\b/i,
-  /recovery[_\s-]?code/i,
-  /backup[_\s-]?code/i,
-] as const
+  'otp',
+  'one_time_password',
+  'one_time_code',
+  'mfa_secret',
+  'mfa_seed',
+  'mfa_code',
+  'mfa_token',
+  'two_factor_code',
+  'two_factor_token',
+  '2fa',
+  '2fa_code',
+  '2fa_token',
+  'recovery_code',
+  'backup_code',
+])
 
 /**
- * True iff `segment` itself matches a sensitive-name pattern. Numeric
- * segments are never sensitive (array indices carry no semantic
- * weight). Used by `isSensitivePath` AND by the devtools redact
- * walk, which short-circuits whole subtrees the moment any ancestor
- * segment matches — saving an O(leaves × ancestors) regex sweep
- * per timeline event.
+ * Compact-length threshold below which a stem gets word-boundary
+ * anchors. Tuned so `'pin'`, `'card'`, `'token'` get boundary
+ * protection (avoiding `'pinned'`, `'cards'`, `'tokenizer'`) while
+ * `'passwd'`, `'secret'`, `'tokens'` match as substring (catching
+ * camelCase variants like `'userPassword'`).
  */
-export function segmentMatchesSensitive(segment: Segment): boolean {
-  if (typeof segment !== 'string') return false
-  for (const pattern of SENSITIVE_NAME_PATTERNS) {
-    if (pattern.test(segment)) return true
-  }
-  return false
+const WORD_BOUNDARY_THRESHOLD = 5
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /**
- * True iff any segment of the path matches a sensitive-name pattern.
- * Match is per-segment: `'profile.password'` triggers via the `password`
- * segment; `'description.text'` does NOT match `desc` because of the
- * word boundaries on the short tokens.
- *
- * Accepts either a structured `Path` (canonical segments) or a string
- * `PathKey` (canonicalised JSON form). For PathKey, the JSON-bracket
- * shape `["profile","password"]` parses cleanly into segments; falling
- * back to a dotted-string split keeps simple cases working without
- * a JSON.parse round-trip.
+ * Build a single case-insensitive regex from a name stem. Underscores,
+ * hyphens, and spaces in the input become `[_\s-]?` (optional
+ * separator) so `'card_number'` tolerates `'cardNumber'`,
+ * `'card-number'`, `'cardnumber'`, and `'card number'` alike.
  */
-export function isSensitivePath(path: Path | PathKey | string): boolean {
-  if (typeof path !== 'string') {
-    for (const segment of path) {
-      if (segmentMatchesSensitive(segment)) return true
+function nameToRegex(name: string): RegExp {
+  const parts = name.split(/[_\s-]/).filter((p) => p.length > 0)
+  if (parts.length === 0) {
+    // Pathological input (empty / all-separator); produce a regex that
+    // matches nothing rather than throwing — keeps the caller's
+    // composition surface forgiving.
+    return /(?!)/
+  }
+  const escaped = parts.map(escapeRegex).join('[_\\s-]?')
+  const compactLength = parts.reduce((sum, p) => sum + p.length, 0)
+  const useBoundary = compactLength <= WORD_BOUNDARY_THRESHOLD
+  const source = useBoundary ? `\\b${escaped}\\b` : escaped
+  return new RegExp(source, 'i')
+}
+
+function namesToPatterns(names: readonly string[]): readonly RegExp[] {
+  const patterns: RegExp[] = []
+  for (const name of names) {
+    if (typeof name !== 'string' || name.length === 0) continue
+    patterns.push(nameToRegex(name))
+  }
+  return patterns
+}
+
+const DEFAULT_PATTERNS = namesToPatterns(DEFAULT_SENSITIVE_NAMES)
+
+/**
+ * Factory: returns a closure that tests a single Segment against the
+ * resolved name list. Reused by the DevTools redact walk to
+ * short-circuit whole subtrees the moment any ancestor segment matches.
+ *
+ * Pass an empty array to disable the heuristic entirely (no segment
+ * counts as sensitive). Omitting the argument uses the library
+ * default list.
+ */
+export function createSegmentMatchesSensitive(
+  names: readonly string[] = DEFAULT_SENSITIVE_NAMES
+): (segment: Segment) => boolean {
+  const patterns = names === DEFAULT_SENSITIVE_NAMES ? DEFAULT_PATTERNS : namesToPatterns(names)
+  return (segment: Segment) => {
+    if (typeof segment !== 'string') return false
+    for (const p of patterns) {
+      if (p.test(segment)) return true
     }
     return false
   }
-  // String input: try JSON-array first (PathKey), fall back to dotted.
-  if (path.startsWith('[')) {
-    try {
-      const parsed = JSON.parse(path) as unknown[]
-      if (Array.isArray(parsed)) {
-        for (const segment of parsed) {
-          if (segmentMatchesSensitive(segment as Segment)) return true
-        }
-        return false
-      }
-    } catch {
-      // fall through
-    }
-  }
-  for (const segment of path.split('.')) {
-    if (segmentMatchesSensitive(segment)) return true
-  }
-  return false
 }
 
 /**
- * Throw `SensitivePersistFieldError` if `path` matches the heuristic
- * and `acknowledged` is not true. Idempotent / pure — the call site is
- * the directive's opt-in lifecycle (on every add) and `form.persist`
- * (on every imperative checkpoint).
+ * Factory: returns a closure that tests a path (structured `Path`,
+ * dotted-string, or canonical JSON `PathKey`) against the resolved
+ * name list. True iff ANY segment matches.
+ *
+ * Same predicate gates persistence writes, multi-tab broadcasts, AND
+ * the DevTools edit-rejection check — consumers configure once via
+ * `sensitiveNames` and every surface respects it.
  */
-export function enforceSensitiveCheck(path: Path | PathKey | string, acknowledged: boolean): void {
+export function createIsSensitivePath(
+  names: readonly string[] = DEFAULT_SENSITIVE_NAMES
+): (path: Path | PathKey | string) => boolean {
+  const segmentMatches = createSegmentMatchesSensitive(names)
+  return (path: Path | PathKey | string) => {
+    if (typeof path !== 'string') {
+      for (const segment of path) {
+        if (segmentMatches(segment)) return true
+      }
+      return false
+    }
+    // String input: try JSON-array first (PathKey), fall back to dotted.
+    if (path.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(path) as unknown[]
+        if (Array.isArray(parsed)) {
+          for (const segment of parsed) {
+            if (segmentMatches(segment as Segment)) return true
+          }
+          return false
+        }
+      } catch {
+        // fall through to dotted parse
+      }
+    }
+    for (const segment of path.split('.')) {
+      if (segmentMatches(segment)) return true
+    }
+    return false
+  }
+}
+
+const defaultSegmentMatches = createSegmentMatchesSensitive()
+const defaultIsSensitivePath = createIsSensitivePath()
+
+/**
+ * True iff `segment` itself matches the LIBRARY DEFAULT sensitive-name
+ * list. For consumer-configurable matching, use
+ * `createSegmentMatchesSensitive(list)` to build a per-form closure.
+ */
+export function segmentMatchesSensitive(segment: Segment): boolean {
+  return defaultSegmentMatches(segment)
+}
+
+/**
+ * True iff any segment of the path matches the LIBRARY DEFAULT
+ * sensitive-name list. For consumer-configurable matching, use
+ * `createIsSensitivePath(list)` to build a per-form closure.
+ */
+export function isSensitivePath(path: Path | PathKey | string): boolean {
+  return defaultIsSensitivePath(path)
+}
+
+/**
+ * Throw `SensitivePersistFieldError` if `path` matches sensitivity and
+ * `acknowledged` is not true. The optional `isSensitive` predicate
+ * lets call sites pass the per-form resolved closure; omit to use the
+ * library default list.
+ */
+export function enforceSensitiveCheck(
+  path: Path | PathKey | string,
+  acknowledged: boolean,
+  isSensitive: (p: Path | PathKey | string) => boolean = defaultIsSensitivePath
+): void {
   if (acknowledged) return
-  if (!isSensitivePath(path)) return
+  if (!isSensitive(path)) return
   throw new SensitivePersistFieldError(path)
 }

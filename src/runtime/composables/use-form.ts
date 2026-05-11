@@ -1,7 +1,13 @@
 import type { z } from 'zod-v3'
 import { zodAdapter } from '../adapters/zod-v3'
 import { InvalidUseFormConfigError } from '../core/errors'
-import type { AbstractSchema, UseFormReturnType, UseFormConfiguration } from '../types/types-api'
+import type { SchemaFactoryOptions } from '../core/get-computed-schema'
+import type {
+  AbstractSchema,
+  FormKey,
+  UseFormReturnType,
+  UseFormConfiguration,
+} from '../types/types-api'
 import type { DeepPartial, DefaultValuesShape, GenericForm } from '../types/types-core'
 import type { TypeWithNullableDynamicKeys } from '../adapters/zod-v3/types-zod'
 import type {
@@ -61,12 +67,12 @@ export function useForm<
 >(
   configuration: UseFormConfigurationWithZod<
     Schema,
-    DeepPartial<DefaultValuesShape<z.infer<UnwrapZodObject<Schema>>>>
+    DeepPartial<DefaultValuesShape<z.input<UnwrapZodObject<Schema>>>>
   >
-): UseFormReturnType<z.infer<UnwrapZodObject<Schema>>, GetValueFormType>
+): UseFormReturnType<z.input<UnwrapZodObject<Schema>>, GetValueFormType>
 export function useForm<
   Schema extends z.ZodSchema<unknown>,
-  Form extends GenericForm = z.infer<UnwrapZodObject<Schema>>,
+  Form extends GenericForm = z.input<UnwrapZodObject<Schema>>,
   GetValueFormType extends GenericForm = Form,
 >(
   configuration:
@@ -78,7 +84,7 @@ export function useForm<
       >
     | UseFormConfigurationWithZod<
         Schema,
-        DeepPartial<DefaultValuesShape<z.infer<UnwrapZodObject<Schema>>>>
+        DeepPartial<DefaultValuesShape<z.input<UnwrapZodObject<Schema>>>>
       >
 ): UseFormReturnType<Form, GetValueFormType> {
   // Foot-gun guard: catches `useForm(z.object({...}))` (raw schema as
@@ -119,7 +125,15 @@ export function useForm<
       AbstractSchema<Form, GetValueFormType>,
       DeepPartial<DefaultValuesShape<Form>>
     >),
-    schema: abstractSchema,
+    // The v3 adapter widens the read-side type through
+    // `TypeWithNullableDynamicKeys<Schema>` (records/arrays/DUs get
+    // `| undefined` markers); useAbstractForm's parameter expects the
+    // exact `GetValueFormType` (defaults to `Form`). The runtime
+    // accepts the widened shape unchanged — cast across the gap so
+    // the structural disagreement doesn't reach the caller.
+    schema: abstractSchema as
+      | AbstractSchema<Form, GetValueFormType>
+      | ((key: FormKey, options: SchemaFactoryOptions) => AbstractSchema<Form, GetValueFormType>),
     defaultValues: configuration.defaultValues as DeepPartial<DefaultValuesShape<Form>>,
   })
 }

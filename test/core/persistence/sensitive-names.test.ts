@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_SENSITIVE_NAMES,
+  createIsSensitivePath,
+  createSegmentMatchesSensitive,
   isSensitivePath,
-  SENSITIVE_NAME_PATTERNS,
 } from '../../../src/runtime/core/persistence/sensitive-names'
 
 /**
@@ -10,7 +12,7 @@ import {
  * code-review trigger, not a soundness boundary, and the patterns
  * are conservative.
  *
- * Suite asserts both inclusion (the pattern set covers the common
+ * Suite asserts both inclusion (the stem set covers the common
  * footguns) and exclusion (typical-sounding non-sensitive names
  * don't trip the heuristic).
  */
@@ -138,6 +140,8 @@ describe('isSensitivePath — false positives we deliberately avoid', () => {
     ['avatar'],
     ['profile'],
     ['greeting'],
+    ['pinned'], // word boundary on `pin` prevents this
+    ['tokenizer'], // word boundary on `token` prevents this
   ])('does not flag %s as sensitive', (segment) => {
     expect(isSensitivePath([segment])).toBe(false)
   })
@@ -182,11 +186,55 @@ describe('isSensitivePath — path-shape dispatch', () => {
   })
 })
 
-describe('SENSITIVE_NAME_PATTERNS shape', () => {
-  it('exports a non-empty readonly array of RegExp', () => {
-    expect(SENSITIVE_NAME_PATTERNS.length).toBeGreaterThan(20)
-    for (const pattern of SENSITIVE_NAME_PATTERNS) {
-      expect(pattern).toBeInstanceOf(RegExp)
+describe('DEFAULT_SENSITIVE_NAMES shape', () => {
+  it('exports a non-empty frozen array of name stems', () => {
+    expect(DEFAULT_SENSITIVE_NAMES.length).toBeGreaterThan(20)
+    expect(Object.isFrozen(DEFAULT_SENSITIVE_NAMES)).toBe(true)
+    for (const name of DEFAULT_SENSITIVE_NAMES) {
+      expect(typeof name).toBe('string')
+      expect(name.length).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('createIsSensitivePath — custom name lists', () => {
+  it('extends DEFAULT_SENSITIVE_NAMES with a consumer addition', () => {
+    const isSensitive = createIsSensitivePath([...DEFAULT_SENSITIVE_NAMES, 'mrn'])
+    // The new stem flags
+    expect(isSensitive(['mrn'])).toBe(true)
+    expect(isSensitive(['patient', 'mrn'])).toBe(true)
+    // The default stems still flag
+    expect(isSensitive(['password'])).toBe(true)
+    // Non-matching paths still don't flag
+    expect(isSensitive(['email'])).toBe(false)
+  })
+
+  it('REPLACES the default when given a non-default list', () => {
+    // A consumer who passes ONLY their own names loses the defaults —
+    // that's the "replace, not extend" contract.
+    const isSensitive = createIsSensitivePath(['mrn'])
+    expect(isSensitive(['mrn'])).toBe(true)
+    expect(isSensitive(['password'])).toBe(false)
+  })
+
+  it('empty list is explicit opt-out — nothing is sensitive', () => {
+    const isSensitive = createIsSensitivePath([])
+    expect(isSensitive(['password'])).toBe(false)
+    expect(isSensitive(['ssn'])).toBe(false)
+  })
+
+  it('tolerates separators in consumer entries', () => {
+    const isSensitive = createIsSensitivePath(['patient_mrn'])
+    expect(isSensitive(['patient_mrn'])).toBe(true)
+    expect(isSensitive(['patient-mrn'])).toBe(true)
+    expect(isSensitive(['patientMrn'])).toBe(true)
+  })
+
+  it('createSegmentMatchesSensitive returns a per-segment closure', () => {
+    const match = createSegmentMatchesSensitive([...DEFAULT_SENSITIVE_NAMES, 'mrn'])
+    expect(match('mrn')).toBe(true)
+    expect(match('password')).toBe(true)
+    expect(match('email')).toBe(false)
+    expect(match(0)).toBe(false) // numeric segments never match
   })
 })

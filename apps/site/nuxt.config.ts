@@ -42,6 +42,19 @@ import zodPkg from 'zod/package.json'
 //      and listing the entries explicitly in our config doesn't help
 //      (they'd just add their own unresolvable copies). Filtered
 //      narrowly to the @nuxtjs/mdc prefix.
+//
+//   4. "Payload extraction is recommended for full-static output. You can
+//      enable it by setting experimental.payloadExtraction to true or
+//      'client'."
+//      — Fires during `nuxi dev` because we INTENTIONALLY disable payload
+//      extraction in development to dodge the ENOTDIR Nitro cache collision
+//      documented in the `experimental:` block below. The warning is correct
+//      for production (we DO want payload extraction in static output), but
+//      our `experimental.payloadExtraction` gate already does the right thing
+//      based on NODE_ENV — the warning fires in dev anyway because Nitro
+//      reads `nitro.static: true` and assumes the warning applies regardless
+//      of mode. Filter narrowly to the exact string so any unrelated payload
+//      warning still surfaces.
 function isFilteredBuildWarning(msg: string): boolean {
   if (msg.includes('Sourcemap is likely to be incorrect')) return true
   if (
@@ -51,6 +64,9 @@ function isFilteredBuildWarning(msg: string): boolean {
     return true
   }
   if (msg.includes('Unresolvable optimizeDeps.include entries') && msg.includes('@nuxtjs/mdc')) {
+    return true
+  }
+  if (msg.includes('Payload extraction is recommended for full-static output')) {
     return true
   }
   return false
@@ -131,12 +147,40 @@ export default defineNuxtConfig({
   // crawler hits redirects, wasting crawl budget and signaling
   // duplicate content. The canonical host is www; everything we ship
   // points there directly.
+  //
+  // `indexable` gates the ENTIRE SEO-discovery surface on a single
+  // env flag — same gate the IndexNow ping uses
+  // (`scripts/indexnow-ping.mjs`). When `false`:
+  //
+  //   - `robots.txt` flips to `User-agent: * \n Disallow: /`
+  //   - The sitemap.xml route is suppressed
+  //   - Every page emits `<meta name="robots" content="noindex, nofollow">`
+  //   - Schema.org JSON-LD `url` resolution stays internally consistent
+  //     but crawlers honoring the meta tag won't follow.
+  //
+  // Default posture is `false` — sandboxed branches, preview deploys,
+  // local builds, and CI all produce non-indexable output. Only a
+  // Vercel **production** deploy (`VERCEL_ENV === 'production'`) flips
+  // to `true`. There is intentionally no force-override flag: the
+  // production gate is the single source of truth, matching the
+  // IndexNow script's posture. If you need to manually test the
+  // indexable variant locally, set `VERCEL_ENV=production` explicitly
+  // on the `pnpm build` command line.
+  //
+  // Belt + suspenders: the static output may still be reachable at
+  // its deploy URL, but search engines that respect `robots.txt` AND
+  // the `noindex` meta tag will skip it. Bing's IndexNow endpoint is
+  // never pinged (separate gate in the index:bing script). The
+  // attack surface for "sandbox URL appears in Google" collapses to
+  // direct backlinks from indexable pages — which production never
+  // emits to preview hostnames.
   site: {
     url: 'https://www.attaform.com',
     name: 'Attaform',
     description:
       'A type-safe, schema-driven form library for Vue 3 and Nuxt with first-class Zod support.',
     defaultLocale: 'en',
+    indexable: process.env.VERCEL_ENV === 'production',
   },
   // nuxt-og-image renders Vue components to 1200×630 PNGs at build
   // time via Satori. We're on the generic Nitro `static` preset
@@ -145,6 +189,19 @@ export default defineNuxtConfig({
   // og-image module reads `nitro.static` (set in the `nitro:` block
   // below) to detect SSG and route to its `nitro-prerender`
   // compatibility profile.
+  //
+  // `zeroRuntime: true` disables dynamic image generation entirely —
+  // every OG image is prerendered at build time, no runtime image
+  // generation endpoint is served. Two effects:
+  //   1. The "OG image URLs are not signed. Anyone can craft arbitrary
+  //      image generation requests" warning goes away. Pure SSG: there
+  //      IS no runtime to sign requests against.
+  //   2. The static output excludes the dynamic-generation entry, so the
+  //      attack surface (request forgery → free CPU on a server we
+  //      don't have) collapses to nothing.
+  // Setting a NUXT_OG_IMAGE_SECRET would also silence the warning, but
+  // we'd be paying for a runtime we don't ship.
+  ogImage: { zeroRuntime: true },
   //
   // No `fonts:` block here on purpose. nuxt-og-image v6 dropped
   // that field in favour of reading from `@nuxt/fonts` (now gone

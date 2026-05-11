@@ -84,10 +84,9 @@ export function injectForm<Form extends GenericForm, GetValueFormType extends Ge
   }
 
   // Pull the cached history module (if the owning `useForm` wired it)
-  // so every consumer's API surface includes `undo` / `redo` / `canUndo`
-  // / `canRedo` / `historySize`. Without this, consumers reached via
-  // the context would receive inert stubs even when history is enabled
-  // on the form.
+  // so every consumer's API surface includes a live `form.history`
+  // namespace. Without this, consumers reached via the context would
+  // receive inert stubs even when history is enabled on the form.
   const apiOptions: Parameters<typeof buildFormApi<Form, GetValueFormType>>[2] = {}
   const history = state.modules.get('history') as HistoryModule | undefined
   if (history !== undefined) {
@@ -111,7 +110,11 @@ export function injectForm<Form extends GenericForm, GetValueFormType extends Ge
     (getCurrentInstance() !== null
       ? useId()
       : `atta:form-instance-injected:${injectedInstanceCounter++}`)
-  return buildFormApi<Form, GetValueFormType>(state, formInstanceId, apiOptions)
+  return buildFormApi<Form, GetValueFormType>(
+    state as FormStore<Form, GetValueFormType>,
+    formInstanceId,
+    apiOptions
+  )
 }
 
 /**

@@ -3,8 +3,8 @@ import { detectSSR } from '../../src/runtime/core/ssr'
 
 describe('detectSSR', () => {
   it('returns the explicit override when provided', () => {
-    expect(detectSSR({ override: true })).toBe(true)
-    expect(detectSSR({ override: false })).toBe(false)
+    expect(detectSSR({ ssr: true })).toBe(true)
+    expect(detectSSR({ ssr: false })).toBe(false)
   })
 
   it('returns false in a DOM-equipped environment (JSDOM provides window/document)', () => {
@@ -20,6 +20,6 @@ describe('detectSSR', () => {
   })
 
   it('override wins even when window/document exist', () => {
-    expect(detectSSR({ override: true })).toBe(true)
+    expect(detectSSR({ ssr: true })).toBe(true)
   })
 })

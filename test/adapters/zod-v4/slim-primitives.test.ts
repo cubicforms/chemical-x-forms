@@ -10,7 +10,7 @@ import { zodV4Adapter } from '../../../src/runtime/adapters/zod-v4/adapter'
  */
 
 function probe(rootSchema: z.ZodObject, path: (string | number)[]): Set<string> {
-  const adapter = zodV4Adapter(rootSchema)('f')
+  const adapter = zodV4Adapter(rootSchema)('f', { maxRecursionDepth: 64 })
   return adapter.getSlimPrimitiveTypesAtPath(path)
 }
 

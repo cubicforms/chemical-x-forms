@@ -56,7 +56,7 @@ function mount(): { app: App; api: Api } {
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform())
   app.mount(document.createElement('div'))
   return { app, api: captured as Api }
 }

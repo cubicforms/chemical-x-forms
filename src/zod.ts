@@ -46,6 +46,7 @@
  */
 
 export { useForm } from './runtime/adapters/unified/use-form'
+export type { PathInput, PathOutput } from './runtime/adapters/zod-v4'
 export { injectForm } from './runtime/composables/use-form-context'
 export { useRegister } from './runtime/composables/use-register'
 export { AttaformErrorCode } from './runtime/core/error-codes'

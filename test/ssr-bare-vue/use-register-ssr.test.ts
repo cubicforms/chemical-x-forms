@@ -92,7 +92,7 @@ function makeAppWithParentChildTemplate(parentTemplate: string) {
     render: compileWithTransforms(parentTemplate),
   })
   const app = createSSRApp(Parent)
-  app.use(createAttaform({ override: true /* SSR */ }))
+  app.use(createAttaform({ ssr: true /* SSR */ }))
   return app
 }
 
@@ -189,7 +189,7 @@ describe('useRegister — SSR (renderToString)', () => {
       ),
     })
     const app = createSSRApp(Parent)
-    app.use(createAttaform({ override: true }))
+    app.use(createAttaform({ ssr: true }))
     const html = await renderToString(app)
 
     // Path is the canonical PathKey (JSON-encoded). Vue's HTML
@@ -237,7 +237,7 @@ describe('useRegister — SSR (renderToString)', () => {
       },
     })
     const app = createSSRApp(Parent)
-    app.use(createAttaform({ override: true }))
+    app.use(createAttaform({ ssr: true }))
     await renderToString(app)
 
     const noParentRvWarns = warnings.filter((w) =>

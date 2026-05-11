@@ -1,4 +1,4 @@
-import { computed, markRaw, reactive, ref, watch, type ComputedRef, type Ref } from 'vue'
+import { computed, markRaw, reactive, ref, toRaw, watch, type ComputedRef, type Ref } from 'vue'
 import type {
   AbstractSchema,
   CoercionRegistry,
@@ -12,7 +12,7 @@ import type {
 } from '../types/types-api'
 import { resolveShouldShowErrors } from './should-show-errors'
 import type { DeepPartial, GenericForm, WriteShape } from '../types/types-core'
-import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS } from './defaults'
+import { DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS, normalizeNumericOption } from './defaults'
 import { applyChangedKeys, diffAndApply, structuralSnapshot, type Patch } from './diff-apply'
 import { AttaformErrorCode } from './error-codes'
 import {
@@ -40,6 +40,10 @@ import {
   createPersistOptInRegistry,
   type PersistOptInRegistry,
 } from './persistence/opt-in-registry'
+import {
+  isSensitivePath as defaultIsSensitivePath,
+  segmentMatchesSensitive as defaultSegmentMatchesSensitive,
+} from './persistence/sensitive-names'
 
 /**
  * Per-form closure state — the single store owned by each `useForm` call.
@@ -101,6 +105,61 @@ function warnMalformedHydration(formKey: FormKey, kind: string, rawKey: string):
     `[attaform] hydration: skipping malformed ${kind} entry at key '${rawKey}' on form '${formKey}'. ` +
       `This usually means the SSR bundle is on a different version than the client (rolling deploy / stale cache).`
   )
+}
+
+function applyDuStubs(
+  schema: AbstractSchema<unknown, unknown>,
+  data: unknown,
+  options: { warn?: boolean; basePath?: Path } = {}
+): unknown {
+  const warned = options.warn === true ? new Set<string>() : undefined
+  return walkDuStubs(schema, data, options.basePath ?? [], warned)
+}
+
+function walkDuStubs(
+  schema: AbstractSchema<unknown, unknown>,
+  value: unknown,
+  path: Path,
+  warned: Set<string> | undefined
+): unknown {
+  if (value === null || value === undefined || typeof value !== 'object') return value
+  if (
+    value instanceof Date ||
+    value instanceof RegExp ||
+    value instanceof Map ||
+    value instanceof Set ||
+    typeof value === 'function'
+  ) {
+    return value
+  }
+  if (Array.isArray(value)) {
+    return value.map((item, i) => walkDuStubs(schema, item, [...path, i], warned))
+  }
+  const rec = value as Record<string, unknown>
+  const du = schema.getUnionDiscriminatorAtPath(path)
+  if (du !== undefined) {
+    const discValue = rec[du.discriminatorKey]
+    if (discValue !== undefined && !du.isVariantSelected(discValue)) {
+      if (warned !== undefined && __DEV__) {
+        const dotted = path.map((s) => String(s)).join('.') || '(root)'
+        const key = `${dotted}::${String(discValue)}`
+        if (!warned.has(key)) {
+          warned.add(key)
+          console.warn(
+            `[attaform] defaultValues at '${dotted}' carries discriminator ` +
+              `'${du.discriminatorKey}=${JSON.stringify(discValue)}' which isn't a known variant. ` +
+              `Form mounts in a stub holding only the discriminator key. Validation will surface the mismatch.`
+          )
+        }
+      }
+      return { [du.discriminatorKey]: discValue }
+    }
+  }
+  const out: Record<string, unknown> = {}
+  for (const k of Object.keys(rec)) {
+    out[k] = walkDuStubs(schema, rec[k], [...path, k], warned)
+  }
+  return out
 }
 
 /** Per-path DOM element tracking. Client-only. */
@@ -387,7 +446,16 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    */
   registerElement(path: Path, element: HTMLElement, formInstanceId: string): boolean
   deregisterElement(path: Path, element: HTMLElement): number
-  markFocused(path: Path, focused: boolean): void
+  /**
+   * Optional `meta.instance` carries per-`useForm()`-instance overrides
+   * for `validateOn` / `debounceMs` so the blur-trigger respects the
+   * caller's config when sibling instances share a FormStore.
+   */
+  markFocused(
+    path: Path,
+    focused: boolean,
+    meta?: { readonly instance?: WriteMeta['instance'] }
+  ): void
   markTouched(path: Path): void
   /**
    * Walk every active-variant leaf under `segments` and flip
@@ -463,8 +531,18 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    * the adapter call on the next microtask. Internal callsites use this
    * for one-shot triggers; the per-keystroke writers pass `false` to
    * coalesce rapid mutations under the configured debounceMs.
+   *
+   * `override` carries per-`useForm()`-instance values: when provided,
+   * the scheduler honors `override.mode` instead of the store's
+   * captured `validateOn`, and `override.debounceMs` instead of the
+   * store's captured `debounceMs`. Used so sibling instances sharing a
+   * FormStore can each validate on their own cadence.
    */
-  scheduleFieldValidation(path: Path, immediate: boolean): void
+  scheduleFieldValidation(
+    path: Path,
+    immediate: boolean,
+    override?: { readonly mode?: ValidateOn; readonly debounceMs?: number }
+  ): void
 
   /**
    * Subscribe to every `applyFormReplacement`. Fires synchronously
@@ -545,6 +623,62 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    * subsystem; not part of the consumer API surface.
    */
   readonly persistOptIns: PersistOptInRegistry
+
+  /**
+   * Resolved sensitive-path predicate for THIS form. Honors the
+   * cascade (`useForm({ sensitiveNames })` > global default >
+   * library `DEFAULT_SENSITIVE_NAMES`). Used by:
+   *  - persistence enforcement (`enforceSensitiveCheck` at write time);
+   *  - the multi-tab sync module (outbound strip + inbound reject);
+   *  - DevTools edit rejection;
+   *  - any future surface that needs to flag "this path holds
+   *    sensitive data."
+   *
+   * Frozen at FormStore construction. Two callsites sharing a key
+   * share the predicate — consistent with the rest of the per-form
+   * resolved-config surface.
+   */
+  readonly isSensitivePath: (path: Path | PathKey | string) => boolean
+
+  /**
+   * Single-segment variant of `isSensitivePath`. Used by the DevTools
+   * redact walk to short-circuit whole subtrees the moment any
+   * ancestor segment matches — saving an O(leaves × ancestors) regex
+   * sweep per timeline event. Resolved from the same `sensitiveNames`
+   * cascade as `isSensitivePath`.
+   */
+  readonly segmentMatchesSensitive: (segment: Segment) => boolean
+
+  /**
+   * Canonical path keys explicitly opted OUT of multi-tab sync by
+   * `register(path, { multiTab: false })`. The sync module's outbound
+   * broadcaster strips patches at these paths AND the inbound listener
+   * rejects them — symmetric tab-local behaviour for selected fields.
+   *
+   * Read-only Set view; mutate via `incrementNoSyncOptOut` /
+   * `decrementNoSyncOptOut` which maintain a per-path ref count so
+   * multiple bindings on the same path balance correctly across
+   * dynamic conditional renders. Empty by default.
+   */
+  readonly noSyncPaths: ReadonlySet<PathKey>
+
+  /**
+   * Ref-counted "this path is tab-local" registration. Called by
+   * `v-register`'s `created` hook for any binding that declared
+   * `register('x', { multiTab: false })`. The first call for a given
+   * path adds it to `noSyncPaths`; subsequent calls just bump the
+   * ref count. Pair with `decrementNoSyncOptOut`.
+   */
+  incrementNoSyncOptOut(path: PathKey): void
+
+  /**
+   * Symmetric companion to `incrementNoSyncOptOut`. Called by
+   * `v-register`'s `beforeUnmount` hook. When the ref count for a
+   * path drops to zero, the path is removed from `noSyncPaths` —
+   * dynamic toggling (the binding rendered conditionally) restores
+   * full sync to the path when the last opt-out unmounts.
+   */
+  decrementNoSyncOptOut(path: PathKey): void
 
   /**
    * Resolved schema-coercion index — the merged config from
@@ -647,6 +781,22 @@ export type CreateFormStoreOptions<F extends GenericForm, G extends GenericForm 
    * three-tier resolution rules.
    */
   readonly shouldShowErrors?: ShouldShowErrorsConfig | undefined
+  /**
+   * Pre-resolved sensitive-path predicate. Built by the caller from
+   * the `sensitiveNames` cascade (`useForm({ sensitiveNames })` >
+   * global default > library `DEFAULT_SENSITIVE_NAMES`). Stored on
+   * the FormStore for use by persistence enforcement, multi-tab sync,
+   * DevTools, and the per-form variant of the heuristic. Optional;
+   * when omitted, the library-default closure is used.
+   */
+  readonly isSensitivePath?: ((path: Path | PathKey | string) => boolean) | undefined
+  /**
+   * Pre-resolved single-segment variant of `isSensitivePath`. Paired
+   * with `isSensitivePath` (built from the same resolved list) so the
+   * DevTools redact walk can short-circuit whole subtrees. Optional;
+   * when omitted, the library-default closure is used.
+   */
+  readonly segmentMatchesSensitive?: ((segment: Segment) => boolean) | undefined
 }
 
 /**
@@ -666,6 +816,83 @@ function isPathKeyUnder(existingKey: PathKey, parentPath: Path): boolean {
   return true
 }
 
+/**
+ * Walk a consumer-supplied value and drop Symbol-keyed properties
+ * recursively. Form values are string-keyed by schema design — symbols
+ * at any level would trip JSON serialization (persistence adapters),
+ * the variant-memory snapshot, and surface as
+ * `Object.getOwnPropertySymbols(values.x).length > 0`.
+ *
+ * Fast path: returns the input unchanged when the tree contains no
+ * symbols at any level. Only allocates a new object/array on the
+ * spine that contains a stripped node, so the common no-symbol
+ * case has zero allocation cost.
+ */
+function stripSymbolsDeep(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') return value
+  if (Array.isArray(value)) {
+    let mutated = false
+    const out: unknown[] = new Array(value.length)
+    for (let i = 0; i < value.length; i++) {
+      const cleaned = stripSymbolsDeep(value[i])
+      out[i] = cleaned
+      if (cleaned !== value[i]) mutated = true
+    }
+    return mutated ? out : value
+  }
+  // Skip non-plain objects (Date, Map, Set, RegExp, class instances) —
+  // their semantics aren't "key:value" and stripping would corrupt
+  // them. Symbol-keyed properties on these are a consumer concern.
+  const proto = Object.getPrototypeOf(value)
+  if (proto !== Object.prototype && proto !== null) return value
+  const symKeys = Object.getOwnPropertySymbols(value)
+  const stringKeys = Object.keys(value)
+  let mutated = symKeys.length > 0
+  const out: Record<string, unknown> = {}
+  const src = value as Record<string, unknown>
+  for (const k of stringKeys) {
+    const cleaned = stripSymbolsDeep(src[k])
+    out[k] = cleaned
+    if (cleaned !== src[k]) mutated = true
+  }
+  return mutated ? out : value
+}
+
+/**
+ * Deep-clone a value read out of the live reactive form tree, for the
+ * variant-memory snapshot. Calls `toRaw` at every level to bypass
+ * Vue's on-demand reactivity wrapping, preserves `BigInt`, `Date`,
+ * `Map`, `Set` natively (Zod can validate these at leaves), and
+ * recurses through plain arrays + objects. Detached from the form's
+ * reactive graph, so a later `form.value = nextForm` doesn't mutate
+ * the snapshot.
+ */
+function cloneVariantSnapshot(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') return value
+  const raw = toRaw(value as object)
+  if (raw instanceof Date) return new Date(raw.getTime())
+  if (raw instanceof Map) {
+    const out = new Map<unknown, unknown>()
+    for (const [k, v] of raw.entries()) out.set(cloneVariantSnapshot(k), cloneVariantSnapshot(v))
+    return out
+  }
+  if (raw instanceof Set) {
+    const out = new Set<unknown>()
+    for (const v of raw) out.add(cloneVariantSnapshot(v))
+    return out
+  }
+  if (raw instanceof RegExp) return new RegExp(raw.source, raw.flags)
+  if (Array.isArray(raw)) {
+    const out: unknown[] = new Array(raw.length)
+    for (let i = 0; i < raw.length; i++) out[i] = cloneVariantSnapshot(raw[i])
+    return out
+  }
+  const src = raw as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const k of Object.keys(src)) out[k] = cloneVariantSnapshot(src[k])
+  return out
+}
+
 export function createFormStore<F extends GenericForm, G extends GenericForm = F>(
   options: CreateFormStoreOptions<F, G>
 ): FormStore<F, G> {
@@ -673,8 +900,18 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   const ssr = options.ssr === true
   const rememberVariants: boolean = options.rememberVariants !== false
   const fieldValidationMode: ValidateOn = options.validateOn ?? 'change'
-  const fieldValidationDebounceMs: number =
-    options.debounceMs ?? DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS
+  // Sanitise the debounce value before threading it into `setTimeout`.
+  // `NaN` would fire synchronously (defeating the debounce); negatives
+  // clamp to 0 (consumer intent: "no debounce"); `Infinity` would stall
+  // the event loop for ~24.8 days then wrap, so it falls back to the
+  // library default.
+  const fieldValidationDebounceMs = normalizeNumericOption({
+    value: options.debounceMs ?? DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS,
+    source: 'useForm.debounceMs',
+    allowInfinity: false,
+    min: 0,
+    defaultValue: DEFAULT_FIELD_VALIDATION_DEBOUNCE_MS,
+  })
 
   type FieldValidationEntry = {
     controller: AbortController
@@ -693,6 +930,30 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // its subscription (mount order between the directive and
   // wirePersistence isn't guaranteed).
   const persistOptIns = createPersistOptInRegistry()
+  // Per-register `multiTab: false` opt-out tracker. Populated by the
+  // directive's mount hook for bindings that pass `{ multiTab: false }`;
+  // read by the multi-tab sync module to filter outbound + inbound
+  // patches symmetrically. Ref-counted under the hood — the `Set`
+  // view exposed to readers reflects "any binding currently
+  // declares this path as tab-local."
+  const noSyncPaths = new Set<PathKey>()
+  const noSyncPathCounts = new Map<PathKey, number>()
+
+  function incrementNoSyncOptOut(path: PathKey): void {
+    const next = (noSyncPathCounts.get(path) ?? 0) + 1
+    noSyncPathCounts.set(path, next)
+    if (next === 1) noSyncPaths.add(path)
+  }
+
+  function decrementNoSyncOptOut(path: PathKey): void {
+    const current = noSyncPathCounts.get(path) ?? 0
+    if (current <= 1) {
+      noSyncPathCounts.delete(path)
+      noSyncPaths.delete(path)
+      return
+    }
+    noSyncPathCounts.set(path, current - 1)
+  }
 
   // Resolve the coercion config to a concrete index ONCE per form.
   // The index is keyed by `${input}->${output}` for O(1) per-keystroke
@@ -707,6 +968,14 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   const resolvedShouldShowErrors: ShouldShowErrors = resolveShouldShowErrors(
     options.shouldShowErrors
   )
+
+  // Sensitive-path predicates: caller-provided (built from the
+  // `sensitiveNames` cascade in `use-abstract-form.ts`) or the
+  // library-default closure. Same predicate gates persistence,
+  // multi-tab sync, DevTools.
+  const resolvedIsSensitivePath = options.isSensitivePath ?? defaultIsSensitivePath
+  const resolvedSegmentMatchesSensitive =
+    options.segmentMatchesSensitive ?? defaultSegmentMatchesSensitive
 
   // State-scoped teardown hooks. Persistence / history / any other
   // per-state module registers its disposer here so the cleanup is
@@ -743,7 +1012,18 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   const initialData: F =
     hydration !== undefined ? (hydration.form as F) : (structuralSnapshot(schemaInitialData) as F)
 
-  const form = ref(initialData) as Ref<F>
+  // Construction-time DU stub walk: every DU path whose disc value
+  // isn't a known variant literal collapses to a stub holding only
+  // the discriminator key. Drops any first-variant fields that snuck
+  // in via `mergeStructural` / `getDefaultValues` when the consumer's
+  // `defaultValues` (or hydration payload) carried a bad discriminator.
+  // Mirrors the runtime stub-state contract `setValueAtPath` uses for
+  // bad-disc Case A/B writes; emits a one-shot dev warning per bad path.
+  const stubbedInitialData = applyDuStubs(schema as AbstractSchema<unknown, unknown>, initialData, {
+    warn: true,
+  }) as F
+
+  const form = ref(stubbedInitialData) as Ref<F>
 
   // Per-path state. `reactive(new Map())` uses Vue's collection handlers —
   // reads of specific keys track those keys only, so a change to one field
@@ -838,6 +1118,46 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     readonly blankPaths: ReadonlyArray<PathKey>
   }
   const variantMemory = new Map<PathKey, Map<unknown, VariantSnapshot>>()
+
+  function clearVariantMemoryUnderPath(arrayPath: Path): void {
+    for (const memKey of [...variantMemory.keys()]) {
+      const segs = segmentsForPathKey(memKey)
+      if (segs === null) continue
+      if (isPathPrefix(arrayPath, segs)) variantMemory.delete(memKey)
+    }
+  }
+
+  function clearVariantMemoryAtArrayIndices(
+    arrayPath: Path,
+    indexFilter: (idx: number) => boolean
+  ): void {
+    for (const memKey of [...variantMemory.keys()]) {
+      const segs = segmentsForPathKey(memKey)
+      if (segs === null) continue
+      if (!isPathPrefix(arrayPath, segs)) continue
+      if (segs.length <= arrayPath.length) continue
+      const idxSeg = segs[arrayPath.length]
+      if (typeof idxSeg !== 'number') continue
+      if (indexFilter(idxSeg)) variantMemory.delete(memKey)
+    }
+  }
+
+  function applyArrayOpToMemory(arrayPath: Path, op: NonNullable<WriteMeta['arrayOp']>): void {
+    switch (op.kind) {
+      case 'shift-from':
+        clearVariantMemoryAtArrayIndices(arrayPath, (i) => i >= op.index)
+        return
+      case 'shift-range':
+        clearVariantMemoryAtArrayIndices(arrayPath, (i) => i >= op.fromIndex && i <= op.toIndex)
+        return
+      case 'swap':
+        clearVariantMemoryAtArrayIndices(arrayPath, (i) => i === op.a || i === op.b)
+        return
+      case 'replace-at':
+        clearVariantMemoryAtArrayIndices(arrayPath, (i) => i === op.index)
+        return
+    }
+  }
 
   // Schema-declaration ordinal map for `form.meta.errors` sort order.
   // Plain (non-reactive) Map: it's mutated lazily from inside the
@@ -1119,12 +1439,65 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   }
 
   function setValueAtPath(path: Path, value: unknown, meta?: WriteMeta): boolean {
+    // Drop any Symbol-keyed properties before the value flows through
+    // the gate, DU reshape, or storage. Form values are string-keyed
+    // by schema design and the consumer-side leak would otherwise
+    // surface in `Object.getOwnPropertySymbols(values.x)` and break
+    // downstream JSON serialization (persistence) + variant memory.
+    value = stripSymbolsDeep(value)
+    // Give the schema a chance to normalize the consumer's input
+    // before it hits the slim-primitive gate or storage. Zod expresses
+    // this via `z.preprocess(fn, inner)`; other adapters expose
+    // analogous constructs. Without this hook, a schema like `notify:
+    // z.preprocess(v => v == null ? defaultVar : v, innerDU)` would
+    // let the consumer write `null` and lock storage into `null` —
+    // the preprocess wrapper accepts `unknown` at the input side, the
+    // slim-gate has nothing to reject against, and the input lands
+    // verbatim. Running the normalization at the write boundary means
+    // storage holds the shape the user declared, and validation sees
+    // a consistent value.
+    value = schema.normalizeWriteValueAtPath(value, path)
     // Slim-primitive write gate: every leaf in the value must match
     // the schema's slim primitive set at its sub-path. Refinement-level
     // constraints (.email/.min/enum membership/etc.) are NOT enforced
     // here — they're a validation concern. See ./slim-primitive-gate.ts.
     if (!isSlimPrimitiveValid(schema, form, path, value)) {
       return false
+    }
+    // Cross-variant write guard: walking the path, if any ancestor is
+    // a DU whose ACTIVE disc value resolves to a known variant that
+    // doesn't contain the next path segment, the write targets an
+    // inactive-variant key (e.g. `setValue('notify.number', ...)`
+    // while the active channel is 'email'). Or the ancestor is in
+    // stub state (disc isn't a known variant). Reject so foreign
+    // sibling-variant fields can't leak into form.values.
+    //
+    // The DU's own disc key is always reachable — writes to it
+    // recover the form from stub state by selecting a valid variant
+    // — so the guard skips when the next path segment IS the disc.
+    if (path.length >= 2) {
+      for (let i = 0; i < path.length - 1; i++) {
+        const ancestorPath = path.slice(0, i + 1)
+        const du = schema.getUnionDiscriminatorAtPath(ancestorPath)
+        if (du === undefined) continue
+        const nextSeg = path[i + 1]
+        if (nextSeg === du.discriminatorKey) continue
+        const ancestorValue = getAtPath(form.value, ancestorPath)
+        if (!isPlainRecord(ancestorValue)) continue
+        const discValue = (ancestorValue as Record<string, unknown>)[du.discriminatorKey]
+        if (discValue === undefined) {
+          return false
+        }
+        if (!du.isVariantSelected(discValue)) {
+          return false
+        }
+        const variantDefault = du.getVariantDefault(discValue)
+        if (!isPlainRecord(variantDefault)) continue
+        if (typeof nextSeg !== 'string') continue
+        if (!(nextSeg in (variantDefault as Record<string, unknown>))) {
+          return false
+        }
+      }
     }
 
     // Discriminated-union variant transitions. Writing a discriminator
@@ -1167,6 +1540,19 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
                   meta
                 )
               }
+              // Disc value isn't a known variant literal. Storage at
+              // the union path becomes a stub holding only the disc
+              // key — prior variant body dropped, no first-variant-
+              // default leak. Validation surfaces the issue via Zod's
+              // natural invalid_union_discriminator at parentPath.
+              return reshapeUnionVariant(
+                parentPath,
+                oldValue,
+                value,
+                { [last]: value },
+                undefined,
+                meta
+              )
             }
           }
         }
@@ -1176,14 +1562,15 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
         const selfDU = schema.getUnionDiscriminatorAtPath(path)
         if (selfDU !== undefined) {
           const valueRecord = value as Record<string, unknown>
-          const discValue = valueRecord[selfDU.discriminatorKey]
+          const discKey = selfDU.discriminatorKey
+          const discValue = valueRecord[discKey]
+          const currentUnionValue = getAtPath(form.value, path)
+          const oldDiscValue = isPlainRecord(currentUnionValue)
+            ? (currentUnionValue as Record<string, unknown>)[discKey]
+            : undefined
           if (discValue !== undefined) {
             const variantDefault = selfDU.getVariantDefault(discValue)
             if (variantDefault !== undefined && isPlainRecord(variantDefault)) {
-              const currentUnionValue = getAtPath(form.value, path)
-              const oldDiscValue = isPlainRecord(currentUnionValue)
-                ? (currentUnionValue as Record<string, unknown>)[selfDU.discriminatorKey]
-                : undefined
               return reshapeUnionVariant(
                 path,
                 oldDiscValue,
@@ -1193,7 +1580,24 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
                 meta
               )
             }
+            // Consumer supplied a disc value that's not a known
+            // variant. Stub holds only the disc key; non-disc consumer
+            // keys are dropped (consumerOverrides = undefined) so
+            // foreign fields don't leak into form.values.
+            return reshapeUnionVariant(
+              path,
+              oldDiscValue,
+              discValue,
+              { [discKey]: discValue },
+              undefined,
+              meta
+            )
           }
+          // Consumer wrote a whole-union value with NO discriminator.
+          // The form is "between selections" — empty stub {} ; every
+          // consumer key is dropped (no auto-merge with the first-
+          // variant default).
+          return reshapeUnionVariant(path, oldDiscValue, undefined, {}, undefined, meta)
         }
       }
     }
@@ -1241,8 +1645,26 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     }
     const nextForm = setAtPathWithSchemaFill(form.value, schema, path, completedValue) as F
     applyFormReplacement(nextForm, meta)
-    if (fieldValidationMode === 'change') {
-      scheduleFieldValidation(path, false /* debounced */)
+    // Variant-memory bookkeeping for array structural mutations. The
+    // field-array helpers tag each op with an `arrayOp` describing
+    // which indices shifted; raw whole-array setValues (`setValue
+    // ('events', [...])`) clear all memory under the array path
+    // because identity bookkeeping was lost wholesale. Memory keyed
+    // by absolute index would otherwise bleed onto new occupants of
+    // those indices on a future variant switch.
+    if (meta?.arrayOp !== undefined) {
+      applyArrayOpToMemory(path, meta.arrayOp)
+    } else if (Array.isArray(value) && Array.isArray(currentValue)) {
+      clearVariantMemoryUnderPath(path)
+    }
+    const effectiveModeAfterWrite = meta?.instance?.validateOn ?? fieldValidationMode
+    if (effectiveModeAfterWrite === 'change') {
+      scheduleFieldValidation(path, false /* debounced */, {
+        ...(meta?.instance?.validateOn !== undefined ? { mode: meta.instance.validateOn } : {}),
+        ...(meta?.instance?.debounceMs !== undefined
+          ? { debounceMs: meta.instance.debounceMs }
+          : {}),
+      })
     }
     return true
   }
@@ -1292,18 +1714,22 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // parentPath)` returns a Vue reactive proxy into the live tree
     // (form is `ref(initialData)`); after the upcoming `form.value =
     // nextForm` overwrites the union path, the proxy still points to
-    // the orphaned raw target. JSON-cycle through the proxy reads to
-    // produce a plain-object copy detached from reactivity — form
-    // values are JSON-serializable by construction (slim primitive
-    // write gate enforces this). `structuredClone` does NOT work
-    // here: it rejects Vue's Proxy with `DataCloneError`. Skip when
-    // `oldDiscValue` is undefined (initial state had no
+    // the orphaned raw target. `cloneVariantSnapshot` walks the
+    // subtree, calling `toRaw` at each level to bypass Vue reactivity
+    // and preserves `BigInt`, `Date`, `Map`, `Set` natively — types
+    // Zod schemas can validate at leaves but the prior `JSON.parse(
+    // JSON.stringify(...))` cycle either crashed on (BigInt) or
+    // silently degraded (Date → ISO string, Map/Set → `{}`).
+    // `structuredClone` won't work as a one-shot replacement: nested
+    // reactive children stored as Proxies cause `DataCloneError`.
+    // Skip when `oldDiscValue` is undefined (initial state had no
     // discriminator) — nothing meaningful to remember.
     let baseline: unknown = variantDefault
     let restoredBlanks: PathKey[] | undefined
-    if (rememberVariants && !sameDisc) {
+    const effectiveRemember = meta?.instance?.rememberVariants ?? rememberVariants
+    if (effectiveRemember && !sameDisc) {
       if (oldDiscValue !== undefined) {
-        const currentValue: unknown = JSON.parse(JSON.stringify(getAtPath(form.value, parentPath)))
+        const currentValue: unknown = cloneVariantSnapshot(getAtPath(form.value, parentPath))
         const outgoingBlanks: PathKey[] = []
         for (const k of blankPaths) {
           if (isPathKeyUnder(k, parentPath)) outgoingBlanks.push(k)
@@ -1331,10 +1757,19 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // Layer consumer overrides on top of the baseline (Case B).
     // For Case A (`consumerOverrides === undefined`), the baseline
     // is the final value.
-    const finalValue: unknown =
+    const layered: unknown =
       consumerOverrides !== undefined
         ? { ...(baseline as Record<string, unknown>), ...consumerOverrides }
         : baseline
+    // Stub-correct any nested DU paths inside `layered` whose disc
+    // value isn't a known variant — the consumer's Case B payload may
+    // carry a valid outer disc but a bad inner disc (e.g.
+    // `{step:'choose', inner:{kind:'BAD_INNER', a:'x'}}`). Without
+    // this, the inner mixed shape leaks through reshape; with it,
+    // every level ends in either a real variant or a disc-only stub.
+    const finalValue: unknown = applyDuStubs(schema as AbstractSchema<unknown, unknown>, layered, {
+      basePath: parentPath,
+    })
 
     // New blanks: restored from memory (preserves the user's prior
     // explicit blanks + numeric auto-marks together) or recomputed
@@ -1371,10 +1806,16 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       for (const k of newBlankPaths) blankPaths.add(k)
       return true
     }
+    // `setAtPathWithSchemaFill` (not the plain `setAtPath`) so that
+    // writing to an array index past current length pads positions in
+    // between with the schema's element default — otherwise a
+    // `setValue('events.10', { type: 'text', value: 'far' })` on a
+    // length-1 array would leave `events[1..9]` as `undefined` holes,
+    // which break downstream iteration and validation.
     const nextForm =
       parentPath.length === 0
         ? (finalValue as F)
-        : (setAtPath(form.value, parentPath, finalValue) as F)
+        : (setAtPathWithSchemaFill(form.value, schema, parentPath, finalValue) as F)
     // Sync-validate AHEAD of the form mutation when the schema
     // permits it. Both writes (schemaErrors + form.value) then land
     // in the same Vue reactive batch, so a single render emits the
@@ -1391,7 +1832,8 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // we detect that with `instanceof Promise` and fall through to
     // the existing debounced async pipeline in that case.
     let appliedSync = false
-    if (fieldValidationMode === 'change') {
+    const reshapeMode = meta?.instance?.validateOn ?? fieldValidationMode
+    if (reshapeMode === 'change') {
       const syncOrPromise = schema.validateAtPath(finalValue, parentPath, { sync: true })
       if (!(syncOrPromise instanceof Promise)) {
         const reStamped = syncOrPromise.success
@@ -1415,8 +1857,13 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     }
     applyFormReplacement(nextForm, meta)
     for (const k of newBlankPaths) blankPaths.add(k)
-    if (fieldValidationMode === 'change' && !appliedSync) {
-      scheduleFieldValidation(parentPath, false /* debounced */)
+    if (reshapeMode === 'change' && !appliedSync) {
+      scheduleFieldValidation(parentPath, false /* debounced */, {
+        ...(meta?.instance?.validateOn !== undefined ? { mode: meta.instance.validateOn } : {}),
+        ...(meta?.instance?.debounceMs !== undefined
+          ? { debounceMs: meta.instance.debounceMs }
+          : {}),
+      })
     }
     return true
   }
@@ -1433,8 +1880,14 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
    * latest-keystroke value is what matters, not whichever value
    * tripped the timer scheduler N milliseconds ago.
    */
-  function scheduleFieldValidation(path: Path, immediate: boolean): void {
-    if (fieldValidationMode === 'submit') return
+  function scheduleFieldValidation(
+    path: Path,
+    immediate: boolean,
+    override?: { readonly mode?: ValidateOn; readonly debounceMs?: number }
+  ): void {
+    const effectiveMode = override?.mode ?? fieldValidationMode
+    if (effectiveMode === 'submit') return
+    const effectiveDebounce = override?.debounceMs ?? fieldValidationDebounceMs
     const { key } = canonicalizePath(path)
     const prev = fieldValidationState.get(key)
     if (prev !== undefined) {
@@ -1449,8 +1902,31 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       fresh.timer = null
       if (controller.signal.aborted) return
       const data = getAtPath(form.value, path)
-      activeValidations.value += 1
-      incFieldValidation(key)
+      // Defense-in-depth: the increments below trigger reactive
+      // subscribers (sync watchers on `api.meta.validating` or
+      // `api.fields.X.validating`). If one of those subscribers throws,
+      // the Promise chain whose `.finally` does the decrements never
+      // starts, leaking the per-path counter — `validating` would
+      // stay true forever, and the mount-gate's
+      // `pathHasAsyncValidation` would report a permanently-pending
+      // verdict. Roll back the increments that succeeded on a sync
+      // throw before letting the error propagate.
+      let activeIncremented = false
+      try {
+        activeValidations.value += 1
+        activeIncremented = true
+        incFieldValidation(key)
+      } catch (err) {
+        // `incFieldValidation` is the last statement above and is
+        // structurally a `Map.set` — if it throws, it threw before the
+        // map entry was written, so there's nothing to roll back on the
+        // field counter. The only rollback that matters is the global
+        // `activeValidations` increment that happened on the first line.
+        if (activeIncremented) {
+          activeValidations.value = Math.max(0, activeValidations.value - 1)
+        }
+        throw err
+      }
       void Promise.resolve()
         .then(() => schema.validateAtPath(data, path))
         .then((response) => {
@@ -1493,10 +1969,10 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // punt to the next macrotask (browsers also clamp to ~4 ms), and
     // the indirection serves no purpose when the consumer asked for
     // "no debounce." Run synchronously like the `immediate` branch.
-    if (immediate || fieldValidationDebounceMs === 0) {
+    if (immediate || effectiveDebounce === 0) {
       run()
     } else {
-      fresh.timer = setTimeout(run, fieldValidationDebounceMs)
+      fresh.timer = setTimeout(run, effectiveDebounce)
     }
   }
 
@@ -1580,6 +2056,8 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // (it shouldn't, but defensive) doesn't keep the registry alive
     // through stale path entries on a disposed store.
     persistOptIns.clear()
+    noSyncPaths.clear()
+    noSyncPathCounts.clear()
   }
 
   function getValueAtPath(path: Path): unknown {
@@ -1825,7 +2303,11 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     touchFieldRecord(key, path, { connected: true })
   }
 
-  function markFocused(path: Path, focused: boolean): void {
+  function markFocused(
+    path: Path,
+    focused: boolean,
+    meta?: { readonly instance?: WriteMeta['instance'] }
+  ): void {
     const { key } = canonicalizePath(path)
     touchFieldRecord(key, path, {
       focused,
@@ -1837,8 +2319,14 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // On blur (focused → false), `validateOn: 'blur'` fires an
     // immediate (no-debounce) validation for this path. Ignored for
     // change/submit modes so behaviour matches the declared config.
-    if (!focused && fieldValidationMode === 'blur') {
-      scheduleFieldValidation(path, true /* immediate */)
+    const focusMode = meta?.instance?.validateOn ?? fieldValidationMode
+    if (!focused && focusMode === 'blur') {
+      scheduleFieldValidation(path, true /* immediate */, {
+        ...(meta?.instance?.validateOn !== undefined ? { mode: meta.instance.validateOn } : {}),
+        ...(meta?.instance?.debounceMs !== undefined
+          ? { debounceMs: meta.instance.debounceMs }
+          : {}),
+      })
     }
   }
 
@@ -1893,11 +2381,28 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // `useForm({ defaultValues: ... })`. The structural-completeness
     // invariant covers post-write correctness; preserving construction
     // defaults across reset is a separate semantic the consumer expects.
-    const next = schema.getDefaultValues({
+    //
+    // Pre-merge sparse constraints through `mergeStructural` BEFORE
+    // calling `getDefaultValues`, MIRRORING construction (line ~999).
+    // Without this, a sparse `defaultValues` like `{ pickup: { country:
+    // 'US' } }` reaches the adapter without its sibling-fill, and the
+    // adapter's `useDefaultSchemaValues` branch returns
+    // `success: true` even though the FILLED form
+    // (`{ pickup: { country: 'US', line1: '', city: '', ... } }`)
+    // violates `.min(1)` refinements on those siblings. Construction
+    // pre-fills, so it sees `success: false` correctly. Reset must
+    // do the same to keep the two responses byte-equivalent.
+    const resetSource = nextDefaultValues ?? defaultValues
+    const completedResetConstraints =
+      resetSource === undefined
+        ? undefined
+        : (mergeStructural(schema, [], resetSource) as DeepPartial<WriteShape<F>>)
+    const resetResponse = schema.getDefaultValues({
       useDefaultSchemaValues: true,
-      constraints: nextDefaultValues ?? defaultValues,
+      constraints: completedResetConstraints,
       strict,
-    }).data
+    })
+    const next = resetResponse.data
     // Replace form in one shot — applyFormReplacement will emit diffAndApply
     // patches and touch field records for every changed leaf.
     applyFormReplacement(next)
@@ -1933,6 +2438,67 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // which preserves them).
     schemaErrors.clear()
     userErrors.clear()
+    // Re-derive schemaErrors from the post-reset state under strict mode,
+    // mirroring construction-time validation (line ~1338). Without this,
+    // reset clears the error store but never re-runs validation — so a
+    // form mounted with invalid defaults (e.g. empty required strings)
+    // would surface as `valid: true` immediately after reset even though
+    // the values it landed back on are the same INVALID defaults it
+    // mounted with. `field.valid` aggregates over schemaErrors and would
+    // otherwise come up empty, flipping every leaf green.
+    //
+    // Gated on `strict` to honor the same opt-out construction uses:
+    // a non-strict form opted out of construction-time validation
+    // explicitly, and post-reset behaviour follows suit.
+    if (strict && !resetResponse.success) {
+      setAllSchemaErrors(resetResponse.errors)
+    }
+    // `getDefaultValues` strips refinements before parsing (see
+    // `adapters/zod-v4/default-values.ts:290`) — it produces usable
+    // starting data, not refinement-level verdicts. So `.min(1)` /
+    // `.email()` / etc. failures on the post-reset defaults DON'T
+    // surface via the sync re-derive above. Run a synchronous
+    // full-schema parse against the post-reset form value to populate
+    // refinement errors IMMEDIATELY (no flash where step titles flip
+    // green between reset() returning and the async pass landing).
+    // Async-only verdicts can't surface this way (adapter returns a
+    // Promise) — they're handled by the queueMicrotask below.
+    //
+    // Construction has the same gap mount-side, but the flash is
+    // invisible: the form mounts before the user is looking, errors
+    // land within a microtask, and the UI never has time to render
+    // the empty-errors state.
+    if (strict) {
+      const syncResult = schema.validateAtPath(form.value, undefined, { sync: true })
+      if (!(syncResult instanceof Promise) && !syncResult.success) {
+        applySchemaErrorsForSubtree([], syncResult.errors)
+      }
+    }
+    // Restore the `firstValidationDone` gate to its construction-time
+    // value (line ~1233). Async-validating schemas init this flag to
+    // `false`, gating container `.valid` until the construction-time
+    // async pass completes. After mount the flag flips `true` via the
+    // watch on `activeValidations`. Across reset, leaving it `true`
+    // removes the gate AND clears errors AND the sync re-derive
+    // can't fill them (the zod-v4 adapter strips refinements in
+    // `getDefaultValues`, returns `success: true`; sync
+    // `validateAtPath` throws on schemas with always-running async
+    // refines and falls through to async-only). The window between
+    // `reset()` returning and the re-queued async pass landing reads
+    // `valid: true` for every container — the docs-site stepper
+    // demo's step titles turn green for ~600ms-1.5s. Restoring the
+    // gate keeps containers `valid: false` throughout that window.
+    firstValidationDone.value = !strict || schema.needsAsyncValidation?.() !== true
+    // Re-queue the async validation pass on the same gate construction
+    // uses (line ~1371). Picks up async-only verdicts the sync pass
+    // above can't reach (`.refine(async ...)` on
+    // `pickup.postalCode`, etc.). SSR skip mirrors construction —
+    // microtasks don't await before `renderToString` and would stamp
+    // `validating: true` into HTML the client won't reproduce.
+    const needsAsync = !ssr && strict && schema.needsAsyncValidation?.() === true
+    if (needsAsync) {
+      queueMicrotask(() => scheduleFieldValidation([], true /* immediate */))
+    }
     // Blow away touched/focused/blurred per field. connected stays as-is
     // (the DOM elements haven't detached — that's a separate concern from
     // form state) and updatedAt stamps to now.
@@ -1999,7 +2565,14 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       }
     }
 
-    // Leaf shortcut: direct originals hit means one setValueAtPath does it.
+    // Storage restore: leaf > container > nothing.
+    //
+    // Leaf shortcut: direct originals hit means one setValueAtPath does
+    // it. A miss falls through to the container case, which assembles a
+    // subtree from every original under the prefix. When neither
+    // matches — e.g. `resetField('')` (the form-level error path, never
+    // a storage slot) or `resetField('unknownPath')` — storage stays
+    // untouched but the cleanup below still runs.
     const leafEntry = originals.get(targetKey)
     if (leafEntry !== undefined) {
       const wrote = setValueAtPath(targetSegments, leafEntry.value)
@@ -2013,53 +2586,53 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
             `This is a bug in the construction pipeline.`
         )
       }
-      schemaErrors.delete(targetKey)
-      userErrors.delete(targetKey)
-      clearFieldRecordFlags(targetKey)
-      return
-    }
-
-    // Container case — reconstruct the subtree by walking originals for
-    // every leaf whose path is a descendant of `targetSegments`. We assemble
-    // the subtree first, then apply it in one setValueAtPath so diffAndApply
-    // sees a single coherent replacement (rather than N mutations).
-    //
-    // The iteration reads `entry.segments` directly; the alternative
-    // (JSON.parse on the Map key) both allocates and pays a parse cost per
-    // entry even on cold paths.
-    let subtree: unknown = undefined
-    let anyMatch = false
-    for (const [, entry] of originals) {
-      const leafSegments = entry.segments
-      if (!isPathPrefix(targetSegments, leafSegments)) continue
-      if (leafSegments.length === targetSegments.length) continue // covered by the leaf shortcut above
-      anyMatch = true
-      const relative = leafSegments.slice(targetSegments.length)
-      if (subtree === undefined) {
-        // Seed root container type from the first relative segment. Numeric
-        // index → array; string key → plain object. setAtPath will stay
-        // consistent with that choice for the rest of the walk.
-        subtree = typeof relative[0] === 'number' ? [] : {}
+    } else {
+      // Container case — reconstruct the subtree by walking originals for
+      // every leaf whose path is a descendant of `targetSegments`. We assemble
+      // the subtree first, then apply it in one setValueAtPath so diffAndApply
+      // sees a single coherent replacement (rather than N mutations).
+      //
+      // The iteration reads `entry.segments` directly; the alternative
+      // (JSON.parse on the Map key) both allocates and pays a parse cost per
+      // entry even on cold paths.
+      let subtree: unknown = undefined
+      let anyMatch = false
+      for (const [, entry] of originals) {
+        const leafSegments = entry.segments
+        if (!isPathPrefix(targetSegments, leafSegments)) continue
+        if (leafSegments.length === targetSegments.length) continue // would have hit the leaf shortcut
+        anyMatch = true
+        const relative = leafSegments.slice(targetSegments.length)
+        if (subtree === undefined) {
+          // Seed root container type from the first relative segment. Numeric
+          // index → array; string key → plain object. setAtPath will stay
+          // consistent with that choice for the rest of the walk.
+          subtree = typeof relative[0] === 'number' ? [] : {}
+        }
+        subtree = setAtPath(subtree, relative, entry.value)
       }
-      subtree = setAtPath(subtree, relative, entry.value)
+      if (anyMatch) {
+        const wroteSubtree = setValueAtPath(targetSegments, subtree)
+        if (!wroteSubtree) {
+          console.error(
+            `[attaform] resetField: subtree write rejected at path '${targetKey}' — ` +
+              `originals contain values that don't satisfy the slim primitive shape. ` +
+              `This is a bug in the construction pipeline.`
+          )
+        }
+      }
     }
-    if (!anyMatch) return // nothing tracked under this prefix; no-op
 
-    const wroteSubtree = setValueAtPath(targetSegments, subtree)
-    if (!wroteSubtree) {
-      console.error(
-        `[attaform] resetField: subtree write rejected at path '${targetKey}' — ` +
-          `originals contain values that don't satisfy the slim primitive shape. ` +
-          `This is a bug in the construction pipeline.`
-      )
-    }
-
-    // Clear errors and reset field-record flags for the target + every
-    // descendant. Segments come from the stored records (each ValidationError
-    // carries its own `path`, each FieldRecord carries `path`), so neither
-    // loop has to `JSON.parse` the Map key. Both error stores walk in
-    // parallel — resetField is "fresh start at this subtree" semantics, so
-    // user-injected errors under the prefix go too.
+    // Cleanup runs regardless of whether storage was restored. Clears
+    // errors and field-record flags for the target path AND every
+    // descendant. `deleteErrorsUnderPrefix` covers the exact-path entry
+    // too (an array is a prefix of itself), so a leaf reset clears the
+    // single matching entry and a container reset sweeps the subtree.
+    // Crucially, this also makes `resetField('')` a usable form-level-
+    // error wipe: there's no storage at `''`, but errors do live there,
+    // and a consumer who calls resetField on that path expects them
+    // cleared. Same reasoning applies to consumer-set errors at any
+    // path the schema doesn't model.
     deleteErrorsUnderPrefix(schemaErrors, targetSegments)
     deleteErrorsUnderPrefix(userErrors, targetSegments)
     for (const [fieldKey, record] of Array.from(fields.entries())) {
@@ -2242,6 +2815,11 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     awaitPendingWrites,
     modules,
     persistOptIns,
+    isSensitivePath: resolvedIsSensitivePath,
+    segmentMatchesSensitive: resolvedSegmentMatchesSensitive,
+    noSyncPaths,
+    incrementNoSyncOptOut,
+    decrementNoSyncOptOut,
     coerceIndex,
     blankPaths,
     originalBlankPaths,

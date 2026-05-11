@@ -89,7 +89,7 @@ function mount(
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform())
   app.config.warnHandler = (msg: string) => {
     warnings.push(msg)
   }

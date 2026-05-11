@@ -31,18 +31,29 @@ const PATH_SEPARATOR = '.'
  * - Leaf types (string/number/literal/...) return `[]` when there's still
  *   path left, so a caller that asked for `firstName.middle` against a
  *   string schema gets an empty resolution rather than a wrong schema.
+ *
+ * `maxRecursionDepth` caps descent through `z.lazy()`. Once the walker
+ * has crossed `maxRecursionDepth + 1` lazy boundaries it returns `[]`,
+ * so writes at recursive paths deeper than the cap fall back to a
+ * permissive type gate.
  */
 export function getNestedZodSchemasAtPath(
   schema: z.ZodType,
-  path: string | readonly (string | number)[]
+  path: string | readonly (string | number)[],
+  maxRecursionDepth: number
 ): z.ZodType[] {
-  if (Array.isArray(path)) return walkSegments(schema, path.map(String))
+  if (Array.isArray(path)) return walkSegments(schema, path.map(String), maxRecursionDepth, 0)
   const pathString = path as string
   if (pathString.length === 0) return [schema]
-  return walkSegments(schema, pathString.split(PATH_SEPARATOR))
+  return walkSegments(schema, pathString.split(PATH_SEPARATOR), maxRecursionDepth, 0)
 }
 
-function walkSegments(schema: z.ZodType, segments: readonly string[]): z.ZodType[] {
+function walkSegments(
+  schema: z.ZodType,
+  segments: readonly string[],
+  maxDepth: number,
+  lazyDepth: number
+): z.ZodType[] {
   if (segments.length === 0) return [schema]
   const [head, ...rest] = segments
   if (head === undefined) return [schema]
@@ -57,26 +68,28 @@ function walkSegments(schema: z.ZodType, segments: readonly string[]): z.ZodType
       // to OWN keys so unknown segments resolve to "doesn't exist."
       if (!Object.hasOwn(shape, head)) return []
       const next = shape[head]
-      return next === undefined ? [] : walkSegments(next, rest)
+      return next === undefined ? [] : walkSegments(next, rest, maxDepth, lazyDepth)
     }
     case 'array':
-      return walkSegments(getArrayElement(schema as z.ZodArray), rest)
+      return walkSegments(getArrayElement(schema as z.ZodArray), rest, maxDepth, lazyDepth)
     case 'set':
       // Sets aren't position-indexed, so the `head` segment is just a
       // synthetic indexer (`[...path, 0]`) used to query the element
       // type. We descend into the value schema and consume the segment.
-      return walkSegments(getSetValueType(schema), rest)
+      return walkSegments(getSetValueType(schema), rest, maxDepth, lazyDepth)
     case 'record':
-      return walkSegments(getRecordValueType(schema), rest)
+      return walkSegments(getRecordValueType(schema), rest, maxDepth, lazyDepth)
     case 'tuple': {
       const index = Number(head)
       if (!Number.isInteger(index)) return []
       const items = getTupleItems(schema)
       const item = items[index]
-      return item === undefined ? [] : walkSegments(item, rest)
+      return item === undefined ? [] : walkSegments(item, rest, maxDepth, lazyDepth)
     }
     case 'union':
-      return getUnionOptions(schema).flatMap((opt) => walkSegments(opt, segments))
+      return getUnionOptions(schema).flatMap((opt) =>
+        walkSegments(opt, segments, maxDepth, lazyDepth)
+      )
     case 'discriminated-union': {
       // Filter options whose shape contains this segment. Fallback: if no
       // option matches (e.g. the discriminator key itself), try every option.
@@ -87,7 +100,7 @@ function walkSegments(schema: z.ZodType, segments: readonly string[]): z.ZodType
         return Object.hasOwn(shape, head)
       })
       const candidates = matching.length > 0 ? matching : options
-      return candidates.flatMap((opt) => walkSegments(opt, segments))
+      return candidates.flatMap((opt) => walkSegments(opt, segments, maxDepth, lazyDepth))
     }
     case 'optional':
     case 'nullable':
@@ -97,25 +110,28 @@ function walkSegments(schema: z.ZodType, segments: readonly string[]): z.ZodType
       // `catch` peels like a wrapper — descend into the inner schema.
       // The catch fallback only matters at parse time, not path lookup.
       const inner = unwrapInner(schema)
-      return inner === undefined ? [] : walkSegments(inner, segments)
+      return inner === undefined ? [] : walkSegments(inner, segments, maxDepth, lazyDepth)
     }
     case 'pipe': {
       const inner = unwrapPipe(schema)
-      return inner === undefined ? [] : walkSegments(inner, segments)
+      return inner === undefined ? [] : walkSegments(inner, segments, maxDepth, lazyDepth)
     }
     case 'lazy': {
-      // Lazy transparently descends — `assertSupportedKinds` guarantees
-      // the tree is finite before we get here.
+      // Bump the lazy counter. Past the cap, return [] so callers fall
+      // back to permissive behaviour at recursive paths beyond the cap.
+      if (lazyDepth >= maxDepth) return []
       const inner = unwrapLazy(schema)
-      return inner === undefined ? [] : walkSegments(inner, segments)
+      return inner === undefined ? [] : walkSegments(inner, segments, maxDepth, lazyDepth + 1)
     }
     case 'intersection': {
       // Union of both sides' resolutions — callers try each candidate,
       // matching parse-time semantics where a value must satisfy both.
       const left = getIntersectionLeft(schema)
       const right = getIntersectionRight(schema)
-      const leftResults = left === undefined ? [] : walkSegments(left, segments)
-      const rightResults = right === undefined ? [] : walkSegments(right, segments)
+      const leftResults =
+        left === undefined ? [] : walkSegments(left, segments, maxDepth, lazyDepth)
+      const rightResults =
+        right === undefined ? [] : walkSegments(right, segments, maxDepth, lazyDepth)
       return [...leftResults, ...rightResults]
     }
     // Leaf types — can't descend further.
@@ -136,6 +152,10 @@ function walkSegments(schema: z.ZodType, segments: readonly string[]): z.ZodType
     case 'promise':
     case 'custom':
     case 'template-literal':
+    case 'transform':
+      // ZodTransform is the input side of `z.preprocess(fn, inner)` and
+      // not directly walkable; callers reach `inner` through the
+      // surrounding pipe.
       return []
     default: {
       const _exhaustive: never = kind

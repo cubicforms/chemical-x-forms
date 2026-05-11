@@ -39,8 +39,6 @@ export const PERMISSIVE: ReadonlySet<SlimPrimitiveKind> = new Set<SlimPrimitiveK
   'set',
 ])
 
-const MAX_LAZY_DEPTH = 64
-
 /**
  * Walk a schema, emitting the union of slim primitive kinds it
  * accepts. Wrappers descend into their inner schema; unions union
@@ -52,13 +50,21 @@ const MAX_LAZY_DEPTH = 64
  * recursive cycle, custom z-types we don't recognise) return the
  * permissive set so the runtime gate doesn't reject legitimate
  * writes against shapes we can't introspect.
+ *
+ * `maxRecursionDepth` caps descent through `z.lazy()`: the counter
+ * bumps only when the walker crosses a lazy boundary, so wrapper
+ * stacks (`.optional().nullable()`) and union branches don't burn
+ * the budget. Past the cap, the walker returns the permissive set
+ * so writes at recursive paths beyond the cap aren't false-rejected.
  */
-export function slimPrimitivesOf(schema: z.ZodType): Set<SlimPrimitiveKind> {
-  return walk(schema, 0)
+export function slimPrimitivesOf(
+  schema: z.ZodType,
+  maxRecursionDepth: number
+): Set<SlimPrimitiveKind> {
+  return walk(schema, 0, maxRecursionDepth)
 }
 
-function walk(schema: z.ZodType, depth: number): Set<SlimPrimitiveKind> {
-  if (depth > MAX_LAZY_DEPTH) return new Set(PERMISSIVE)
+function walk(schema: z.ZodType, lazyDepth: number, maxDepth: number): Set<SlimPrimitiveKind> {
   const kind = kindOf(schema)
   switch (kind) {
     case 'string':
@@ -103,13 +109,15 @@ function walk(schema: z.ZodType, depth: number): Set<SlimPrimitiveKind> {
       return new Set(['set'])
     case 'optional': {
       const inner = unwrapInner(schema)
-      const innerSet = inner === undefined ? new Set<SlimPrimitiveKind>() : walk(inner, depth + 1)
+      const innerSet =
+        inner === undefined ? new Set<SlimPrimitiveKind>() : walk(inner, lazyDepth, maxDepth)
       innerSet.add('undefined')
       return innerSet
     }
     case 'nullable': {
       const inner = unwrapInner(schema)
-      const innerSet = inner === undefined ? new Set<SlimPrimitiveKind>() : walk(inner, depth + 1)
+      const innerSet =
+        inner === undefined ? new Set<SlimPrimitiveKind>() : walk(inner, lazyDepth, maxDepth)
       innerSet.add('null')
       return innerSet
     }
@@ -117,31 +125,34 @@ function walk(schema: z.ZodType, depth: number): Set<SlimPrimitiveKind> {
     case 'readonly':
     case 'catch': {
       const inner = unwrapInner(schema)
-      return inner === undefined ? new Set(PERMISSIVE) : walk(inner, depth + 1)
+      return inner === undefined ? new Set(PERMISSIVE) : walk(inner, lazyDepth, maxDepth)
     }
     case 'pipe': {
       // Use the INPUT side: writes are pre-transform values.
       const inner = unwrapPipe(schema)
-      return inner === undefined ? new Set(PERMISSIVE) : walk(inner, depth + 1)
+      return inner === undefined ? new Set(PERMISSIVE) : walk(inner, lazyDepth, maxDepth)
     }
     case 'lazy': {
+      // Bump on lazy crossing only; past the cap, fall back to
+      // permissive so recursive paths beyond the cap aren't gated.
+      if (lazyDepth >= maxDepth) return new Set(PERMISSIVE)
       const inner = unwrapLazy(schema)
-      return inner === undefined ? new Set(PERMISSIVE) : walk(inner, depth + 1)
+      return inner === undefined ? new Set(PERMISSIVE) : walk(inner, lazyDepth + 1, maxDepth)
     }
     case 'union':
     case 'discriminated-union': {
       const options = getUnionOptions(schema)
       const out = new Set<SlimPrimitiveKind>()
       for (const opt of options) {
-        for (const k of walk(opt as z.ZodType, depth + 1)) out.add(k)
+        for (const k of walk(opt as z.ZodType, lazyDepth, maxDepth)) out.add(k)
       }
       return out.size === 0 ? new Set(PERMISSIVE) : out
     }
     case 'intersection': {
       const left = getIntersectionLeft(schema)
       const right = getIntersectionRight(schema)
-      const leftSet = left === undefined ? new Set(PERMISSIVE) : walk(left, depth + 1)
-      const rightSet = right === undefined ? new Set(PERMISSIVE) : walk(right, depth + 1)
+      const leftSet = left === undefined ? new Set(PERMISSIVE) : walk(left, lazyDepth, maxDepth)
+      const rightSet = right === undefined ? new Set(PERMISSIVE) : walk(right, lazyDepth, maxDepth)
       const out = new Set<SlimPrimitiveKind>()
       for (const k of leftSet) if (rightSet.has(k)) out.add(k)
       return out
@@ -157,6 +168,8 @@ function walk(schema: z.ZodType, depth: number): Set<SlimPrimitiveKind> {
     case 'promise':
     case 'custom':
     case 'template-literal':
+    case 'transform':
+      return new Set(PERMISSIVE)
     default:
       return new Set(PERMISSIVE)
   }

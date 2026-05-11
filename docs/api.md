@@ -82,8 +82,8 @@ custom bundler pipeline.
 
 The reactive object returned by every `useForm()` call —
 `values`, `errors`, `fields`, `setValue`, `register`, `validate*`,
-`handleSubmit`, `meta`, `reset`, undo/redo, field-array helpers,
-imperative persistence.
+`handleSubmit`, `meta`, `history` (undo/redo), `reset`, field-array
+helpers, imperative persistence.
 
 → [Read the useForm return value](/docs/api/use-form-return)
 
@@ -91,7 +91,8 @@ imperative persistence.
 [Dynamic field arrays](/docs/recipes/dynamic-field-arrays) ·
 [Undo / redo](/docs/recipes/undo-redo) ·
 [Focus on error](/docs/recipes/focus-on-error) ·
-[Persistence](/docs/recipes/persistence)
+[Persistence](/docs/recipes/persistence) ·
+[Multi-tab sync](/docs/recipes/multi-tab-sync)
 
 ## Types
 

@@ -11,6 +11,7 @@ import type {
 } from '../../types/types-api'
 import { AttaformErrorCode } from '../../core/error-codes'
 import { getFieldMeta, getFieldMetaList } from './field-meta'
+import type { SchemaFactoryOptions } from '../../core/get-computed-schema'
 import { humanize } from '../../core/humanize'
 import { canonicalizePath, type Path, type PathKey } from '../../core/paths'
 import type { DeepPartial, GenericForm } from '../../types/types-core'
@@ -34,9 +35,12 @@ import {
   getTupleItems,
   getUnionOptions,
   kindOf,
+  readTransformFn,
   unwrapInner,
   unwrapLazy,
   unwrapPipe,
+  unwrapPipeIn,
+  unwrapPipeOut,
 } from './introspect'
 import { getNestedZodSchemasAtPath } from './path-walker'
 import { slimPrimitivesOf } from './slim-primitives'
@@ -235,20 +239,35 @@ function isLeafRequired(schema: z.ZodType, depth = 0): boolean {
  * data with the same library used elsewhere in the form runtime, or
  * exposing the adapter to a custom integration).
  *
- * Throws if the schema isn't Zod v4, or contains kinds the adapter
- * cannot represent (`z.promise`, `z.custom`, `z.templateLiteral`,
- * recursive `z.lazy(...)`).
+ * The returned factory accepts per-form `SchemaFactoryOptions` (notably
+ * `maxRecursionDepth`); the adapter closure bakes them into every
+ * downstream walk so a per-form override can lift the cap without
+ * touching the app-level default.
+ *
+ * Throws if the schema isn't Zod v4 or contains kinds the adapter
+ * cannot represent (`z.promise`, `z.custom`, `z.templateLiteral`).
+ * Recursive `z.lazy(...)` is supported — the runtime walks bound their
+ * descent via `maxRecursionDepth`.
  */
-export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infer<FormSchema>>(
+export function zodV4Adapter<
+  FormSchema extends z.ZodObject,
+  Form extends z.input<FormSchema>,
+  GetValueFormType extends z.output<FormSchema> = z.output<FormSchema>,
+>(
   rootSchema: FormSchema
-): (formKey: FormKey) => AbstractSchema<Form, Form> {
+): (formKey: FormKey, options: SchemaFactoryOptions) => AbstractSchema<Form, GetValueFormType> {
   assertZodVersion(rootSchema)
   // Fail fast at adapter construction if the schema uses kinds we can't
-  // represent (z.promise / z.custom / z.templateLiteral) or a recursive
-  // z.lazy(). Errors carry the dotted path to the offending node.
+  // represent (z.promise / z.custom / z.templateLiteral). Errors carry
+  // the dotted path to the offending node. Recursive lazies pass — the
+  // runtime walks cap their descent via `maxRecursionDepth`.
   assertSupportedKinds(rootSchema)
 
-  return (formKey: FormKey): AbstractSchema<Form, Form> => {
+  return (
+    formKey: FormKey,
+    options: SchemaFactoryOptions
+  ): AbstractSchema<Form, GetValueFormType> => {
+    const maxRecursionDepth = options.maxRecursionDepth
     // Per-adapter `isLeafAtPath` cache. Lifetime = one adapter instance
     // (one per `useForm()` call). Memoises the slim-primitive walk so the
     // leaf-aware proxy traps don't re-walk the schema on every read.
@@ -266,11 +285,14 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         return asyncValidationFlag
       },
 
-      getDefaultValues(config): ReturnType<AbstractSchema<Form, Form>['getDefaultValues']> {
+      getDefaultValues(
+        config
+      ): ReturnType<AbstractSchema<Form, GetValueFormType>['getDefaultValues']> {
         const { data } = getDefaultValuesFromZodSchema<Form>({
           schema: rootSchema,
           useDefaultSchemaValues: config.useDefaultSchemaValues,
           constraints: config.constraints,
+          maxRecursionDepth,
         })
 
         if (config.strict !== false) {
@@ -285,9 +307,18 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
           // let the runtime's first mutation kick off `validateAtPath`,
           // which uses `safeParseAsync`.
           try {
-            const strictResult = rootSchema.safeParse(data) as z.ZodSafeParseResult<Form>
+            const strictResult = rootSchema.safeParse(
+              data
+            ) as z.ZodSafeParseResult<GetValueFormType>
             if (strictResult.success) {
-              return { data: strictResult.data, errors: undefined, success: true, formKey }
+              // Storage holds the pre-transform `z.input` view, so we
+              // return the original `data` (already filled by
+              // `getDefaultValuesFromZodSchema`) rather than
+              // `strictResult.data` (the post-transform `z.output`).
+              // For schemas without `.transform()` the two coincide;
+              // for schemas with one the storage stays the honest input
+              // view that `form.values` reflects.
+              return { data, errors: undefined, success: true, formKey }
             }
             return {
               data,
@@ -307,7 +338,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
             // regardless).
             try {
               const syncOnly = stripAsyncChecks(rootSchema)
-              const syncResult = syncOnly.safeParse(data) as z.ZodSafeParseResult<Form>
+              const syncResult = syncOnly.safeParse(data) as z.ZodSafeParseResult<GetValueFormType>
               if (syncResult.success) {
                 // Sync portion is clean; only async refines could
                 // fail. Mount cleanly and let the post-mount async
@@ -340,12 +371,68 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         return { data, errors: undefined, success: true, formKey }
       },
 
+      normalizeWriteValueAtPath(value, path) {
+        // Zod expresses input normalization as `z.preprocess(fn,
+        // inner)`, which desugars to a pipe whose `def.in` is a bare
+        // ZodTransform (no schema constraint) and `def.out` is the
+        // inner schema. We walk to the schema at `path` and apply
+        // each preprocess wrapper found there, descending through
+        // nested stacks. Post-validation transforms (e.g.
+        // `z.string().transform(fn)`) have `def.out` as the transform
+        // and `def.in` as the real schema — those aren't input
+        // normalizations and are left untouched.
+        const candidates =
+          path.length === 0
+            ? [rootSchema]
+            : getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
+        // Multi-candidate paths (union descent) — pick the first; the
+        // adapter's first-success convention matches getDefaultAtPath.
+        const [first] = candidates
+        if (first === undefined) return value
+        let current: z.ZodType = first
+        let result: unknown = value
+        // Bounded loop matches unwrapToDiscriminatedUnion's 64-step
+        // cap — a deeper preprocess stack is almost certainly a
+        // recursive z.lazy cycle, not legitimate.
+        for (let i = 0; i < 64; i++) {
+          if (kindOf(current) !== 'pipe') break
+          const pipeIn = unwrapPipeIn(current)
+          if (pipeIn === undefined || kindOf(pipeIn) !== 'transform') break
+          const fn = readTransformFn(pipeIn)
+          if (typeof fn !== 'function') break
+          let next: unknown
+          try {
+            next = fn(result)
+          } catch (cause) {
+            // User's normalization fn threw. Don't silently swallow —
+            // wrap with a path-tagged message and re-raise so the
+            // caller (setValueAtPath) sees it. The user wrote the
+            // fn, they own the bug; we just make it diagnosable.
+            throw new Error(
+              `[attaform] input normalization at path "${path.join('.')}" threw — write rejected.`,
+              { cause }
+            )
+          }
+          if (next instanceof Promise) {
+            // Async preprocess can't run at write time (setValue is
+            // sync). Leave the input as-is; validation will run the
+            // preprocess properly during parse.
+            return value
+          }
+          result = next
+          const out = unwrapPipeOut(current)
+          if (out === undefined) break
+          current = out
+        }
+        return result
+      },
+
       getDefaultAtPath(path) {
         // For empty path, the "default at root" is the schema's full
         // default — return the deriveDefault of the root, not the slim-
         // schema validate-then-fix loop (that's getDefaultValues' job).
-        if (path.length === 0) return deriveDefault(rootSchema, true)
-        const [first] = getNestedZodSchemasAtPath(rootSchema, path)
+        if (path.length === 0) return deriveDefault(rootSchema, true, maxRecursionDepth)
+        const [first] = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
         if (first === undefined) return undefined
         // STRUCTURAL default: peel `.optional()` / `.nullable()` so the
         // result is the inner shape's default (`''` for an optional
@@ -359,12 +446,12 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         // First candidate matches validateAtPath's first-success semantic
         // and getDefaultValuesFromZodSchema's line-256 first-candidate
         // behavior.
-        return deriveDefault(unwrapStructuralWrappers(first), true)
+        return deriveDefault(unwrapStructuralWrappers(first), true, maxRecursionDepth)
       },
 
       arrayShapeAtPath(path) {
         if (path.length === 0) return undefined
-        const [first] = getNestedZodSchemasAtPath(rootSchema, path)
+        const [first] = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
         if (first === undefined) return undefined
         const peeled = peelAllWrappers(first)
         const kind = kindOf(peeled)
@@ -374,14 +461,14 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
       },
 
       getSchemasAtPath(path) {
-        const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+        const resolved = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
         return resolved.map(
           (schema) =>
             ({
               fingerprint: () => fingerprintZodSchema(schema),
               needsAsyncValidation: () => containsAsyncRefine(schema),
               getDefaultValues: () => ({
-                data: deriveDefault(schema, true),
+                data: deriveDefault(schema, true, maxRecursionDepth),
                 errors: undefined,
                 success: true,
                 formKey,
@@ -402,7 +489,9 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
                   formKey,
                 }
               },
-            }) as unknown as ReturnType<AbstractSchema<Form, Form>['getSchemasAtPath']>[number]
+            }) as unknown as ReturnType<
+              AbstractSchema<Form, GetValueFormType>['getSchemasAtPath']
+            >[number]
         )
       },
 
@@ -411,14 +500,14 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         // multiple) and union their slim-primitive sets. Empty path
         // is the root form: always an object.
         if (path.length === 0) return new Set(['object'])
-        const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+        const resolved = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
         // Path doesn't resolve in the schema → no kinds accepted.
         // The gate's membership check rejects every kind against an
         // empty set, blocking writes to typo / unknown paths.
         if (resolved.length === 0) return new Set()
         const out = new Set<SlimPrimitiveKind>()
         for (const candidate of resolved) {
-          for (const k of slimPrimitivesOf(candidate)) out.add(k)
+          for (const k of slimPrimitivesOf(candidate, maxRecursionDepth)) out.add(k)
         }
         return out
       },
@@ -448,7 +537,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         // check never sees the root path in `blankPaths`
         // (the set tracks primitive leaves), so the value is academic.
         if (path.length === 0) return true
-        const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+        const resolved = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
         if (resolved.length === 0) return false
         // Every candidate must be required for the path overall to be
         // required — matches the union "any-branch-permissive" rule
@@ -457,7 +546,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
       },
 
       getFieldMetaAtPath(path): ResolvedFieldMeta {
-        return resolveFieldMetaAtPath(rootSchema, path)
+        return resolveFieldMetaAtPath(rootSchema, path, maxRecursionDepth)
       },
 
       getUnionDiscriminatorAtPath(path): UnionDiscriminatorContext | undefined {
@@ -470,7 +559,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         const candidates =
           path.length === 0
             ? [rootSchema as z.ZodType]
-            : getNestedZodSchemasAtPath(rootSchema, path)
+            : getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
         let matchedUnion: z.ZodType | undefined
         for (const candidate of candidates) {
           const du = unwrapToDiscriminatedUnion(candidate)
@@ -482,6 +571,14 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         const discKey = getDiscriminator(matchedUnion)
         if (discKey === undefined) return undefined
         const options = getDiscriminatedOptions(matchedUnion)
+        const literalSet = new Set<unknown>()
+        for (const opt of options) {
+          const shape = getObjectShape(opt)
+          const litSchema = shape[discKey]
+          if (litSchema === undefined) continue
+          if (kindOf(litSchema) !== 'literal') continue
+          for (const v of getLiteralValues(litSchema)) literalSet.add(v)
+        }
         return {
           discriminatorKey: discKey,
           getVariantDefault(value: unknown): unknown {
@@ -491,9 +588,12 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
               if (litSchema === undefined) continue
               if (kindOf(litSchema) !== 'literal') continue
               const literalValues = getLiteralValues(litSchema)
-              if (literalValues.includes(value)) return deriveDefault(opt, true)
+              if (literalValues.includes(value)) return deriveDefault(opt, true, maxRecursionDepth)
             }
             return undefined
+          },
+          isVariantSelected(value: unknown): boolean {
+            return literalSet.has(value)
           },
         }
       },
@@ -502,7 +602,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         data,
         path,
         options
-      ): ReturnType<AbstractSchema<Form, Form>['validateAtPath']> {
+      ): ReturnType<AbstractSchema<Form, GetValueFormType>['validateAtPath']> {
         // Sync attempt: when `options.sync === true`, try `safeParse`
         // (synchronous). It throws on async refines / pipes /
         // transforms; we catch and fall through to `safeParseAsync`.
@@ -518,9 +618,9 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
         }
         return runAsync()
 
-        function runSync(): ValidationResponse<Form> {
+        function runSync(): ValidationResponse<GetValueFormType> {
           if (path === undefined) {
-            const result = rootSchema.safeParse(data) as z.ZodSafeParseResult<Form>
+            const result = rootSchema.safeParse(data) as z.ZodSafeParseResult<GetValueFormType>
             return result.success
               ? { data: result.data, errors: undefined, success: true, formKey }
               : {
@@ -530,22 +630,29 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
                   formKey,
                 }
           }
-          const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+          const resolved = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
           if (resolved.length === 0) return pathNotFound(path)
           const aggregated: ValidationError[] = []
           for (const candidate of resolved) {
             const result = candidate.safeParse(data)
             if (result.success) {
-              return { data: result.data as Form, errors: undefined, success: true, formKey }
+              return {
+                data: result.data as GetValueFormType,
+                errors: undefined,
+                success: true,
+                formKey,
+              }
             }
             aggregated.push(...zodIssuesToValidationErrors(result.error.issues, formKey))
           }
           return { data: undefined, errors: aggregated, success: false, formKey }
         }
 
-        async function runAsync(): Promise<ValidationResponse<Form>> {
+        async function runAsync(): Promise<ValidationResponse<GetValueFormType>> {
           if (path === undefined) {
-            const result = (await rootSchema.safeParseAsync(data)) as z.ZodSafeParseResult<Form>
+            const result = (await rootSchema.safeParseAsync(
+              data
+            )) as z.ZodSafeParseResult<GetValueFormType>
             return result.success
               ? { data: result.data, errors: undefined, success: true, formKey }
               : {
@@ -555,7 +662,7 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
                   formKey,
                 }
           }
-          const resolved = getNestedZodSchemasAtPath(rootSchema, path)
+          const resolved = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
           if (resolved.length === 0) return pathNotFound(path)
           // Sequential await — parallel parses would run every
           // branch's async side effects on a value only one branch
@@ -564,14 +671,19 @@ export function zodV4Adapter<FormSchema extends z.ZodObject, Form extends z.infe
           for (const candidate of resolved) {
             const result = await candidate.safeParseAsync(data)
             if (result.success) {
-              return { data: result.data as Form, errors: undefined, success: true, formKey }
+              return {
+                data: result.data as GetValueFormType,
+                errors: undefined,
+                success: true,
+                formKey,
+              }
             }
             aggregated.push(...zodIssuesToValidationErrors(result.error.issues, formKey))
           }
           return { data: undefined, errors: aggregated, success: false, formKey }
         }
 
-        function pathNotFound(p: Path): ValidationResponse<Form> {
+        function pathNotFound(p: Path): ValidationResponse<GetValueFormType> {
           return {
             data: undefined,
             errors: [
@@ -790,6 +902,7 @@ function walkForMeta(
       case 'promise':
       case 'custom':
       case 'template-literal':
+      case 'transform':
         return
     }
   } finally {
@@ -835,9 +948,16 @@ function consumePayload(
  * registration order matches tree-walk order, and the mapping pairs
  * correctly.
  */
-function resolveFieldMetaAtPath(rootSchema: z.ZodType, path: Path): ResolvedFieldMeta {
+function resolveFieldMetaAtPath(
+  rootSchema: z.ZodType,
+  path: Path,
+  maxRecursionDepth: number
+): ResolvedFieldMeta {
   const lastSegment = path.length === 0 ? '' : (path[path.length - 1] as string | number)
-  const candidates = path.length === 0 ? [rootSchema] : getNestedZodSchemasAtPath(rootSchema, path)
+  const candidates =
+    path.length === 0
+      ? [rootSchema]
+      : getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
   const target = candidates[0]
   if (target === undefined) {
     return {

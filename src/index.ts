@@ -176,6 +176,17 @@ export {
 // the library default for the unhandled cases).
 export { defaultShouldShowErrors } from './runtime/core/should-show-errors'
 
+// Library-default list of identifier name stems flagged as sensitive
+// (password, ssn, cvv, token, etc.). Compose with `sensitiveNames` at
+// the global or per-form level to extend:
+//
+//   useForm({ sensitiveNames: [...DEFAULT_SENSITIVE_NAMES, 'mrn'] })
+//
+// The resolved list gates persistence writes, multi-tab sync
+// broadcasts, AND the DevTools redact walk — one configurable source
+// of truth for "what counts as sensitive" across every surface.
+export { DEFAULT_SENSITIVE_NAMES } from './runtime/core/persistence/sensitive-names'
+
 // API-error parser. Pure transformation: takes a server response in
 // the common shapes (wrapped envelope, raw details record) and returns
 // `ValidationError[]` + an `ok` discriminator for malformed payloads.

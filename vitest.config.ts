@@ -21,6 +21,11 @@ import { defineConfig } from 'vitest/config'
  */
 export default defineConfig({
   test: {
+    // Global setup file: stubs `window.isSecureContext = true` so the
+    // secure-context gate doesn't disable multi-tab sync and built-in
+    // persistence in jsdom-backed tests, and resets the
+    // one-shot dev-warning dedup between tests.
+    setupFiles: ['./test/setup.ts'],
     // Shuffle test-file AND intra-file test order on every run. Surfaces
     // any implicit ordering dependency (a test leaking state, a module-
     // level side effect triggered by load order, etc.) that would

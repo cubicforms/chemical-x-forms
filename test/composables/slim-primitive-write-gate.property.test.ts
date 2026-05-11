@@ -42,7 +42,9 @@ describe('slim-primitive write gate — property: manifest sanity (v4)', () => {
   test.prop([arbSchema])(
     'manifest leaf accept-sets equal adapter.getSlimPrimitiveTypesAtPath',
     ({ schema, leaves }) => {
-      const adapter = zodAdapter(schema as z.ZodObject)('manifest-sanity')
+      const adapter = zodAdapter(schema as z.ZodObject)('manifest-sanity', {
+        maxRecursionDepth: 64,
+      })
       for (const leaf of leaves) {
         const adapterSet = adapter.getSlimPrimitiveTypesAtPath(leaf.path)
         expect([...adapterSet].sort()).toEqual([...leaf.acceptSet].sort())

@@ -7,9 +7,16 @@ description: "Map server-returned validation errors back into Attaform's reactiv
 
 Server-side rules the client doesn't know — "email already taken",
 "coupon expired", "we couldn't reach the payment provider" — surface
-as `errors` via a two-step pattern: parse the payload with
-`parseApiErrors`, write the result with `setFieldErrors` (or
-`addFieldErrors`).
+as `errors`. Two patterns, picked by what kind of error you're
+routing:
+
+- **Field-keyed errors** (server says "email already taken"): parse
+  the payload with `parseApiErrors`, write the result with
+  `setFieldErrors` (or `addFieldErrors`). Covered first.
+- **Form-level errors** (server says "capacity exceeded" with no
+  field to attach to): write the message to the form-level bucket
+  with `setFormErrors`. Covered in
+  [Non-field errors](#non-field-errors).
 
 ## The usual case
 
@@ -222,8 +229,63 @@ user-error store; merging is structural.
 
 ## Non-field errors
 
-Some server errors aren't tied to a field — rate limits, provider
-outages. They belong in `meta.submitError`, not `errors`:
+Some server failures aren't tied to a field — rate limits, provider
+outages, a thrown exception inside your submit handler. Two surfaces
+to pick from, depending on how you want them to behave.
+
+### `setFormErrors` — displayable, reactive
+
+For messages you intend to render in the UI, write to the form-level
+error bucket. It's a first-class part of `form.errors`: reactive
+across the proxy, the call form, the flat aggregate, and template
+serialisation.
+
+```ts
+const onSubmit = form.handleSubmit(async (values) => {
+  try {
+    await $fetch('/api/signup', { method: 'POST', body: values })
+  } catch (err) {
+    if (err instanceof Error) {
+      form.setFormErrors([{ message: err.message, code: 'api:signup' }])
+    }
+  }
+})
+```
+
+```vue
+<template>
+  <div v-if="form.errors('')" role="alert" class="form-banner">
+    <p v-for="e in form.errors('')" :key="e.message">{{ e.message }}</p>
+  </div>
+
+  <input v-register="form.register('email')" />
+  <button :disabled="form.meta.submitting">Sign up</button>
+</template>
+```
+
+The bucket is separate from field errors — a later `setFieldErrors`
+call won't wipe it, and `clearFieldErrors()` leaves it alone. Clear
+it explicitly with `form.clearFormErrors()` (or `form.setFormErrors([])`),
+or wait for `form.reset()` which clears the entire error store.
+
+`setFormErrors` REPLACES every form-level entry on each call, mirroring
+the `setFieldErrors` semantic. For "append one to whatever's already
+there," read the current bucket and write the concatenation:
+
+```ts
+const existing = form.errors('') ?? []
+form.setFormErrors([...existing, { message: 'extra', code: 'api:extra' }])
+```
+
+See [error display > form-level errors](/docs/recipes/error-display#form-level-errors)
+for the full read surface.
+
+### `meta.submitError` — raw throw, snapshot
+
+If the failure should bubble to imperative callers (so an
+`await submitHandler(event)` actually rejects) AND you want a
+lifecycle-tracked snapshot of the last submit's outcome, throw and
+let it land on `form.meta.submitError`:
 
 ```ts
 const onSubmit = form.handleSubmit(async (values) => {
@@ -241,6 +303,13 @@ const onSubmit = form.handleSubmit(async (values) => {
   </p>
 </template>
 ```
+
+`submitError` holds whatever value the most recent failed submission
+threw (typically an `Error`). It's a per-submit snapshot: a
+subsequent successful submission clears it; a subsequent failing one
+overwrites it. `setFormErrors` is the better pick when you want
+multiple coexisting messages, codes you can branch on, or
+declarative clearing alongside other error state.
 
 ## Untrusted payloads
 

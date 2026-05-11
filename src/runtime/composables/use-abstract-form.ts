@@ -3,7 +3,9 @@ import { buildFormApi } from '../core/build-form-api'
 import { createFormStore, type FormStore } from '../core/create-form-store'
 import {
   ANONYMOUS_FORM_KEY_PREFIX,
+  DEFAULT_MAX_RECURSION_DEPTH,
   DEFAULT_PERSISTENCE_DEBOUNCE_MS,
+  normalizeNumericOption,
   PERSISTENCE_KEY_PREFIX,
   RESERVED_KEY_PREFIX,
 } from '../core/defaults'
@@ -30,16 +32,24 @@ import {
   sweepNonConfiguredStandardStoresForOrphans,
   type PersistenceModule,
 } from '../core/persistence'
+import {
+  createIsSensitivePath,
+  createSegmentMatchesSensitive,
+} from '../core/persistence/sensitive-names'
 import { hashStableString } from '../core/hash'
+import { createMultiTabSyncModule, MULTI_TAB_SYNC_MODULE_KEY } from '../core/multi-tab-sync'
+import { isSecureContext, warnOnceInsecureContext } from '../core/insecure-context-warn'
 import { canonicalizePath, type Path, type PathKey } from '../core/paths'
 import { deleteAtPath, getAtPath, setAtPath, isPlainRecord } from '../core/path-walker'
 import { ensureAttaformInstalled } from '../core/plugin'
 import { kFormContext, kFormInstanceId, useRegistry } from '../core/registry'
+import { resolveShouldShowErrors } from '../core/should-show-errors'
 import { walkUnsetSentinels } from '../core/unset-walker'
 import type {
   AbstractSchema,
   AttaformDefaults,
   FormKey,
+  PersistConfig,
   PersistConfigOptions,
   UseFormReturnType,
   UseFormConfiguration,
@@ -95,29 +105,6 @@ export function useAbstractForm<
 
   const key = resolveFormKey(configuration.key)
 
-  // Resolve the schema (accepts either an AbstractSchema or a factory).
-  // Preserve both generics — dropping `GetValueFormType` here would make
-  // `state.schema.getSchemasAtPath(...)` return `AbstractSchema<_, Form>[]`
-  // for consumers whose schema intentionally produces a different runtime
-  // shape (e.g. an adapter that narrows via a transform).
-  const resolvedSchema = getComputedSchema(key, configuration.schema)
-
-  // Eager throw: persistence configured without an explicit `key:`. An
-  // anonymous synthetic key (`__atta:anon:*`) drifts across mounts (HMR /
-  // route changes / SSR↔CSR) and can collide between unrelated forms —
-  // refusing here keeps the namespace stable and forecloses on the
-  // future encrypted-backend case where collision becomes a key-derivation
-  // overlap. Throws in dev and prod alike. The error body carries the
-  // schema's top-level fields and a captured call-site so the offender
-  // is identifiable from the message alone.
-  if (configuration.persist !== undefined && configuration.key === undefined) {
-    throw new AnonPersistError({
-      cause: 'no-key',
-      schemaFields: extractSchemaFields(resolvedSchema),
-      callSite: captureUserCallSite(),
-    })
-  }
-
   // One FormStore per (app, formKey). Multiple useForm calls with the same
   // key resolve to the same instance — that's the shared-store semantic
   // for forms that explicitly opt in to a stable key.
@@ -136,8 +123,48 @@ export function useAbstractForm<
   // Per-form values always win for scalars; `validateOn` and `debounceMs`
   // resolve independently so consumers can set `debounceMs` globally
   // and override `validateOn` per-form. Every downstream read uses
-  // `merged` so the merge happens exactly once.
+  // `merged` so the merge happens exactly once. Runs BEFORE schema
+  // resolution so the merged `maxRecursionDepth` can thread into the
+  // adapter factory.
   const merged = mergeWithDefaults(registry.defaults, configuration)
+
+  // Resolve the schema (accepts either an AbstractSchema or a factory).
+  // Preserve both generics — dropping `GetValueFormType` here would make
+  // `state.schema.getSchemasAtPath(...)` return `AbstractSchema<_, Form>[]`
+  // for consumers whose schema intentionally produces a different runtime
+  // shape (e.g. an adapter that narrows via a transform). The factory
+  // receives the resolved per-form options (`maxRecursionDepth`) so the
+  // adapter can bake them into its walk closures.
+  //
+  // Sanitise the consumer-supplied value: `NaN` / `-Infinity` /
+  // non-numbers fall back to the library default with a dev-warn;
+  // negatives clamp to 0; non-integers floor; `Infinity` is allowed
+  // (disables the cap). The adapter's `>=` comparisons assume integer
+  // depth, so the normalisation prevents footguns at the boundary.
+  const maxRecursionDepth = normalizeNumericOption({
+    value: merged.maxRecursionDepth ?? DEFAULT_MAX_RECURSION_DEPTH,
+    source: 'useForm.maxRecursionDepth',
+    allowInfinity: true,
+    min: 0,
+    defaultValue: DEFAULT_MAX_RECURSION_DEPTH,
+  })
+  const resolvedSchema = getComputedSchema(key, configuration.schema, { maxRecursionDepth })
+
+  // Eager throw: persistence configured without an explicit `key:`. An
+  // anonymous synthetic key (`__atta:anon:*`) drifts across mounts (HMR /
+  // route changes / SSR↔CSR) and can collide between unrelated forms —
+  // refusing here keeps the namespace stable and forecloses on the
+  // future encrypted-backend case where collision becomes a key-derivation
+  // overlap. Throws in dev and prod alike. The error body carries the
+  // schema's top-level fields and a captured call-site so the offender
+  // is identifiable from the message alone.
+  if (configuration.persist !== undefined && configuration.key === undefined) {
+    throw new AnonPersistError({
+      cause: 'no-key',
+      schemaFields: extractSchemaFields(resolvedSchema),
+      callSite: captureUserCallSite(),
+    })
+  }
 
   const existing = registry.forms.get(key) as FormStore<Form, GetValueFormType> | undefined
   if (__DEV__ && existing !== undefined) {
@@ -152,6 +179,20 @@ export function useAbstractForm<
     // favour of the first's — matching what already happens (only
     // the first caller's config wires the FormStore).
     warnOnSchemaFingerprintMismatch(key, existing.schema, resolvedSchema)
+    // Persist is a single-IO-channel concern (one storage key, one
+    // debounce timer, one subscription). The first useForm call wires
+    // it; subsequent calls' `persist:` configurations are silently
+    // dropped. When the second caller passes a DIFFERENT persist
+    // config, that drop is a footgun: modal-team dev configures
+    // `'session'`, finds nothing in sessionStorage, debugs for an hour
+    // — the main-form team wired `'local'` first. Surface the divergence
+    // as a dev-warn so the surprise is explicit. `validateOn` /
+    // `debounceMs` / `coerce` / `rememberVariants` / `shouldShowErrors`
+    // are now per-instance, so they don't need this guard;
+    // `defaultValues` is intentionally first-wins (the live store
+    // state is what the modal should see); `strict` is construction-
+    // only and the seed has already fired.
+    warnOnPersistDivergence(key, existing, configuration.persist)
   }
   const state: FormStore<Form, GetValueFormType> =
     existing ?? buildFreshState<Form, GetValueFormType>(key, resolvedSchema, merged, registry)
@@ -194,21 +235,39 @@ export function useAbstractForm<
   if (existing === undefined && !registry.ssr) {
     if (merged.persist !== undefined && !persistDisabledByAnonRule) {
       const resolvedPersist = normalizePersistConfig(merged.persist)
-      const persistenceBase = resolveStorageKeyBase(resolvedPersist, state.formKey)
-      // Cross-store orphan cleanup: any standard backend not matching
-      // the configured one gets every attaform-managed key under the
-      // base wiped (unfingerprinted AND stale-fingerprint alike).
-      // Ensures stale drafts can't survive in stores the dev migrated
-      // AWAY from. Fire-and-forget; backend unavailability is silent.
-      void sweepNonConfiguredStandardStoresForOrphans(resolvedPersist.storage, persistenceBase)
-      const persistenceModule = wirePersistence(state, resolvedPersist)
-      state.modules.set(PERSISTENCE_MODULE_KEY, persistenceModule)
-      // Drain BEFORE the synchronous teardown: the registry will await
-      // `awaitPendingWrites` before calling `dispose`, so the last
-      // debounced keystroke gets to disk before the FormStore is
-      // evicted from the registry's `forms` map.
-      state.registerDrain(() => persistenceModule.awaitPendingWrites())
-      state.registerCleanup(() => persistenceModule.dispose())
+      // Secure-context gate for BUILT-IN storage adapters. Plain HTTP
+      // on a real hostname leaves localStorage / sessionStorage open
+      // to MITM injection — same threat profile as multi-tab sync. The
+      // gate noops the persistence wiring entirely with a one-shot
+      // dev warning. Custom storage adapters (consumer-supplied
+      // objects) bypass the gate — the consumer owns that storage
+      // layer's security posture (could be encrypted, server-side,
+      // behind a tunnel, etc.).
+      const storageKind = resolvedPersist.storage
+      const isBuiltinStorage = typeof storageKind === 'string'
+      const secureContextOk = !isBuiltinStorage || isSecureContext()
+      if (!secureContextOk) {
+        const feature: 'persist:local' | 'persist:session' =
+          storageKind === 'session' ? 'persist:session' : 'persist:local'
+        warnOnceInsecureContext(feature)
+        void sweepAllOrphansAcrossStandardStores(`${PERSISTENCE_KEY_PREFIX}${state.formKey}`)
+      } else {
+        const persistenceBase = resolveStorageKeyBase(resolvedPersist, state.formKey)
+        // Cross-store orphan cleanup: any standard backend not matching
+        // the configured one gets every attaform-managed key under the
+        // base wiped (unfingerprinted AND stale-fingerprint alike).
+        // Ensures stale drafts can't survive in stores the dev migrated
+        // AWAY from. Fire-and-forget; backend unavailability is silent.
+        void sweepNonConfiguredStandardStoresForOrphans(resolvedPersist.storage, persistenceBase)
+        const persistenceModule = wirePersistence(state, resolvedPersist)
+        state.modules.set(PERSISTENCE_MODULE_KEY, persistenceModule)
+        // Drain BEFORE the synchronous teardown: the registry will await
+        // `awaitPendingWrites` before calling `dispose`, so the last
+        // debounced keystroke gets to disk before the FormStore is
+        // evicted from the registry's `forms` map.
+        state.registerDrain(() => persistenceModule.awaitPendingWrites())
+        state.registerCleanup(() => persistenceModule.dispose())
+      }
     } else {
       // Either the dev didn't configure `persist:` OR we just disabled
       // it via the anon-persist rule. Either way, sweep every
@@ -216,6 +275,69 @@ export function useAbstractForm<
       // backends so dropping (or refusing to wire) persistence
       // actually leaves storage clean.
       void sweepAllOrphansAcrossStandardStores(`${PERSISTENCE_KEY_PREFIX}${state.formKey}`)
+    }
+  }
+
+  // Wire multi-tab sync. Fresh-state-only — the module subscribes
+  // to FormStore events, so subscribing twice would double-broadcast.
+  // Registers AFTER persistence (so persistence hydration is the floor
+  // — when a BroadcastChannel snapshot arrives, it overrides the
+  // disk-persisted baseline) and BEFORE history (so the crossTab-meta
+  // history-listener guard is in place by the time the first incoming
+  // message lands).
+  //
+  // Activation requires ALL of:
+  //   1. `multiTab` cascade resolves to !== false (per-form > global > library default `true`)
+  //   2. Consumer-supplied `key` (anonymous forms skip — channel would be solo)
+  //   3. Runtime has `BroadcastChannel`
+  //   4. `window.isSecureContext === true` (HTTPS or localhost)
+  //
+  // The else branch fires a one-shot dev warning when a keyed form
+  // requested sync but the secure-context gate blocked it — saves
+  // consumers from debugging "why isn't sync working in prod" in
+  // silence.
+  if (
+    existing === undefined &&
+    merged.multiTab !== false &&
+    configuration.key !== undefined &&
+    !registry.ssr
+  ) {
+    const hasBroadcastChannel = typeof BroadcastChannel !== 'undefined'
+    const secureContext = isSecureContext()
+    if (hasBroadcastChannel && secureContext) {
+      // Channel name = `attaform:sync:${formKey}:${fingerprint hash}`.
+      // Wrap the fingerprint read so an adapter bug throwing here
+      // doesn't poison the rest of the form lifecycle — the sync
+      // module just skips instantiation. The schema-fingerprint
+      // mismatch warning surfaces the underlying adapter issue
+      // separately.
+      let channelName: string | null
+      try {
+        channelName = `attaform:sync:${state.formKey}:${hashStableString(state.schema.fingerprint())}`
+      } catch {
+        channelName = null
+      }
+      if (channelName !== null) {
+        const syncModule = createMultiTabSyncModule(state, channelName, {
+          isSensitivePath: state.isSensitivePath,
+          noSyncPaths: state.noSyncPaths,
+          validateForm: (form) => {
+            // Sync-preferred schema validation. Async-only schemas
+            // return a Promise — for those we skip the gate and trust
+            // the patch (last-writer-wins; local validate cycle catches
+            // issues on next user interaction).
+            const result = state.schema.validateAtPath(form, undefined, { sync: true })
+            if (result instanceof Promise) return
+            if (!result.success) {
+              throw new Error('attaform multi-tab sync: post-apply schema validation failed')
+            }
+          },
+        })
+        state.modules.set(MULTI_TAB_SYNC_MODULE_KEY, syncModule)
+        state.registerCleanup(() => syncModule.dispose())
+      }
+    } else if (hasBroadcastChannel && !secureContext) {
+      warnOnceInsecureContext('multiTab')
     }
   }
 
@@ -280,6 +402,29 @@ export function useAbstractForm<
   if (history !== undefined) {
     apiOptions.history = history
   }
+  // Per-instance config lifts: each `useForm()` callsite carries its
+  // own `validateOn` / `debounceMs` / `shouldShowErrors` / `coerce` /
+  // `rememberVariants`. These thread through `buildFormApi` into
+  // register's coerce closure, the field-state predicate, and store
+  // writes' WriteMeta — so two `useForm({ key })` calls (modal + main)
+  // can validate on different cadences and surface errors with
+  // different visibility rules even though they share a FormStore.
+  if (merged.validateOn !== undefined) {
+    apiOptions.validateOn = merged.validateOn
+  }
+  const mergedDebounceMs = (merged as { debounceMs?: number }).debounceMs
+  if (mergedDebounceMs !== undefined) {
+    apiOptions.debounceMs = mergedDebounceMs
+  }
+  if (merged.shouldShowErrors !== undefined) {
+    apiOptions.shouldShowErrors = resolveShouldShowErrors(merged.shouldShowErrors)
+  }
+  if (merged.coerce !== undefined) {
+    apiOptions.coerce = merged.coerce
+  }
+  if (merged.rememberVariants !== undefined) {
+    apiOptions.rememberVariants = merged.rememberVariants
+  }
   return buildFormApi<Form, GetValueFormType>(state, formInstanceId, apiOptions)
 }
 
@@ -316,6 +461,17 @@ function mergeWithDefaults<
   // the value under non-`'change'` modes regardless.
   const debounceMs = (configuration as { debounceMs?: number }).debounceMs ?? defaults.debounceMs
   const shouldShowErrors = configuration.shouldShowErrors ?? defaults.shouldShowErrors
+  const maxRecursionDepth = configuration.maxRecursionDepth ?? defaults.maxRecursionDepth
+  // sensitiveNames REPLACES (doesn't extend) — consumers compose
+  // additive lists themselves via `[...DEFAULT_SENSITIVE_NAMES, ...]`.
+  // Per-form value wins; falls back to global default. Empty array
+  // `[]` is the explicit opt-out and is preserved through the merge.
+  const sensitiveNames = configuration.sensitiveNames ?? defaults.sensitiveNames
+  // multiTab cascade: per-form > global > library default (`true`).
+  // The library-default `true` is applied later at the wiring site
+  // (so the merged config still distinguishes "consumer didn't say"
+  // from an explicit `true` for downstream diagnostics).
+  const multiTab = configuration.multiTab ?? defaults.multiTab
   return {
     ...configuration,
     ...(strict === undefined ? {} : { strict }),
@@ -326,6 +482,9 @@ function mergeWithDefaults<
     ...(validateOn === undefined ? {} : { validateOn }),
     ...(debounceMs === undefined ? {} : { debounceMs }),
     ...(shouldShowErrors === undefined ? {} : { shouldShowErrors }),
+    ...(maxRecursionDepth === undefined ? {} : { maxRecursionDepth }),
+    ...(sensitiveNames === undefined ? {} : { sensitiveNames }),
+    ...(multiTab === undefined ? {} : { multiTab }),
   } as UseFormConfiguration<Form, GetValueFormType, Schema, Defaults>
 }
 
@@ -370,6 +529,20 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
   // construction-time defaults invented.
   const initialBlankPaths: ReadonlyArray<string> | undefined =
     pending === undefined ? walked.paths : undefined
+  // `configuration` has already passed through `mergeWithDefaults`, so
+  // `sensitiveNames` here is the cascade-resolved value (per-form >
+  // global > undefined-falls-to-library-default). An empty array `[]`
+  // is the explicit opt-out ("nothing is sensitive on this form") and
+  // the factory honors it. The resulting closures are frozen onto the
+  // FormStore so persistence, multi-tab sync, and DevTools all share
+  // one source of truth.
+  const resolvedSensitiveNames = configuration.sensitiveNames
+  const resolvedIsSensitivePath =
+    resolvedSensitiveNames === undefined ? undefined : createIsSensitivePath(resolvedSensitiveNames)
+  const resolvedSegmentMatchesSensitive =
+    resolvedSensitiveNames === undefined
+      ? undefined
+      : createSegmentMatchesSensitive(resolvedSensitiveNames)
   const createOptions: Parameters<typeof createFormStore<F, G>>[0] = {
     formKey: key,
     schema,
@@ -389,6 +562,10 @@ function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
       ? { shouldShowErrors: configuration.shouldShowErrors }
       : {}),
     ...(initialBlankPaths !== undefined ? { initialBlankPaths } : {}),
+    ...(resolvedIsSensitivePath !== undefined ? { isSensitivePath: resolvedIsSensitivePath } : {}),
+    ...(resolvedSegmentMatchesSensitive !== undefined
+      ? { segmentMatchesSensitive: resolvedSegmentMatchesSensitive }
+      : {}),
   }
   const state = createFormStore<F, G>(createOptions)
   // Storage type is FormStore<GenericForm>; the lookup above narrows
@@ -547,6 +724,53 @@ function warnOnSchemaFingerprintMismatch(
 }
 
 /**
+ * Dev-only: warn when a second `useForm` lands on the same key with a
+ * `persist:` config that diverges from what the first call wired. The
+ * persist channel is single-IO (one storage key, one debounce timer);
+ * silent drop is a high-stakes footgun ("I configured persist but
+ * sessionStorage is empty"). Skipped when the second call passes no
+ * persist config (intentional inheritance), and when the comparison
+ * is deemed equivalent (same `storage` reference / kind, same `key`,
+ * same `debounceMs`). Custom adapter functions compare by reference
+ * — distinct closures look distinct, which is conservative but
+ * correct: distinct closures may persist to different backends.
+ */
+function warnOnPersistDivergence<F extends GenericForm>(
+  key: FormKey,
+  existing: FormStore<F, GenericForm>,
+  incomingPersist: PersistConfig | undefined
+): void {
+  if (incomingPersist === undefined) return
+  const wired = existing.modules.get(PERSISTENCE_MODULE_KEY) as PersistenceModule | undefined
+  const incomingNormalized = normalizePersistConfig(incomingPersist)
+  if (wired === undefined) {
+    console.warn(
+      `[attaform] useForm({ key: "${key}" }) passed a persist config but the first useForm({ key }) call didn't wire persistence; the new config is silently dropped. Pass persist on the first call, or remove persist here to make the inheritance explicit.`
+    )
+    return
+  }
+  if (persistConfigsEquivalent(wired.wiredConfig, incomingNormalized)) return
+  console.warn(
+    `[attaform] useForm({ key: "${key}" }) passed a persist config that differs from the first useForm({ key }) call's; first wins, this one is ignored.\n  wired:    ${describePersist(wired.wiredConfig)}\n  incoming: ${describePersist(incomingNormalized)}`
+  )
+}
+
+function persistConfigsEquivalent(a: PersistConfigOptions, b: PersistConfigOptions): boolean {
+  if (a.storage !== b.storage) return false
+  if ((a.key ?? undefined) !== (b.key ?? undefined)) return false
+  if ((a.debounceMs ?? undefined) !== (b.debounceMs ?? undefined)) return false
+  return true
+}
+
+function describePersist(config: PersistConfigOptions): string {
+  const storage = typeof config.storage === 'string' ? config.storage : 'custom-adapter'
+  const parts = [`storage=${storage}`]
+  if (config.key !== undefined) parts.push(`key=${config.key}`)
+  if (config.debounceMs !== undefined) parts.push(`debounceMs=${config.debounceMs}`)
+  return `{ ${parts.join(', ')} }`
+}
+
+/**
  * Wire persistence to a fresh FormStore:
  *
  *   1. Resolve the storage adapter (dynamic-imported — `'local'` never
@@ -564,7 +788,7 @@ function warnOnSchemaFingerprintMismatch(
  *      teardown.
  */
 function wirePersistence<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   config: PersistConfigOptions
 ): PersistenceModule {
   // Fingerprint the schema once and bake it into the storage key. Any
@@ -582,7 +806,16 @@ function wirePersistence<F extends GenericForm>(
   const fingerprint = hashStableString(state.schema.fingerprint())
   const base = resolveStorageKeyBase(config, state.formKey)
   const key = `${base}:${fingerprint}`
-  const debounceMs = config.debounceMs ?? DEFAULT_PERSISTENCE_DEBOUNCE_MS
+  // Sanitise the persistence debounce — same rules as field validation:
+  // `NaN` would fire synchronously, `Infinity` would stall the event
+  // loop for ~24.8 days then wrap. Both fall back to the library default.
+  const debounceMs = normalizeNumericOption({
+    value: config.debounceMs ?? DEFAULT_PERSISTENCE_DEBOUNCE_MS,
+    source: 'useForm.persist.debounceMs',
+    allowInfinity: false,
+    min: 0,
+    defaultValue: DEFAULT_PERSISTENCE_DEBOUNCE_MS,
+  })
   const include = config.include ?? 'form'
   const clearOnSubmitSuccess = config.clearOnSubmitSuccess ?? true
 
@@ -661,6 +894,13 @@ function wirePersistence<F extends GenericForm>(
 
   const unsubscribeChange = state.onFormChange((_next, meta) => {
     if (disposed || inFlightFinalFlush !== null) return
+    // Cross-tab apply: a sibling tab already wrote this value to its
+    // own persistence layer; double-persisting from the receiving
+    // tab would be wasted I/O. The multi-tab sync module sets
+    // `persist: false` for this reason, which the next check already
+    // catches — but adding the explicit `crossTab` early return makes
+    // the intent legible at the listener boundary.
+    if (meta?.crossTab === true) return
     // Per-element opt-in: only writes whose source declared `persist: true`
     // reach the storage adapter. Programmatic `form.setValue`, history
     // undo without opt-ins, devtools edits to non-opted paths, and
@@ -729,7 +969,12 @@ function wirePersistence<F extends GenericForm>(
         payload.data.form,
         state.schema as unknown as Parameters<typeof mergeSparseHydration>[2]
       )
-      state.applyFormReplacement(merged)
+      // `hydration: true` tells listeners (notably the history module)
+      // that this replacement is the baseline, not a user mutation —
+      // history wipes its stacks and reseeds with the post-hydration
+      // snapshot so `undo()` can't reach the transient pre-hydration
+      // default the form briefly held between mount and hydrate.
+      state.applyFormReplacement(merged, { hydration: true })
       // payload. Persistence is per-element opt-in, so the persisted
       // payload only covers paths within the opt-in scope (the leaf
       // paths populated in `payload.data.form`). Construction-time
@@ -938,6 +1183,7 @@ function wirePersistence<F extends GenericForm>(
   }
 
   return {
+    wiredConfig: config,
     writePathImmediately,
     clearPersistedDraft,
     awaitPendingWrites,

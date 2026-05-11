@@ -1,5 +1,6 @@
 import type { ComputedRef, ObjectDirective, Ref } from 'vue'
 import type { FieldMetaPayload, ResolvedFieldMeta } from '../core/field-meta'
+import type { SchemaFactoryOptions } from '../core/get-computed-schema'
 import type { Path, PathKey } from '../core/paths'
 import type { PersistOptInRegistry } from '../core/persistence/opt-in-registry'
 
@@ -239,6 +240,38 @@ export type AbstractSchema<Form, GetValueFormType> = {
    */
   getDefaultAtPath(path: Path): unknown
   /**
+   * Give the schema a chance to normalize the consumer's write value
+   * before it lands in storage / hits the slim-primitive gate. Each
+   * schema library exposes this concept differently — Zod calls it
+   * `z.preprocess(fn, inner)`, Yup calls it `.transform()`, Valibot
+   * spells it `pipe(transform(fn), inner)` — but the shape is the
+   * same: "this input shape gets coerced into that storage shape at
+   * the boundary."
+   *
+   * Runs SYNCHRONOUSLY at the write boundary so storage holds the
+   * post-normalization shape. Without this, a schema like `notify:
+   * z.preprocess(v => v == null ? defaultVar : v, innerDU)` would
+   * let the consumer write `null` and lock storage into `null` —
+   * because the gate sees the raw input (which the preprocess wrapper
+   * accepts as `unknown`) and storage holds a shape no variant
+   * matches.
+   *
+   * Adapters MUST:
+   *   - Return `value` unchanged when no normalization is declared at
+   *     the path.
+   *   - Return `value` unchanged when the user's normalization fn
+   *     returns a `Promise` (async coercion can't run at write time —
+   *     validation handles it during parse).
+   *   - Let user-thrown errors propagate (the user wrote the fn; we
+   *     just tag the path in the wrapper error for diagnostics).
+   *
+   * Normalization runs when `path` equals the wrapper's exact
+   * location. Writes deeper than the wrapper bypass it (a wrapper
+   * over the whole subtree can't be invoked from a partial leaf
+   * write).
+   */
+  normalizeWriteValueAtPath(value: unknown, path: Path): unknown
+  /**
    * Distinguish a tuple (fixed-length, position-typed) from an
    * unbounded array at `path`. The runtime calls this on every
    * `mergeStructural` / `setAtPathWithSchemaFill` write that descends
@@ -302,7 +335,7 @@ export type AbstractSchema<Form, GetValueFormType> = {
     data: unknown,
     path: Path | undefined,
     options?: ValidateOptions
-  ): MaybePromise<ValidationResponse<Form>>
+  ): MaybePromise<ValidationResponse<GetValueFormType>>
   /**
    * Sync sister to `getSchemasAtPath` / `validateAtPath`. Returns the
    * set of primitive `typeof`-style kinds the path's leaf schema
@@ -517,6 +550,14 @@ export type UnionDiscriminatorContext = {
    * skips the reshape and falls back to a plain write.
    */
   getVariantDefault(value: unknown): unknown
+  /**
+   * Returns `true` iff `value` is a literal recognised by one of the
+   * discriminator's variants. Used by reshape to decide whether to
+   * seek a variant default or emit a stub state. NOT used at the
+   * runtime write gate — consumer-side value validity is a
+   * validation-time concern.
+   */
+  isVariantSelected(value: unknown): boolean
 }
 
 /**
@@ -742,18 +783,126 @@ export type WriteMeta = {
    * an infinite loop. Don't set from consumer code.
    */
   readonly skipDiscriminatorReshape?: boolean
+  /**
+   * Hint about an array structural mutation, set by `field-arrays.ts`
+   * helpers so `setValueAtPath` can surgically clear variant memory
+   * for indices the operation invalidated. Without this hint, a raw
+   * whole-array `setValue(arrayPath, [...])` clears all memory under
+   * the array (the runtime can't tell which indices stayed put).
+   * Internal — don't set from consumer code.
+   */
+  readonly arrayOp?:
+    | { readonly kind: 'shift-from'; readonly index: number }
+    | { readonly kind: 'shift-range'; readonly fromIndex: number; readonly toIndex: number }
+    | { readonly kind: 'swap'; readonly a: number; readonly b: number }
+    | { readonly kind: 'replace-at'; readonly index: number }
+  /**
+   * Per-instance config overrides threaded through writes so each
+   * `useForm({ key })` callsite honors its own `validateOn` /
+   * `debounceMs` / `rememberVariants` even when sharing a FormStore
+   * with sibling calls (e.g., a modal and main form rendering the
+   * same logical form). Internal — set by `buildFormApi` from
+   * the per-instance options bag; the store reads each field with
+   * fallback to its construction-time defaults.
+   */
+  readonly instance?: {
+    readonly validateOn?: ValidateOn
+    readonly debounceMs?: number
+    readonly rememberVariants?: boolean
+  }
+  /**
+   * When `true`, marks this `applyFormReplacement` call as the
+   * persistence hydration step. Modules that snapshot the form state
+   * (notably the history module) treat hydration as the baseline:
+   * stacks reset to a single seed of the post-hydration value, so a
+   * subsequent `undo()` can't recover the transient pre-hydration
+   * default. Internal — set by `wirePersistence`. Don't set from
+   * consumer code.
+   */
+  readonly hydration?: boolean
+  /**
+   * When `true`, this write originated from a sibling tab's
+   * BroadcastChannel broadcast (the multi-tab sync module's inbound
+   * apply). Listeners that initiate side effects check this flag to
+   * avoid amplification loops and spurious side effects:
+   *
+   * - The multi-tab sync OUTBOUND broadcaster skips so a remote-driven
+   *   write doesn't echo back across the channel.
+   * - The history module updates its diff anchor but does NOT push a
+   *   delta — remote writes aren't part of the local user's undo
+   *   timeline.
+   * - The persistence writer skips so the receiving tab doesn't
+   *   double-persist a value the originating tab already wrote.
+   *
+   * Internal — set by `createMultiTabSyncModule`. Don't set from
+   * consumer code.
+   */
+  readonly crossTab?: boolean
 }
 
 /**
  * Undo/redo configuration passed via `useForm({ history })`.
  *
- * - `true` — enable with the default snapshot cap (`max: 50`).
- * - `{ max }` — enable and tune the bounded snapshot stack size.
+ * - `true` — enable with the default position cap (`max: 128`).
+ * - `{ max }` — enable and tune the bounded history size.
  *
- * When enabled, every mutation pushes a snapshot; `undo()` /
- * `redo()` walk the stacks. `reset()` clears history.
+ * When enabled, every mutation records a forward delta; `form.history.undo()`
+ * / `form.history.redo()` walk the chain. `reset()` is itself a mutation —
+ * the pre-reset state stays one undo away. Persistence hydration is the
+ * floor: after hydrate applies, the chain reseeds with the hydrated value
+ * and `undo()` cannot reach the transient pre-hydration default.
  */
 export type HistoryConfig = true | { max?: number }
+
+/**
+ * Consolidated undo/redo namespace at `form.history`. All history-related
+ * surface lives here — methods and reactive flags both — so consumers
+ * have one canonical address to read from.
+ *
+ * Always present on `useForm()` return whether or not `history` was
+ * configured. When history isn't enabled, methods are no-ops returning
+ * `false` (or `void`), `canUndo` / `canRedo` read `false`, and `size`
+ * reads `0`. Consumer templates don't need conditional logic.
+ *
+ * Reactivity: built as `readonly(reactive({...}))`, so `canUndo` / `canRedo`
+ * / `size` auto-unwrap on access (plain `boolean` / `number`, not refs).
+ * Method fields (`undo`, `redo`, `clear`) pass through as plain functions.
+ */
+export type FormHistoryNamespace = {
+  /**
+   * Step back one position in the history chain. Returns `true` when a
+   * step was taken, `false` when already at the oldest reachable
+   * position (or when history isn't configured).
+   */
+  readonly undo: () => boolean
+  /**
+   * Replay the next step forward in the chain. Returns `true` on
+   * success, `false` when there's nothing queued (or history isn't
+   * configured). The forward branch is dropped as soon as a new
+   * mutation lands.
+   */
+  readonly redo: () => boolean
+  /**
+   * Wipe the undo and redo branches; reseed the chain with the current
+   * form state as the new baseline. The form value, errors, and
+   * blankPaths all stay where they are — only the past/future history
+   * resets. After `clear()`: `canUndo === false`, `canRedo === false`,
+   * `size === 1`. No-op when history isn't configured.
+   */
+  readonly clear: () => void
+  /** `true` when there is at least one undo step available. */
+  readonly canUndo: boolean
+  /** `true` when `undo()` has been called and a `redo()` would replay. */
+  readonly canRedo: boolean
+  /**
+   * Total reachable positions in the history chain (the current
+   * position plus everything reachable via `undo()` / `redo()`).
+   * Useful for debug overlays; UI driving undo/redo buttons should
+   * gate on `canUndo` / `canRedo` instead. Reads `0` when history
+   * isn't configured.
+   */
+  readonly size: number
+}
 
 /**
  * Full options bag for `useForm({ persist })`. Use this when you need
@@ -863,10 +1012,15 @@ export type UseFormConfiguration<
    * abstract entry point accepts any object implementing
    * `AbstractSchema`.
    *
-   * For schemas that depend on the form's identity, pass a factory
-   * `(key) => schema` instead — the library calls it once per form.
+   * For schemas that depend on the form's identity or per-form
+   * options, pass a factory `(key, options) => schema` instead — the
+   * library calls it once per form, after `mergeWithDefaults` has
+   * resolved the options bag (`maxRecursionDepth`, etc.). Most
+   * adapters ignore the options argument; the typed Zod entry points
+   * use it to thread the resolved recursion cap into the adapter
+   * closure.
    */
-  schema: Schema | ((key: FormKey) => Schema)
+  schema: Schema | ((key: FormKey, options: SchemaFactoryOptions) => Schema)
   /**
    * Optional identifier for this form. Omit for one-off forms; the
    * library allocates a unique key automatically (SSR-safe, stable
@@ -979,13 +1133,14 @@ export type UseFormConfiguration<
   persist?: PersistConfig
 
   /**
-   * Opt-in undo/redo. Off by default. `true` enables with a 50-snapshot
+   * Opt-in undo/redo. Off by default. `true` enables with a 128-position
    * cap; `{ max: N }` tunes the cap.
    *
-   * Every mutation pushes a snapshot. `undo()` pops one; `redo()`
-   * replays it. `reset()` clears history. Reactive flags
-   * `state.canUndo` / `state.canRedo` / `state.historySize` reflect
-   * the current stack.
+   * Every mutation records a forward delta. `form.history.undo()` walks
+   * one step back; `form.history.redo()` walks one step forward.
+   * `reset()` is itself a mutation, so the pre-reset state stays one
+   * undo away. The consolidated `form.history` namespace also exposes
+   * `clear()`, `canUndo`, `canRedo`, and `size`.
    */
   history?: HistoryConfig
 
@@ -1043,6 +1198,71 @@ export type UseFormConfiguration<
    * `false` → never show.
    */
   shouldShowErrors?: ShouldShowErrorsConfig
+  /**
+   * Recursion ceiling for schema walks that descend through recursive
+   * schemas (Zod's `z.lazy(...)` today). Default `64`. Per-form value
+   * overrides `AttaformDefaults.maxRecursionDepth`, which overrides
+   * the library default.
+   *
+   * Schemas that don't include a recursive boundary ignore this knob
+   * entirely — it's read only at the descent step through a recursive
+   * wrapper. Set it on the specific form whose schema is recursive
+   * (a comment tree, a category tree, a nested-rule editor):
+   *
+   * ```ts
+   * useForm({ schema: commentTreeSchema, maxRecursionDepth: 128 })
+   * ```
+   *
+   * Past the cap, the slim-primitive type gate falls back to permissive
+   * (write-time type checks skip; full schema validation still runs).
+   * Storage and reads work at any depth; only the per-write type gate
+   * stops short of the cap. Raise the cap if you regularly edit nodes
+   * beyond the default depth.
+   *
+   * See `AttaformDefaults.maxRecursionDepth` for the resolution rules
+   * and the broader description of where the cap is read.
+   */
+  maxRecursionDepth?: number
+  /**
+   * Override the path-segment name stems treated as sensitive for this
+   * form. Sensitive paths are excluded from persistence writes,
+   * multi-tab sync broadcasts, AND the DevTools redact walk.
+   *
+   * Resolution: per-form value (this field) > global default
+   * (`createAttaform({ defaults: { sensitiveNames } })`) > library
+   * default (`DEFAULT_SENSITIVE_NAMES`).
+   *
+   * Pass an empty array `[]` as the explicit opt-out — "nothing is
+   * sensitive on this form" — for fully-trusted internal tooling.
+   * See `AttaformDefaults.sensitiveNames` for composition examples.
+   */
+  sensitiveNames?: readonly string[]
+  /**
+   * Cross-tab synchronisation via BroadcastChannel. Defaults to `true`
+   * (when the browser supports it and the page is in a secure
+   * context): a keyed `useForm` callsite auto-pairs with same-keyed
+   * siblings in other same-origin tabs and mirrors their mutations
+   * in near real-time.
+   *
+   * **Resolution order (per-register override > per-form > global > library):**
+   *
+   *   register(path, { multiTab })  >  useForm({ multiTab })  >  AttaformDefaults.multiTab  >  library default (`true`)
+   *
+   * **When to set `false`:** forms holding PII / PHI, contexts where
+   * tab isolation is required by policy, or any flow where conflicting
+   * tab edits could corrupt user intent. Sensitive-named paths (via
+   * `sensitiveNames`) are always stripped from outbound broadcasts
+   * regardless of this setting.
+   *
+   * **Secure-context requirement.** Multi-tab sync is silently disabled
+   * outside `window.isSecureContext === true` (HTTPS or localhost). On
+   * plain HTTP a one-shot dev warning fires and the module noops.
+   *
+   * **Anonymous (auto-keyed) forms skip sync entirely** — without a
+   * consumer-supplied `key`, cross-tab identity is undefined and the
+   * channel would be solo by construction.
+   */
+  multiTab?: boolean
 }
 
 /**
@@ -1137,6 +1357,102 @@ export type AttaformDefaults = {
    * predicate, so reading them inside would be a self-reference.
    */
   shouldShowErrors?: ShouldShowErrorsConfig
+  /**
+   * Default for `useForm({ maxRecursionDepth })`. Recursion ceiling
+   * for schema walks that descend through recursive schemas (Zod's
+   * `z.lazy(...)` today, equivalent constructs in any future adapter).
+   * Library default: `64`.
+   *
+   * Resolution order (per-form wins):
+   *
+   *   useForm({ maxRecursionDepth })  >  AttaformDefaults  >  library default (64)
+   *
+   * Read at every step of a schema walk that crosses a recursive
+   * boundary — default-value derivation at construction, slim-primitive
+   * type gates on each write, path-by-path schema resolution. Walks
+   * track their descent depth and switch to a permissive fallback once
+   * `depth > maxRecursionDepth`.
+   *
+   * "Permissive fallback" means storage and reads keep working at any
+   * depth; only the per-write type gate stops checking past the cap.
+   * Full schema validation (`validateAsync`, `handleSubmit`) still runs
+   * against the real schema, so refinement errors at any depth still
+   * surface — the cap only affects the *write-time gate*.
+   *
+   * Forms with no recursive schemas ignore this entirely — the cap is
+   * read only at the descent step through a recursive wrapper. Setting
+   * it app-wide is the right move when you have multiple recursive
+   * forms that should share one ceiling:
+   *
+   * ```ts
+   * createAttaform({
+   *   defaults: { maxRecursionDepth: 128 },
+   * })
+   * ```
+   *
+   * Per-form override stays available for the one tree-shaped form
+   * whose depth is unusual:
+   *
+   * ```ts
+   * useForm({ schema: deepCategoryTreeSchema, maxRecursionDepth: 256 })
+   * ```
+   *
+   * Setting this app-wide costs nothing for non-recursive forms — the
+   * walks that read the cap never run for them.
+   *
+   * Pass `Infinity` to disable the cap entirely. Walks will then
+   * descend through recursive boundaries until they terminate
+   * structurally; a schema with no structural terminator will exhaust
+   * the JS call stack. Reserve for schemas whose authors are
+   * confident the recursion is bounded by the actual data shape.
+   */
+  maxRecursionDepth?: number
+  /**
+   * Override the path-segment name stems treated as sensitive.
+   * Sensitive paths are excluded from persistence writes, multi-tab
+   * sync broadcasts, AND the DevTools redact walk — one configurable
+   * source of truth across every surface.
+   *
+   * Library default is `DEFAULT_SENSITIVE_NAMES` (exported from
+   * `attaform`); compose to extend:
+   *
+   * ```ts
+   * import { DEFAULT_SENSITIVE_NAMES, createAttaform } from 'attaform'
+   *
+   * createAttaform({
+   *   defaults: { sensitiveNames: [...DEFAULT_SENSITIVE_NAMES, 'mrn', 'tax_id'] }
+   * })
+   * ```
+   *
+   * Pass an empty array `[]` as the explicit opt-out — "nothing is
+   * sensitive" — for fully-trusted internal tooling. When present at
+   * the per-form level via `useForm({ sensitiveNames })`, the per-form
+   * list REPLACES the global one (consumers compose their own
+   * additive lists via the exported default).
+   */
+  sensitiveNames?: readonly string[]
+  /**
+   * App-wide default for `useForm({ multiTab })`. Default `true` when
+   * the runtime supports `BroadcastChannel` AND `window.isSecureContext`
+   * is true (HTTPS in production, localhost in development) — same gate
+   * browsers apply to other sensitive APIs (clipboard, geolocation,
+   * push, web crypto subtle).
+   *
+   * Set to `false` once at the plugin level for a multi-tenant
+   * deployment that prefers tab-isolation by default; individual forms
+   * can still opt back in via `useForm({ multiTab: true })`.
+   *
+   * **Resolution order (per-form wins):**
+   *
+   *   useForm({ multiTab })  >  AttaformDefaults.multiTab  >  library default (`true`)
+   *
+   * **Secure-context gate.** Multi-tab sync only activates over HTTPS
+   * or localhost. On plain HTTP, the module silently noops with a
+   * one-shot dev-mode warning — production deployments MUST be served
+   * over HTTPS for sync to function. See the multi-tab-sync recipe's
+   * Security section for the threat model.
+   */
+  multiTab?: boolean
 }
 
 export type FormStore<TData extends GenericForm> = Map<FormKey, TData>
@@ -1480,6 +1796,25 @@ export type RegisterOptions = {
    */
   acknowledgeSensitive?: boolean
   /**
+   * Opt this field OUT of multi-tab sync. The form-level cascade
+   * activates sync by default; passing `multiTab: false` on a single
+   * register call keeps that path tab-local — outbound patches at
+   * the path are stripped, and inbound patches at the path are
+   * rejected (symmetric tab-local behaviour).
+   *
+   * The opt-out is downgrade-only — you cannot pass `multiTab: true`
+   * to bring sync back on a form whose form-level `multiTab` is
+   * `false` (in that case the sync module never instantiated; there's
+   * no broadcaster to opt back into).
+   *
+   * Use for fields that hold transient per-tab UI state inside an
+   * otherwise-synced form (e.g. an editor's cursor position field
+   * mirrored into the form for save-on-blur), or for individual
+   * paths the consumer wants to scope to the originating tab without
+   * disabling sync globally.
+   */
+  multiTab?: boolean
+  /**
    * Sync transformation pipeline applied to user-typed values before
    * they reach form state. Composes left-to-right: each transform
    * receives the previous transform's output (or the directive-
@@ -1616,6 +1951,40 @@ export type RegisterValue<Value = unknown> = Readonly<{
    * @internal
    */
   persistOptIns: PersistOptInRegistry
+  /**
+   * Resolved sensitive-path predicate honoring this form's
+   * `sensitiveNames` cascade. The directive calls this through
+   * `enforceSensitiveCheck` when a `register('path', { persist: true })`
+   * binding mounts so a per-form custom list (e.g. extending with
+   * `'mrn'`) gates persistence enrolment correctly.
+   * @internal
+   */
+  isSensitivePath: (path: Path | PathKey | string) => boolean
+  /**
+   * Whether this binding declared `register('path', { multiTab: false })`.
+   * Drives the directive's mount/unmount lifecycle: when `false`, the
+   * directive's `created` hook bumps `state.noSyncPaths` for this
+   * path, and `beforeUnmount` decrements. When `true` (the default),
+   * the binding rides the form-level cascade.
+   * @internal
+   */
+  multiTab: boolean
+  /**
+   * Pre-bound mount hook for `multiTab: false` bindings — calls
+   * `state.incrementNoSyncOptOut(path)` with this binding's path.
+   * `undefined` when `multiTab !== false`. The directive invokes
+   * during the mount lifecycle.
+   * @internal
+   */
+  markNoSync?: () => void
+  /**
+   * Pre-bound unmount hook for `multiTab: false` bindings — calls
+   * `state.decrementNoSyncOptOut(path)`. Paired with `markNoSync`;
+   * the directive invokes on `beforeUnmount` (and on `beforeUpdate`
+   * when the binding transitions out of opt-out).
+   * @internal
+   */
+  unmarkNoSync?: () => void
   /**
    * Sync transform pipeline applied by the directive's assigner to
    * user-typed values before they reach form state. See
@@ -1936,6 +2305,67 @@ export type SetValueCallback<Read, Write = Read> = (prev: Read) => Read | Write
  *   array elements as possibly-undefined to reflect runtime reality.
  */
 export type SetValuePayload<Write, Read = Write> = Write | SetValueCallback<Read, Write>
+
+/**
+ * Detect `any` distinctly from `unknown`. The trick: `1 & any` is `any`
+ * and `0 extends any` is `true`; `1 & unknown` is `1` and `0 extends 1`
+ * is `false`. Used to fork `PathSetValuePayload` so `z.any()` paths
+ * resolve to `any` (matching the read-side surface) and `z.unknown()` /
+ * preprocess paths resolve to `unknown` (matching Zod's input typing).
+ */
+type IsAny<T> = 0 extends 1 & T ? true : false
+
+/**
+ * Resolves `setValue`'s `value` argument type at a single `Path` leaf.
+ *
+ * Three branches, one per Zod input-typing case:
+ *
+ *   1. **`any` leaf (`z.any()`)** — schema input type is `any`; the
+ *      whole form API surface (read, register, fields) is `any` at
+ *      this path. This branch returns raw `any` so `setValue` stays
+ *      consistent with the rest. Callsites that pass an unannotated
+ *      `(prev) => ...` may surface `noImplicitAny` under the
+ *      consumer's tsconfig — annotate `(prev: any) => ...` to opt
+ *      into the looser shape explicitly.
+ *
+ *   2. **`unknown` leaf (`z.unknown()`, `z.preprocess()` input)** —
+ *      schema input is unconstrained; consumers narrow before use.
+ *      The branch returns `({} | null | undefined) | ((prev: unknown)
+ *      => unknown)` instead of a `SetValuePayload<unknown, ...>`-style
+ *      union for three reasons:
+ *
+ *      a. **Union absorption** — `unknown | X` collapses to `unknown`,
+ *         erasing the callback union member. With the callback shape
+ *         gone, TS has no contextual type for `prev` and decays it to
+ *         implicit `any` under `noImplicitAny`. The triple
+ *         `{} | null | undefined` is structurally equivalent to
+ *         `unknown` (covers the same value space) but is NOT subject
+ *         to absorption — the callback branch survives the union and
+ *         `prev` infers cleanly to `unknown`.
+ *
+ *      b. **`NonNullable<unknown> = {}`** — applying `NonNullable` to
+ *         the read slot for an unknown leaf narrows `prev` to `{}`,
+ *         which is looser than `unknown` (allows ad-hoc property
+ *         access). This branch keeps the read slot as `unknown`
+ *         directly so the consumer is forced to narrow.
+ *
+ *      c. **`Unset`-widening doesn't apply** — `DefaultValuesShape`
+ *         widens primitive leaves to admit `unset`; for an unknown
+ *         leaf there's no primitive to widen. The open-form triple
+ *         covers the same value space the runtime accepts (any
+ *         value, including `unset` — symbols are `{}`).
+ *
+ *   3. **All other leaves** — flow through unchanged via
+ *      `SetValuePayload<DefaultValuesShape<Leaf>, NonNullable<WriteShape<Leaf>>>`.
+ */
+export type PathSetValuePayload<Leaf> =
+  IsAny<Leaf> extends true
+    ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      any
+    : unknown extends Leaf
+      ? // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+          ({} | null | undefined) | ((prev: unknown) => unknown)
+      : SetValuePayload<DefaultValuesShape<Leaf>, NonNullable<WriteShape<Leaf>>>
 
 /**
  * Focus / blur / touched flags for a registered field.
@@ -2468,19 +2898,6 @@ export type FormMeta<F = unknown> = FieldState<F> & {
    */
   readonly submitError: unknown
 
-  /** `true` when there is at least one undo step available. Always present (false when history is disabled). */
-  readonly canUndo: boolean
-
-  /** `true` when `undo()` has been called and a `redo()` would replay. Always present (false when history is disabled). */
-  readonly canRedo: boolean
-
-  /**
-   * Total snapshots across the undo and redo stacks. Useful for
-   * debug overlays; UI driving undo/redo buttons should gate on
-   * `canUndo` / `canRedo` instead.
-   */
-  readonly historySize: number
-
   /**
    * Per-`useForm()`-call identity. Stable for the lifetime of one
    * `useForm()` call; new on every fresh mount. Orthogonal to
@@ -2520,6 +2937,22 @@ export type FormMeta<F = unknown> = FieldState<F> & {
  * form.handleSubmit(onSubmit)   // returns a submit handler
  * form.meta.submitting        // form-level reactive flag
  * ```
+ *
+ * Two generic slots split the input view from the output view:
+ *
+ * - `Form` — the **input / storage shape** (`z.input<Schema>`). Used
+ *   by `setValue`, `defaultValues`, `values`, `fields`, `register`,
+ *   `toRef`, and every path-addressed API. Storage holds values as
+ *   the consumer wrote them; preprocess normalization runs at the
+ *   write boundary, but `.transform()`s are deferred to parse-time.
+ *
+ * - `GetValueFormType` — the **output / parsed shape**
+ *   (`z.output<Schema>`). Used by `handleSubmit`'s `onSubmit`
+ *   callback and by `form.process()`'s success payload. This is the
+ *   shape after refinements have fired and transforms have run.
+ *
+ * For schemas without transforms the two are identical, and the
+ * default `GetValueFormType = Form` keeps the surface ergonomic.
  */
 export type UseFormReturnType<
   Form extends GenericForm,
@@ -2536,10 +2969,13 @@ export type UseFormReturnType<
    * ```
    *
    * `data` is the strictly-typed parsed value — refinements have
-   * fired, so every leaf is guaranteed to satisfy its schema-level
-   * format / range / membership constraints.
+   * fired and `.transform()`s have run, so the payload matches
+   * `z.output<Schema>` (the post-parse output shape). For schemas
+   * where the input type differs from the output type (e.g.
+   * `z.string().transform(v => v.length > 10)`), `data` is the
+   * output shape while `form.values` stays the input shape.
    */
-  handleSubmit: HandleSubmit<Form>
+  handleSubmit: HandleSubmit<GetValueFormType>
 
   /**
    * Reactive readonly proxy over the form's storage value. Read
@@ -2563,10 +2999,13 @@ export type UseFormReturnType<
    *
    * Reads reflect what's storable: enum-typed slots widen to their
    * primitive supertype (`string`), so refinement-invalid but
-   * structurally-valid values are visible. Use `handleSubmit` /
-   * `validateAsync()` when you need the post-validation strict type.
+   * structurally-valid values are visible. Storage holds the
+   * `z.input<Schema>` shape — `.transform()`s have NOT run, so for
+   * a schema like `z.string().transform(v => v.length > 10)` the
+   * value reads as `string`, not `boolean`. Use `handleSubmit` or
+   * `form.process()` when you need the post-transform output shape.
    */
-  values: ValuesSurface<WriteShape<GetValueFormType>>
+  values: ValuesSurface<WriteShape<Form>>
 
   /**
    * Reactive per-field state proxy. Pinia-style nested object — read
@@ -2585,8 +3024,9 @@ export type UseFormReturnType<
    * descends into the nested leaf.
    *
    * Leaf values follow the slim WriteShape contract: enum-typed leaves
-   * widen to their primitive supertype. The errors array, dirty flag,
-   * focus state, etc. are unaffected.
+   * widen to their primitive supertype, and the leaf value reflects
+   * the `z.input<Schema>` shape (transforms deferred until parse).
+   * The errors array, dirty flag, focus state, etc. are unaffected.
    *
    * Shadowing: at depth 2+, FieldState keys (`dirty`, `touched`,
    * `errors`, `blank`, `focused`, `blurred`, `value`,
@@ -2595,7 +3035,7 @@ export type UseFormReturnType<
    * Document edge case; rename the offending schema field if the
    * collision matters.
    */
-  fields: FieldStateMap<WriteShape<GetValueFormType>>
+  fields: FieldStateMap<WriteShape<Form>>
 
   /**
    * Write to the form programmatically. Two forms:
@@ -2654,13 +3094,7 @@ export type UseFormReturnType<
      * it blank (storage holds the slim default; UI displays
      * empty; submit raises "No value supplied" for required schemas).
      */
-    <
-      Path extends FlatPath<Form>,
-      Value extends SetValuePayload<
-        DefaultValuesShape<NestedType<Form, Path>>,
-        NonNullable<WriteShape<NestedType<Form, Path>>>
-      >,
-    >(
+    <Path extends FlatPath<Form>, Value extends PathSetValuePayload<NestedType<Form, Path>>>(
       path: Path,
       value: Value
     ): boolean
@@ -2672,10 +3106,7 @@ export type UseFormReturnType<
      */
     <
       const S extends ReadonlyArray<string | number>,
-      Value extends SetValuePayload<
-        DefaultValuesShape<NestedType<Form, JoinSegments<S>>>,
-        NonNullable<WriteShape<NestedType<Form, JoinSegments<S>>>>
-      >,
+      Value extends PathSetValuePayload<NestedType<Form, JoinSegments<S>>>,
     >(
       segments: S & ([JoinSegments<S>] extends [FlatPath<Form>] ? unknown : never),
       value: Value
@@ -2714,6 +3145,32 @@ export type UseFormReturnType<
    * `true` while the promise is in flight.
    */
   validateAsync: (path?: FlatPath<Form>) => Promise<ValidationResponseWithoutValue<Form>>
+  /**
+   * Imperative one-shot parse. Same pipeline as `validateAsync` —
+   * runs refinements, applies `.transform()`s, composes blank-required
+   * errors — but RETAINS the parsed data instead of stripping it.
+   *
+   * Storage holds the "honest input view" — values you wrote, with
+   * preprocess normalization applied but `.transform()` deferred. For
+   * schemas where the input type differs from the output type (e.g.,
+   * `z.string().transform(v => v.length > 10)`), `form.values.X` is
+   * the input shape and `(await form.process()).data?.X` is the
+   * output shape.
+   *
+   * ```ts
+   * const result = await form.process()
+   * if (result.success) {
+   *   // result.data matches z.output<typeof schema>
+   * } else {
+   *   // result.errors is the validation failure list
+   * }
+   * ```
+   *
+   * Pass a path to parse a subtree only. Async because refinements may
+   * be async. `meta.validating` flips `true` while the promise is in
+   * flight (shared with validateAsync).
+   */
+  process: (path?: FlatPath<Form>) => Promise<ValidationResponse<GetValueFormType>>
   /**
    * Bind a path to a native input via `v-register`. Returns a
    * `RegisterValue` carrying the live ref and event handlers the
@@ -2810,12 +3267,10 @@ export type UseFormReturnType<
    * scripts; `toRef` is for ref-shaped interop only.
    */
   toRef: {
-    <Path extends FlatPath<Form>>(
-      path: Path
-    ): Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, Path>>>
+    <Path extends FlatPath<Form>>(path: Path): Readonly<Ref<NestedReadType<WriteShape<Form>, Path>>>
     <const S extends ReadonlyArray<string | number>>(
       segments: S & ([JoinSegments<S>] extends [FlatPath<Form>] ? unknown : never)
-    ): Readonly<Ref<NestedReadType<WriteShape<GetValueFormType>, JoinSegments<S>>>>
+    ): Readonly<Ref<NestedReadType<WriteShape<Form>, JoinSegments<S>>>>
   }
 
   /**
@@ -2896,12 +3351,13 @@ export type UseFormReturnType<
 
   /**
    * Form-level reactive flags, counters, and aggregates (`dirty`,
-   * `valid`, `submitting`, `submitCount`, `canUndo`,
-   * `historySize`, and the flat `errors` array). See `FormMeta` for
-   * the full shape. Read leaves directly with no `.value`.
+   * `valid`, `submitting`, `submitCount`, and the flat `errors`
+   * array). See `FormMeta` for the full shape. Read leaves directly
+   * with no `.value`.
    *
    * For per-field state (touched, focused, blurred, errors at one
-   * path), use `form.fields.<path>` instead.
+   * path), use `form.fields.<path>` instead. Undo/redo state lives at
+   * `form.history` (see `FormHistoryNamespace`).
    */
   meta: FormMeta<Form>
 
@@ -2971,18 +3427,12 @@ export type UseFormReturnType<
   // --- Undo / redo ---
 
   /**
-   * Revert the form to the previous snapshot. Returns `true` when a
-   * snapshot was restored, `false` when there's nothing to undo.
-   * No-op (returns `false`) when `useForm({ history })` wasn't configured.
+   * Consolidated undo/redo namespace — `form.history.{undo, redo,
+   * clear, canUndo, canRedo, size}`. Always present; inert when
+   * `useForm({ history })` wasn't configured. See `FormHistoryNamespace`
+   * for field-by-field semantics.
    */
-  undo: () => boolean
-
-  /**
-   * Replay a previously-undone snapshot. Returns `true` on success,
-   * `false` when the redo stack is empty. The redo stack clears as
-   * soon as a new mutation lands.
-   */
-  redo: () => boolean
+  history: FormHistoryNamespace
 
   // --- Focus / scroll to first error ---
 

@@ -52,7 +52,7 @@ describe('<select multiple v-register> — SSR + hydration', () => {
   })
 
   it('SSR HTML output for the select', async () => {
-    const ssrApp = createSSRApp(Parent).use(createAttaform({ override: true }))
+    const ssrApp = createSSRApp(Parent).use(createAttaform())
     const html = await renderToString(ssrApp)
     // Surface the SSR HTML so we can see what attributes (if any) the
     // server emits on options. The user's browser snapshot showed
@@ -66,7 +66,7 @@ describe('<select multiple v-register> — SSR + hydration', () => {
 
   it('after hydration, red and blue options have selected=true on the IDL property', async () => {
     // SSR pass.
-    const ssrApp = createSSRApp(Parent).use(createAttaform({ override: true }))
+    const ssrApp = createSSRApp(Parent).use(createAttaform())
     const html = await renderToString(ssrApp)
 
     // Plant the SSR HTML in the document so the client can hydrate it.

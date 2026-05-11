@@ -45,27 +45,30 @@ describe('zod-v4 adapter — unsupported kinds rejected at construction', () => 
     }
   })
 
-  it('recursive z.lazy() throws UnsupportedSchemaError', () => {
+  it('recursive z.lazy() mounts without throwing — adapter walks cap descent via maxRecursionDepth', () => {
     // Classic self-referential: getter resolves back to the same lazy.
-    // Zod types this as `z.ZodLazy<z.ZodType>`; the factory's return
-    // value is the same instance as the wrapper itself.
+    // Pre-B2 this threw `UnsupportedSchemaError` at adapter construction;
+    // post-B2 the adapter constructs and the runtime walks cap their
+    // descent via `maxRecursionDepth`.
+    //
+    // Caveat: a pathological `z.lazy(() => self)` schema with NO
+    // terminal structure cannot be parsed by Zod itself — calling
+    // `safeParse` on the slim schema after our walks cap still chains
+    // through a long lazy stack that Zod's parser can't unwind. Our
+    // contract is "construction doesn't throw"; running the schema
+    // against actual data is on the consumer.
     const self: z.ZodType = z.lazy(() => self)
     const schema = z.object({ node: self })
-    expect(() => zodV4Adapter(schema)).toThrow(UnsupportedSchemaError)
-    try {
-      zodV4Adapter(schema)
-    } catch (err) {
-      expect((err as Error).message).toContain('Recursive')
-      expect((err as Error).message).toContain("'node'")
-    }
+    expect(() => zodV4Adapter(schema)).not.toThrow()
+    expect(() => zodV4Adapter(schema)('test', { maxRecursionDepth: 64 })).not.toThrow()
   })
 
-  it('recursive z.lazy() via nested structure throws', () => {
+  it('recursive z.lazy() via nested structure mounts without throwing', () => {
     type Node = { value: string; children: Node[] }
     const nodeSchema: z.ZodType<Node> = z.lazy(() =>
       z.object({ value: z.string(), children: z.array(nodeSchema) })
     )
-    expect(() => zodV4Adapter(z.object({ root: nodeSchema }))).toThrow(UnsupportedSchemaError)
+    expect(() => zodV4Adapter(z.object({ root: nodeSchema }))).not.toThrow()
   })
 })
 
@@ -74,7 +77,7 @@ describe('zod-v4 adapter — supported variants of lazy/intersection/catch', () 
     const inner = z.object({ x: z.number() })
     const schema = z.object({ wrap: z.lazy(() => inner) })
     expect(() => zodV4Adapter(schema)).not.toThrow()
-    const adapter = zodV4Adapter(schema)('test')
+    const adapter = zodV4Adapter(schema)('test', { maxRecursionDepth: 64 })
     const result = adapter.getDefaultValues({
       useDefaultSchemaValues: false,
       strict: false,
@@ -88,7 +91,7 @@ describe('zod-v4 adapter — supported variants of lazy/intersection/catch', () 
       item: z.intersection(z.object({ a: z.string() }), z.object({ b: z.number() })),
     })
     expect(() => zodV4Adapter(schema)).not.toThrow()
-    const adapter = zodV4Adapter(schema)('test')
+    const adapter = zodV4Adapter(schema)('test', { maxRecursionDepth: 64 })
     const result = adapter.getDefaultValues({
       useDefaultSchemaValues: false,
       strict: false,
@@ -99,7 +102,7 @@ describe('zod-v4 adapter — supported variants of lazy/intersection/catch', () 
 
   it('z.catch(schema, value) uses the catch value when useDefault=true', () => {
     const schema = z.object({ n: z.number().catch(42) })
-    const adapter = zodV4Adapter(schema)('test')
+    const adapter = zodV4Adapter(schema)('test', { maxRecursionDepth: 64 })
     const result = adapter.getDefaultValues({
       useDefaultSchemaValues: true,
       strict: false,
@@ -110,7 +113,7 @@ describe('zod-v4 adapter — supported variants of lazy/intersection/catch', () 
 
   it('z.catch falls through to inner leaf default when useDefault=false', () => {
     const schema = z.object({ n: z.number().catch(42) })
-    const adapter = zodV4Adapter(schema)('test')
+    const adapter = zodV4Adapter(schema)('test', { maxRecursionDepth: 64 })
     const result = adapter.getDefaultValues({
       useDefaultSchemaValues: false,
       strict: false,
@@ -152,13 +155,14 @@ describe('zod-v4 adapter — deriveDefault fallback on unsupported leaves', () =
     // `deriveDefault` is the internal walker; it's kept defensive so
     // downstream code paths that bypass the constructor guard don't
     // explode. Callers using the public adapter never hit this branch.
-    expect(deriveDefault(z.promise(z.string()), false)).toBeUndefined()
+    expect(deriveDefault(z.promise(z.string()), false, 64)).toBeUndefined()
     expect(
       deriveDefault(
         z.custom<string>(() => true),
-        false
+        false,
+        64
       )
     ).toBeUndefined()
-    expect(deriveDefault(z.templateLiteral(['x ', z.string()]), false)).toBeUndefined()
+    expect(deriveDefault(z.templateLiteral(['x ', z.string()]), false, 64)).toBeUndefined()
   })
 })

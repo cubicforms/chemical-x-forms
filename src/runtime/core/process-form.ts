@@ -50,8 +50,8 @@ export type BuildProcessFormOptions = {
   onInvalidSubmit?: OnInvalidSubmitPolicy
 }
 
-export function buildProcessForm<F extends GenericForm>(
-  state: FormStore<F>,
+export function buildProcessForm<F extends GenericForm, Out extends GenericForm = F>(
+  state: FormStore<F, Out>,
   formInstanceId: string,
   options: BuildProcessFormOptions = {}
 ) {
@@ -77,14 +77,20 @@ export function buildProcessForm<F extends GenericForm>(
       // against the effect — the activeEffect stack is empty here —
       // so writing to `activeValidations` / `result` can't re-trigger
       // the watchEffect below.
-      state.activeValidations.value += 1
-      result.value = {
-        pending: true,
-        errors: undefined,
-        success: false,
-        formKey: state.formKey,
-      }
+      //
+      // The lifecycle setup (counter increment + `pending: true` write)
+      // lives INSIDE the try block so a sync watcher on
+      // `meta.validating` or on the returned `result` ref that throws
+      // can't leak the counter — the finally still decrements (Math.max
+      // clamps the partial-increment underflow case at zero).
       try {
+        state.activeValidations.value += 1
+        result.value = {
+          pending: true,
+          errors: undefined,
+          success: false,
+          formKey: state.formKey,
+        }
         const refinement = await runRefinementValidation(data, path)
         if (captured !== gen) return
         result.value = settled(composeWithDerivedBlank(refinement, path))
@@ -159,12 +165,87 @@ export function buildProcessForm<F extends GenericForm>(
   ): Promise<ValidationResponseWithoutValue<F>> {
     const segments = pathInput === undefined ? undefined : toSegments(pathInput)
     const dataAtPath = segments === undefined ? state.form.value : state.getValueAtPath(segments)
-    state.activeValidations.value += 1
+    // Increment lives INSIDE the try so a sync watcher on
+    // `meta.validating` that throws can't leak `activeValidations`. The
+    // finally still decrements (Math.max guards the partial-increment
+    // underflow case). Adapter throws (or any throw inside the
+    // pipeline — sync watcher boom, malformed schema) get translated
+    // into a structured failure response with the `AdapterThrew` code
+    // instead of rejecting the promise. A misbehaving adapter must not
+    // be allowed to wreck the consumer's await chain or leak a raw
+    // exception into UI code.
     try {
+      state.activeValidations.value += 1
       const refinement = await runRefinementValidation(dataAtPath, segments)
       return stripData(composeWithDerivedBlank(refinement, segments))
+    } catch (err) {
+      return adapterThrowResponse(err)
     } finally {
       state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
+    }
+  }
+
+  /**
+   * Imperative one-shot parse — same pipeline as `validateAsync` but
+   * RETAINS the parsed data. Returns what `form.values` WOULD be if
+   * every refinement passed and every transform fired. Useful when
+   * the form's storage holds the pre-transform input view (the
+   * "honest input view" — Attaform doesn't run `.transform()` at
+   * write time, only preprocess) and the consumer wants the
+   * post-transform output on demand.
+   *
+   * For a schema like `z.object({ email: z.string().transform(v =>
+   * v.length > 10) })`, `form.values.email` is the string the user
+   * wrote, while `(await form.process()).data?.email` is the boolean
+   * the transform produces. handleSubmit's callback already receives
+   * this same shape (it's what the parse pipeline emits before
+   * onSubmit runs); `process()` is the standalone read-only form.
+   *
+   * Async because refinements may be async (`.refine(async ...)`).
+   * The path-scoped variant mirrors `validateAsync(path?)` —
+   * `process('email')` returns the parsed value at that path only.
+   *
+   * Like `validateAsync`, this never rejects on adapter misbehavior:
+   * a throwing adapter (or any pipeline failure) lands in the
+   * response as a `success: false, errors: [{ code: AdapterThrew }]`
+   * shape so the library stays robust against a bad adapter.
+   */
+  async function process(pathInput?: string | Path): Promise<ValidationResponse<Out>> {
+    const segments = pathInput === undefined ? undefined : toSegments(pathInput)
+    const dataAtPath = segments === undefined ? state.form.value : state.getValueAtPath(segments)
+    try {
+      state.activeValidations.value += 1
+      const refinement = await runRefinementValidation(dataAtPath, segments)
+      return composeWithDerivedBlank(refinement, segments)
+    } catch (err) {
+      return adapterThrowResponse(err)
+    } finally {
+      state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
+    }
+  }
+
+  /**
+   * Build an adapter-threw failure response. Shared between
+   * `validateAsync`, `process`, and the reactive `validate()`'s
+   * kickoff so every imperative validation surface presents the same
+   * shape on adapter misbehavior: `{ success: false, errors: [{ code
+   * AdapterThrew, message: adapterThrowMessage(err), path: [],
+   * formKey }] }`. The `data` field is `undefined` so the
+   * ValidationResponse union resolves to ErrorWithoutData.
+   */
+  function adapterThrowResponse(err: unknown): ValidationResponse<Out> {
+    return {
+      success: false,
+      data: undefined,
+      errors: [
+        {
+          message: adapterThrowMessage(err),
+          path: [],
+          formKey: state.formKey,
+          code: AttaformErrorCode.AdapterThrew,
+        },
+      ],
+      formKey: state.formKey,
     }
   }
 
@@ -180,8 +261,8 @@ export function buildProcessForm<F extends GenericForm>(
   async function runRefinementValidation(
     data: unknown,
     path: Path | undefined
-  ): Promise<ValidationResponse<F>> {
-    return (await state.schema.validateAtPath(data, path)) as ValidationResponse<F>
+  ): Promise<ValidationResponse<Out>> {
+    return await state.schema.validateAtPath(data, path)
   }
 
   /**
@@ -191,9 +272,9 @@ export function buildProcessForm<F extends GenericForm>(
    * tick.
    */
   function composeWithDerivedBlank(
-    refinement: ValidationResponse<F>,
+    refinement: ValidationResponse<Out>,
     scope: Path | undefined
-  ): ValidationResponse<F> {
+  ): ValidationResponse<Out> {
     const blankErrors = collectScopedBlankErrors(state, scope)
     if (blankErrors.length === 0) return refinement
     if (refinement.success) {
@@ -232,7 +313,7 @@ export function buildProcessForm<F extends GenericForm>(
    * `validating` ref (backed by `state.activeValidations`) is true
    * for the validation window.
    */
-  const handleSubmit: HandleSubmit<F> = (onSubmit: OnSubmit<F>, onError?: OnError) => {
+  const handleSubmit: HandleSubmit<Out> = (onSubmit: OnSubmit<Out>, onError?: OnError) => {
     const submitHandler: SubmitHandler = async (event?: Event): Promise<void> => {
       if (
         event !== undefined &&
@@ -241,23 +322,40 @@ export function buildProcessForm<F extends GenericForm>(
       ) {
         event.preventDefault()
       }
-      // Use the in-flight counter on FormStore so two overlapping submit
-      // handlers don't clobber each other: the first completion only
-      // flips submitting to false when the counter reaches zero, not
-      // unconditionally. submitError is shared across runs by design — a
-      // later run's success / failure replaces the earlier capture,
-      // UNLESS a `reset()` fired between entry and throw (see below).
+      // Re-entry guard: a submission is already in flight. The classic
+      // double-click case — `submit()` fires while a prior call is still
+      // awaiting validation or the consumer's onSuccess — would otherwise
+      // drive `onSuccess` twice and duplicate side-effects (POSTs, etc).
+      // `preventDefault` already ran above, so a duplicate browser submit
+      // is suppressed even when this branch returns early.
+      if (state.activeSubmissions.value > 0) {
+        return
+      }
+      // Track in-flight via a counter (not a flag) so that a generation
+      // bump during the run can still distinguish "I'm the live submission"
+      // from "a stale prior submission winding down" via the early
+      // generation snapshot. submitError is shared with the prior call's
+      // capture only when a `reset()` hasn't fired between entry and
+      // throw (see the catch block).
       const genAtEntry = state.submissionGeneration.value
-      state.activeSubmissions.value += 1
-      state.submitting.value = true
-      state.submitError.value = null
-      // Abort any in-flight per-field validation runs so their late
-      // writes can't clobber the authoritative submit result. Also
-      // clears debounce timers that never fired.
-      state.cancelFieldValidation()
-      state.activeValidations.value += 1
       let validationSettled = false
       try {
+        // All lifecycle setup happens inside the try so a throw from
+        // any of the setters (e.g. a sync `watch` on `meta.submitting`
+        // that rejects, or a defensive throw from
+        // `cancelFieldValidation`) still lands in the finally block.
+        // Without this, an early-setup throw would leak
+        // `activeSubmissions` at 1 forever and silently block every
+        // subsequent submit. Math.max in the finally already clamps
+        // partial-increment underflow at zero.
+        state.activeSubmissions.value += 1
+        state.submitting.value = true
+        state.submitError.value = null
+        // Abort any in-flight per-field validation runs so their late
+        // writes can't clobber the authoritative submit result. Also
+        // clears debounce timers that never fired.
+        state.cancelFieldValidation()
+        state.activeValidations.value += 1
         const refinement = await runRefinementValidation(state.form.value, undefined)
         const merged = composeWithDerivedBlank(refinement, undefined)
         state.activeValidations.value = Math.max(0, state.activeValidations.value - 1)
@@ -349,7 +447,7 @@ export function buildProcessForm<F extends GenericForm>(
     return submitHandler
   }
 
-  return { validate, validateAsync, handleSubmit }
+  return { validate, validateAsync, process, handleSubmit }
 }
 
 function toSegments(pathInput: string | Path): Path {
@@ -388,7 +486,7 @@ function adapterThrowMessage(err: unknown): string {
  * the store's computed builds a fresh map per recompute.
  */
 function collectScopedBlankErrors<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   scope: Path | undefined
 ): ValidationError[] {
   const derived = state.derivedBlankErrors.value
@@ -425,7 +523,7 @@ function pathStartsWith(target: Path, prefix: Path): boolean {
 }
 
 function applyInvalidSubmitPolicy<F extends GenericForm>(
-  state: FormStore<F>,
+  state: FormStore<F, GenericForm>,
   formInstanceId: string,
   policy: OnInvalidSubmitPolicy
 ): void {

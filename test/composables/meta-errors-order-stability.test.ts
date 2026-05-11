@@ -50,7 +50,7 @@ function mountForm<Schema extends z.ZodObject>(
       return () => h('div')
     },
   })
-  const app = createApp(App).use(createAttaform({ override: true }))
+  const app = createApp(App).use(createAttaform())
   app.config.warnHandler = () => {}
   app.config.errorHandler = () => {}
   app.mount(document.createElement('div'))
@@ -205,7 +205,16 @@ describe('form.meta.errors — schema-declaration ordinal sort', () => {
     expect(api.meta.errors.map((e) => e.path.join('.'))).toEqual(['email', 'password'])
   })
 
-  it('reset preserves ordinals across re-trigger', async () => {
+  it('reset preserves ordinals across re-derive (strict mode re-runs validation)', async () => {
+    // Under `strict: true` (the default), construction validates the
+    // mounted defaults and seeds schemaErrors accordingly — and reset
+    // mirrors that by re-deriving against the post-reset state. A
+    // form mounted with invalid defaults stays in an invalid surface
+    // post-reset; the user-visible verdict can't lie that the form
+    // is suddenly fine when its values haven't moved.
+    //
+    // This probe pins both pieces: the re-derive fires AND the
+    // ordinals (path → sort slot) survive the reset cleanly.
     const { app, api } = mountForm(schema, { email: '', password: '' })
     apps.push(app)
 
@@ -222,10 +231,13 @@ describe('form.meta.errors — schema-declaration ordinal sort', () => {
     expect(beforeReset).toEqual(['email', 'password'])
 
     api.reset()
-    await waitUntil(() => (api.meta.errors.length === 0 ? true : null))
-    expect(api.meta.errors).toEqual([])
+    // After reset, the invalid defaults still violate the schema —
+    // errors are re-derived synchronously in the same order construction
+    // would have produced them.
+    expect(api.meta.errors.map((e) => e.path.join('.'))).toEqual(beforeReset)
 
-    // Re-submit with the same default-empty state.
+    // Re-submit with the same default-empty state — the aggregate
+    // doesn't churn (errors already there, ordinals preserved).
     await handler()
     await waitUntil(() =>
       api.meta.errors.map((e) => e.path.join('.')).join('|') === beforeReset.join('|') ? true : null

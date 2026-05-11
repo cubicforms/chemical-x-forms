@@ -351,7 +351,7 @@ describe('anonymous useForm — ambient-overwrite dev warning', () => {
     })
 
     const serverApp = createSSRApp(App)
-    serverApp.use(createAttaform({ override: true }))
+    serverApp.use(createAttaform({ ssr: true }))
     await renderToString(serverApp)
 
     expect(warnSpy).not.toHaveBeenCalled()
@@ -384,7 +384,7 @@ describe('anonymous useForm — SSR determinism', () => {
 
     // Server-side render — useId() draws from Vue's SSR id allocator.
     const serverApp = createSSRApp(App((api) => (serverApi = api)))
-    serverApp.use(createAttaform({ override: true }))
+    serverApp.use(createAttaform())
     await renderToString(serverApp)
 
     // Client-side mount of the same tree shape — useId() must match
@@ -419,7 +419,7 @@ describe('reserved key namespace', () => {
         return () => h('div')
       },
     })
-    const app = createApp(App).use(createAttaform({ override: true }))
+    const app = createApp(App).use(createAttaform())
     // The throw IS the test's signal — vitest captures it via
     // `.toThrow(...)`. Vue still emits a `[Vue warn]: Unhandled error
     // during execution of setup function` to stderr before re-throwing,

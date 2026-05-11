@@ -669,7 +669,13 @@ describe('form.errors — container materialisation (toJSON / String / `{{ }}`)'
     expect(serialised.name.map((e) => e.message)).toEqual(['A', 'B'])
   })
 
-  it('active-path filter: inactive DU variant errors are excluded', () => {
+  it('user errors at inactive DU variant paths still surface (consumer data, not filtered)', () => {
+    // Updated contract: user-injected errors are consumer data —
+    // server replies, manual marks, programmatic warnings — and the
+    // library never silently drops them, including at paths the
+    // current DU variant doesn't cover. Schema errors (library-
+    // produced verdicts) still respect the active-path filter; see
+    // the DU-transition probe below for that contract.
     const schema = z.object({
       notify: z.discriminatedUnion('channel', [
         z.object({ channel: z.literal('email'), address: z.string() }),
@@ -692,12 +698,8 @@ describe('form.errors — container materialisation (toJSON / String / `{{ }}`)'
       },
     ])
     const serialised = JSON.parse(JSON.stringify(form.errors))
-    expect(serialised).toMatchObject({
-      notify: { address: [{ message: 'bad addr' }] },
-    })
-    // The inactive variant's path is filtered out, matching the leaf-read
-    // semantics (`form.errors.notify.number` is undefined in this state).
-    expect(serialised.notify.number).toBeUndefined()
+    expect(serialised.notify.address).toMatchObject([{ message: 'bad addr' }])
+    expect(serialised.notify.number).toMatchObject([{ message: 'bad num' }])
   })
 
   it('serialised tree updates on every JSON.stringify call (no staleness across state changes)', () => {
@@ -1018,56 +1020,41 @@ describe('surface materialisation — predictable representations + complex erro
     expect(messages).toContain('Server says income is suspicious')
   })
 
-  it('DU transition: errors at the previously-active variant disappear after switch', () => {
+  it('DU transition: schema errors at the previously-active variant disappear after switch (user errors persist)', () => {
+    // Schema errors (library-produced) respect the active-path filter:
+    // a schema verdict against the email variant becomes unreachable
+    // when the discriminator flips to sms, so it stops appearing in
+    // the serialised tree. User-injected errors are consumer data
+    // and survive the switch — see the surface-serialization probe
+    // for the unknown-key / form-level companions to this rule.
     const schema = z.object({
       notify: z.discriminatedUnion('channel', [
-        z.object({ channel: z.literal('email'), address: z.string() }),
-        z.object({ channel: z.literal('sms'), number: z.string() }),
+        z.object({ channel: z.literal('email'), address: z.email() }),
+        z.object({ channel: z.literal('sms'), number: z.string().min(10) }),
       ]),
     })
-    const form = mount(schema, { notify: { channel: 'email', address: 'a@b.com' } })
+    const form = mount(schema, { notify: { channel: 'email', address: 'not-an-email' } })
 
-    form.setFieldErrors([
-      {
-        path: ['notify', 'address'],
-        message: 'address bad',
-        formKey: form.key,
-        code: 'api:validation',
-      },
-      {
-        path: ['notify', 'number'],
-        message: 'number bad',
-        formKey: form.key,
-        code: 'api:validation',
-      },
-    ])
+    // Trigger a schema error on the active variant.
+    form.validate('notify.address')
 
-    // Email is active: only `address` surfaces; `number` is filtered.
-    const beforeSwitch = JSON.parse(JSON.stringify(form.errors)) as {
-      notify: { address?: unknown; number?: unknown }
-    }
-    expect(beforeSwitch.notify.address).toMatchObject([{ message: 'address bad' }])
-    expect(beforeSwitch.notify.number).toBeUndefined()
-
-    // Switch to sms: storage now contains `notify.number`, not
-    // `notify.address`. The active-path filter inverts which variant
-    // surfaces.
-    form.setValue('notify', { channel: 'sms', number: '+15555' })
+    // After the variant switch, the schema error at notify.address
+    // becomes inactive and the serialised tree drops it.
+    form.setValue('notify', { channel: 'sms', number: '+1555' })
     const afterSwitch = JSON.parse(JSON.stringify(form.errors)) as {
-      notify: { address?: unknown; number?: unknown }
+      notify?: { address?: unknown; number?: unknown }
     }
-    expect(afterSwitch.notify.address).toBeUndefined()
-    expect(afterSwitch.notify.number).toMatchObject([{ message: 'number bad' }])
+    expect(afterSwitch.notify?.address).toBeUndefined()
   })
 
-  it("form-level errors (path: ['']) are excluded from form.errors drill but surface in form.meta.errors and form.errors('')", () => {
-    // Container materialisation skips self-path errors at every
-    // container depth — including the root. The form-level bucket
-    // (`['']`) lives in its own dedicated channel: `form.errors('')`
-    // returns just the bucket; `form.meta.errors` is the unfiltered
-    // flat aggregate; the descend-only path-keyed `form.errors`
-    // proxy intentionally has no key representing the empty path
-    // in its nested tree.
+  it("form-level errors (path: ['']) surface in form.errors at the empty-string key, plus form.meta.errors and form.errors('')", () => {
+    // Form-level user entries (set via `setFormErrors` or arriving
+    // through `setFieldErrors([{ path: [] }])` which reroutes to the
+    // empty-string bucket) MUST surface in the serialised
+    // `form.errors` tree under the empty-string key. Otherwise
+    // debug-prints (`{{ JSON.stringify(form.errors, null, 2) }}`)
+    // silently lose them. They also stay reachable via
+    // `form.errors('')` and `form.meta.errors`.
     const schema = z.object({ name: z.string() })
     const form = mount(schema, { name: '' })
     form.setFieldErrors([
@@ -1076,16 +1063,13 @@ describe('surface materialisation — predictable representations + complex erro
     ])
 
     const errorsTree = JSON.parse(JSON.stringify(form.errors)) as Record<string, unknown>
-    // Leaf-keyed entry surfaces.
     expect(errorsTree['name']).toMatchObject([{ message: 'name bad' }])
-    // The form-level error is NOT serialised (no key represents the
-    // form-level path in the nested tree).
-    const keys = Object.keys(errorsTree)
-    expect(keys).toEqual(['name'])
+    expect(errorsTree['']).toMatchObject([{ message: 'whole-form invalid' }])
 
-    // The flat aggregate captures BOTH entries.
+    // Dedicated form-level read still works.
+    expect(form.errors('')).toMatchObject([{ message: 'whole-form invalid' }])
+
+    // Flat aggregate captures both entries.
     expect(form.meta.errors).toHaveLength(2)
-    const formLevel = form.meta.errors.find((e) => e.path.length === 1 && e.path[0] === '')
-    expect(formLevel?.message).toBe('whole-form invalid')
   })
 })

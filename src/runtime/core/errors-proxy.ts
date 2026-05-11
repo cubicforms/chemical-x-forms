@@ -46,19 +46,28 @@ export function buildErrorsProxy<F extends GenericForm>(
   return buildSurfaceProxy<ValidationError[] | undefined>({
     schema: state.schema as unknown as Parameters<typeof buildSurfaceProxy>[0]['schema'],
     resolveLeaf: (path) => {
-      // Active-path filter: paths whose value is no longer reachable
-      // through the live form value (inactive variant after a DU
-      // switch) are hidden from `form.errors`. Per-field read APIs
+      // Active-path filter applies to SCHEMA + DERIVED-BLANK errors
+      // only: paths whose value is no longer reachable through the
+      // live form (e.g. the inactive variant of a DU after a switch)
+      // are hidden because they're library-produced verdicts against
+      // state that's been replaced. USER errors (set via
+      // `setFieldErrors` / `setFormErrors`) are the consumer's data
+      // — server replies, programmatic warnings, manual marks — and
+      // we never silently drop them, even at paths the schema
+      // doesn't know about. Per-field reads
       // (`form.fields.<path>.errors`, `state.getErrorsForPath`) and
-      // the `form.meta.errors` aggregate still expose them.
-      if (!hasAtPath(state.form.value, path as ReadonlyArray<Segment>)) return undefined
+      // the `form.meta.errors` aggregate are unaffected by this
+      // filter.
       const { key } = canonicalizePath(path as Path)
-      const schemaForKey = state.schemaErrors.get(key)
-      const blankForKey = state.derivedBlankErrors.value.get(key)
       const userForKey = state.userErrors.get(key)
+      const isActive = hasAtPath(state.form.value, path as ReadonlyArray<Segment>)
       const merged: ValidationError[] = []
-      if (schemaForKey !== undefined) merged.push(...schemaForKey)
-      if (blankForKey !== undefined) merged.push(...blankForKey)
+      if (isActive) {
+        const schemaForKey = state.schemaErrors.get(key)
+        const blankForKey = state.derivedBlankErrors.value.get(key)
+        if (schemaForKey !== undefined) merged.push(...schemaForKey)
+        if (blankForKey !== undefined) merged.push(...blankForKey)
+      }
       if (userForKey !== undefined) merged.push(...userForKey)
       return merged.length === 0 ? undefined : merged
     },
@@ -112,7 +121,16 @@ function materializeErrors<F extends GenericForm>(
   const liveContainer = getAtPath(state.form.value, containerSegments)
   const tree: Record<string, unknown> | unknown[] = Array.isArray(liveContainer) ? [] : {}
 
-  const collect = (store: ReadonlyMap<PathKey, ValidationError[]>): void => {
+  // Two store classes with different visibility rules. Schema +
+  // derived-blank: library-produced verdicts; filter out paths the
+  // current form value can't reach (inactive DU variants). User:
+  // consumer-supplied data (server replies, manual marks); surface
+  // every entry regardless of `hasAtPath`, otherwise unknown server
+  // keys / form-level messages get silently swallowed.
+  const collect = (
+    store: ReadonlyMap<PathKey, ValidationError[]>,
+    applyActivePathFilter: boolean
+  ): void => {
     entries: for (const [pathKey, errors] of store) {
       if (errors.length === 0) continue
       // Cache hit on every keystroke — the store's PathKeys are
@@ -120,25 +138,29 @@ function materializeErrors<F extends GenericForm>(
       // cache. Cold path (corrupt key) returns null and we skip.
       const fullPath = segmentsForPathKey(pathKey)
       if (fullPath === null) continue
-      // Skip paths that aren't strict descendants of the container —
-      // a path equal to or shorter than the container has no leaf-keyed
-      // contribution at this view (errors at the exact container path
-      // are surfaced via `form.meta.errors`).
+      // Skip paths that aren't strict descendants of the container.
+      // Exception at the ROOT container (`containerSegments.length === 0`):
+      // form-level user entries live at the empty-string path `['']`
+      // (length 1), which IS a strict descendant of the root by length,
+      // but with a `''` first segment that placeAt routes under an
+      // empty-string key — letting consumers debug-print form-level
+      // messages without a separate API call.
       if (fullPath.length <= containerSegments.length) continue
       for (let i = 0; i < containerSegments.length; i++) {
         if (fullPath[i] !== containerSegments[i]) continue entries
       }
-      // Active-path filter: skip paths that aren't reachable through
-      // the live form value. Matches `resolveLeaf` semantics so a leaf
-      // read and a container materialisation never disagree.
-      if (!hasAtPath(state.form.value, fullPath)) continue
+      // Active-path filter matches `resolveLeaf` semantics so a leaf
+      // read and a container materialisation never disagree. Only
+      // schema-class stores apply it — user errors stay visible
+      // whether or not their path is reachable.
+      if (applyActivePathFilter && !hasAtPath(state.form.value, fullPath)) continue
       placeAt(tree, fullPath.slice(containerSegments.length), errors)
     }
   }
 
-  collect(state.schemaErrors)
-  collect(state.derivedBlankErrors.value)
-  collect(state.userErrors)
+  collect(state.schemaErrors, true)
+  collect(state.derivedBlankErrors.value, true)
+  collect(state.userErrors, false)
   return tree
 }
 

@@ -10,10 +10,20 @@ import type { ValidationError } from '../../src/runtime/types/types-api'
  * `form.setFormErrors` / `form.clearFormErrors` write and clear the
  * form-level errors — entries at the empty-string path `['']`,
  * stored in the `'[""]'` PathKey bucket — without disturbing any
- * field-level error. Form-level errors surface in `form.meta.errors`
- * and in `form.errors('')`; they're excluded from the path-keyed
- * `form.errors` drill proxy because no nested-object key represents
- * the empty-string path.
+ * field-level error. Form-level entries are visible across every
+ * read surface:
+ *
+ *   - `form.meta.errors` — the flat aggregate, unfiltered.
+ *   - `form.errors('')` — the dedicated form-level read.
+ *   - `form.errors` proxy iteration / `JSON.stringify(form.errors)`
+ *     / `{{ form.errors }}` — surfaces under the empty-string key
+ *     in the serialised tree so debug-prints don't silently lose
+ *     them.
+ *
+ * The path-keyed drill `form.errors.<field>` still only resolves
+ * schema field paths (`form.errors.` has no `''` field), so the
+ * form-level bucket is reached via the call form or via iteration,
+ * not dot-access.
  */
 
 const schema = z.object({
@@ -147,17 +157,20 @@ describe('form.setFormErrors / clearFormErrors', () => {
     expect(entries[1]?.code).toBe('atta:form-error')
   })
 
-  it('form-level errors are excluded from form.errors proxy', () => {
+  it('form-level errors surface in form.errors at the empty-string key', () => {
     const { app, api } = mount()
     apps.push(app)
 
     api.setFormErrors([{ message: 'Capacity exceeded' }])
 
-    // No key represents `[]` in the nested error tree — the proxy
-    // intentionally skips form-level errors. They live on
-    // `meta.errors` only.
-    const tree = JSON.parse(JSON.stringify(api.errors))
-    expect(tree).toEqual({})
+    // Form-level errors (empty-string path bucket) appear in the
+    // serialised proxy tree under the `''` key so debug-prints
+    // (`{{ JSON.stringify(form.errors, null, 2) }}`) don't silently
+    // drop them. They also remain reachable via `form.errors('')`
+    // and the flat `form.meta.errors` aggregate.
+    const tree = JSON.parse(JSON.stringify(api.errors)) as Record<string, unknown>
+    expect(tree['']).toMatchObject([{ message: 'Capacity exceeded' }])
+    expect(api.errors('')).toMatchObject([{ message: 'Capacity exceeded' }])
     expect(api.meta.errors).toHaveLength(1)
   })
 

@@ -366,7 +366,17 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   }
 
   function setFieldErrors(errors: ValidationError[]): void {
+    // `setAllUserErrors` clears the entire user-error map before
+    // writing, which would also wipe the form-level bucket
+    // (`FORM_ERRORS_PATH_KEY`). The form-level slot is owned by
+    // `setFormErrors` / `clearFormErrors` and is logically separate
+    // from field errors — replace-all field-error writes must not
+    // touch it. Preserve the bucket across the call.
+    const preserved = state.userErrors.get(FORM_ERRORS_PATH_KEY)
     state.setAllUserErrors(filterToOwnFormKey(errors, 'setFieldErrors'))
+    if (preserved !== undefined && preserved.length > 0) {
+      state.userErrors.set(FORM_ERRORS_PATH_KEY, preserved)
+    }
   }
 
   function addFieldErrors(errors: ValidationError[]): void {
@@ -381,8 +391,16 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     // and confined to "before the next keystroke / submit." See
     // docs/migration/0.11-to-0.12.md for the rationale.
     if (path === undefined) {
+      // Same logical separation as `setFieldErrors`: a no-arg
+      // `clearFieldErrors()` clears every FIELD error but must NOT
+      // wipe the form-level bucket. Form-level lifecycle belongs to
+      // `clearFormErrors()`.
+      const preserved = state.userErrors.get(FORM_ERRORS_PATH_KEY)
       state.clearSchemaErrors()
       state.clearUserErrors()
+      if (preserved !== undefined && preserved.length > 0) {
+        state.userErrors.set(FORM_ERRORS_PATH_KEY, preserved)
+      }
       return
     }
     const segments = canonicalizePath(path as string | Path).segments

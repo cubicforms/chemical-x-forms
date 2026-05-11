@@ -31,7 +31,7 @@
     "lint:fix": "eslint --ext .ts,.js,.vue . --fix && pnpm format",
     "format": "prettier --write '**/*.{ts,js,vue,css,scss,md,json,yml,yaml}'",
     "format:check": "prettier --check '**/*.{ts,js,vue,css,scss,md,json,yml,yaml}'",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm check:size && pnpm check:bench && pnpm check:coverage",
+    "check": "pnpm lint && pnpm typecheck && pnpm check:site && pnpm test && pnpm check:size && pnpm check:bench && pnpm check:coverage",
     "fix": "pnpm lint:fix",
     "typecheck": "tsc --noEmit",
     "prepack": "unbuild",
@@ -44,6 +44,7 @@
     "check:size": "pnpm prepack && size-limit",
     "check:coverage": "vitest run --coverage",
     "check:bench": "node scripts/check-bench.mjs",
+    "check:site": "pnpm dev:prepare && pnpm --filter attaform-site typecheck",
     "version": "node scripts/promote-changelog.mjs && (node scripts/generate-release-notes.mjs || echo '[version] release-notes step failed; continuing') && git add CHANGELOG.md RELEASES.md",
     "prepare": "husky"
   },
@@ -109,12 +110,6 @@
   "license": "MIT",
   "packageManager": "pnpm@10.33.4",
   "type": "module",
-  "lint-staged": {
-    "./src/**/*.{ts,vue}": "eslint",
-    "./apps/site/**/*.{ts,vue}": "eslint",
-    "./test/**/*.{ts,vue}": "eslint",
-    "**/*.{ts,js,vue,css,scss,md,json,yml,yaml}": "prettier --write"
-  },
   "pnpm": {
     "overrides": {
       "@nuxt/devtools": "3.2.4",

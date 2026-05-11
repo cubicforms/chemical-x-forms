@@ -2379,9 +2379,25 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     // `useForm({ defaultValues: ... })`. The structural-completeness
     // invariant covers post-write correctness; preserving construction
     // defaults across reset is a separate semantic the consumer expects.
+    //
+    // Pre-merge sparse constraints through `mergeStructural` BEFORE
+    // calling `getDefaultValues`, MIRRORING construction (line ~999).
+    // Without this, a sparse `defaultValues` like `{ pickup: { country:
+    // 'US' } }` reaches the adapter without its sibling-fill, and the
+    // adapter's `useDefaultSchemaValues` branch returns
+    // `success: true` even though the FILLED form
+    // (`{ pickup: { country: 'US', line1: '', city: '', ... } }`)
+    // violates `.min(1)` refinements on those siblings. Construction
+    // pre-fills, so it sees `success: false` correctly. Reset must
+    // do the same to keep the two responses byte-equivalent.
+    const resetSource = nextDefaultValues ?? defaultValues
+    const completedResetConstraints =
+      resetSource === undefined
+        ? undefined
+        : (mergeStructural(schema, [], resetSource) as DeepPartial<WriteShape<F>>)
     const resetResponse = schema.getDefaultValues({
       useDefaultSchemaValues: true,
-      constraints: nextDefaultValues ?? defaultValues,
+      constraints: completedResetConstraints,
       strict,
     })
     const next = resetResponse.data

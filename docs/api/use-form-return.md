@@ -182,12 +182,19 @@ registered through THAT callsite. `injectForm()` children inherit
 their ancestor's instance ID, so parent-submit-focus reaches inputs
 registered by deep children.
 
-## Reset
+## Reset and clear
 
-| Member             | Signature                                                | What it does                                                                                                                                                                                                               |
-| ------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `reset(next?)`     | `(next?: DeepPartial<DefaultValuesShape<Form>>) => void` | Re-seed the whole form. Rebuilds originals, clears errors + touched + submit state. Wipes the persisted draft if `persist:` is configured. Each leaf in `next` may be `unset` to mark the path displayed-empty post-reset. |
-| `resetField(path)` | `(path: FlatPath<Form>) => void`                         | Restore one path (leaf or container) to its original value. Wipes the matching subpath from storage if `persist:` is configured.                                                                                           |
+`reset` restores the schema's declared defaults; `clear` wipes to the
+type's falsy concrete (`''` / `0` / `false` / `[]` / recursively-empty
+object), ignoring any `.default(x)` wrapper. The two are orthogonal —
+see the [storage-shape recipe](/docs/recipes/storage-shape#reset-vs-clear-the-orthogonality)
+for the user-facing model.
+
+| Member             | Signature                                                                   | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------ | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reset(next?)`     | `(next?: DeepPartial<DefaultValuesShape<Form>>) => void`                    | Re-seed the whole form. Rebuilds originals, clears errors + touched + submit state. Wipes the persisted draft if `persist:` is configured. Each leaf in `next` may be `unset` to mark the path displayed-empty post-reset.                                                                                                                                                                                                                                 |
+| `resetField(path)` | `(path: FlatPath<Form>) => void`                                            | Restore one path (leaf or container) to its original value. Wipes the matching subpath from storage if `persist:` is configured.                                                                                                                                                                                                                                                                                                                           |
+| `clear(path?)`     | `(path?: FlatPath<Form> \| '' \| readonly (string \| number)[]) => boolean` | Wipe a path (or the whole form when called with no arg) to the type's falsy concrete. `.default(x)` / `.catch(x)` wrappers are intentionally skipped — clear ends at `false` / `0` / `''` / `[]` regardless of declared default. `.optional()` → `undefined`, `.nullable()` → `null`. Sugar over `setValue(path, schema.getEmptyValueAtPath(path))`. `clear()` (no arg) is the whole-form variant; `clear('')` targets the empty-string slot specifically. |
 
 ## Persistence (imperative)
 

@@ -43,5 +43,6 @@ export type {
   UnwrapZodObject,
   UseFormConfigurationWithZod,
 } from './runtime/adapters/zod-v3/types-zod-adapter'
+export type { ReadShape, ReadShapeField } from './runtime/adapters/zod-v3/types-read-shape'
 export { fieldMeta, withMeta } from './runtime/adapters/zod-v3/field-meta'
 export type { FieldMetaPayload } from './runtime/core/field-meta'

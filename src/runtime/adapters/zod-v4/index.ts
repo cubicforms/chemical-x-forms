@@ -22,11 +22,13 @@ import type {
   NestedType,
 } from '../../types/types-core'
 import { zodV4Adapter } from './adapter'
+import type { ReadShape } from './types-read-shape'
 
 export { zodV4Adapter as zodAdapter } from './adapter'
 export { UnsupportedSchemaError } from './errors'
 export { assertZodVersion, kindOf } from './introspect'
 export type { ZodKind } from './introspect'
+export type { ReadShape, ReadShapeField } from './types-read-shape'
 
 /**
  * Type of the value accepted at `Path` for `setValue` / `defaultValues`
@@ -105,7 +107,8 @@ export function useForm<Schema extends z.ZodObject>(
   > & { schema: Schema } & ValidateOnConfig
 ): UseFormReturnType<
   z.input<Schema> extends GenericForm ? z.input<Schema> : never,
-  z.output<Schema> extends GenericForm ? z.output<Schema> : never
+  z.output<Schema> extends GenericForm ? z.output<Schema> : never,
+  ReadShape<Schema> extends GenericForm ? ReadShape<Schema> : never
 > {
   // Foot-gun guard: catches `useForm(z.object({...}))` (raw schema as
   // the first arg — its `.schema` field is undefined), `useForm()` (no
@@ -147,9 +150,10 @@ export function useForm<Schema extends z.ZodObject>(
   // public `useForm` signature already enforced the discriminant on
   // `configuration` before we got here), so cast to the parameter
   // type to side-step the structural disagreement.
+  type Read = ReadShape<Schema> extends GenericForm ? ReadShape<Schema> : never
   // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-  return useAbstractForm<Form, Out>({
+  return useAbstractForm<Form, Out, Read>({
     ...configuration,
     schema: adapter,
-  } as Parameters<typeof useAbstractForm<Form, Out>>[0])
+  } as Parameters<typeof useAbstractForm<Form, Out, Read>>[0])
 }

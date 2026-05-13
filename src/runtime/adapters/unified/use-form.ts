@@ -23,6 +23,7 @@ import { InvalidUseFormConfigError } from '../../core/errors'
 import { isZodV4SchemaShape } from '../../core/zod-shape'
 import { useForm as useFormV3 } from '../../composables/use-form'
 import { useForm as useFormV4 } from '../zod-v4'
+import type { ReadShape } from '../zod-v4/types-read-shape'
 import type {
   AbstractSchema,
   ValidateOnConfig,
@@ -68,7 +69,8 @@ export function useForm<Schema extends z.ZodObject>(
   > & { schema: Schema } & ValidateOnConfig
 ): UseFormReturnType<
   z.input<Schema> extends GenericForm ? z.input<Schema> : never,
-  z.output<Schema> extends GenericForm ? z.output<Schema> : never
+  z.output<Schema> extends GenericForm ? z.output<Schema> : never,
+  ReadShape<Schema> extends GenericForm ? ReadShape<Schema> : never
 > {
   // Foot-gun guard mirrors the typed wrappers'.
   if (

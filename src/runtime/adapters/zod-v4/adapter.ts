@@ -449,6 +449,23 @@ export function zodV4Adapter<
         return deriveDefault(unwrapStructuralWrappers(first), true, maxRecursionDepth)
       },
 
+      getEmptyValueAtPath(path) {
+        // `clear`'s underlying value lookup. Same path-resolution flow
+        // as `getDefaultAtPath` (root for empty path, first candidate
+        // for unions), but `useDefault=false` so `.default(x)` /
+        // `.prefault(x)` / `.catch(x)` wrappers are skipped — the
+        // walker yields the inner-schema's empty/falsy concrete
+        // instead. Structural wrappers (`.optional()` / `.nullable()`)
+        // are NOT peeled: clearing an `.optional()` slot is
+        // legitimately `undefined`, clearing a `.nullable()` slot is
+        // `null` — that's the user's "this slot is empty" signal at
+        // those wrapper types.
+        if (path.length === 0) return deriveDefault(rootSchema, false, maxRecursionDepth)
+        const [first] = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)
+        if (first === undefined) return undefined
+        return deriveDefault(first, false, maxRecursionDepth)
+      },
+
       arrayShapeAtPath(path) {
         if (path.length === 0) return undefined
         const [first] = getNestedZodSchemasAtPath(rootSchema, path, maxRecursionDepth)

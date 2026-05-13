@@ -19,13 +19,11 @@ import { createAttaform } from '../../src/runtime/core/plugin'
  * runtime resolves it to `T` at storage-init. That gap is the §1.1
  * "type lies" friction.
  *
- * RED-today markers: every type-level assertion in the deltas below
- * carries `@ts-expect-error - POST-FIX (storage-shape)`. Once the
- * `StorageShape<Schema>` mapped type lands, those directives become
- * invalid (TS2578) and force co-removal in the fix commit. Runtime
- * assertions stay unmarked — the storage invariant already holds at
- * runtime; this matrix exists to ensure the static type catches up
- * AND to flag any runtime corner that contradicts the invariant.
+ * Type-level assertions pin the surface so a future regression to
+ * `z.input<Schema>`-only typing (or any drift in `ReadShape<>`) trips
+ * `expectTypeOf` at compile time. Runtime assertions confirm the
+ * storage invariant holds end-to-end; together the matrix is the
+ * cross-check that the static type and the runtime agree.
  *
  * Out-of-scope edges (kept here as guardrails, not bugs):
  *  - `ZodOptional<T>` without a default — genuinely optional; type
@@ -94,7 +92,6 @@ describe('ZodDefault — type peels `| undefined`, runtime resolves the default'
   const formT = makeFormProxy<Form>()
 
   it('z.boolean().default(true) → boolean (type)', () => {
-    // @ts-expect-error - POST-FIX (storage-shape): should be `boolean`
     expectTypeOf(formT.values.flag).toEqualTypeOf<boolean>()
   })
   it('z.boolean().default(true) → true (runtime)', () => {
@@ -110,7 +107,6 @@ describe('ZodDefault — type peels `| undefined`, runtime resolves the default'
   })
 
   it('z.number().default(0) → number (type)', () => {
-    // @ts-expect-error - POST-FIX (storage-shape): should be `number`
     expectTypeOf(formT.values.count).toEqualTypeOf<number>()
   })
   it('z.number().default(0) → 0 (runtime)', () => {
@@ -126,7 +122,6 @@ describe('ZodDefault — type peels `| undefined`, runtime resolves the default'
   })
 
   it('z.string().default("attaform") → string (type)', () => {
-    // @ts-expect-error - POST-FIX (storage-shape): should be `string`
     expectTypeOf(formT.values.name).toEqualTypeOf<string>()
   })
   it('z.string().default("attaform") → "attaform" (runtime)', () => {
@@ -142,7 +137,6 @@ describe('ZodDefault — type peels `| undefined`, runtime resolves the default'
   })
 
   it('z.array(z.string()).default([]) → string[] (type)', () => {
-    // @ts-expect-error - POST-FIX (storage-shape): should be `string[]`
     expectTypeOf(formT.values.tags).toEqualTypeOf<string[]>()
   })
   it('z.array(z.string()).default([]) → [] (runtime)', () => {
@@ -158,9 +152,7 @@ describe('ZodDefault — type peels `| undefined`, runtime resolves the default'
   })
 
   it('nested ZodDefault — type resolves inner shape', () => {
-    // @ts-expect-error - POST-FIX (storage-shape): should be `{ enabled: boolean; label: string }`
     expectTypeOf(formT.values.config).toEqualTypeOf<{ enabled: boolean; label: string }>()
-    // @ts-expect-error - POST-FIX (storage-shape): should be `boolean`
     expectTypeOf(formT.values.config.enabled).toEqualTypeOf<boolean>()
   })
   it('nested ZodDefault — runtime resolves the inner shape', () => {
@@ -169,7 +161,6 @@ describe('ZodDefault — type peels `| undefined`, runtime resolves the default'
     )
     try {
       expect(api.values.config).toEqual({ enabled: true, label: 'default-label' })
-      // @ts-expect-error - POST-FIX (storage-shape): config is non-undefined post-default-resolution
       expect(api.values.config.enabled).toBe(true)
     } finally {
       unmount()
@@ -453,8 +444,6 @@ describe('preprocess / transform — write-boundary vs parse-time semantics', ()
   it('z.preprocess(fn, z.string()) — type peels to inner-schema input', () => {
     type Form = ReturnType<typeof useForm<typeof preprocessSchema>>
     const formT = makeFormProxy<Form>()
-    // @ts-expect-error - POST-FIX (storage-shape): preprocess input shape
-    // peels to the inner schema's input (z.string() → string), not unknown.
     expectTypeOf(formT.values.trimmed).toEqualTypeOf<string>()
   })
 

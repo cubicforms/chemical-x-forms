@@ -14,6 +14,7 @@ import type {
   UnwrapZodObject,
   UseFormConfigurationWithZod,
 } from '../adapters/zod-v3/types-zod-adapter'
+import type { ReadShape } from '../adapters/zod-v3/types-read-shape'
 import { useAbstractForm } from './use-abstract-form'
 
 /**
@@ -69,7 +70,11 @@ export function useForm<
     Schema,
     DeepPartial<DefaultValuesShape<z.input<UnwrapZodObject<Schema>>>>
   >
-): UseFormReturnType<z.input<UnwrapZodObject<Schema>>, GetValueFormType>
+): UseFormReturnType<
+  z.input<UnwrapZodObject<Schema>>,
+  GetValueFormType,
+  ReadShape<Schema> extends GenericForm ? ReadShape<Schema> : never
+>
 export function useForm<
   Schema extends z.ZodSchema<unknown>,
   Form extends GenericForm = z.input<UnwrapZodObject<Schema>>,
@@ -118,7 +123,8 @@ export function useForm<
   // (`createAttaform({ defaults: { strict: false } })`).
   // The library-level fallback to `true` lives downstream in
   // `createFormStore`, where it can apply *after* the registry merge.
-  return useAbstractForm<Form, GetValueFormType>({
+  type Read = ReadShape<Schema> extends GenericForm ? ReadShape<Schema> : never
+  return useAbstractForm<Form, GetValueFormType, Read>({
     ...(configuration as UseFormConfiguration<
       Form,
       GetValueFormType,
@@ -135,5 +141,5 @@ export function useForm<
       | AbstractSchema<Form, GetValueFormType>
       | ((key: FormKey, options: SchemaFactoryOptions) => AbstractSchema<Form, GetValueFormType>),
     defaultValues: configuration.defaultValues as DeepPartial<DefaultValuesShape<Form>>,
-  })
+  }) as unknown as UseFormReturnType<Form, GetValueFormType>
 }

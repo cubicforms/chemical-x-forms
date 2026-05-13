@@ -82,6 +82,7 @@ import type { DeepPartial, DefaultValuesShape, GenericForm, WriteShape } from '.
 export function useAbstractForm<
   Form extends GenericForm,
   GetValueFormType extends GenericForm = Form,
+  ReadForm extends GenericForm = Form,
 >(
   configuration: UseFormConfiguration<
     Form,
@@ -89,7 +90,7 @@ export function useAbstractForm<
     AbstractSchema<Form, GetValueFormType>,
     DeepPartial<DefaultValuesShape<Form>>
   >
-): UseFormReturnType<Form, GetValueFormType> {
+): UseFormReturnType<Form, GetValueFormType, ReadForm> {
   // Foot-gun guard: catches `useForm()` (no args), `useForm(null)`,
   // `useForm(rawSchema)` (any schema-like object passed as the first
   // argument — its `.schema` field is undefined), and the explicit
@@ -425,7 +426,15 @@ export function useAbstractForm<
   if (merged.rememberVariants !== undefined) {
     apiOptions.rememberVariants = merged.rememberVariants
   }
-  return buildFormApi<Form, GetValueFormType>(state, formInstanceId, apiOptions)
+  // `buildFormApi` returns the schema-agnostic shape (`ReadForm = Form`).
+  // Adapter callers compute the richer `ReadForm` (e.g. zod-v4's
+  // `ReadShape<Schema>`) and assert it through the public return type —
+  // at runtime the same proxies serve both views.
+  return buildFormApi<Form, GetValueFormType>(
+    state,
+    formInstanceId,
+    apiOptions
+  ) as unknown as UseFormReturnType<Form, GetValueFormType, ReadForm>
 }
 
 /**

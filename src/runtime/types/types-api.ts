@@ -2951,12 +2951,23 @@ export type FormMeta<F = unknown> = FieldState<F> & {
  *   callback and by `form.process()`'s success payload. This is the
  *   shape after refinements have fired and transforms have run.
  *
- * For schemas without transforms the two are identical, and the
- * default `GetValueFormType = Form` keeps the surface ergonomic.
+ * - `ReadForm` — the **read / storage shape** — the type
+ *   `form.values.<path>` resolves to at runtime once defaults have
+ *   fired and blank-path synthesis has filled required leaves. For a
+ *   Zod schema this is `ReadShape<Schema>` (provided by the adapter);
+ *   for schema-agnostic call sites it defaults to `Form`, preserving
+ *   the existing surface. Used by `values`, `fields`, `register`'s
+ *   read side, and `toRef`.
+ *
+ * For schemas without transforms the input and output shapes are
+ * identical; for schemas without defaults / preprocess the input and
+ * read shapes are identical. Defaults keep the surface ergonomic when
+ * the adapter doesn't compute the richer shapes.
  */
 export type UseFormReturnType<
   Form extends GenericForm,
   GetValueFormType extends GenericForm = Form,
+  ReadForm extends GenericForm = Form,
 > = {
   /**
    * Wraps your submit logic with validation and error routing.
@@ -3005,7 +3016,7 @@ export type UseFormReturnType<
    * value reads as `string`, not `boolean`. Use `handleSubmit` or
    * `form.process()` when you need the post-transform output shape.
    */
-  values: ValuesSurface<WriteShape<Form>>
+  values: ValuesSurface<WriteShape<ReadForm>>
 
   /**
    * Reactive per-field state proxy. Pinia-style nested object — read
@@ -3035,7 +3046,7 @@ export type UseFormReturnType<
    * Document edge case; rename the offending schema field if the
    * collision matters.
    */
-  fields: FieldStateMap<WriteShape<Form>>
+  fields: FieldStateMap<WriteShape<ReadForm>>
 
   /**
    * Write to the form programmatically. Two forms:
@@ -3203,12 +3214,12 @@ export type UseFormReturnType<
     <Path extends RegisterFlatPath<Form, keyof Form>>(
       path: Path,
       options?: RegisterOptions
-    ): RegisterValue<NestedReadType<WriteShape<Form>, Path>>
+    ): RegisterValue<NestedReadType<WriteShape<ReadForm>, Path>>
     <const S extends ReadonlyArray<string | number>>(
       segments: S &
         ([JoinSegments<S>] extends [RegisterFlatPath<Form, keyof Form>] ? unknown : never),
       options?: RegisterOptions
-    ): RegisterValue<NestedReadType<WriteShape<Form>, JoinSegments<S>>>
+    ): RegisterValue<NestedReadType<WriteShape<ReadForm>, JoinSegments<S>>>
   }
   /**
    * The form's identifier — either the explicit `key` passed to
@@ -3267,10 +3278,12 @@ export type UseFormReturnType<
    * scripts; `toRef` is for ref-shaped interop only.
    */
   toRef: {
-    <Path extends FlatPath<Form>>(path: Path): Readonly<Ref<NestedReadType<WriteShape<Form>, Path>>>
+    <Path extends FlatPath<Form>>(
+      path: Path
+    ): Readonly<Ref<NestedReadType<WriteShape<ReadForm>, Path>>>
     <const S extends ReadonlyArray<string | number>>(
       segments: S & ([JoinSegments<S>] extends [FlatPath<Form>] ? unknown : never)
-    ): Readonly<Ref<NestedReadType<WriteShape<Form>, JoinSegments<S>>>>
+    ): Readonly<Ref<NestedReadType<WriteShape<ReadForm>, JoinSegments<S>>>>
   }
 
   /**

@@ -126,7 +126,7 @@
   },
   "devDependencies": {
     "@commitlint/cli": "^20.5.0",
-    "@commitlint/config-conventional": "^20.5.0",
+    "@commitlint/config-conventional": "^21.0.1",
     "@eslint/js": "^10.0.1",
     "@fast-check/vitest": "^0.4.0",
     "@nuxt/eslint-config": "^1.15.2",

@@ -4,6 +4,9 @@
 
 _No unreleased changes yet._
 
+## v0.17.1
+_No unreleased changes yet._
+
 ## v0.17.0
 Library-hardening campaign closeout (52 failing probes → 0,
 19 buckets resolved) + multi-tab sync as a headline feature.

@@ -1,5 +1,22 @@
 # Releases
 
+## v0.17.1 — 2026-05-13
+
+## What's Changed
+* feat(form): close §1–4 of the 0.17.0 feedback — ReadShape, form.clear, preprocess synthesis by @ozzyfromspace in https://github.com/attaform/Attaform/pull/196
+* chore(ci): bump actions/dependency-review-action from 4 to 5 by @dependabot[bot] in https://github.com/attaform/Attaform/pull/190
+* fix(form): StorageShape replaces ReadShape — fixes Volar TS2589 by @ozzyfromspace in https://github.com/attaform/Attaform/pull/197
+* chore(deps-dev): bump the dev-dependencies group with 20 updates by @dependabot[bot] in https://github.com/attaform/Attaform/pull/191
+* chore(deps-dev): bump marked from 15.0.12 to 18.0.3 by @dependabot[bot] in https://github.com/attaform/Attaform/pull/192
+* chore(deps-dev): bump @commitlint/config-conventional from 20.5.3 to 21.0.1 by @dependabot[bot] in https://github.com/attaform/Attaform/pull/193
+* chore(deps-dev): bump lint-staged from 16.4.0 to 17.0.4 by @dependabot[bot] in https://github.com/attaform/Attaform/pull/194
+* chore(deps-dev): bump @commitlint/cli from 20.5.3 to 21.0.1 by @dependabot[bot] in https://github.com/attaform/Attaform/pull/195
+
+
+**Full Changelog**: https://github.com/attaform/Attaform/compare/v0.17.0...v0.17.1
+
+---
+
 ## v0.17.0 — 2026-05-11
 
 ## What's Changed

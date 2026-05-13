@@ -240,6 +240,34 @@ export type AbstractSchema<Form, GetValueFormType> = {
    */
   getDefaultAtPath(path: Path): unknown
   /**
+   * Return the schema's "appropriate nullish value" at the given path
+   * — the underlying type's empty/falsy concrete, with `.default(x)`
+   * wrappers explicitly NOT honoured. Powers `form.clear(path)`:
+   * `clear` differs from `reset` precisely in that it ignores
+   * declared defaults and produces `false` / `0` / `''` / `[]` / a
+   * recursively-empty object instead.
+   *
+   * Semantics (mirrors `getDefaultAtPath`'s sub-path resolution,
+   * differs at leaves):
+   * - **Primitive leaf:** the primitive's falsy concrete
+   *   (`''` / `0` / `false` / `0n` / `new Date(0)`, etc.).
+   * - **Array / Set / Record:** empty.
+   * - **Optional<T>:** `undefined` (the wrapper's "absent" marker).
+   * - **Nullable<T>:** `null` (the wrapper's "explicit empty").
+   * - **Default<T> / Prefault<T> / Catch<T>:** inner-schema empty
+   *   — the declared default value is INTENTIONALLY skipped.
+   * - **Readonly<T> / preprocess(fn, T):** inner-schema empty.
+   * - **Object:** recursive — every property gets its own empty.
+   * - **Discriminated union:** first variant's recursive empty
+   *   (parallels `getDefaultAtPath`'s first-success precedent).
+   * - **Path doesn't exist in schema:** `undefined`.
+   *
+   * Adapters may return `undefined` when the path can't be resolved;
+   * callers treat that as "don't write" and leave existing storage
+   * unchanged.
+   */
+  getEmptyValueAtPath(path: Path): unknown
+  /**
    * Give the schema a chance to normalize the consumer's write value
    * before it lands in storage / hits the slim-primitive gate. Each
    * schema library exposes this concept differently — Zod calls it
@@ -3407,6 +3435,54 @@ export type UseFormReturnType<
    * from the persisted draft too.
    */
   resetField: (path: FlatPath<Form>) => void
+
+  /**
+   * Wipe a field (or the whole form) to the "appropriate nullish
+   * value" for its declared type — the underlying type's empty/falsy
+   * concrete, with any `.default(x)` wrapper INTENTIONALLY skipped.
+   * Orthogonal to `reset` / `resetField` by design.
+   *
+   * ```ts
+   * const schema = z.object({
+   *   notify: z.boolean().default(true),
+   *   count: z.number().default(5),
+   * })
+   * const form = useForm({ schema })
+   *
+   * form.reset()         // notify → true,  count → 5  (defaults)
+   * form.clear()         // notify → false, count → 0  (falsy-for-type)
+   * form.clear('notify') // → false (NOT the declared default true)
+   * ```
+   *
+   * Per-wrapper semantics:
+   *
+   * - `.default(x)` / `.prefault(x)` / `.catch(x)` → inner-schema
+   *   empty (default is INTENTIONALLY skipped).
+   * - `.optional()` → `undefined` (the wrapper's "absent" marker).
+   * - `.nullable()` → `null` (the wrapper's "explicit empty").
+   * - Object → recursive (every property gets its own empty).
+   * - Array / Set / Record → empty.
+   *
+   * Returns `true` when the write was accepted, `false` when the
+   * adapter couldn't resolve an empty value at the path (e.g. the
+   * path doesn't exist in the schema). The form state is unchanged
+   * on a `false` return.
+   *
+   * Sugar over `setValue(path, schema.getEmptyValueAtPath(path))` —
+   * no separate bookkeeping. Variant memory, history, persistence,
+   * and listeners all see this as a regular write at the path.
+   *
+   * `clear()` (no arg) targets the whole form. `clear('')` targets
+   * the empty-string path slot SPECIFICALLY — the two are NOT
+   * interchangeable, matching `touch()` / `touch('')` from #184.
+   */
+  clear: {
+    (): boolean
+    <Path extends FlatPath<Form> | ''>(path: Path): boolean
+    <const S extends ReadonlyArray<string | number>>(
+      segments: S & ([JoinSegments<S>] extends [FlatPath<Form> | ''] ? unknown : never)
+    ): boolean
+  }
 
   // --- Persistence (imperative APIs) ---
 

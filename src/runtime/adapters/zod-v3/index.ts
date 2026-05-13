@@ -403,6 +403,21 @@ export function zodAdapter<
         const peeled = unwrapStructuralLeafV3(leaf)
         return getDefaultValuesFromZodSchema(peeled as z.ZodSchema, true, _formKey)
       },
+      getEmptyValueAtPath(path) {
+        // `clear`'s underlying value lookup. Same path-resolution flow
+        // as `getDefaultAtPath` but with `useDefaultSchemaValues=false`
+        // so `.default(x)` / `.catch(x)` wrappers are skipped — the
+        // walker yields the inner-schema's empty concrete instead.
+        // Structural wrappers (`.optional()` / `.nullable()`) are NOT
+        // peeled here: clearing an `.optional()` slot is legitimately
+        // `undefined`, clearing a `.nullable()` slot is `null`.
+        if (path.length === 0) {
+          return getDefaultValuesFromZodSchema(_zodSchema, false, _formKey)
+        }
+        const leaf = walkV3ToLeafSchema(_zodSchema, path)
+        if (!leaf) return undefined
+        return getDefaultValuesFromZodSchema(leaf as z.ZodSchema, false, _formKey)
+      },
       arrayShapeAtPath(path) {
         if (path.length === 0) return undefined
         const leaf = walkV3ToLeafSchema(_zodSchema, path)

@@ -400,9 +400,17 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   setValueAtPath(path: Path, value: unknown, meta?: WriteMeta): boolean
   getValueAtPath(path: Path): unknown
 
-  // --- reset ---
+  // --- reset / clear ---
   reset(nextDefaultValues?: DeepPartial<WriteShape<F>>): void
   resetField(path: Path): void
+  /**
+   * Wipe `path` (or the whole form when `path === ''`) to the
+   * schema's "appropriate nullish value" — the underlying type's
+   * empty/falsy concrete, with `.default()` / `.catch()` wrappers
+   * INTENTIONALLY skipped. Sugar for
+   * `setValueAtPath(path, schema.getEmptyValueAtPath(path))`.
+   */
+  clear(path: Path): boolean
 
   // --- errors ---
   // Schema-driven writers. Used by the validation pipeline + handleSubmit.
@@ -2372,6 +2380,30 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     }
   }
 
+  // --- Clear ---
+
+  function clear(path: Path): boolean {
+    // `clear` is sugar over `setValueAtPath`: ask the adapter for the
+    // "appropriate nullish value" at this path (the underlying type's
+    // empty/falsy concrete, with `.default()` / `.catch()` wrappers
+    // intentionally skipped) and write it. No bookkeeping that
+    // `setValueAtPath` doesn't already do — variant memory, history,
+    // persistence, and listeners all see this as a regular write.
+    //
+    // `path` is segments (canonical form). An empty segment list
+    // (`[]`) targets the whole form; `['']` targets the empty-string
+    // slot (`form.errors('')` bucket / `form.touch('')` semantics
+    // from #184). The two are NOT interchangeable — special-casing
+    // either would create a maintenance footgun.
+    //
+    // The adapter may legitimately return `undefined` as the empty
+    // value (e.g. `z.string().optional()` — the wrapper's "absent"
+    // marker IS `undefined`). The slim-primitive write gate inside
+    // `setValueAtPath` decides whether that's an acceptable write at
+    // the path — we forward unconditionally and let it adjudicate.
+    return setValueAtPath(path, schema.getEmptyValueAtPath(path))
+  }
+
   // --- Reset ---
 
   function reset(nextDefaultValues?: DeepPartial<WriteShape<F>>): void {
@@ -2783,6 +2815,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
 
     reset,
     resetField,
+    clear,
 
     setSchemaErrorsForPath,
     setAllSchemaErrors,

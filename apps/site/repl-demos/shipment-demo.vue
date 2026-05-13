@@ -74,6 +74,7 @@
   const TRUCK_TYPES = ['box', 'flatbed', 'reefer', 'tanker'] as const
   const CONTAINER_SIZES = ['20FT', '40FT', '40FTHC', '45FTHC'] as const
   const COVERAGES = ['none', 'basic', 'full'] as const
+  const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY'] as const
 
   const addressSchema = z.object({
     line1: z
@@ -267,17 +268,35 @@
       .string()
       .min(1, 'Pick a delivery date.')
       .register(fieldMeta, { label: 'Delivery date' }),
+    // Inference stress test: `.transform()`-wrapped object with a
+    // `.default()`-ed leaf inside. The read view (form.values.insurance)
+    // recurses through the pipe so `currency` types as `string` — not
+    // `string | undefined`. The transform fires at submit, so
+    // handleSubmit's payload also carries the derived `tier`.
     insurance: z
       .object({
         declaredValueUSD: z
           .number()
           .min(0, "Declared value can't be negative.")
           .register(fieldMeta, {
-            label: 'Declared value (USD)',
+            label: 'Declared value',
             description: 'Used to calculate insurance coverage.',
           }),
         coverage: z.enum(COVERAGES).register(fieldMeta, { label: 'Coverage' }),
+        currency: z.enum(CURRENCIES).default('USD').register(fieldMeta, {
+          label: 'Currency',
+          description: 'Defaults to USD until you pick another.',
+        }),
       })
+      .transform((v) => ({
+        ...v,
+        tier:
+          v.coverage === 'full'
+            ? 'premium'
+            : v.coverage === 'basic'
+              ? 'standard'
+              : ('none' as const),
+      }))
       .register(fieldMeta, { label: 'Insurance' }),
     notes: z
       .string()
@@ -913,7 +932,7 @@
 
         <fieldset class="address">
           <legend>{{ form.fields('insurance').label }}</legend>
-          <div class="grid-2">
+          <div class="grid-3">
             <div class="field" :class="fieldClasses(form.fields.insurance.declaredValueUSD)">
               <label>{{ form.fields.insurance.declaredValueUSD.label }}</label>
               <small v-if="form.fields.insurance.declaredValueUSD.description" class="help">
@@ -932,6 +951,15 @@
               <label>{{ form.fields.insurance.coverage.label }}</label>
               <select v-register="form.register('insurance.coverage')">
                 <option v-for="c in COVERAGES" :key="c" :value="c">{{ COVERAGE_LABELS[c] }}</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>{{ form.fields.insurance.currency.label }}</label>
+              <small v-if="form.fields.insurance.currency.description" class="help">
+                {{ form.fields.insurance.currency.description }}
+              </small>
+              <select v-register="form.register('insurance.currency')">
+                <option v-for="c in CURRENCIES" :key="c" :value="c">{{ c }}</option>
               </select>
             </div>
           </div>

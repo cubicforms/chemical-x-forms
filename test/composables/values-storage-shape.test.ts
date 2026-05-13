@@ -505,6 +505,42 @@ describe('preprocess / transform — write-boundary vs parse-time semantics', ()
       unmount()
     }
   })
+
+  // Defaults nested INSIDE a `.transform()`-wrapped object should
+  // still peel to `T` (not `T | undefined`). StorageShape recurses
+  // through the non-transform side of the pipe so the inner shape
+  // gets the same per-key storage treatment as the top level.
+  it('z.object({…}).transform(fn) — inner defaulted leaf peels to T', () => {
+    const _schema = z.object({
+      meta: z
+        .object({
+          tag: z.string().default('untagged'),
+          retries: z.number().default(0),
+        })
+        .transform((o) => ({ ...o, sealed: true })),
+    })
+    type Form = ReturnType<typeof useForm<typeof _schema>>
+    const formT = makeFormProxy<Form>()
+    expectTypeOf(formT.values.meta.tag).toEqualTypeOf<string>()
+    expectTypeOf(formT.values.meta.retries).toEqualTypeOf<number>()
+  })
+
+  // Same precision when the carrier is a preprocess instead of a
+  // transform — both pipe shapes route through StorageShape on the
+  // non-transform side.
+  it('z.preprocess(fn, z.object({…})) — inner defaulted leaf peels to T', () => {
+    const _schema = z.object({
+      meta: z.preprocess(
+        (v) => v,
+        z.object({
+          tag: z.string().default('untagged'),
+        })
+      ),
+    })
+    type Form = ReturnType<typeof useForm<typeof _schema>>
+    const formT = makeFormProxy<Form>()
+    expectTypeOf(formT.values.meta.tag).toEqualTypeOf<string>()
+  })
 })
 
 // ──────────────────────────────────────────────────────────────────────

@@ -80,6 +80,13 @@ export function fakeSchema<F extends GenericForm>(
       }
       return current
     },
+    getEmptyValueAtPath() {
+      // fakeSchema can't model per-type empty values without per-leaf
+      // schemas. Return `undefined` so `form.clear` no-ops under the
+      // fake adapter — callers needing real empty-value semantics
+      // should use a Zod adapter.
+      return undefined
+    },
     arrayShapeAtPath(path) {
       // fakeSchema can't model element schemas — return `undefined` so
       // the runtime falls back to the legacy probe loop, matching the

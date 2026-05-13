@@ -19,7 +19,8 @@ import {
   kindOf,
   unwrapInner,
   unwrapLazy,
-  unwrapPipe,
+  unwrapPipeIn,
+  unwrapPipeOut,
 } from './introspect'
 
 type StripConfigInternal = Pick<StripConfig, 'stripRefinements'> & {
@@ -436,10 +437,23 @@ function walkSlim(
       // transformation, so by default we return the original schema
       // unchanged. Consumers who explicitly opt in via `stripPipe`
       // (e.g. default-values derivation, where a transform doesn't make
-      // sense) get the upstream leg of the pipe only.
+      // sense) get the "real" leg of the pipe — the side that ISN'T
+      // a ZodTransform. For `z.preprocess(fn, inner)` that's `def.out`
+      // (the inner schema); for `someSchema.transform(fn)` that's
+      // `def.in` (the source schema). Falling through to the transform
+      // side would re-run the user's fn during default-values
+      // derivation — for preprocess that means a throwing fn crashes
+      // mount even though there's nothing to normalize at init time.
       if (stripConfig.stripPipe === true) {
-        const inner = unwrapPipe(schema) ?? schema
-        return walkSlim(inner, stripConfig, maxDepth, lazyDepth)
+        const pipeIn = unwrapPipeIn(schema)
+        const pipeOut = unwrapPipeOut(schema)
+        const real =
+          pipeIn !== undefined && kindOf(pipeIn) !== 'transform'
+            ? pipeIn
+            : pipeOut !== undefined && kindOf(pipeOut) !== 'transform'
+              ? pipeOut
+              : (pipeIn ?? pipeOut ?? schema)
+        return walkSlim(real, stripConfig, maxDepth, lazyDepth)
       }
       return schema
     }

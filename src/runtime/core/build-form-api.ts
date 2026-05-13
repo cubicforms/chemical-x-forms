@@ -685,6 +685,18 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     }
   }
 
+  // --- Clear ---
+  // `clear()` wipes the whole form to per-leaf falsy concrete; `clear(path)`
+  // wipes a sub-tree. The `pathInput === undefined` check is what
+  // distinguishes "no arg" (whole-form) from explicit `clear('')`
+  // (the empty-string path slot); canonicalizePath preserves the
+  // distinction (`''` → `['']` segments, undefined never reaches it).
+  // Mirrors `touch`'s arg handling.
+  function clear(pathInput?: string | readonly (string | number)[]): boolean {
+    const segments = pathInput === undefined ? ROOT_PATH : canonicalizePath(pathInput).segments
+    return state.clear(segments)
+  }
+
   // --- Persistence (imperative APIs) ---
 
   const persist = async (
@@ -795,6 +807,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     meta: formMeta,
     reset: reset as UseFormReturnType<Form, GetValueFormType>['reset'],
     resetField: resetField as UseFormReturnType<Form, GetValueFormType>['resetField'],
+    clear: clear as UseFormReturnType<Form, GetValueFormType>['clear'],
     persist: persist as UseFormReturnType<Form, GetValueFormType>['persist'],
     clearPersistedDraft: clearPersistedDraft as UseFormReturnType<
       Form,

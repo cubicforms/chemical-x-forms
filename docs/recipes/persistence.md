@@ -9,6 +9,39 @@ Long forms — multi-step onboarding, checkout, surveys — should
 survive a navigation mistake or a browser refresh. Attaform persists drafts
 to client-side storage with a per-field opt-in.
 
+## Scope: form state vs generic UI state
+
+Attaform persists **form state** — anything you've declared in
+`schema` is eligible. That covers more than it sounds: selections
+(active org, current chat), toggles, mode pickers, multi-step
+wizards. If the state is schema-shaped and you want the safety
+machinery (schema fingerprint, sensitive-name filtering, blank-
+path tracking, multi-tab sync, hydration-validation), model it as
+a form field:
+
+```ts
+const schema = z.object({
+  // Regular form fields
+  email: z.email(),
+  // Stateful UI selections — also form fields
+  selectedOrg: OrgSchema.nullable(),
+  selectedChat: z.string().nullable(),
+})
+
+const form = useForm({ schema, persist: 'local' })
+
+// Imperative write at any time — same machinery as autosave.
+form.persist('selectedOrg')
+```
+
+On refresh, `selectedOrg` rehydrates like any other field.
+
+For truly form-independent state — UI scratchpads, theme toggles,
+anything with no schema and no participation in submit/validate —
+reach for **[VueUse's `useStorage`](https://vueuse.org/core/useStorage/)**
+instead. Two persistence stories, each purpose-built for its
+state-shape; one library for each, no cross-coupling.
+
 ## Security: what not to persist
 
 Client-side storage is unencrypted at rest, readable by any

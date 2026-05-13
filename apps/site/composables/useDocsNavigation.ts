@@ -57,6 +57,7 @@ export const docsNavigation: DocsSection[] = [
       { title: 'Persistence: edge cases', to: '/docs/recipes/persistence-edge-cases' },
       { title: 'Server errors', to: '/docs/recipes/server-errors' },
       { title: 'SSR hydration', to: '/docs/recipes/ssr-hydration' },
+      { title: 'Storage shape', to: '/docs/recipes/storage-shape' },
       { title: 'Transforms', to: '/docs/recipes/transforms' },
       { title: 'Undo / redo', to: '/docs/recipes/undo-redo' },
     ],

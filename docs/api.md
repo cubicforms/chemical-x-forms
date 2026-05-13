@@ -88,6 +88,7 @@ helpers, imperative persistence.
 → [Read the useForm return value](/docs/api/use-form-return)
 
 **Recipes that use this:** [Quick start](/docs/quickstart) ·
+[form.values — the storage shape](/docs/recipes/storage-shape) ·
 [Dynamic field arrays](/docs/recipes/dynamic-field-arrays) ·
 [Undo / redo](/docs/recipes/undo-redo) ·
 [Focus on error](/docs/recipes/focus-on-error) ·

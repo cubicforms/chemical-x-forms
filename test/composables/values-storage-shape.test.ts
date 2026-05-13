@@ -14,11 +14,6 @@ import { createAttaform } from '../../src/runtime/core/plugin'
  * skeleton. Reads NEVER produce `undefined` for a slot the schema
  * resolved to a concrete type — and the static type SHOULD agree.
  *
- * Today, `form.values` is typed as `z.input<Schema>`, which leaves a
- * gap: `ZodDefault<T>`'s input is `T | undefined`, even though the
- * runtime resolves it to `T` at storage-init. That gap is the §1.1
- * "type lies" friction.
- *
  * Type-level assertions pin the surface so a future regression to
  * `z.input<Schema>`-only typing (or any drift in `ReadShape<>`) trips
  * `expectTypeOf` at compile time. Runtime assertions confirm the
@@ -447,32 +442,24 @@ describe('preprocess / transform — write-boundary vs parse-time semantics', ()
     expectTypeOf(formT.values.trimmed).toEqualTypeOf<string>()
   })
 
-  // RED today: synthesis bails on preprocess wrappers and the field
-  // reads as `undefined`. POST-FIX, the blank-path skeleton descends
-  // through the preprocess wrapper to the inner schema's falsy — the
-  // storage invariant holds for preprocess slots too. `.fails` flips
-  // to a passing assertion when the synthesis path peels through.
-  it.fails(
-    'z.preprocess(fn, z.string()) — storage holds the inner-schema falsy, not undefined',
-    () => {
-      const { api, unmount } = mountForm(() =>
-        useForm({ schema: preprocessSchema, key: uniqueKey('pre-synth') })
-      )
-      try {
-        expect(api.values.trimmed).toBe('')
-        expect(typeof api.values.trimmed).toBe('string')
-      } finally {
-        unmount()
-      }
+  it('z.preprocess(fn, z.string()) — storage holds the inner-schema falsy, not undefined', () => {
+    const { api, unmount } = mountForm(() =>
+      useForm({ schema: preprocessSchema, key: uniqueKey('pre-synth') })
+    )
+    try {
+      expect(api.values.trimmed).toBe('')
+      expect(typeof api.values.trimmed).toBe('string')
+    } finally {
+      unmount()
     }
-  )
+  })
 
   // RED today: preprocess throwing on a write leaves the field at
   // `undefined` (or whatever the throw policy is). POST-FIX, the
   // field falls back to a "reasonable value" — concrete sub-policy
   // (inner-falsy vs prior-value) settled when the implementation
   // lands. The narrow guarantee this probe pins: NEVER undefined.
-  it.fails('preprocess failure on write does not strand the field at undefined', () => {
+  it('preprocess failure on write does not strand the field at undefined', () => {
     const throwyPreprocess = z.object({
       v: z.preprocess(() => {
         throw new Error('preprocess refused')

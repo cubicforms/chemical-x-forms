@@ -17,7 +17,8 @@ import {
   kindOf,
   unwrapInner,
   unwrapLazy,
-  unwrapPipe,
+  unwrapPipeIn,
+  unwrapPipeOut,
   type ZodKind,
 } from './introspect'
 import { getNestedZodSchemasAtPath } from './path-walker'
@@ -79,10 +80,26 @@ function defaultForKind(
         : defaultForKind(kindOf(inner), inner, useDefault, maxDepth, lazyDepth)
     }
     case 'pipe': {
-      const inner = unwrapPipe(schema)
-      return inner === undefined
+      // `z.preprocess(fn, inner)` desugars to a pipe whose `in` is a
+      // ZodTransform (the user-supplied `fn`) and whose `out` is the
+      // inner schema. The "real" schema we want to draw a default from
+      // is the side that ISN'T a transform — `out` for preprocess,
+      // `in` for `.transform()` (where the source schema is on the
+      // in side and the transform itself is on the out side). Falling
+      // through to the transform side returns `undefined` and breaks
+      // the storage invariant (blank-path synthesis would leave the
+      // slot at `undefined` instead of the inner-schema's falsy).
+      const out = unwrapPipeOut(schema)
+      const inn = unwrapPipeIn(schema)
+      const real =
+        inn !== undefined && kindOf(inn) !== 'transform'
+          ? inn
+          : out !== undefined && kindOf(out) !== 'transform'
+            ? out
+            : (inn ?? out)
+      return real === undefined
         ? undefined
-        : defaultForKind(kindOf(inner), inner, useDefault, maxDepth, lazyDepth)
+        : defaultForKind(kindOf(real), real, useDefault, maxDepth, lazyDepth)
     }
     case 'array':
       return []

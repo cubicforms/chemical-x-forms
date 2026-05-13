@@ -2623,20 +2623,39 @@ export type FieldState<Value = unknown> = {
  * regardless of the active variant, with the leaf typed as
  * `FieldState<number | undefined>`. Matches the runtime's stub
  * `FieldState` for inactive-variant paths.
+ *
+ * Implementation note — two-pass split: the entry type peels exactly
+ * one decision ("leaf or container?") and hands the container case to
+ * {@link FieldStateMapContainer}. Folding the structural branches into
+ * one long conditional chain costs TS instantiation depth per nesting
+ * level, and on schemas with two discriminated unions plus a few
+ * nested objects (the multi-step booking shape) the language service's
+ * hover budget runs out — TS2589 surfaces on the `fields` property
+ * even though `tsc` accepts it. Splitting bounds the chain length per
+ * frame; tsserver's hover-render stays within budget.
  */
 export type FieldStateMapEntry<T> = [T] extends [
   string | number | boolean | bigint | symbol | null | undefined | Date,
 ]
   ? FieldState<T>
-  : [T] extends [ReadonlyArray<infer U>]
-    ? { readonly [K: number]: FieldStateMapEntry<U> }
-    : [T] extends [object]
-      ? [IsUnion<T>] extends [true]
-        ? {
-            readonly [K in KeyofUnion<T>]-?: FieldStateMapEntry<ValueOfUnion<T, K>>
-          }
-        : { readonly [K in keyof T]-?: FieldStateMapEntry<T[K]> }
-      : FieldState<T>
+  : FieldStateMapContainer<T>
+
+/**
+ * Container-side resolution for {@link FieldStateMapEntry}: array, then
+ * object (discriminated-union and plain), with a fall-through for any
+ * other non-leaf shape. Recurses into each child by handing back to
+ * `FieldStateMapEntry`, so per-child leaf-detection still runs at the
+ * boundary.
+ */
+type FieldStateMapContainer<T> = [T] extends [ReadonlyArray<infer U>]
+  ? { readonly [K: number]: FieldStateMapEntry<U> }
+  : [T] extends [object]
+    ? [IsUnion<T>] extends [true]
+      ? {
+          readonly [K in KeyofUnion<T>]-?: FieldStateMapEntry<ValueOfUnion<T, K>>
+        }
+      : { readonly [K in keyof T]-?: FieldStateMapEntry<T[K]> }
+    : FieldState<T>
 
 /**
  * Type of `form.fields` — leaf-aware drillable callable Proxy. At
@@ -2760,19 +2779,31 @@ export type FormErrorsSurface<Form> = ErrorsProxyShape<Form> & {
   (): readonly ValidationError[] | undefined
 }
 
+/**
+ * Two-pass split mirrors {@link FieldStateMapEntry}: the outer pass
+ * peels one decision ("leaf or container?") so the conditional chain
+ * stays short per recursion frame, then hands the container case to
+ * {@link ErrorsProxyShapeContainer}. Folding the structural branches
+ * into one long chain trips TS2589 on the IDE hover for deep schemas
+ * (the multi-step booking shape — two DUs plus nested objects — is
+ * enough). `tsc` accepts either form; this split keeps the language
+ * service's hover budget intact.
+ */
 type ErrorsProxyShape<T> = [T] extends [
   string | number | boolean | bigint | symbol | null | undefined | Date,
 ]
   ? readonly ValidationError[] | undefined
-  : [T] extends [ReadonlyArray<infer U>]
-    ? { readonly [K: number]: ErrorsProxyShape<U> }
-    : [T] extends [object]
-      ? [IsUnion<T>] extends [true]
-        ? {
-            readonly [K in KeyofUnion<T>]: ErrorsProxyShape<ValueOfUnion<T, K>>
-          }
-        : { readonly [K in keyof T]: ErrorsProxyShape<T[K]> }
-      : readonly ValidationError[] | undefined
+  : ErrorsProxyShapeContainer<T>
+
+type ErrorsProxyShapeContainer<T> = [T] extends [ReadonlyArray<infer U>]
+  ? { readonly [K: number]: ErrorsProxyShape<U> }
+  : [T] extends [object]
+    ? [IsUnion<T>] extends [true]
+      ? {
+          readonly [K in KeyofUnion<T>]: ErrorsProxyShape<ValueOfUnion<T, K>>
+        }
+      : { readonly [K in keyof T]: ErrorsProxyShape<T[K]> }
+    : readonly ValidationError[] | undefined
 
 /**
  * Type of `form.values`. Drillable readonly callable proxy. Unlike

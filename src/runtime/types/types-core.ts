@@ -179,6 +179,14 @@ export type ValueOfUnion<T, K extends PropertyKey> = T extends unknown
  * recursed into) — value reads of those types should preserve the
  * platform shape unchanged.
  */
+// Two-pass split: the outer alias peels primitives / opaque
+// instance-leaves / arrays in one short chain and hands the
+// recurse-into-object case to `LiftedValueShapeObject`. Keeps each
+// recursion frame's conditional depth short so the language-service's
+// hover budget doesn't trip TS2589 on deep schemas (the multi-step
+// booking shape — two discriminated unions plus nested objects — is
+// enough). `tsc` accepts either form; this split is for tsserver's
+// hover renderer.
 export type LiftedValueShape<T> = [T] extends [
   string | number | boolean | bigint | symbol | null | undefined,
 ]
@@ -189,11 +197,13 @@ export type LiftedValueShape<T> = [T] extends [
     ? T
     : [T] extends [ReadonlyArray<unknown>]
       ? T
-      : [T] extends [object]
-        ? [IsUnion<T>] extends [true]
-          ? { [K in KeyofUnion<T>]: LiftedValueShape<ValueOfUnion<T, K>> }
-          : { [K in keyof T]: LiftedValueShape<T[K]> }
-        : T
+      : LiftedValueShapeObject<T>
+
+type LiftedValueShapeObject<T> = [T] extends [object]
+  ? [IsUnion<T>] extends [true]
+    ? { [K in KeyofUnion<T>]: LiftedValueShape<ValueOfUnion<T, K>> }
+    : { [K in keyof T]: LiftedValueShape<T[K]> }
+  : T
 
 /**
  * Recursive `Partial` — every property at every depth is optional.
@@ -388,6 +398,13 @@ export type ArrayItem<Form, Path extends ArrayPath<Form>> =
  * payloads have been parsed by the schema, so the widened shape
  * doesn't apply.
  */
+// Two-pass split: the outer alias resolves primitive widening and the
+// opaque-instance passthrough — both leaf cases — and hands the
+// recurse-into-container case to `WriteShapeContainer`. Keeps the
+// per-frame conditional chain short so deep schemas (the multi-step
+// booking shape with two DUs and nested objects) don't trip TS2589
+// on the IDE hover for `setValue` / `defaultValues` / `values`.
+// `tsc` accepts either form; this split is for tsserver's renderer.
 export type WriteShape<T> = T extends string | number | boolean | bigint | symbol | null | undefined
   ? T extends string
     ? string
@@ -402,15 +419,17 @@ export type WriteShape<T> = T extends string | number | boolean | bigint | symbo
             : T
   : T extends Date | RegExp | Map<unknown, unknown> | Set<unknown> | ((...args: never) => unknown)
     ? T
-    : T extends readonly [unknown, ...unknown[]]
+    : WriteShapeContainer<T>
+
+type WriteShapeContainer<T> = T extends readonly [unknown, ...unknown[]]
+  ? { -readonly [K in keyof T]: WriteShape<T[K]> }
+  : T extends ReadonlyArray<infer U>
+    ? IsTuple<T> extends true
       ? { -readonly [K in keyof T]: WriteShape<T[K]> }
-      : T extends ReadonlyArray<infer U>
-        ? IsTuple<T> extends true
-          ? { -readonly [K in keyof T]: WriteShape<T[K]> }
-          : Array<WriteShape<U>>
-        : T extends object
-          ? { [K in keyof T]: WriteShape<T[K]> }
-          : T
+      : Array<WriteShape<U>>
+    : T extends object
+      ? { [K in keyof T]: WriteShape<T[K]> }
+      : T
 
 /**
  * Like `WriteShape<T>`, but additionally widens every primitive leaf
@@ -435,6 +454,11 @@ export type WriteShape<T> = T extends string | number | boolean | bigint | symbo
  * Used by `UseFormConfiguration.defaultValues`, `setValue`'s value
  * parameter, and `reset`'s parameter (commit 7 widens all three).
  */
+// Two-pass split: same rationale as `WriteShape` — primitive widening
+// (with `| Unset`) and opaque-instance passthrough are leaf decisions;
+// container descent is delegated. Keeps the per-frame conditional
+// chain bounded so `defaultValues`, `setValue`, and `reset` hovers
+// stay within tsserver's TS2589 budget on deep schemas.
 export type DefaultValuesShape<T> = T extends
   | string
   | number
@@ -456,12 +480,14 @@ export type DefaultValuesShape<T> = T extends
             : T
   : T extends Date | RegExp | Map<unknown, unknown> | Set<unknown> | ((...args: never) => unknown)
     ? T
-    : T extends readonly [unknown, ...unknown[]]
+    : DefaultValuesShapeContainer<T>
+
+type DefaultValuesShapeContainer<T> = T extends readonly [unknown, ...unknown[]]
+  ? { -readonly [K in keyof T]: DefaultValuesShape<T[K]> }
+  : T extends ReadonlyArray<infer U>
+    ? IsTuple<T> extends true
       ? { -readonly [K in keyof T]: DefaultValuesShape<T[K]> }
-      : T extends ReadonlyArray<infer U>
-        ? IsTuple<T> extends true
-          ? { -readonly [K in keyof T]: DefaultValuesShape<T[K]> }
-          : Array<DefaultValuesShape<U>>
-        : T extends object
-          ? { [K in keyof T]: DefaultValuesShape<T[K]> }
-          : T
+      : Array<DefaultValuesShape<U>>
+    : T extends object
+      ? { [K in keyof T]: DefaultValuesShape<T[K]> }
+      : T

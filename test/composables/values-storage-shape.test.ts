@@ -4,6 +4,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
+import type { ValidationError } from '../../src/runtime/types/types-api'
 
 /**
  * Storage-shape invariant probes (feedback §1.2).
@@ -503,5 +504,273 @@ describe('preprocess / transform — write-boundary vs parse-time semantics', ()
     } finally {
       unmount()
     }
+  })
+})
+
+// ──────────────────────────────────────────────────────────────────────
+// Depth-pressure regression. Modelled on the cargo-shipment booking
+// demo (apps/site/repl-demos/shipment-demo.vue) — the schema-shape
+// that previously made the language-service hover for `useForm`
+// surface TS2589 ("Type instantiation is excessively deep") even
+// though tsc accepted it. Two discriminated unions, an array of
+// objects, two address sub-objects, and several enums in one shape
+// is the bar this probe holds.
+// ──────────────────────────────────────────────────────────────────────
+
+describe('Depth pressure — multi-step booking schema (shipment-demo shape)', () => {
+  const COUNTRIES = ['US', 'CA', 'MX', 'GB', 'DE', 'FR', 'JP', 'CN', 'AU'] as const
+  const HAZARD_CLASSES = ['1', '2', '3', '4', '5', '6', '7', '8', '9'] as const
+  const TRUCK_TYPES = ['box', 'flatbed', 'reefer', 'tanker'] as const
+  const CONTAINER_SIZES = ['20FT', '40FT', '40FTHC', '45FTHC'] as const
+  const COVERAGES = ['none', 'basic', 'full'] as const
+
+  const addressSchema = z.object({
+    line1: z.string().min(1),
+    line2: z.string().optional(),
+    city: z.string().min(1),
+    region: z.string().min(2),
+    postalCode: z.string().min(3),
+    country: z.enum(COUNTRIES),
+  })
+  const lineItemSchema = z.object({
+    sku: z.string(),
+    description: z.string().min(1).max(120),
+    quantity: z.number().int().min(1).max(10_000),
+    unitWeightLb: z.number().positive(),
+  })
+  const dryDetails = z.object({ type: z.literal('dry'), fragile: z.boolean() })
+  const refrigeratedDetails = z.object({
+    type: z.literal('refrigerated'),
+    tempMinF: z.number(),
+    tempMaxF: z.number(),
+  })
+  const hazmatDetails = z.object({
+    type: z.literal('hazmat'),
+    unNumber: z.string(),
+    hazardClass: z.enum(HAZARD_CLASSES),
+    acknowledged: z.literal(true),
+  })
+  const oversizedDetails = z.object({
+    type: z.literal('oversized'),
+    lengthIn: z.number().positive(),
+    widthIn: z.number().positive(),
+    heightIn: z.number().positive(),
+    permitNumber: z.string().optional(),
+  })
+  const cargoSchema = z.object({
+    items: z.array(lineItemSchema).min(1),
+    details: z.discriminatedUnion('type', [
+      dryDetails,
+      refrigeratedDetails,
+      hazmatDetails,
+      oversizedDetails,
+    ]),
+  })
+  const truckService = z.object({
+    mode: z.literal('truck'),
+    truckType: z.enum(TRUCK_TYPES),
+    liftgate: z.boolean(),
+  })
+  const airService = z.object({
+    mode: z.literal('air'),
+    airline: z.string().min(2),
+    awbPrefix: z.string(),
+  })
+  const oceanService = z.object({
+    mode: z.literal('ocean'),
+    vessel: z.string().min(2),
+    containerSize: z.enum(CONTAINER_SIZES),
+  })
+  const serviceSchema = z.discriminatedUnion('mode', [truckService, airService, oceanService])
+
+  const shipmentSchema = z.object({
+    reference: z.string(),
+    pickup: addressSchema,
+    delivery: addressSchema,
+    useSameDeliveryAddress: z.boolean(),
+    cargo: cargoSchema,
+    service: serviceSchema,
+    desiredPickupDate: z.string().min(1),
+    desiredDeliveryDate: z.string().min(1),
+    insurance: z.object({
+      declaredValueUSD: z.number().min(0),
+      coverage: z.enum(COVERAGES),
+    }),
+    notes: z.string().max(500).optional(),
+  })
+
+  type Form = ReturnType<typeof useForm<typeof shipmentSchema>>
+  const formT = makeFormProxy<Form>()
+
+  it('top-level scalars resolve without TS2589', () => {
+    expectTypeOf(formT.values.reference).toEqualTypeOf<string>()
+    expectTypeOf(formT.values.useSameDeliveryAddress).toEqualTypeOf<boolean>()
+  })
+
+  it('nested address objects descend through the read-shape', () => {
+    expectTypeOf(formT.values.pickup.city).toEqualTypeOf<string>()
+    expectTypeOf(formT.values.pickup.line2).toEqualTypeOf<string | undefined>()
+    expectTypeOf(formT.values.delivery.region).toEqualTypeOf<string>()
+  })
+
+  it('array-of-objects elements read as the inner read-shape', () => {
+    expectTypeOf(formT.values.cargo.items[0]?.sku).toEqualTypeOf<string | undefined>()
+  })
+
+  it('discriminated unions read as the union of variant read-shapes', () => {
+    // The discriminant variants resolve to a literal-string union on the
+    // read side, then `WriteShape` widens primitive literals to their
+    // primitive supertype at the `form.values` surface — the slim
+    // write-time contract documented in `WriteShape`. The runtime still
+    // reports the literal at parse time (handleSubmit / process), so
+    // narrowing happens at the validation boundary, not on direct reads.
+    expectTypeOf(formT.values.cargo.details.type).toEqualTypeOf<string>()
+    expectTypeOf(formT.values.service.mode).toEqualTypeOf<string>()
+  })
+
+  it('optional leaves stay `T | undefined`', () => {
+    expectTypeOf(formT.values.notes).toEqualTypeOf<string | undefined>()
+  })
+
+  it('the full schema mounts and round-trips', () => {
+    const { api, unmount } = mountForm(() =>
+      useForm({
+        schema: shipmentSchema,
+        key: uniqueKey('shipment-depth'),
+        defaultValues: {
+          reference: 'SHP-100001',
+          cargo: { items: [], details: { type: 'dry', fragile: false } },
+          service: { mode: 'truck', truckType: 'box', liftgate: false },
+          insurance: { declaredValueUSD: 0, coverage: 'basic' },
+          pickup: { country: 'US' },
+          delivery: { country: 'US' },
+          useSameDeliveryAddress: false,
+        },
+      })
+    )
+    try {
+      expect(api.values.reference).toBe('SHP-100001')
+      expect(api.values.cargo.details.type).toBe('dry')
+      expect(api.values.service.mode).toBe('truck')
+      expect(api.values.pickup.country).toBe('US')
+      expect(api.values.useSameDeliveryAddress).toBe(false)
+    } finally {
+      unmount()
+    }
+  })
+
+  // The `fields` property is the second deep mapped type on the
+  // `UseFormReturnType` (`FieldStateMap<WriteShape<ReadForm>>`) — same
+  // recursion-depth shape as ReadShape. These probes pin both the
+  // callable surface and the proxy-descent surface against the
+  // shipment-demo schema so a future regression to the single-pass
+  // FieldStateMapEntry shape trips here at compile time before it
+  // reaches the IDE hover.
+  it('fields proxy descent resolves leaf FieldStates', () => {
+    expectTypeOf(formT.fields.reference.value).toEqualTypeOf<string>()
+    expectTypeOf(formT.fields.useSameDeliveryAddress.value).toEqualTypeOf<boolean>()
+    expectTypeOf(formT.fields.pickup.city.value).toEqualTypeOf<string>()
+    expectTypeOf(formT.fields.pickup.line2.value).toEqualTypeOf<string | undefined>()
+    expectTypeOf(formT.fields.notes.value).toEqualTypeOf<string | undefined>()
+  })
+
+  it('fields callable form returns FieldState at a known path', () => {
+    expectTypeOf(formT.fields(['pickup', 'city']).value).toEqualTypeOf<string>()
+    expectTypeOf(formT.fields(['cargo', 'items', 0, 'sku']).value).toEqualTypeOf<string>()
+  })
+
+  it('fields runtime descent stays consistent with the static type', () => {
+    const { api, unmount } = mountForm(() =>
+      useForm({
+        schema: shipmentSchema,
+        key: uniqueKey('shipment-fields'),
+        defaultValues: {
+          reference: 'SHP-100002',
+          cargo: { items: [], details: { type: 'dry', fragile: false } },
+          service: { mode: 'truck', truckType: 'box', liftgate: false },
+          insurance: { declaredValueUSD: 0, coverage: 'basic' },
+          pickup: { country: 'US' },
+          delivery: { country: 'US' },
+          useSameDeliveryAddress: false,
+        },
+      })
+    )
+    try {
+      expect(api.fields.reference.value).toBe('SHP-100002')
+      expect(api.fields.pickup.city.value).toBe('')
+      expect(api.fields(['pickup', 'city']).value).toBe('')
+      expect(api.fields(['service', 'mode']).value).toBe('truck')
+    } finally {
+      unmount()
+    }
+  })
+
+  // Errors proxy uses the same recursion-depth shape as fields
+  // (`ErrorsProxyShape<WriteShape<ReadForm>>`). Pinning the descent
+  // surfaces forces the two-pass split to keep working.
+  it('errors proxy descent reaches every container path', () => {
+    expectTypeOf(formT.errors.reference).toEqualTypeOf<readonly ValidationError[] | undefined>()
+    expectTypeOf(formT.errors.pickup.city).toEqualTypeOf<readonly ValidationError[] | undefined>()
+    expectTypeOf(formT.errors.cargo.items).toBeObject()
+    expectTypeOf(formT.errors.notes).toEqualTypeOf<readonly ValidationError[] | undefined>()
+  })
+
+  it('errors callable form returns a ValidationError list at a known path', () => {
+    expectTypeOf(formT.errors(['pickup', 'city'])).toEqualTypeOf<
+      readonly ValidationError[] | undefined
+    >()
+    expectTypeOf(formT.errors('reference')).toEqualTypeOf<readonly ValidationError[] | undefined>()
+  })
+
+  // `setValue` types its `value` argument as `PathSetValuePayload<...>`,
+  // which composes `DefaultValuesShape` + `NonNullable<WriteShape<...>>`
+  // — both deep recursive types that we just split. The probe pins the
+  // call shape so a regression collapses the payload type at TS-check
+  // time rather than at IDE-hover time.
+  it('setValue accepts the resolved payload type at a known path', () => {
+    const setRef: (v: string) => boolean = (v) => formT.setValue('reference', v)
+    const setCity: (v: string) => boolean = (v) => formT.setValue('pickup.city', v)
+    const setNotes: (v: string | undefined) => boolean = (v) => formT.setValue('notes', v)
+    expectTypeOf(setRef).toBeFunction()
+    expectTypeOf(setCity).toBeFunction()
+    expectTypeOf(setNotes).toBeFunction()
+  })
+
+  // `validate` / `validateAsync` resolve to a `ValidationResponse<Form>`
+  // — the success branch carries the full Form shape (via the read-side
+  // `data`). Pinning the return-type wrapper here forces the chain to
+  // stay within tsserver's hover budget on deep schemas.
+  it('validate / validateAsync resolve without TS2589', () => {
+    expectTypeOf(formT.validate).toBeFunction()
+    expectTypeOf(formT.validateAsync).toBeFunction()
+    expectTypeOf(formT.validate()).toBeObject()
+  })
+
+  // FieldState aggregation flags (touched, dirty, valid, blurred,
+  // focused, blank) read uniformly off every node in the descent.
+  // Pinning a sampling here keeps the aggregation surface honest
+  // alongside the leaf-value pin above.
+  it('FieldState aggregation flags expose the typed surface at every depth', () => {
+    // `touched` carries `null` for never-focused fields; `dirty` /
+    // `valid` / `blank` are strict booleans. Aggregations at container
+    // paths are reachable through the callable form (the proxy at a
+    // container path returns a sub-proxy, not a FieldState).
+    expectTypeOf(formT.fields.reference.touched).toEqualTypeOf<boolean | null>()
+    expectTypeOf(formT.fields.reference.dirty).toEqualTypeOf<boolean>()
+    expectTypeOf(formT.fields.reference.valid).toEqualTypeOf<boolean>()
+    expectTypeOf(formT.fields.reference.blank).toEqualTypeOf<boolean>()
+    expectTypeOf(formT.fields.pickup.city.touched).toEqualTypeOf<boolean | null>()
+    // Root no-arg call returns the root FieldState (aggregated across
+    // every active-variant leaf).
+    expectTypeOf(formT.fields().dirty).toEqualTypeOf<boolean>()
+  })
+
+  // The `values` callable surface mirrors the same shape. The proxy
+  // descent goes through `LiftedValueShape<WriteShape<ReadForm>>`, the
+  // other deep mapped type we split.
+  it('values callable form returns the form shape at a known path', () => {
+    expectTypeOf(formT.values('reference')).toBeUnknown()
+    expectTypeOf(formT.values(['pickup', 'city'])).toBeUnknown()
+    expectTypeOf(formT.values()).toBeObject()
   })
 })

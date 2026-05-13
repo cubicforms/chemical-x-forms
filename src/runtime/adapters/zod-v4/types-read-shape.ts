@@ -20,18 +20,38 @@ import type { z } from 'zod'
  *
  *  | Wrapper             | Key | Value at the key            |
  *  | ------------------- | --- | --------------------------- |
- *  | `ZodDefault<T>`     | req | `z.input<T>` (no undefined) |
- *  | `ZodOptional<T>`    | opt | `z.input<T> \| undefined`   |
- *  | `ZodNullable<T>`    | req | `z.input<T> \| null`        |
- *  | `ZodPreprocess<T>`  | req | `z.input<T>` (peel cb→unknown)
- *  | plain wrapper / T   | req | `z.input<T>`                |
+ *  | `ZodDefault<T>`     | req | inner read shape            |
+ *  | `ZodPrefault<T>`    | req | inner read shape            |
+ *  | `ZodCatch<T>`       | req | inner read shape            |
+ *  | `ZodReadonly<T>`    | req | inner read shape            |
+ *  | `ZodOptional<T>`    | opt | inner read shape \| undef   |
+ *  | `ZodNullable<T>`    | req | inner read shape \| null    |
+ *  | `ZodPreprocess<T>`  | req | inner read shape            |
+ *  | nested `ZodObject`  | req | recursed read shape         |
+ *  | nested `ZodArray`   | req | `Array<inner read shape>`   |
+ *  | plain / fallthrough | req | `z.input<T>`                |
  *
- * Composes with `WriteShape<>` (primitive-literal widening) at the
- * `form.values` boundary: `ValuesSurface<WriteShape<ReadShape<S>>>`.
+ * Wrapper peeling is intentionally NOT chained through nested
+ * descent — each conditional branch costs TS instantiation depth, and
+ * v4's full wrapper set (Default / Prefault / Catch / Readonly /
+ * Optional / Nullable / Preprocess) combined with Object / Array /
+ * Tuple / Record / DiscriminatedUnion recursion hits the TS2589
+ * ceiling for any non-trivial schema (two discriminated unions plus
+ * a few nested objects is enough, e.g. a multi-step booking form).
  *
- * Ingestion surfaces (`setValue`, `defaultValues`, `register` write
- * path) keep `z.input<S>` — those need to admit `undefined` for
- * defaulted fields and `unknown` for preprocess slots.
+ * The two-pass split keeps the type bounded: the outer pass peels at
+ * most one wrapper; the inner pass does structural descent (object /
+ * array / tuple / record / discriminated-union) and restarts the peel
+ * chain at the boundary so nested wrappers still work for the common
+ * cases. Deeper wrapper chains nested INSIDE another wrapper (e.g.
+ * `.optional().default(...)` whose inner is itself wrapped) fall
+ * through to `z.input<Inner>` — the runtime still resolves nested
+ * defaults to concrete values; the type just stays at the input
+ * shape. Most defaulted fields are top-level inside an object; the
+ * deeper case is a documented edge.
+ *
+ * Mirrors the v3 read-shape (see
+ * `src/runtime/adapters/zod-v3/types-read-shape.ts`).
  */
 export type ReadShape<S> =
   S extends z.ZodObject<infer Shape extends z.ZodRawShape>
@@ -39,38 +59,50 @@ export type ReadShape<S> =
     : ReadShapeField<S>
 
 /**
- * Per-field resolution for {@link ReadShape}. Recurses into nested
- * `ZodObject` / `ZodArray`; peels wrappers per the policy table.
+ * Outer pass — peels at most one wrapper, then hands off to the
+ * structural descent. Does NOT re-enter the wrapper-peel chain on
+ * the inner schema; that's `ReadShapeInner`'s job.
  */
 export type ReadShapeField<T> =
   T extends z.ZodDefault<infer Inner>
-    ? ReadShapeField<Inner>
+    ? ReadShapeInner<Inner>
     : T extends z.ZodPrefault<infer Inner>
-      ? ReadShapeField<Inner>
+      ? ReadShapeInner<Inner>
       : T extends z.ZodCatch<infer Inner>
-        ? ReadShapeField<Inner>
+        ? ReadShapeInner<Inner>
         : T extends z.ZodReadonly<infer Inner>
-          ? ReadShapeField<Inner>
+          ? ReadShapeInner<Inner>
           : T extends z.ZodOptional<infer Inner>
-            ? ReadShapeField<Inner> | undefined
+            ? ReadShapeInner<Inner> | undefined
             : T extends z.ZodNullable<infer Inner>
-              ? ReadShapeField<Inner> | null
+              ? ReadShapeInner<Inner> | null
               : T extends z.ZodPreprocess<infer Inner>
-                ? ReadShapeField<Inner>
-                : T extends z.ZodObject<infer Shape extends z.ZodRawShape>
-                  ? { [K in keyof Shape]: ReadShapeField<Shape[K]> }
-                  : T extends z.ZodArray<infer Item>
-                    ? Array<ReadShapeField<Item>>
-                    : T extends z.ZodTuple<infer Items>
-                      ? { -readonly [K in keyof Items]: ReadShapeField<Items[K]> }
-                      : T extends z.ZodRecord<infer _Key, infer Value>
-                        ? Record<string, ReadShapeField<Value>>
-                        : T extends z.ZodDiscriminatedUnion<infer Options, string>
-                          ? Options extends ReadonlyArray<infer Opt>
-                            ? Opt extends z.ZodType
-                              ? ReadShapeField<Opt>
-                              : never
-                            : never
-                          : T extends z.ZodType
-                            ? z.input<T>
-                            : T
+                ? ReadShapeInner<Inner>
+                : ReadShapeInner<T>
+
+/**
+ * Inner pass — structural descent into containers without re-entering
+ * the wrapper-peel chain. Object / array / tuple / record /
+ * discriminated-union recurse by handing each child back to
+ * {@link ReadShapeField}, so per-field wrappers still get one level
+ * of peeling at the boundary. Plain schemas (and any wrapped schema
+ * the inner pass doesn't recognise) fall through to `z.input<T>`.
+ */
+type ReadShapeInner<T> =
+  T extends z.ZodObject<infer Shape extends z.ZodRawShape>
+    ? { [K in keyof Shape]: ReadShapeField<Shape[K]> }
+    : T extends z.ZodArray<infer Item>
+      ? Array<ReadShapeField<Item>>
+      : T extends z.ZodTuple<infer Items>
+        ? { -readonly [K in keyof Items]: ReadShapeField<Items[K]> }
+        : T extends z.ZodRecord<infer _Key, infer Value>
+          ? Record<string, ReadShapeField<Value>>
+          : T extends z.ZodDiscriminatedUnion<infer Options, string>
+            ? Options extends ReadonlyArray<infer Opt>
+              ? Opt extends z.ZodType
+                ? ReadShapeField<Opt>
+                : never
+              : never
+            : T extends z.ZodType
+              ? z.input<T>
+              : T

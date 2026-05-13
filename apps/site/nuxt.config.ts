@@ -479,7 +479,38 @@ export default defineNuxtConfig({
       // Excluding both keeps both entries served from their real
       // node_modules paths (assets/ neighbors resolve) and through the
       // same resolver (single vue copy across the @vue/repl tree).
-      exclude: ['@vue/repl', '@vue/repl/monaco-editor'],
+      //
+      // The remark/rehype/unified cluster is excluded for a different
+      // reason: @nuxtjs/mdc (transitive via @nuxt/content) pushes these
+      // specifiers into Vite's `optimizeDeps.include` list via its own
+      // module manifest, but under pnpm's strict hoist they don't
+      // surface at apps/site/node_modules and Vite can't resolve them
+      // through the `parent > child` traversal. On a cold container
+      // (`make up` after `docker compose down` clears Vite's dep
+      // cache), the scanner re-enters resolution on every unresolvable
+      // entry and stack-overflows the plugin pipeline on the first
+      // transform request — visible as `Internal server error: Maximum
+      // call stack size exceeded` from `EnvironmentPluginContainer.transform`.
+      // Listing them as `exclude` short-circuits the scanner and tells
+      // Vite "Nuxt's machinery already resolves these at module-load
+      // time, don't pre-bundle them." The warning filter in
+      // `isFilteredBuildWarning` (top of this file) suppresses the
+      // residual log noise; this `exclude` block prevents the actual
+      // overflow on cold start.
+      exclude: [
+        '@vue/repl',
+        '@vue/repl/monaco-editor',
+        'remark-gfm',
+        'remark-emoji',
+        'remark-mdc',
+        'remark-rehype',
+        'rehype-raw',
+        'parse5',
+        'unist-util-visit',
+        'unified',
+        'debug',
+        'extend',
+      ],
     },
     build: {
       // Production sourcemaps are pure overhead for a docs site —

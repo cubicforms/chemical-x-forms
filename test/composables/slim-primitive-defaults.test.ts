@@ -42,7 +42,7 @@ function mountWith<S extends z.ZodObject>(
         strict,
         defaultValues: defaults,
       }
-      captured.api = (useForm as (cfg: unknown) => ReturnType<typeof useForm<S>>)(config)
+      captured.api = (useForm as unknown as (cfg: unknown) => ReturnType<typeof useForm<S>>)(config)
       return () => h('div')
     },
   })

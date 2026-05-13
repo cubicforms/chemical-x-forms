@@ -1,4 +1,4 @@
-.PHONY: help build up down restart logs shell install test test-watch lint format check prepare typecheck publish-prep watch watch-bg unwatch
+.PHONY: help build up down restart logs shell install test test-watch lint format check prepare typecheck bundle-repl publish-prep watch watch-bg unwatch
 .DEFAULT_GOAL := help
 
 CONTAINER := attaform-dev
@@ -11,16 +11,20 @@ help:  ## Show this help
 build:  ## Build the dev image
 	docker compose build
 
-up: down  ## Stop any prior stack, start the dev container, and boot the docs site (http://localhost:3000)
+up: down  ## Stop any prior stack, regen the playground type bundle, start the dev container, and boot the docs site (http://localhost:3000)
 	docker compose up -d
+	docker compose exec attaform sh -c "cd apps/site && pnpm bundle:repl"
 	docker compose exec attaform pnpm dev
 
 down:  ## Stop and remove the dev container
 	docker compose down
 
-restart:  ## Rebuild image and bring the dev server back up
+restart:  ## Rebuild image, regen the playground type bundle, and bring the dev server back up
 	docker compose build
 	$(MAKE) up
+
+bundle-repl:  ## Regenerate the playground type bundle (apps/site/public/lib/types/attaform/*.d.ts)
+	docker compose exec attaform sh -c "cd apps/site && pnpm bundle:repl"
 
 logs:  ## Tail container logs
 	docker compose logs -f

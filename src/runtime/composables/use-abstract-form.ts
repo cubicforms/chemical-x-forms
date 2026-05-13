@@ -426,10 +426,10 @@ export function useAbstractForm<
   if (merged.rememberVariants !== undefined) {
     apiOptions.rememberVariants = merged.rememberVariants
   }
-  // `buildFormApi` returns the schema-agnostic shape (`ReadForm = Form`).
-  // Adapter callers compute the richer `ReadForm` (e.g. zod-v4's
-  // `ReadShape<Schema>`) and assert it through the public return type —
-  // at runtime the same proxies serve both views.
+  // `buildFormApi` returns the schema-agnostic shape (`ReadForm = Form`);
+  // adapter callers compute the richer `ReadForm` (zod-v4's
+  // `StorageShape<Schema>`) and assert it through the public return
+  // type — at runtime the same proxies serve both views.
   return buildFormApi<Form, GetValueFormType>(
     state,
     formInstanceId,

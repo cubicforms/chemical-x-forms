@@ -2623,39 +2623,20 @@ export type FieldState<Value = unknown> = {
  * regardless of the active variant, with the leaf typed as
  * `FieldState<number | undefined>`. Matches the runtime's stub
  * `FieldState` for inactive-variant paths.
- *
- * Implementation note — two-pass split: the entry type peels exactly
- * one decision ("leaf or container?") and hands the container case to
- * {@link FieldStateMapContainer}. Folding the structural branches into
- * one long conditional chain costs TS instantiation depth per nesting
- * level, and on schemas with two discriminated unions plus a few
- * nested objects (the multi-step booking shape) the language service's
- * hover budget runs out — TS2589 surfaces on the `fields` property
- * even though `tsc` accepts it. Splitting bounds the chain length per
- * frame; tsserver's hover-render stays within budget.
  */
 export type FieldStateMapEntry<T> = [T] extends [
   string | number | boolean | bigint | symbol | null | undefined | Date,
 ]
   ? FieldState<T>
-  : FieldStateMapContainer<T>
-
-/**
- * Container-side resolution for {@link FieldStateMapEntry}: array, then
- * object (discriminated-union and plain), with a fall-through for any
- * other non-leaf shape. Recurses into each child by handing back to
- * `FieldStateMapEntry`, so per-child leaf-detection still runs at the
- * boundary.
- */
-type FieldStateMapContainer<T> = [T] extends [ReadonlyArray<infer U>]
-  ? { readonly [K: number]: FieldStateMapEntry<U> }
-  : [T] extends [object]
-    ? [IsUnion<T>] extends [true]
-      ? {
-          readonly [K in KeyofUnion<T>]-?: FieldStateMapEntry<ValueOfUnion<T, K>>
-        }
-      : { readonly [K in keyof T]-?: FieldStateMapEntry<T[K]> }
-    : FieldState<T>
+  : [T] extends [ReadonlyArray<infer U>]
+    ? { readonly [K: number]: FieldStateMapEntry<U> }
+    : [T] extends [object]
+      ? [IsUnion<T>] extends [true]
+        ? {
+            readonly [K in KeyofUnion<T>]-?: FieldStateMapEntry<ValueOfUnion<T, K>>
+          }
+        : { readonly [K in keyof T]-?: FieldStateMapEntry<T[K]> }
+      : FieldState<T>
 
 /**
  * Type of `form.fields` — leaf-aware drillable callable Proxy. At
@@ -2779,31 +2760,19 @@ export type FormErrorsSurface<Form> = ErrorsProxyShape<Form> & {
   (): readonly ValidationError[] | undefined
 }
 
-/**
- * Two-pass split mirrors {@link FieldStateMapEntry}: the outer pass
- * peels one decision ("leaf or container?") so the conditional chain
- * stays short per recursion frame, then hands the container case to
- * {@link ErrorsProxyShapeContainer}. Folding the structural branches
- * into one long chain trips TS2589 on the IDE hover for deep schemas
- * (the multi-step booking shape — two DUs plus nested objects — is
- * enough). `tsc` accepts either form; this split keeps the language
- * service's hover budget intact.
- */
 type ErrorsProxyShape<T> = [T] extends [
   string | number | boolean | bigint | symbol | null | undefined | Date,
 ]
   ? readonly ValidationError[] | undefined
-  : ErrorsProxyShapeContainer<T>
-
-type ErrorsProxyShapeContainer<T> = [T] extends [ReadonlyArray<infer U>]
-  ? { readonly [K: number]: ErrorsProxyShape<U> }
-  : [T] extends [object]
-    ? [IsUnion<T>] extends [true]
-      ? {
-          readonly [K in KeyofUnion<T>]: ErrorsProxyShape<ValueOfUnion<T, K>>
-        }
-      : { readonly [K in keyof T]: ErrorsProxyShape<T[K]> }
-    : readonly ValidationError[] | undefined
+  : [T] extends [ReadonlyArray<infer U>]
+    ? { readonly [K: number]: ErrorsProxyShape<U> }
+    : [T] extends [object]
+      ? [IsUnion<T>] extends [true]
+        ? {
+            readonly [K in KeyofUnion<T>]: ErrorsProxyShape<ValueOfUnion<T, K>>
+          }
+        : { readonly [K in keyof T]: ErrorsProxyShape<T[K]> }
+      : readonly ValidationError[] | undefined
 
 /**
  * Type of `form.values`. Drillable readonly callable proxy. Unlike
@@ -2997,31 +2966,28 @@ export type FormMeta<F = unknown> = FieldState<F> & {
  * form.meta.submitting        // form-level reactive flag
  * ```
  *
- * Two generic slots split the input view from the output view:
+ * Three generic slots split the write view, parse view, and read view:
  *
- * - `Form` — the **input / storage shape** (`z.input<Schema>`). Used
- *   by `setValue`, `defaultValues`, `values`, `fields`, `register`,
- *   `toRef`, and every path-addressed API. Storage holds values as
- *   the consumer wrote them; preprocess normalization runs at the
- *   write boundary, but `.transform()`s are deferred to parse-time.
+ * - `Form` — the **input / write shape** (`z.input<Schema>`). Used
+ *   by `setValue`, `defaultValues`, and `register`'s write side.
+ *   Loose: preprocess paths accept `unknown` at the write boundary,
+ *   defaulted fields accept their inner type optionally.
  *
  * - `GetValueFormType` — the **output / parsed shape**
  *   (`z.output<Schema>`). Used by `handleSubmit`'s `onSubmit`
  *   callback and by `form.process()`'s success payload. This is the
  *   shape after refinements have fired and transforms have run.
  *
- * - `ReadForm` — the **read / storage shape** — the type
- *   `form.values.<path>` resolves to at runtime once defaults have
- *   fired and blank-path synthesis has filled required leaves. For a
- *   Zod schema this is `ReadShape<Schema>` (provided by the adapter);
- *   for schema-agnostic call sites it defaults to `Form`, preserving
- *   the existing surface. Used by `values`, `fields`, `register`'s
- *   read side, and `toRef`.
+ * - `ReadForm` — the **read / storage shape**. Used by `values`,
+ *   `fields`, `register`'s read side, `toRef`. Per-key precise: at
+ *   the write-boundary wrappers (`default` / `prefault` / `catch` /
+ *   `readonly` / `preprocess`) the value is `z.output<Inner>`
+ *   (default has fired, preprocess has normalized); at transforms /
+ *   pipes the value stays `z.input<Inner>` (transforms are deferred
+ *   until parse). For schema-agnostic call sites defaults to `Form`.
  *
- * For schemas without transforms the input and output shapes are
- * identical; for schemas without defaults / preprocess the input and
- * read shapes are identical. Defaults keep the surface ergonomic when
- * the adapter doesn't compute the richer shapes.
+ * For schemas without write-boundary wrappers or transforms the three
+ * shapes coincide.
  */
 export type UseFormReturnType<
   Form extends GenericForm,

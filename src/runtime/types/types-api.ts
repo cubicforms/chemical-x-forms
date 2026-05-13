@@ -2966,31 +2966,28 @@ export type FormMeta<F = unknown> = FieldState<F> & {
  * form.meta.submitting        // form-level reactive flag
  * ```
  *
- * Two generic slots split the input view from the output view:
+ * Three generic slots split the write view, parse view, and read view:
  *
- * - `Form` — the **input / storage shape** (`z.input<Schema>`). Used
- *   by `setValue`, `defaultValues`, `values`, `fields`, `register`,
- *   `toRef`, and every path-addressed API. Storage holds values as
- *   the consumer wrote them; preprocess normalization runs at the
- *   write boundary, but `.transform()`s are deferred to parse-time.
+ * - `Form` — the **input / write shape** (`z.input<Schema>`). Used
+ *   by `setValue`, `defaultValues`, and `register`'s write side.
+ *   Loose: preprocess paths accept `unknown` at the write boundary,
+ *   defaulted fields accept their inner type optionally.
  *
  * - `GetValueFormType` — the **output / parsed shape**
  *   (`z.output<Schema>`). Used by `handleSubmit`'s `onSubmit`
  *   callback and by `form.process()`'s success payload. This is the
  *   shape after refinements have fired and transforms have run.
  *
- * - `ReadForm` — the **read / storage shape** — the type
- *   `form.values.<path>` resolves to at runtime once defaults have
- *   fired and blank-path synthesis has filled required leaves. For a
- *   Zod schema this is `ReadShape<Schema>` (provided by the adapter);
- *   for schema-agnostic call sites it defaults to `Form`, preserving
- *   the existing surface. Used by `values`, `fields`, `register`'s
- *   read side, and `toRef`.
+ * - `ReadForm` — the **read / storage shape**. Used by `values`,
+ *   `fields`, `register`'s read side, `toRef`. Per-key precise: at
+ *   the write-boundary wrappers (`default` / `prefault` / `catch` /
+ *   `readonly` / `preprocess`) the value is `z.output<Inner>`
+ *   (default has fired, preprocess has normalized); at transforms /
+ *   pipes the value stays `z.input<Inner>` (transforms are deferred
+ *   until parse). For schema-agnostic call sites defaults to `Form`.
  *
- * For schemas without transforms the input and output shapes are
- * identical; for schemas without defaults / preprocess the input and
- * read shapes are identical. Defaults keep the surface ergonomic when
- * the adapter doesn't compute the richer shapes.
+ * For schemas without write-boundary wrappers or transforms the three
+ * shapes coincide.
  */
 export type UseFormReturnType<
   Form extends GenericForm,

@@ -22,13 +22,13 @@ import type {
   NestedType,
 } from '../../types/types-core'
 import { zodV4Adapter } from './adapter'
-import type { ReadShape } from './types-read-shape'
+import type { StorageShape } from './types-storage-shape'
 
 export { zodV4Adapter as zodAdapter } from './adapter'
 export { UnsupportedSchemaError } from './errors'
 export { assertZodVersion, kindOf } from './introspect'
 export type { ZodKind } from './introspect'
-export type { ReadShape, ReadShapeField } from './types-read-shape'
+export type { StorageShape } from './types-storage-shape'
 
 /**
  * Type of the value accepted at `Path` for `setValue` / `defaultValues`
@@ -108,7 +108,7 @@ export function useForm<Schema extends z.ZodObject>(
 ): UseFormReturnType<
   z.input<Schema> extends GenericForm ? z.input<Schema> : never,
   z.output<Schema> extends GenericForm ? z.output<Schema> : never,
-  ReadShape<Schema> extends GenericForm ? ReadShape<Schema> : never
+  StorageShape<Schema> extends GenericForm ? StorageShape<Schema> : never
 > {
   // Foot-gun guard: catches `useForm(z.object({...}))` (raw schema as
   // the first arg — its `.schema` field is undefined), `useForm()` (no
@@ -124,13 +124,21 @@ export function useForm<Schema extends z.ZodObject>(
   ) {
     throw new InvalidUseFormConfigError()
   }
-  // Two-slot generic split: `Form` is the storage / write shape
-  // (z.input — pre-transform), `Out` is the parsed output shape
-  // (z.output — post-transform). `handleSubmit` and `form.process()`
-  // resolve to `Out`; every write- and path-addressed API resolves
-  // to `Form`.
+  // Three-slot generic split:
+  //  - `Form` (z.input) is the WRITE view — what setValue / register
+  //    / defaultValues accept. Loose for honest-input wrappers
+  //    (preprocess accepts `unknown` at the write boundary).
+  //  - `Out` (z.output) is the parsed-output view — what handleSubmit
+  //    and form.process() yield. Refinements have fired, transforms
+  //    have run.
+  //  - `Read` (StorageShape) is the READ view — what form.values /
+  //    form.fields / register's read side / toRef expose. Per-key
+  //    z.output for write-boundary wrappers (default / preprocess /
+  //    etc.) so defaulted leaves type as `T` (not `T | undefined`),
+  //    z.input for transforms (storage holds pre-transform input).
   type Form = z.input<Schema> extends GenericForm ? z.input<Schema> : never
   type Out = z.output<Schema> extends GenericForm ? z.output<Schema> : never
+  type Read = StorageShape<Schema> extends GenericForm ? StorageShape<Schema> : never
   // `zodV4Adapter` returns a factory
   // `(formKey, options: SchemaFactoryOptions) => AbstractSchema`;
   // `UseFormConfiguration.schema` accepts `Schema | ((key, options) => Schema)`,
@@ -150,7 +158,6 @@ export function useForm<Schema extends z.ZodObject>(
   // public `useForm` signature already enforced the discriminant on
   // `configuration` before we got here), so cast to the parameter
   // type to side-step the structural disagreement.
-  type Read = ReadShape<Schema> extends GenericForm ? ReadShape<Schema> : never
   // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
   return useAbstractForm<Form, Out, Read>({
     ...configuration,

@@ -14,7 +14,7 @@ import type {
   UnwrapZodObject,
   UseFormConfigurationWithZod,
 } from '../adapters/zod-v3/types-zod-adapter'
-import type { ReadShape } from '../adapters/zod-v3/types-read-shape'
+import type { StorageShape } from '../adapters/zod-v3/types-storage-shape'
 import { useAbstractForm } from './use-abstract-form'
 
 /**
@@ -73,7 +73,9 @@ export function useForm<
 ): UseFormReturnType<
   z.input<UnwrapZodObject<Schema>>,
   GetValueFormType,
-  ReadShape<Schema> extends GenericForm ? ReadShape<Schema> : never
+  StorageShape<UnwrapZodObject<Schema>> extends GenericForm
+    ? StorageShape<UnwrapZodObject<Schema>>
+    : never
 >
 export function useForm<
   Schema extends z.ZodSchema<unknown>,
@@ -123,7 +125,10 @@ export function useForm<
   // (`createAttaform({ defaults: { strict: false } })`).
   // The library-level fallback to `true` lives downstream in
   // `createFormStore`, where it can apply *after* the registry merge.
-  type Read = ReadShape<Schema> extends GenericForm ? ReadShape<Schema> : never
+  type Read =
+    StorageShape<UnwrapZodObject<Schema>> extends GenericForm
+      ? StorageShape<UnwrapZodObject<Schema>>
+      : never
   return useAbstractForm<Form, GetValueFormType, Read>({
     ...(configuration as UseFormConfiguration<
       Form,

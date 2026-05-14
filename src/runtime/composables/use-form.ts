@@ -1,7 +1,6 @@
 import type { z } from 'zod-v3'
 import { zodAdapter } from '../adapters/zod-v3'
 import { InvalidUseFormConfigError } from '../core/errors'
-import type { SchemaFactoryOptions } from '../core/get-computed-schema'
 import type {
   AbstractSchema,
   FormKey,
@@ -9,7 +8,6 @@ import type {
   UseFormConfiguration,
 } from '../types/types-api'
 import type { DefaultValuesInput, GenericForm } from '../types/types-core'
-import type { TypeWithNullableDynamicKeys } from '../adapters/zod-v3/types-zod'
 import type {
   UnwrapZodObject,
   UseFormConfigurationWithZod,
@@ -87,22 +85,20 @@ export function useForm<
     : never,
   K
 >
-export function useForm<
-  Schema extends z.ZodSchema<unknown>,
-  Form extends GenericForm = z.input<UnwrapZodObject<Schema>>,
-  GetValueFormType extends GenericForm = Form,
-  K extends FormKey = FormKey,
->(
-  configuration:
-    | UseFormConfiguration<
-        Form,
-        GetValueFormType,
-        AbstractSchema<Form, GetValueFormType>,
-        DefaultValuesInput<Form>,
-        K
-      >
-    | UseFormConfigurationWithZod<Schema, DefaultValuesInput<z.input<UnwrapZodObject<Schema>>>, K>
-): UseFormReturnType<Form, GetValueFormType, Form, K> {
+// Untyped impl signature. The two overloads above are the public typed
+// contract; this signature exists only so the body has somewhere to
+// land. Keeping it untyped severs the overload-vs-impl reconciliation
+// that would otherwise force every overload return to round-trip
+// through `WriteShape`'s primitive-widening idempotence — a constraint
+// that blocks fusing `LiftedValueShape` into `WriteShape` because the
+// union-distribution arm breaks that idempotence on discriminated
+// unions.
+//
+// Type safety inside the body comes from the inner helpers
+// (`zodAdapter`, `useAbstractForm`) inferring from runtime values; the
+// public surface that consumers see comes from the overloads.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useForm(configuration: any): any {
   // Foot-gun guard: catches `useForm(z.object({...}))` (raw schema as
   // the first arg — its `.schema` field is undefined), `useForm()` (no
   // args), and `useForm({ schema: undefined })` before they reach the
@@ -120,44 +116,18 @@ export function useForm<
   }
 
   const { schema } = configuration
-  const abstractSchema = isZodType(schema)
-    ? zodAdapter<Schema, Form, TypeWithNullableDynamicKeys<typeof schema>>(schema)
-    : schema
+  const abstractSchema = isZodType(schema) ? zodAdapter(schema) : schema
 
   // Spread the full configuration so opt-in options (`onInvalidSubmit`,
-  // `validateOn`, `debounceMs`, `persist`, `history`) reach useAbstractForm.
-  // The explicit overrides below narrow schema / defaultValues to the
-  // shapes useAbstractForm expects. `key` and `strict` are
-  // intentionally NOT re-listed — the spread carries them through, and
-  // writing `strict: configuration.strict ?? true` here would
-  // short-circuit the registry's app-level defaults
-  // (`createAttaform({ defaults: { strict: false } })`).
-  // The library-level fallback to `true` lives downstream in
+  // `validateOn`, `debounceMs`, `persist`, `history`, `key`, `strict`)
+  // reach useAbstractForm. Writing `strict: configuration.strict ?? true`
+  // here would short-circuit the registry's app-level defaults
+  // (`createAttaform({ defaults: { strict: false } })`). The
+  // library-level fallback to `true` lives downstream in
   // `createFormStore`, where it can apply *after* the registry merge.
-  type Read =
-    StorageShape<UnwrapZodObject<Schema>> extends GenericForm
-      ? StorageShape<UnwrapZodObject<Schema>>
-      : never
-  return useAbstractForm<Form, GetValueFormType, Read>({
-    ...(configuration as UseFormConfiguration<
-      Form,
-      GetValueFormType,
-      AbstractSchema<Form, GetValueFormType>,
-      DefaultValuesInput<Form>
-    >),
-    // `zodAdapter`'s constraint on its third generic is
-    // `GetValueFormType extends TypeWithNullableDynamicKeys<FormSchema>`,
-    // and `Schema` at this implementation overload is only constrained
-    // by `extends z.ZodSchema<unknown>` — too loose for
-    // `z.output<UnwrapZodObject<typeof schema>>` to resolve concretely.
-    // Pass `TypeWithNullableDynamicKeys<typeof schema>` here purely to
-    // satisfy the adapter's constraint at the structural-cast layer.
-    // The PUBLIC signature's `GetValueFormType` default (line 67) is
-    // what consumers see — that's `z.output<UnwrapZodObject<Schema>>`,
-    // matching the docstring promise. Runtime is unaffected either way.
-    schema: abstractSchema as
-      | AbstractSchema<Form, GetValueFormType>
-      | ((key: FormKey, options: SchemaFactoryOptions) => AbstractSchema<Form, GetValueFormType>),
-    defaultValues: configuration.defaultValues as DefaultValuesInput<Form>,
-  }) as unknown as UseFormReturnType<Form, GetValueFormType, Form, K>
+  return useAbstractForm({
+    ...configuration,
+    schema: abstractSchema,
+    defaultValues: configuration.defaultValues,
+  })
 }

@@ -482,3 +482,64 @@ export type DefaultValuesShape<T> = T extends
         : T extends object
           ? { [K in keyof T]: DefaultValuesShape<T[K]> }
           : T
+
+/**
+ * Single-walker fusion of `DeepPartial` and `DefaultValuesShape` — the
+ * type accepted at `defaultValues`, `reset()`'s parameter, and every
+ * partial-shape consumer. Every level is optional and every primitive
+ * leaf admits its supertype `| Unset`, in one tree walk where the
+ * prior `DeepPartial<DefaultValuesShape<F>>` composition walked twice.
+ *
+ * Both passes had identical topology (object → mapped, tuple →
+ * positional, array → recurse, primitive → terminal) — the doubled
+ * recursion exhausted the depth budget at consumer call sites that
+ * wire multiple complex forms into one scope. Collapsing them buys
+ * back the headroom plus a side fix: opaque leaves (`Date`, `Map`,
+ * `Set`, `RegExp`, functions) now stay intact when their containing
+ * property is optional, rather than getting structurally destructured
+ * by `DeepPartial`'s pass.
+ *
+ * Tuple positions, array elements, and discriminated-union variants
+ * all flow through unchanged from the prior semantics.
+ *
+ * ```ts
+ * type T = DefaultValuesInput<{
+ *   email: string
+ *   joinedAt: Date
+ *   profile: { name: string; age: number }
+ * }>
+ * // → {
+ * //   email?: string | Unset
+ * //   joinedAt?: Date
+ * //   profile?: { name?: string | Unset; age?: number | Unset }
+ * // }
+ * ```
+ */
+export type DefaultValuesInput<T> = T extends string
+  ? string | Unset
+  : T extends number
+    ? number | Unset
+    : T extends boolean
+      ? boolean | Unset
+      : T extends bigint
+        ? bigint | Unset
+        : T extends symbol
+          ? symbol
+          : T extends null | undefined
+            ? T
+            : T extends
+                  | Date
+                  | RegExp
+                  | Map<unknown, unknown>
+                  | Set<unknown>
+                  | ((...args: never) => unknown)
+              ? T
+              : T extends readonly [unknown, ...unknown[]]
+                ? { -readonly [K in keyof T]?: DefaultValuesInput<T[K]> }
+                : T extends ReadonlyArray<infer U>
+                  ? IsTuple<T> extends true
+                    ? { -readonly [K in keyof T]?: DefaultValuesInput<T[K]> }
+                    : Array<DefaultValuesInput<U>>
+                  : T extends object
+                    ? { [K in keyof T]?: DefaultValuesInput<T[K]> }
+                    : T

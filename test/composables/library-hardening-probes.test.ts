@@ -5190,7 +5190,7 @@ describe('chaos — Map / Set values at leaves', () => {
           handle.api = useForm({
             schema,
             key: `chaos-set-leaf-${Math.random().toString(36).slice(2)}`,
-            defaultValues: { payload: { kind: 'seqed', tags: new Set() } },
+            defaultValues: { payload: { kind: 'seqed', tags: new Set<string>() } },
           }) as unknown as Api
           return () => h('div')
         },

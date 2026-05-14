@@ -50,7 +50,7 @@ import type {
   UseFormReturnType,
   UseFormConfiguration,
 } from '../../types/types-api'
-import type { DeepPartial, DefaultValuesShape, GenericForm } from '../../types/types-core'
+import type { DefaultValuesInput, GenericForm } from '../../types/types-core'
 
 // ───────────────────────────────────────────────────────────────────
 // Per-major projections. Each dispatches a single Schema to the
@@ -112,7 +112,7 @@ type UnifiedConfiguration<Schema, K extends FormKey = FormKey> = Omit<
     FormInput<Schema>,
     FormOutput<Schema>,
     AbstractSchema<FormInput<Schema>, FormOutput<Schema>>,
-    DeepPartial<DefaultValuesShape<FormInput<Schema>>>,
+    DefaultValuesInput<FormInput<Schema>>,
     K
   >,
   'schema' | 'validateOn' | 'debounceMs'

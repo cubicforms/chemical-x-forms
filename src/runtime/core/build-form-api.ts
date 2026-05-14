@@ -15,7 +15,7 @@ import type {
   ValidationResponseWithoutValue,
   WriteMeta,
 } from '../types/types-api'
-import type { DeepPartial, DefaultValuesShape, GenericForm } from '../types/types-core'
+import type { DeepPartial, DefaultValuesInput, GenericForm } from '../types/types-core'
 import { __DEV__ } from './dev'
 import type { FormStore } from './create-form-store'
 import { structuralSnapshot } from './diff-apply'
@@ -647,7 +647,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // opt-in registry is NOT touched: directives are still mounted and
   // the next user keystroke on an opted-in input re-populates the
   // entry naturally.
-  const reset = (nextDefaultValues?: DeepPartial<DefaultValuesShape<Form>>): void => {
+  const reset = (nextDefaultValues?: DefaultValuesInput<Form>): void => {
     if (nextDefaultValues === undefined) {
       state.reset()
     } else {

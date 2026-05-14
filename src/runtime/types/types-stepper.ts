@@ -156,6 +156,15 @@ export type StepperOptions<Forms extends readonly AnyForm[] = readonly AnyForm[]
 }
 
 /**
+ * Cross-form value aggregate. Each form's `values` proxy is exposed
+ * under its key — drillable as `stepper.allValues.cargo.weight`.
+ * Useful for review screens and final-submit aggregation.
+ */
+export type AllValues<Forms extends readonly AnyForm[]> = {
+  readonly [K in KeysOf<Forms>]: unknown
+}
+
+/**
  * Return shape of `useStepper`. Reactive `current` is a readonly ref;
  * `forms` is the original tuple (so consumers can index by key or
  * iterate); `count` is the static step count.
@@ -164,12 +173,18 @@ export type StepperOptions<Forms extends readonly AnyForm[] = readonly AnyForm[]
  * readable as `stepper.statuses.cargo.isValid`, callable as
  * `stepper.statuses('cargo')` or `stepper.statuses()`. Each entry
  * derives from the matching form's `meta`.
+ *
+ * `allValues` exposes each form's `values` proxy under its key for
+ * cross-step review screens. `allErrors` is the flat error list across
+ * all forms, ordered by `forms` then per-form order.
  */
 export type UseStepperReturnType<Forms extends readonly AnyForm[]> = {
   readonly current: Readonly<Ref<KeysOf<Forms>>>
   readonly forms: Forms
   readonly count: number
   readonly statuses: StepperStatusesProxy<Statuses<Forms>>
+  readonly allValues: AllValues<Forms>
+  readonly allErrors: Readonly<Ref<readonly AggregateError[]>>
   readonly next: (options?: StepperNavOptions) => void
   readonly back: (options?: StepperNavOptions) => void
   readonly goTo: (key: KeysOf<Forms>, options?: StepperNavOptions) => void

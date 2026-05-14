@@ -13,6 +13,8 @@ import { resolveTrichotomy } from '../core/resolve-default-values'
 import { createStepperRegistry } from '../core/stepper-registry'
 import { buildStepperStatusesProxy } from '../core/stepper-statuses-proxy'
 import type {
+  AggregateError,
+  AllValues,
   AnyForm,
   FormStatus,
   KeysOf,
@@ -41,7 +43,13 @@ type StatusSourceForm = {
     readonly dirty: boolean
     readonly isSubmitted: boolean
     readonly errorCount: number
+    readonly errors: ReadonlyArray<{
+      readonly path: ReadonlyArray<string | number>
+      readonly message: string
+      readonly code?: string
+    }>
   }
+  readonly values: unknown
 }
 
 /**
@@ -257,6 +265,42 @@ export function useStepper<Forms extends readonly AnyForm[]>(
     return formKeys.indexOf(key)
   }
 
+  // Cross-form aggregates. `allValues` exposes each form's existing
+  // values proxy under its key — read-only by way of the proxies'
+  // own traps. `allErrors` is a computed flat list ordered by forms
+  // array, then per-form order.
+  const allValuesObject: Record<string, unknown> = {}
+  for (let i = 0; i < forms.length; i += 1) {
+    const form = forms[i] as AnyForm
+    const source = form as unknown as StatusSourceForm
+    Object.defineProperty(allValuesObject, form.key, {
+      enumerable: true,
+      configurable: false,
+      get: () => source.values,
+    })
+  }
+  const allValues = allValuesObject as AllValues<Forms>
+
+  const allErrors = computed<readonly AggregateError[]>(() => {
+    const flat: AggregateError[] = []
+    for (let i = 0; i < forms.length; i += 1) {
+      const form = forms[i] as AnyForm
+      const source = form as unknown as StatusSourceForm
+      const errors = source.meta?.errors
+      if (errors === undefined) continue
+      for (const error of errors) {
+        const entry: { -readonly [P in keyof AggregateError]: AggregateError[P] } = {
+          formKey: form.key,
+          path: error.path,
+          message: error.message,
+        }
+        if (error.code !== undefined) entry.code = error.code
+        flat.push(entry)
+      }
+    }
+    return flat
+  })
+
   function setCurrent(nextKey: KeysOf<Forms>): void {
     const priorKey = current.value as KeysOf<Forms>
     if (priorKey === nextKey) return
@@ -313,6 +357,8 @@ export function useStepper<Forms extends readonly AnyForm[]>(
     forms,
     count: forms.length,
     statuses,
+    allValues,
+    allErrors: readonly(allErrors),
     next,
     back,
     goTo,

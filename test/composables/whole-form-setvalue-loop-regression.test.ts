@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, nextTick, watch, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
@@ -38,7 +39,7 @@ const schema = z.object({
   }),
 })
 
-type Api = ReturnType<typeof useForm<typeof schema>>
+type Api = UseFormReturn<typeof schema>
 
 function mount(): { app: App; api: Api } {
   let captured: Api | undefined

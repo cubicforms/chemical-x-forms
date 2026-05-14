@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { unset, useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { canonicalizePath } from '../../src/runtime/core/paths'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
@@ -143,7 +144,7 @@ describe('blank-marked number leaf — blank flag survives blur', () => {
   it('blankPaths still contains the leaf after focus + blur', async () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
-    let captured: ReturnType<typeof useForm<typeof numericLeafSchema>> | undefined
+    let captured: UseFormReturn<typeof numericLeafSchema> | undefined
     const App = defineComponent({
       setup() {
         const form = useForm({

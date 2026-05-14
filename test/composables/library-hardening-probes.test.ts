@@ -4,6 +4,7 @@ import { createApp, defineComponent, h, nextTick, watch, type App } from 'vue'
 import { z } from 'zod'
 import { z as zV3 } from 'zod-v3'
 import { unset, useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { useForm as useFormV3 } from '../../src/zod-v3'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType } from '../../src/runtime/types/types-api'
@@ -3044,7 +3045,7 @@ describe('chaos — z.transform() at a leaf changes the output type', () => {
     // Inside the form API, the same asymmetry threads through. Type-
     // assert directly off `useForm`'s return without any `as Api` cast
     // so the public TS surface is what's under test.
-    type FormApi = ReturnType<typeof useForm<typeof _schema>>
+    type FormApi = UseFormReturn<typeof _schema>
 
     // form.values reflects storage — the pre-transform z.input view.
     type FlagAtValues = FormApi['values']['isLongEmail']
@@ -5421,7 +5422,7 @@ describe('chaos — two <input> elements registered to the same path', () => {
 
   it('typing in either input keeps both in sync via the shared form value', async () => {
     const schema = z.object({ shared: z.string() })
-    type Api = ReturnType<typeof useForm<typeof schema>>
+    type Api = UseFormReturn<typeof schema>
     const handle: { api?: Api; el1?: HTMLInputElement; el2?: HTMLInputElement } = {}
 
     // Use the directive interface that the existing persistence test
@@ -6044,7 +6045,7 @@ describe('chaos — empty z.object({}) schema', () => {
 
   it('mounts a form with z.object({}) and accepts validateAsync', async () => {
     const schema = z.object({})
-    let api: ReturnType<typeof useForm<typeof schema>> | undefined
+    let api: UseFormReturn<typeof schema> | undefined
     const App = defineComponent({
       setup() {
         api = useForm({
@@ -6095,7 +6096,7 @@ describe('crash — BigInt-in-DU surfaces as a thrown error to the Vue app', () 
     // Vue's errorHandler captures uncaught errors that escape render
     // / handlers. Wire a spy to detect any.
     const captured: unknown[] = []
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
     const App = defineComponent({
       setup() {
         handle.api = useForm({
@@ -6112,7 +6113,7 @@ describe('crash — BigInt-in-DU surfaces as a thrown error to the Vue app', () 
     }
     app.mount(document.createElement('div'))
     apps.push(app)
-    const api = handle.api as ReturnType<typeof useForm<typeof schema>>
+    const api = handle.api as UseFormReturn<typeof schema>
 
     // The user clicks "switch to small". The synchronous setValue
     // triggers reshape → JSON.stringify(BigInt) → throws → propagates
@@ -6195,7 +6196,7 @@ describe('crash — infinite reactivity loop via setValue inside a computed', ()
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>>; iterations?: number } = {
+    const handle: { api?: UseFormReturn<typeof schema>; iterations?: number } = {
       iterations: 0,
     }
     let crashed = false

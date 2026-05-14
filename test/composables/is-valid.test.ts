@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { computed, createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { z } from 'zod'
 import { attachRegistryToApp, createRegistry } from '../../src/runtime/core/registry'
 import { canonicalizePath } from '../../src/runtime/core/paths'
@@ -33,7 +34,7 @@ const schema = z.object({
   }),
 })
 
-type Api = ReturnType<typeof useForm<typeof schema>>
+type Api = UseFormReturn<typeof schema>
 
 type FieldStateLike = {
   valid: boolean

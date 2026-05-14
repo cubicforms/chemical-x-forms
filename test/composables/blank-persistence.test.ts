@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { AttaformErrorCode } from '../../src/runtime/core/error-codes'
 import { canonicalizePath } from '../../src/runtime/core/paths'
@@ -135,7 +136,7 @@ describe('persistence — blank round-trips across mount', () => {
       })
     )
 
-    let captured: ReturnType<typeof useForm<typeof schema>> | undefined
+    let captured: UseFormReturn<typeof schema> | undefined
     const App = defineComponent({
       setup() {
         const form = useForm({
@@ -251,7 +252,7 @@ describe('persistence — blank round-trips across mount', () => {
       })
     )
 
-    let captured: ReturnType<typeof useForm<typeof schema>> | undefined
+    let captured: UseFormReturn<typeof schema> | undefined
     const App = defineComponent({
       setup() {
         const form = useForm({

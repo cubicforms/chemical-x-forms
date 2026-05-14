@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { z } from 'zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import type { ValidationError } from '../../src/runtime/types/types-api'
@@ -31,7 +32,7 @@ const schema = z.object({
   password: z.string().min(8, 'min 8 chars'),
 })
 
-type Api = ReturnType<typeof useForm<typeof schema>>
+type Api = UseFormReturn<typeof schema>
 
 function mount(): { app: App; api: Api } {
   const handle: { api?: Api } = {}

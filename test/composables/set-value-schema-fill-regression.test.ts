@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
@@ -48,7 +49,7 @@ const formSchema = z.object({
 type Form = z.output<typeof formSchema>
 
 function harness(initialPeople: Form['people']) {
-  let captured!: ReturnType<typeof useForm<typeof formSchema>>
+  let captured!: UseFormReturn<typeof formSchema>
   const Probe = defineComponent({
     setup() {
       captured = useForm({
@@ -217,7 +218,7 @@ const profileSchema = z.object({
 type ProfileForm = z.output<typeof profileSchema>
 
 function profileHarness(initial: Partial<ProfileForm['user']>) {
-  let captured!: ReturnType<typeof useForm<typeof profileSchema>>
+  let captured!: UseFormReturn<typeof profileSchema>
   const Probe = defineComponent({
     setup() {
       captured = useForm({
@@ -312,7 +313,7 @@ const addressSchema = z.object({
 type AddressForm = z.output<typeof addressSchema>
 
 function addressHarness(initialPeople: AddressForm['address']['people']) {
-  let captured!: ReturnType<typeof useForm<typeof addressSchema>>
+  let captured!: UseFormReturn<typeof addressSchema>
   const Probe = defineComponent({
     setup() {
       captured = useForm({
@@ -400,7 +401,7 @@ const cascadeSchema = z.object({
 type CascadeForm = z.output<typeof cascadeSchema>
 
 function cascadeHarness() {
-  let captured!: ReturnType<typeof useForm<typeof cascadeSchema>>
+  let captured!: UseFormReturn<typeof cascadeSchema>
   const Probe = defineComponent({
     setup() {
       captured = useForm({
@@ -520,7 +521,7 @@ const tupleSchema = z.object({
 type TupleForm = z.output<typeof tupleSchema>
 
 function tupleHarness(initial: TupleForm['coords']) {
-  let captured!: ReturnType<typeof useForm<typeof tupleSchema>>
+  let captured!: UseFormReturn<typeof tupleSchema>
   const Probe = defineComponent({
     setup() {
       captured = useForm({

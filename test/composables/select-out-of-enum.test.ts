@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { waitUntil } from '../utils/form-harness'
@@ -38,7 +39,7 @@ describe('<select v-register> with out-of-enum option', () => {
   })
 
   it('selecting an out-of-enum option writes the string value (slim-type match)', async () => {
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -95,7 +96,7 @@ describe('<select v-register> with out-of-enum option', () => {
   it('programmatic setValue with a wrong-primitive-type value is REJECTED + dev-warned', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -142,7 +143,7 @@ describe('<select v-register> with out-of-enum option', () => {
   })
 
   it('programmatic setValue with a wrong-enum-member writes (string slim accepted)', async () => {
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {

@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormConfig, UseFormReturn } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { AnonPersistError } from '../../src/runtime/core/errors'
 import { __resetIndexedDbForTests } from '../../src/runtime/core/persistence/indexeddb'
@@ -96,10 +97,10 @@ const schema = z.object({
 const FP = hashStableString(fingerprintZodSchema(schema))
 const fpKey = (base: string): string => `${base}:${FP}`
 
-type ApiReturn = ReturnType<typeof useForm<typeof schema>>
+type ApiReturn = UseFormReturn<typeof schema>
 type Field = 'email' | 'password'
 
-function mountForm(persist: Parameters<typeof useForm<typeof schema>>[0]['persist']): {
+function mountForm(persist: UseFormConfig<typeof schema>['persist']): {
   app: App
   api: ApiReturn
   /**
@@ -329,7 +330,7 @@ describe('persistence — non-opted-in blank paths survive hydration', () => {
       })
     )
 
-    const captured: { api?: ReturnType<typeof useForm<typeof customSchema>> } = {}
+    const captured: { api?: UseFormReturn<typeof customSchema> } = {}
     const App = defineComponent({
       setup() {
         const api = useForm({
@@ -1454,7 +1455,7 @@ describe('persistence — cross-store cleanup at mount', () => {
     __resetIndexedDbForTests()
   })
 
-  function mountMinimal(persist: Parameters<typeof useForm<typeof schema>>[0]['persist']): App {
+  function mountMinimal(persist: UseFormConfig<typeof schema>['persist']): App {
     const App = defineComponent({
       setup() {
         useForm({

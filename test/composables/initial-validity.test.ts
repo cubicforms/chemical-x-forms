@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { z } from 'zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 
@@ -46,8 +47,8 @@ const syncSchema = z.object({ reference: z.string() }).refine((data) => data.ref
   message: 'reference must be OK',
 })
 
-type AsyncApi = ReturnType<typeof useForm<typeof asyncSchema>>
-type SyncApi = ReturnType<typeof useForm<typeof syncSchema>>
+type AsyncApi = UseFormReturn<typeof asyncSchema>
+type SyncApi = UseFormReturn<typeof syncSchema>
 
 // Convenience wrapper for the multi-path "all subtrees valid" read.
 // Each path goes through `form.fields(p).valid` — same per-path
@@ -222,7 +223,7 @@ describe('initial validity gating — asymmetry between isValid and field.valid'
     }),
   })
 
-  type MixedApi = ReturnType<typeof useForm<typeof mixedSchema>>
+  type MixedApi = UseFormReturn<typeof mixedSchema>
   const apps: App[] = []
   afterEach(() => {
     while (apps.length > 0) apps.pop()?.unmount()

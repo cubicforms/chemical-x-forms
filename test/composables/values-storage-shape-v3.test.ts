@@ -21,7 +21,7 @@ import { createAttaform } from '../../src/runtime/core/plugin'
  * depth bounded — see the doc on `ReadShape` for the rationale.
  *
  * v3's `useForm` has multiple overloads, so the proxy-based
- * `ReturnType<typeof useForm<...>>` pattern used by the v4 matrix
+ * `UseFormReturn<...>` pattern used by the v4 matrix
  * doesn't resolve consistently. We mount each scenario and run both
  * type-level (`expectTypeOf(api.values.X)`) and runtime
  * (`expect(api.values.X)`) assertions against the live API instance.

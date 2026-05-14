@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
@@ -31,8 +32,8 @@ const signupSchema = z.object({
   password: z.string().min(8),
 })
 
-function mountForm(onCreated: (form: ReturnType<typeof useForm<typeof signupSchema>>) => void) {
-  type Returned = ReturnType<typeof useForm<typeof signupSchema>>
+function mountForm(onCreated: (form: UseFormReturn<typeof signupSchema>) => void) {
+  type Returned = UseFormReturn<typeof signupSchema>
   const handle: { api?: Returned } = {}
   const App = defineComponent({
     setup() {
@@ -63,7 +64,7 @@ describe('async validation — handleSubmit awaits async refinements', () => {
   })
 
   it('dispatches to onSubmit when an async refinement passes', async () => {
-    let api!: ReturnType<typeof useForm<typeof signupSchema>>
+    let api!: UseFormReturn<typeof signupSchema>
     const { app } = mountForm((a) => (api = a))
     apps.push(app)
     api.setValue('email', 'alice@example.com')
@@ -77,7 +78,7 @@ describe('async validation — handleSubmit awaits async refinements', () => {
   })
 
   it('routes async refinement failures into fieldErrors + onError', async () => {
-    let api!: ReturnType<typeof useForm<typeof signupSchema>>
+    let api!: UseFormReturn<typeof signupSchema>
     const { app } = mountForm((a) => (api = a))
     apps.push(app)
     api.setValue('email', 'taken@example.com')
@@ -98,7 +99,7 @@ describe('async validation — handleSubmit awaits async refinements', () => {
   })
 
   it('validating flips true during submit validation, false after', async () => {
-    let api!: ReturnType<typeof useForm<typeof signupSchema>>
+    let api!: UseFormReturn<typeof signupSchema>
     const { app } = mountForm((a) => (api = a))
     apps.push(app)
     api.setValue('email', 'alice@example.com')
@@ -120,7 +121,7 @@ describe('validateAsync — imperative one-shot', () => {
   })
 
   it('resolves to success when the current form state satisfies the schema', async () => {
-    let api!: ReturnType<typeof useForm<typeof signupSchema>>
+    let api!: UseFormReturn<typeof signupSchema>
     const { app } = mountForm((a) => (api = a))
     apps.push(app)
     api.setValue('email', 'ok@example.com')
@@ -131,7 +132,7 @@ describe('validateAsync — imperative one-shot', () => {
   })
 
   it('resolves to failure when the async refinement rejects', async () => {
-    let api!: ReturnType<typeof useForm<typeof signupSchema>>
+    let api!: UseFormReturn<typeof signupSchema>
     const { app } = mountForm((a) => (api = a))
     apps.push(app)
     api.setValue('email', 'taken@x.com')
@@ -150,7 +151,7 @@ describe('per-field validating — `form.fields.<path>.validating`', () => {
   })
 
   it('flips true synchronously after setValue, back to false once the per-field run settles', async () => {
-    let api!: ReturnType<typeof useForm<typeof signupSchema>>
+    let api!: UseFormReturn<typeof signupSchema>
     const { app } = mountForm((a) => (api = a))
     apps.push(app)
 
@@ -173,7 +174,7 @@ describe('per-field validating — `form.fields.<path>.validating`', () => {
   })
 
   it('sibling paths flip independently — email validating does not affect password', async () => {
-    let api!: ReturnType<typeof useForm<typeof signupSchema>>
+    let api!: UseFormReturn<typeof signupSchema>
     const { app } = mountForm((a) => (api = a))
     apps.push(app)
 
@@ -200,7 +201,7 @@ describe('per-field validating — `form.fields.<path>.validating`', () => {
     // Per-field `validating` reflects field-LEVEL scheduled runs only,
     // by design. Whole-form validation drives the form-wide flag and the
     // per-field flag stays at its prior value (here, `false`).
-    let api!: ReturnType<typeof useForm<typeof signupSchema>>
+    let api!: UseFormReturn<typeof signupSchema>
     const { app } = mountForm((a) => (api = a))
     apps.push(app)
 
@@ -233,7 +234,7 @@ describe('per-field validating — `form.fields.<path>.validating`', () => {
     // accessor reports `true` continuously until both runs settle. A
     // Set-based regression would briefly read `false` between the
     // aborted run's delete and the fresh run's add.
-    let api!: ReturnType<typeof useForm<typeof signupSchema>>
+    let api!: UseFormReturn<typeof signupSchema>
     const { app } = mountForm((a) => (api = a))
     apps.push(app)
 
@@ -257,7 +258,7 @@ describe('per-field valid — `form.fields.<path>.valid`', () => {
   })
 
   it('false during a per-field run, true after settle when there are no errors', async () => {
-    let api!: ReturnType<typeof useForm<typeof signupSchema>>
+    let api!: UseFormReturn<typeof signupSchema>
     const { app } = mountForm((a) => (api = a))
     apps.push(app)
 
@@ -275,7 +276,7 @@ describe('per-field valid — `form.fields.<path>.valid`', () => {
   })
 
   it('false after a failed async refinement settles (no in-flight, errors present)', async () => {
-    let api!: ReturnType<typeof useForm<typeof signupSchema>>
+    let api!: UseFormReturn<typeof signupSchema>
     const { app } = mountForm((a) => (api = a))
     apps.push(app)
 
@@ -297,7 +298,7 @@ describe('form.meta.valid — `valid && !validating`', () => {
   })
 
   it('flips false during validateAsync, true after settle when no errors', async () => {
-    let api!: ReturnType<typeof useForm<typeof signupSchema>>
+    let api!: UseFormReturn<typeof signupSchema>
     const { app } = mountForm((a) => (api = a))
     apps.push(app)
 
@@ -327,7 +328,7 @@ describe('form.meta.valid — `valid && !validating`', () => {
   })
 
   it('false after a failed validateAsync (errors land, no in-flight)', async () => {
-    let api!: ReturnType<typeof useForm<typeof signupSchema>>
+    let api!: UseFormReturn<typeof signupSchema>
     const { app } = mountForm((a) => (api = a))
     apps.push(app)
 
@@ -348,7 +349,7 @@ describe('validate() reactive ref — pending + cancellation', () => {
   })
 
   it('starts pending, then settles on the first form mutation after mount', async () => {
-    let api!: ReturnType<typeof useForm<typeof signupSchema>>
+    let api!: UseFormReturn<typeof signupSchema>
     const { app } = mountForm((a) => (api = a))
     apps.push(app)
     const status = api.validate()
@@ -367,7 +368,7 @@ describe('validate() reactive ref — pending + cancellation', () => {
     // clobber the newer "alice@" result after it resolves. With the
     // generation counter, only the newest run writes — the test
     // confirms the settled status reflects the *latest* form value.
-    let api!: ReturnType<typeof useForm<typeof signupSchema>>
+    let api!: UseFormReturn<typeof signupSchema>
     const { app } = mountForm((a) => (api = a))
     apps.push(app)
     api.setValue('email', 'taken@example.com')

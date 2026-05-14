@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormConfigV4 } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 import { waitUntil } from '../utils/form-harness'
@@ -27,7 +28,7 @@ type ApiFor<Schema extends z.ZodObject> = Omit<UseFormReturnType<z.output<Schema
 
 function mountForm<Schema extends z.ZodObject>(
   schema: Schema,
-  defaultValues: NonNullable<Parameters<typeof useForm<Schema>>[0]['defaultValues']>
+  defaultValues: NonNullable<UseFormConfigV4<Schema>['defaultValues']>
 ): { app: App; api: ApiFor<Schema> } {
   const handle: { api?: ApiFor<Schema> } = {}
   const App = defineComponent({

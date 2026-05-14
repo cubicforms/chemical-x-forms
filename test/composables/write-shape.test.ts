@@ -1,6 +1,6 @@
 import { describe, expectTypeOf, it } from 'vitest'
 import { z } from 'zod'
-import type { useForm } from '../../src/zod'
+import type { UseFormConfig, UseFormReturn } from '../../src/zod'
 import type { WriteShape } from '../../src/runtime/types/types-core'
 
 /**
@@ -102,7 +102,7 @@ const _setValueSchema = z.object({
   age: z.number().int(),
   email: z.string().email(),
 })
-const setValueForm = makeFormProxy<ReturnType<typeof useForm<typeof _setValueSchema>>>()
+const setValueForm = makeFormProxy<UseFormReturn<typeof _setValueSchema>>()
 
 describe('WriteShape — applied to setValue', () => {
   const form = setValueForm
@@ -139,7 +139,7 @@ describe('WriteShape — applied to setValue', () => {
 describe('WriteShape — applied to defaultValues', () => {
   it('refinement-invalid string defaults are accepted', () => {
     const _schema = z.object({ color: z.enum(['red', 'green', 'blue']) })
-    type Defaults = Parameters<typeof useForm<typeof _schema>>[0]['defaultValues']
+    type Defaults = UseFormConfig<typeof _schema>['defaultValues']
 
     // 'teal' is not in the enum, but it's a string — slim-correct.
     expectTypeOf<{ color: 'teal' }>().toMatchTypeOf<NonNullable<Defaults>>()
@@ -147,7 +147,7 @@ describe('WriteShape — applied to defaultValues', () => {
 
   it('wrong-primitive defaults are TS errors (compile error)', () => {
     const _schema = z.object({ color: z.enum(['red', 'green', 'blue']) })
-    type Defaults = Parameters<typeof useForm<typeof _schema>>[0]['defaultValues']
+    type Defaults = UseFormConfig<typeof _schema>['defaultValues']
 
     // @ts-expect-error: number is not a string — slim-mismatch
     const _bad: Defaults = { color: 1 }
@@ -156,7 +156,7 @@ describe('WriteShape — applied to defaultValues', () => {
 })
 
 const _submitSchema = z.object({ color: z.enum(['red', 'green', 'blue']) })
-const _submitForm = makeFormProxy<ReturnType<typeof useForm<typeof _submitSchema>>>()
+const _submitForm = makeFormProxy<UseFormReturn<typeof _submitSchema>>()
 
 describe('WriteShape — handleSubmit stays strict', () => {
   it('handleSubmit data is the strict zod-output type, not WriteShape', () => {
@@ -173,7 +173,7 @@ const _readSchema = z.object({
   age: z.number().int(),
   email: z.string().email(),
 })
-const _readForm = makeFormProxy<ReturnType<typeof useForm<typeof _readSchema>>>()
+const _readForm = makeFormProxy<UseFormReturn<typeof _readSchema>>()
 
 /**
  * Read-side widening: storage holds slim-primitive-correct values

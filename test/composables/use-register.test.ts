@@ -13,6 +13,7 @@ import {
 } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { useRegister } from '../../src/runtime/composables/use-register'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
@@ -226,7 +227,7 @@ describe('useRegister — inside child setup', () => {
 
   it("with parent registerValue → returns ComputedRef whose .value === parent's RV (referential)", async () => {
     const captured: {
-      parentRV?: ReturnType<ReturnType<typeof useForm<typeof schema>>['register']>
+      parentRV?: ReturnType<UseFormReturn<typeof schema>['register']>
       childRegister?: ReturnType<typeof useRegister>
     } = {}
 
@@ -615,7 +616,7 @@ describe('useRegister — sentinel suppresses parent-directive warn', () => {
     // input doesn't reach the wrapper's listener with a write
     // attempt, so the form value isn't clobbered with `el.value`
     // (the wrapper's, which is junk).
-    let formApi: ReturnType<typeof useForm<typeof schema>> | undefined
+    let formApi: UseFormReturn<typeof schema> | undefined
     const Child = defineComponent({
       name: 'NoBailChild',
       inheritAttrs: false,
@@ -676,7 +677,7 @@ describe('useRegister — inner v-register receives full directive lifecycle', (
   })
 
   it('FormStore element registry tracks the inner input + focus listeners attach', async () => {
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Child = defineComponent({
       name: 'InnerRegisterChild',

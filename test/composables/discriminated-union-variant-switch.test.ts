@@ -4,6 +4,7 @@ import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { z as zV3 } from 'zod-v3'
 import { isUnset, unset, useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { useForm as useFormV3 } from '../../src/zod-v3'
 import { AttaformErrorCode } from '../../src/runtime/core/error-codes'
 import { createAttaform } from '../../src/runtime/core/plugin'
@@ -1521,7 +1522,7 @@ const cargoLiftSchema = z.object({
   ]),
 })
 
-type CargoLiftApi = ReturnType<typeof useForm<typeof cargoLiftSchema>>
+type CargoLiftApi = UseFormReturn<typeof cargoLiftSchema>
 
 function mountCargoLift(): { app: App; api: CargoLiftApi } {
   const handle: { api?: CargoLiftApi } = {}

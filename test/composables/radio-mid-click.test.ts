@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { waitUntil } from '../utils/form-harness'
@@ -32,7 +33,7 @@ describe('<input type="radio" v-register> — sibling re-render mid-click', () =
   })
 
   it('a sibling re-render between mousedown and change MUST NOT clobber the user-selected radio', async () => {
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -118,7 +119,7 @@ describe('<input type="radio" v-register> — sibling re-render mid-click', () =
   })
 
   it('subsequent renders with model-identity-unchanged are no-ops on the DOM (skip path)', async () => {
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -187,7 +188,7 @@ describe('<input type="radio" v-register> — sibling re-render mid-click', () =
   })
 
   it('a real model change still drives the DOM (post-skip resync)', async () => {
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {

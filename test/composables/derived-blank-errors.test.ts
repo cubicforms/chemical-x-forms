@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { z } from 'zod'
 import { unset } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { useForm } from '../../src/zod'
 import { AttaformErrorCode } from '../../src/runtime/core/error-codes'
 import { createAttaform } from '../../src/runtime/core/plugin'
@@ -35,7 +36,7 @@ const numericSchema = z.object({
   income: z.number(),
   netWorth: z.bigint(),
 })
-type NumericApi = ReturnType<typeof useForm<typeof numericSchema>>
+type NumericApi = UseFormReturn<typeof numericSchema>
 
 function mountNumeric(): { app: App; api: NumericApi } {
   const handle: { api?: NumericApi } = {}
@@ -132,7 +133,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
 
   it("required string leaf is blank-free at mount (storage `''` matches DOM `''`)", () => {
     const schema = z.object({ name: z.string() })
-    type Api = ReturnType<typeof useForm<typeof schema>>
+    type Api = UseFormReturn<typeof schema>
     const handle: { api?: Api } = {}
     const App = defineComponent({
       setup() {
@@ -151,7 +152,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
 
   it('required boolean leaf is blank-free at mount (storage `false` matches unchecked)', () => {
     const schema = z.object({ agreed: z.boolean() })
-    type Api = ReturnType<typeof useForm<typeof schema>>
+    type Api = UseFormReturn<typeof schema>
     const handle: { api?: Api } = {}
     const App = defineComponent({
       setup() {
@@ -170,7 +171,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
 
   it('user typing then deleting a string does NOT re-blank (schema is authority)', async () => {
     const schema = z.object({ name: z.string() })
-    type Api = ReturnType<typeof useForm<typeof schema>>
+    type Api = UseFormReturn<typeof schema>
     const handle: { api?: Api } = {}
     const App = defineComponent({
       setup() {
@@ -206,7 +207,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
 
   it('explicit `unset` opts a string into blank (universal opt-in)', () => {
     const schema = z.object({ note: z.string() })
-    type Api = ReturnType<typeof useForm<typeof schema>>
+    type Api = UseFormReturn<typeof schema>
     const handle: { api?: Api } = {}
     const App = defineComponent({
       setup() {
@@ -228,7 +229,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
 
   it('explicit `unset` opts a boolean into blank (universal opt-in)', () => {
     const schema = z.object({ agreed: z.boolean() })
-    type Api = ReturnType<typeof useForm<typeof schema>>
+    type Api = UseFormReturn<typeof schema>
     const handle: { api?: Api } = {}
     const App = defineComponent({
       setup() {
@@ -250,7 +251,7 @@ describe('derivedBlankErrors — string / boolean leaves do NOT auto-mark', () =
 
   it('schema-level non-empty rule (`.min(1)`) fires through schemaErrors, not blank', async () => {
     const schema = z.object({ name: z.string().min(1, 'name required') })
-    type Api = ReturnType<typeof useForm<typeof schema>>
+    type Api = UseFormReturn<typeof schema>
     const handle: { api?: Api } = {}
     const App = defineComponent({
       setup() {
@@ -279,7 +280,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
 
   it('does NOT synthesise for `.optional()` numeric leaves', () => {
     const schema = z.object({ income: z.number().optional() })
-    type Api = ReturnType<typeof useForm<typeof schema>>
+    type Api = UseFormReturn<typeof schema>
     const handle: { api?: Api } = {}
     const App = defineComponent({
       setup() {
@@ -297,7 +298,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
 
   it('does NOT synthesise for `.nullable()` numeric leaves', () => {
     const schema = z.object({ income: z.number().nullable() })
-    type Api = ReturnType<typeof useForm<typeof schema>>
+    type Api = UseFormReturn<typeof schema>
     const handle: { api?: Api } = {}
     const App = defineComponent({
       setup() {
@@ -315,7 +316,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
 
   it('does NOT synthesise for `.default(N)` numeric leaves', () => {
     const schema = z.object({ income: z.number().default(0) })
-    type Api = ReturnType<typeof useForm<typeof schema>>
+    type Api = UseFormReturn<typeof schema>
     const handle: { api?: Api } = {}
     const App = defineComponent({
       setup() {
@@ -332,7 +333,7 @@ describe('derivedBlankErrors — schema modifiers gate the synthesis', () => {
   })
 
   it('does NOT synthesise when the consumer provides an explicit value', () => {
-    type Api = ReturnType<typeof useForm<typeof numericSchema>>
+    type Api = UseFormReturn<typeof numericSchema>
     const handle: { api?: Api } = {}
     const App = defineComponent({
       setup() {
@@ -400,7 +401,7 @@ describe('derivedBlankErrors — independent of imperative writers', () => {
     const refineSchema = z.object({
       income: z.number().refine((v) => v > 1000, 'must be > 1000'),
     })
-    type Api = ReturnType<typeof useForm<typeof refineSchema>>
+    type Api = UseFormReturn<typeof refineSchema>
     const handle: { api?: Api } = {}
     const App = defineComponent({
       setup() {

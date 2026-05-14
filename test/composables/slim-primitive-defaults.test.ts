@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturnV4 } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
@@ -32,8 +33,8 @@ function mountWith<S extends z.ZodObject>(
   schema: S,
   defaults: Partial<z.infer<S>>,
   strict: boolean = false
-): { api: ReturnType<typeof useForm<S>>; app: App } {
-  const captured: { api?: ReturnType<typeof useForm<S>> } = {}
+): { api: UseFormReturnV4<S>; app: App } {
+  const captured: { api?: UseFormReturnV4<S> } = {}
   const App = defineComponent({
     setup() {
       const config = {
@@ -42,7 +43,7 @@ function mountWith<S extends z.ZodObject>(
         strict,
         defaultValues: defaults,
       }
-      captured.api = (useForm as unknown as (cfg: unknown) => ReturnType<typeof useForm<S>>)(config)
+      captured.api = (useForm as unknown as (cfg: unknown) => UseFormReturnV4<S>)(config)
       return () => h('div')
     },
   })
@@ -50,7 +51,7 @@ function mountWith<S extends z.ZodObject>(
   const root = document.createElement('div')
   document.body.appendChild(root)
   app.mount(root)
-  return { api: captured.api as ReturnType<typeof useForm<S>>, app }
+  return { api: captured.api as UseFormReturnV4<S>, app }
 }
 
 describe('slim-primitive defaults — refinement-invalid passes through', () => {

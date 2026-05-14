@@ -1,7 +1,7 @@
 import { describe, expectTypeOf, it } from 'vitest'
 import { z } from 'zod'
 import type { FormMeta } from '../../src'
-import type { useForm } from '../../src/zod'
+import type { UseFormConfig, UseFormReturn } from '../../src/zod'
 
 /**
  * Type-inference tests for `useForm` via the Zod v4 adapter.
@@ -55,11 +55,11 @@ type ExpectedForm = {
 // `useForm({ schema, key })`. We bind the generic to our Schema to
 // exercise the full inference pipeline (Schema → z.output<Schema> →
 // Form → FlatPath/NestedType).
-type Form = ReturnType<typeof useForm<Schema>>
+type Form = UseFormReturn<Schema>
 
 // The public factory's *parameter* type — used to test the type-level
 // requirement on `key` without actually invoking useForm at runtime.
-type UseFormOptions = Parameters<typeof useForm<Schema>>[0]
+type UseFormOptions = UseFormConfig<Schema>
 
 // `expectTypeOf` evaluates its argument at runtime even though it only
 // cares about the type. We can't call the real `useForm` here (no Vue
@@ -267,7 +267,7 @@ describe('useForm type inference — primitive-array register paths', () => {
     multiBooleans: z.array(z.boolean()),
     multiBigints: z.array(z.bigint()),
   })
-  type MultiForm = ReturnType<typeof useForm<typeof _multiSchema>>
+  type MultiForm = UseFormReturn<typeof _multiSchema>
   const multiForm = (() => {
     const handler: ProxyHandler<() => unknown> = { get: () => proxy, apply: () => proxy }
     const proxy: unknown = new Proxy(() => undefined, handler)
@@ -452,7 +452,7 @@ describe('useForm type inference — setValue at honest-input paths', () => {
     anyThing: z.any(),
   })
   type HonestSchema = typeof _honestSchema
-  type HonestForm = ReturnType<typeof useForm<HonestSchema>>
+  type HonestForm = UseFormReturn<HonestSchema>
   const honestForm: HonestForm = (() => {
     const handler: ProxyHandler<() => unknown> = { get: () => proxy, apply: () => proxy }
     const proxy: unknown = new Proxy(() => undefined, handler)

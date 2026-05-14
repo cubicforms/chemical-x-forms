@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type App } from 'vue'
 import { useForm } from '../../src/zod'
+import type { UseFormConfig, UseFormReturn } from '../../src/zod'
 import { z } from 'zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 
@@ -26,7 +27,7 @@ const baseSchema = z.object({
 })
 
 function mountWith(options: { validateOn?: 'change' | 'blur' | 'submit'; debounceMs?: number }) {
-  type Returned = ReturnType<typeof useForm<typeof baseSchema>>
+  type Returned = UseFormReturn<typeof baseSchema>
   const handle: { api?: Returned } = {}
   const App = defineComponent({
     setup() {
@@ -41,7 +42,7 @@ function mountWith(options: { validateOn?: 'change' | 'blur' | 'submit'; debounc
         strict: false,
         ...(options.validateOn !== undefined ? { validateOn: options.validateOn } : {}),
         ...(options.debounceMs !== undefined ? { debounceMs: options.debounceMs } : {}),
-      } as Parameters<typeof useForm<typeof baseSchema>>[0])
+      } as UseFormConfig<typeof baseSchema>)
       return () => h('div')
     },
   })

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { unset, useForm } from '../../src/zod'
+import type { UseFormConfig, UseFormReturn } from '../../src/zod'
 import { canonicalizePath } from '../../src/runtime/core/paths'
 import { createAttaform } from '../../src/runtime/core/plugin'
 
@@ -22,9 +23,9 @@ const schema = z.object({
   password: z.string(),
 })
 
-type ApiReturn = ReturnType<typeof useForm<typeof schema>>
+type ApiReturn = UseFormReturn<typeof schema>
 
-function mountForm(history: Parameters<typeof useForm<typeof schema>>[0]['history']): {
+function mountForm(history: UseFormConfig<typeof schema>['history']): {
   app: App
   api: ApiReturn
 } {
@@ -185,7 +186,7 @@ describe('history — blankPaths preservation', () => {
   // the value). History snapshots have to carry both halves — replaying
   // the form value alone would pin a cleared field to '0' on the screen.
   const numericSchema = z.object({ count: z.number() })
-  type NumericApi = ReturnType<typeof useForm<typeof numericSchema>>
+  type NumericApi = UseFormReturn<typeof numericSchema>
   const countKey = canonicalizePath('count').key
 
   function mountNumericForm(): { app: App; api: NumericApi } {
@@ -276,7 +277,7 @@ describe('history — delta round-trip', () => {
     }),
     email: z.string(),
   })
-  type NestedApi = ReturnType<typeof useForm<typeof nestedSchema>>
+  type NestedApi = UseFormReturn<typeof nestedSchema>
 
   function mountNested(): { app: App; api: NestedApi } {
     const handle: { api?: NestedApi } = {}

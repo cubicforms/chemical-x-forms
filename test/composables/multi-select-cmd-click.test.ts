@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { waitUntil } from '../utils/form-harness'
@@ -39,7 +40,7 @@ describe('<select multiple v-register> — Cmd+click adds selection', () => {
   })
 
   it('after Cmd+click on a third option, DOM shows all three selected (matches model)', async () => {
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -154,7 +155,7 @@ describe('<select multiple v-register> — Cmd+click adds selection', () => {
     // `setSelected` from `updated` when the model hasn't changed since
     // the last application — mirroring the spirit of `setChecked`'s
     // `originalValue === oldValue` short-circuit.
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, isReactive, isReadonly, isRef, watch } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { waitUntil } from '../utils/form-harness'
 
@@ -26,10 +27,10 @@ const schema = z.object({
 type Form = z.infer<typeof schema>
 
 function mountForm(): {
-  api: ReturnType<typeof useForm<typeof schema>>
+  api: UseFormReturn<typeof schema>
   unmount: () => void
 } {
-  let captured: ReturnType<typeof useForm<typeof schema>> | undefined
+  let captured: UseFormReturn<typeof schema> | undefined
   const App = defineComponent({
     setup() {
       captured = useForm({

@@ -93,6 +93,7 @@ export type {
   CoercionResult,
   CustomDirectiveRegisterAssignerFn,
   DefaultValuesResponse,
+  ErrorsProxyShape,
   FieldMetaPayload,
   FieldState,
   FieldStateMap,
@@ -153,6 +154,8 @@ export type {
   LiftedValueShape,
   NestedReadType,
   NestedType,
+  PartialFlatPath,
+  Primitive,
   ValueOfUnion,
   WriteShape,
 } from './runtime/types/types-core'

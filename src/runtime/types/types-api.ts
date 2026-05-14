@@ -2787,7 +2787,15 @@ export type FormErrorsSurface<Form> = ErrorsProxyShape<Form> & {
   (): readonly ValidationError[] | undefined
 }
 
-type ErrorsProxyShape<T> = [T] extends [
+/**
+ * Implementation-detail walker backing `form.errors` typed proxy.
+ * Exported so the bundled `.d.ts` references a single alias body
+ * rather than re-emitting the full union-aware recursion at every
+ * consumer call site that types `form.errors`. Multiple useForm
+ * instances in one scope otherwise compound this into TS2589
+ * territory. Consumers should reach for `FormErrorsSurface` instead.
+ */
+export type ErrorsProxyShape<T> = [T] extends [
   string | number | boolean | bigint | symbol | null | undefined | Date,
 ]
   ? readonly ValidationError[] | undefined

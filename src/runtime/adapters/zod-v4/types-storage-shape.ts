@@ -54,7 +54,15 @@ export type StorageShape<S> = S extends {
   ? { [K in keyof Shape]-?: StorageLeaf<Shape[K]> }
   : StorageLeaf<S>
 
-type StorageLeaf<L> = L extends {
+/**
+ * Implementation-detail per-leaf branching for `StorageShape`.
+ * Exported so the bundled `.d.ts` carries a single alias body —
+ * every leaf of a Zod object schema otherwise re-emits the full
+ * pipe / transform / default conditional ladder, which compounds
+ * badly with multiple complex schemas in the same scope. Consumers
+ * should reach for `StorageShape` instead.
+ */
+export type StorageLeaf<L> = L extends {
   _zod: { def: { type: 'pipe'; in: infer A; out: infer B } }
 }
   ? A extends { _zod: { def: { type: 'transform' } } }

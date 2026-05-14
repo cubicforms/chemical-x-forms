@@ -64,7 +64,9 @@ export function useForm<Form extends GenericForm, GetValueFormType extends Gener
  */
 export function useForm<
   Schema extends z.ZodObject<z.ZodRawShape>,
-  GetValueFormType extends GenericForm = TypeWithNullableDynamicKeys<Schema>,
+  GetValueFormType extends GenericForm = z.output<UnwrapZodObject<Schema>> extends GenericForm
+    ? z.output<UnwrapZodObject<Schema>>
+    : never,
 >(
   configuration: UseFormConfigurationWithZod<
     Schema,
@@ -136,12 +138,16 @@ export function useForm<
       AbstractSchema<Form, GetValueFormType>,
       DeepPartial<DefaultValuesShape<Form>>
     >),
-    // The v3 adapter widens the read-side type through
-    // `TypeWithNullableDynamicKeys<Schema>` (records/arrays/DUs get
-    // `| undefined` markers); useAbstractForm's parameter expects the
-    // exact `GetValueFormType` (defaults to `Form`). The runtime
-    // accepts the widened shape unchanged — cast across the gap so
-    // the structural disagreement doesn't reach the caller.
+    // `zodAdapter`'s constraint on its third generic is
+    // `GetValueFormType extends TypeWithNullableDynamicKeys<FormSchema>`,
+    // and `Schema` at this implementation overload is only constrained
+    // by `extends z.ZodSchema<unknown>` — too loose for
+    // `z.output<UnwrapZodObject<typeof schema>>` to resolve concretely.
+    // Pass `TypeWithNullableDynamicKeys<typeof schema>` here purely to
+    // satisfy the adapter's constraint at the structural-cast layer.
+    // The PUBLIC signature's `GetValueFormType` default (line 67) is
+    // what consumers see — that's `z.output<UnwrapZodObject<Schema>>`,
+    // matching the docstring promise. Runtime is unaffected either way.
     schema: abstractSchema as
       | AbstractSchema<Form, GetValueFormType>
       | ((key: FormKey, options: SchemaFactoryOptions) => AbstractSchema<Form, GetValueFormType>),

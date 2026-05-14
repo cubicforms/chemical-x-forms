@@ -14,13 +14,7 @@ import type {
   UseFormReturnType,
   UseFormConfiguration,
 } from '../../types/types-api'
-import type {
-  DeepPartial,
-  DefaultValuesShape,
-  FlatPath,
-  GenericForm,
-  NestedType,
-} from '../../types/types-core'
+import type { DefaultValuesInput, FlatPath, GenericForm, NestedType } from '../../types/types-core'
 import { zodV4Adapter } from './adapter'
 import type { StorageShape } from './types-storage-shape'
 
@@ -117,7 +111,7 @@ export function useForm<Schema extends z.ZodObject, K extends FormKey = FormKey>
       FormOf<Schema>,
       OutOf<Schema>,
       AbstractSchema<FormOf<Schema>, OutOf<Schema>>,
-      DeepPartial<DefaultValuesShape<FormOf<Schema>>>,
+      DefaultValuesInput<FormOf<Schema>>,
       K
     >,
     'schema' | 'validateOn' | 'debounceMs'

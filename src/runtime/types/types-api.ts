@@ -9,6 +9,7 @@ import type {
   ArrayItem,
   ArrayPath,
   DeepPartial,
+  DefaultValuesInput,
   DefaultValuesShape,
   FlatPath,
   GenericForm,
@@ -1031,7 +1032,7 @@ export type UseFormConfiguration<
   Form extends GenericForm,
   GetValueFormType,
   Schema extends AbstractSchema<Form, GetValueFormType>,
-  DefaultValues extends DeepPartial<DefaultValuesShape<Form>>,
+  DefaultValues extends DefaultValuesInput<Form>,
   K extends FormKey = FormKey,
 > = {
   /**
@@ -3522,7 +3523,7 @@ export type UseFormReturnType<
    * The next edit on a still-mounted opted-in input will start
    * persisting again automatically.
    */
-  reset: (nextDefaultValues?: DeepPartial<DefaultValuesShape<Form>>) => void
+  reset: (nextDefaultValues?: DefaultValuesInput<Form>) => void
 
   /**
    * Restore a single field (or a sub-tree like `'user'`) to its

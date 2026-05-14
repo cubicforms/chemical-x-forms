@@ -144,6 +144,7 @@ export type {
   ArrayItem,
   ArrayPath,
   DeepPartial,
+  DefaultValuesInput,
   DefaultValuesShape,
   FlatPath,
   GenericForm,

@@ -64,7 +64,7 @@ import type {
   UseFormConfiguration,
   ValidationError,
 } from '../types/types-api'
-import type { DeepPartial, DefaultValuesShape, GenericForm, WriteShape } from '../types/types-core'
+import type { DeepPartial, DefaultValuesInput, GenericForm, WriteShape } from '../types/types-core'
 
 /**
  * Schema-agnostic `useForm`. Accepts any object that implements
@@ -98,7 +98,7 @@ export function useAbstractForm<
     Form,
     GetValueFormType,
     AbstractSchema<Form, GetValueFormType>,
-    DeepPartial<DefaultValuesShape<Form>>,
+    DefaultValuesInput<Form>,
     K
   >
 ): UseFormReturnType<Form, GetValueFormType, ReadForm, K> {
@@ -140,16 +140,16 @@ export function useAbstractForm<
   // settles into `state.applyFormReplacement` once it resolves (wired
   // below).
   const resolvedDefaults = resolveTrichotomy<
-    | DeepPartial<DefaultValuesShape<Form>>
+    | DefaultValuesInput<Form>
     | undefined
-    | (() => DeepPartial<DefaultValuesShape<Form>> | Promise<DeepPartial<DefaultValuesShape<Form>>>)
+    | (() => DefaultValuesInput<Form> | Promise<DefaultValuesInput<Form>>)
   >(configuration.defaultValues)
   // Build the materialised override conditionally — exactOptionalPropertyTypes
   // refuses explicit `undefined` on the optional field, so we omit it
   // when the resolved value is undefined.
-  const materialisedDefaults: DeepPartial<DefaultValuesShape<Form>> | undefined =
+  const materialisedDefaults: DefaultValuesInput<Form> | undefined =
     resolvedDefaults.kind === 'sync'
-      ? (resolvedDefaults.value as DeepPartial<DefaultValuesShape<Form>> | undefined)
+      ? (resolvedDefaults.value as DefaultValuesInput<Form> | undefined)
       : undefined
   const { defaultValues: _droppedDefaults, ...configWithoutDefaults } = configuration
   void _droppedDefaults
@@ -157,19 +157,19 @@ export function useAbstractForm<
     Form,
     GetValueFormType,
     AbstractSchema<Form, GetValueFormType>,
-    DeepPartial<DefaultValuesShape<Form>>
+    DefaultValuesInput<Form>
   > = materialisedDefaults === undefined
     ? (configWithoutDefaults as UseFormConfiguration<
         Form,
         GetValueFormType,
         AbstractSchema<Form, GetValueFormType>,
-        DeepPartial<DefaultValuesShape<Form>>
+        DefaultValuesInput<Form>
       >)
     : ({ ...configWithoutDefaults, defaultValues: materialisedDefaults } as UseFormConfiguration<
         Form,
         GetValueFormType,
         AbstractSchema<Form, GetValueFormType>,
-        DeepPartial<DefaultValuesShape<Form>>
+        DefaultValuesInput<Form>
       >)
 
   // Merge app-level defaults from the registry over per-form options.
@@ -273,8 +273,8 @@ export function useAbstractForm<
   }
   if (existing === undefined && resolvedDefaults.kind === 'async') {
     const factory = resolvedDefaults.factory as () =>
-      | DeepPartial<DefaultValuesShape<Form>>
-      | Promise<DeepPartial<DefaultValuesShape<Form>>>
+      | DefaultValuesInput<Form>
+      | Promise<DefaultValuesInput<Form>>
     state.defaultValuesFactory.value = factory
     if (hadPendingHydration) {
       // Server already resolved the factory; client just consumed the
@@ -576,7 +576,7 @@ function mergeWithDefaults<
   Form extends GenericForm,
   GetValueFormType extends GenericForm,
   Schema extends AbstractSchema<Form, GetValueFormType>,
-  Defaults extends DeepPartial<DefaultValuesShape<Form>>,
+  Defaults extends DefaultValuesInput<Form>,
 >(
   defaults: AttaformDefaults,
   configuration: UseFormConfiguration<Form, GetValueFormType, Schema, Defaults>
@@ -633,12 +633,7 @@ const HISTORY_MODULE_KEY = 'history'
 function buildFreshState<F extends GenericForm, G extends GenericForm = F>(
   key: FormKey,
   schema: AbstractSchema<F, G>,
-  configuration: UseFormConfiguration<
-    F,
-    G,
-    AbstractSchema<F, G>,
-    DeepPartial<DefaultValuesShape<F>>
-  >,
+  configuration: UseFormConfiguration<F, G, AbstractSchema<F, G>, DefaultValuesInput<F>>,
   registry: ReturnType<typeof useRegistry>
 ): FormStore<F, G> {
   const pending = registry.pendingHydration.get(key)

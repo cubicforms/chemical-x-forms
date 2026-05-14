@@ -8,7 +8,7 @@ import type {
   UseFormReturnType,
   UseFormConfiguration,
 } from '../types/types-api'
-import type { DeepPartial, DefaultValuesShape, GenericForm } from '../types/types-core'
+import type { DefaultValuesInput, GenericForm } from '../types/types-core'
 import type { TypeWithNullableDynamicKeys } from '../adapters/zod-v3/types-zod'
 import type {
   UnwrapZodObject,
@@ -39,7 +39,7 @@ export function useForm<
     Form,
     GetValueFormType,
     AbstractSchema<Form, GetValueFormType>,
-    DeepPartial<DefaultValuesShape<Form>>,
+    DefaultValuesInput<Form>,
     K
   >
 ): UseFormReturnType<Form, GetValueFormType, Form, K>
@@ -76,7 +76,7 @@ export function useForm<
 >(
   configuration: UseFormConfigurationWithZod<
     Schema,
-    DeepPartial<DefaultValuesShape<z.input<UnwrapZodObject<Schema>>>>,
+    DefaultValuesInput<z.input<UnwrapZodObject<Schema>>>,
     K
   >
 ): UseFormReturnType<
@@ -98,14 +98,10 @@ export function useForm<
         Form,
         GetValueFormType,
         AbstractSchema<Form, GetValueFormType>,
-        DeepPartial<DefaultValuesShape<Form>>,
+        DefaultValuesInput<Form>,
         K
       >
-    | UseFormConfigurationWithZod<
-        Schema,
-        DeepPartial<DefaultValuesShape<z.input<UnwrapZodObject<Schema>>>>,
-        K
-      >
+    | UseFormConfigurationWithZod<Schema, DefaultValuesInput<z.input<UnwrapZodObject<Schema>>>, K>
 ): UseFormReturnType<Form, GetValueFormType, Form, K> {
   // Foot-gun guard: catches `useForm(z.object({...}))` (raw schema as
   // the first arg — its `.schema` field is undefined), `useForm()` (no
@@ -147,7 +143,7 @@ export function useForm<
       Form,
       GetValueFormType,
       AbstractSchema<Form, GetValueFormType>,
-      DeepPartial<DefaultValuesShape<Form>>
+      DefaultValuesInput<Form>
     >),
     // `zodAdapter`'s constraint on its third generic is
     // `GetValueFormType extends TypeWithNullableDynamicKeys<FormSchema>`,
@@ -162,6 +158,6 @@ export function useForm<
     schema: abstractSchema as
       | AbstractSchema<Form, GetValueFormType>
       | ((key: FormKey, options: SchemaFactoryOptions) => AbstractSchema<Form, GetValueFormType>),
-    defaultValues: configuration.defaultValues as DeepPartial<DefaultValuesShape<Form>>,
+    defaultValues: configuration.defaultValues as DefaultValuesInput<Form>,
   }) as unknown as UseFormReturnType<Form, GetValueFormType, Form, K>
 }

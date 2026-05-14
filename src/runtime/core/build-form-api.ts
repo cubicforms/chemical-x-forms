@@ -545,11 +545,17 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
   // own showErrors computation.
   const getFormMetaBase = (): FormMetaBase => {
     const rootBase = buildContainerFieldStateBase(state, ROOT_PATH, ROOT_PATH_KEY)
+    const submitCount = state.submitCount.value
     return {
       ...rootBase,
       submitting: state.submitting.value,
-      submitCount: state.submitCount.value,
+      submitCount,
       submitError: state.submitError.value,
+      // Scalar mirrors over `errors.length` and `submitCount` — same
+      // values surfaced on `form.meta`. Available here so predicates
+      // (`shouldShowErrors`) can read them too.
+      errorCount: rootBase.errors.length,
+      isSubmitted: submitCount > 0,
       instanceId: formInstanceId,
     }
   }
@@ -615,6 +621,11 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
       submitting,
       submitCount,
       submitError,
+      // Scalar mirrors over the array / counter — meta is a single
+      // sticky surface for both templates and the upcoming
+      // `useStepper`'s `FormStatus`, so the projections live here.
+      errorCount: computed(() => metaErrors.value.length),
+      isSubmitted: computed(() => submitCount.value > 0),
       // Per-`useForm()`-call identity. Stable for one mount; new on
       // re-mount; orthogonal to `form.key` (which is the user-supplied
       // shared identifier). Useful for devtools panels disambiguating

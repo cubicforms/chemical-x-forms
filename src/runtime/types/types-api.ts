@@ -2932,6 +2932,27 @@ export type FormMeta<F = unknown> = FieldState<F> & {
   readonly submitError: unknown
 
   /**
+   * Scalar mirror of `meta.errors.length`. Read it from templates and
+   * `watch()` without indexing the underlying array.
+   *
+   * Always tracks `errors.length` exactly — reactivity is wired through
+   * the same computed graph, so a `watch(form.meta.errorCount, ...)`
+   * fires when (and only when) the aggregate error count changes.
+   */
+  readonly errorCount: number
+
+  /**
+   * `true` once `handleSubmit` has been invoked at least once, success
+   * or failure. Equivalent to `submitCount > 0`, exposed as a scalar
+   * for "show this only after the first submit attempt" UX in
+   * templates.
+   *
+   * Monotonically non-decreasing over the form's lifetime — once
+   * flipped, it stays `true` even after `form.reset()`.
+   */
+  readonly isSubmitted: boolean
+
+  /**
    * Per-`useForm()`-call identity. Stable for the lifetime of one
    * `useForm()` call; new on every fresh mount. Orthogonal to
    * `form.key`: the key identifies a SHARED FormStore (so two

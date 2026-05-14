@@ -2852,7 +2852,19 @@ export type FormErrorsSurface<Form> = ErrorsProxyShape<Form> & {
  * instances in one scope otherwise compound this into TS2589
  * territory. Consumers should reach for `FormErrorsSurface` instead.
  */
-export type ErrorsProxyShape<T> = LeafWalker<T, 'errors', false>
+export type ErrorsProxyShape<T> = [T] extends [
+  string | number | boolean | bigint | symbol | null | undefined | Date,
+]
+  ? readonly ValidationError[] | undefined
+  : [T] extends [ReadonlyArray<infer U>]
+    ? { readonly [K: number]: ErrorsProxyShape<U> }
+    : [T] extends [object]
+      ? [IsUnion<T>] extends [true]
+        ? {
+            readonly [K in KeyofUnion<T>]: ErrorsProxyShape<ValueOfUnion<T, K>>
+          }
+        : { readonly [K in keyof T]: ErrorsProxyShape<T[K]> }
+      : readonly ValidationError[] | undefined
 
 /**
  * Type of `form.values`. Drillable readonly callable proxy. Unlike

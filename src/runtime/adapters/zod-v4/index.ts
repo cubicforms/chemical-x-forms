@@ -92,28 +92,37 @@ export type PathOutput<Schema extends z.ZodType, Path extends string> =
  *
  * For Zod v3, import from `attaform/zod-v3` instead.
  */
+/**
+ * `FormOf` / `OutOf` / `ReadOf` factor the three identical-shape
+ * conditionals out of `useForm`'s public signature. The bundled
+ * `.d.ts` then carries one alias per shape rather than re-inlining
+ * `z.input<Schema> extends GenericForm ? z.input<Schema> : never`
+ * four times — which is what produces TS2589 ("Type instantiation
+ * is excessively deep") on consumer call sites with complex schemas
+ * (discriminated unions, transform pipes, deep `.register()` chains).
+ * Each alias is computed once per `Schema` instantiation; downstream
+ * generics ride on the alias rather than re-evaluating the
+ * conditional from scratch.
+ */
+type FormOf<Schema extends z.ZodObject> =
+  z.input<Schema> extends GenericForm ? z.input<Schema> : never
+type OutOf<Schema extends z.ZodObject> =
+  z.output<Schema> extends GenericForm ? z.output<Schema> : never
+type ReadOf<Schema extends z.ZodObject> =
+  StorageShape<Schema> extends GenericForm ? StorageShape<Schema> : never
+
 export function useForm<Schema extends z.ZodObject, K extends FormKey = FormKey>(
   configuration: Omit<
     UseFormConfiguration<
-      z.input<Schema> extends GenericForm ? z.input<Schema> : never,
-      z.output<Schema> extends GenericForm ? z.output<Schema> : never,
-      AbstractSchema<
-        z.input<Schema> extends GenericForm ? z.input<Schema> : never,
-        z.output<Schema> extends GenericForm ? z.output<Schema> : never
-      >,
-      DeepPartial<
-        DefaultValuesShape<z.input<Schema> extends GenericForm ? z.input<Schema> : never>
-      >,
+      FormOf<Schema>,
+      OutOf<Schema>,
+      AbstractSchema<FormOf<Schema>, OutOf<Schema>>,
+      DeepPartial<DefaultValuesShape<FormOf<Schema>>>,
       K
     >,
     'schema' | 'validateOn' | 'debounceMs'
   > & { schema: Schema } & ValidateOnConfig
-): UseFormReturnType<
-  z.input<Schema> extends GenericForm ? z.input<Schema> : never,
-  z.output<Schema> extends GenericForm ? z.output<Schema> : never,
-  StorageShape<Schema> extends GenericForm ? StorageShape<Schema> : never,
-  K
-> {
+): UseFormReturnType<FormOf<Schema>, OutOf<Schema>, ReadOf<Schema>, K> {
   // Foot-gun guard: catches `useForm(z.object({...}))` (raw schema as
   // the first arg — its `.schema` field is undefined), `useForm()` (no
   // args), and `useForm({ schema: undefined })` before they reach the

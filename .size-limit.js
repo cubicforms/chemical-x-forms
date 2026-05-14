@@ -239,7 +239,12 @@ export default [
     //     and re-applies via applyFormReplacement({ hydration: true })
     //   - meta.errorCount + meta.isSubmitted computed siblings
     // Measured at 48.03 KB.
-    limit: '49 KB',
+    //
+    // Raised 49 → 51 KB when `useStepper` was re-exported from the
+    // unified `attaform/zod` entry. The full stepper surface
+    // (composable + registry + statuses proxy + history primitive)
+    // now ships through this bundle too. Measured at 50.40 KB.
+    limit: '51 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
@@ -262,7 +267,11 @@ export default [
     //
     // Raised 42 → 43 KB on the defaultValues-trichotomy branch
     // (same shared core chunk as zod.mjs). Measured at 42.11 KB.
-    limit: '43 KB',
+    //
+    // Raised 43 → 45 KB when `useStepper` was re-exported from the
+    // `attaform/zod-v4` subpath. Same surface addition as the
+    // `attaform/zod` unified entry. Measured at 44.46 KB.
+    limit: '45 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
@@ -311,7 +320,11 @@ export default [
     //
     // Raised 36 → 42 KB tracking index.mjs's library-hardening +
     // multi-tab bump (same shared core chunk). Measured at 41.03 KB.
-    limit: '42 KB',
+    //
+    // Raised 42 → 44 KB when `useStepper` was re-exported from the
+    // `attaform/zod-v3` subpath. Same surface addition as the
+    // `attaform/zod` unified entry. Measured at 43.86 KB.
+    limit: '44 KB',
     gzip: true,
     ignore: ['zod', 'lodash-es'],
     modifyEsbuildConfig: asEsm,

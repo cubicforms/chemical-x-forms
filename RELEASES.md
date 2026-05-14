@@ -1,5 +1,15 @@
 # Releases
 
+## v0.17.2 — 2026-05-14
+
+## What's Changed
+* fix(form): v3 parity through the unified attaform/zod entry by @ozzyfromspace in https://github.com/attaform/Attaform/pull/198
+
+
+**Full Changelog**: https://github.com/attaform/Attaform/compare/v0.17.1...v0.17.2
+
+---
+
 ## v0.17.1 — 2026-05-13
 
 ## What's Changed

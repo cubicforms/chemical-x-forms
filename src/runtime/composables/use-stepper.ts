@@ -1,14 +1,56 @@
-import { getCurrentScope, onScopeDispose, readonly, ref } from 'vue'
+import {
+  computed,
+  getCurrentScope,
+  onScopeDispose,
+  readonly,
+  ref,
+  watch,
+  type ComputedRef,
+} from 'vue'
 import { StepperLateRegistrationError } from '../core/errors'
 import { useRegistry } from '../core/registry'
+import { resolveTrichotomy } from '../core/resolve-default-values'
 import { createStepperRegistry } from '../core/stepper-registry'
+import { buildStepperStatusesProxy } from '../core/stepper-statuses-proxy'
 import type {
+  AggregateError,
+  AllValues,
   AnyForm,
+  FormStatus,
   KeysOf,
+  Statuses,
   StepperNavOptions,
   StepperOptions,
   UseStepperReturnType,
 } from '../types/types-stepper'
+
+/** Pending sentinel returned by `stepper.statuses[key]` when the form hasn't
+ *  yet wired a FormStore (defensive — useStepper guards against this, but
+ *  the snapshot fallback keeps templates from crashing). */
+const PENDING_STATUS: FormStatus = {
+  isValid: false,
+  isDirty: false,
+  isSubmitted: false,
+  errorCount: 0,
+}
+
+/** Shape we read off each participating form at runtime. Loosely typed
+ *  against `AnyForm` (which only requires `key`) — the runtime objects
+ *  returned by `useForm` always satisfy this richer shape. */
+type StatusSourceForm = {
+  readonly meta: {
+    readonly valid: boolean
+    readonly dirty: boolean
+    readonly isSubmitted: boolean
+    readonly errorCount: number
+    readonly errors: ReadonlyArray<{
+      readonly path: ReadonlyArray<string | number>
+      readonly message: string
+      readonly code?: string
+    }>
+  }
+  readonly values: unknown
+}
 
 /**
  * Multistep-form orchestrator. Composes existing `useForm` instances
@@ -35,7 +77,7 @@ import type {
  */
 export function useStepper<Forms extends readonly AnyForm[]>(
   forms: Forms,
-  _options: StepperOptions
+  options: StepperOptions<Forms>
 ): UseStepperReturnType<Forms> {
   if (forms.length === 0) {
     throw new Error('[attaform] useStepper requires at least one form.')
@@ -98,6 +140,112 @@ export function useStepper<Forms extends readonly AnyForm[]>(
     }
   }
 
+  // Resolve `defaultStatuses` (the trichotomy mirror). Sync values
+  // apply immediately at construction; async factories register and
+  // populate `seedRef` on resolution. While the async seed is
+  // pending, the status falls back to the pending sentinel.
+  const seedRef = ref<Statuses<Forms> | undefined>(undefined)
+  const seedInput = options.defaultStatuses as
+    | Statuses<Forms>
+    | (() => Statuses<Forms>)
+    | (() => Promise<Statuses<Forms>>)
+    | undefined
+  if (seedInput !== undefined) {
+    const resolved = resolveTrichotomy(seedInput)
+    if (resolved.kind === 'sync') {
+      seedRef.value = resolved.value
+    } else {
+      const eager = resolved.factory()
+      if (eager instanceof Promise) {
+        void eager.then((value) => {
+          seedRef.value = value as Statuses<Forms>
+        })
+      } else {
+        seedRef.value = eager as Statuses<Forms>
+      }
+    }
+  }
+  // Construction-time validation: any key in the seed that isn't a
+  // participating form is a typo and throws.
+  if (seedRef.value !== undefined) {
+    for (const seedKey of Object.keys(seedRef.value)) {
+      if (!seenKeys.has(seedKey)) {
+        throw new Error(
+          `[attaform] useStepper.defaultStatuses: key "${seedKey}" is not in the forms array. Known keys: ${formKeys.map((k) => `"${k}"`).join(', ')}.`
+        )
+      }
+    }
+  }
+
+  // Build per-form FormStatus computeds — each tracks its participating
+  // form's `meta` reactively. Resolution priority:
+  //   1. store.defaultsResolved === true → derive from form.meta
+  //   2. else seed value for this key → frozen seed
+  //   3. else → pending sentinel
+  // `defaultsResolved` is the right gate (not `isHydrating`) because
+  // deferred stepper forms have `isHydrating: false` BEFORE
+  // activation — the factory hasn't fired, so meta is the trivial
+  // pending shape rather than real data.
+  const statusComputeds: Record<string, ComputedRef<FormStatus>> = {}
+  for (let i = 0; i < forms.length; i += 1) {
+    const form = forms[i] as AnyForm
+    const source = form as unknown as StatusSourceForm
+    const key = form.key
+    statusComputeds[key] = computed<FormStatus>(() => {
+      const store = registry.forms.get(key)
+      const resolved = store?.defaultsResolved.value === true
+      const meta = source.meta
+      if (resolved && meta !== undefined && meta !== null) {
+        return {
+          isValid: meta.valid,
+          isDirty: meta.dirty,
+          isSubmitted: meta.isSubmitted,
+          errorCount: meta.errorCount,
+        }
+      }
+      const seedMap = seedRef.value as Record<string, FormStatus> | undefined
+      if (seedMap !== undefined && Object.hasOwn(seedMap, key)) {
+        return seedMap[key] as FormStatus
+      }
+      return PENDING_STATUS
+    })
+  }
+  const statuses = buildStepperStatusesProxy<Statuses<Forms>>(
+    statusComputeds as Record<keyof Statuses<Forms>, ComputedRef<FormStatus>>
+  )
+
+  // `onStatusChange` handler captured once for both the per-form
+  // material-change watch AND the synthetic nav-away invocation in
+  // `setCurrent` below.
+  const statusChangeHandler = options.onStatusChange
+
+  // Wire per-form material-change watches. Fires only when the
+  // 4-scalar tuple (\`isValid\`, \`isDirty\`, \`isSubmitted\`,
+  // \`errorCount\`) actually moves; identical writes don't re-fire.
+  // Async returns are fire-and-forget — navigation is never gated on
+  // the handler's promise. A separate \`onBeforeLeave\` (future) would
+  // cover nav-blocking guards.
+  if (statusChangeHandler !== undefined) {
+    for (let i = 0; i < forms.length; i += 1) {
+      const form = forms[i] as AnyForm
+      const key = form.key
+      const statusComputed = statusComputeds[key]
+      if (statusComputed === undefined) continue
+      watch(statusComputed, (next, prev) => {
+        if (
+          prev !== undefined &&
+          prev.isValid === next.isValid &&
+          prev.isDirty === next.isDirty &&
+          prev.isSubmitted === next.isSubmitted &&
+          prev.errorCount === next.errorCount
+        ) {
+          return
+        }
+        void statusChangeHandler(next, form as unknown as Forms[number])
+      })
+    }
+  }
+
   if (getCurrentScope() !== undefined) {
     const releases: Array<() => void> = []
     for (const key of formKeys) {
@@ -117,17 +265,84 @@ export function useStepper<Forms extends readonly AnyForm[]>(
     return formKeys.indexOf(key)
   }
 
+  // Cross-form aggregates. `allValues` exposes each form's existing
+  // values proxy under its key — read-only by way of the proxies'
+  // own traps. `allErrors` is a computed flat list ordered by forms
+  // array, then per-form order.
+  const allValuesObject: Record<string, unknown> = {}
+  for (let i = 0; i < forms.length; i += 1) {
+    const form = forms[i] as AnyForm
+    const source = form as unknown as StatusSourceForm
+    Object.defineProperty(allValuesObject, form.key, {
+      enumerable: true,
+      configurable: false,
+      get: () => source.values,
+    })
+  }
+  const allValues = allValuesObject as AllValues<Forms>
+
+  // Progress — default `valid_count / total` (normalised) or override.
+  // Wrapped in a computed so reactivity follows the underlying
+  // statuses (default) or whatever reactive sources the override
+  // touches.
+  const progressOverride = options.progress
+  const progress = computed<number>(() => {
+    if (progressOverride !== undefined) {
+      return progressOverride(forms)
+    }
+    if (forms.length === 0) return 0
+    let valid = 0
+    for (let i = 0; i < forms.length; i += 1) {
+      const form = forms[i] as AnyForm
+      const status = statusComputeds[form.key]?.value
+      if (status?.isValid === true) valid += 1
+    }
+    return valid / forms.length
+  })
+
+  const allErrors = computed<readonly AggregateError[]>(() => {
+    const flat: AggregateError[] = []
+    for (let i = 0; i < forms.length; i += 1) {
+      const form = forms[i] as AnyForm
+      const source = form as unknown as StatusSourceForm
+      const errors = source.meta?.errors
+      if (errors === undefined) continue
+      for (const error of errors) {
+        const entry: { -readonly [P in keyof AggregateError]: AggregateError[P] } = {
+          formKey: form.key,
+          path: error.path,
+          message: error.message,
+        }
+        if (error.code !== undefined) entry.code = error.code
+        flat.push(entry)
+      }
+    }
+    return flat
+  })
+
   function setCurrent(nextKey: KeysOf<Forms>): void {
     const priorKey = current.value as KeysOf<Forms>
     if (priorKey === nextKey) return
     stepperRegistry.markCurrent(nextKey, priorKey)
     current.value = nextKey
+    // Synthetic nav-away invocation. `onStatusChange` fires for the
+    // form being left, regardless of whether anything materially
+    // changed — useful for autosave-on-step-leave patterns.
+    if (statusChangeHandler !== undefined) {
+      const priorIdx = formKeys.indexOf(priorKey as string)
+      if (priorIdx !== -1) {
+        const priorForm = forms[priorIdx] as AnyForm
+        const priorStatus = statusComputeds[priorKey as string]?.value
+        if (priorStatus !== undefined) {
+          void statusChangeHandler(priorStatus, priorForm as unknown as Forms[number])
+        }
+      }
+    }
   }
 
   function next(_options?: StepperNavOptions): void {
     const idx = indexOf(current.value as string)
     if (idx === formKeys.length - 1) {
-      // eslint-disable-next-line no-console
       console.warn(
         `[attaform] useStepper.next(): already on the last step ("${current.value as string}"). Disable the button at the end of the wizard.`
       )
@@ -139,7 +354,6 @@ export function useStepper<Forms extends readonly AnyForm[]>(
   function back(_options?: StepperNavOptions): void {
     const idx = indexOf(current.value as string)
     if (idx === 0) {
-      // eslint-disable-next-line no-console
       console.warn(
         `[attaform] useStepper.back(): already on the first step ("${current.value as string}"). Disable the button at the start of the wizard.`
       )
@@ -161,6 +375,10 @@ export function useStepper<Forms extends readonly AnyForm[]>(
     current: readonly(current) as Readonly<typeof current>,
     forms,
     count: forms.length,
+    statuses,
+    allValues,
+    allErrors: readonly(allErrors),
+    progress: readonly(progress),
     next,
     back,
     goTo,

@@ -330,6 +330,14 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    */
   readonly factorySettleStarted: Ref<boolean>
   /**
+   * `true` once the form's effective defaults have been applied —
+   * sync `defaultValues` at construction, or async factory whose
+   * settle completed. Stays `false` for deferred (stepper-claimed,
+   * non-current) forms until they activate. Read by `useStepper` to
+   * decide whether seed status or live meta should surface.
+   */
+  readonly defaultsResolved: Ref<boolean>
+  /**
    * Bridge populated by `useStepper` when this form participates in a
    * stepper. `useAbstractForm.settle` consults `shouldDefer()` before
    * firing the captured async-defaults factory: if `true`, settle
@@ -1292,6 +1300,13 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   // starts running (CSR) or `onServerPrefetch` invokes the body
   // (SSR). Read by `useStepper`'s late-registration guard.
   const factorySettleStarted = ref(false)
+  // `true` once the form's effective defaults have been applied —
+  // either a sync `defaultValues` at construction, or an async
+  // factory whose settle completed. Stays `false` for deferred
+  // (stepper-claimed, non-current) forms until they activate. Read by
+  // `useStepper` to decide whether to surface seed status vs. live
+  // meta.
+  const defaultsResolved = ref(false)
   const stepperHandle = ref<
     | {
         shouldDefer: () => boolean
@@ -2512,6 +2527,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       applyFormReplacement(full, { hydration: true })
       scheduleFieldValidation([], true /* immediate */)
       hydrateError.value = null
+      defaultsResolved.value = true
     } catch (error) {
       hydrateError.value = error
     } finally {
@@ -2922,6 +2938,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     hydrateError,
     defaultValuesFactory,
     factorySettleStarted,
+    defaultsResolved,
     stepperHandle,
     rehydrate,
     submissionGeneration,

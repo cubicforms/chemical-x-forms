@@ -263,6 +263,14 @@ export function useAbstractForm<
   // its chance to defer the firing (PR 2). Subsequent `useForm({ key })`
   // calls that resolve to the same store observe the in-flight state
   // via `state.isHydrating` rather than re-firing.
+  if (existing !== undefined) {
+    // Reusing a live store — its `defaultsResolved` already reflects
+    // the first caller's effective state. Don't overwrite it.
+  } else if (resolvedDefaults.kind === 'sync') {
+    // Sync defaults applied during `buildFreshState`; the form is
+    // immediately usable.
+    state.defaultsResolved.value = true
+  }
   if (existing === undefined && resolvedDefaults.kind === 'async') {
     const factory = resolvedDefaults.factory as () =>
       | DeepPartial<DefaultValuesShape<Form>>
@@ -270,8 +278,10 @@ export function useAbstractForm<
     state.defaultValuesFactory.value = factory
     if (hadPendingHydration) {
       // Server already resolved the factory; client just consumed the
-      // payload at `buildFreshState`. Skip the re-fetch.
+      // payload at `buildFreshState`. Skip the re-fetch — and the
+      // resolved payload IS the effective default state.
       state.isHydrating.value = false
+      state.defaultsResolved.value = true
     } else if (registry.ssr) {
       // Server side: run the factory inside `onServerPrefetch` so the
       // framework's SSR awaiter waits for resolution before the

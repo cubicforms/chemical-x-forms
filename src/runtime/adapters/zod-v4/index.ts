@@ -28,7 +28,7 @@ export { zodV4Adapter as zodAdapter } from './adapter'
 export { UnsupportedSchemaError } from './errors'
 export { assertZodVersion, kindOf } from './introspect'
 export type { ZodKind } from './introspect'
-export type { StorageShape } from './types-storage-shape'
+export type { StorageLeaf, StorageShape } from './types-storage-shape'
 
 /**
  * Type of the value accepted at `Path` for `setValue` / `defaultValues`

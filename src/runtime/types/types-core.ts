@@ -14,7 +14,17 @@ export type IsObjectOrArray<T> = T extends GenericForm
     ? true
     : false
 
-type PartialFlatPath<Form, Key extends keyof Form = keyof Form> =
+/**
+ * Implementation detail backing `FlatPath` in its default
+ * (partial-path) mode. Exported so `rollup-plugin-dts` preserves it
+ * as a named alias in the bundled `.d.ts` rather than inlining the
+ * full template-literal recursion body at every reference site
+ * (`FlatPath`, `RegisterFlatPath`, every path-addressed API method).
+ * Inlining at consumer call sites compounds into TS2589 territory
+ * when multiple complex forms share a scope. Consumers should reach
+ * for `FlatPath` instead; this alias is not part of the stable surface.
+ */
+export type PartialFlatPath<Form, Key extends keyof Form = keyof Form> =
   IsObjectOrArray<Form> extends true
     ? Key extends string
       ? Form[Key] extends infer Value
@@ -265,8 +275,15 @@ export type NestedType<
           ? ValueOfUnion<_RootValue, FlattenedPath>
           : never
 
-// Helper type for primitive types (non-object and non-array)
-type Primitive = string | number | boolean | symbol | bigint | null | undefined
+/**
+ * Implementation-detail primitive-leaf marker used by `DeepPartial`
+ * and sibling structural walkers. Exported so the bundled `.d.ts`
+ * references one alias instead of re-emitting the union at every
+ * recursion branch of every walker that depends on it. Not part of
+ * the stable consumer-facing surface — reach for `DeepPartial`
+ * instead.
+ */
+export type Primitive = string | number | boolean | symbol | bigint | null | undefined
 
 /**
  * Distinguish a tuple from a regular array.

@@ -117,19 +117,34 @@
   // never reassign it, but the type still demands a Ref wrapper.
   const resourceLinks = ref({
     pkgFileTextUrl: (pkgName: string, _pkgVersion: string | undefined, pkgPath: string) => {
-      if (pkgName === 'attaform' || pkgName === 'vue' || pkgName === 'zod') {
+      if (
+        pkgName === 'attaform' ||
+        pkgName === 'vue' ||
+        pkgName === 'zod' ||
+        pkgName === 'zod-v3'
+      ) {
         return `/lib/types/${pkgName}/${pkgPath}`
       }
       return `https://cdn.jsdelivr.net/npm/${pkgName}/${pkgPath}`
     },
     pkgDirUrl: (pkgName: string, _pkgVersion: string | undefined, _pkgPath: string) => {
-      if (pkgName === 'attaform' || pkgName === 'vue' || pkgName === 'zod') {
+      if (
+        pkgName === 'attaform' ||
+        pkgName === 'vue' ||
+        pkgName === 'zod' ||
+        pkgName === 'zod-v3'
+      ) {
         return `/lib/types/${pkgName}/meta.json`
       }
       return `https://unpkg.com/${pkgName}@${_pkgVersion || 'latest'}/${_pkgPath}/?meta`
     },
     pkgLatestVersionUrl: (pkgName: string) => {
-      if (pkgName === 'attaform' || pkgName === 'vue' || pkgName === 'zod') {
+      if (
+        pkgName === 'attaform' ||
+        pkgName === 'vue' ||
+        pkgName === 'zod' ||
+        pkgName === 'zod-v3'
+      ) {
         return `/lib/types/${pkgName}/package.json`
       }
       return `https://unpkg.com/${pkgName}@latest/package.json`

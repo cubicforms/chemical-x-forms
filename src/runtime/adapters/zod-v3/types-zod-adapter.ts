@@ -16,6 +16,7 @@ import type {
 export type UseFormConfigurationWithZod<
   Schema extends z.ZodType<unknown>,
   DefaultValues,
+  K extends FormKey = FormKey,
 > = ValidateOnConfig & {
   /** A Zod v3 `ZodObject` schema (or one wrapped in `.optional()` / `.nullable()` / `.default()` / `.refine()`). */
   schema: Schema extends z.ZodType<unknown>
@@ -26,9 +27,14 @@ export type UseFormConfigurationWithZod<
   // Optional — matches the core `UseFormConfiguration`. Omit for
   // one-off forms; pass a string when the form needs identity (shared
   // state, distant lookup, persistence default, DevTools label). See
-  // types-api.ts for the full rationale.
-  key?: FormKey
-  defaultValues?: DefaultValues
+  // types-api.ts for the full rationale. Literal preserved on
+  // `form.key` for typed discrimination.
+  key?: K
+  // See `UseFormConfiguration.defaultValues` for the trichotomy
+  // semantics. Plain value resolves at construction; sync/async
+  // function defers (function-form factories surface via
+  // `form.isHydrating` / `form.hydrateError`).
+  defaultValues?: DefaultValues | (() => DefaultValues) | (() => Promise<DefaultValues>)
   strict?: boolean
   onInvalidSubmit?: OnInvalidSubmitPolicy
   persist?: PersistConfig

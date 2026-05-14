@@ -1032,6 +1032,7 @@ export type UseFormConfiguration<
   GetValueFormType,
   Schema extends AbstractSchema<Form, GetValueFormType>,
   DefaultValues extends DeepPartial<DefaultValuesShape<Form>>,
+  K extends FormKey = FormKey,
 > = {
   /**
    * The schema describing the form's shape and validation rules.
@@ -1063,8 +1064,12 @@ export type UseFormConfiguration<
    *
    * Keys starting with `__atta:` are reserved for internal use and
    * throw `ReservedFormKeyError` if passed.
+   *
+   * When passed as a string literal, the literal is preserved on
+   * `form.key` so `useStepper` and other consumers can discriminate
+   * against the union of known keys at compile time.
    */
-  key?: FormKey
+  key?: K
   /**
    * Initial values applied over the schema's defaults. Each field
    * falls back to the schema default (or the primitive default for
@@ -1076,8 +1081,30 @@ export type UseFormConfiguration<
    * membership, length / range bounds). Refinement-invalid defaults
    * pass through and surface as field errors — this lets you
    * rehydrate stale saved data without losing the user's input.
+   *
+   * Accepts a plain value, a sync function, or an async function:
+   *
+   * ```ts
+   * // Plain value — applies at construction.
+   * defaultValues: { email: '' }
+   *
+   * // Sync function — invoked on a microtask after construction.
+   * defaultValues: () => buildDraft()
+   *
+   * // Async function — form starts with the schema's slim defaults
+   * // and `form.isHydrating` flips true while the promise is
+   * // in flight; on resolve the values apply and `isHydrating` flips
+   * // false. Under SSR the factory fires via `onServerPrefetch` so
+   * // the resolved payload bakes into hydration transfer state and
+   * // the client never re-fetches.
+   * defaultValues: async () => api.fetchDraft(userId)
+   * ```
+   *
+   * Errors thrown by a function-form factory surface on
+   * `form.hydrateError`; the form stays usable with slim defaults.
+   * Call `form.rehydrate()` to re-fire the factory.
    */
-  defaultValues?: DefaultValues
+  defaultValues?: DefaultValues | (() => DefaultValues) | (() => Promise<DefaultValues>)
   /**
    * Whether to validate default values at construction. Default
    * `true`.
@@ -2927,6 +2954,27 @@ export type FormMeta<F = unknown> = FieldState<F> & {
   readonly submitError: unknown
 
   /**
+   * Scalar mirror of `meta.errors.length`. Read it from templates and
+   * `watch()` without indexing the underlying array.
+   *
+   * Always tracks `errors.length` exactly — reactivity is wired through
+   * the same computed graph, so a `watch(form.meta.errorCount, ...)`
+   * fires when (and only when) the aggregate error count changes.
+   */
+  readonly errorCount: number
+
+  /**
+   * `true` once `handleSubmit` has been invoked at least once, success
+   * or failure. Equivalent to `submitCount > 0`, exposed as a scalar
+   * for "show this only after the first submit attempt" UX in
+   * templates.
+   *
+   * Monotonically non-decreasing over the form's lifetime — once
+   * flipped, it stays `true` even after `form.reset()`.
+   */
+  readonly isSubmitted: boolean
+
+  /**
    * Per-`useForm()`-call identity. Stable for the lifetime of one
    * `useForm()` call; new on every fresh mount. Orthogonal to
    * `form.key`: the key identifies a SHARED FormStore (so two
@@ -2993,6 +3041,7 @@ export type UseFormReturnType<
   Form extends GenericForm,
   GetValueFormType extends GenericForm = Form,
   ReadForm extends GenericForm = Form,
+  K extends FormKey = FormKey,
 > = {
   /**
    * Wraps your submit logic with validation and error routing.
@@ -3255,8 +3304,55 @@ export type UseFormReturnType<
    * const result = parseApiErrors(serverPayload, { formKey: form.key })
    * if (result.ok) form.setFieldErrors(result.errors)
    * ```
+   *
+   * Typed as the literal `K` when an explicit `key` was passed; falls
+   * back to `FormKey` when omitted (auto-generated id).
    */
-  key: FormKey
+  key: K
+
+  // --- Async-defaults lifecycle ---
+
+  /**
+   * `true` while a function-form `defaultValues` factory is in flight
+   * — between `useForm` construction and the moment the factory
+   * resolves (sync function on the next microtask; async function when
+   * its promise settles). `false` otherwise, including when
+   * `defaultValues` is a plain value.
+   *
+   * The form is fully usable while `isHydrating` is `true` — it holds
+   * the schema's slim defaults. The flag exists so templates can show
+   * a spinner / dim the form while real data loads, e.g.
+   *
+   * ```vue
+   * <div :aria-busy="form.isHydrating">…</div>
+   * ```
+   */
+  readonly isHydrating: Readonly<Ref<boolean>>
+
+  /**
+   * The error thrown or rejected by the most recent function-form
+   * `defaultValues` factory. `null` on construction, on successful
+   * resolution, and whenever no factory has fired. Updates with each
+   * `form.rehydrate()` call.
+   *
+   * Distinct from `meta.submitError` so retry buttons and recovery
+   * UX can stay focused on the load-time failure without entangling
+   * the submit pipeline.
+   */
+  readonly hydrateError: Readonly<Ref<unknown | null>>
+
+  /**
+   * Re-fire the captured `defaultValues` factory and re-apply its
+   * payload over the current form values. Useful when the upstream
+   * source changes (the user picks a different draft, a background
+   * sync indicates fresh server data, etc.).
+   *
+   * Resolves after `isHydrating` flips back to `false`. Throws
+   * synchronously when the form was constructed with a plain-value
+   * `defaultValues` (nothing to re-fire). Does NOT clear dirty /
+   * touched / submit state — chain `form.reset()` for that.
+   */
+  rehydrate(): Promise<void>
 
   // --- Reactive field-error API ---
 

@@ -45,6 +45,7 @@ import type { StorageShape as StorageShapeV3 } from '../zod-v3/types-storage-sha
 import type { UnwrapZodObject } from '../zod-v3/types-zod-adapter'
 import type {
   AbstractSchema,
+  FormKey,
   ValidateOnConfig,
   UseFormReturnType,
   UseFormConfiguration,
@@ -96,12 +97,13 @@ type FormStorageShape<Schema> = Schema extends z.ZodObject
 // Schema kind via `FormInput` / `FormOutput`. The runtime cast
 // passes the configuration through unchanged — each adapter's own
 // signature absorbs the residual structural drift.
-type UnifiedConfiguration<Schema> = Omit<
+type UnifiedConfiguration<Schema, K extends FormKey = FormKey> = Omit<
   UseFormConfiguration<
     FormInput<Schema>,
     FormOutput<Schema>,
     AbstractSchema<FormInput<Schema>, FormOutput<Schema>>,
-    DeepPartial<DefaultValuesShape<FormInput<Schema>>>
+    DeepPartial<DefaultValuesShape<FormInput<Schema>>>,
+    K
   >,
   'schema' | 'validateOn' | 'debounceMs'
 > & { schema: Schema } & ValidateOnConfig
@@ -132,9 +134,12 @@ type UnifiedConfiguration<Schema> = Omit<
  * })
  * ```
  */
-export function useForm<Schema extends z.ZodObject | zV3.ZodObject<zV3.ZodRawShape>>(
-  configuration: UnifiedConfiguration<Schema>
-): UseFormReturnType<FormInput<Schema>, FormOutput<Schema>, FormStorageShape<Schema>> {
+export function useForm<
+  Schema extends z.ZodObject | zV3.ZodObject<zV3.ZodRawShape>,
+  K extends FormKey = FormKey,
+>(
+  configuration: UnifiedConfiguration<Schema, K>
+): UseFormReturnType<FormInput<Schema>, FormOutput<Schema>, FormStorageShape<Schema>, K> {
   // Foot-gun guard mirrors the typed wrappers'.
   if (
     configuration === undefined ||
@@ -151,7 +156,8 @@ export function useForm<Schema extends z.ZodObject | zV3.ZodObject<zV3.ZodRawSha
     ) as unknown as UseFormReturnType<
       FormInput<Schema>,
       FormOutput<Schema>,
-      FormStorageShape<Schema>
+      FormStorageShape<Schema>,
+      K
     >
   }
   // Anything else (Zod v3 schema, custom AbstractSchema, schema
@@ -160,5 +166,10 @@ export function useForm<Schema extends z.ZodObject | zV3.ZodObject<zV3.ZodRawSha
   // branch.
   return useFormV3(
     configuration as Parameters<typeof useFormV3>[0]
-  ) as unknown as UseFormReturnType<FormInput<Schema>, FormOutput<Schema>, FormStorageShape<Schema>>
+  ) as unknown as UseFormReturnType<
+    FormInput<Schema>,
+    FormOutput<Schema>,
+    FormStorageShape<Schema>,
+    K
+  >
 }

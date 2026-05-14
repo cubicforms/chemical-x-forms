@@ -1,4 +1,12 @@
-import { getCurrentInstance, getCurrentScope, onScopeDispose, provide, toRaw, useId } from 'vue'
+import {
+  getCurrentInstance,
+  getCurrentScope,
+  onScopeDispose,
+  onServerPrefetch,
+  provide,
+  toRaw,
+  useId,
+} from 'vue'
 import { buildFormApi } from '../core/build-form-api'
 import { createFormStore, type FormStore } from '../core/create-form-store'
 import {
@@ -44,6 +52,7 @@ import { deleteAtPath, getAtPath, setAtPath, isPlainRecord } from '../core/path-
 import { ensureAttaformInstalled } from '../core/plugin'
 import { kFormContext, kFormInstanceId, useRegistry } from '../core/registry'
 import { resolveShouldShowErrors } from '../core/should-show-errors'
+import { resolveTrichotomy } from '../core/resolve-default-values'
 import { walkUnsetSentinels } from '../core/unset-walker'
 import type {
   AbstractSchema,
@@ -83,14 +92,16 @@ export function useAbstractForm<
   Form extends GenericForm,
   GetValueFormType extends GenericForm = Form,
   ReadForm extends GenericForm = Form,
+  K extends FormKey = FormKey,
 >(
   configuration: UseFormConfiguration<
     Form,
     GetValueFormType,
     AbstractSchema<Form, GetValueFormType>,
-    DeepPartial<DefaultValuesShape<Form>>
+    DeepPartial<DefaultValuesShape<Form>>,
+    K
   >
-): UseFormReturnType<Form, GetValueFormType, ReadForm> {
+): UseFormReturnType<Form, GetValueFormType, ReadForm, K> {
   // Foot-gun guard: catches `useForm()` (no args), `useForm(null)`,
   // `useForm(rawSchema)` (any schema-like object passed as the first
   // argument — its `.schema` field is undefined), and the explicit
@@ -120,6 +131,47 @@ export function useAbstractForm<
   if (instance !== null) ensureAttaformInstalled(instance.appContext.app)
   const registry = useRegistry()
 
+  // Materialise the `defaultValues` trichotomy (`T | (() => T) |
+  // (() => Promise<T>)`) before the merge — downstream consumers
+  // (`mergeWithDefaults`, `walkUnsetSentinels` inside `buildFreshState`)
+  // expect a plain `DeepPartial<...>`, not a function. Sync inputs use
+  // their value as-is; function inputs swap to `undefined` so the form
+  // constructs against the schema's slim defaults, and the factory
+  // settles into `state.applyFormReplacement` once it resolves (wired
+  // below).
+  const resolvedDefaults = resolveTrichotomy<
+    | DeepPartial<DefaultValuesShape<Form>>
+    | undefined
+    | (() => DeepPartial<DefaultValuesShape<Form>> | Promise<DeepPartial<DefaultValuesShape<Form>>>)
+  >(configuration.defaultValues)
+  // Build the materialised override conditionally — exactOptionalPropertyTypes
+  // refuses explicit `undefined` on the optional field, so we omit it
+  // when the resolved value is undefined.
+  const materialisedDefaults: DeepPartial<DefaultValuesShape<Form>> | undefined =
+    resolvedDefaults.kind === 'sync'
+      ? (resolvedDefaults.value as DeepPartial<DefaultValuesShape<Form>> | undefined)
+      : undefined
+  const { defaultValues: _droppedDefaults, ...configWithoutDefaults } = configuration
+  void _droppedDefaults
+  const trichotomyOverride: UseFormConfiguration<
+    Form,
+    GetValueFormType,
+    AbstractSchema<Form, GetValueFormType>,
+    DeepPartial<DefaultValuesShape<Form>>
+  > = materialisedDefaults === undefined
+    ? (configWithoutDefaults as UseFormConfiguration<
+        Form,
+        GetValueFormType,
+        AbstractSchema<Form, GetValueFormType>,
+        DeepPartial<DefaultValuesShape<Form>>
+      >)
+    : ({ ...configWithoutDefaults, defaultValues: materialisedDefaults } as UseFormConfiguration<
+        Form,
+        GetValueFormType,
+        AbstractSchema<Form, GetValueFormType>,
+        DeepPartial<DefaultValuesShape<Form>>
+      >)
+
   // Merge app-level defaults from the registry over per-form options.
   // Per-form values always win for scalars; `validateOn` and `debounceMs`
   // resolve independently so consumers can set `debounceMs` globally
@@ -127,7 +179,7 @@ export function useAbstractForm<
   // `merged` so the merge happens exactly once. Runs BEFORE schema
   // resolution so the merged `maxRecursionDepth` can thread into the
   // adapter factory.
-  const merged = mergeWithDefaults(registry.defaults, configuration)
+  const merged = mergeWithDefaults(registry.defaults, trichotomyOverride)
 
   // Resolve the schema (accepts either an AbstractSchema or a factory).
   // Preserve both generics — dropping `GetValueFormType` here would make
@@ -195,8 +247,48 @@ export function useAbstractForm<
     // only and the seed has already fired.
     warnOnPersistDivergence(key, existing, configuration.persist)
   }
+  // Capture whether a hydration payload is waiting for this key BEFORE
+  // `buildFreshState` consumes it. We use this flag to skip re-firing
+  // an async-defaults factory on the client: the server already
+  // resolved it and the resolved values rode the payload, so the
+  // factory call would just double-fetch.
+  const hadPendingHydration = registry.pendingHydration.has(key)
+
   const state: FormStore<Form, GetValueFormType> =
     existing ?? buildFreshState<Form, GetValueFormType>(key, resolvedSchema, merged, registry)
+
+  // Wire function-form `defaultValues` once per FormStore. Sync inputs
+  // already applied at construction; async inputs settle the factory
+  // on a microtask so a synchronously-following `useStepper` claim has
+  // its chance to defer the firing (PR 2). Subsequent `useForm({ key })`
+  // calls that resolve to the same store observe the in-flight state
+  // via `state.isHydrating` rather than re-firing.
+  if (existing === undefined && resolvedDefaults.kind === 'async') {
+    const factory = resolvedDefaults.factory as () =>
+      | DeepPartial<DefaultValuesShape<Form>>
+      | Promise<DeepPartial<DefaultValuesShape<Form>>>
+    state.defaultValuesFactory.value = factory
+    if (hadPendingHydration) {
+      // Server already resolved the factory; client just consumed the
+      // payload at `buildFreshState`. Skip the re-fetch.
+      state.isHydrating.value = false
+    } else if (registry.ssr) {
+      // Server side: run the factory inside `onServerPrefetch` so the
+      // framework's SSR awaiter waits for resolution before the
+      // payload is serialised. Resolved values bake into the
+      // hydration transfer state and the client never re-fetches.
+      state.isHydrating.value = true
+      onServerPrefetch(() => state.rehydrate())
+    } else {
+      // CSR: microtask defer leaves a synchronously-following
+      // `useStepper` claim a frame to register a deferral before the
+      // factory fires (PR 2). `state.rehydrate` handles the
+      // settle-and-apply cycle (same path as the imperative
+      // `form.rehydrate()`).
+      state.isHydrating.value = true
+      void Promise.resolve().then(() => state.rehydrate())
+    }
+  }
 
   // Ref-count this consumer. When the component's effect scope tears down,
   // release the count; the registry evicts the FormStore once the last
@@ -434,7 +526,7 @@ export function useAbstractForm<
     state,
     formInstanceId,
     apiOptions
-  ) as unknown as UseFormReturnType<Form, GetValueFormType, ReadForm>
+  ) as unknown as UseFormReturnType<Form, GetValueFormType, ReadForm, K>
 }
 
 /**

@@ -321,6 +321,15 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    */
   readonly defaultValuesFactory: Ref<(() => unknown | Promise<unknown>) | undefined>
   /**
+   * `true` once `useAbstractForm`'s settle path has started running
+   * the captured factory (CSR microtask body or
+   * `onServerPrefetch`'s SSR body). Read by `useStepper`'s
+   * late-registration guard: if a stepper-claimed form has settled
+   * before the claim arrived, the defer-claim contract can't honor
+   * the privacy guarantee and we throw `StepperLateRegistrationError`.
+   */
+  readonly factorySettleStarted: Ref<boolean>
+  /**
    * Bridge populated by `useStepper` when this form participates in a
    * stepper. `useAbstractForm.settle` consults `shouldDefer()` before
    * firing the captured async-defaults factory: if `true`, settle
@@ -1279,6 +1288,10 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   const isHydrating = ref(false)
   const hydrateError = ref<unknown>(null)
   const defaultValuesFactory = ref<(() => unknown | Promise<unknown>) | undefined>(undefined)
+  // Flipped to `true` once `useAbstractForm`'s settle microtask body
+  // starts running (CSR) or `onServerPrefetch` invokes the body
+  // (SSR). Read by `useStepper`'s late-registration guard.
+  const factorySettleStarted = ref(false)
   const stepperHandle = ref<
     | {
         shouldDefer: () => boolean
@@ -2908,6 +2921,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     isHydrating,
     hydrateError,
     defaultValuesFactory,
+    factorySettleStarted,
     stepperHandle,
     rehydrate,
     submissionGeneration,

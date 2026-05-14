@@ -1,4 +1,5 @@
 import { getCurrentScope, onScopeDispose, readonly, ref } from 'vue'
+import { StepperLateRegistrationError } from '../core/errors'
 import { useRegistry } from '../core/registry'
 import { createStepperRegistry } from '../core/stepper-registry'
 import type {
@@ -64,6 +65,23 @@ export function useStepper<Forms extends readonly AnyForm[]>(
   }
 
   const registry = useRegistry()
+
+  // Late-registration guard. The defer-claim contract relies on
+  // `useStepper` winning the race against the microtask-deferred
+  // factory settle. If any participating form's factory has already
+  // started settling, the claim is too late to honor the privacy
+  // guarantee — throw with a clear message instead of silently
+  // degrading.
+  for (const key of formKeys) {
+    const store = registry.forms.get(key)
+    if (
+      store !== undefined &&
+      store.defaultValuesFactory.value !== undefined &&
+      store.factorySettleStarted.value
+    ) {
+      throw new StepperLateRegistrationError(key)
+    }
+  }
 
   // Wire each form's `stepperHandle` so `useAbstractForm.settle` can
   // consult the deferral signal before firing an async-defaults

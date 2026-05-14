@@ -283,6 +283,7 @@ export function useAbstractForm<
       // will fire on activation.
       state.isHydrating.value = true
       onServerPrefetch(() => {
+        state.factorySettleStarted.value = true
         const handle = state.stepperHandle.value
         if (handle !== undefined && handle.shouldDefer()) {
           state.isHydrating.value = false
@@ -300,6 +301,7 @@ export function useAbstractForm<
       // imperative `form.rehydrate()`).
       state.isHydrating.value = true
       void Promise.resolve().then(() => {
+        state.factorySettleStarted.value = true
         const handle = state.stepperHandle.value
         if (handle !== undefined && handle.shouldDefer()) {
           state.isHydrating.value = false

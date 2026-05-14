@@ -1081,8 +1081,30 @@ export type UseFormConfiguration<
    * membership, length / range bounds). Refinement-invalid defaults
    * pass through and surface as field errors — this lets you
    * rehydrate stale saved data without losing the user's input.
+   *
+   * Accepts a plain value, a sync function, or an async function:
+   *
+   * ```ts
+   * // Plain value — applies at construction.
+   * defaultValues: { email: '' }
+   *
+   * // Sync function — invoked on a microtask after construction.
+   * defaultValues: () => buildDraft()
+   *
+   * // Async function — form starts with the schema's slim defaults
+   * // and `form.isHydrating` flips true while the promise is
+   * // in flight; on resolve the values apply and `isHydrating` flips
+   * // false. Under SSR the factory fires via `onServerPrefetch` so
+   * // the resolved payload bakes into hydration transfer state and
+   * // the client never re-fetches.
+   * defaultValues: async () => api.fetchDraft(userId)
+   * ```
+   *
+   * Errors thrown by a function-form factory surface on
+   * `form.hydrateError`; the form stays usable with slim defaults.
+   * Call `form.rehydrate()` to re-fire the factory.
    */
-  defaultValues?: DefaultValues
+  defaultValues?: DefaultValues | (() => DefaultValues) | (() => Promise<DefaultValues>)
   /**
    * Whether to validate default values at construction. Default
    * `true`.
@@ -3287,6 +3309,37 @@ export type UseFormReturnType<
    * back to `FormKey` when omitted (auto-generated id).
    */
   key: K
+
+  // --- Async-defaults lifecycle ---
+
+  /**
+   * `true` while a function-form `defaultValues` factory is in flight
+   * — between `useForm` construction and the moment the factory
+   * resolves (sync function on the next microtask; async function when
+   * its promise settles). `false` otherwise, including when
+   * `defaultValues` is a plain value.
+   *
+   * The form is fully usable while `isHydrating` is `true` — it holds
+   * the schema's slim defaults. The flag exists so templates can show
+   * a spinner / dim the form while real data loads, e.g.
+   *
+   * ```vue
+   * <div :aria-busy="form.isHydrating">…</div>
+   * ```
+   */
+  readonly isHydrating: Readonly<Ref<boolean>>
+
+  /**
+   * The error thrown or rejected by the most recent function-form
+   * `defaultValues` factory. `null` on construction, on successful
+   * resolution, and whenever no factory has fired. Updates with each
+   * `form.rehydrate()` call.
+   *
+   * Distinct from `meta.submitError` so retry buttons and recovery
+   * UX can stay focused on the load-time failure without entangling
+   * the submit pipeline.
+   */
+  readonly hydrateError: Readonly<Ref<unknown | null>>
 
   // --- Reactive field-error API ---
 

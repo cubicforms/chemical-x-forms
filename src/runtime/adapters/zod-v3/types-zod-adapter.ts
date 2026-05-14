@@ -30,7 +30,11 @@ export type UseFormConfigurationWithZod<
   // types-api.ts for the full rationale. Literal preserved on
   // `form.key` for typed discrimination.
   key?: K
-  defaultValues?: DefaultValues
+  // See `UseFormConfiguration.defaultValues` for the trichotomy
+  // semantics. Plain value resolves at construction; sync/async
+  // function defers (function-form factories surface via
+  // `form.isHydrating` / `form.hydrateError`).
+  defaultValues?: DefaultValues | (() => DefaultValues) | (() => Promise<DefaultValues>)
   strict?: boolean
   onInvalidSubmit?: OnInvalidSubmitPolicy
   persist?: PersistConfig

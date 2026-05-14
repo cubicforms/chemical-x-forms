@@ -44,6 +44,7 @@ import { deleteAtPath, getAtPath, setAtPath, isPlainRecord } from '../core/path-
 import { ensureAttaformInstalled } from '../core/plugin'
 import { kFormContext, kFormInstanceId, useRegistry } from '../core/registry'
 import { resolveShouldShowErrors } from '../core/should-show-errors'
+import { resolveTrichotomy } from '../core/resolve-default-values'
 import { walkUnsetSentinels } from '../core/unset-walker'
 import type {
   AbstractSchema,
@@ -122,6 +123,47 @@ export function useAbstractForm<
   if (instance !== null) ensureAttaformInstalled(instance.appContext.app)
   const registry = useRegistry()
 
+  // Materialise the `defaultValues` trichotomy (`T | (() => T) |
+  // (() => Promise<T>)`) before the merge — downstream consumers
+  // (`mergeWithDefaults`, `walkUnsetSentinels` inside `buildFreshState`)
+  // expect a plain `DeepPartial<...>`, not a function. Sync inputs use
+  // their value as-is; function inputs swap to `undefined` so the form
+  // constructs against the schema's slim defaults, and the factory
+  // settles into `state.applyFormReplacement` once it resolves (wired
+  // below).
+  const resolvedDefaults = resolveTrichotomy<
+    | DeepPartial<DefaultValuesShape<Form>>
+    | undefined
+    | (() => DeepPartial<DefaultValuesShape<Form>> | Promise<DeepPartial<DefaultValuesShape<Form>>>)
+  >(configuration.defaultValues)
+  // Build the materialised override conditionally — exactOptionalPropertyTypes
+  // refuses explicit `undefined` on the optional field, so we omit it
+  // when the resolved value is undefined.
+  const materialisedDefaults: DeepPartial<DefaultValuesShape<Form>> | undefined =
+    resolvedDefaults.kind === 'sync'
+      ? (resolvedDefaults.value as DeepPartial<DefaultValuesShape<Form>> | undefined)
+      : undefined
+  const { defaultValues: _droppedDefaults, ...configWithoutDefaults } = configuration
+  void _droppedDefaults
+  const trichotomyOverride: UseFormConfiguration<
+    Form,
+    GetValueFormType,
+    AbstractSchema<Form, GetValueFormType>,
+    DeepPartial<DefaultValuesShape<Form>>
+  > = materialisedDefaults === undefined
+    ? (configWithoutDefaults as UseFormConfiguration<
+        Form,
+        GetValueFormType,
+        AbstractSchema<Form, GetValueFormType>,
+        DeepPartial<DefaultValuesShape<Form>>
+      >)
+    : ({ ...configWithoutDefaults, defaultValues: materialisedDefaults } as UseFormConfiguration<
+        Form,
+        GetValueFormType,
+        AbstractSchema<Form, GetValueFormType>,
+        DeepPartial<DefaultValuesShape<Form>>
+      >)
+
   // Merge app-level defaults from the registry over per-form options.
   // Per-form values always win for scalars; `validateOn` and `debounceMs`
   // resolve independently so consumers can set `debounceMs` globally
@@ -129,7 +171,7 @@ export function useAbstractForm<
   // `merged` so the merge happens exactly once. Runs BEFORE schema
   // resolution so the merged `maxRecursionDepth` can thread into the
   // adapter factory.
-  const merged = mergeWithDefaults(registry.defaults, configuration)
+  const merged = mergeWithDefaults(registry.defaults, trichotomyOverride)
 
   // Resolve the schema (accepts either an AbstractSchema or a factory).
   // Preserve both generics — dropping `GetValueFormType` here would make
@@ -199,6 +241,45 @@ export function useAbstractForm<
   }
   const state: FormStore<Form, GetValueFormType> =
     existing ?? buildFreshState<Form, GetValueFormType>(key, resolvedSchema, merged, registry)
+
+  // Wire function-form `defaultValues` once per FormStore. Sync inputs
+  // already applied at construction; async inputs schedule the factory
+  // on a microtask so a synchronously-following `useStepper` claim has
+  // its chance to defer the firing (PR 2). Subsequent `useForm({ key })`
+  // calls that resolve to the same store observe the in-flight state
+  // via `state.isHydrating` rather than re-firing.
+  if (existing === undefined && resolvedDefaults.kind === 'async') {
+    const factory = resolvedDefaults.factory as () =>
+      | DeepPartial<DefaultValuesShape<Form>>
+      | Promise<DeepPartial<DefaultValuesShape<Form>>>
+    state.defaultValuesFactory.value = factory
+    state.isHydrating.value = true
+    const settle = async (): Promise<void> => {
+      try {
+        const value = await factory()
+        const full = mergeSparseHydration(
+          toRaw(state.form.value) as Form,
+          value,
+          state.schema as unknown as Parameters<typeof mergeSparseHydration>[2]
+        )
+        state.applyFormReplacement(full, { hydration: true })
+        // Post-hydration revalidation — mirrors the persistence path
+        // (`scheduleFieldValidation([], true)` further down). Async
+        // refinements that couldn't fire on the slim seed get their
+        // verdict against the resolved values.
+        state.scheduleFieldValidation([], true)
+      } catch (error) {
+        state.hydrateError.value = error
+      } finally {
+        state.isHydrating.value = false
+      }
+    }
+    // CSR: microtask defer. SSR support comes in PR 1.6 — for now an
+    // SSR pass with async defaults would fire its factory on the
+    // server but the result wouldn't bake into the hydration payload
+    // (it's mounted post-render). That's covered next commit.
+    void Promise.resolve().then(settle)
+  }
 
   // Ref-count this consumer. When the component's effect scope tears down,
   // release the count; the registry evicts the FormStore once the last

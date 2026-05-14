@@ -189,6 +189,19 @@ export type StepperOptions<Forms extends readonly AnyForm[] = readonly AnyForm[]
    * underlying primitive is a no-op.
    */
   readonly history?: boolean | StepperHistoryConfig
+  /**
+   * Framework-agnostic SSR active-step source. The library does not
+   * import `useRoute()` or any router — the consumer reads route
+   * state from whichever framework they use and returns the active
+   * step key. The stepper consults this BEFORE form-store settle
+   * microtasks fire so the active step's `onServerPrefetch` runs
+   * server-side and non-active steps stay deferred.
+   *
+   * The getter runs on both server and client (the consumer's route
+   * source must be available on both); returning `undefined` falls
+   * through to URL `?step=<key>` and finally to `forms[0]`.
+   */
+  readonly getServerActiveStep?: () => KeysOf<Forms> | undefined
 }
 
 /**

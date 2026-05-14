@@ -116,13 +116,21 @@ export function useStepper<Forms extends readonly AnyForm[]>(
   const stepperHistory = historyConfig.enabled
     ? createStepperHistory(historyConfig.param)
     : NOOP_STEPPER_HISTORY
-  // Resolve initial step. URL takes priority when it names a known
-  // key — supports reload-on-step-N. Unknown key falls through to
-  // forms[0] so consumers don't crash on stale links.
+  // Resolve initial step. Priority: `getServerActiveStep()` (SSR
+  // source of truth, returned identically on client) → URL
+  // `?step=<key>` (reload preservation when no getter is wired) →
+  // `forms[0]` fallback. Unknown keys at any level fall through so a
+  // stale link can't crash construction.
+  const fromGetter = options.getServerActiveStep?.()
   const fromUrl = stepperHistory.read()
-  const initialKey = (
-    fromUrl !== undefined && formKeys.includes(fromUrl) ? fromUrl : formKeys[0]
-  ) as KeysOf<Forms>
+  let initialKey: KeysOf<Forms>
+  if (fromGetter !== undefined && formKeys.includes(fromGetter as string)) {
+    initialKey = fromGetter as KeysOf<Forms>
+  } else if (fromUrl !== undefined && formKeys.includes(fromUrl)) {
+    initialKey = fromUrl as KeysOf<Forms>
+  } else {
+    initialKey = formKeys[0] as KeysOf<Forms>
+  }
   const current = ref(initialKey) as ReturnType<typeof ref<KeysOf<Forms>>>
 
   stepperRegistry.claim(initialKey, true)

@@ -22,22 +22,26 @@ describe('createStepperHistory — primitive', () => {
     window.history.replaceState(null, '', ORIGINAL_URL)
   })
 
-  it('push(key) adds a history entry and writes `?step=<key>`', () => {
+  it('push(key) calls pushState and writes `?step=<key>`', () => {
     const handle = createStepperHistory('step')
-    const before = window.history.length
+    const pushSpy = vi.spyOn(window.history, 'pushState')
     handle.push('cargo')
-    expect(window.history.length).toBeGreaterThan(before)
+    expect(pushSpy).toHaveBeenCalledTimes(1)
     expect(new URL(window.location.href).searchParams.get('step')).toBe('cargo')
+    pushSpy.mockRestore()
     handle.dispose()
   })
 
-  it('replace(key) updates current entry without growing history', () => {
+  it('replace(key) calls replaceState — no pushState', () => {
     const handle = createStepperHistory('step')
-    handle.push('cargo')
-    const beforeLen = window.history.length
+    const pushSpy = vi.spyOn(window.history, 'pushState')
+    const replaceSpy = vi.spyOn(window.history, 'replaceState')
     handle.replace('review')
-    expect(window.history.length).toBe(beforeLen)
+    expect(replaceSpy).toHaveBeenCalledTimes(1)
+    expect(pushSpy).not.toHaveBeenCalled()
     expect(new URL(window.location.href).searchParams.get('step')).toBe('review')
+    pushSpy.mockRestore()
+    replaceSpy.mockRestore()
     handle.dispose()
   })
 

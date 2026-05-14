@@ -29,7 +29,12 @@ export type StepperHistoryHandle = {
   dispose(): void
 }
 
-const NOOP_HANDLE: StepperHistoryHandle = {
+/**
+ * No-op handle. Returned by `createStepperHistory` on SSR (no
+ * `window`) and assigned directly when the consumer passes
+ * `history: false`. Every method is a safe call-site shim.
+ */
+export const NOOP_STEPPER_HISTORY: StepperHistoryHandle = {
   push() {},
   replace() {},
   read() {
@@ -40,7 +45,7 @@ const NOOP_HANDLE: StepperHistoryHandle = {
 }
 
 export function createStepperHistory(param: string): StepperHistoryHandle {
-  if (typeof window === 'undefined') return NOOP_HANDLE
+  if (typeof window === 'undefined') return NOOP_STEPPER_HISTORY
 
   const subscribers: Array<(key: string | undefined) => void> = []
   let disposed = false

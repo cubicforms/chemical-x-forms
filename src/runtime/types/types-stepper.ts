@@ -115,6 +115,19 @@ export type StepperStatusesProxy<S extends Record<string, FormStatus>> = ((
   Readonly<S>
 
 /**
+ * Browser-history config. `history: true` (the default when the
+ * option is omitted) enables `?step=<key>` round-tripping via
+ * `window.history.pushState` / `replaceState` / `popstate`.
+ * `history: false` disables the integration entirely — useful for
+ * embedded wizards where step state lives in component state.
+ * `history: { param: 'wiz' }` customises the URL search param.
+ */
+export type StepperHistoryConfig = {
+  readonly enabled?: boolean
+  readonly param?: string
+}
+
+/**
  * `useStepper(forms, options)` — options is positional-required per
  * the "required internal params" doctrine. PR 3 adds
  * `defaultStatuses`; PR 4 adds `history` + `getServerActiveStep`.
@@ -165,6 +178,17 @@ export type StepperOptions<Forms extends readonly AnyForm[] = readonly AnyForm[]
    * form.meta, stepper.statuses, etc.).
    */
   readonly progress?: (forms: Forms) => number
+  /**
+   * Browser-history integration. Default behaviour (option omitted
+   * or `true`) is to record each navigation in `window.history` so
+   * back/forward buttons walk steps and reload preserves the active
+   * step via `?step=<key>`. `false` disables the integration.
+   * An object form lets the consumer rename the URL param.
+   *
+   * SSR-safe regardless of value: when `window` is undefined the
+   * underlying primitive is a no-op.
+   */
+  readonly history?: boolean | StepperHistoryConfig
 }
 
 /**

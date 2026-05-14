@@ -43,6 +43,19 @@ export { useAbstractForm as useForm } from './runtime/composables/use-abstract-f
 // docblock for the type-erasure reasoning.
 export { injectForm } from './runtime/composables/use-form-context'
 
+// Multistep-form orchestrator. Composes existing `useForm` instances
+// into a wizard with navigation, status aggregation, and activation
+// lifecycle. See the composable's docblock for invariants.
+export { useStepper } from './runtime/composables/use-stepper'
+export type {
+  AnyForm,
+  FormKeyOf,
+  KeysOf,
+  StepperNavOptions,
+  StepperOptions,
+  UseStepperReturnType,
+} from './runtime/types/types-stepper'
+
 // Ambient bridge for components that wrap a single field and want to
 // re-bind v-register onto an inner native element. See the
 // `useRegister` section in `docs/api.md` for the wrapper-component

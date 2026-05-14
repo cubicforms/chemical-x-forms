@@ -268,26 +268,6 @@ export function useAbstractForm<
       | DeepPartial<DefaultValuesShape<Form>>
       | Promise<DeepPartial<DefaultValuesShape<Form>>>
     state.defaultValuesFactory.value = factory
-    const settle = async (): Promise<void> => {
-      try {
-        const value = await factory()
-        const full = mergeSparseHydration(
-          toRaw(state.form.value) as Form,
-          value,
-          state.schema as unknown as Parameters<typeof mergeSparseHydration>[2]
-        )
-        state.applyFormReplacement(full, { hydration: true })
-        // Post-hydration revalidation — mirrors the persistence path
-        // (`scheduleFieldValidation([], true)` further down). Async
-        // refinements that couldn't fire on the slim seed get their
-        // verdict against the resolved values.
-        state.scheduleFieldValidation([], true)
-      } catch (error) {
-        state.hydrateError.value = error
-      } finally {
-        state.isHydrating.value = false
-      }
-    }
     if (hadPendingHydration) {
       // Server already resolved the factory; client just consumed the
       // payload at `buildFreshState`. Skip the re-fetch.
@@ -298,13 +278,15 @@ export function useAbstractForm<
       // payload is serialised. Resolved values bake into the
       // hydration transfer state and the client never re-fetches.
       state.isHydrating.value = true
-      onServerPrefetch(settle)
+      onServerPrefetch(() => state.rehydrate())
     } else {
       // CSR: microtask defer leaves a synchronously-following
       // `useStepper` claim a frame to register a deferral before the
-      // factory fires (PR 2).
+      // factory fires (PR 2). `state.rehydrate` handles the
+      // settle-and-apply cycle (same path as the imperative
+      // `form.rehydrate()`).
       state.isHydrating.value = true
-      void Promise.resolve().then(settle)
+      void Promise.resolve().then(() => state.rehydrate())
     }
   }
 

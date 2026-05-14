@@ -36,6 +36,7 @@ import { __DEV__ } from './dev'
 import { resolveCoercionIndex, type CoercionIndex } from './schema-coerce'
 import { isSlimPrimitiveValid } from './slim-primitive-gate'
 import { walkUnspecified } from './unset-walker'
+import { mergeSparseHydration } from './persistence'
 import {
   createPersistOptInRegistry,
   type PersistOptInRegistry,
@@ -316,9 +317,19 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
   /**
    * The function-form `defaultValues` factory, captured at the first
    * `useForm({ key })` call that wired this store. `undefined` for
-   * plain-value forms. Read by `form.rehydrate()` (PR 1.7).
+   * plain-value forms. Read by `form.rehydrate()`.
    */
   readonly defaultValuesFactory: Ref<(() => unknown | Promise<unknown>) | undefined>
+  /**
+   * Re-fire the captured function-form `defaultValues` factory. Throws
+   * synchronously when no factory was captured (plain-value form).
+   * Resolves after `isHydrating` flips back to `false`; consumers can
+   * `await form.rehydrate()` to gate UI on the fresh load.
+   *
+   * Does NOT touch dirty / touched / submit state — chain
+   * `form.reset()` if you want a clean baseline.
+   */
+  rehydrate(): Promise<void>
   /**
    * Incremented by every `reset()` call. The submit wrapper captures
    * this at entry and skips writing `submitError` from a catch that
@@ -2430,6 +2441,49 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     return setValueAtPath(path, schema.getEmptyValueAtPath(path))
   }
 
+  // --- Rehydrate ---
+  // Imperative re-fire of the captured function-form `defaultValues`
+  // factory. Lives on the store so every consumer of the shared key
+  // sees one source of truth for `isHydrating`. Mirrors the
+  // construction-time settle path: factory result merges over the
+  // current values via `mergeSparseHydration`, applies through
+  // `applyFormReplacement({ hydration: true })` (history-module aware),
+  // and triggers a post-hydration validation sweep. Does NOT clear
+  // dirty / touched / submit state — chain `form.reset()` for that.
+
+  function rehydrate(): Promise<void> {
+    const factory = defaultValuesFactory.value
+    if (factory === undefined) {
+      // Sync throw — misuse should surface at the call site, not at
+      // await time. Mirrors the type-system contract: `rehydrate()`
+      // only makes sense after a function-form `defaultValues` was
+      // captured.
+      throw new Error(
+        '[attaform] form.rehydrate(): no defaultValues factory was captured. Configure useForm({ defaultValues: () => ... }) to enable rehydrate.'
+      )
+    }
+    return runFactoryAndApply(factory)
+  }
+
+  async function runFactoryAndApply(factory: () => unknown | Promise<unknown>): Promise<void> {
+    isHydrating.value = true
+    try {
+      const value = await factory()
+      const full = mergeSparseHydration(
+        toRaw(form.value) as F,
+        value,
+        schema as unknown as Parameters<typeof mergeSparseHydration>[2]
+      )
+      applyFormReplacement(full, { hydration: true })
+      scheduleFieldValidation([], true /* immediate */)
+      hydrateError.value = null
+    } catch (error) {
+      hydrateError.value = error
+    } finally {
+      isHydrating.value = false
+    }
+  }
+
   // --- Reset ---
 
   function reset(nextDefaultValues?: DeepPartial<WriteShape<F>>): void {
@@ -2832,6 +2886,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     isHydrating,
     hydrateError,
     defaultValuesFactory,
+    rehydrate,
     submissionGeneration,
     activeValidations,
     firstValidationDone,

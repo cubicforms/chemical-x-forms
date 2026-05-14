@@ -813,6 +813,7 @@ export function buildFormApi<Form extends GenericForm, GetValueFormType extends 
     // forms hold these at their zero state for the form's lifetime.
     isHydrating: readonly(state.isHydrating) as Readonly<Ref<boolean>>,
     hydrateError: readonly(state.hydrateError) as Readonly<Ref<unknown | null>>,
+    rehydrate: () => state.rehydrate(),
     errors: errorsProxy as unknown as FormErrorsSurface<Form>,
     toRef: pathToRef as UseFormReturnType<Form, GetValueFormType>['toRef'],
     setFieldErrors,

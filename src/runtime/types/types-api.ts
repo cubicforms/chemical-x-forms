@@ -3341,6 +3341,19 @@ export type UseFormReturnType<
    */
   readonly hydrateError: Readonly<Ref<unknown | null>>
 
+  /**
+   * Re-fire the captured `defaultValues` factory and re-apply its
+   * payload over the current form values. Useful when the upstream
+   * source changes (the user picks a different draft, a background
+   * sync indicates fresh server data, etc.).
+   *
+   * Resolves after `isHydrating` flips back to `false`. Throws
+   * synchronously when the form was constructed with a plain-value
+   * `defaultValues` (nothing to re-fire). Does NOT clear dirty /
+   * touched / submit state — chain `form.reset()` for that.
+   */
+  rehydrate(): Promise<void>
+
   // --- Reactive field-error API ---
 
   /**

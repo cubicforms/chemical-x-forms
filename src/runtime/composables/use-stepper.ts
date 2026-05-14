@@ -281,6 +281,25 @@ export function useStepper<Forms extends readonly AnyForm[]>(
   }
   const allValues = allValuesObject as AllValues<Forms>
 
+  // Progress — default `valid_count / total` (normalised) or override.
+  // Wrapped in a computed so reactivity follows the underlying
+  // statuses (default) or whatever reactive sources the override
+  // touches.
+  const progressOverride = options.progress
+  const progress = computed<number>(() => {
+    if (progressOverride !== undefined) {
+      return progressOverride(forms)
+    }
+    if (forms.length === 0) return 0
+    let valid = 0
+    for (let i = 0; i < forms.length; i += 1) {
+      const form = forms[i] as AnyForm
+      const status = statusComputeds[form.key]?.value
+      if (status?.isValid === true) valid += 1
+    }
+    return valid / forms.length
+  })
+
   const allErrors = computed<readonly AggregateError[]>(() => {
     const flat: AggregateError[] = []
     for (let i = 0; i < forms.length; i += 1) {
@@ -359,6 +378,7 @@ export function useStepper<Forms extends readonly AnyForm[]>(
     statuses,
     allValues,
     allErrors: readonly(allErrors),
+    progress: readonly(progress),
     next,
     back,
     goTo,

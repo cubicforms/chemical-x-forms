@@ -153,6 +153,18 @@ export type StepperOptions<Forms extends readonly AnyForm[] = readonly AnyForm[]
    * re-fire).
    */
   readonly onStatusChange?: (status: FormStatus, form: Forms[number]) => void | Promise<void>
+  /**
+   * Optional progress override. When omitted, the stepper exposes
+   * \`progress.value\` as \`valid_form_count / count\` (normalised to
+   * \`[0, 1]\`). When provided, the returned number is used as-is —
+   * the consumer is responsible for any normalisation (\`[0, 1]\`
+   * vs raw count vs percentage).
+   *
+   * The override is invoked inside a Vue \`computed\` so it must be
+   * synchronous and may only read reactive sources (form values,
+   * form.meta, stepper.statuses, etc.).
+   */
+  readonly progress?: (forms: Forms) => number
 }
 
 /**
@@ -185,6 +197,7 @@ export type UseStepperReturnType<Forms extends readonly AnyForm[]> = {
   readonly statuses: StepperStatusesProxy<Statuses<Forms>>
   readonly allValues: AllValues<Forms>
   readonly allErrors: Readonly<Ref<readonly AggregateError[]>>
+  readonly progress: Readonly<Ref<number>>
   readonly next: (options?: StepperNavOptions) => void
   readonly back: (options?: StepperNavOptions) => void
   readonly goTo: (key: KeysOf<Forms>, options?: StepperNavOptions) => void

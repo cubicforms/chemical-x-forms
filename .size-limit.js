@@ -162,7 +162,16 @@ export default [
     //     factorySettleStarted refs, settle path consult-defer
     //     branch in useAbstractForm.
     // Measured at 36.89 KB.
-    limit: '38 KB',
+    //
+    // Raised 38 → 39 KB on the stepper history + SSR branch:
+    //   - createStepperHistory primitive (push/replace/popstate
+    //     handle around `window.history`, NOOP_STEPPER_HISTORY for
+    //     SSR + disable path)
+    //   - history config + popstate subscription + URL-seed +
+    //     replace-on-mount in use-stepper.ts
+    //   - StepperHistoryConfig + getServerActiveStep option types
+    // Measured at 38.30 KB.
+    limit: '39 KB',
     gzip: true,
     modifyEsbuildConfig: asEsm,
   },

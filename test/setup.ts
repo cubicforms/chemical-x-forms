@@ -1,4 +1,4 @@
-import { afterEach } from 'vitest'
+import { afterEach, beforeEach } from 'vitest'
 import { resetInsecureContextWarnDedup } from '../src/runtime/core/insecure-context-warn'
 
 /**
@@ -38,4 +38,19 @@ if (typeof window !== 'undefined') {
 
 afterEach(() => {
   resetInsecureContextWarnDedup()
+})
+
+// Reset `window.location` to the jsdom default before each test so
+// stepper history tests can't leak `?step=<key>` into the next test's
+// initial-seed read. The default `http://localhost:3000/` matches
+// jsdom's origin so `history.replaceState` won't trip a SecurityError.
+beforeEach(() => {
+  if (typeof window !== 'undefined') {
+    try {
+      window.history.replaceState(null, '', 'http://localhost:3000/')
+    } catch {
+      // jsdom origin policy may reject in unusual configs; the local
+      // beforeEach in stepper tests handles their cases explicitly.
+    }
+  }
 })

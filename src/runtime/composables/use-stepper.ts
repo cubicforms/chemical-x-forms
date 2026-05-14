@@ -10,6 +10,7 @@ import {
 import { StepperLateRegistrationError } from '../core/errors'
 import { useRegistry } from '../core/registry'
 import { resolveTrichotomy } from '../core/resolve-default-values'
+import { createStepperHistory, NOOP_STEPPER_HISTORY } from '../core/stepper-history'
 import { createStepperRegistry } from '../core/stepper-registry'
 import { buildStepperStatusesProxy } from '../core/stepper-statuses-proxy'
 import type {
@@ -19,6 +20,7 @@ import type {
   FormStatus,
   KeysOf,
   Statuses,
+  StepperHistoryConfig,
   StepperNavOptions,
   StepperOptions,
   UseStepperReturnType,
@@ -98,13 +100,49 @@ export function useStepper<Forms extends readonly AnyForm[]>(
 
   const stepperRegistry = createStepperRegistry()
   const formKeys = forms.map((form) => form.key)
-  const initialKey = formKeys[0] as KeysOf<Forms>
+
+  // Resolve history config. `history` omitted → default on with the
+  // standard `step` param. `history: true` → same defaults. `false` →
+  // primitive replaced with a no-op (no DOM access, no popstate
+  // subscription).
+  const historyOption = options.history
+  const historyConfig: Required<StepperHistoryConfig> = {
+    enabled: historyOption !== false,
+    param:
+      typeof historyOption === 'object' && historyOption !== null
+        ? (historyOption.param ?? 'step')
+        : 'step',
+  }
+  const stepperHistory = historyConfig.enabled
+    ? createStepperHistory(historyConfig.param)
+    : NOOP_STEPPER_HISTORY
+  // Resolve initial step. Priority: `getServerActiveStep()` (SSR
+  // source of truth, returned identically on client) → URL
+  // `?step=<key>` (reload preservation when no getter is wired) →
+  // `forms[0]` fallback. Unknown keys at any level fall through so a
+  // stale link can't crash construction.
+  const fromGetter = options.getServerActiveStep?.()
+  const fromUrl = stepperHistory.read()
+  let initialKey: KeysOf<Forms>
+  if (fromGetter !== undefined && formKeys.includes(fromGetter as string)) {
+    initialKey = fromGetter as KeysOf<Forms>
+  } else if (fromUrl !== undefined && formKeys.includes(fromUrl)) {
+    initialKey = fromUrl as KeysOf<Forms>
+  } else {
+    initialKey = formKeys[0] as KeysOf<Forms>
+  }
   const current = ref(initialKey) as ReturnType<typeof ref<KeysOf<Forms>>>
 
   stepperRegistry.claim(initialKey, true)
-  for (let i = 1; i < formKeys.length; i += 1) {
-    stepperRegistry.claim(formKeys[i]!, false)
+  for (let i = 0; i < formKeys.length; i += 1) {
+    const key = formKeys[i]!
+    if (key === initialKey) continue
+    stepperRegistry.claim(key, false)
   }
+
+  // Replace the URL so it always reflects the active step on mount —
+  // idempotent when the URL already named the correct key.
+  stepperHistory.replace(initialKey as string)
 
   const registry = useRegistry()
 
@@ -258,6 +296,7 @@ export function useStepper<Forms extends readonly AnyForm[]>(
         if (store !== undefined) store.stepperHandle.value = undefined
       }
       stepperRegistry.dispose()
+      stepperHistory.dispose()
     })
   }
 
@@ -320,11 +359,26 @@ export function useStepper<Forms extends readonly AnyForm[]>(
     return flat
   })
 
-  function setCurrent(nextKey: KeysOf<Forms>): void {
+  /**
+   * Internal navigation. `historyMode` controls how the change is
+   * reflected in `window.history`:
+   *   - `'push'` (default for nav calls) — new history entry.
+   *   - `'replace'` — overwrite the current entry (for
+   *     `goTo({ replace: true })`).
+   *   - `'silent'` — no write. Used by the popstate handler: the
+   *     browser has already moved the entry, writing again would
+   *     double-record.
+   */
+  function setCurrent(
+    nextKey: KeysOf<Forms>,
+    historyMode: 'push' | 'replace' | 'silent' = 'push'
+  ): void {
     const priorKey = current.value as KeysOf<Forms>
     if (priorKey === nextKey) return
     stepperRegistry.markCurrent(nextKey, priorKey)
     current.value = nextKey
+    if (historyMode === 'push') stepperHistory.push(nextKey as string)
+    else if (historyMode === 'replace') stepperHistory.replace(nextKey as string)
     // Synthetic nav-away invocation. `onStatusChange` fires for the
     // form being left, regardless of whether anything materially
     // changed — useful for autosave-on-step-leave patterns.
@@ -340,7 +394,16 @@ export function useStepper<Forms extends readonly AnyForm[]>(
     }
   }
 
-  function next(_options?: StepperNavOptions): void {
+  // Browser back/forward → restore current from URL. The handler is a
+  // no-op when the URL no longer names a known key (consumer linked
+  // outside the wizard, or popped past the original entry).
+  stepperHistory.subscribe((key) => {
+    if (key === undefined) return
+    if (!seenKeys.has(key)) return
+    setCurrent(key as KeysOf<Forms>, 'silent')
+  })
+
+  function next(navOptions?: StepperNavOptions): void {
     const idx = indexOf(current.value as string)
     if (idx === formKeys.length - 1) {
       console.warn(
@@ -348,10 +411,13 @@ export function useStepper<Forms extends readonly AnyForm[]>(
       )
       return
     }
-    setCurrent(formKeys[idx + 1] as KeysOf<Forms>)
+    setCurrent(
+      formKeys[idx + 1] as KeysOf<Forms>,
+      navOptions?.replace === true ? 'replace' : 'push'
+    )
   }
 
-  function back(_options?: StepperNavOptions): void {
+  function back(navOptions?: StepperNavOptions): void {
     const idx = indexOf(current.value as string)
     if (idx === 0) {
       console.warn(
@@ -359,16 +425,19 @@ export function useStepper<Forms extends readonly AnyForm[]>(
       )
       return
     }
-    setCurrent(formKeys[idx - 1] as KeysOf<Forms>)
+    setCurrent(
+      formKeys[idx - 1] as KeysOf<Forms>,
+      navOptions?.replace === true ? 'replace' : 'push'
+    )
   }
 
-  function goTo(key: KeysOf<Forms>, _options?: StepperNavOptions): void {
+  function goTo(key: KeysOf<Forms>, navOptions?: StepperNavOptions): void {
     if (!seenKeys.has(key as string)) {
       throw new Error(
         `[attaform] useStepper.goTo("${String(key)}"): unknown step key. Known keys: ${formKeys.map((k) => `"${k}"`).join(', ')}.`
       )
     }
-    setCurrent(key)
+    setCurrent(key, navOptions?.replace === true ? 'replace' : 'push')
   }
 
   return {

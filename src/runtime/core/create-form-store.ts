@@ -321,6 +321,21 @@ export type FormStore<F extends GenericForm, G extends GenericForm = F> = {
    */
   readonly defaultValuesFactory: Ref<(() => unknown | Promise<unknown>) | undefined>
   /**
+   * Bridge populated by `useStepper` when this form participates in a
+   * stepper. `useAbstractForm.settle` consults `shouldDefer()` before
+   * firing the captured async-defaults factory: if `true`, settle
+   * bails and registers an activation callback that fires the factory
+   * once the step becomes current. `undefined` when the form is
+   * standalone — no defer-claim, factory fires normally.
+   */
+  readonly stepperHandle: Ref<
+    | {
+        shouldDefer: () => boolean
+        registerActivation: (callback: () => void) => void
+      }
+    | undefined
+  >
+  /**
    * Re-fire the captured function-form `defaultValues` factory. Throws
    * synchronously when no factory was captured (plain-value form).
    * Resolves after `isHydrating` flips back to `false`; consumers can
@@ -1264,6 +1279,13 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   const isHydrating = ref(false)
   const hydrateError = ref<unknown>(null)
   const defaultValuesFactory = ref<(() => unknown | Promise<unknown>) | undefined>(undefined)
+  const stepperHandle = ref<
+    | {
+        shouldDefer: () => boolean
+        registerActivation: (callback: () => void) => void
+      }
+    | undefined
+  >(undefined)
   // Initial-validity gate. See `FormStore.firstValidationDone` JSDoc.
   // Only ASYNC-validating strict schemas need the gate: sync schemas
   // either surface refinement errors at construction (slim parse
@@ -2886,6 +2908,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     isHydrating,
     hydrateError,
     defaultValuesFactory,
+    stepperHandle,
     rehydrate,
     submissionGeneration,
     activeValidations,

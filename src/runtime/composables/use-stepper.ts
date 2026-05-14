@@ -64,6 +64,22 @@ export function useStepper<Forms extends readonly AnyForm[]>(
   }
 
   const registry = useRegistry()
+
+  // Wire each form's `stepperHandle` so `useAbstractForm.settle` can
+  // consult the deferral signal before firing an async-defaults
+  // factory. Bound by `key` (not by the form return object) so
+  // future late-arriving forms that resolve to the same store inherit
+  // the claim.
+  for (const key of formKeys) {
+    const store = registry.forms.get(key)
+    if (store !== undefined) {
+      store.stepperHandle.value = {
+        shouldDefer: () => stepperRegistry.shouldDefer(key),
+        registerActivation: (callback) => stepperRegistry.registerActivation(key, callback),
+      }
+    }
+  }
+
   if (getCurrentScope() !== undefined) {
     const releases: Array<() => void> = []
     for (const key of formKeys) {
@@ -71,6 +87,10 @@ export function useStepper<Forms extends readonly AnyForm[]>(
     }
     onScopeDispose(() => {
       for (const release of releases) release()
+      for (const key of formKeys) {
+        const store = registry.forms.get(key)
+        if (store !== undefined) store.stepperHandle.value = undefined
+      }
       stepperRegistry.dispose()
     })
   }

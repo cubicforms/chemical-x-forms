@@ -2846,25 +2846,19 @@ export type FormErrorsSurface<Form> = ErrorsProxyShape<Form> & {
 
 /**
  * Implementation-detail walker backing `form.errors` typed proxy.
+ * Thin alias over `LeafWalker<T, 'errors', false>` — the shared walker
+ * topology is defined once at `LeafWalker` and parameterized via
+ * `LeafSchemeFor`. `false` preserves optional-key modifiers (errors
+ * proxy mirrors the input shape including `?`); contrast with the
+ * fields proxy alias which strips them via the default `true`.
+ *
  * Exported so the bundled `.d.ts` references a single alias body
  * rather than re-emitting the full union-aware recursion at every
  * consumer call site that types `form.errors`. Multiple useForm
  * instances in one scope otherwise compound this into TS2589
  * territory. Consumers should reach for `FormErrorsSurface` instead.
  */
-export type ErrorsProxyShape<T> = [T] extends [
-  string | number | boolean | bigint | symbol | null | undefined | Date,
-]
-  ? readonly ValidationError[] | undefined
-  : [T] extends [ReadonlyArray<infer U>]
-    ? { readonly [K: number]: ErrorsProxyShape<U> }
-    : [T] extends [object]
-      ? [IsUnion<T>] extends [true]
-        ? {
-            readonly [K in KeyofUnion<T>]: ErrorsProxyShape<ValueOfUnion<T, K>>
-          }
-        : { readonly [K in keyof T]: ErrorsProxyShape<T[K]> }
-      : readonly ValidationError[] | undefined
+export type ErrorsProxyShape<T> = LeafWalker<T, 'errors', false>
 
 /**
  * Type of `form.values`. Drillable readonly callable proxy. Unlike

@@ -1,4 +1,12 @@
-import { getCurrentInstance, getCurrentScope, onScopeDispose, provide, toRaw, useId } from 'vue'
+import {
+  getCurrentInstance,
+  getCurrentScope,
+  onScopeDispose,
+  onServerPrefetch,
+  provide,
+  toRaw,
+  useId,
+} from 'vue'
 import { buildFormApi } from '../core/build-form-api'
 import { createFormStore, type FormStore } from '../core/create-form-store'
 import {
@@ -239,11 +247,18 @@ export function useAbstractForm<
     // only and the seed has already fired.
     warnOnPersistDivergence(key, existing, configuration.persist)
   }
+  // Capture whether a hydration payload is waiting for this key BEFORE
+  // `buildFreshState` consumes it. We use this flag to skip re-firing
+  // an async-defaults factory on the client: the server already
+  // resolved it and the resolved values rode the payload, so the
+  // factory call would just double-fetch.
+  const hadPendingHydration = registry.pendingHydration.has(key)
+
   const state: FormStore<Form, GetValueFormType> =
     existing ?? buildFreshState<Form, GetValueFormType>(key, resolvedSchema, merged, registry)
 
   // Wire function-form `defaultValues` once per FormStore. Sync inputs
-  // already applied at construction; async inputs schedule the factory
+  // already applied at construction; async inputs settle the factory
   // on a microtask so a synchronously-following `useStepper` claim has
   // its chance to defer the firing (PR 2). Subsequent `useForm({ key })`
   // calls that resolve to the same store observe the in-flight state
@@ -253,7 +268,6 @@ export function useAbstractForm<
       | DeepPartial<DefaultValuesShape<Form>>
       | Promise<DeepPartial<DefaultValuesShape<Form>>>
     state.defaultValuesFactory.value = factory
-    state.isHydrating.value = true
     const settle = async (): Promise<void> => {
       try {
         const value = await factory()
@@ -274,11 +288,24 @@ export function useAbstractForm<
         state.isHydrating.value = false
       }
     }
-    // CSR: microtask defer. SSR support comes in PR 1.6 — for now an
-    // SSR pass with async defaults would fire its factory on the
-    // server but the result wouldn't bake into the hydration payload
-    // (it's mounted post-render). That's covered next commit.
-    void Promise.resolve().then(settle)
+    if (hadPendingHydration) {
+      // Server already resolved the factory; client just consumed the
+      // payload at `buildFreshState`. Skip the re-fetch.
+      state.isHydrating.value = false
+    } else if (registry.ssr) {
+      // Server side: run the factory inside `onServerPrefetch` so the
+      // framework's SSR awaiter waits for resolution before the
+      // payload is serialised. Resolved values bake into the
+      // hydration transfer state and the client never re-fetches.
+      state.isHydrating.value = true
+      onServerPrefetch(settle)
+    } else {
+      // CSR: microtask defer leaves a synchronously-following
+      // `useStepper` claim a frame to register a deferral before the
+      // factory fires (PR 2).
+      state.isHydrating.value = true
+      void Promise.resolve().then(settle)
+    }
   }
 
   // Ref-count this consumer. When the component's effect scope tears down,

@@ -1,4 +1,12 @@
-import { computed, getCurrentScope, onScopeDispose, readonly, ref, type ComputedRef } from 'vue'
+import {
+  computed,
+  getCurrentScope,
+  onScopeDispose,
+  readonly,
+  ref,
+  watch,
+  type ComputedRef,
+} from 'vue'
 import { StepperLateRegistrationError } from '../core/errors'
 import { useRegistry } from '../core/registry'
 import { resolveTrichotomy } from '../core/resolve-default-values'
@@ -198,6 +206,34 @@ export function useStepper<Forms extends readonly AnyForm[]>(
     statusComputeds as Record<keyof Statuses<Forms>, ComputedRef<FormStatus>>
   )
 
+  // Wire `onStatusChange` watches. One watcher per form on its
+  // FormStatus computed; fires only on material change (the 4-scalar
+  // tuple actually moved). Async returns are fire-and-forget — the
+  // stepper doesn't await them, so navigation isn't gated on the
+  // handler's promise. A separate `onBeforeLeave` (future) would
+  // cover nav-blocking guards.
+  if (options.onStatusChange !== undefined) {
+    const handler = options.onStatusChange
+    for (let i = 0; i < forms.length; i += 1) {
+      const form = forms[i] as AnyForm
+      const key = form.key
+      const statusComputed = statusComputeds[key]
+      if (statusComputed === undefined) continue
+      watch(statusComputed, (next, prev) => {
+        if (
+          prev !== undefined &&
+          prev.isValid === next.isValid &&
+          prev.isDirty === next.isDirty &&
+          prev.isSubmitted === next.isSubmitted &&
+          prev.errorCount === next.errorCount
+        ) {
+          return
+        }
+        void handler(next, form as unknown as Forms[number])
+      })
+    }
+  }
+
   if (getCurrentScope() !== undefined) {
     const releases: Array<() => void> = []
     for (const key of formKeys) {
@@ -227,7 +263,6 @@ export function useStepper<Forms extends readonly AnyForm[]>(
   function next(_options?: StepperNavOptions): void {
     const idx = indexOf(current.value as string)
     if (idx === formKeys.length - 1) {
-      // eslint-disable-next-line no-console
       console.warn(
         `[attaform] useStepper.next(): already on the last step ("${current.value as string}"). Disable the button at the end of the wizard.`
       )
@@ -239,7 +274,6 @@ export function useStepper<Forms extends readonly AnyForm[]>(
   function back(_options?: StepperNavOptions): void {
     const idx = indexOf(current.value as string)
     if (idx === 0) {
-      // eslint-disable-next-line no-console
       console.warn(
         `[attaform] useStepper.back(): already on the first step ("${current.value as string}"). Disable the button at the start of the wizard.`
       )

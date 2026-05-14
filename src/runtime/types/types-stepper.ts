@@ -121,14 +121,15 @@ export type StepperStatusesProxy<S extends Record<string, FormStatus>> = ((
  */
 export type StepperOptions<Forms extends readonly AnyForm[] = readonly AnyForm[]> = {
   /**
-   * Seed status payload used while a form is hydrating (e.g. async
-   * `defaultValues` in flight). Mirrors `defaultValues`' trichotomy:
-   * plain object, sync factory, or async factory.
+   * Seed status payload used while a form is pre-resolved (async
+   * `defaultValues` in flight, or stepper-deferred non-current).
+   * Mirrors `defaultValues`' trichotomy: plain object, sync factory,
+   * or async factory.
    *
    * Status resolution priority per form:
-   *   1. \`form.isHydrating === false\` → derive from \`form.meta\`
+   *   1. `store.defaultsResolved === true` → derive from `form.meta`
    *   2. else seed value for this key → frozen seed
-   *   3. else → pending sentinel (\`{ isValid: false, ... }\`)
+   *   3. else → pending sentinel
    *
    * Unknown keys in the seed object throw at construction (typo
    * safety).
@@ -137,6 +138,21 @@ export type StepperOptions<Forms extends readonly AnyForm[] = readonly AnyForm[]
     | Statuses<Forms>
     | (() => Statuses<Forms>)
     | (() => Promise<Statuses<Forms>>)
+  /**
+   * Fires whenever a participating form's status (`isValid`,
+   * `isDirty`, `isSubmitted`, or `errorCount`) materially changes —
+   * one of those four scalars actually moved. The handler receives
+   * the new status and the form whose status changed.
+   *
+   * Fire-and-forget: a returned promise is NOT awaited. Use a
+   * separate \`onBeforeLeave\` (future) for nav-blocking guards.
+   *
+   * No debounce. The handler fires immediately on Vue's next watch
+   * flush after the underlying meta changes — chatter is naturally
+   * dampened by the material-change check (identical writes don't
+   * re-fire).
+   */
+  readonly onStatusChange?: (status: FormStatus, form: Forms[number]) => void | Promise<void>
 }
 
 /**

@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "lib": ["es2020", "es2022.error", "dom"],
+    "types": []
+  },
+  "include": ["./4-form-stepper.ts"]
+}

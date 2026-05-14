@@ -394,6 +394,12 @@ export default [
       'apps/site/scripts/**',
       '.prettierrc.cjs',
       'scripts/**',
+      // Bundled-types regression fixture imports from `dist/*` to
+      // typecheck the published `.d.ts` shape; intentionally sits
+      // outside the source tsconfig, so eslint's typed-rule pipeline
+      // can't include it. Verified at gate time via
+      // `pnpm check:bundled-types`, not via the main eslint pass.
+      'tests/fixtures/bundled-types/**',
     ],
   },
 ]

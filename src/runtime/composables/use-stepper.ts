@@ -79,7 +79,7 @@ type StatusSourceForm = {
  */
 export function useStepper<Forms extends readonly AnyForm[]>(
   forms: Forms,
-  options: StepperOptions<Forms>
+  options: StepperOptions<Forms> = {}
 ): UseStepperReturnType<Forms> {
   if (forms.length === 0) {
     throw new Error('[attaform] useStepper requires at least one form.')

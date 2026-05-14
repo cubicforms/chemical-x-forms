@@ -53,9 +53,9 @@ describe('useStepper — allValues', () => {
     })
     apps.push(app)
     const allValues = result.allValues as Record<string, Record<string, unknown>>
-    expect(allValues['av-cargo']!.weight).toBe(5)
-    expect(allValues['av-cargo']!.description).toBe('box')
-    expect(allValues['av-review']!.note).toBe('send it')
+    expect(allValues['av-cargo']!['weight']).toBe(5)
+    expect(allValues['av-cargo']!['description']).toBe('box')
+    expect(allValues['av-review']!['note']).toBe('send it')
   })
 
   it('reflects live updates from each form', () => {
@@ -69,8 +69,8 @@ describe('useStepper — allValues', () => {
     })
     apps.push(app)
     const allValues = result.stepper.allValues as Record<string, Record<string, unknown>>
-    expect(allValues['av-live-cargo']!.weight).toBe(5)
+    expect(allValues['av-live-cargo']!['weight']).toBe(5)
     result.cargo.setValue('weight', 12)
-    expect(allValues['av-live-cargo']!.weight).toBe(12)
+    expect(allValues['av-live-cargo']!['weight']).toBe(12)
   })
 })

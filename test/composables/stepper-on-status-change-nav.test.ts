@@ -69,7 +69,11 @@ describe('useStepper — onStatusChange nav-away firing', () => {
       const a = useForm({ schema: schemaA, key: 'navback-a' })
       const b = useForm({ schema: schemaB, key: 'navback-b' })
       return {
-        stepper: useStepper([a, b], { onStatusChange: (_s, f) => events.push(f.key) }),
+        stepper: useStepper([a, b], {
+          onStatusChange: (_s, f) => {
+            events.push(f.key)
+          },
+        }),
         a,
         b,
       }
@@ -88,7 +92,11 @@ describe('useStepper — onStatusChange nav-away firing', () => {
       const b = useForm({ schema: schemaB, key: 'navgoto-b' })
       const c = useForm({ schema: schemaC, key: 'navgoto-c' })
       return {
-        stepper: useStepper([a, b, c], { onStatusChange: (_s, f) => events.push(f.key) }),
+        stepper: useStepper([a, b, c], {
+          onStatusChange: (_s, f) => {
+            events.push(f.key)
+          },
+        }),
         a,
         b,
         c,
@@ -105,7 +113,11 @@ describe('useStepper — onStatusChange nav-away firing', () => {
       const a = useForm({ schema: schemaA, key: 'navnoop-a' })
       const b = useForm({ schema: schemaB, key: 'navnoop-b' })
       return {
-        stepper: useStepper([a, b], { onStatusChange: (_s, f) => events.push(f.key) }),
+        stepper: useStepper([a, b], {
+          onStatusChange: (_s, f) => {
+            events.push(f.key)
+          },
+        }),
         a,
         b,
       }

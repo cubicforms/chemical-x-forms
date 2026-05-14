@@ -55,7 +55,7 @@ describe('stepper status types', () => {
     type StatusMap = { readonly a: FormStatus; readonly b: FormStatus }
     type Proxy = StepperStatusesProxy<StatusMap>
     function _neverInvoked() {
-      const proxy = {} as Proxy
+      const proxy = ((..._args: unknown[]) => ({})) as Proxy
       const status = proxy.a
       expectTypeOf(status satisfies FormStatus).toMatchTypeOf<FormStatus>()
       const _fromCall = proxy('a')

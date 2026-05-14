@@ -206,14 +206,18 @@ export function useStepper<Forms extends readonly AnyForm[]>(
     statusComputeds as Record<keyof Statuses<Forms>, ComputedRef<FormStatus>>
   )
 
-  // Wire `onStatusChange` watches. One watcher per form on its
-  // FormStatus computed; fires only on material change (the 4-scalar
-  // tuple actually moved). Async returns are fire-and-forget — the
-  // stepper doesn't await them, so navigation isn't gated on the
-  // handler's promise. A separate `onBeforeLeave` (future) would
+  // `onStatusChange` handler captured once for both the per-form
+  // material-change watch AND the synthetic nav-away invocation in
+  // `setCurrent` below.
+  const statusChangeHandler = options.onStatusChange
+
+  // Wire per-form material-change watches. Fires only when the
+  // 4-scalar tuple (\`isValid\`, \`isDirty\`, \`isSubmitted\`,
+  // \`errorCount\`) actually moves; identical writes don't re-fire.
+  // Async returns are fire-and-forget — navigation is never gated on
+  // the handler's promise. A separate \`onBeforeLeave\` (future) would
   // cover nav-blocking guards.
-  if (options.onStatusChange !== undefined) {
-    const handler = options.onStatusChange
+  if (statusChangeHandler !== undefined) {
     for (let i = 0; i < forms.length; i += 1) {
       const form = forms[i] as AnyForm
       const key = form.key
@@ -229,7 +233,7 @@ export function useStepper<Forms extends readonly AnyForm[]>(
         ) {
           return
         }
-        void handler(next, form as unknown as Forms[number])
+        void statusChangeHandler(next, form as unknown as Forms[number])
       })
     }
   }
@@ -258,6 +262,19 @@ export function useStepper<Forms extends readonly AnyForm[]>(
     if (priorKey === nextKey) return
     stepperRegistry.markCurrent(nextKey, priorKey)
     current.value = nextKey
+    // Synthetic nav-away invocation. `onStatusChange` fires for the
+    // form being left, regardless of whether anything materially
+    // changed — useful for autosave-on-step-leave patterns.
+    if (statusChangeHandler !== undefined) {
+      const priorIdx = formKeys.indexOf(priorKey as string)
+      if (priorIdx !== -1) {
+        const priorForm = forms[priorIdx] as AnyForm
+        const priorStatus = statusComputeds[priorKey as string]?.value
+        if (priorStatus !== undefined) {
+          void statusChangeHandler(priorStatus, priorForm as unknown as Forms[number])
+        }
+      }
+    }
   }
 
   function next(_options?: StepperNavOptions): void {

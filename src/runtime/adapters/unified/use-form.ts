@@ -60,34 +60,44 @@ import type { DeepPartial, DefaultValuesShape, GenericForm } from '../../types/t
 // public signature guarantees one arm always fires.
 // ───────────────────────────────────────────────────────────────────
 
-type FormInput<Schema> = Schema extends z.ZodObject
-  ? z.input<Schema> extends GenericForm
-    ? z.input<Schema>
+// Per-major helpers. Naming each variant keeps `rollup-plugin-dts`
+// from inlining the `z.input<X> extends GenericForm ? z.input<X> :
+// never` conditional twice inside each branch of the unified
+// `FormInput` / `FormOutput` / `FormStorageShape` aliases — the
+// bundled `.d.ts` preserves the helper as a single alias rather
+// than re-evaluating it at every consumer call site. Critical for
+// TS2589 headroom in setups that wire several `useForm` calls in
+// one scope (multistep wizards, parallel inline pickers, etc.).
+type FormInputV4<S extends z.ZodObject> = z.input<S> extends GenericForm ? z.input<S> : never
+type FormOutputV4<S extends z.ZodObject> = z.output<S> extends GenericForm ? z.output<S> : never
+type FormStorageShapeV4<S extends z.ZodObject> =
+  StorageShapeV4<S> extends GenericForm ? StorageShapeV4<S> : never
+
+type FormInputV3<S extends zV3.ZodObject<zV3.ZodRawShape>> =
+  zV3.input<UnwrapZodObject<S>> extends GenericForm ? zV3.input<UnwrapZodObject<S>> : never
+type FormOutputV3<S extends zV3.ZodObject<zV3.ZodRawShape>> =
+  zV3.output<UnwrapZodObject<S>> extends GenericForm ? zV3.output<UnwrapZodObject<S>> : never
+type FormStorageShapeV3<S extends zV3.ZodObject<zV3.ZodRawShape>> =
+  StorageShapeV3<UnwrapZodObject<S>> extends GenericForm
+    ? StorageShapeV3<UnwrapZodObject<S>>
     : never
+
+type FormInput<Schema> = Schema extends z.ZodObject
+  ? FormInputV4<Schema>
   : Schema extends zV3.ZodObject<zV3.ZodRawShape>
-    ? zV3.input<UnwrapZodObject<Schema>> extends GenericForm
-      ? zV3.input<UnwrapZodObject<Schema>>
-      : never
+    ? FormInputV3<Schema>
     : never
 
 type FormOutput<Schema> = Schema extends z.ZodObject
-  ? z.output<Schema> extends GenericForm
-    ? z.output<Schema>
-    : never
+  ? FormOutputV4<Schema>
   : Schema extends zV3.ZodObject<zV3.ZodRawShape>
-    ? zV3.output<UnwrapZodObject<Schema>> extends GenericForm
-      ? zV3.output<UnwrapZodObject<Schema>>
-      : never
+    ? FormOutputV3<Schema>
     : never
 
 type FormStorageShape<Schema> = Schema extends z.ZodObject
-  ? StorageShapeV4<Schema> extends GenericForm
-    ? StorageShapeV4<Schema>
-    : never
+  ? FormStorageShapeV4<Schema>
   : Schema extends zV3.ZodObject<zV3.ZodRawShape>
-    ? StorageShapeV3<UnwrapZodObject<Schema>> extends GenericForm
-      ? StorageShapeV3<UnwrapZodObject<Schema>>
-      : never
+    ? FormStorageShapeV3<Schema>
     : never
 
 // Single unified configuration shape. The outer structure is

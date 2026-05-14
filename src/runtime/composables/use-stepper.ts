@@ -1,6 +1,7 @@
 import { computed, getCurrentScope, onScopeDispose, readonly, ref, type ComputedRef } from 'vue'
 import { StepperLateRegistrationError } from '../core/errors'
 import { useRegistry } from '../core/registry'
+import { resolveTrichotomy } from '../core/resolve-default-values'
 import { createStepperRegistry } from '../core/stepper-registry'
 import { buildStepperStatusesProxy } from '../core/stepper-statuses-proxy'
 import type {
@@ -60,7 +61,7 @@ type StatusSourceForm = {
  */
 export function useStepper<Forms extends readonly AnyForm[]>(
   forms: Forms,
-  _options: StepperOptions
+  options: StepperOptions<Forms>
 ): UseStepperReturnType<Forms> {
   if (forms.length === 0) {
     throw new Error('[attaform] useStepper requires at least one form.')
@@ -123,24 +124,74 @@ export function useStepper<Forms extends readonly AnyForm[]>(
     }
   }
 
+  // Resolve `defaultStatuses` (the trichotomy mirror). Sync values
+  // apply immediately at construction; async factories register and
+  // populate `seedRef` on resolution. While the async seed is
+  // pending, the status falls back to the pending sentinel.
+  const seedRef = ref<Statuses<Forms> | undefined>(undefined)
+  const seedInput = options.defaultStatuses as
+    | Statuses<Forms>
+    | (() => Statuses<Forms>)
+    | (() => Promise<Statuses<Forms>>)
+    | undefined
+  if (seedInput !== undefined) {
+    const resolved = resolveTrichotomy(seedInput)
+    if (resolved.kind === 'sync') {
+      seedRef.value = resolved.value
+    } else {
+      const eager = resolved.factory()
+      if (eager instanceof Promise) {
+        void eager.then((value) => {
+          seedRef.value = value as Statuses<Forms>
+        })
+      } else {
+        seedRef.value = eager as Statuses<Forms>
+      }
+    }
+  }
+  // Construction-time validation: any key in the seed that isn't a
+  // participating form is a typo and throws.
+  if (seedRef.value !== undefined) {
+    for (const seedKey of Object.keys(seedRef.value)) {
+      if (!seenKeys.has(seedKey)) {
+        throw new Error(
+          `[attaform] useStepper.defaultStatuses: key "${seedKey}" is not in the forms array. Known keys: ${formKeys.map((k) => `"${k}"`).join(', ')}.`
+        )
+      }
+    }
+  }
+
   // Build per-form FormStatus computeds — each tracks its participating
-  // form's `meta` reactively. The forms tuple is typed against the
-  // minimal `AnyForm` constraint, but the runtime objects always
-  // satisfy `StatusSourceForm` because they come from `useForm`.
+  // form's `meta` reactively. Resolution priority:
+  //   1. store.defaultsResolved === true → derive from form.meta
+  //   2. else seed value for this key → frozen seed
+  //   3. else → pending sentinel
+  // `defaultsResolved` is the right gate (not `isHydrating`) because
+  // deferred stepper forms have `isHydrating: false` BEFORE
+  // activation — the factory hasn't fired, so meta is the trivial
+  // pending shape rather than real data.
   const statusComputeds: Record<string, ComputedRef<FormStatus>> = {}
   for (let i = 0; i < forms.length; i += 1) {
     const form = forms[i] as AnyForm
     const source = form as unknown as StatusSourceForm
     const key = form.key
     statusComputeds[key] = computed<FormStatus>(() => {
+      const store = registry.forms.get(key)
+      const resolved = store?.defaultsResolved.value === true
       const meta = source.meta
-      if (meta === undefined || meta === null) return PENDING_STATUS
-      return {
-        isValid: meta.valid,
-        isDirty: meta.dirty,
-        isSubmitted: meta.isSubmitted,
-        errorCount: meta.errorCount,
+      if (resolved && meta !== undefined && meta !== null) {
+        return {
+          isValid: meta.valid,
+          isDirty: meta.dirty,
+          isSubmitted: meta.isSubmitted,
+          errorCount: meta.errorCount,
+        }
       }
+      const seedMap = seedRef.value as Record<string, FormStatus> | undefined
+      if (seedMap !== undefined && Object.hasOwn(seedMap, key)) {
+        return seedMap[key] as FormStatus
+      }
+      return PENDING_STATUS
     })
   }
   const statuses = buildStepperStatusesProxy<Statuses<Forms>>(

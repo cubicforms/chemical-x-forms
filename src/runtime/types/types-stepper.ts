@@ -116,11 +116,28 @@ export type StepperStatusesProxy<S extends Record<string, FormStatus>> = ((
 
 /**
  * `useStepper(forms, options)` — options is positional-required per
- * the "required internal params" doctrine. Empty in PR 2; fields
- * land in PR 3 (`defaultStatuses`, `onStatusChange`, `progress`) and
- * PR 4 (`history`, `getServerActiveStep`).
+ * the "required internal params" doctrine. PR 3 adds
+ * `defaultStatuses`; PR 4 adds `history` + `getServerActiveStep`.
  */
-export type StepperOptions = Record<string, never>
+export type StepperOptions<Forms extends readonly AnyForm[] = readonly AnyForm[]> = {
+  /**
+   * Seed status payload used while a form is hydrating (e.g. async
+   * `defaultValues` in flight). Mirrors `defaultValues`' trichotomy:
+   * plain object, sync factory, or async factory.
+   *
+   * Status resolution priority per form:
+   *   1. \`form.isHydrating === false\` → derive from \`form.meta\`
+   *   2. else seed value for this key → frozen seed
+   *   3. else → pending sentinel (\`{ isValid: false, ... }\`)
+   *
+   * Unknown keys in the seed object throw at construction (typo
+   * safety).
+   */
+  readonly defaultStatuses?:
+    | Statuses<Forms>
+    | (() => Statuses<Forms>)
+    | (() => Promise<Statuses<Forms>>)
+}
 
 /**
  * Return shape of `useStepper`. Reactive `current` is a readonly ref;

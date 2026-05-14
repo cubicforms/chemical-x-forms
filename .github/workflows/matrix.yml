@@ -209,6 +209,14 @@ jobs:
       - name: Check bundle size
         run: pnpm check:size
 
+      # Verifies the published `.d.ts` shape compiles a representative
+      # 4-form `useStepper` pattern under `tsc`. Acceptance test for
+      # the type-system depth-efficiency refactor — if this fails,
+      # consumers wiring multiple forms in one scope will trip
+      # TS2589 ("Type instantiation is excessively deep").
+      - name: Check bundled types
+        run: pnpm check:bundled-types
+
   bench:
     name: Performance benchmarks
     runs-on: ubuntu-latest

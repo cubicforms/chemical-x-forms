@@ -35,11 +35,17 @@
     strict: false,
   })
   directForm.setFieldErrors([
-    { message: 'Email already in use', path: ['email'], formKey: 'errors-direct' },
+    {
+      message: 'Email already in use',
+      path: ['email'],
+      formKey: 'errors-direct',
+      code: 'api:duplicate-email',
+    },
     {
       message: 'Password must be at least 8 characters',
       path: ['password'],
       formKey: 'errors-direct',
+      code: 'api:password-too-short',
     },
   ])
 

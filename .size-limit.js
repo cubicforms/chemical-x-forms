@@ -154,7 +154,15 @@ export default [
     //     for the post-reset valid:true flash on async-refining
     //     schemas)
     // Measured at 35.47 KB; ~0.5 KB headroom.
-    limit: '36 KB',
+    //
+    // Raised 36 → 38 KB on the useStepper branch:
+    //   - useStepper composable (registration, navigation, claim
+    //     wiring), createStepperRegistry primitive,
+    //     StepperLateRegistrationError, FormStore.stepperHandle +
+    //     factorySettleStarted refs, settle path consult-defer
+    //     branch in useAbstractForm.
+    // Measured at 36.89 KB.
+    limit: '38 KB',
     gzip: true,
     modifyEsbuildConfig: asEsm,
   },

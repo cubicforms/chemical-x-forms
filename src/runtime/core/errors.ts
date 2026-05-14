@@ -110,6 +110,28 @@ export class OutsideSetupError extends AttaformError {
 }
 
 /**
+ * Thrown when `useStepper` is called too late — after a participating
+ * form's async `defaultValues` factory has already settled. The
+ * defer-claim contract relies on `useStepper` winning the race
+ * against a microtask-deferred factory; once the factory has fired,
+ * the claim can no longer hold the privacy guarantee for that step.
+ *
+ * Fix: call `useStepper(...)` in the same synchronous `setup()` as
+ * its participating `useForm(...)` calls. Don't defer the stepper
+ * construction into `onMounted`, a watcher, or an async setup
+ * function that awaits before the call.
+ */
+export class StepperLateRegistrationError extends AttaformError {
+  constructor(key: string) {
+    super(
+      `[attaform] useStepper called after form "${key}" already settled its async defaultValues. ` +
+        `The defer-claim contract needs useStepper to run in the same synchronous setup() as ` +
+        `its useForm() calls. Move the useStepper(...) call up to setup-top, before any await.`
+    )
+  }
+}
+
+/**
  * Thrown when a `useForm({ key })` call uses a key starting with
  * `__atta:`. That prefix is reserved for keys the library generates
  * internally (e.g. for anonymous `useForm()` calls without an

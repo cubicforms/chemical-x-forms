@@ -277,16 +277,41 @@ export function useAbstractForm<
       // framework's SSR awaiter waits for resolution before the
       // payload is serialised. Resolved values bake into the
       // hydration transfer state and the client never re-fetches.
+      // Stepper claims (synchronous, after this `useForm` call but
+      // before the prefetch flush) can mark this form deferred — in
+      // which case skip the server-side fetch entirely. The client
+      // will fire on activation.
       state.isHydrating.value = true
-      onServerPrefetch(() => state.rehydrate())
+      onServerPrefetch(() => {
+        state.factorySettleStarted.value = true
+        const handle = state.stepperHandle.value
+        if (handle !== undefined && handle.shouldDefer()) {
+          state.isHydrating.value = false
+          return
+        }
+        return state.rehydrate()
+      })
     } else {
       // CSR: microtask defer leaves a synchronously-following
       // `useStepper` claim a frame to register a deferral before the
-      // factory fires (PR 2). `state.rehydrate` handles the
-      // settle-and-apply cycle (same path as the imperative
-      // `form.rehydrate()`).
+      // factory fires. When a stepper has marked this form deferred,
+      // bail and register an activation callback that runs the factory
+      // once the step becomes current. Otherwise `state.rehydrate`
+      // handles the settle-and-apply cycle (same path as the
+      // imperative `form.rehydrate()`).
       state.isHydrating.value = true
-      void Promise.resolve().then(() => state.rehydrate())
+      void Promise.resolve().then(() => {
+        state.factorySettleStarted.value = true
+        const handle = state.stepperHandle.value
+        if (handle !== undefined && handle.shouldDefer()) {
+          state.isHydrating.value = false
+          handle.registerActivation(() => {
+            void state.rehydrate()
+          })
+          return
+        }
+        return state.rehydrate()
+      })
     }
   }
 

@@ -185,6 +185,17 @@
     scrollBeyondLastLine: false,
     renderLineHighlight: 'gutter' as const,
     smoothScrolling: true,
+    // By default Monaco's scrollbar consumes every wheel event over its
+    // viewport — even when the editor is pinned at its top or bottom
+    // extreme. In a docs page that ends well below the REPL, that traps
+    // the reader inside the editor pane; they have to move the cursor
+    // off the editor before they can keep scrolling the page. Setting
+    // `alwaysConsumeMouseWheel: false` lets Monaco swallow the wheel
+    // only while it actually has content to scroll, then bubbles
+    // subsequent events to the parent so the page keeps moving. The
+    // preview pane doesn't have this problem because it's a plain iframe
+    // / scroll container with native wheel behavior.
+    scrollbar: { alwaysConsumeMouseWheel: false },
   }
   // `showErrorText: false` and `autoSaveText: false` opt out of the
   // "Show Error" / "Auto Save" toggle buttons @vue/repl floats in the

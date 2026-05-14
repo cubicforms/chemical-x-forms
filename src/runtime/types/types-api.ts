@@ -2652,19 +2652,75 @@ export type FieldState<Value = unknown> = {
  * `FieldState<number | undefined>`. Matches the runtime's stub
  * `FieldState` for inactive-variant paths.
  */
-export type FieldStateMapEntry<T> = [T] extends [
-  string | number | boolean | bigint | symbol | null | undefined | Date,
-]
-  ? FieldState<T>
+/**
+ * Leaf-shape dispatch table for `LeafWalker`. Each entry maps a walker
+ * kind to the leaf type that walker produces at primitive / Date /
+ * non-recursable positions. The lookup `LeafSchemeFor<T>[Kind]`
+ * threads `T` through the leaf type when the kind needs it
+ * (`field` carries `FieldState<T>`); kinds that don't depend on
+ * `T` simply ignore it (`errors` always produces
+ * `readonly ValidationError[] | undefined`).
+ *
+ * Adding a new walker is one entry here plus a one-line wrapper
+ * alias (`type FooShape<T> = LeafWalker<T, 'foo'>`). The walker
+ * topology is shared; only the leaf changes.
+ *
+ * Implementation-detail surface — consumers reach for `FieldStateMap`
+ * or `FormErrorsSurface` instead.
+ */
+export interface LeafSchemeFor<T> {
+  field: FieldState<T>
+  errors: readonly ValidationError[] | undefined
+}
+
+/**
+ * Generic walk that produces a proxy shape over `T` with leaves
+ * dispatched via `LeafSchemeFor<T>[Kind]`. The walk topology
+ * (object → mapped homomorphic, object-union → KeyofUnion merge,
+ * array → indexed, primitive / Date → terminal) is identical
+ * across walker kinds; only the leaf type differs.
+ *
+ * Replaces the duplicated bodies of `FieldStateMapEntry` and
+ * `ErrorsProxyShape`. The prior duplication walked the same shape
+ * twice per useForm return type — once for the fields proxy, once
+ * for the errors proxy. Factoring lets the bundled `.d.ts` carry one
+ * shared walker body plus per-kind one-line wrappers, halving the
+ * recursive depth contribution from these two proxies on consumer
+ * call sites.
+ *
+ * `StripOptional` controls whether optional modifiers on input
+ * properties are stripped at every recursion level. `true` (default)
+ * matches the fields proxy semantics — every known leaf carries a
+ * `FieldState` wrapper regardless of source `?`. `false` matches the
+ * errors proxy semantics — the proxy shape stays structurally
+ * identical to the input form, optional keys included.
+ *
+ * Implementation-detail surface — consumers reach for `FieldStateMap`
+ * or `FormErrorsSurface` instead.
+ */
+export type LeafWalker<
+  T,
+  Kind extends keyof LeafSchemeFor<unknown>,
+  StripOptional extends boolean = true,
+> = [T] extends [string | number | boolean | bigint | symbol | null | undefined | Date]
+  ? LeafSchemeFor<T>[Kind]
   : [T] extends [ReadonlyArray<infer U>]
-    ? { readonly [K: number]: FieldStateMapEntry<U> }
+    ? { readonly [K: number]: LeafWalker<U, Kind, StripOptional> }
     : [T] extends [object]
       ? [IsUnion<T>] extends [true]
-        ? {
-            readonly [K in KeyofUnion<T>]-?: FieldStateMapEntry<ValueOfUnion<T, K>>
-          }
-        : { readonly [K in keyof T]-?: FieldStateMapEntry<T[K]> }
-      : FieldState<T>
+        ? StripOptional extends true
+          ? {
+              readonly [K in KeyofUnion<T>]-?: LeafWalker<ValueOfUnion<T, K>, Kind, StripOptional>
+            }
+          : {
+              readonly [K in KeyofUnion<T>]: LeafWalker<ValueOfUnion<T, K>, Kind, StripOptional>
+            }
+        : StripOptional extends true
+          ? { readonly [K in keyof T]-?: LeafWalker<T[K], Kind, StripOptional> }
+          : { readonly [K in keyof T]: LeafWalker<T[K], Kind, StripOptional> }
+      : LeafSchemeFor<T>[Kind]
+
+export type FieldStateMapEntry<T> = LeafWalker<T, 'field'>
 
 /**
  * Type of `form.fields` — leaf-aware drillable callable Proxy. At
@@ -2796,19 +2852,7 @@ export type FormErrorsSurface<Form> = ErrorsProxyShape<Form> & {
  * instances in one scope otherwise compound this into TS2589
  * territory. Consumers should reach for `FormErrorsSurface` instead.
  */
-export type ErrorsProxyShape<T> = [T] extends [
-  string | number | boolean | bigint | symbol | null | undefined | Date,
-]
-  ? readonly ValidationError[] | undefined
-  : [T] extends [ReadonlyArray<infer U>]
-    ? { readonly [K: number]: ErrorsProxyShape<U> }
-    : [T] extends [object]
-      ? [IsUnion<T>] extends [true]
-        ? {
-            readonly [K in KeyofUnion<T>]: ErrorsProxyShape<ValueOfUnion<T, K>>
-          }
-        : { readonly [K in keyof T]: ErrorsProxyShape<T[K]> }
-      : readonly ValidationError[] | undefined
+export type ErrorsProxyShape<T> = LeafWalker<T, 'errors', false>
 
 /**
  * Type of `form.values`. Drillable readonly callable proxy. Unlike

@@ -92,7 +92,7 @@ export type PathOutput<Schema extends z.ZodType, Path extends string> =
  *
  * For Zod v3, import from `attaform/zod-v3` instead.
  */
-export function useForm<Schema extends z.ZodObject>(
+export function useForm<Schema extends z.ZodObject, K extends FormKey = FormKey>(
   configuration: Omit<
     UseFormConfiguration<
       z.input<Schema> extends GenericForm ? z.input<Schema> : never,
@@ -101,14 +101,18 @@ export function useForm<Schema extends z.ZodObject>(
         z.input<Schema> extends GenericForm ? z.input<Schema> : never,
         z.output<Schema> extends GenericForm ? z.output<Schema> : never
       >,
-      DeepPartial<DefaultValuesShape<z.input<Schema> extends GenericForm ? z.input<Schema> : never>>
+      DeepPartial<
+        DefaultValuesShape<z.input<Schema> extends GenericForm ? z.input<Schema> : never>
+      >,
+      K
     >,
     'schema' | 'validateOn' | 'debounceMs'
   > & { schema: Schema } & ValidateOnConfig
 ): UseFormReturnType<
   z.input<Schema> extends GenericForm ? z.input<Schema> : never,
   z.output<Schema> extends GenericForm ? z.output<Schema> : never,
-  StorageShape<Schema> extends GenericForm ? StorageShape<Schema> : never
+  StorageShape<Schema> extends GenericForm ? StorageShape<Schema> : never,
+  K
 > {
   // Foot-gun guard: catches `useForm(z.object({...}))` (raw schema as
   // the first arg — its `.schema` field is undefined), `useForm()` (no
@@ -159,8 +163,8 @@ export function useForm<Schema extends z.ZodObject>(
   // `configuration` before we got here), so cast to the parameter
   // type to side-step the structural disagreement.
   // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-  return useAbstractForm<Form, Out, Read>({
+  return useAbstractForm<Form, Out, Read, K>({
     ...configuration,
     schema: adapter,
-  } as Parameters<typeof useAbstractForm<Form, Out, Read>>[0])
+  } as Parameters<typeof useAbstractForm<Form, Out, Read, K>>[0])
 }

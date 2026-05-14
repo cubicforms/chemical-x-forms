@@ -83,14 +83,16 @@ export function useAbstractForm<
   Form extends GenericForm,
   GetValueFormType extends GenericForm = Form,
   ReadForm extends GenericForm = Form,
+  K extends FormKey = FormKey,
 >(
   configuration: UseFormConfiguration<
     Form,
     GetValueFormType,
     AbstractSchema<Form, GetValueFormType>,
-    DeepPartial<DefaultValuesShape<Form>>
+    DeepPartial<DefaultValuesShape<Form>>,
+    K
   >
-): UseFormReturnType<Form, GetValueFormType, ReadForm> {
+): UseFormReturnType<Form, GetValueFormType, ReadForm, K> {
   // Foot-gun guard: catches `useForm()` (no args), `useForm(null)`,
   // `useForm(rawSchema)` (any schema-like object passed as the first
   // argument — its `.schema` field is undefined), and the explicit
@@ -434,7 +436,7 @@ export function useAbstractForm<
     state,
     formInstanceId,
     apiOptions
-  ) as unknown as UseFormReturnType<Form, GetValueFormType, ReadForm>
+  ) as unknown as UseFormReturnType<Form, GetValueFormType, ReadForm, K>
 }
 
 /**

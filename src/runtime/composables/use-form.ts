@@ -30,14 +30,19 @@ import { useAbstractForm } from './use-abstract-form'
  * directly — it wraps the adapter automatically. For Zod v4, import
  * from `attaform/zod` instead.
  */
-export function useForm<Form extends GenericForm, GetValueFormType extends GenericForm = Form>(
+export function useForm<
+  Form extends GenericForm,
+  GetValueFormType extends GenericForm = Form,
+  K extends FormKey = FormKey,
+>(
   configuration: UseFormConfiguration<
     Form,
     GetValueFormType,
     AbstractSchema<Form, GetValueFormType>,
-    DeepPartial<DefaultValuesShape<Form>>
+    DeepPartial<DefaultValuesShape<Form>>,
+    K
   >
-): UseFormReturnType<Form, GetValueFormType>
+): UseFormReturnType<Form, GetValueFormType, Form, K>
 /**
  * Create a form bound to a Zod v3 `ZodObject` schema.
  *
@@ -67,35 +72,41 @@ export function useForm<
   GetValueFormType extends GenericForm = z.output<UnwrapZodObject<Schema>> extends GenericForm
     ? z.output<UnwrapZodObject<Schema>>
     : never,
+  K extends FormKey = FormKey,
 >(
   configuration: UseFormConfigurationWithZod<
     Schema,
-    DeepPartial<DefaultValuesShape<z.input<UnwrapZodObject<Schema>>>>
+    DeepPartial<DefaultValuesShape<z.input<UnwrapZodObject<Schema>>>>,
+    K
   >
 ): UseFormReturnType<
   z.input<UnwrapZodObject<Schema>>,
   GetValueFormType,
   StorageShape<UnwrapZodObject<Schema>> extends GenericForm
     ? StorageShape<UnwrapZodObject<Schema>>
-    : never
+    : never,
+  K
 >
 export function useForm<
   Schema extends z.ZodSchema<unknown>,
   Form extends GenericForm = z.input<UnwrapZodObject<Schema>>,
   GetValueFormType extends GenericForm = Form,
+  K extends FormKey = FormKey,
 >(
   configuration:
     | UseFormConfiguration<
         Form,
         GetValueFormType,
         AbstractSchema<Form, GetValueFormType>,
-        DeepPartial<DefaultValuesShape<Form>>
+        DeepPartial<DefaultValuesShape<Form>>,
+        K
       >
     | UseFormConfigurationWithZod<
         Schema,
-        DeepPartial<DefaultValuesShape<z.input<UnwrapZodObject<Schema>>>>
+        DeepPartial<DefaultValuesShape<z.input<UnwrapZodObject<Schema>>>>,
+        K
       >
-): UseFormReturnType<Form, GetValueFormType> {
+): UseFormReturnType<Form, GetValueFormType, Form, K> {
   // Foot-gun guard: catches `useForm(z.object({...}))` (raw schema as
   // the first arg — its `.schema` field is undefined), `useForm()` (no
   // args), and `useForm({ schema: undefined })` before they reach the
@@ -152,5 +163,5 @@ export function useForm<
       | AbstractSchema<Form, GetValueFormType>
       | ((key: FormKey, options: SchemaFactoryOptions) => AbstractSchema<Form, GetValueFormType>),
     defaultValues: configuration.defaultValues as DeepPartial<DefaultValuesShape<Form>>,
-  }) as unknown as UseFormReturnType<Form, GetValueFormType>
+  }) as unknown as UseFormReturnType<Form, GetValueFormType, Form, K>
 }

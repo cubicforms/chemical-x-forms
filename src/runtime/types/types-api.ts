@@ -1032,6 +1032,7 @@ export type UseFormConfiguration<
   GetValueFormType,
   Schema extends AbstractSchema<Form, GetValueFormType>,
   DefaultValues extends DeepPartial<DefaultValuesShape<Form>>,
+  K extends FormKey = FormKey,
 > = {
   /**
    * The schema describing the form's shape and validation rules.
@@ -1063,8 +1064,12 @@ export type UseFormConfiguration<
    *
    * Keys starting with `__atta:` are reserved for internal use and
    * throw `ReservedFormKeyError` if passed.
+   *
+   * When passed as a string literal, the literal is preserved on
+   * `form.key` so `useStepper` and other consumers can discriminate
+   * against the union of known keys at compile time.
    */
-  key?: FormKey
+  key?: K
   /**
    * Initial values applied over the schema's defaults. Each field
    * falls back to the schema default (or the primitive default for
@@ -2993,6 +2998,7 @@ export type UseFormReturnType<
   Form extends GenericForm,
   GetValueFormType extends GenericForm = Form,
   ReadForm extends GenericForm = Form,
+  K extends FormKey = FormKey,
 > = {
   /**
    * Wraps your submit logic with validation and error routing.
@@ -3255,8 +3261,11 @@ export type UseFormReturnType<
    * const result = parseApiErrors(serverPayload, { formKey: form.key })
    * if (result.ok) form.setFieldErrors(result.errors)
    * ```
+   *
+   * Typed as the literal `K` when an explicit `key` was passed; falls
+   * back to `FormKey` when omitted (auto-generated id).
    */
-  key: FormKey
+  key: K
 
   // --- Reactive field-error API ---
 

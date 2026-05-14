@@ -9,6 +9,16 @@
  * The site typecheck takes ~8s. We pay it only when an apps/site
  * file is touched, which is rare on commits that don't change the
  * site.
+ *
+ * The vue-tsc pass routes through Docker (`docker compose exec -T
+ * attaform ...`) rather than running on the host. The bundled
+ * `dist/*.d.mts` stubs are absolute-path `unbuild --stub` output and
+ * point at whichever filesystem most-recently regenerated them —
+ * usually the container, since `make install` runs `pnpm dev:prepare`
+ * inside the container. Host-side vue-tsc against container-path
+ * stubs surfaces every `attaform` import as "no exported member" and
+ * fails the commit. Routing through Docker matches the
+ * "strictly Docker for dev" workflow and sidesteps the drift entirely.
  */
 export default {
   './src/**/*.{ts,vue}': 'eslint',
@@ -20,7 +30,7 @@ export default {
     // matched file list to the typecheck command.
     return [
       `eslint ${files.join(' ')}`,
-      'pnpm --filter attaform-site typecheck',
+      'docker compose exec -T attaform pnpm --filter attaform-site typecheck',
     ]
   },
   './test/**/*.{ts,vue}': 'eslint',

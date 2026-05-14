@@ -1,14 +1,39 @@
-import { getCurrentScope, onScopeDispose, readonly, ref } from 'vue'
+import { computed, getCurrentScope, onScopeDispose, readonly, ref, type ComputedRef } from 'vue'
 import { StepperLateRegistrationError } from '../core/errors'
 import { useRegistry } from '../core/registry'
 import { createStepperRegistry } from '../core/stepper-registry'
+import { buildStepperStatusesProxy } from '../core/stepper-statuses-proxy'
 import type {
   AnyForm,
+  FormStatus,
   KeysOf,
+  Statuses,
   StepperNavOptions,
   StepperOptions,
   UseStepperReturnType,
 } from '../types/types-stepper'
+
+/** Pending sentinel returned by `stepper.statuses[key]` when the form hasn't
+ *  yet wired a FormStore (defensive — useStepper guards against this, but
+ *  the snapshot fallback keeps templates from crashing). */
+const PENDING_STATUS: FormStatus = {
+  isValid: false,
+  isDirty: false,
+  isSubmitted: false,
+  errorCount: 0,
+}
+
+/** Shape we read off each participating form at runtime. Loosely typed
+ *  against `AnyForm` (which only requires `key`) — the runtime objects
+ *  returned by `useForm` always satisfy this richer shape. */
+type StatusSourceForm = {
+  readonly meta: {
+    readonly valid: boolean
+    readonly dirty: boolean
+    readonly isSubmitted: boolean
+    readonly errorCount: number
+  }
+}
 
 /**
  * Multistep-form orchestrator. Composes existing `useForm` instances
@@ -98,6 +123,30 @@ export function useStepper<Forms extends readonly AnyForm[]>(
     }
   }
 
+  // Build per-form FormStatus computeds — each tracks its participating
+  // form's `meta` reactively. The forms tuple is typed against the
+  // minimal `AnyForm` constraint, but the runtime objects always
+  // satisfy `StatusSourceForm` because they come from `useForm`.
+  const statusComputeds: Record<string, ComputedRef<FormStatus>> = {}
+  for (let i = 0; i < forms.length; i += 1) {
+    const form = forms[i] as AnyForm
+    const source = form as unknown as StatusSourceForm
+    const key = form.key
+    statusComputeds[key] = computed<FormStatus>(() => {
+      const meta = source.meta
+      if (meta === undefined || meta === null) return PENDING_STATUS
+      return {
+        isValid: meta.valid,
+        isDirty: meta.dirty,
+        isSubmitted: meta.isSubmitted,
+        errorCount: meta.errorCount,
+      }
+    })
+  }
+  const statuses = buildStepperStatusesProxy<Statuses<Forms>>(
+    statusComputeds as Record<keyof Statuses<Forms>, ComputedRef<FormStatus>>
+  )
+
   if (getCurrentScope() !== undefined) {
     const releases: Array<() => void> = []
     for (const key of formKeys) {
@@ -161,6 +210,7 @@ export function useStepper<Forms extends readonly AnyForm[]>(
     current: readonly(current) as Readonly<typeof current>,
     forms,
     count: forms.length,
+    statuses,
     next,
     back,
     goTo,

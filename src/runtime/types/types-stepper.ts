@@ -126,11 +126,17 @@ export type StepperOptions = Record<string, never>
  * Return shape of `useStepper`. Reactive `current` is a readonly ref;
  * `forms` is the original tuple (so consumers can index by key or
  * iterate); `count` is the static step count.
+ *
+ * `statuses` is a callable readonly proxy over `Statuses<Forms>` —
+ * readable as `stepper.statuses.cargo.isValid`, callable as
+ * `stepper.statuses('cargo')` or `stepper.statuses()`. Each entry
+ * derives from the matching form's `meta`.
  */
 export type UseStepperReturnType<Forms extends readonly AnyForm[]> = {
   readonly current: Readonly<Ref<KeysOf<Forms>>>
   readonly forms: Forms
   readonly count: number
+  readonly statuses: StepperStatusesProxy<Statuses<Forms>>
   readonly next: (options?: StepperNavOptions) => void
   readonly back: (options?: StepperNavOptions) => void
   readonly goTo: (key: KeysOf<Forms>, options?: StepperNavOptions) => void

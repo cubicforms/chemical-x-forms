@@ -23,14 +23,19 @@ const pending: FormStatus = {
   errorCount: 0,
 }
 
-function makeProxy(map: Record<string, FormStatus>) {
+function makeProxy<K extends string>(map: Record<K, FormStatus>) {
+  type StatusMap = { readonly [P in K]: FormStatus }
   const sources = Object.fromEntries(
-    Object.entries(map).map(([key, value]) => [key, ref(value)])
-  ) as Record<string, ReturnType<typeof ref<FormStatus>>>
+    Object.entries(map).map(([key, value]) => [key, ref(value as FormStatus)])
+  ) as Record<K, ReturnType<typeof ref<FormStatus>>>
   const computeds = Object.fromEntries(
-    Object.entries(sources).map(([key, source]) => [key, computed(() => source.value)])
-  ) as Record<string, ReturnType<typeof computed<FormStatus>>>
-  return { proxy: buildStepperStatusesProxy(computeds), sources }
+    Object.entries(sources).map(([key, source]) => [
+      key,
+      computed(() => (source as ReturnType<typeof ref<FormStatus>>).value),
+    ])
+  ) as Record<K, ReturnType<typeof computed<FormStatus>>>
+  const proxy = buildStepperStatusesProxy<StatusMap>(computeds)
+  return { proxy, sources }
 }
 
 describe('buildStepperStatusesProxy', () => {
@@ -57,8 +62,9 @@ describe('buildStepperStatusesProxy', () => {
       b: { isValid: true, isDirty: false, isSubmitted: false, errorCount: 0 },
     })
     const all = proxy() as Record<string, FormStatus>
-    expect(all.a).toMatchObject(pending)
-    expect(all.b.isValid).toBe(true)
+    expect(all['a']).toMatchObject(pending)
+    const b = all['b'] as FormStatus
+    expect(b.isValid).toBe(true)
   })
 
   it('reflects reactive updates from the underlying computeds', () => {
@@ -72,15 +78,15 @@ describe('buildStepperStatusesProxy', () => {
 
   it('returns undefined for an unknown key in property access', () => {
     const { proxy } = makeProxy({ a: pending })
-    expect((proxy as Record<string, unknown>).unknown).toBeUndefined()
+    expect((proxy as unknown as Record<string, unknown>)['unknown']).toBeUndefined()
   })
 
   it('returns undefined when called with an unknown key', () => {
     const { proxy } = makeProxy({ a: pending })
-    const result = (proxy as (key?: string) => FormStatus | Record<string, FormStatus> | undefined)(
-      'unknown'
-    )
-    expect(result).toBeUndefined()
+    const fn = proxy as unknown as (
+      key?: string
+    ) => FormStatus | Record<string, FormStatus> | undefined
+    expect(fn('unknown')).toBeUndefined()
   })
 
   it('blocks writes with a dev-only warning', () => {

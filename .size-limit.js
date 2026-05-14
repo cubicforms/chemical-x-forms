@@ -212,7 +212,17 @@ export default [
     // WriteMeta.crossTab/persist threading, noSyncPaths opt-out,
     // sensitive-names factory refactor, insecure-context-warn helper,
     // reset() 4-part hardening). Measured at 47.5 KB.
-    limit: '48 KB',
+    //
+    // Raised 48 → 49 KB on the defaultValues-trichotomy branch:
+    //   - resolveTrichotomy classifier in core/
+    //   - useAbstractForm trichotomy branch + microtask/onServerPrefetch
+    //     settle path + pendingHydration re-fire guard
+    //   - FormStore.defaultValuesFactory + isHydrating + hydrateError
+    //     refs + rehydrate() method that re-fires the captured factory
+    //     and re-applies via applyFormReplacement({ hydration: true })
+    //   - meta.errorCount + meta.isSubmitted computed siblings
+    // Measured at 48.03 KB.
+    limit: '49 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
@@ -232,7 +242,10 @@ export default [
     //
     // Raised 36 → 42 KB tracking index.mjs's library-hardening +
     // multi-tab bump (same shared core chunk). Measured at 41.62 KB.
-    limit: '42 KB',
+    //
+    // Raised 42 → 43 KB on the defaultValues-trichotomy branch
+    // (same shared core chunk as zod.mjs). Measured at 42.11 KB.
+    limit: '43 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,

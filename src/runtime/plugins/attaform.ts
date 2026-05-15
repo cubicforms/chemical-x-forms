@@ -9,7 +9,9 @@
  * without a stub.
  */
 import { defineNuxtPlugin, useRuntimeConfig } from 'nuxt/app'
+import { DEVTOOLS_WINDOW_KEY } from '../core/devtools-shared'
 import { createAttaform } from '../core/plugin'
+import { getRegistryFromApp } from '../core/registry'
 import { hydrateAttaformState, renderAttaformState } from '../core/serialize'
 import type { SerializedAttaformState } from '../core/serialize'
 import type { AttaformDefaults } from '../types/types-api'
@@ -27,8 +29,10 @@ export default defineNuxtPlugin({
     // Read app-level defaults from the Nuxt module's runtime-config slot
     // (populated in src/nuxt.ts). The module ships in the same package
     // as this plugin, so the slot is always present and well-typed.
-    const { defaults } = (useRuntimeConfig().public as { attaform: { defaults: AttaformDefaults } })
-      .attaform
+    const config = useRuntimeConfig().public as {
+      attaform: { defaults: AttaformDefaults; version: string }
+    }
+    const { defaults, version } = config.attaform
 
     nuxtApp.vueApp.use(createAttaform({ ssr: isServer, defaults }))
 
@@ -47,6 +51,19 @@ export default defineNuxtPlugin({
         .attaform
       if (serialized !== undefined) {
         hydrateAttaformState(nuxtApp.vueApp, serialized)
+      }
+
+      // Dev-only: attach the registry to window so the Nuxt DevTools overlay
+      // panel (which runs in an iframe at /_attaform_devtools) can reach it
+      // via `window.parent.__attaform_devtools__`. The bridge holds a live
+      // reference to the registry — Vue's reactivity flows across the
+      // same-origin iframe boundary, so the panel re-renders on every form
+      // mutation without an explicit push channel. `import.meta.dev` is
+      // statically replaced by Nuxt at build time, so this whole branch is
+      // tree-shaken from production builds.
+      if (import.meta.dev) {
+        const registry = getRegistryFromApp(nuxtApp.vueApp)
+        window[DEVTOOLS_WINDOW_KEY] = { registry, version }
       }
     }
   },

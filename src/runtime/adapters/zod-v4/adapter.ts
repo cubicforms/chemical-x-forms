@@ -920,6 +920,7 @@ function walkForMeta(
       case 'custom':
       case 'template-literal':
       case 'transform':
+      case 'file':
         return
     }
   } finally {

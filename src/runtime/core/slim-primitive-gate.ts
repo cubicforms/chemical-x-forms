@@ -56,6 +56,10 @@ export function slimKindOf(value: unknown): SlimPrimitiveKind {
   if (value instanceof Date) return 'date'
   if (value instanceof Map) return 'map'
   if (value instanceof Set) return 'set'
+  // Guard the global access — File is browser/Node-21+ only; falling
+  // through to 'object' on platforms where it's not defined leaves
+  // server-side rendering uncoupled from the DOM globals.
+  if (typeof File !== 'undefined' && value instanceof File) return 'file'
   const t = typeof value
   switch (t) {
     case 'string':

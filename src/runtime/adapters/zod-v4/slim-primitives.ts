@@ -37,6 +37,7 @@ export const PERMISSIVE: ReadonlySet<SlimPrimitiveKind> = new Set<SlimPrimitiveK
   'function',
   'map',
   'set',
+  'file',
 ])
 
 /**
@@ -78,6 +79,19 @@ function walk(schema: z.ZodType, lazyDepth: number, maxDepth: number): Set<SlimP
       return new Set(['bigint'])
     case 'date':
       return new Set(['date'])
+    case 'file':
+      // `z.file()` accepts `File` instances at write time. `null` is
+      // also accepted at the slim-primitive level so the directive's
+      // canonical blank value (the "no file selected" sentinel) lands
+      // even on required-file schemas — the blank-path channel + the
+      // derived "No value supplied" error already gates submission, so
+      // permitting `null` storage here doesn't loosen schema enforcement.
+      //
+      // The set's lack of container kinds (`object` / `array` / `map`
+      // / `set`) makes the path a leaf via `isLeafAtPath`, so
+      // `form.fields.<file-path>` returns a FieldState rather than
+      // descending into the File's own keys.
+      return new Set(['file', 'null'])
     case 'null':
       return new Set(['null'])
     case 'undefined':

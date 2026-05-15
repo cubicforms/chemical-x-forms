@@ -212,6 +212,13 @@ function defaultForKind(
       // Kept for exhaustive switch safety when `deriveDefault` is
       // called directly in tests.
       return undefined
+    case 'file':
+      // `z.file()` has no canonical "empty file" — the user picks one
+      // through the directive's change handler. `null` is the storage
+      // blank value the directive canonicalises to on register / clear;
+      // emitting `null` here keeps `getEmptyValueAtPath` aligned with
+      // what `form.clear(path)` writes.
+      return null
     default: {
       const _exhaustive: never = kind
       throw new Error(`deriveDefault: unhandled ZodKind '${_exhaustive as string}'`)

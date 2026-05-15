@@ -68,7 +68,7 @@ export function captureUserCallSite(): string | undefined {
  * the original trimmed frame is returned unchanged — better to
  * surface something than nothing.
  */
-export function shortenSourceFrame(frame: string): string {
+function shortenSourceFrame(frame: string): string {
   const match = /(?:^|\s|\()([^\s()]+):(\d+):\d+\)?$/.exec(frame)
   if (match === null) return frame
   const [, urlOrPath, line] = match

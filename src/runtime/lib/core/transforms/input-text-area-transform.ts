@@ -206,12 +206,15 @@ export const inputTextAreaNodeTransform: NodeTransform = (node) => {
     const registerSummarizedProp = elementProps[registerIndex]
     if (!registerSummarizedProp) return // no v-register directive; nothing to transform
 
-    // <input type="file" v-register="..."> silently skipped — at runtime the
-    // directive routes to a no-op variant. Trying to set el.value on a file
-    // input throws a DOMException for security reasons. We must skip not just
-    // the static type="file" case but any dynamic binding (`:type="x"`,
-    // template-literal expressions, etc.) that COULD resolve to "file" at
-    // runtime — `couldResolveToFileType` errs on the conservative side.
+    // <input type="file" v-register="..."> bypasses the value-binding
+    // injection — the runtime `vRegisterFile` variant owns the DOM
+    // contract for file inputs (read `el.files` on change; clear via
+    // `el.value = ''` only). Skipping at compile-time avoids the
+    // `:value=""` binding browsers would otherwise reject on a file
+    // input. We must skip not just the static `type="file"` case but any
+    // dynamic binding (`:type="x"`, template-literal expressions, etc.)
+    // that COULD resolve to "file" at runtime — `couldResolveToFileType`
+    // errs on the conservative side.
     const typeIndex = elementProps.findIndex((p) => isExactKey(p.key, 'type'))
     const typeProp = elementProps[typeIndex]
     if (typeProp !== undefined && couldResolveToFileType(typeProp.value)) return

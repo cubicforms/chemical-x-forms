@@ -25,7 +25,7 @@ import {
   looseToNumber,
 } from './vue-shared-shim'
 import type { DirectiveBinding, DirectiveHook, ObjectDirective, VNode } from 'vue'
-import { isRef, nextTick, warn } from 'vue'
+import { effectScope, isRef, nextTick, warn, watch } from 'vue'
 import { REGISTER_OWNER_MARKER } from '../composables/use-register'
 import { __DEV__ } from './dev'
 import type {
@@ -415,7 +415,12 @@ const getModelAssigner = (
  * cross-form / cross-SFC case where `register()` returns a value bound
  * to a different FormStore (different `persistOptIns` instance).
  */
-function syncPersistOptIn(el: HTMLElement, value: unknown, oldValue: unknown): void {
+function syncPersistOptIn(
+  el: HTMLElement,
+  value: unknown,
+  oldValue: unknown,
+  vnodeType: unknown
+): void {
   const wasOptedIn = isRegisterValue(oldValue) && oldValue.persist === true
   // File inputs can't survive a reload — `input.files` is read-only at
   // the browser layer, so even a perfect base64 round-trip couldn't
@@ -423,7 +428,14 @@ function syncPersistOptIn(el: HTMLElement, value: unknown, oldValue: unknown): v
   // path never enters `optedInPaths`, never reaches the serializer, and
   // a separate `vRegisterFile` hook can surface the one-time dev warn
   // pointing consumers at the upload-on-select pattern.
-  const isFileInput = el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'file'
+  //
+  // Detection consults `vnode.props.type` (passed in) first, then
+  // `el.type` as a fallback. During `created`, Vue may not have
+  // patched the `type` property onto the element yet — the vnode's
+  // prop is the authoritative pre-patch source. On `beforeUpdate` the
+  // element is fully patched and `el.type` agrees.
+  const isFileInput =
+    el.tagName === 'INPUT' && (vnodeType === 'file' || (el as HTMLInputElement).type === 'file')
   const wantsOptIn = !isFileInput && isRegisterValue(value) && value.persist === true
   if (!wasOptedIn && !wantsOptIn) return
   const elementId = getOrAssignElementId(el)
@@ -1355,7 +1367,7 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
   created(el, binding, vnode) {
     // Per-element persist opt-in is reconciled at the dynamic level so
     // the per-tag variants stay focused on their input semantics.
-    syncPersistOptIn(el, binding.value, undefined)
+    syncPersistOptIn(el, binding.value, undefined, vnode.props?.['type'])
     // Per-path multi-tab opt-out lives at the dynamic level too —
     // ref-counted on the FormStore so multiple bindings on the same
     // path balance correctly across conditional renders.
@@ -1405,7 +1417,7 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
     // re-evaluates on every parent render. `binding.oldValue` holds the
     // prior RegisterValue so the helper can diff persist / path / registry
     // and migrate the entry without thrashing.
-    syncPersistOptIn(el, binding.value, binding.oldValue)
+    syncPersistOptIn(el, binding.value, binding.oldValue, vnode.props?.['type'])
     // Reactive multi-tab opt-out toggling — same diff strategy.
     syncMultiTabOptOut(binding.value, binding.oldValue)
     // Same diff for the form's element map. Catches the
@@ -1518,6 +1530,13 @@ function maybeWarnPersistedFile(value: RegisterValue): void {
 // `beforeUpdate` hook keeps the DOM in lockstep with storage by
 // clearing `el.value` when storage transitions to blank — the only
 // programmatic write browsers permit on file inputs.
+// Symbol slot for the per-element effect-scope teardown function. The
+// blank-resync watcher inside `created` runs in its own scope so we
+// can stop it on `beforeUnmount` without depending on the surrounding
+// component still being alive.
+const fileScopeKey: unique symbol = Symbol.for('attaform:file-scope')
+type FileScopeCarrier = { [fileScopeKey]?: () => void }
+
 const vRegisterFile: RegisterModelDynamicCustomDirective = {
   created(el, { value }) {
     if (!isRegisterValue(value)) return
@@ -1544,22 +1563,58 @@ const vRegisterFile: RegisterModelDynamicCustomDirective = {
       const blank = isBlankFileValue(next)
       value.setValueWithInternalPath(next, blank ? { blank: true } : undefined)
     })
+
+    // Watch storage for programmatic transitions to the blank shape
+    // (`form.clear(path)` / `form.reset()` / hydrate). Re-mark the
+    // path blank and clear the DOM input. `beforeUpdate` covers the
+    // common parent-re-render case; this watcher catches storage
+    // mutations that don't trigger a parent re-render. Runs in its
+    // own effect scope so we can stop it from `beforeUnmount`
+    // independent of the surrounding component.
+    const scope = effectScope(true)
+    scope.run(() => {
+      watch(
+        value.innerRef,
+        (next) => {
+          if (!isBlankFileValue(next)) return
+          value.setValueWithInternalPath(next, { blank: true })
+          if (input.value !== '') input.value = ''
+        },
+        { flush: 'post' }
+      )
+    })
+    ;(input as FileScopeCarrier)[fileScopeKey] = (): void => scope.stop()
   },
   beforeUpdate(el, { value }) {
     if (!isRegisterValue(value)) return
     const input = el as HTMLInputElement
-    // Storage → DOM sync. The only programmatic mutation browsers allow
-    // on a file input is `el.value = ''` (the clear path). Drive that
-    // from the blank-shape predicate so `form.clear(path)` and
-    // `form.reset()` visibly empty the input without coupling the
-    // directive to the storage container's specific empty value.
+    // Storage → DOM + blankPaths sync. Two responsibilities:
+    //
+    //   1. Clear the DOM input when storage went blank
+    //      (`form.clear(path)` / `form.reset()` / hydrate). `el.value
+    //      = ''` is the one programmatic mutation browsers allow on
+    //      `<input type="file">`.
+    //
+    //   2. Re-mark the path blank in the store so `derivedBlankErrors`
+    //      keeps firing the friendly "No value supplied" message after
+    //      programmatic clears. `form.clear` writes the schema's empty
+    //      value (`null`) but doesn't propagate `meta.blank: true`, so
+    //      the path would otherwise drift out of `blankPaths`. The
+    //      store's `Set.add` is idempotent, and identity-equal writes
+    //      don't trigger re-renders — safe to call on every update.
     const currentRaw = value.innerRef.value
-    if (isBlankFileValue(currentRaw) && input.value !== '') {
-      input.value = ''
+    if (isBlankFileValue(currentRaw)) {
+      value.setValueWithInternalPath(currentRaw, { blank: true })
+      if (input.value !== '') input.value = ''
     }
   },
   beforeUnmount(el, { value }) {
     removeTrackedListeners(el)
+    const stop = (el as FileScopeCarrier)[fileScopeKey]
+    if (stop !== undefined) {
+      stop()
+      delete (el as FileScopeCarrier)[fileScopeKey]
+    }
     if (!isRegisterValue(value)) return
     value.deregisterElement(el)
   },

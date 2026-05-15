@@ -61,7 +61,7 @@ async function flushValidations(form: { meta: { validating: boolean } }): Promis
 
 type FormWithTouch = {
   touch: (path?: string | readonly (string | number)[]) => void
-  fields: (path?: string | readonly (string | number)[]) => { touched: boolean | null }
+  fields: (path?: string | readonly (string | number)[]) => { touched: boolean }
   meta: { validating: boolean }
   setValue: (path: string, value: unknown) => boolean
   values: (path?: string | readonly (string | number)[]) => unknown
@@ -97,7 +97,7 @@ describe('form.touch — zod-v3 adapter', () => {
 
   it('marks a leaf path touched', async () => {
     const form = asTouchable(makeForm())
-    expect(form.fields('email').touched).toBe(null)
+    expect(form.fields('email').touched).toBe(false)
     form.touch('email')
     await nextTick()
     expect(form.fields('email').touched).toBe(true)
@@ -119,7 +119,7 @@ describe('form.touch — zod-v3 adapter', () => {
     expect(form.fields('profile.name').touched).toBe(true)
     expect(form.fields('profile.age').touched).toBe(true)
     // Sibling leaf untouched
-    expect(form.fields('email').touched).toBe(null)
+    expect(form.fields('email').touched).toBe(false)
   })
 
   it('no-arg form marks every leaf in the form', async () => {
@@ -136,7 +136,7 @@ describe('form.touch — zod-v3 adapter', () => {
     form.touch(['profile', 'name'])
     await nextTick()
     expect(form.fields('profile.name').touched).toBe(true)
-    expect(form.fields('profile.age').touched).toBe(null)
+    expect(form.fields('profile.age').touched).toBe(false)
   })
 
   it('does not modify value', async () => {
@@ -200,7 +200,7 @@ describe('form.touch — zod-v4 adapter', () => {
 
   it('marks a leaf path touched', async () => {
     const form = asTouchable(makeForm())
-    expect(form.fields('email').touched).toBe(null)
+    expect(form.fields('email').touched).toBe(false)
     form.touch('email')
     await nextTick()
     expect(form.fields('email').touched).toBe(true)
@@ -212,7 +212,7 @@ describe('form.touch — zod-v4 adapter', () => {
     await nextTick()
     expect(form.fields('profile.name').touched).toBe(true)
     expect(form.fields('profile.age').touched).toBe(true)
-    expect(form.fields('email').touched).toBe(null)
+    expect(form.fields('email').touched).toBe(false)
   })
 
   it('no-arg form marks every leaf in the form', async () => {

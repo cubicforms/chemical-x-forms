@@ -58,6 +58,13 @@ export interface AttaformModuleOptions {
  */
 export type AttaformRuntimeConfig = {
   defaults: AttaformDefaults
+  /**
+   * Library version, read from the package's own `package.json` at
+   * module setup. Surfaced to the runtime plugin so the DevTools
+   * overlay panel can render a version pill — single source of truth
+   * matches the `meta.version` Nuxt DevTools sees in the Modules panel.
+   */
+  version: string
 }
 
 /**
@@ -129,6 +136,7 @@ export default defineNuxtModule<AttaformModuleOptions>({
     const runtimePublic = nuxt.options.runtimeConfig.public as Record<string, unknown>
     runtimePublic['attaform'] = {
       defaults: _options.defaults ?? {},
+      version: pkgVersion,
     } satisfies AttaformRuntimeConfig
 
     // Force-include attaform's own peers that Vite's startup crawl
@@ -246,5 +254,47 @@ declare module "vue" {
 
 export { }`,
     })
+
+    // Dev-only: register a Nuxt DevTools overlay tab pointing at an
+    // iframe that mounts the Attaform inspector. The iframe URL
+    // (`/_attaform_devtools`) is served by a Vite-layer middleware
+    // wired up in `attaform/vite` — by intercepting at the Vite layer
+    // rather than via `extendPages`, the route stays invisible to
+    // vue-router and works regardless of whether the consumer uses
+    // a `pages/` directory or `app.vue`-only mode.
+    //
+    // `@nuxt/devtools-kit` is NOT a transitive peer of `@nuxt/kit`; it
+    // ships alongside `@nuxt/devtools`. Consumers who don't install
+    // Nuxt DevTools (rare in real Nuxt projects, common in test
+    // fixtures) get a silent no-op instead of an "unresolved import"
+    // error. Mirrors the same try/import pattern used for
+    // `@vue/devtools-api` in the runtime devtools wire-up.
+    if (nuxt.options.dev) {
+      nuxt.hook('ready', async () => {
+        try {
+          const { addCustomTab } = await import('@nuxt/devtools-kit')
+          addCustomTab({
+            name: 'attaform',
+            title: 'Attaform',
+            // Brand mark — purple square with a white "A" silhouette,
+            // matching `apps/site/public/favicon.svg`. Served by the
+            // `attaform/vite` middleware at the same `/_attaform_devtools`
+            // route family (sibling to the panel HTML). A real URL
+            // renders reliably across Nuxt DevTools versions where
+            // `data:` URIs don't.
+            icon: '/_attaform_devtools/icon.svg',
+            view: {
+              type: 'iframe',
+              src: '/_attaform_devtools',
+              persistent: true,
+            },
+          })
+        } catch {
+          // Nuxt DevTools (and thus @nuxt/devtools-kit) isn't installed
+          // in this consumer — silently skip. The library still works;
+          // only the overlay tab is missing.
+        }
+      })
+    }
   },
 })

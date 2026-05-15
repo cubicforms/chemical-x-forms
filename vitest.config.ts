@@ -1,3 +1,4 @@
+import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
 /**
@@ -20,6 +21,10 @@ import { defineConfig } from 'vitest/config'
  * scripts. Thresholds fail the run if coverage drops.
  */
 export default defineConfig({
+  // Vue SFC support for `*.test.ts` files that import `.vue` components
+  // (e.g., the overlay-panel devtools tests). The plugin is otherwise
+  // dormant — tests that don't touch `.vue` files pay no cost.
+  plugins: [vue()],
   test: {
     // Global setup file: stubs `window.isSecureContext = true` so the
     // secure-context gate doesn't disable multi-tab sync and built-in

@@ -55,7 +55,7 @@ describe('createFormStore', () => {
       expect(emailField?.connected).toBe(false)
       expect(emailField?.focused).toBe(null)
       expect(emailField?.blurred).toBe(null)
-      expect(emailField?.touched).toBe(null)
+      expect(emailField?.touched).toBe(false)
     })
   })
 
@@ -337,10 +337,10 @@ describe('createFormStore', () => {
       expect(field?.touched).toBe(true)
     })
 
-    it('markFocused(true) on a never-touched field preserves touched=null', () => {
+    it('markFocused(true) on a never-touched field preserves touched=false', () => {
       const state = makeState()
       state.markFocused(['email'], true)
-      expect(state.getFieldRecord(['email'])?.touched).toBe(null)
+      expect(state.getFieldRecord(['email'])?.touched).toBe(false)
     })
 
     it('markFocused(true) after a blur keeps touched=true', () => {

@@ -275,7 +275,7 @@ describe('form.values / form.errors / form.fields — template + JSON.stringify 
       // FieldState terminal includes the usual keys.
       expect(snapshot['value']).toBe('a@b.co')
       expect(typeof snapshot['dirty']).toBe('boolean')
-      expect(typeof snapshot['touched'] === 'boolean' || snapshot['touched'] === null).toBe(true)
+      expect(typeof snapshot['touched']).toBe('boolean')
     })
   })
 })

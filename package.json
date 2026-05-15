@@ -68,6 +68,9 @@
       "types": "./dist/vite.d.mts",
       "import": "./dist/vite.mjs"
     },
+    "./devtools-panel": {
+      "default": "./dist/runtime/components/AttaformDevtoolsPanel.vue"
+    },
     "./transforms": {
       "types": "./dist/transforms.d.mts",
       "import": "./dist/transforms.mjs"
@@ -142,6 +145,7 @@
     "@types/node": "^25.6.0",
     "@typescript-eslint/eslint-plugin": "^8.59.0",
     "@typescript-eslint/parser": "^8.59.0",
+    "@nuxt/devtools-kit": "^3.2.0",
     "@vitejs/plugin-vue": "^6.0.6",
     "@vitest/coverage-v8": "^4.1.5",
     "@vue/compiler-core": "^3.5.33",
@@ -181,6 +185,7 @@
     "zod-v3": "npm:zod@^3.24"
   },
   "peerDependencies": {
+    "@nuxt/devtools-kit": "^2.0.0 || ^3.0.0",
     "@vue/compiler-core": ">=3.5.0",
     "@vue/devtools-api": "^6.6.0 || ^7.0.0",
     "lodash-es": ">= 4.0.0",
@@ -190,6 +195,9 @@
     "zod": ">=3.0.0"
   },
   "peerDependenciesMeta": {
+    "@nuxt/devtools-kit": {
+      "optional": true
+    },
     "@vue/devtools-api": {
       "optional": true
     },

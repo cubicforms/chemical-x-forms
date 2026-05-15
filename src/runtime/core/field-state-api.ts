@@ -177,7 +177,7 @@ function buildLeafFieldStateBase<F extends GenericForm>(
     dirty: !pristine,
     focused: record?.focused ?? null,
     blurred: record?.blurred ?? null,
-    touched: record?.touched ?? null,
+    touched: record?.touched ?? false,
     connected: record?.connected ?? false,
     element: firstElement,
     elements: elementsArr,

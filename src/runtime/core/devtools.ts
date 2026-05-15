@@ -3,7 +3,7 @@ import type { FormStore } from './create-form-store'
 import type { AttaformRegistry } from './registry'
 import type { GenericForm } from '../types/types-core'
 import type { FormKey } from '../types/types-api'
-import { canonicalizePath, type Segment } from './paths'
+import { canonicalizePath } from './paths'
 
 /**
  * Vue DevTools plugin wiring for attaform. Lazy-imported by
@@ -26,72 +26,6 @@ import { canonicalizePath, type Segment } from './paths'
 
 const INSPECTOR_ID = 'attaform'
 const TIMELINE_LAYER_ID = 'attaform:events'
-
-const REDACTED = '[redacted]'
-
-/**
- * Walk `value` and replace any leaf whose enclosing path matches the
- * sensitive-name heuristic with the string `'[redacted]'`. Returns a
- * new tree (no mutation of the input). Object keys + array indices
- * are preserved; only the leaf payloads change.
- *
- * Applied to BOTH the DevTools timeline events and the inspector
- * `Form value` panel — leaks via either surface are treatable as
- * "any developer with the panel open during user testing can read
- * a customer's password," which is exactly the failure mode the
- * sensitive-name guard exists to prevent on the storage side.
- *
- * Leaves whose path doesn't match a pattern pass through untouched.
- * `acknowledgeSensitive: true` on persistence does NOT bypass this —
- * if the consumer opted into persisting the value, they still
- * shouldn't see it in DevTools timelines that grow unbounded.
- *
- * Implementation note: tracks an `inSensitiveSubtree` flag through
- * the recursion instead of allocating a fresh path array per node
- * + calling `isSensitivePath` per leaf. Once any ancestor segment
- * matches the heuristic, the flag stays set for every descendant —
- * the leaf simply returns `REDACTED` without re-scanning the path.
- * For a 100-leaf form: ~100 path allocations + ~100 full-path regex
- * sweeps → 0 path allocations + ~100 single-segment regex sweeps,
- * with whole-subtree short-circuit when sensitive ancestors are
- * found early.
- */
-function redactSensitiveLeaves(
-  value: unknown,
-  matchSensitive: (segment: Segment) => boolean
-): unknown {
-  return redactImpl(value, false, matchSensitive)
-}
-
-function redactImpl(
-  value: unknown,
-  inSensitiveSubtree: boolean,
-  matchSensitive: (segment: Segment) => boolean
-): unknown {
-  if (value === null || value === undefined) return value
-  if (typeof value !== 'object') {
-    return inSensitiveSubtree ? REDACTED : value
-  }
-  if (Array.isArray(value)) {
-    // Numeric segments never match the sensitive-name heuristic
-    // (segmentMatchesSensitive rejects non-string segments), so the
-    // flag passes through unchanged when descending into arrays.
-    return value.map((item) => redactImpl(item, inSensitiveSubtree, matchSensitive))
-  }
-  // Non-plain object (Map / Set / Date / class instance) — redact
-  // wholesale if we're already in a sensitive subtree; otherwise pass
-  // through. DevTools rendering of these is already heuristic, so we
-  // don't try to descend into them.
-  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
-    return inSensitiveSubtree ? REDACTED : value
-  }
-  const out: Record<string, unknown> = {}
-  for (const key of Object.keys(value as Record<string, unknown>)) {
-    const childSensitive = inSensitiveSubtree || matchSensitive(key)
-    out[key] = redactImpl((value as Record<string, unknown>)[key], childSensitive, matchSensitive)
-  }
-  return out
-}
 
 type UnsafeDevtoolsApi = {
   addInspector(opts: { id: string; label: string; icon?: string; app: App }): void
@@ -212,17 +146,11 @@ function wire(api: UnsafeDevtoolsApi, app: App, registry: AttaformRegistry): voi
           time: Date.now(),
           title: 'form.change',
           subtitle: state.formKey,
-          // Redact sensitive-named leaves before they land in the
-          // timeline event log — events accumulate for the whole
-          // session and a screen-share / paired-debugging session
-          // would otherwise expose any password / token / etc. the
-          // user typed since DevTools was opened.
-          data: {
-            form: redactSensitiveLeaves(state.form.value, state.segmentMatchesSensitive) as Record<
-              string,
-              unknown
-            >,
-          },
+          // Devtools is dev-only — emit raw values. Consumers worried
+          // about screen-share leaks should close the panel before
+          // sharing, same as they would for the browser DevTools
+          // console.
+          data: { form: state.form.value as Record<string, unknown> },
         },
       })
     })
@@ -233,12 +161,7 @@ function wire(api: UnsafeDevtoolsApi, app: App, registry: AttaformRegistry): voi
           time: Date.now(),
           title: 'submit.success',
           subtitle: state.formKey,
-          data: {
-            form: redactSensitiveLeaves(state.form.value, state.segmentMatchesSensitive) as Record<
-              string,
-              unknown
-            >,
-          },
+          data: { form: state.form.value as Record<string, unknown> },
         },
       })
     })
@@ -295,17 +218,13 @@ function wire(api: UnsafeDevtoolsApi, app: App, registry: AttaformRegistry): voi
     const formKey = payload.nodeId.slice('form:'.length)
     const state = registry.forms.get(formKey)
     if (state === undefined) return
-    // Redact sensitive-named leaves in the inspector panel for the
-    // same reason as the timeline events: a screen-share with an
-    // open DevTools panel shouldn't expose passwords / tokens.
-    // Editing stays enabled at the section level — the editInspector
-    // handler refuses sensitive-path edits at write time so a dev
-    // can't accidentally write the literal string `'[redacted]'` over
-    // a real value.
+    // Devtools is dev-only — render raw values for everything,
+    // including sensitive-named paths. Consumers concerned about
+    // screen-share leaks should close the panel before sharing.
     payload.state['Form value'] = [
       {
         key: 'form',
-        value: redactSensitiveLeaves(state.form.value, state.segmentMatchesSensitive),
+        value: state.form.value,
         editable: true,
       },
     ]
@@ -351,11 +270,6 @@ function wire(api: UnsafeDevtoolsApi, app: App, registry: AttaformRegistry): voi
     if (section !== 'Form value') return
     const segments = payload.path.slice(2)
     const { segments: canonicalPath, key: canonicalKey } = canonicalizePath(segments)
-    // Refuse edits on sensitive-named paths. The inspector renders
-    // them as `'[redacted]'`, so a dev who confirms the field would
-    // overwrite the real value with the literal masked string. Edits
-    // to sensitive paths must go through the bound input element.
-    if (state.isSensitivePath([...canonicalPath])) return
     // A devtools edit on a path that any element has opted in to should
     // persist (matches the user's expectation: editing via the inspector
     // should be indistinguishable from typing into the bound input).

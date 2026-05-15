@@ -205,7 +205,7 @@ describe('DevTools plugin — inspector + timeline wiring', () => {
   })
 })
 
-describe('DevTools plugin — sensitive-name redaction (B5)', () => {
+describe('DevTools plugin — raw values surface (dev-only)', () => {
   const apps: App[] = []
 
   beforeEach(() => {
@@ -217,103 +217,59 @@ describe('DevTools plugin — sensitive-name redaction (B5)', () => {
     currentMock.api = null
   })
 
-  it("redacts sensitive leaves in the inspector's Form value panel", async () => {
+  it('renders raw values (no redaction) in the inspector Form value panel', async () => {
     const regApp = createApp(defineComponent({ setup: () => () => h('div') }))
     const registry = createRegistry({})
     attachRegistryToApp(regApp, registry)
     const { createFormStore } = await import('../../src/runtime/core/create-form-store')
     const { fakeSchema } = await import('../utils/fake-schema')
-    const state = createFormStore<{ email: string; password: string; profile: { name: string } }>({
-      formKey: 'redact-form',
-      schema: fakeSchema({ email: '', password: '', profile: { name: '' } }),
+    const state = createFormStore<{ email: string; password: string }>({
+      formKey: 'raw-form',
+      schema: fakeSchema({ email: '', password: '' }),
     })
-    state.applyFormReplacement({
-      email: 'alice@example.com',
-      password: 'super-secret',
-      profile: { name: 'Alice' },
-    })
-    registry.forms.set('redact-form', state)
+    state.applyFormReplacement({ email: 'alice@example.com', password: 'super-secret' })
+    registry.forms.set('raw-form', state)
 
     await setupAttaformDevtools(regApp, registry)
 
     const payload = {
       inspectorId: 'attaform',
-      nodeId: 'form:redact-form',
+      nodeId: 'form:raw-form',
       state: {} as Record<string, Array<{ key: string; value: unknown; editable?: boolean }>>,
     }
     currentMock.api!._handlers.getInspectorState!(payload)
-    const formEntry = payload.state['Form value']?.[0]
-    expect(formEntry).toBeDefined()
-    const value = formEntry?.value as {
+    const value = payload.state['Form value']?.[0]?.value as {
       email: string
       password: string
-      profile: { name: string }
     }
-    expect(value.email).toBe('alice@example.com') // not sensitive
-    expect(value.password).toBe('[redacted]') // sensitive — masked
-    expect(value.profile.name).toBe('Alice') // nested but not sensitive
+    // Devtools is dev-only; values surface verbatim (including paths
+    // matched by the sensitive-name heuristic the storage layer
+    // honours). Screen-share hygiene is the consumer's call.
+    expect(value.email).toBe('alice@example.com')
+    expect(value.password).toBe('super-secret')
   })
 
-  it('redacts sensitive leaves in form.change timeline events', async () => {
-    const handle: {
-      api?: UseFormReturn<z.ZodObject<{ email: z.ZodString; password: z.ZodString }>>
-    } = {}
-    const App = defineComponent({
-      setup() {
-        handle.api = useForm({
-          schema: z.object({ email: z.string(), password: z.string() }),
-          key: 'redact-timeline',
-        })
-        return () => h('div')
-      },
-    })
-    const app = createApp(App).use(createAttaform({ devtools: false }))
-    const root = document.createElement('div')
-    document.body.appendChild(root)
-    app.mount(root)
-    apps.push(app)
-
-    const { getRegistryFromApp } = await import('../../src/runtime/core/registry')
-    const registry = getRegistryFromApp(app)
-    await setupAttaformDevtools(app, registry)
-    await Promise.resolve()
-
-    handle.api!.setValue('password', 'super-secret')
-    await Promise.resolve()
-
-    const changes = currentMock.api!._events.filter((e) => e.event.title === 'form.change')
-    // Single setValue() ⇒ exactly one form.change event. Tightened
-    // from `> 0` so a duplicate-emit regression no longer hides.
-    expect(changes).toHaveLength(1)
-    const last = changes[changes.length - 1]!
-    const form = last.event.data?.['form'] as { password?: unknown; email?: unknown }
-    expect(form.password).toBe('[redacted]')
-    expect(form.email).toBe('') // schema default; not sensitive
-  })
-
-  it('refuses sensitive-path edits via the inspector', async () => {
+  it('accepts edits at sensitive-named paths (no refusal)', async () => {
     const regApp = createApp(defineComponent({ setup: () => () => h('div') }))
     const registry = createRegistry({})
     attachRegistryToApp(regApp, registry)
     const { createFormStore } = await import('../../src/runtime/core/create-form-store')
     const { fakeSchema } = await import('../utils/fake-schema')
     const state = createFormStore<{ password: string }>({
-      formKey: 'edit-block',
+      formKey: 'edit-allow',
       schema: fakeSchema<{ password: string }>({ password: '' }),
     })
     state.applyFormReplacement({ password: 'original' })
-    registry.forms.set('edit-block', state)
+    registry.forms.set('edit-allow', state)
 
     await setupAttaformDevtools(regApp, registry)
 
     currentMock.api!._handlers.editInspectorState!({
       inspectorId: 'attaform',
-      nodeId: 'form:edit-block',
-      // path = ['Form value', 'form', 'password']
+      nodeId: 'form:edit-allow',
       path: ['Form value', 'form', 'password'],
-      state: { value: '[redacted]' }, // simulating "user confirmed redacted view"
+      state: { value: 'rotated' },
     })
-    // The original value must NOT be overwritten by the redacted literal.
-    expect(state.form.value.password).toBe('original')
+    expect(state.form.value.password).toBe('rotated')
   })
 })

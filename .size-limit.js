@@ -361,7 +361,15 @@ export default [
   },
   {
     path: 'dist/nuxt.mjs',
-    limit: '6 KB',
+    // Raised 6 → 7 KB on the Nuxt DevTools overlay panel branch:
+    //   - `nuxt.hook('ready')` + lazy-imported `@nuxt/devtools-kit`
+    //     `addCustomTab` call (Attaform tab with iframe view targeting
+    //     `/_attaform_devtools`).
+    //   - `package.json`-version read via `createRequire` for the
+    //     module's DevTools meta pill and runtime-config slot.
+    //   - Polished module meta (`name: 'Attaform'`, `version`, `docs`).
+    // Measured at 6.22 KB; ~0.8 KB headroom.
+    limit: '7 KB',
     gzip: true,
     ignore: ['@nuxt/kit', 'nuxt/app'],
     modifyEsbuildConfig: asEsmNode,
@@ -375,7 +383,17 @@ export default [
     // associated diagnostic copy (missing-zod throw, unparseable-
     // version warn). Measured at 4.19 KB; ~0.8 KB headroom for the
     // follow-up docs / test commit.
-    limit: '5 KB',
+    //
+    // Raised 5 → 6 KB on the Nuxt DevTools overlay panel branch:
+    // `configureServer` middleware that serves the iframe HTML at
+    // `/_attaform_devtools` (Vite-layer middleware so the URL bypasses
+    // vue-router and works for `app.vue`-only consumers without
+    // forcing pages-mode). The HTML body is inlined as a string;
+    // `server.transformIndexHtml` runs Vite's resolver across the
+    // inline `<script type="module">` so bare specifiers like `vue`
+    // and `attaform/devtools-panel` resolve through node_modules.
+    // Measured at 5.16 KB; ~0.8 KB headroom.
+    limit: '6 KB',
     gzip: true,
     ignore: ['vite'],
     modifyEsbuildConfig: asEsmNode,

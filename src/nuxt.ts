@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
@@ -10,6 +11,14 @@ import {
 } from '@nuxt/kit'
 import type { AttaformDefaults } from './runtime/types/types-api'
 import { attaform as attaformVitePlugin } from './vite'
+
+// Read the published version from the package's own package.json so the
+// module's DevTools panel surfaces the live version pill without a
+// build-time string injection. `createRequire` reads sync at module load —
+// run once, free at steady state. Works under unbuild's Rollup output
+// without bundler-specific JSON-import handling.
+const pkgVersion = (createRequire(import.meta.url)('../package.json') as { version: string })
+  .version
 
 /**
  * Options accepted by `attaform/nuxt` under the `attaform`
@@ -92,8 +101,10 @@ function canResolve(specifier: string, fromURL: string): boolean {
 
 export default defineNuxtModule<AttaformModuleOptions>({
   meta: {
-    name: 'attaform',
+    name: 'Attaform',
     configKey: 'attaform',
+    version: pkgVersion,
+    docs: 'https://www.attaform.com/docs',
     compatibility: {
       nuxt: '>=3.0.0',
     },

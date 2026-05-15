@@ -8,6 +8,7 @@ import {
   addVitePlugin,
   createResolver,
   defineNuxtModule,
+  extendPages,
 } from '@nuxt/kit'
 import type { AttaformDefaults } from './runtime/types/types-api'
 import { attaform as attaformVitePlugin } from './vite'
@@ -58,6 +59,13 @@ export interface AttaformModuleOptions {
  */
 export type AttaformRuntimeConfig = {
   defaults: AttaformDefaults
+  /**
+   * Library version, read from the package's own `package.json` at
+   * module setup. Surfaced to the runtime plugin so the DevTools
+   * overlay panel can render a version pill — single source of truth
+   * matches the `meta.version` Nuxt DevTools sees in the Modules panel.
+   */
+  version: string
 }
 
 /**
@@ -129,6 +137,7 @@ export default defineNuxtModule<AttaformModuleOptions>({
     const runtimePublic = nuxt.options.runtimeConfig.public as Record<string, unknown>
     runtimePublic['attaform'] = {
       defaults: _options.defaults ?? {},
+      version: pkgVersion,
     } satisfies AttaformRuntimeConfig
 
     // Force-include attaform's own peers that Vite's startup crawl
@@ -246,5 +255,50 @@ declare module "vue" {
 
 export { }`,
     })
+
+    // Dev-only: register a Nuxt DevTools overlay tab pointing at an
+    // iframe page that mounts the Attaform inspector. The page route
+    // (`/_attaform_devtools`) is injected via `extendPages`, also
+    // dev-gated — production builds neither serve the route nor pull
+    // in `@nuxt/devtools-kit`.
+    //
+    // `@nuxt/devtools-kit` is NOT a transitive peer of `@nuxt/kit`; it
+    // ships alongside `@nuxt/devtools`. Consumers who don't install
+    // Nuxt DevTools (rare in real Nuxt projects, common in test
+    // fixtures) get a silent no-op instead of an "unresolved import"
+    // error. Mirrors the same try/import pattern used for
+    // `@vue/devtools-api` in the runtime devtools wire-up.
+    if (nuxt.options.dev) {
+      extendPages((pages) => {
+        pages.push({
+          name: '_attaform_devtools',
+          path: '/_attaform_devtools',
+          file: resolver.resolve('./runtime/pages/_attaform_devtools.vue'),
+        })
+      })
+
+      nuxt.hook('ready', async () => {
+        try {
+          const { addCustomTab } = await import('@nuxt/devtools-kit')
+          addCustomTab({
+            name: 'attaform',
+            title: 'Attaform',
+            // Lucide / Iconify spec — `i-` prefix is resolved by Nuxt
+            // DevTools' Iconify integration. Form-themed icon for the
+            // sidebar entry.
+            icon: 'i-lucide-clipboard-list',
+            view: {
+              type: 'iframe',
+              src: '/_attaform_devtools',
+              persistent: true,
+            },
+          })
+        } catch {
+          // Nuxt DevTools (and thus @nuxt/devtools-kit) isn't installed
+          // in this consumer — silently skip. The library still works;
+          // only the overlay tab is missing.
+        }
+      })
+    }
   },
 })

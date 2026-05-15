@@ -1,22 +1,52 @@
 ---
-description: 'Inspect Attaform forms at runtime through the Vue DevTools panel: form state, errors, history, persistence drafts, and per-field meta in real time.'
+description: 'Inspect Attaform forms at runtime through the Nuxt DevTools overlay or Vue DevTools extension: form state, errors, history, persistence drafts, and per-field meta in real time.'
 ---
 
-# Vue DevTools
+# DevTools
 
-Every registered form shows up in the Vue DevTools sidebar with an
-editable tree, an error view, and a timeline for submit / reset /
-mutation events.
+Every registered form shows up in your browser DevTools — values,
+errors, aggregates, and a timeline of every change — through one of two
+surfaces, depending on what the project uses.
 
-## Setup
+| Surface                      | Where it lives                         | Install                                                   |
+| ---------------------------- | -------------------------------------- | --------------------------------------------------------- |
+| **Nuxt DevTools overlay**    | Bottom of the dev page                 | Nothing — wired by `attaform/nuxt`.                       |
+| **Vue DevTools (extension)** | Chrome / Edge / Firefox devtools panel | [Install from the web store](https://devtools.vuejs.org). |
 
-Install the peer dep:
+Both surfaces render the same data: the four sections below, plus a
+timeline of `form.change` / `submit.success` / `reset` events.
+
+## Nuxt DevTools — first-class native panel
+
+For Nuxt apps, the integration is automatic — installing `attaform/nuxt`
+adds an **Attaform** tab to the Nuxt DevTools sidebar (alongside
+Pages / Components / Modules). No peer dep to add, no extension to
+install, no Vite plugin to configure.
+
+```ts
+// nuxt.config.ts — no devtools-specific config needed
+export default defineNuxtConfig({
+  modules: ['attaform/nuxt'],
+  devtools: { enabled: true },
+})
+```
+
+Open the overlay with `Shift + Option + D` (or click the Nuxt logo in
+the bottom corner) and select **Attaform** in the sidebar. The tab is
+dev-only — production builds skip the route injection and the
+`@nuxt/devtools-kit` import entirely.
+
+## Vue DevTools (Chrome extension)
+
+For Vite / bare-Vue projects (or as an alternative on Nuxt), install
+the optional peer dep:
 
 ```bash
 npm install -D @vue/devtools-api
 ```
 
-That's it — the plugin auto-wires when the dep is present:
+The library auto-wires the inspector + timeline when the dep is
+present:
 
 ```ts
 // main.ts
@@ -25,38 +55,65 @@ createApp(App)
   .mount('#app')
 ```
 
-Supports DevTools v6 and v7 (`@vue/devtools-api` v6.6+).
+If the peer dep isn't installed at runtime, nothing breaks — the
+inspector simply doesn't register, the form library works as usual.
 
-## Disabling
-
-Skip the wiring in production, keep it in dev:
+For production builds, gate the wiring off:
 
 ```ts
 import.meta.env.PROD ? createAttaform({ devtools: false }) : createAttaform()
 ```
 
-If the peer dep isn't installed at runtime, nothing breaks — the
-plugin silently skips setup.
-
 ## What you see
 
-### Inspector
+### Form list
 
-`Attaform` shows up alongside "Pinia", "Router", etc.
-Expand it to see one node per registered form (keyed by the form's
-`key`). Select a form to view:
+One entry per registered form, keyed by the form's `key`. Click a form
+to inspect it.
 
-- **Form value** — the current form as a JSON tree. Editable from
-  the DevTools UI; your edit flows through `setValue` and drives
-  the whole reactive pipeline (validation, persistence, history).
-- **Errors** — the error map keyed by path.
-- **Aggregates** — the `state` bundle (`dirty`, `valid`,
-  `submitting`, `validating`, `submitCount`, `submitError`,
-  `canUndo`, `canRedo`, `historySize`).
+### Form value
+
+The current form as an interactive JSON tree. **Editable from the
+panel** — your edit flows through `setValueAtPath` and drives the
+whole reactive pipeline (validation, persistence opt-in, history).
+
+Sensitive-named leaves (`password`, `token`, `secret`, etc.) render as
+`[redacted]` with a lock icon. Edits on these are refused at write time
+so a dev confirming the masked view can't overwrite the real value with
+the literal `[redacted]` string. Same heuristic that gates persistence
+writes and multi-tab broadcasts — configure once via `sensitiveNames`
+on `useForm` and every surface respects it.
+
+### Schema Errors / User Errors
+
+The error map keyed by path, split by source:
+
+- **Schema Errors** — what the validator (Zod adapter) produced.
+  Cleared by `reset()` / `handleSubmit` success.
+- **User Errors** — what you wrote via `setFieldErrors*` / the
+  `parseApiErrors` server-error pipeline. Persists across revalidation
+  and successful submits.
+
+Splitting them tells you instantly whether validation or your
+application code emitted each error.
+
+### Aggregates
+
+The reactive bundle:
+
+- `submitting`
+- `submitCount`
+- `submitError`
+- `activeValidations`
+
+Useful for confirming your loading-state wiring is reading the right
+reactive thing.
 
 ### Timeline
 
-A "Attaform" timeline layer logs:
+A scrollable log of recent events. Each entry shows a timestamp, an
+event type, and the form key, with the form value at the moment of
+fire (redacted) available on click.
 
 | Event            | Fires on                                                                  |
 | ---------------- | ------------------------------------------------------------------------- |
@@ -64,23 +121,29 @@ A "Attaform" timeline layer logs:
 | `submit.success` | A submit handler's `onSubmit` resolves.                                   |
 | `reset`          | `reset()` completes.                                                      |
 
-Hover a timeline event to see the form state at that moment.
+Capacity is capped at 200 events per session — older entries fall off
+the back. Hit **clear** to wipe the log mid-debug.
 
 ## Keeping production bundles clean
 
-The DevTools module is code-split — bundlers emit it as a separate
-chunk, and the dynamic `import()` only fires when `devtools: true`.
+The Nuxt overlay tab is dev-gated at the module level — production
+builds skip the route injection and never import `@nuxt/devtools-kit`.
+The Vue DevTools wire-up is dev-gated at the `createAttaform({ devtools })`
+boundary and code-split so the chunk isn't pulled in when `devtools:
+false`.
+
 For a zero-overhead production build:
 
-1. Pass `{ devtools: false }`.
+1. Pass `{ devtools: false }` to `createAttaform` for bare-Vue setups
+   (Nuxt apps don't need this — the module already gates dev-only).
 2. Keep `@vue/devtools-api` in `devDependencies`, not `dependencies`.
 
 ## Coming soon
 
 - **Field flags** (touched / focused / blurred) in the inspector —
   values + errors are surfaced today, UI interaction state isn't.
-- **History stack visualisation.** Undo / redo snapshots show on
-  the timeline via `form.change` entries; the stack itself isn't a
+- **History stack visualisation.** Undo / redo snapshots show on the
+  timeline via `form.change` entries; the stack itself isn't a
   separate node yet. Open an issue if your editor workflow needs it.
 - **Persisted payload preview.** Inspect live form state in the
   inspector; for the serialised payload on disk, open Application →
@@ -88,8 +151,14 @@ For a zero-overhead production build:
 
 ## Caveats
 
-- **DevTools edits bypass your component bindings.** Fine for
-  poking at state during debugging; don't rely on the path
-  mirroring production interaction exactly.
+- **Panel edits bypass your component bindings.** Fine for poking at
+  state during debugging; don't rely on the path mirroring production
+  interaction exactly.
 - **Multi-app setups.** Each Vue app registers its own inspector
-  entry.
+  entry in the extension. The Nuxt overlay panel reads from the most
+  recent `createAttaform()` install — micro-frontend setups with
+  parallel apps will only see one app's forms.
+- **Sensitive-path edits are blocked.** This is intentional: a dev
+  confirming a redacted cell would otherwise write the literal
+  `[redacted]` string over a real password. Edit those paths through
+  the bound input element on the page instead.

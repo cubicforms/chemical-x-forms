@@ -23,6 +23,26 @@ export default defineBuildConfig({
     'src/zod-v3',
     'src/zod-v4',
     'src/runtime/plugins/attaform',
+    // `.vue` files for the Nuxt DevTools overlay panel + iframe page.
+    // Rollup builds .ts entries; the consumer's Vite + @vitejs/plugin-vue
+    // compiles the raw `.vue` source at consumer-build time. mkdist's
+    // job is just to copy the files into `dist/runtime/` so the Nuxt
+    // module's `resolver.resolve('./runtime/pages/_attaform_devtools.vue')`
+    // path resolves in a published install. Dev-only entries — production
+    // builds skip the page injection + `addCustomTab` call, so these
+    // files only matter when Nuxt DevTools loads them.
+    {
+      builder: 'mkdist',
+      input: './src/runtime/components/',
+      outDir: './dist/runtime/components/',
+      pattern: ['**/*.vue'],
+    },
+    {
+      builder: 'mkdist',
+      input: './src/runtime/pages/',
+      outDir: './dist/runtime/pages/',
+      pattern: ['**/*.vue'],
+    },
   ],
   externals: [
     '@vue/compiler-core',

@@ -5,21 +5,18 @@
  * to the v3 wrapper, which already accepts both Zod v3 input and
  * `AbstractSchema` directly via its built-in shape branch.
  *
- * Type-level dispatch happens through a single signature with a
- * union constraint — `Schema extends z.ZodObject |
- * zV3.ZodObject<zV3.ZodRawShape>`. The configuration parameter and
- * return type both dispatch conditionally on whether `Schema` is a
- * v4 or v3 object. The two majors don't structurally satisfy each
- * other's `ZodObject` constraints (v4 has `loose` / `safeExtend` /
- * `def` / `type` members v3 lacks), so neither alone is enough — the
- * union accepts both, and the conditional return type routes through
- * the matching adapter's `StorageShape` / `z.input` / `z.output`.
+ * Type-level dispatch happens via TWO typed overloads — v4 first, v3
+ * second — plus an untyped impl. Each overload mirrors the matching
+ * direct adapter's signature exactly, so a v4-schema call site pays
+ * the same per-call depth cost as importing from `attaform/zod-v4`
+ * directly. Overload resolution at concrete call sites commits to one
+ * overload immediately on argument shape — no type-level dispatch tax.
  *
- * A single signature (rather than overloads) keeps `typeof
- * useForm<X>` instantiation expressions in test code unambiguous:
- * TypeScript's overload-resolution rules for these expressions are
- * brittle when multiple overloads partially match, so we collapse to
- * one signature.
+ * Tests and other call sites that need the equivalent of
+ * `typeof useForm<X>` should reach for the `UseFormReturn<X>` /
+ * `UseFormConfig<X>` helpers in `types-api.ts` — instantiation
+ * expressions on overloaded functions follow brittle resolution rules,
+ * and the helper types give a deterministic projection.
  *
  * This module is the FALLBACK path. Vite consumers see the
  * `attaform/vite` plugin's `resolveId` hook rewrite `attaform/zod`
@@ -53,84 +50,28 @@ import type {
 import type { DefaultValuesInput, GenericForm } from '../../types/types-core'
 
 // ───────────────────────────────────────────────────────────────────
-// Per-major projections. Each dispatches a single Schema to the
-// matching adapter's input / output / storage-shape slot. The
-// trailing `never` arms catch the "other major" case so an isolated
-// instantiation stays well-formed; the union constraint on the
-// public signature guarantees one arm always fires.
+// Per-major projection helpers. Each overload's constraint scopes the
+// Schema to one Zod major, so the projection is a direct read — no
+// dispatch in the type body. Mirrors the direct adapter shapes so the
+// unified entry pays the same per-call depth cost as a direct import.
 // ───────────────────────────────────────────────────────────────────
 
-// Per-major helpers. Naming each variant keeps `rollup-plugin-dts`
-// from inlining the `z.input<X> extends GenericForm ? z.input<X> :
-// never` conditional twice inside each branch of the unified
-// `FormInput` / `FormOutput` / `FormStorageShape` aliases — the
-// bundled `.d.ts` preserves the helper as a single alias rather
-// than re-evaluating it at every consumer call site. Critical for
-// TS2589 headroom in setups that wire several `useForm` calls in
-// one scope (multistep wizards, parallel inline pickers, etc.).
-type FormInputV4<S extends z.ZodObject> = z.input<S> extends GenericForm ? z.input<S> : never
-type FormOutputV4<S extends z.ZodObject> = z.output<S> extends GenericForm ? z.output<S> : never
-type FormStorageShapeV4<S extends z.ZodObject> =
+type V4FormOf<S extends z.ZodObject> = z.input<S> extends GenericForm ? z.input<S> : never
+type V4OutOf<S extends z.ZodObject> = z.output<S> extends GenericForm ? z.output<S> : never
+type V4ReadOf<S extends z.ZodObject> =
   StorageShapeV4<S> extends GenericForm ? StorageShapeV4<S> : never
 
-type FormInputV3<S extends zV3.ZodObject<zV3.ZodRawShape>> =
+type V3FormOf<S extends zV3.ZodObject<zV3.ZodRawShape>> =
   zV3.input<UnwrapZodObject<S>> extends GenericForm ? zV3.input<UnwrapZodObject<S>> : never
-type FormOutputV3<S extends zV3.ZodObject<zV3.ZodRawShape>> =
+type V3OutOf<S extends zV3.ZodObject<zV3.ZodRawShape>> =
   zV3.output<UnwrapZodObject<S>> extends GenericForm ? zV3.output<UnwrapZodObject<S>> : never
-type FormStorageShapeV3<S extends zV3.ZodObject<zV3.ZodRawShape>> =
+type V3ReadOf<S extends zV3.ZodObject<zV3.ZodRawShape>> =
   StorageShapeV3<UnwrapZodObject<S>> extends GenericForm
     ? StorageShapeV3<UnwrapZodObject<S>>
     : never
 
-type FormInput<Schema> = Schema extends z.ZodObject
-  ? FormInputV4<Schema>
-  : Schema extends zV3.ZodObject<zV3.ZodRawShape>
-    ? FormInputV3<Schema>
-    : never
-
-type FormOutput<Schema> = Schema extends z.ZodObject
-  ? FormOutputV4<Schema>
-  : Schema extends zV3.ZodObject<zV3.ZodRawShape>
-    ? FormOutputV3<Schema>
-    : never
-
-type FormStorageShape<Schema> = Schema extends z.ZodObject
-  ? FormStorageShapeV4<Schema>
-  : Schema extends zV3.ZodObject<zV3.ZodRawShape>
-    ? FormStorageShapeV3<Schema>
-    : never
-
-// Single unified configuration shape. The outer structure is
-// non-conditional (so TS can resolve it for any Schema satisfying
-// the union constraint, including generic `F extends z.ZodObject`
-// helpers in test code); only the field-level types dispatch on
-// Schema kind via `FormInput` / `FormOutput`. The runtime cast
-// passes the configuration through unchanged — each adapter's own
-// signature absorbs the residual structural drift.
-type UnifiedConfiguration<Schema, K extends FormKey = FormKey> = Omit<
-  UseFormConfiguration<
-    FormInput<Schema>,
-    FormOutput<Schema>,
-    AbstractSchema<FormInput<Schema>, FormOutput<Schema>>,
-    DefaultValuesInput<FormInput<Schema>>,
-    K
-  >,
-  'schema' | 'validateOn' | 'debounceMs'
-> & { schema: Schema } & ValidateOnConfig
-
 /**
- * Create a form bound to a Zod schema. Accepts both Zod v3 and Zod v4
- * schemas; the runtime picks the right adapter from the schema's
- * shape.
- *
- * Type inference works transparently for both Zod v3 and Zod v4
- * schemas — the adapter is selected from the schema's shape at both
- * runtime and type-check time. `form.values`, `form.fields`,
- * `register`, and the `handleSubmit` callback data type all resolve
- * against the matching adapter's storage shape; consumers don't need
- * to reach for `attaform/zod-v3` or `attaform/zod-v4` to get full
- * inference. Those subpath entries remain as lean-bundle escape
- * hatches for non-Vite tooling, not correctness escape hatches.
+ * Create a form bound to a Zod v4 schema.
  *
  * ```ts
  * import { useForm } from 'attaform/zod'
@@ -143,14 +84,54 @@ type UnifiedConfiguration<Schema, K extends FormKey = FormKey> = Omit<
  *   }),
  * })
  * ```
+ *
+ * v4 schemas match this overload first via their structural `def`
+ * field. v3 schemas fall through to the v3 overload below.
  */
-export function useForm<
-  Schema extends z.ZodObject | zV3.ZodObject<zV3.ZodRawShape>,
-  K extends FormKey = FormKey,
->(
-  configuration: UnifiedConfiguration<Schema, K>
-): UseFormReturnType<FormInput<Schema>, FormOutput<Schema>, FormStorageShape<Schema>, K> {
-  // Foot-gun guard mirrors the typed wrappers'.
+export function useForm<Schema extends z.ZodObject, K extends FormKey = FormKey>(
+  configuration: Omit<
+    UseFormConfiguration<
+      V4FormOf<Schema>,
+      V4OutOf<Schema>,
+      AbstractSchema<V4FormOf<Schema>, V4OutOf<Schema>>,
+      DefaultValuesInput<V4FormOf<Schema>>,
+      K
+    >,
+    'schema' | 'validateOn' | 'debounceMs'
+  > & { schema: Schema } & ValidateOnConfig
+): UseFormReturnType<V4FormOf<Schema>, V4OutOf<Schema>, V4ReadOf<Schema>, K>
+/**
+ * Create a form bound to a Zod v3 schema.
+ *
+ * ```ts
+ * import { useForm } from 'attaform/zod'
+ * import { z } from 'zod-v3'
+ *
+ * const form = useForm({
+ *   schema: z.object({
+ *     username: z.string().min(2, 'At least 2 characters'),
+ *     password: z.string().min(8, 'At least 8 characters'),
+ *   }),
+ * })
+ * ```
+ *
+ * v3 schemas match this overload; v4 schemas hit the v4 overload
+ * above first and never reach here.
+ */
+export function useForm<Schema extends zV3.ZodObject<zV3.ZodRawShape>, K extends FormKey = FormKey>(
+  configuration: Omit<
+    UseFormConfiguration<
+      V3FormOf<Schema>,
+      V3OutOf<Schema>,
+      AbstractSchema<V3FormOf<Schema>, V3OutOf<Schema>>,
+      DefaultValuesInput<V3FormOf<Schema>>,
+      K
+    >,
+    'schema' | 'validateOn' | 'debounceMs'
+  > & { schema: Schema } & ValidateOnConfig
+): UseFormReturnType<V3FormOf<Schema>, V3OutOf<Schema>, V3ReadOf<Schema>, K>
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useForm(configuration: any): any {
   if (
     configuration === undefined ||
     configuration === null ||
@@ -158,28 +139,9 @@ export function useForm<
   ) {
     throw new InvalidUseFormConfigError()
   }
-
   const { schema } = configuration as { schema: unknown }
   if (isZodV4SchemaShape(schema)) {
-    return useFormV4(
-      configuration as Parameters<typeof useFormV4>[0]
-    ) as unknown as UseFormReturnType<
-      FormInput<Schema>,
-      FormOutput<Schema>,
-      FormStorageShape<Schema>,
-      K
-    >
+    return useFormV4(configuration as Parameters<typeof useFormV4>[0])
   }
-  // Anything else (Zod v3 schema, custom AbstractSchema, schema
-  // factory) goes through the v3 wrapper, which already accepts both
-  // Zod v3 input and AbstractSchema directly via its existing shape
-  // branch.
-  return useFormV3(
-    configuration as Parameters<typeof useFormV3>[0]
-  ) as unknown as UseFormReturnType<
-    FormInput<Schema>,
-    FormOutput<Schema>,
-    FormStorageShape<Schema>,
-    K
-  >
+  return useFormV3(configuration as Parameters<typeof useFormV3>[0])
 }

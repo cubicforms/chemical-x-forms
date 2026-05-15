@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { unset, useForm } from '../../src/zod'
+import type { UseFormConfigV4, UseFormReturnV4 } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
@@ -23,8 +24,8 @@ afterEach(() => {
 
 function mount<Schema extends z.ZodObject>(
   schema: Schema,
-  defaultValues: Parameters<typeof useForm<Schema>>[0]['defaultValues']
-): ReturnType<typeof useForm<Schema>> {
+  defaultValues: UseFormConfigV4<Schema>['defaultValues']
+): UseFormReturnV4<Schema> {
   let captured: unknown
   const App = defineComponent({
     setup() {
@@ -42,7 +43,7 @@ function mount<Schema extends z.ZodObject>(
   app.mount(root)
   apps.push(app)
   if (captured === undefined) throw new Error('useForm did not return')
-  return captured as ReturnType<typeof useForm<Schema>>
+  return captured as UseFormReturnV4<Schema>
 }
 
 describe('form.fields — shadowing immunity (FIELD_STATE_KEYS only inject at leaves)', () => {

@@ -6,6 +6,7 @@ import { setupAttaformDevtools } from '../../src/runtime/core/devtools'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { createRegistry, attachRegistryToApp } from '../../src/runtime/core/registry'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 
 /**
  * Phase 5.10 — Vue DevTools plugin contract tests.
@@ -164,7 +165,7 @@ describe('DevTools plugin — inspector + timeline wiring', () => {
   })
 
   it('emits a timeline event on submit success', async () => {
-    const handle: { api?: ReturnType<typeof useForm<z.ZodObject<{ email: z.ZodString }>>> } = {}
+    const handle: { api?: UseFormReturn<z.ZodObject<{ email: z.ZodString }>> } = {}
     const App = defineComponent({
       setup() {
         handle.api = useForm({
@@ -255,7 +256,7 @@ describe('DevTools plugin — sensitive-name redaction (B5)', () => {
 
   it('redacts sensitive leaves in form.change timeline events', async () => {
     const handle: {
-      api?: ReturnType<typeof useForm<z.ZodObject<{ email: z.ZodString; password: z.ZodString }>>>
+      api?: UseFormReturn<z.ZodObject<{ email: z.ZodString; password: z.ZodString }>>
     } = {}
     const App = defineComponent({
       setup() {

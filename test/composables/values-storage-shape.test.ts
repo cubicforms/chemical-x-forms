@@ -3,6 +3,7 @@ import { createApp, defineComponent, h } from 'vue'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import type { ValidationError } from '../../src/runtime/types/types-api'
 
@@ -84,7 +85,7 @@ const defaultsSchema = z.object({
 })
 
 describe('ZodDefault — type peels `| undefined`, runtime resolves the default', () => {
-  type Form = ReturnType<typeof useForm<typeof defaultsSchema>>
+  type Form = UseFormReturn<typeof defaultsSchema>
   const formT = makeFormProxy<Form>()
 
   it('z.boolean().default(true) → boolean (type)', () => {
@@ -191,7 +192,7 @@ const bareRequiredSchema = z.object({
 })
 
 describe('Synthesis — bare-required fields resolve to a falsy concrete value', () => {
-  type Form = ReturnType<typeof useForm<typeof bareRequiredSchema>>
+  type Form = UseFormReturn<typeof bareRequiredSchema>
   const formT = makeFormProxy<Form>()
 
   it('z.string() (no default) → string (type)', () => {
@@ -276,7 +277,7 @@ const deepSchema = z.object({
 })
 
 describe('Synthesis — deep nested objects resolve recursively', () => {
-  type Form = ReturnType<typeof useForm<typeof deepSchema>>
+  type Form = UseFormReturn<typeof deepSchema>
   const formT = makeFormProxy<Form>()
 
   it('two-level descent — type stays strict', () => {
@@ -367,7 +368,7 @@ const arrSchema = z.object({ tags: z.array(z.string()) })
 
 describe('Genuinely uncertain — invariant does NOT promise to peel', () => {
   it('z.string().optional() keeps `| undefined` at the type level', () => {
-    type Form = ReturnType<typeof useForm<typeof optionalSchema>>
+    type Form = UseFormReturn<typeof optionalSchema>
     const formT = makeFormProxy<Form>()
     expectTypeOf(formT.values.bio).toEqualTypeOf<string | undefined>()
   })
@@ -387,7 +388,7 @@ describe('Genuinely uncertain — invariant does NOT promise to peel', () => {
   })
 
   it('z.string().nullable() keeps `| null` at the type level', () => {
-    type Form = ReturnType<typeof useForm<typeof nullableSchema>>
+    type Form = UseFormReturn<typeof nullableSchema>
     const formT = makeFormProxy<Form>()
     expectTypeOf(formT.values.ref).toEqualTypeOf<string | null>()
   })
@@ -407,7 +408,7 @@ describe('Genuinely uncertain — invariant does NOT promise to peel', () => {
   })
 
   it('array element past length is `T | undefined` — noUncheckedIndexedAccess, not storage', () => {
-    type Form = ReturnType<typeof useForm<typeof arrSchema>>
+    type Form = UseFormReturn<typeof arrSchema>
     const formT = makeFormProxy<Form>()
     expectTypeOf(formT.values.tags[0]).toEqualTypeOf<string | undefined>()
   })
@@ -438,7 +439,7 @@ const transformSchema = z.object({
 
 describe('preprocess / transform — write-boundary vs parse-time semantics', () => {
   it('z.preprocess(fn, z.string()) — type peels to inner-schema input', () => {
-    type Form = ReturnType<typeof useForm<typeof preprocessSchema>>
+    type Form = UseFormReturn<typeof preprocessSchema>
     const formT = makeFormProxy<Form>()
     expectTypeOf(formT.values.trimmed).toEqualTypeOf<string>()
   })
@@ -487,7 +488,7 @@ describe('preprocess / transform — write-boundary vs parse-time semantics', ()
   })
 
   it('z.string().transform(fn) — storage holds PRE-transform input (existing rationale)', () => {
-    type Form = ReturnType<typeof useForm<typeof transformSchema>>
+    type Form = UseFormReturn<typeof transformSchema>
     const formT = makeFormProxy<Form>()
     // Transforms run at parse, not at write. The storage view stays the
     // input shape — string here, not number. This is the case the §1.1
@@ -519,7 +520,7 @@ describe('preprocess / transform — write-boundary vs parse-time semantics', ()
         })
         .transform((o) => ({ ...o, sealed: true })),
     })
-    type Form = ReturnType<typeof useForm<typeof _schema>>
+    type Form = UseFormReturn<typeof _schema>
     const formT = makeFormProxy<Form>()
     expectTypeOf(formT.values.meta.tag).toEqualTypeOf<string>()
     expectTypeOf(formT.values.meta.retries).toEqualTypeOf<number>()
@@ -537,7 +538,7 @@ describe('preprocess / transform — write-boundary vs parse-time semantics', ()
         })
       ),
     })
-    type Form = ReturnType<typeof useForm<typeof _schema>>
+    type Form = UseFormReturn<typeof _schema>
     const formT = makeFormProxy<Form>()
     expectTypeOf(formT.values.meta.tag).toEqualTypeOf<string>()
   })
@@ -635,7 +636,7 @@ describe('Depth pressure — multi-step booking schema (shipment-demo shape)', (
     notes: z.string().max(500).optional(),
   })
 
-  type Form = ReturnType<typeof useForm<typeof shipmentSchema>>
+  type Form = UseFormReturn<typeof shipmentSchema>
   const formT = makeFormProxy<Form>()
 
   it('top-level scalars resolve without TS2589', () => {

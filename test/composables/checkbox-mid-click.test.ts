@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { waitUntil } from '../utils/form-harness'
@@ -33,7 +34,7 @@ describe('<input type="checkbox" v-register> — sibling re-render mid-click', (
   })
 
   it('a sibling re-render between mousedown and change MUST NOT clobber the user-toggled checkbox (array model)', async () => {
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -131,7 +132,7 @@ describe('<input type="checkbox" v-register> — sibling re-render mid-click', (
     // We instrument `el.checked`'s setter with `Object.defineProperty`
     // to count writes — pre-fix the count grew with every sibling
     // keystroke; post-fix it stays at zero after mount.
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -207,7 +208,7 @@ describe('<input type="checkbox" v-register> — sibling re-render mid-click', (
     // Counterpart to the skip test — confirm the identity guard
     // doesn't get stuck. After a programmatic `setValue` moves the
     // model, the next render must re-apply.
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {

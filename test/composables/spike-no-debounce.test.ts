@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormConfig, UseFormReturn } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { waitUntil } from '../utils/form-harness'
@@ -33,7 +34,7 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
   })
 
   it('explicit positive debounce: post-keystroke errors do NOT surface until the timer fires', async () => {
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         handle.api = useForm({
@@ -83,7 +84,7 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
   })
 
   it('debounceMs: 0: errors surface on the next microtask — no timer wait', async () => {
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         handle.api = useForm({
@@ -121,7 +122,7 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
   })
 
   it('debounceMs: 0: per-keystroke errors track the live value with no lag', async () => {
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         handle.api = useForm({
@@ -176,7 +177,7 @@ describe('spike — debounceMs: 0 disables the debounce timer', () => {
     // directives below fail the build if the constraint regresses. The
     // body executes nothing meaningful at runtime — vitest accepts the
     // empty test, the build is the gate.
-    type Opts = Parameters<typeof useForm<typeof schema>>[0]
+    type Opts = UseFormConfig<typeof schema>
     const ok1: Opts = { schema, validateOn: 'change', debounceMs: 50 }
     const ok2: Opts = { schema, validateOn: 'blur' }
     const ok3: Opts = { schema, validateOn: 'submit' }
@@ -211,7 +212,7 @@ describe('spike — persist.debounceMs: 0 writes immediately on every form chang
       },
     }
 
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         handle.api = useForm({
@@ -267,7 +268,7 @@ describe('spike — persist.debounceMs: 0 writes immediately on every form chang
       },
     }
 
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         handle.api = useForm({

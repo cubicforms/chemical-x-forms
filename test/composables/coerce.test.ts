@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormConfigV4, UseFormReturnV4 } from '../../src/zod'
 import { vRegister, isRegisterValue, assignKey } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { defineCoercion, defaultCoercionRules } from '../../src/runtime/core/schema-coerce'
@@ -31,17 +32,17 @@ afterEach(() => {
 function mount<S extends z.ZodObject>(
   schema: S,
   defaultValues: z.infer<S>,
-  body: (api: ReturnType<typeof useForm<S>>) => unknown,
+  body: (api: UseFormReturnV4<S>) => unknown,
   pluginOpts?: Parameters<typeof createAttaform>[0]
-): { api: ReturnType<typeof useForm<S>>; root: HTMLDivElement } {
-  const handle: { api?: ReturnType<typeof useForm<S>> } = {}
+): { api: UseFormReturnV4<S>; root: HTMLDivElement } {
+  const handle: { api?: UseFormReturnV4<S> } = {}
   const Parent = defineComponent({
     setup() {
       const api = useForm({
         schema,
         defaultValues,
         key: `coerce-${Math.random().toString(36).slice(2)}`,
-      } as Parameters<typeof useForm<S>>[0])
+      } as UseFormConfigV4<S>)
       handle.api = api
       return () => body(api)
     },
@@ -531,7 +532,7 @@ describe('plugin-default off', () => {
 describe('per-form override beats plugin default (both directions)', () => {
   it('plugin off + useForm({ coerce: true }) → coerce runs', async () => {
     const schema = z.object({ age: z.number() })
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturnV4<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         const api = useForm({
@@ -564,7 +565,7 @@ describe('per-form override beats plugin default (both directions)', () => {
   it('plugin on + useForm({ coerce: false }) → coerce off', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const schema = z.object({ age: z.number() })
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturnV4<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         const api = useForm({
@@ -718,7 +719,7 @@ describe('consumer-extended registry — string->bigint', () => {
         },
       }),
     ]
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturnV4<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         const api = useForm({

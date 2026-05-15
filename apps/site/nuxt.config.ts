@@ -1,3 +1,5 @@
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { logger as nuxtKitLogger } from '@nuxt/kit'
 import tailwindcss from '@tailwindcss/vite'
 import { rendererRich, transformerTwoslash } from '@shikijs/twoslash'
@@ -5,6 +7,18 @@ import type { Logger, LogOptions } from 'vite'
 import attaformPkg from '../../package.json'
 import vuePkg from 'vue/package.json'
 import zodPkg from 'zod/package.json'
+// `zod-v3` is an npm-aliased package — pnpm installs zod@3.x under
+// the directory name `zod-v3` (see root package.json:
+// `"zod-v3": "npm:zod@^3.24"`). The aliased path resolves to its
+// own package.json, whose version field is the v3.x release.
+import zodV3Pkg from 'zod-v3/package.json'
+
+// Compute the on-disk path to the monorepo root (two levels up from
+// `apps/site`). Used to broaden Vite's `server.fs.allow` so the
+// dev server can stream files from the workspace's hoisted
+// `node_modules/.pnpm/...` tree (see the `vite.server.fs.allow`
+// block below for the full rationale).
+const monorepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
 // Two warning families fire on every build, are not ours to fix,
 // and add nothing actionable for a maintainer reading the logs:
@@ -312,6 +326,7 @@ export default defineNuxtConfig({
         attaform: attaformPkg.version,
         vue: vuePkg.version,
         zod: zodPkg.version,
+        'zod-v3': zodV3Pkg.version,
       },
     },
   },
@@ -446,8 +461,27 @@ export default defineNuxtConfig({
     // expects you to use the top-level `devServer.host`), but Vite
     // itself accepts the value and devtools needs it set on Vite's
     // own config, so we suppress the type error.
-    // @ts-expect-error see comment above — Nuxt-typed Omit, Vite-accepted runtime field
-    server: { host: '0.0.0.0' },
+    server: {
+      // @ts-expect-error Nuxt's `vite.server` type Omits `host`; the
+      // runtime accepts it (see comment above for why devtools needs
+      // this set on Vite's own config).
+      host: '0.0.0.0',
+      // Vite's strict `fs.allow` defaults to the workspace root, but
+      // requests to `/@fs/app/node_modules/.pnpm/...` for modules in
+      // `optimizeDeps.exclude` arrive BEFORE the importer is analyzed
+      // — so the target file never lands in `config.safeModulePaths`
+      // via the import-analysis pass, and `fs.allow` is the only gate
+      // that lets the static-serve middleware emit the file. The
+      // symptom is a 404 on `@vue/repl/monaco-editor` (7.2 MB) on
+      // first page load while smaller siblings in the same directory
+      // (already-analyzed) serve cleanly. Explicitly listing the
+      // monorepo root (two levels up from `apps/site`) here makes the
+      // allowance unambiguous and survives any Vite-detected-root
+      // drift across pnpm-workspace layouts.
+      fs: {
+        allow: [monorepoRoot],
+      },
+    },
     // Vite's startup crawl scans index.html + statically discoverable
     // imports; it misses imports inside `.client.vue` components (which
     // SSR skips) and inside Nuxt's lazy page chunks. When those land

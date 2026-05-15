@@ -6,6 +6,7 @@ import { createFormStore } from '../../src/runtime/core/create-form-store'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { canonicalizePath } from '../../src/runtime/core/paths'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { fakeSchema } from '../utils/fake-schema'
 import { waitUntil } from '../utils/form-harness'
 
@@ -32,9 +33,9 @@ type Tight = z.infer<typeof tightSchema>
 
 function mountWithZod(options: { strict?: boolean; defaultValues?: Partial<Tight> }): {
   app: App
-  api: ReturnType<typeof useForm<typeof tightSchema>>
+  api: UseFormReturn<typeof tightSchema>
 } {
-  type API = ReturnType<typeof useForm<typeof tightSchema>>
+  type API = UseFormReturn<typeof tightSchema>
   const handle: { api?: API } = {}
   const App = defineComponent({
     setup() {
@@ -77,7 +78,7 @@ describe('initial validation seed — strict mode', () => {
     const asyncSchema = z.object({
       email: z.email().refine(async () => Promise.resolve(true), 'taken'),
     })
-    type AsyncApi = ReturnType<typeof useForm<typeof asyncSchema>>
+    type AsyncApi = UseFormReturn<typeof asyncSchema>
     const handle: { api?: AsyncApi } = {}
     const App = defineComponent({
       setup() {
@@ -166,7 +167,7 @@ describe('initial validation seed — async-refine schema', () => {
         .email()
         .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
     })
-    type AsyncApi = ReturnType<typeof useForm<typeof asyncSchema>>
+    type AsyncApi = UseFormReturn<typeof asyncSchema>
     const handle: { api?: AsyncApi } = {}
     const App = defineComponent({
       setup() {
@@ -202,7 +203,7 @@ describe('initial validation seed — async-refine schema', () => {
         .email()
         .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
     })
-    type AsyncApi = ReturnType<typeof useForm<typeof asyncSchema>>
+    type AsyncApi = UseFormReturn<typeof asyncSchema>
     const handle: { api?: AsyncApi } = {}
     const App = defineComponent({
       setup() {
@@ -244,7 +245,7 @@ describe('initial validation seed — async-refine schema', () => {
     const asyncSchema = z.object({
       email: z.email().refine(async (v) => v !== 'taken@example.com', 'taken'),
     })
-    type AsyncApi = ReturnType<typeof useForm<typeof asyncSchema>>
+    type AsyncApi = UseFormReturn<typeof asyncSchema>
     const handle: { api?: AsyncApi } = {}
     const App = defineComponent({
       setup() {
@@ -289,7 +290,7 @@ describe('initial validation seed — async-refine schema', () => {
     const asyncSchema = z.object({
       email: z.email().refine(async (v) => v !== 'taken@example.com', 'taken'),
     })
-    type AsyncApi = ReturnType<typeof useForm<typeof asyncSchema>>
+    type AsyncApi = UseFormReturn<typeof asyncSchema>
     const handle: { api?: AsyncApi } = {}
     const App = defineComponent({
       setup() {
@@ -336,7 +337,7 @@ describe('initial validation seed — async-refine schema', () => {
         .email()
         .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
     })
-    type MixedApi = ReturnType<typeof useForm<typeof mixedSchema>>
+    type MixedApi = UseFormReturn<typeof mixedSchema>
     const handle: { api?: MixedApi } = {}
     const App = defineComponent({
       setup() {
@@ -383,7 +384,7 @@ describe('initial validation seed — async-refine schema', () => {
         .email()
         .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
     })
-    type MixedApi = ReturnType<typeof useForm<typeof mixedSchema>>
+    type MixedApi = UseFormReturn<typeof mixedSchema>
     const handle: { api?: MixedApi } = {}
     const App = defineComponent({
       setup() {
@@ -425,7 +426,7 @@ describe('initial validation seed — async-refine schema', () => {
         .email()
         .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
     })
-    type MixedApi = ReturnType<typeof useForm<typeof mixedSchema>>
+    type MixedApi = UseFormReturn<typeof mixedSchema>
     const handle: { api?: MixedApi } = {}
     const App = defineComponent({
       setup() {
@@ -463,7 +464,7 @@ describe('initial validation seed — async-refine schema', () => {
     // actually pending. Skipping the schedule for sync schemas keeps
     // `validating` honestly false at construction.
     const syncSchema = z.object({ email: z.email('Invalid email') })
-    type SyncApi = ReturnType<typeof useForm<typeof syncSchema>>
+    type SyncApi = UseFormReturn<typeof syncSchema>
     const handle: { api?: SyncApi } = {}
     const App = defineComponent({
       setup() {

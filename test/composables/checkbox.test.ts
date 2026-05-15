@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { waitUntil } from '../utils/form-harness'
@@ -42,7 +43,7 @@ describe('<input type="checkbox" v-register> — single boolean', () => {
 
   it('checking the box writes true; unchecking writes false', async () => {
     const schema = z.object({ agreed: z.boolean() })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -79,7 +80,7 @@ describe('<input type="checkbox" v-register> — single boolean', () => {
 
   it('mounts with el.checked synced to the form value', async () => {
     const schema = z.object({ agreed: z.boolean() })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -123,7 +124,7 @@ describe('<input type="checkbox" v-register> — array group', () => {
 
   it('toggles add/remove the option value from the array', async () => {
     const schema = z.object({ fruits: z.array(z.string()) })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -194,7 +195,7 @@ describe('<input type="checkbox" v-register> — array group', () => {
 
   it('mounts with each checkbox checked iff its value is in the array', async () => {
     const schema = z.object({ fruits: z.array(z.string()) })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -247,7 +248,7 @@ describe('<input type="checkbox" v-register> — array group', () => {
     // _value) and then deleting `_value` before dispatching change —
     // the post-hydration state in a real Nuxt app.
     const schema = z.object({ fruits: z.array(z.string()) })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -289,7 +290,7 @@ describe('<input type="checkbox" v-register> — array group', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const schema = z.object({ fruits: z.array(z.string()) })
-      const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+      const captured: { api?: UseFormReturn<typeof schema> } = {}
 
       const Parent = defineComponent({
         setup() {
@@ -347,7 +348,7 @@ describe('<input type="checkbox" v-register> — Set group', () => {
 
   it('toggles add/delete the option value through Set semantics', async () => {
     const schema = z.object({ tags: z.set(z.string()) })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -418,7 +419,7 @@ describe('<input type="checkbox" v-register> — :true-value / :false-value', ()
 
   it('binds a single checkbox to one of two strings', async () => {
     const schema = z.object({ newsletter: z.enum(['subscribe', 'unsubscribe']) })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -486,7 +487,7 @@ describe('checkbox slim-primitive gate interactions', () => {
 
   it('rejects a string write to a boolean checkbox path', async () => {
     const schema = z.object({ agreed: z.boolean() })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -509,7 +510,7 @@ describe('checkbox slim-primitive gate interactions', () => {
 
   it('rejects a string write to an array checkbox path', async () => {
     const schema = z.object({ fruits: z.array(z.string()) })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {

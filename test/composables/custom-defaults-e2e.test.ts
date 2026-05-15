@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturnV4 } from '../../src/zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 
 /**
@@ -31,9 +32,9 @@ function harness<S extends z.ZodObject>(
   schema: S
 ): {
   app: App
-  form: ReturnType<typeof useForm<S>>
+  form: UseFormReturnV4<S>
 } {
-  let captured!: ReturnType<typeof useForm<S>>
+  let captured!: UseFormReturnV4<S>
   const Probe = defineComponent({
     setup() {
       captured = useForm({

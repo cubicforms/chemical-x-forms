@@ -6,6 +6,7 @@ import { fingerprintZodSchema } from '../../src/runtime/adapters/zod-v4/fingerpr
 import { hashStableString } from '../../src/runtime/core/hash'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { waitUntil } from '../utils/form-harness'
 
 /**
@@ -91,8 +92,8 @@ type SyncForm = z.infer<typeof syncSchema>
 const ASYNC_FP = hashStableString(fingerprintZodSchema(asyncSchema))
 const SYNC_FP = hashStableString(fingerprintZodSchema(syncSchema))
 
-type AsyncApi = ReturnType<typeof useForm<typeof asyncSchema>>
-type SyncApi = ReturnType<typeof useForm<typeof syncSchema>>
+type AsyncApi = UseFormReturn<typeof asyncSchema>
+type SyncApi = UseFormReturn<typeof syncSchema>
 
 function mountAsyncForm(persistKey: string, strict: boolean = true): { app: App; api: AsyncApi } {
   const handle: { api?: AsyncApi } = {}

@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { waitUntil } from '../utils/form-harness'
@@ -42,7 +43,7 @@ describe('register({ transforms }) — applies to all four element variants', ()
       radio: z.string(),
     })
 
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         const api = useForm({

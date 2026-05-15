@@ -7,6 +7,7 @@ import { ANONYMOUS_FORM_KEY_PREFIX } from '../../src/runtime/core/defaults'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 import { useForm } from '../../src/zod'
+import type { UseFormConfig, UseFormReturn } from '../../src/zod'
 import { z as zV3 } from 'zod-v3'
 
 /**
@@ -32,7 +33,7 @@ const tightSchema = z.object({
 })
 
 type Tight = z.infer<typeof tightSchema>
-type API = ReturnType<typeof useForm<typeof tightSchema>>
+type API = UseFormReturn<typeof tightSchema>
 
 function mountWithDefaults(
   defaults: Parameters<typeof createAttaform>[0] extends infer T
@@ -60,7 +61,7 @@ function mountWithDefaults(
         ...(formOptions.defaultValues !== undefined
           ? { defaultValues: formOptions.defaultValues }
           : {}),
-      } as Parameters<typeof useForm<typeof tightSchema>>[0])
+      } as UseFormConfig<typeof tightSchema>)
       return () => h('div')
     },
   })
@@ -211,8 +212,8 @@ describe('app-level defaults — anonymous + multi-form', () => {
     type FormA = typeof tightSchema
     type FormB = typeof tightSchema
     const handles: {
-      a?: ReturnType<typeof useForm<FormA>>
-      b?: ReturnType<typeof useForm<FormB>>
+      a?: UseFormReturn<FormA>
+      b?: UseFormReturn<FormB>
     } = {}
     const App = defineComponent({
       setup() {

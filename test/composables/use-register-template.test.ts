@@ -5,6 +5,7 @@ import { createApp, defineComponent, type App } from 'vue'
 import * as VueRuntime from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { useRegister } from '../../src/runtime/composables/use-register'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
@@ -95,7 +96,7 @@ describe('useRegister — template-compiled v-register reaches inner input', () 
     // injects `:value` and `:registerValue` props. At runtime,
     // useRegister captures registerValue and strips both bridge keys
     // from instance.attrs (no DOM leak on the wrapper).
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       components: { Child },
       setup() {
@@ -148,7 +149,7 @@ describe('useRegister — template-compiled v-register reaches inner input', () 
       ),
     })
 
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       components: { Child },
       setup() {

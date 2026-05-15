@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormConfigV4 } from '../../src/zod'
 import { attachRegistryToApp, createRegistry } from '../../src/runtime/core/registry'
 import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 
@@ -17,7 +18,7 @@ import type { UseFormReturnType } from '../../src/runtime/types/types-api'
 
 function setupForm<F extends z.ZodObject<Record<string, z.ZodType>>>(
   schema: F,
-  defaultValues?: Parameters<typeof useForm<F>>[0]['defaultValues']
+  defaultValues?: UseFormConfigV4<F>['defaultValues']
 ) {
   let captured!: UseFormReturnType<z.output<F> & Record<string, unknown>>
   const Probe = defineComponent({

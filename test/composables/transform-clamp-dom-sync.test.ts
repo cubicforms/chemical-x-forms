@@ -26,6 +26,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { waitUntil } from '../utils/form-harness'
@@ -46,7 +47,7 @@ describe('spike 18c — `<input type="number">` + clamp transform DOM/storage pa
 
   it('typing past the clamp cap snaps the DOM back to the clamped value', async () => {
     const schema = z.object({ bounded: z.number() })
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         const api = useForm({
@@ -107,7 +108,7 @@ describe('spike 18c — `<input type="number">` + clamp transform DOM/storage pa
 
   it('typing below the clamp cap snaps the DOM back to the clamped value', async () => {
     const schema = z.object({ bounded: z.number() })
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         const api = useForm({
@@ -150,7 +151,7 @@ describe('spike 18c — `<input type="number">` + clamp transform DOM/storage pa
     // The user gets to keep typing the scientific-notation form mid-edit;
     // blur normalizes it.
     const schema = z.object({ bounded: z.number() })
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         const api = useForm({

@@ -65,14 +65,37 @@ export function createStepperHistory(param: string): StepperHistoryHandle {
 
   window.addEventListener('popstate', handlePopstate)
 
+  // Some embedded contexts can't accept a same-document URL rewrite —
+  // most commonly `about:srcdoc` iframes (e.g. Vue REPL previews),
+  // sandboxed iframes, and data: URLs. In those, `buildUrl(key)`
+  // resolves to a URL whose origin doesn't match the document's
+  // (the document inherits the parent's origin, but the synthesized
+  // URL keeps the scheme), and `history.pushState` / `replaceState`
+  // throw `SecurityError`. The user-visible step state still works
+  // — `current` / `goTo()` drive the form via the in-memory stepper
+  // — they just won't appear in the URL bar. Silently swallowing
+  // keeps the preview functional without coupling the library to
+  // embed-detection logic.
+  function safeWriteState(key: string, op: 'push' | 'replace'): void {
+    try {
+      const fn = op === 'push' ? window.history.pushState : window.history.replaceState
+      fn.call(window.history, {}, '', buildUrl(key))
+    } catch {
+      // SecurityError or similar — origin mismatch, sandboxed history,
+      // or a host that's locked down the History API. No remediation
+      // possible here; the in-memory stepper state remains the source
+      // of truth.
+    }
+  }
+
   return {
     push(key) {
       if (disposed) return
-      window.history.pushState({}, '', buildUrl(key))
+      safeWriteState(key, 'push')
     },
     replace(key) {
       if (disposed) return
-      window.history.replaceState({}, '', buildUrl(key))
+      safeWriteState(key, 'replace')
     },
     read() {
       const url = new URL(window.location.href)

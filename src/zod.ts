@@ -46,6 +46,14 @@
  */
 
 export { useForm } from './runtime/adapters/unified/use-form'
+export type {
+  UseFormConfig,
+  UseFormConfigV3,
+  UseFormConfigV4,
+  UseFormReturn,
+  UseFormReturnV3,
+  UseFormReturnV4,
+} from './runtime/adapters/unified/types-unified'
 export type { PathInput, PathOutput } from './runtime/adapters/zod-v4'
 export { injectForm } from './runtime/composables/use-form-context'
 export { useRegister } from './runtime/composables/use-register'

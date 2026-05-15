@@ -117,19 +117,34 @@
   // never reassign it, but the type still demands a Ref wrapper.
   const resourceLinks = ref({
     pkgFileTextUrl: (pkgName: string, _pkgVersion: string | undefined, pkgPath: string) => {
-      if (pkgName === 'attaform' || pkgName === 'vue' || pkgName === 'zod') {
+      if (
+        pkgName === 'attaform' ||
+        pkgName === 'vue' ||
+        pkgName === 'zod' ||
+        pkgName === 'zod-v3'
+      ) {
         return `/lib/types/${pkgName}/${pkgPath}`
       }
       return `https://cdn.jsdelivr.net/npm/${pkgName}/${pkgPath}`
     },
     pkgDirUrl: (pkgName: string, _pkgVersion: string | undefined, _pkgPath: string) => {
-      if (pkgName === 'attaform' || pkgName === 'vue' || pkgName === 'zod') {
+      if (
+        pkgName === 'attaform' ||
+        pkgName === 'vue' ||
+        pkgName === 'zod' ||
+        pkgName === 'zod-v3'
+      ) {
         return `/lib/types/${pkgName}/meta.json`
       }
       return `https://unpkg.com/${pkgName}@${_pkgVersion || 'latest'}/${_pkgPath}/?meta`
     },
     pkgLatestVersionUrl: (pkgName: string) => {
-      if (pkgName === 'attaform' || pkgName === 'vue' || pkgName === 'zod') {
+      if (
+        pkgName === 'attaform' ||
+        pkgName === 'vue' ||
+        pkgName === 'zod' ||
+        pkgName === 'zod-v3'
+      ) {
         return `/lib/types/${pkgName}/package.json`
       }
       return `https://unpkg.com/${pkgName}@latest/package.json`
@@ -170,6 +185,17 @@
     scrollBeyondLastLine: false,
     renderLineHighlight: 'gutter' as const,
     smoothScrolling: true,
+    // By default Monaco's scrollbar consumes every wheel event over its
+    // viewport — even when the editor is pinned at its top or bottom
+    // extreme. In a docs page that ends well below the REPL, that traps
+    // the reader inside the editor pane; they have to move the cursor
+    // off the editor before they can keep scrolling the page. Setting
+    // `alwaysConsumeMouseWheel: false` lets Monaco swallow the wheel
+    // only while it actually has content to scroll, then bubbles
+    // subsequent events to the parent so the page keeps moving. The
+    // preview pane doesn't have this problem because it's a plain iframe
+    // / scroll container with native wheel behavior.
+    scrollbar: { alwaysConsumeMouseWheel: false },
   }
   // `showErrorText: false` and `autoSaveText: false` opt out of the
   // "Show Error" / "Auto Save" toggle buttons @vue/repl floats in the

@@ -46,6 +46,11 @@ const typesDir = resolve(outDir, 'types')
 const requireFromHere = createRequire(import.meta.url)
 const vuePkg = requireFromHere('vue/package.json')
 const zodPkg = requireFromHere('zod/package.json')
+// `zod-v3` is an npm-aliased package: pnpm installs zod@3.x under the
+// directory name `zod-v3` so v3 and v4 can coexist. The package.json's
+// own `name` field still says "zod", but `requireFromHere('zod-v3/...')`
+// resolves to the v3 install via the alias.
+const zodV3Pkg = requireFromHere('zod-v3/package.json')
 // attaform's package.json sits at the monorepo root, not in
 // node_modules — resolve it by absolute path so we don't rely on a
 // hoisting layout that the workspace might restructure later.
@@ -316,6 +321,19 @@ const packageManifests = {
     types: './index.d.ts',
     main: './index.js',
   },
+  // `zod-v3` is consumed by the unified `attaform/zod` entry's type
+  // bundle (the V3 overload references `z as zV3 from 'zod-v3'`).
+  // Volar's LSP resolves that bare import against the package manifest
+  // here — without this, the LSP falls back to fetching from unpkg
+  // (which 404s + CORS-blocks the request, polluting the console).
+  // The runtime side doesn't need a `/lib/zod-v3.js` because esbuild
+  // inlines zod-v3 into `attaform-zod.js` (no external marker).
+  'zod-v3': {
+    name: 'zod-v3',
+    version: zodV3Pkg.version,
+    types: './index.d.ts',
+    main: './index.js',
+  },
 }
 
 // Just attaform's two .d.ts entry points. Re-run on every src/ change
@@ -346,6 +364,7 @@ async function emitTypeBundles() {
     mkdir(resolve(typesDir, 'attaform'), { recursive: true }),
     mkdir(resolve(typesDir, 'vue'), { recursive: true }),
     mkdir(resolve(typesDir, 'zod'), { recursive: true }),
+    mkdir(resolve(typesDir, 'zod-v3'), { recursive: true }),
   ])
   await Promise.all([
     emitAttaformTypeBundles(),
@@ -359,6 +378,22 @@ async function emitTypeBundles() {
       input: resolve(repoRoot, 'node_modules/zod/index.d.ts'),
       output: resolve(typesDir, 'zod/index.d.ts'),
       name: 'zod',
+      respectExternal: true,
+    }),
+    bundleDts({
+      // zod-v3's root `index.d.ts` re-exports through an `import * as
+      // z` / `export { z }` namespace shape that rollup-plugin-dts
+      // chokes on (it emits getter syntax in its namespace fixer that
+      // its own parser can't re-parse — UnsupportedSyntaxError). The
+      // `v3/external.d.ts` sub-entry has the same surface (everything
+      // the public `z` namespace contains) via plain `export *`
+      // statements, which bundles cleanly. We then rewrite a fresh
+      // `index.d.ts` below that re-exports the bundle as the `z`
+      // namespace, matching the consumer-facing shape
+      // `import { z } from 'zod-v3'`.
+      input: resolve(repoRoot, 'node_modules/zod-v3/v3/external.d.ts'),
+      output: resolve(typesDir, 'zod-v3/external.d.ts'),
+      name: 'zod-v3',
       respectExternal: true,
     }),
   ])
@@ -381,6 +416,17 @@ async function emitTypeBundles() {
     writeFile(resolve(typesDir, 'attaform/zod.js'), ''),
     writeFile(resolve(typesDir, 'vue/index.js'), ''),
     writeFile(resolve(typesDir, 'zod/index.js'), ''),
+    writeFile(resolve(typesDir, 'zod-v3/index.js'), ''),
+    // zod-v3 root entry: re-exports the bundled v3 surface as both
+    // the `z` namespace (matching `import { z } from 'zod-v3'`) and
+    // as plain named re-exports (matching `import { ZodObject } from
+    // 'zod-v3'`). Mirrors the shape zod-v3's published `index.d.ts`
+    // exposes, minus the namespace-fixer syntax that rollup-plugin-dts
+    // can't handle (see the bundleDts call above for context).
+    writeFile(
+      resolve(typesDir, 'zod-v3/index.d.ts'),
+      `import * as z from './external'\nexport * from './external'\nexport { z }\nexport default z\n`
+    ),
   ])
   // Sidecar `.d.ts` next to each `.js` runtime bundle so Nuxt/IDE
   // tooling (vue-tsc, Volar, vtsls) sees types when resolving an
@@ -438,6 +484,14 @@ async function emitTypeBundles() {
     writeFile(
       resolve(typesDir, 'zod/meta.json'),
       JSON.stringify(dirMeta(['package.json', 'index.d.ts', 'index.js']), null, 2)
+    ),
+    writeFile(
+      resolve(typesDir, 'zod-v3/meta.json'),
+      JSON.stringify(
+        dirMeta(['package.json', 'index.d.ts', 'index.js', 'external.d.ts']),
+        null,
+        2
+      )
     ),
   ])
 }

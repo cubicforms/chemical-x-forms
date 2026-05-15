@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { waitUntil } from '../utils/form-harness'
@@ -36,7 +37,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
 
   it('selecting a radio writes its option-value to the model', async () => {
     const schema = z.object({ tier: z.enum(['free', 'pro', 'enterprise']) })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -103,7 +104,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
 
   it('mounts with el.checked synced to the model', async () => {
     const schema = z.object({ tier: z.enum(['free', 'pro', 'enterprise']) })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -151,7 +152,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
     // latter: include the form's value in the render function so a
     // setValue call triggers a re-render → `beforeUpdate` → setChecked.
     const schema = z.object({ tier: z.enum(['free', 'pro', 'enterprise']) })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -203,7 +204,7 @@ describe('<input type="radio" v-register> — single-group selection', () => {
     // group should leave every option unchecked rather than picking
     // an arbitrary one.
     const schema = z.object({ tier: z.enum(['free', 'pro', 'enterprise']) })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -254,7 +255,7 @@ describe('<input type="radio" v-register> — hydration with static value attrib
     // The directive must still resolve the option-value via the DOM
     // attribute (el.value) so el.checked reflects the model.
     const schema = z.object({ tier: z.enum(['free', 'pro', 'enterprise']) })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -324,7 +325,7 @@ describe('<input type="radio" v-register> — slim-gate interactions', () => {
   it('rejects a non-string write to a string-enum-bound radio path', async () => {
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const schema = z.object({ tier: z.enum(['free', 'pro']) })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {
@@ -354,7 +355,7 @@ describe('<input type="radio" v-register> — slim-gate interactions', () => {
 
   it('accepts an out-of-enum string (refinement check, not a write-time gate)', async () => {
     const schema = z.object({ tier: z.enum(['free', 'pro']) })
-    const captured: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const captured: { api?: UseFormReturn<typeof schema> } = {}
 
     const Parent = defineComponent({
       setup() {

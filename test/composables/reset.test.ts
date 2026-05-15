@@ -4,6 +4,7 @@ import { createApp, defineComponent, h, type App } from 'vue'
 import { useForm } from '../../src'
 import { attachRegistryToApp, createRegistry } from '../../src/runtime/core/registry'
 import type { UseFormReturnType } from '../../src/runtime/types/types-api'
+import type { UseFormReturn } from '../../src/zod'
 import { fakeSchema } from '../utils/fake-schema'
 
 /**
@@ -238,7 +239,7 @@ describe('useForm — reset() re-derives schema errors against the post-reset st
       email: z.email(),
     })
 
-    let captured!: ReturnType<typeof useForm<typeof schema>>
+    let captured!: UseFormReturn<typeof schema>
     const Probe = defineComponent({
       setup() {
         captured = useForm({
@@ -297,7 +298,7 @@ describe('useForm — reset() re-derives schema errors against the post-reset st
       email: z.email(),
     })
 
-    let captured!: ReturnType<typeof useForm<typeof schema>>
+    let captured!: UseFormReturn<typeof schema>
     const Probe = defineComponent({
       setup() {
         captured = useForm({
@@ -351,7 +352,7 @@ describe('useForm — reset() re-derives schema errors against the post-reset st
       delivery: addressSchema,
     })
 
-    let captured!: ReturnType<typeof useForm<typeof schema>>
+    let captured!: UseFormReturn<typeof schema>
     const Probe = defineComponent({
       setup() {
         captured = useForm({
@@ -443,7 +444,7 @@ describe('useForm — reset() re-derives schema errors against the post-reset st
       }),
     })
 
-    let captured!: ReturnType<typeof useForm<typeof schema>>
+    let captured!: UseFormReturn<typeof schema>
     const Probe = defineComponent({
       setup() {
         captured = useForm({
@@ -519,7 +520,7 @@ describe('useForm — reset() re-derives schema errors against the post-reset st
         .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
     })
 
-    let captured!: ReturnType<typeof useForm<typeof schema>>
+    let captured!: UseFormReturn<typeof schema>
     const Probe = defineComponent({
       setup() {
         captured = useForm({
@@ -574,7 +575,7 @@ describe('useForm — reset() re-derives schema errors against the post-reset st
         .refine(async (v) => v !== 'taken@example.com', 'That email is already registered.'),
     })
 
-    let captured!: ReturnType<typeof useForm<typeof schema>>
+    let captured!: UseFormReturn<typeof schema>
     const Probe = defineComponent({
       setup() {
         captured = useForm({
@@ -615,7 +616,7 @@ describe('useForm — reset() re-derives schema errors against the post-reset st
 
     const schema = z.object({ name: z.string().min(1) })
 
-    let captured!: ReturnType<typeof useForm<typeof schema>>
+    let captured!: UseFormReturn<typeof schema>
     const Probe = defineComponent({
       setup() {
         captured = useForm({

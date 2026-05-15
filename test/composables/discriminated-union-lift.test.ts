@@ -6,7 +6,7 @@ import type {
   FieldStateMapEntry,
   ValidationError,
 } from '../../src/runtime/types/types-api'
-import type { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 
 /**
  * Type-level coverage for the discriminated-union "lift" applied to
@@ -139,7 +139,7 @@ const _cargoSchema = z.object({
   ]),
 })
 
-type CargoForm = ReturnType<typeof useForm<typeof _cargoSchema>>
+type CargoForm = UseFormReturn<typeof _cargoSchema>
 
 // Recursive Proxy stand-in (same pattern as type-inference.test.ts):
 // the file never invokes useForm because there's no Vue app context;

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../../src/zod'
+import type { UseFormReturn } from '../../../src/zod'
 import { createAttaform } from '../../../src/runtime/core/plugin'
 import {
   deriveDefault,
@@ -253,7 +254,7 @@ describe('maxRecursionDepth — counter bumps on lazy only', () => {
           country: z.string(),
         }),
       })
-      type Api = ReturnType<typeof useForm<typeof schema>>
+      type Api = UseFormReturn<typeof schema>
       const handle: { api?: Api } = {}
       const App = defineComponent({
         setup() {
@@ -277,7 +278,7 @@ describe('maxRecursionDepth — counter bumps on lazy only', () => {
       const schema = z.object({
         a: z.object({ b: z.object({ c: z.object({ d: z.string() }) }) }),
       })
-      type Api = ReturnType<typeof useForm<typeof schema>>
+      type Api = UseFormReturn<typeof schema>
       const handle: { api?: Api } = {}
       const App = defineComponent({
         setup() {
@@ -312,7 +313,7 @@ describe('useForm — passes sanitised maxRecursionDepth into walks', () => {
     type Node = { value: string; child: Node }
     const Node: z.ZodType<Node> = z.lazy(() => z.object({ value: z.string(), child: Node }))
     const schema = z.object({ root: Node })
-    type Api = ReturnType<typeof useForm<typeof schema>>
+    type Api = UseFormReturn<typeof schema>
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const handle: { api?: Api } = {}
     const App = defineComponent({
@@ -351,7 +352,7 @@ describe('useForm — passes sanitised maxRecursionDepth into walks', () => {
     const schema = z.object({
       name: z.string(),
     })
-    type Api = ReturnType<typeof useForm<typeof schema>>
+    type Api = UseFormReturn<typeof schema>
     const handle: { api?: Api } = {}
     const App = defineComponent({
       setup() {

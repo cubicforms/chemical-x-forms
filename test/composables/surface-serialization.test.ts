@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, nextTick, toDisplayString, type App } from 'vue'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { z } from 'zod'
 import { createAttaform } from '../../src/runtime/core/plugin'
 
@@ -41,7 +42,7 @@ describe('form.values / form.errors / form.fields — template + JSON.stringify 
       email: z.email(),
       password: z.string().min(1, 'pw required'),
     })
-    type Api = ReturnType<typeof useForm<typeof schema>>
+    type Api = UseFormReturn<typeof schema>
     const handle: { api?: Api } = {}
     const App = defineComponent({
       setup() {
@@ -168,7 +169,7 @@ describe('form.values / form.errors / form.fields — template + JSON.stringify 
           z.object({ channel: z.literal('sms'), number: z.string().min(10) }),
         ]),
       })
-      type Api = ReturnType<typeof useForm<typeof schema>>
+      type Api = UseFormReturn<typeof schema>
       const handle: { api?: Api } = {}
       const App = defineComponent({
         setup() {

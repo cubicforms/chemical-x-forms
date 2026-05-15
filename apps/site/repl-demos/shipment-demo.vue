@@ -1,22 +1,20 @@
 <script setup lang="ts">
   // ─────────────────────────────────────────────────────────────────
-  // Cargo shipment booking — a stress test for Attaform. Exercises:
-  // discriminated unions, enums, field arrays, async field + aggregate
-  // validation, transforms, the unset sentinel, persistence, multi-step
-  // navigation, meta + field valid/validating flags, and the
-  // `field.showErrors` / `field.firstError` error-display primitives.
+  // Cargo shipment booking — multistep wizard built on `useStepper`
+  // composing four `useForm` instances. Each step owns its own schema,
+  // history, and persistence; the stepper orchestrates navigation,
+  // status aggregation, and the cross-form submit.
   //
-  // Error display: every field reads `showErrors` (heuristic-gated:
-  // show after submit OR after touched + dirty) plus `firstError` (the
-  // top error in schema order). Override the heuristic globally via
-  // `createAttaform({ defaults: { shouldShowErrors } })` or per-form
-  // via `useForm({ shouldShowErrors })`. Library default kicks in
-  // here — see the `errorMessage` helper below.
+  // Stresses: discriminated unions, enums, field arrays, async field +
+  // aggregate validation, transforms, the unset sentinel, the
+  // `field.showErrors` / `field.firstError` error-display primitives.
+  // Per-form `history` and `persist` configs round out the wiring —
+  // each step has its own undo stack and namespaced storage key.
   // ─────────────────────────────────────────────────────────────────
 
   import { computed, nextTick, ref, watch } from 'vue'
   import { z } from 'zod'
-  import { fieldMeta, useForm, unset, withMeta } from 'attaform/zod'
+  import { fieldMeta, useForm, useStepper, unset, withMeta } from 'attaform/zod'
   import type { FieldState } from 'attaform'
 
   // ─── Mock async services ─────────────────────────────────────────
@@ -68,14 +66,20 @@
     })
   }
 
-  // ─── Schemas ─────────────────────────────────────────────────────
+  // ─── Constants ───────────────────────────────────────────────────
   const COUNTRIES = ['US', 'CA', 'MX', 'GB', 'DE', 'FR', 'JP', 'CN', 'AU'] as const
   const HAZARD_CLASSES = ['1', '2', '3', '4', '5', '6', '7', '8', '9'] as const
   const TRUCK_TYPES = ['box', 'flatbed', 'reefer', 'tanker'] as const
   const CONTAINER_SIZES = ['20FT', '40FT', '40FTHC', '45FTHC'] as const
   const COVERAGES = ['none', 'basic', 'full'] as const
   const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY'] as const
+  const ACKNOWLEDGEMENTS = [
+    'I confirm the cargo description is accurate.',
+    'I authorize handling fees for hazmat or oversized items.',
+    "I accept the carrier's terms of service and rate schedule.",
+  ] as const
 
+  // ─── Step 1 — reference + pickup + delivery ──────────────────────
   const addressSchema = z.object({
     line1: z
       .string()
@@ -104,6 +108,21 @@
     country: z.enum(COUNTRIES).register(fieldMeta, { label: 'Country' }),
   })
 
+  const referenceSchema = z.object({
+    reference: z
+      .string()
+      .regex(/^SHP-\d{6}$/, 'Reference looks like SHP-123456 — SHP plus 6 digits.')
+      .register(fieldMeta, {
+        label: 'Reference',
+        placeholder: 'SHP-123456',
+        description: 'Tracking ID for this shipment.',
+      }),
+    pickup: withMeta(addressSchema, { label: 'Pickup address' }),
+    delivery: withMeta(addressSchema, { label: 'Delivery address' }),
+    useSameDeliveryAddress: z.boolean().register(fieldMeta, { label: 'Same as pickup address' }),
+  })
+
+  // ─── Step 2 — cargo line items + discriminated details ───────────
   const lineItemSchema = z.object({
     sku: z
       .string()
@@ -131,7 +150,7 @@
   // "dry → hazmat" reclassification keeps whatever items the user
   // already typed instead of resetting items: [] on each variant
   // reshape. The async .superRefine attaches the capacity error at
-  // this array's path (cargo.items), surfaced via cargoItemsArrayError.
+  // this array's path (cargoForm: items), surfaced via cargoItemsArrayError.
   const lineItemArraySchema = z
     .array(lineItemSchema)
     .min(1, 'Add at least one line item to ship.')
@@ -210,6 +229,7 @@
       .register(fieldMeta, { label: 'Cargo details' }),
   })
 
+  // ─── Step 3 — service mode + dates + insurance + notes ───────────
   const truckServiceSchema = z.object({
     mode: z.literal('truck'),
     truckType: z.enum(TRUCK_TYPES).register(fieldMeta, { label: 'Truck type' }),
@@ -237,29 +257,10 @@
     containerSize: z.enum(CONTAINER_SIZES).register(fieldMeta, { label: 'Container' }),
   })
 
-  const serviceSchema = z.discriminatedUnion('mode', [
-    truckServiceSchema,
-    airServiceSchema,
-    oceanServiceSchema,
-  ])
-
-  const schema = z.object({
-    reference: z
-      .string()
-      .regex(/^SHP-\d{6}$/, 'Reference looks like SHP-123456 — SHP plus 6 digits.')
-      .register(fieldMeta, {
-        label: 'Reference',
-        placeholder: 'SHP-123456',
-        description: 'Tracking ID for this shipment.',
-      }),
-    pickup: withMeta(addressSchema, { label: 'Pickup address' }),
-    delivery: withMeta(addressSchema, { label: 'Delivery address' }),
-    // Schema-modeled toggle so the flag is persisted + restored
-    // alongside the rest of the draft. The watch below keeps
-    // delivery in sync with pickup whenever it's true.
-    useSameDeliveryAddress: z.boolean().register(fieldMeta, { label: 'Same as pickup address' }),
-    cargo: cargoSchema.register(fieldMeta, { label: 'Cargo' }),
-    service: serviceSchema.register(fieldMeta, { label: 'Service' }),
+  const serviceSchema = z.object({
+    service: z
+      .discriminatedUnion('mode', [truckServiceSchema, airServiceSchema, oceanServiceSchema])
+      .register(fieldMeta, { label: 'Service' }),
     desiredPickupDate: z
       .string()
       .min(1, 'Pick a pickup date.')
@@ -269,10 +270,10 @@
       .min(1, 'Pick a delivery date.')
       .register(fieldMeta, { label: 'Delivery date' }),
     // Inference stress test: `.transform()`-wrapped object with a
-    // `.default()`-ed leaf inside. The read view (form.values.insurance)
-    // recurses through the pipe so `currency` types as `string` — not
-    // `string | undefined`. The transform fires at submit, so
-    // handleSubmit's payload also carries the derived `tier`.
+    // `.default()`-ed leaf inside. The read view recurses through the
+    // pipe so `currency` types as `string` — not `string | undefined`.
+    // The transform fires at submit, so handleSubmit's payload also
+    // carries the derived `tier`.
     insurance: z
       .object({
         declaredValueUSD: z
@@ -305,40 +306,95 @@
       .register(fieldMeta, { label: 'Notes', description: 'Optional handling instructions.' }),
   })
 
-  // ─── Form ────────────────────────────────────────────────────────
-  const form = useForm({
-    schema,
-    key: 'shipment',
-    persist: 'local',
+  // ─── Step 4 — review form (terms + signature + acknowledgements) ─
+  const reviewSchema = z.object({
+    termsAccepted: z
+      .literal(true, { message: 'Accept the terms to book the shipment.' })
+      .register(fieldMeta, { label: 'I accept the terms' }),
+    signature: z.string().min(2, 'Type your name to sign.').register(fieldMeta, {
+      label: 'Signature',
+      description: 'Type your name as it appears on your shipping account.',
+    }),
+    acknowledgements: z
+      .array(z.enum(ACKNOWLEDGEMENTS))
+      .min(ACKNOWLEDGEMENTS.length, 'Confirm every acknowledgement above to continue.')
+      .register(fieldMeta, { label: 'Acknowledgements' }),
+  })
+
+  // ─── Forms ──────────────────────────────────────────────────────
+  const refForm = useForm({
+    schema: referenceSchema,
+    key: 'reference',
+    persist: { storage: 'local', key: 'attaform:shipment.reference' },
     history: { max: 50 },
     validateOn: 'change',
     debounceMs: 200,
     defaultValues: {
       reference: 'SHP-100001',
-      cargo: { items: [], details: { type: 'dry', fragile: false } },
+      pickup: { country: 'US' },
+      delivery: { country: 'US' },
+      useSameDeliveryAddress: false,
+    },
+  })
+
+  const cargoForm = useForm({
+    schema: cargoSchema,
+    key: 'cargo',
+    persist: { storage: 'local', key: 'attaform:shipment.cargo' },
+    history: { max: 50 },
+    validateOn: 'change',
+    debounceMs: 200,
+    defaultValues: {
+      items: [],
+      details: { type: 'dry', fragile: false },
+    },
+  })
+
+  const serviceForm = useForm({
+    schema: serviceSchema,
+    key: 'service',
+    persist: { storage: 'local', key: 'attaform:shipment.service' },
+    history: { max: 50 },
+    validateOn: 'change',
+    debounceMs: 200,
+    defaultValues: {
       service: { mode: 'truck', truckType: 'box', liftgate: false },
       // unset = "show empty until the user commits a value". $0
       // declared insurance is a meaningful choice, so we don't paint
       // it until they type it.
       insurance: { declaredValueUSD: unset, coverage: 'basic' },
-      pickup: { country: 'US' },
-      delivery: { country: 'US' },
-      useSameDeliveryAddress: false,
       // unset on an optional string keeps "untouched" distinguishable
-      // from "intentionally empty". Watch form.fields.notes.blank.
+      // from "intentionally empty". Watch serviceForm.fields.notes.blank.
       notes: unset,
     },
   })
 
+  const reviewForm = useForm({
+    schema: reviewSchema,
+    key: 'review',
+    persist: { storage: 'local', key: 'attaform:shipment.review' },
+    history: { max: 50 },
+    validateOn: 'change',
+    debounceMs: 200,
+    defaultValues: {
+      acknowledgements: [],
+    },
+  })
+
+  // Compose the four into a wizard. `useStepper` picks up the form
+  // keys for `current`, derives statuses from form meta, and threads
+  // the active step through browser back/forward via window.history.
+  const stepper = useStepper([refForm, cargoForm, serviceForm, reviewForm])
+
   // ─── Pickup → delivery live mirror ───────────────────────────────
   // While the flag is on, copy pickup → delivery via the whole-form
-  // callback variant of setValue. Un-ticking leaves the snapshot in
-  // place for the user to edit.
+  // callback variant of setValue. Both fields live in refForm so this
+  // mirror is self-contained — no cross-form plumbing.
   watch(
-    [() => form.values.useSameDeliveryAddress, () => form.values.pickup],
+    [() => refForm.values.useSameDeliveryAddress, () => refForm.values.pickup],
     ([same]) => {
       if (!same) return
-      form.setValue((v) => ({ ...v, delivery: v.pickup }))
+      refForm.setValue((v) => ({ ...v, delivery: v.pickup }))
     },
     { deep: true, immediate: true }
   )
@@ -347,83 +403,76 @@
     (raw: unknown) => (typeof raw === 'string' ? raw.toUpperCase().replace(/\s+/g, '') : raw),
   ]
 
-  // ─── Step navigation ─────────────────────────────────────────────
-  const STEPS = [
-    { id: 1, title: 'Origin & destination' },
-    { id: 2, title: 'Cargo' },
-    { id: 3, title: 'Service & insurance' },
-    { id: 4, title: 'Review & submit' },
-  ] as const
-  type StepId = (typeof STEPS)[number]['id']
-  const step = ref<StepId>(1)
-
-  // Step 4 owns no fields, so it's never independently "done" — its
-  // completion is the submit itself, not a validity check.
-  const STEP_PATHS = {
-    1: ['reference', 'pickup', 'delivery'],
-    2: ['cargo'],
-    3: ['service', 'insurance', 'desiredPickupDate', 'desiredDeliveryDate', 'notes'],
-    4: [],
+  // ─── Step metadata ───────────────────────────────────────────────
+  // Stepper drives the nav — `current` is the active form's key, and
+  // `statuses[key].isValid` is what gates the Next button.
+  const STEP_TITLES = {
+    reference: 'Origin & destination',
+    cargo: 'Cargo',
+    service: 'Service & insurance',
+    review: 'Review & submit',
   } as const
-  function isStepValid(id: StepId) {
-    const paths = STEP_PATHS[id]
-    if (paths.length === 0) return false
-    return paths.every((p) => form.fields(p).valid)
-  }
-  const currentStepValid = computed(() => isStepValid(step.value))
+  type FormKey = keyof typeof STEP_TITLES
 
-  function goNext() {
-    if (step.value < 4) step.value = (step.value + 1) as StepId
-  }
-  function goBack() {
-    if (step.value > 1) step.value = (step.value - 1) as StepId
-  }
+  const formByKey = {
+    reference: refForm,
+    cargo: cargoForm,
+    service: serviceForm,
+    review: reviewForm,
+  } as const
 
   // ─── Error summary (review step) ────────────────────────────────
-  // Group form.meta.errors by top-level segment so the Review step
-  // renders one panel per section. Each row jumps to the owning step.
-  // Section / leaf labels read straight from the schema's registered
-  // metadata via form.fields(path).label — the schema is the single
-  // source of truth for both structure and presentation.
+  // `stepper.allErrors` is the flat aggregate across all four forms.
+  // Group by formKey × top-level path so each section renders a tidy
+  // panel. Each row jumps to the owning step via `stepper.goTo`.
   type ErrorGroup = {
-    rootKey: string
+    formKey: FormKey
+    stepTitle: string
     rootLabel: string
-    items: { leafLabel: string | null; message: string; path: ReadonlyArray<string | number> }[]
+    rootKey: string
+    items: {
+      leafLabel: string | null
+      message: string
+      path: ReadonlyArray<string | number>
+    }[]
   }
+
+  function safeLabelAtPath(formKey: FormKey, path: ReadonlyArray<string | number>): string | null {
+    try {
+      return formByKey[formKey].fields(path).label || null
+    } catch {
+      return null
+    }
+  }
+
   const groupedErrors = computed(() => {
     const groups = new Map<string, ErrorGroup>()
-    for (const e of form.meta.errors) {
+    for (const e of stepper.allErrors.value) {
+      const formKey = e.formKey as FormKey
       const root = String(e.path[0] ?? '(root)')
-      let group = groups.get(root)
+      const key = `${formKey}:${root}`
+      let group = groups.get(key)
       if (!group) {
+        const rootLabel = safeLabelAtPath(formKey, [root]) ?? root
         group = {
+          formKey,
+          stepTitle: STEP_TITLES[formKey],
           rootKey: root,
-          rootLabel: form.fields(root).label || root,
+          rootLabel,
           items: [],
         }
-        groups.set(root, group)
+        groups.set(key, group)
       }
-      let leaf: string | null = null
-      if (e.path.length > 1) {
-        leaf = form.fields(e.path).label || null
-      }
+      const leaf = e.path.length > 1 ? safeLabelAtPath(formKey, e.path) : null
       group.items.push({ leafLabel: leaf, message: e.message, path: e.path })
     }
     return [...groups.values()]
   })
-  function pathToStep(path: ReadonlyArray<string | number>) {
-    const root = String(path[0] ?? '')
-    for (const id of [1, 2, 3] as const) {
-      if ((STEP_PATHS[id] as ReadonlyArray<string>).includes(root)) return id
-    }
-    return 4
-  }
-  function goToError(path: ReadonlyArray<string | number>) {
-    step.value = pathToStep(path)
-    // nextTick so v-show paints the active step body before we focus.
-    // `form.fields(path)` resolves the FieldState directly (call-form);
-    // `.element` is the first DOM node bound at that path.
-    nextTick(() => form.fields(path).element?.focus())
+
+  function goToError(formKey: FormKey, path: ReadonlyArray<string | number>) {
+    stepper.goTo(formKey)
+    // nextTick so the active step body paints before we try to focus.
+    nextTick(() => formByKey[formKey].fields(path).element?.focus())
   }
 
   // ─── Cargo / service variant switching ───────────────────────────
@@ -462,20 +511,20 @@
     full: 'Full',
   }
 
-  const cargoType = computed(() => form.values.cargo.details.type)
-  const serviceMode = computed(() => form.values.service.mode)
+  const cargoType = computed(() => cargoForm.values.details.type)
+  const serviceMode = computed(() => serviceForm.values.service.mode)
 
   function setCargoType(type: (typeof CARGO_TYPES)[number]) {
-    form.setValue('cargo.details.type', type)
+    cargoForm.setValue('details.type', type)
   }
 
   function setServiceMode(mode: (typeof SERVICE_MODES)[number]) {
-    form.setValue('service.mode', mode)
+    serviceForm.setValue('service.mode', mode)
   }
 
   // ─── Line items (field array) ────────────────────────────────────
   function addLineItem() {
-    form.append('cargo.items', {
+    cargoForm.append('items', {
       sku: '',
       description: '',
       quantity: 1,
@@ -483,35 +532,56 @@
     })
   }
   function removeLineItem(idx: number) {
-    form.remove('cargo.items', idx)
+    cargoForm.remove('items', idx)
   }
 
   const totalLb = computed(() =>
-    form.values.cargo.items.reduce(
+    cargoForm.values.items.reduce(
       (sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.unitWeightLb) || 0),
       0
     )
   )
 
   // ─── Submit ──────────────────────────────────────────────────────
-  // handleSubmit awaits every async refinement (postal lookups, SKU
-  // checks, capacity) before deciding success vs failure.
+  // `handleSubmit` on the review form awaits every async refinement
+  // (postal lookups, SKU checks, capacity, signature). Before
+  // surfacing success we re-check the prior three forms' statuses —
+  // the user can edit upstream steps after reaching review, so the
+  // stepper.statuses gate is what catches "looks valid but pickup
+  // dropped invalid after the user came back here".
   const submitError = ref<string | null>(null)
-  const onSubmit = form.handleSubmit(
-    (values) => {
+  const onSubmit = reviewForm.handleSubmit(
+    (review) => {
+      const upstreamValid =
+        stepper.statuses.reference.isValid &&
+        stepper.statuses.cargo.isValid &&
+        stepper.statuses.service.isValid
+      if (!upstreamValid) {
+        submitError.value =
+          'One or more earlier steps need fixes. Use the summary below to jump to the offending field.'
+        return
+      }
       submitError.value = null
-      alert('Booked!\n\n' + JSON.stringify(values, null, 2))
-      form.reset()
-      step.value = 1
+      const payload = {
+        reference: refForm.values(),
+        cargo: cargoForm.values(),
+        service: serviceForm.values(),
+        review,
+      }
+      alert('Booked!\n\n' + JSON.stringify(payload, null, 2))
+      resetAll()
     },
     () => {
-      submitError.value = 'Please fix the highlighted fields above.'
+      submitError.value = 'Please fix the highlighted fields on this step before booking.'
     }
   )
 
   function resetAll() {
-    form.reset()
-    step.value = 1
+    refForm.reset()
+    cargoForm.reset()
+    serviceForm.reset()
+    reviewForm.reset()
+    stepper.goTo('reference')
     submitError.value = null
   }
 
@@ -532,25 +602,44 @@
     return field?.showErrors ? (field.firstError?.message ?? '') : ''
   }
 
-  // Array-level error at cargo.items (min(1) + async capacity refine).
-  // Filtered to path.length === 2 so per-row errors at
-  // cargo.items.${i}.${leaf} don't bleed into the array banner.
+  // Array-level error at cargoForm: items (min(1) + async capacity refine).
+  // Filtered to path.length === 1 so per-row errors at
+  // items.${i}.${leaf} don't bleed into the array banner.
   const cargoItemsArrayError = computed(
-    () => form.errors('cargo.items')?.find((e) => e.path.length === 2)?.message ?? ''
+    () => cargoForm.errors('items')?.find((e) => e.path.length === 1)?.message ?? ''
   )
 
   const addressBlocks = computed(() => [
     {
       prefix: 'pickup' as const,
-      label: form.fields('pickup').label,
+      label: refForm.fields('pickup').label,
       mirrored: false,
     },
     {
       prefix: 'delivery' as const,
-      label: form.fields('delivery').label,
-      mirrored: form.values.useSameDeliveryAddress,
+      label: refForm.fields('delivery').label,
+      mirrored: refForm.values.useSameDeliveryAddress,
     },
   ])
+
+  // Undo/redo targets the form that owns the active step — each form
+  // has its own history stack so an undo on cargo doesn't roll back
+  // an address edit.
+  const activeForm = computed(() => formByKey[stepper.current.value])
+  const canGoNext = computed(() => stepper.statuses[stepper.current.value].isValid)
+  const isAnyValidating = computed(() => stepper.forms.some((f) => f.meta.validating))
+
+  // Acknowledgement multi-checkbox helper — read / write the array via
+  // setValue. `register()` doesn't bind multi-checkboxes natively in
+  // the demo's HTML; managing it imperatively keeps the surface tight.
+  function toggleAcknowledgement(ack: (typeof ACKNOWLEDGEMENTS)[number], checked: boolean) {
+    const current = reviewForm.values.acknowledgements ?? []
+    const next = checked ? [...current, ack] : current.filter((a) => a !== ack)
+    reviewForm.setValue('acknowledgements', next)
+  }
+  function isAcknowledged(ack: (typeof ACKNOWLEDGEMENTS)[number]) {
+    return (reviewForm.values.acknowledgements ?? []).includes(ack)
+  }
 </script>
 
 <template>
@@ -564,37 +653,37 @@
       <!-- ─── Stepper ─── -->
       <nav class="stepper" aria-label="Form progress">
         <button
-          v-for="s in STEPS"
-          :key="s.id"
+          v-for="(form, idx) in stepper.forms"
+          :key="form.key"
           type="button"
           class="step"
           :class="{
-            active: step === s.id,
-            done: isStepValid(s.id),
+            active: stepper.current.value === form.key,
+            done: stepper.statuses[form.key as FormKey].isValid,
           }"
-          :aria-current="step === s.id ? 'step' : undefined"
-          @click="step = s.id"
+          :aria-current="stepper.current.value === form.key ? 'step' : undefined"
+          @click="stepper.goTo(form.key as FormKey)"
         >
-          <span class="step-num">{{ s.id }}</span>
-          <span class="step-title">{{ s.title }}</span>
+          <span class="step-num">{{ idx + 1 }}</span>
+          <span class="step-title">{{ STEP_TITLES[form.key as FormKey] }}</span>
         </button>
       </nav>
 
       <!-- ─── Step 1: addresses ─── -->
-      <section v-show="step === 1" class="step-body">
-        <div class="field" :class="fieldClasses(form.fields.reference)">
-          <label for="reference">{{ form.fields.reference.label }}</label>
-          <small v-if="form.fields.reference.description" class="help">
-            {{ form.fields.reference.description }}
+      <section v-if="stepper.current.value === 'reference'" class="step-body">
+        <div class="field" :class="fieldClasses(refForm.fields.reference)">
+          <label for="reference">{{ refForm.fields.reference.label }}</label>
+          <small v-if="refForm.fields.reference.description" class="help">
+            {{ refForm.fields.reference.description }}
           </small>
           <input
             id="reference"
-            v-register="form.register('reference')"
-            :placeholder="form.fields.reference.placeholder"
+            v-register="refForm.register('reference')"
+            :placeholder="refForm.fields.reference.placeholder"
           />
-          <small v-if="form.fields.reference.validating" class="hint">Checking…</small>
+          <small v-if="refForm.fields.reference.validating" class="hint">Checking…</small>
           <small v-else class="error">
-            {{ errorMessage(form.fields.reference) }}
+            {{ errorMessage(refForm.fields.reference) }}
           </small>
         </div>
 
@@ -606,84 +695,84 @@
         >
           <legend>{{ block.label }}</legend>
           <label v-if="block.prefix === 'delivery'" class="checkbox">
-            <input v-register="form.register('useSameDeliveryAddress')" type="checkbox" />
-            {{ form.fields.useSameDeliveryAddress.label }}
+            <input v-register="refForm.register('useSameDeliveryAddress')" type="checkbox" />
+            {{ refForm.fields.useSameDeliveryAddress.label }}
           </label>
           <div class="grid-2">
-            <div class="field" :class="fieldClasses(form.fields[block.prefix].line1)">
-              <label>{{ form.fields[block.prefix].line1.label }}</label>
-              <small v-if="form.fields[block.prefix].line1.description" class="help">
-                {{ form.fields[block.prefix].line1.description }}
+            <div class="field" :class="fieldClasses(refForm.fields[block.prefix].line1)">
+              <label>{{ refForm.fields[block.prefix].line1.label }}</label>
+              <small v-if="refForm.fields[block.prefix].line1.description" class="help">
+                {{ refForm.fields[block.prefix].line1.description }}
               </small>
               <input
-                v-register="form.register([block.prefix, 'line1'])"
+                v-register="refForm.register([block.prefix, 'line1'])"
                 :disabled="block.mirrored"
               />
-              <small class="error">{{ errorMessage(form.fields[block.prefix].line1) }}</small>
+              <small class="error">{{ errorMessage(refForm.fields[block.prefix].line1) }}</small>
             </div>
             <div class="field">
-              <label>{{ form.fields[block.prefix].line2.label }}</label>
-              <small v-if="form.fields[block.prefix].line2.description" class="help">
-                {{ form.fields[block.prefix].line2.description }}
+              <label>{{ refForm.fields[block.prefix].line2.label }}</label>
+              <small v-if="refForm.fields[block.prefix].line2.description" class="help">
+                {{ refForm.fields[block.prefix].line2.description }}
               </small>
               <input
-                v-register="form.register([block.prefix, 'line2'])"
+                v-register="refForm.register([block.prefix, 'line2'])"
                 :disabled="block.mirrored"
               />
             </div>
           </div>
           <div class="grid-3">
-            <div class="field" :class="fieldClasses(form.fields[block.prefix].city)">
-              <label>{{ form.fields[block.prefix].city.label }}</label>
+            <div class="field" :class="fieldClasses(refForm.fields[block.prefix].city)">
+              <label>{{ refForm.fields[block.prefix].city.label }}</label>
               <input
-                v-register="form.register([block.prefix, 'city'])"
+                v-register="refForm.register([block.prefix, 'city'])"
                 :disabled="block.mirrored"
               />
-              <small class="error">{{ errorMessage(form.fields[block.prefix].city) }}</small>
+              <small class="error">{{ errorMessage(refForm.fields[block.prefix].city) }}</small>
             </div>
-            <div class="field" :class="fieldClasses(form.fields[block.prefix].region)">
-              <label>{{ form.fields[block.prefix].region.label }}</label>
-              <small v-if="form.fields[block.prefix].region.description" class="help">
-                {{ form.fields[block.prefix].region.description }}
+            <div class="field" :class="fieldClasses(refForm.fields[block.prefix].region)">
+              <label>{{ refForm.fields[block.prefix].region.label }}</label>
+              <small v-if="refForm.fields[block.prefix].region.description" class="help">
+                {{ refForm.fields[block.prefix].region.description }}
               </small>
               <input
-                v-register="form.register([block.prefix, 'region'])"
+                v-register="refForm.register([block.prefix, 'region'])"
                 :disabled="block.mirrored"
               />
-              <small class="error">{{ errorMessage(form.fields[block.prefix].region) }}</small>
+              <small class="error">{{ errorMessage(refForm.fields[block.prefix].region) }}</small>
             </div>
-            <div class="field" :class="fieldClasses(form.fields[block.prefix].country)">
-              <label>{{ form.fields[block.prefix].country.label }}</label>
+            <div class="field" :class="fieldClasses(refForm.fields[block.prefix].country)">
+              <label>{{ refForm.fields[block.prefix].country.label }}</label>
               <select
-                v-register="form.register([block.prefix, 'country'])"
+                v-register="refForm.register([block.prefix, 'country'])"
                 :disabled="block.mirrored"
               >
                 <option v-for="c in COUNTRIES" :key="c" :value="c">{{ c }}</option>
               </select>
             </div>
           </div>
-          <div class="field" :class="fieldClasses(form.fields[block.prefix].postalCode)">
-            <label>{{ form.fields[block.prefix].postalCode.label }}</label>
-            <small v-if="form.fields[block.prefix].postalCode.description" class="help">
-              {{ form.fields[block.prefix].postalCode.description }}
+          <div class="field" :class="fieldClasses(refForm.fields[block.prefix].postalCode)">
+            <label>{{ refForm.fields[block.prefix].postalCode.label }}</label>
+            <small v-if="refForm.fields[block.prefix].postalCode.description" class="help">
+              {{ refForm.fields[block.prefix].postalCode.description }}
             </small>
             <input
-              v-register="form.register([block.prefix, 'postalCode'])"
+              v-register="refForm.register([block.prefix, 'postalCode'])"
               placeholder="Try 10xxx, M5xxx, SWxxx…"
               :disabled="block.mirrored"
             />
-            <small v-if="form.fields[block.prefix].postalCode.validating" class="hint">
+            <small v-if="refForm.fields[block.prefix].postalCode.validating" class="hint">
               Looking up postal code…
             </small>
             <small v-else class="error">
-              {{ errorMessage(form.fields[block.prefix].postalCode) }}
+              {{ errorMessage(refForm.fields[block.prefix].postalCode) }}
             </small>
           </div>
         </fieldset>
       </section>
 
       <!-- ─── Step 2: cargo ─── -->
-      <section v-show="step === 2" class="step-body">
+      <section v-else-if="stepper.current.value === 'cargo'" class="step-body">
         <div class="variant-picker">
           <label>Cargo class</label>
           <div class="chip-row">
@@ -703,85 +792,85 @@
         <!-- Per-variant fields -->
         <div v-if="cargoType === 'dry'" class="row">
           <label class="checkbox">
-            <input v-register="form.register('cargo.details.fragile')" type="checkbox" />
+            <input v-register="cargoForm.register('details.fragile')" type="checkbox" />
             Mark as fragile
           </label>
         </div>
 
         <div v-else-if="cargoType === 'refrigerated'" class="grid-2">
-          <div class="field" :class="fieldClasses(form.fields.cargo.details.tempMinF)">
-            <label>{{ form.fields.cargo.details.tempMinF.label }}</label>
+          <div class="field" :class="fieldClasses(cargoForm.fields.details.tempMinF)">
+            <label>{{ cargoForm.fields.details.tempMinF.label }}</label>
             <input
-              v-register.number="form.register('cargo.details.tempMinF')"
+              v-register.number="cargoForm.register('details.tempMinF')"
               type="number"
               step="0.5"
             />
-            <small class="error">{{ errorMessage(form.fields.cargo.details.tempMinF) }}</small>
+            <small class="error">{{ errorMessage(cargoForm.fields.details.tempMinF) }}</small>
           </div>
-          <div class="field" :class="fieldClasses(form.fields.cargo.details.tempMaxF)">
-            <label>{{ form.fields.cargo.details.tempMaxF.label }}</label>
+          <div class="field" :class="fieldClasses(cargoForm.fields.details.tempMaxF)">
+            <label>{{ cargoForm.fields.details.tempMaxF.label }}</label>
             <input
-              v-register.number="form.register('cargo.details.tempMaxF')"
+              v-register.number="cargoForm.register('details.tempMaxF')"
               type="number"
               step="0.5"
             />
-            <small class="error">{{ errorMessage(form.fields.cargo.details.tempMaxF) }}</small>
+            <small class="error">{{ errorMessage(cargoForm.fields.details.tempMaxF) }}</small>
           </div>
         </div>
 
         <div v-else-if="cargoType === 'hazmat'" class="hazmat">
           <div class="grid-2">
-            <div class="field" :class="fieldClasses(form.fields.cargo.details.unNumber)">
-              <label>{{ form.fields.cargo.details.unNumber.label }}</label>
-              <small v-if="form.fields.cargo.details.unNumber.description" class="help">
-                {{ form.fields.cargo.details.unNumber.description }}
+            <div class="field" :class="fieldClasses(cargoForm.fields.details.unNumber)">
+              <label>{{ cargoForm.fields.details.unNumber.label }}</label>
+              <small v-if="cargoForm.fields.details.unNumber.description" class="help">
+                {{ cargoForm.fields.details.unNumber.description }}
               </small>
-              <input v-register="form.register('cargo.details.unNumber')" placeholder="UN1234" />
-              <small class="error">{{ errorMessage(form.fields.cargo.details.unNumber) }}</small>
+              <input v-register="cargoForm.register('details.unNumber')" placeholder="UN1234" />
+              <small class="error">{{ errorMessage(cargoForm.fields.details.unNumber) }}</small>
             </div>
-            <div class="field" :class="fieldClasses(form.fields.cargo.details.hazardClass)">
-              <label>{{ form.fields.cargo.details.hazardClass.label }}</label>
-              <small v-if="form.fields.cargo.details.hazardClass.description" class="help">
-                {{ form.fields.cargo.details.hazardClass.description }}
+            <div class="field" :class="fieldClasses(cargoForm.fields.details.hazardClass)">
+              <label>{{ cargoForm.fields.details.hazardClass.label }}</label>
+              <small v-if="cargoForm.fields.details.hazardClass.description" class="help">
+                {{ cargoForm.fields.details.hazardClass.description }}
               </small>
-              <select v-register="form.register('cargo.details.hazardClass')">
+              <select v-register="cargoForm.register('details.hazardClass')">
                 <option v-for="c in HAZARD_CLASSES" :key="c" :value="c"> Class {{ c }} </option>
               </select>
-              <small class="error">{{ errorMessage(form.fields.cargo.details.hazardClass) }}</small>
+              <small class="error">{{ errorMessage(cargoForm.fields.details.hazardClass) }}</small>
             </div>
           </div>
           <label class="checkbox">
-            <input v-register="form.register('cargo.details.acknowledged')" type="checkbox" />
+            <input v-register="cargoForm.register('details.acknowledged')" type="checkbox" />
             I have read and acknowledge the dangerous-goods handling rules.
           </label>
-          <small class="error">{{ errorMessage(form.fields.cargo.details.acknowledged) }}</small>
+          <small class="error">{{ errorMessage(cargoForm.fields.details.acknowledged) }}</small>
         </div>
 
         <div v-else-if="cargoType === 'oversized'" class="oversized">
           <div class="grid-3">
-            <div class="field" :class="fieldClasses(form.fields.cargo.details.lengthIn)">
-              <label>{{ form.fields.cargo.details.lengthIn.label }}</label>
-              <input v-register.number="form.register('cargo.details.lengthIn')" type="number" />
-              <small class="error">{{ errorMessage(form.fields.cargo.details.lengthIn) }}</small>
+            <div class="field" :class="fieldClasses(cargoForm.fields.details.lengthIn)">
+              <label>{{ cargoForm.fields.details.lengthIn.label }}</label>
+              <input v-register.number="cargoForm.register('details.lengthIn')" type="number" />
+              <small class="error">{{ errorMessage(cargoForm.fields.details.lengthIn) }}</small>
             </div>
-            <div class="field" :class="fieldClasses(form.fields.cargo.details.widthIn)">
-              <label>{{ form.fields.cargo.details.widthIn.label }}</label>
-              <input v-register.number="form.register('cargo.details.widthIn')" type="number" />
-              <small class="error">{{ errorMessage(form.fields.cargo.details.widthIn) }}</small>
+            <div class="field" :class="fieldClasses(cargoForm.fields.details.widthIn)">
+              <label>{{ cargoForm.fields.details.widthIn.label }}</label>
+              <input v-register.number="cargoForm.register('details.widthIn')" type="number" />
+              <small class="error">{{ errorMessage(cargoForm.fields.details.widthIn) }}</small>
             </div>
-            <div class="field" :class="fieldClasses(form.fields.cargo.details.heightIn)">
-              <label>{{ form.fields.cargo.details.heightIn.label }}</label>
-              <input v-register.number="form.register('cargo.details.heightIn')" type="number" />
-              <small class="error">{{ errorMessage(form.fields.cargo.details.heightIn) }}</small>
+            <div class="field" :class="fieldClasses(cargoForm.fields.details.heightIn)">
+              <label>{{ cargoForm.fields.details.heightIn.label }}</label>
+              <input v-register.number="cargoForm.register('details.heightIn')" type="number" />
+              <small class="error">{{ errorMessage(cargoForm.fields.details.heightIn) }}</small>
             </div>
           </div>
           <div class="field">
-            <label>{{ form.fields.cargo.details.permitNumber.label }}</label>
-            <small v-if="form.fields.cargo.details.permitNumber.description" class="help">
-              {{ form.fields.cargo.details.permitNumber.description }}
+            <label>{{ cargoForm.fields.details.permitNumber.label }}</label>
+            <small v-if="cargoForm.fields.details.permitNumber.description" class="help">
+              {{ cargoForm.fields.details.permitNumber.description }}
             </small>
-            <input v-register="form.register('cargo.details.permitNumber')" />
-            <small v-if="!form.values.cargo.details.permitNumber" class="muted">
+            <input v-register="cargoForm.register('details.permitNumber')" />
+            <small v-if="!cargoForm.values.details.permitNumber" class="muted">
               No permit on file — start typing to add one.
             </small>
           </div>
@@ -795,18 +884,16 @@
             >
             <button type="button" class="ghost" @click="addLineItem">+ Add item</button>
           </div>
-          <div v-if="form.values.cargo.items.length === 0" class="empty">
+          <div v-if="cargoForm.values.items.length === 0" class="empty">
             No line items yet. Try
             <code>SKU-1001</code>, <code>SKU-2001</code>, or <code>PALLET-A</code>.
           </div>
-          <div v-for="(item, idx) in form.fields.cargo.items" :key="idx" class="line-item">
+          <div v-for="(item, idx) in cargoForm.fields.items" :key="idx" class="line-item">
             <div class="li-grid">
               <div class="field" :class="fieldClasses(item.sku)">
                 <label>{{ item.sku.label }}</label>
                 <input
-                  v-register="
-                    form.register(`cargo.items.${idx}.sku`, { transforms: skuTransforms })
-                  "
+                  v-register="cargoForm.register(`items.${idx}.sku`, { transforms: skuTransforms })"
                   placeholder="SKU-1001"
                 />
                 <small v-if="item.sku.validating" class="hint"> Checking SKU… </small>
@@ -816,13 +903,13 @@
               </div>
               <div class="field" :class="fieldClasses(item.description)">
                 <label>{{ item.description.label }}</label>
-                <input v-register="form.register(`cargo.items.${idx}.description`)" />
+                <input v-register="cargoForm.register(`items.${idx}.description`)" />
                 <small class="error">{{ errorMessage(item.description) }}</small>
               </div>
               <div class="field qty" :class="fieldClasses(item.quantity)">
                 <label>{{ item.quantity.label }}</label>
                 <input
-                  v-register.number="form.register(`cargo.items.${idx}.quantity`)"
+                  v-register.number="cargoForm.register(`items.${idx}.quantity`)"
                   type="number"
                   min="1"
                 />
@@ -831,7 +918,7 @@
               <div class="field qty" :class="fieldClasses(item.unitWeightLb)">
                 <label>{{ item.unitWeightLb.label }}</label>
                 <input
-                  v-register.number="form.register(`cargo.items.${idx}.unitWeightLb`)"
+                  v-register.number="cargoForm.register(`items.${idx}.unitWeightLb`)"
                   type="number"
                   step="0.01"
                   min="0"
@@ -853,7 +940,7 @@
       </section>
 
       <!-- ─── Step 3: service & insurance ─── -->
-      <section v-show="step === 3" class="step-body">
+      <section v-else-if="stepper.current.value === 'service'" class="step-body">
         <div class="variant-picker">
           <label>Service mode</label>
           <div class="chip-row">
@@ -871,45 +958,45 @@
         </div>
 
         <div v-if="serviceMode === 'truck'" class="grid-2">
-          <div class="field" :class="fieldClasses(form.fields.service.truckType)">
-            <label>{{ form.fields.service.truckType.label }}</label>
-            <select v-register="form.register('service.truckType')">
+          <div class="field" :class="fieldClasses(serviceForm.fields.service.truckType)">
+            <label>{{ serviceForm.fields.service.truckType.label }}</label>
+            <select v-register="serviceForm.register('service.truckType')">
               <option v-for="t in TRUCK_TYPES" :key="t" :value="t">{{
                 TRUCK_TYPE_LABELS[t]
               }}</option>
             </select>
           </div>
           <label class="checkbox align-end">
-            <input v-register="form.register('service.liftgate')" type="checkbox" />
-            {{ form.fields.service.liftgate.label }}
+            <input v-register="serviceForm.register('service.liftgate')" type="checkbox" />
+            {{ serviceForm.fields.service.liftgate.label }}
           </label>
         </div>
 
         <div v-else-if="serviceMode === 'air'" class="grid-2">
-          <div class="field" :class="fieldClasses(form.fields.service.airline)">
-            <label>{{ form.fields.service.airline.label }}</label>
-            <input v-register="form.register('service.airline')" placeholder="Lufthansa" />
-            <small class="error">{{ errorMessage(form.fields.service.airline) }}</small>
+          <div class="field" :class="fieldClasses(serviceForm.fields.service.airline)">
+            <label>{{ serviceForm.fields.service.airline.label }}</label>
+            <input v-register="serviceForm.register('service.airline')" placeholder="Lufthansa" />
+            <small class="error">{{ errorMessage(serviceForm.fields.service.airline) }}</small>
           </div>
-          <div class="field" :class="fieldClasses(form.fields.service.awbPrefix)">
-            <label>{{ form.fields.service.awbPrefix.label }}</label>
-            <small v-if="form.fields.service.awbPrefix.description" class="help">
-              {{ form.fields.service.awbPrefix.description }}
+          <div class="field" :class="fieldClasses(serviceForm.fields.service.awbPrefix)">
+            <label>{{ serviceForm.fields.service.awbPrefix.label }}</label>
+            <small v-if="serviceForm.fields.service.awbPrefix.description" class="help">
+              {{ serviceForm.fields.service.awbPrefix.description }}
             </small>
-            <input v-register="form.register('service.awbPrefix')" placeholder="220" />
-            <small class="error">{{ errorMessage(form.fields.service.awbPrefix) }}</small>
+            <input v-register="serviceForm.register('service.awbPrefix')" placeholder="220" />
+            <small class="error">{{ errorMessage(serviceForm.fields.service.awbPrefix) }}</small>
           </div>
         </div>
 
         <div v-else-if="serviceMode === 'ocean'" class="grid-2">
-          <div class="field" :class="fieldClasses(form.fields.service.vessel)">
-            <label>{{ form.fields.service.vessel.label }}</label>
-            <input v-register="form.register('service.vessel')" placeholder="MSC Aurelia" />
-            <small class="error">{{ errorMessage(form.fields.service.vessel) }}</small>
+          <div class="field" :class="fieldClasses(serviceForm.fields.service.vessel)">
+            <label>{{ serviceForm.fields.service.vessel.label }}</label>
+            <input v-register="serviceForm.register('service.vessel')" placeholder="MSC Aurelia" />
+            <small class="error">{{ errorMessage(serviceForm.fields.service.vessel) }}</small>
           </div>
-          <div class="field" :class="fieldClasses(form.fields.service.containerSize)">
-            <label>{{ form.fields.service.containerSize.label }}</label>
-            <select v-register="form.register('service.containerSize')">
+          <div class="field" :class="fieldClasses(serviceForm.fields.service.containerSize)">
+            <label>{{ serviceForm.fields.service.containerSize.label }}</label>
+            <select v-register="serviceForm.register('service.containerSize')">
               <option v-for="s in CONTAINER_SIZES" :key="s" :value="s">{{
                 CONTAINER_SIZE_LABELS[s]
               }}</option>
@@ -918,47 +1005,47 @@
         </div>
 
         <div class="grid-2">
-          <div class="field" :class="fieldClasses(form.fields.desiredPickupDate)">
-            <label>{{ form.fields.desiredPickupDate.label }}</label>
-            <input v-register="form.register('desiredPickupDate')" type="date" />
-            <small class="error">{{ errorMessage(form.fields.desiredPickupDate) }}</small>
+          <div class="field" :class="fieldClasses(serviceForm.fields.desiredPickupDate)">
+            <label>{{ serviceForm.fields.desiredPickupDate.label }}</label>
+            <input v-register="serviceForm.register('desiredPickupDate')" type="date" />
+            <small class="error">{{ errorMessage(serviceForm.fields.desiredPickupDate) }}</small>
           </div>
-          <div class="field" :class="fieldClasses(form.fields.desiredDeliveryDate)">
-            <label>{{ form.fields.desiredDeliveryDate.label }}</label>
-            <input v-register="form.register('desiredDeliveryDate')" type="date" />
-            <small class="error">{{ errorMessage(form.fields.desiredDeliveryDate) }}</small>
+          <div class="field" :class="fieldClasses(serviceForm.fields.desiredDeliveryDate)">
+            <label>{{ serviceForm.fields.desiredDeliveryDate.label }}</label>
+            <input v-register="serviceForm.register('desiredDeliveryDate')" type="date" />
+            <small class="error">{{ errorMessage(serviceForm.fields.desiredDeliveryDate) }}</small>
           </div>
         </div>
 
         <fieldset class="address">
-          <legend>{{ form.fields('insurance').label }}</legend>
+          <legend>{{ serviceForm.fields('insurance').label }}</legend>
           <div class="grid-3">
-            <div class="field" :class="fieldClasses(form.fields.insurance.declaredValueUSD)">
-              <label>{{ form.fields.insurance.declaredValueUSD.label }}</label>
-              <small v-if="form.fields.insurance.declaredValueUSD.description" class="help">
-                {{ form.fields.insurance.declaredValueUSD.description }}
+            <div class="field" :class="fieldClasses(serviceForm.fields.insurance.declaredValueUSD)">
+              <label>{{ serviceForm.fields.insurance.declaredValueUSD.label }}</label>
+              <small v-if="serviceForm.fields.insurance.declaredValueUSD.description" class="help">
+                {{ serviceForm.fields.insurance.declaredValueUSD.description }}
               </small>
               <input
-                v-register.number="form.register('insurance.declaredValueUSD')"
+                v-register.number="serviceForm.register('insurance.declaredValueUSD')"
                 type="number"
                 min="0"
               />
               <small class="error">{{
-                errorMessage(form.fields.insurance.declaredValueUSD)
+                errorMessage(serviceForm.fields.insurance.declaredValueUSD)
               }}</small>
             </div>
             <div class="field">
-              <label>{{ form.fields.insurance.coverage.label }}</label>
-              <select v-register="form.register('insurance.coverage')">
+              <label>{{ serviceForm.fields.insurance.coverage.label }}</label>
+              <select v-register="serviceForm.register('insurance.coverage')">
                 <option v-for="c in COVERAGES" :key="c" :value="c">{{ COVERAGE_LABELS[c] }}</option>
               </select>
             </div>
             <div class="field">
-              <label>{{ form.fields.insurance.currency.label }}</label>
-              <small v-if="form.fields.insurance.currency.description" class="help">
-                {{ form.fields.insurance.currency.description }}
+              <label>{{ serviceForm.fields.insurance.currency.label }}</label>
+              <small v-if="serviceForm.fields.insurance.currency.description" class="help">
+                {{ serviceForm.fields.insurance.currency.description }}
               </small>
-              <select v-register="form.register('insurance.currency')">
+              <select v-register="serviceForm.register('insurance.currency')">
                 <option v-for="c in CURRENCIES" :key="c" :value="c">{{ c }}</option>
               </select>
             </div>
@@ -966,48 +1053,65 @@
         </fieldset>
 
         <div class="field">
-          <label>{{ form.fields.notes.label }}</label>
-          <small v-if="form.fields.notes.description" class="help">
-            {{ form.fields.notes.description }}
+          <label>{{ serviceForm.fields.notes.label }}</label>
+          <small v-if="serviceForm.fields.notes.description" class="help">
+            {{ serviceForm.fields.notes.description }}
           </small>
           <textarea
-            v-register="form.register('notes')"
+            v-register="serviceForm.register('notes')"
             rows="3"
             placeholder="Special handling instructions…"
           />
-          <small v-if="!form.values.notes" class="muted">
+          <small v-if="!serviceForm.values.notes" class="muted">
             No notes recorded — start typing to add some.
           </small>
-          <small class="error">{{ errorMessage(form.fields.notes) }}</small>
+          <small class="error">{{ errorMessage(serviceForm.fields.notes) }}</small>
         </div>
       </section>
 
       <!-- ─── Step 4: review ─── -->
-      <section v-show="step === 4" class="step-body review">
-        <h3>Review</h3>
-        <pre>{{ JSON.stringify(form.values(), null, 2) }}</pre>
-        <!-- `form.meta.showErrors` runs the configured heuristic against
-             the root container's aggregated state — same gate as every
-             per-field error site, so the summary only appears when the
-             user is ready to see issues. -->
-        <aside v-if="form.meta.showErrors" class="errors-summary" aria-live="polite">
+      <section v-else-if="stepper.current.value === 'review'" class="step-body review">
+        <h3>Review your manifest</h3>
+        <p class="muted">Everything looks accurate? Sign and book below.</p>
+        <pre>{{
+          JSON.stringify(
+            {
+              reference: refForm.values(),
+              cargo: cargoForm.values(),
+              service: serviceForm.values(),
+            },
+            null,
+            2
+          )
+        }}</pre>
+
+        <!-- Aggregate error summary across all forms. `stepper.allErrors`
+             is the load-bearing aggregate; each row jumps via
+             stepper.goTo(formKey). -->
+        <aside v-if="groupedErrors.length > 0" class="errors-summary" aria-live="polite">
           <header class="errors-summary-head">
             <span class="errors-summary-icon" aria-hidden="true">⚠</span>
             <div>
               <h3 class="errors-summary-title">
-                {{ form.meta.errors.length }}
-                {{ form.meta.errors.length === 1 ? 'item' : 'items' }} on the manifest before it
-                ships.
+                {{ stepper.allErrors.value.length }}
+                {{ stepper.allErrors.value.length === 1 ? 'item' : 'items' }} on the manifest before
+                it ships.
               </h3>
               <p class="errors-summary-hint">Tap any line to jump to the field.</p>
             </div>
           </header>
           <ol class="errors-summary-groups">
-            <li v-for="group in groupedErrors" :key="group.rootKey">
-              <h4 class="errors-summary-group-head">{{ group.rootLabel }}</h4>
+            <li v-for="group in groupedErrors" :key="`${group.formKey}:${group.rootKey}`">
+              <h4 class="errors-summary-group-head">
+                {{ group.stepTitle }} · {{ group.rootLabel }}
+              </h4>
               <ul class="errors-summary-items">
                 <li v-for="(item, i) in group.items" :key="i">
-                  <button type="button" class="errors-summary-row" @click="goToError(item.path)">
+                  <button
+                    type="button"
+                    class="errors-summary-row"
+                    @click="goToError(group.formKey, item.path)"
+                  >
                     <span v-if="item.leafLabel" class="errors-summary-leaf">{{
                       item.leafLabel
                     }}</span>
@@ -1019,6 +1123,42 @@
             </li>
           </ol>
         </aside>
+
+        <fieldset class="address">
+          <legend>Sign & accept</legend>
+          <div class="field" :class="fieldClasses(reviewForm.fields.signature)">
+            <label>{{ reviewForm.fields.signature.label }}</label>
+            <small v-if="reviewForm.fields.signature.description" class="help">
+              {{ reviewForm.fields.signature.description }}
+            </small>
+            <input v-register="reviewForm.register('signature')" placeholder="Ada Lovelace" />
+            <small class="error">{{ errorMessage(reviewForm.fields.signature) }}</small>
+          </div>
+          <div class="field">
+            <label>Acknowledgements</label>
+            <div class="row" style="flex-direction: column; gap: 0.375rem">
+              <label v-for="ack in ACKNOWLEDGEMENTS" :key="ack" class="checkbox">
+                <input
+                  type="checkbox"
+                  :checked="isAcknowledged(ack)"
+                  @change="
+                    toggleAcknowledgement(
+                      ack,
+                      ($event.target as HTMLInputElement | null)?.checked ?? false
+                    )
+                  "
+                />
+                {{ ack }}
+              </label>
+            </div>
+            <small class="error">{{ errorMessage(reviewForm.fields('acknowledgements')) }}</small>
+          </div>
+          <label class="checkbox">
+            <input v-register="reviewForm.register('termsAccepted')" type="checkbox" />
+            {{ reviewForm.fields.termsAccepted.label }}
+          </label>
+          <small class="error">{{ errorMessage(reviewForm.fields.termsAccepted) }}</small>
+        </fieldset>
       </section>
 
       <!-- ─── Submit-row error (form-level) ─── -->
@@ -1030,40 +1170,47 @@
           <button
             type="button"
             class="ghost"
-            :disabled="!form.history.canUndo"
-            @click="form.history.undo()"
+            :disabled="!activeForm.history.canUndo"
+            @click="activeForm.history.undo()"
           >
             ↶ Undo
           </button>
           <button
             type="button"
             class="ghost"
-            :disabled="!form.history.canRedo"
-            @click="form.history.redo()"
+            :disabled="!activeForm.history.canRedo"
+            @click="activeForm.history.redo()"
           >
             ↷ Redo
           </button>
           <button type="button" class="ghost danger" @click="resetAll">Reset</button>
         </div>
         <div class="nav-right">
-          <button v-if="step > 1" type="button" class="secondary" @click="goBack"> Back </button>
           <button
-            v-if="step < 4"
+            v-if="stepper.current.value !== 'reference'"
+            type="button"
+            class="secondary"
+            @click="stepper.back()"
+          >
+            Back
+          </button>
+          <button
+            v-if="stepper.current.value !== 'review'"
             type="button"
             class="primary"
-            :disabled="!currentStepValid"
-            @click="goNext"
+            :disabled="!canGoNext"
+            @click="stepper.next()"
           >
             Next
-            <span v-if="form.meta.validating" class="badge">…</span>
+            <span v-if="isAnyValidating" class="badge">…</span>
           </button>
           <button
             v-else
             type="submit"
             class="primary"
-            :disabled="form.meta.submitting || !form.meta.valid"
+            :disabled="reviewForm.meta.submitting || !reviewForm.meta.valid"
           >
-            {{ form.meta.submitting ? 'Booking…' : 'Book shipment' }}
+            {{ reviewForm.meta.submitting ? 'Booking…' : 'Book shipment' }}
           </button>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, onMounted, ref, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { assignKey, vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { useRegister } from '../../src/runtime/composables/use-register'
@@ -27,7 +28,7 @@ import { waitUntil } from '../utils/form-harness'
  */
 
 const schema = z.object({ email: z.string(), name: z.string() })
-type ApiReturn = ReturnType<typeof useForm<typeof schema>>
+type ApiReturn = UseFormReturn<typeof schema>
 
 type MountReturn = {
   app: App
@@ -504,7 +505,7 @@ describe('pattern 3: @update:registerValue prop on a component', () => {
       rv.setValueWithInternalPath(String(value ?? '').toUpperCase())
     }
 
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         const api = useForm({ schema, key: `compiler-${Math.random().toString(36).slice(2)}` })
@@ -695,7 +696,7 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
   it('11. failure isolation — one path throwing does not affect others', async () => {
     // Mount a parent with two RegisterValue bindings; one throws, one normalizes.
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         const api = useForm({ schema, key: `iso-${Math.random().toString(36).slice(2)}` })
@@ -748,7 +749,7 @@ describe('register({ transforms: [...] }) — sync user-input pipeline', () => {
     // upper, typing in B writes raw. No cross-element leakage at the
     // transform layer; form state at the path is still a single shared
     // slot (last-write-wins), so we can read it back to verify.
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         const api = useForm({ schema, key: `per-bind-${Math.random().toString(36).slice(2)}` })

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturnV4 } from '../../src/zod'
 import { makeMounter as makeMounterShared, waitUntil } from '../utils/form-harness'
 
 /**
@@ -32,7 +33,7 @@ import { makeMounter as makeMounterShared, waitUntil } from '../utils/form-harne
 // `path` parameter) so we narrow back from the harness's `any` here.
 function makeMounter<S extends z.ZodObject>(schema: S) {
   return makeMounterShared(useForm, schema) as () => {
-    api: ReturnType<typeof useForm<S>>
+    api: UseFormReturnV4<S>
     app: App
   }
 }

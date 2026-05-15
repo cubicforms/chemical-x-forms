@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, defineComponent, h, withDirectives, type App } from 'vue'
 import { z } from 'zod'
 import { useForm } from '../../src/zod'
+import type { UseFormReturn } from '../../src/zod'
 import { vRegister } from '../../src/runtime/core/directive'
 import { createAttaform } from '../../src/runtime/core/plugin'
 import { waitUntil } from '../utils/form-harness'
@@ -35,7 +36,7 @@ describe('no-op-write DOM-sync bug class — probes for non-text directives', ()
     // stays at false (no patch) → no render → setChecked doesn't fire
     // → DOM checkbox stays visibly checked, divorced from storage.
     const schema = z.object({ agreed: z.boolean() })
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         const api = useForm({
@@ -79,7 +80,7 @@ describe('no-op-write DOM-sync bug class — probes for non-text directives', ()
     // storage stays 'a' (no patch, no render) → setSelected doesn't
     // fire to revert → DOM <select> stays on 'b', diverged.
     const schema = z.object({ pick: z.enum(['a', 'b', 'c']) })
-    const handle: { api?: ReturnType<typeof useForm<typeof schema>> } = {}
+    const handle: { api?: UseFormReturn<typeof schema> } = {}
     const Parent = defineComponent({
       setup() {
         const api = useForm({

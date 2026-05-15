@@ -27,6 +27,7 @@ export const PERMISSIVE_V3: ReadonlySet<SlimPrimitiveKind> = new Set<SlimPrimiti
   'function',
   'map',
   'set',
+  'file',
 ])
 
 const MAX_LAZY_DEPTH_V3 = 64

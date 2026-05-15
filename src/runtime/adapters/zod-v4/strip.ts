@@ -174,6 +174,7 @@ export function stripRefinements(schema: z.ZodType): z.ZodType {
     case 'custom':
     case 'template-literal':
     case 'transform':
+    case 'file':
       return schema
     default: {
       // Compile-time exhaustiveness pin. If `ZodKind` grows a new
@@ -342,6 +343,7 @@ export function stripAsyncChecks(schema: z.ZodType): z.ZodType {
       case 'custom':
       case 'template-literal':
       case 'transform':
+      case 'file':
         return s
       default: {
         const _exhaustive: never = kind
@@ -565,10 +567,12 @@ function walkSlim(
       return (slimmedInner as z.ZodType).catch(getCatchDefault(schema) as never)
     }
     case 'transform':
+    case 'file':
       // ZodTransform is the input side of `z.preprocess(fn, inner)` and
       // never appears as a top-level schema reachable from the slim path
       // (the surrounding pipe descends into `.out` for the inner shape).
-      // Pass through unchanged for exhaustive switch safety.
+      // `file` has no refinements to strip beyond what the leaf schema
+      // already represents. Pass through unchanged.
       return schema
     default: {
       const _exhaustive: never = kind

@@ -171,7 +171,24 @@ export default [
     //     replace-on-mount in use-stepper.ts
     //   - StepperHistoryConfig + getServerActiveStep option types
     // Measured at 38.30 KB.
-    limit: '39 KB',
+    //
+    // Raised 39 → 40 KB on the file-input v-register branch:
+    //   - vRegisterFile variant in directive.ts (real change-handler,
+    //     blank-marking on register / clear, DOM-clear via el.value = '',
+    //     scoped storage watcher for programmatic clears, persisted-file
+    //     dev warn dedup via WeakMap<PersistOptInRegistry, Set<PathKey>>)
+    //   - 'file' kind plumbing across the v4 adapter (ZodKind, kindOf,
+    //     defaultForKind, slim-primitives with 'null' acceptance, plus
+    //     case additions in assertSupportedKinds, fingerprint,
+    //     path-walker, strip, adapter.walkForMeta)
+    //   - cross-adapter SlimPrimitiveKind 'file' + slimKindOf File
+    //     branch, v3 PERMISSIVE_V3 'file' entry
+    //   - LeafWalker 'File' primitive so form.fields.<file-path>
+    //     resolves to FieldState
+    //   - syncPersistOptIn carve-out reads vnode.props.type to dodge
+    //     the el.type pre-patch timing window
+    // Measured at 38.78 KB.
+    limit: '40 KB',
     gzip: true,
     modifyEsbuildConfig: asEsm,
   },
@@ -244,7 +261,11 @@ export default [
     // unified `attaform/zod` entry. The full stepper surface
     // (composable + registry + statuses proxy + history primitive)
     // now ships through this bundle too. Measured at 50.40 KB.
-    limit: '51 KB',
+    //
+    // Raised 51 → 52 KB tracking index.mjs's file-input v-register
+    // bump (same shared core chunk: vRegisterFile variant, 'file'
+    // ZodKind plumbing, persistence carve-out). Measured at 50.99 KB.
+    limit: '52 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
@@ -271,7 +292,12 @@ export default [
     // Raised 43 → 45 KB when `useStepper` was re-exported from the
     // `attaform/zod-v4` subpath. Same surface addition as the
     // `attaform/zod` unified entry. Measured at 44.46 KB.
-    limit: '45 KB',
+    //
+    // Raised 45 → 46 KB tracking index.mjs's file-input v-register
+    // bump (same shared core chunk + v4-side 'file' ZodKind plumbing
+    // across kindOf / defaultForKind / slim-primitives / fingerprint /
+    // path-walker / strip / walkForMeta). Measured at 45.02 KB.
+    limit: '46 KB',
     gzip: true,
     ignore: ['zod'],
     modifyEsbuildConfig: asEsm,
@@ -324,7 +350,11 @@ export default [
     // Raised 42 → 44 KB when `useStepper` was re-exported from the
     // `attaform/zod-v3` subpath. Same surface addition as the
     // `attaform/zod` unified entry. Measured at 43.86 KB.
-    limit: '44 KB',
+    //
+    // Raised 44 → 45 KB tracking index.mjs's file-input v-register
+    // bump (same shared core chunk + v3 PERMISSIVE_V3 'file' entry).
+    // Measured at 44.41 KB.
+    limit: '45 KB',
     gzip: true,
     ignore: ['zod', 'lodash-es'],
     modifyEsbuildConfig: asEsm,

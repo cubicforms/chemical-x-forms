@@ -613,6 +613,7 @@ export type SlimPrimitiveKind =
   | 'function'
   | 'map'
   | 'set'
+  | 'file'
 
 /**
  * The "no result yet" status returned by the reactive `validate()` ref
@@ -2702,7 +2703,7 @@ export type LeafWalker<
   T,
   Kind extends keyof LeafSchemeFor<unknown>,
   StripOptional extends boolean = true,
-> = [T] extends [string | number | boolean | bigint | symbol | null | undefined | Date]
+> = [T] extends [string | number | boolean | bigint | symbol | null | undefined | Date | File]
   ? LeafSchemeFor<T>[Kind]
   : [T] extends [ReadonlyArray<infer U>]
     ? { readonly [K: number]: LeafWalker<U, Kind, StripOptional> }

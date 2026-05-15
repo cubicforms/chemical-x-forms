@@ -229,6 +229,7 @@ function computeFingerprint(
     case 'custom':
     case 'template-literal':
     case 'transform':
+    case 'file':
       return `${kind}:*`
 
     default: {

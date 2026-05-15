@@ -25,7 +25,7 @@ import {
   looseToNumber,
 } from './vue-shared-shim'
 import type { DirectiveBinding, DirectiveHook, ObjectDirective, VNode } from 'vue'
-import { isRef, nextTick, warn } from 'vue'
+import { effectScope, isRef, nextTick, warn, watch } from 'vue'
 import { REGISTER_OWNER_MARKER } from '../composables/use-register'
 import { __DEV__ } from './dev'
 import type {
@@ -41,6 +41,7 @@ import type {
   WriteMeta,
 } from '../types/types-api'
 import type { PathKey } from './paths'
+import type { PersistOptInRegistry } from './persistence/opt-in-registry'
 import { getOrAssignElementId } from './persistence/opt-in-registry'
 import { enforceSensitiveCheck } from './persistence/sensitive-names'
 
@@ -414,9 +415,28 @@ const getModelAssigner = (
  * cross-form / cross-SFC case where `register()` returns a value bound
  * to a different FormStore (different `persistOptIns` instance).
  */
-function syncPersistOptIn(el: HTMLElement, value: unknown, oldValue: unknown): void {
+function syncPersistOptIn(
+  el: HTMLElement,
+  value: unknown,
+  oldValue: unknown,
+  vnodeType: unknown
+): void {
   const wasOptedIn = isRegisterValue(oldValue) && oldValue.persist === true
-  const wantsOptIn = isRegisterValue(value) && value.persist === true
+  // File inputs can't survive a reload — `input.files` is read-only at
+  // the browser layer, so even a perfect base64 round-trip couldn't
+  // restore the picked file. The registry carve-out lives here so the
+  // path never enters `optedInPaths`, never reaches the serializer, and
+  // a separate `vRegisterFile` hook can surface the one-time dev warn
+  // pointing consumers at the upload-on-select pattern.
+  //
+  // Detection consults `vnode.props.type` (passed in) first, then
+  // `el.type` as a fallback. During `created`, Vue may not have
+  // patched the `type` property onto the element yet — the vnode's
+  // prop is the authoritative pre-patch source. On `beforeUpdate` the
+  // element is fully patched and `el.type` agrees.
+  const isFileInput =
+    el.tagName === 'INPUT' && (vnodeType === 'file' || (el as HTMLInputElement).type === 'file')
+  const wantsOptIn = !isFileInput && isRegisterValue(value) && value.persist === true
   if (!wasOptedIn && !wantsOptIn) return
   const elementId = getOrAssignElementId(el)
   // Detach the old opt-in unless every dimension matches (persist still
@@ -1347,7 +1367,7 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
   created(el, binding, vnode) {
     // Per-element persist opt-in is reconciled at the dynamic level so
     // the per-tag variants stay focused on their input semantics.
-    syncPersistOptIn(el, binding.value, undefined)
+    syncPersistOptIn(el, binding.value, undefined, vnode.props?.['type'])
     // Per-path multi-tab opt-out lives at the dynamic level too —
     // ref-counted on the FormStore so multiple bindings on the same
     // path balance correctly across conditional renders.
@@ -1397,7 +1417,7 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
     // re-evaluates on every parent render. `binding.oldValue` holds the
     // prior RegisterValue so the helper can diff persist / path / registry
     // and migrate the entry without thrashing.
-    syncPersistOptIn(el, binding.value, binding.oldValue)
+    syncPersistOptIn(el, binding.value, binding.oldValue, vnode.props?.['type'])
     // Reactive multi-tab opt-out toggling — same diff strategy.
     syncMultiTabOptOut(binding.value, binding.oldValue)
     // Same diff for the form's element map. Catches the
@@ -1443,28 +1463,158 @@ const vRegisterDynamic: RegisterModelDynamicCustomDirective = {
   },
 }
 
-// No-op variant for <input type="file">. Setting el.value on a file input
-// throws a DOMException for security reasons; the compile-time transform
-// skips this case, and this runtime directive routes reactive type="file"
-// (e.g. `:type="isUpload ? 'file' : 'text'"`) to a no-op too, still tracking
-// the element for focus-state purposes.
-const vRegisterFileNoop: RegisterModelDynamicCustomDirective = {
+// True for any value the file directive treats as "no file selected":
+// `null`, `undefined`, the empty array (multi-input cleared), and an
+// empty `FileList`. Strict equality short-circuits the common cases;
+// the FileList check covers the case where a host wrote the live DOM
+// FileList back into storage (rare, but cheap to handle).
+function isBlankFileValue(value: unknown): boolean {
+  if (value === null || value === undefined) return true
+  if (Array.isArray(value) && value.length === 0) return true
+  if (typeof FileList !== 'undefined' && value instanceof FileList && value.length === 0)
+    return true
+  return false
+}
+
+// Read the current selection off a file input and reshape to the
+// directive's canonical storage form: `File[]` when the element has the
+// `multiple` attribute, `File | null` otherwise. `el.files` is `null`
+// on programmatically-detached inputs and the FileList is empty when
+// the user picked nothing — both collapse to the blank shape.
+function readFilesFromInput(el: HTMLInputElement): File[] | File | null {
+  const files = el.files
+  if (el.multiple) {
+    return files === null ? [] : Array.from(files)
+  }
+  if (files === null || files.length === 0) return null
+  return files.item(0)
+}
+
+// Per-form dedupe for the persisted-file-input dev warning. Keyed on
+// the form's `PersistOptInRegistry` (every form has its own instance)
+// so the warning fires once per (form, path) — a single noisy hint
+// during development rather than per-mount, per-keystroke noise.
+const warnedPersistedFileForms: WeakMap<PersistOptInRegistry, Set<PathKey>> | null = __DEV__
+  ? new WeakMap<PersistOptInRegistry, Set<PathKey>>()
+  : null
+
+function maybeWarnPersistedFile(value: RegisterValue): void {
+  if (!__DEV__ || warnedPersistedFileForms === null) return
+  if (value.persist !== true) return
+  let warnedPaths = warnedPersistedFileForms.get(value.persistOptIns)
+  if (warnedPaths === undefined) {
+    warnedPaths = new Set<PathKey>()
+    warnedPersistedFileForms.set(value.persistOptIns, warnedPaths)
+  }
+  if (warnedPaths.has(value.path)) return
+  warnedPaths.add(value.path)
+  warn(
+    `[attaform] register('${value.path}', { persist: true }) on <input type="file"> — ` +
+      `files can't ride a refresh (browsers block programmatic writes to ` +
+      `<input type="file">), so this path won't be saved. For long-lived ` +
+      `flows, upload on selection and persist the resulting URL or ID in a ` +
+      `sibling string field.`
+  )
+}
+
+// Real `v-register` variant for `<input type="file">`. Reads
+// `event.target.files` into form state as `File | null` (single) or
+// `File[]` (multiple). Storage is the canonical blank shape (`null` /
+// `[]`) when no file is selected, with the path marked in
+// `blankPaths` so the friendly "No value supplied" error surfaces
+// through `derivedBlankErrors` on required-file fields — same channel
+// as required numbers / bigints.
+//
+// The persistence carve-out lives in `syncPersistOptIn`: file paths
+// never enter `persistOptIns`, never serialize, never rehydrate. The
+// `beforeUpdate` hook keeps the DOM in lockstep with storage by
+// clearing `el.value` when storage transitions to blank — the only
+// programmatic write browsers permit on file inputs.
+// Symbol slot for the per-element effect-scope teardown function. The
+// blank-resync watcher inside `created` runs in its own scope so we
+// can stop it on `beforeUnmount` without depending on the surrounding
+// component still being alive.
+const fileScopeKey: unique symbol = Symbol.for('attaform:file-scope')
+type FileScopeCarrier = { [fileScopeKey]?: () => void }
+
+const vRegisterFile: RegisterModelDynamicCustomDirective = {
   created(el, { value }) {
     if (!isRegisterValue(value)) return
-    value.registerElement(el)
-    if (__DEV__) {
-      warn(
-        '[attaform] v-register on <input type="file"> is not supported. ' +
-          'Handle uploads with a manual @change listener.'
+    // `resolveDynamicModel` routes here only when `el.tagName === 'INPUT'`
+    // and `el.type === 'file'`. The variant union type widens to include
+    // select/textarea, so narrow once per hook.
+    const input = el as HTMLInputElement
+    value.registerElement(input)
+    maybeWarnPersistedFile(value)
+
+    // Seed the blank-path channel on register. Storage shape gets
+    // canonicalised to `null` / `[]` whenever the consumer's default
+    // is loosely blank (e.g. `undefined` for a non-nullable
+    // `z.file()` schema), so reads return a uniform shape regardless
+    // of how the user expressed "optional file" in their schema.
+    const currentRaw = value.innerRef.value
+    if (isBlankFileValue(currentRaw)) {
+      const blankShape: File[] | null = input.multiple ? [] : null
+      value.setValueWithInternalPath(blankShape, { blank: true })
+    }
+
+    addEventListener(input, 'change', () => {
+      const next = readFilesFromInput(input)
+      const blank = isBlankFileValue(next)
+      value.setValueWithInternalPath(next, blank ? { blank: true } : undefined)
+    })
+
+    // Watch storage for programmatic transitions to the blank shape
+    // (`form.clear(path)` / `form.reset()` / hydrate). Re-mark the
+    // path blank and clear the DOM input. `beforeUpdate` covers the
+    // common parent-re-render case; this watcher catches storage
+    // mutations that don't trigger a parent re-render. Runs in its
+    // own effect scope so we can stop it from `beforeUnmount`
+    // independent of the surrounding component.
+    const scope = effectScope(true)
+    scope.run(() => {
+      watch(
+        value.innerRef,
+        (next) => {
+          if (!isBlankFileValue(next)) return
+          value.setValueWithInternalPath(next, { blank: true })
+          if (input.value !== '') input.value = ''
+        },
+        { flush: 'post' }
       )
+    })
+    ;(input as FileScopeCarrier)[fileScopeKey] = (): void => scope.stop()
+  },
+  beforeUpdate(el, { value }) {
+    if (!isRegisterValue(value)) return
+    const input = el as HTMLInputElement
+    // Storage → DOM + blankPaths sync. Two responsibilities:
+    //
+    //   1. Clear the DOM input when storage went blank
+    //      (`form.clear(path)` / `form.reset()` / hydrate). `el.value
+    //      = ''` is the one programmatic mutation browsers allow on
+    //      `<input type="file">`.
+    //
+    //   2. Re-mark the path blank in the store so `derivedBlankErrors`
+    //      keeps firing the friendly "No value supplied" message after
+    //      programmatic clears. `form.clear` writes the schema's empty
+    //      value (`null`) but doesn't propagate `meta.blank: true`, so
+    //      the path would otherwise drift out of `blankPaths`. The
+    //      store's `Set.add` is idempotent, and identity-equal writes
+    //      don't trigger re-renders — safe to call on every update.
+    const currentRaw = value.innerRef.value
+    if (isBlankFileValue(currentRaw)) {
+      value.setValueWithInternalPath(currentRaw, { blank: true })
+      if (input.value !== '') input.value = ''
     }
   },
   beforeUnmount(el, { value }) {
-    // The file-input variant attaches no listeners, but we still drain
-    // the bag defensively — a runtime-typed `:type` binding that flipped
-    // from 'text' to 'file' on a reused element would have left the text
-    // variant's listeners attached.
     removeTrackedListeners(el)
+    const stop = (el as FileScopeCarrier)[fileScopeKey]
+    if (stop !== undefined) {
+      stop()
+      delete (el as FileScopeCarrier)[fileScopeKey]
+    }
     if (!isRegisterValue(value)) return
     value.deregisterElement(el)
   },
@@ -1477,7 +1627,7 @@ function resolveDynamicModel(tagName: string, type: unknown) {
   if (tagName === 'SELECT') return vRegisterSelect
   if (tagName === 'TEXTAREA') return vRegisterText
   if (typeof type !== 'string') return vRegisterText
-  if (type === 'file') return vRegisterFileNoop
+  if (type === 'file') return vRegisterFile
   if (type === 'checkbox') return vRegisterCheckbox
   if (type === 'radio') return vRegisterRadio
   return vRegisterText

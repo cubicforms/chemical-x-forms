@@ -49,6 +49,7 @@ export type ZodKind =
   | 'custom'
   | 'template-literal'
   | 'transform'
+  | 'file'
 
 // Narrow accessor for the unstable `def` surface. All reads from this
 // object go through helpers below — never inline.
@@ -170,6 +171,8 @@ export function kindOf(schema: unknown): ZodKind {
     case 'template_literal':
     case 'templateLiteral':
       return 'template-literal'
+    case 'file':
+      return 'file'
     default:
       return 'unknown'
   }

@@ -13,27 +13,47 @@ import { isZodSchemaType } from './helpers'
  * `src/runtime/adapters/zod-v4/slim-primitives.ts`.
  */
 
-export const PERMISSIVE_V3: ReadonlySet<SlimPrimitiveKind> = new Set<SlimPrimitiveKind>([
-  'string',
-  'number',
-  'boolean',
-  'bigint',
-  'date',
-  'null',
-  'undefined',
-  'object',
-  'array',
-  'symbol',
-  'function',
-  'map',
-  'set',
-  'file',
-])
+export const PERMISSIVE_V3: ReadonlySet<SlimPrimitiveKind> =
+  /* @__PURE__ */ new Set<SlimPrimitiveKind>([
+    'string',
+    'number',
+    'boolean',
+    'bigint',
+    'date',
+    'null',
+    'undefined',
+    'object',
+    'array',
+    'symbol',
+    'function',
+    'map',
+    'set',
+    'file',
+  ])
+
+// Module-level frozen leaf singletons; see the v4 file for rationale.
+const KIND_STRING: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['string'])
+const KIND_NUMBER: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['number'])
+const KIND_BOOLEAN: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['boolean'])
+const KIND_BIGINT: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['bigint'])
+const KIND_DATE: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['date'])
+const KIND_NULL: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['null'])
+const KIND_UNDEFINED: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['undefined'])
+const KIND_OBJECT: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['object'])
+const KIND_ARRAY: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['array'])
+const KIND_SET: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['set'])
+const EMPTY_KINDS: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set()
 
 const MAX_LAZY_DEPTH_V3 = 64
 
 export function slimPrimitivesV3(schema: z.ZodTypeAny, depth = 0): Set<SlimPrimitiveKind> {
-  if (depth > MAX_LAZY_DEPTH_V3) return new Set(PERMISSIVE_V3)
+  // Clone once at the public boundary; the internal walk reuses
+  // frozen singletons for leaf kinds.
+  return new Set(walk(schema, depth))
+}
+
+function walk(schema: z.ZodTypeAny, depth: number): ReadonlySet<SlimPrimitiveKind> {
+  if (depth > MAX_LAZY_DEPTH_V3) return PERMISSIVE_V3
   const def = (
     schema as {
       _def?: {
@@ -52,15 +72,15 @@ export function slimPrimitivesV3(schema: z.ZodTypeAny, depth = 0): Set<SlimPrimi
   )._def
   const typeName = def?.typeName
 
-  if (isZodSchemaType(schema, 'ZodString')) return new Set(['string'])
-  if (isZodSchemaType(schema, 'ZodNumber')) return new Set(['number'])
-  if (isZodSchemaType(schema, 'ZodBoolean')) return new Set(['boolean'])
-  if (isZodSchemaType(schema, 'ZodBigInt')) return new Set(['bigint'])
-  if (isZodSchemaType(schema, 'ZodDate')) return new Set(['date'])
-  if (isZodSchemaType(schema, 'ZodNull')) return new Set(['null'])
-  if (isZodSchemaType(schema, 'ZodUndefined')) return new Set(['undefined'])
-  if (typeName === 'ZodVoid') return new Set(['undefined'])
-  if (typeName === 'ZodNaN') return new Set(['number'])
+  if (isZodSchemaType(schema, 'ZodString')) return KIND_STRING
+  if (isZodSchemaType(schema, 'ZodNumber')) return KIND_NUMBER
+  if (isZodSchemaType(schema, 'ZodBoolean')) return KIND_BOOLEAN
+  if (isZodSchemaType(schema, 'ZodBigInt')) return KIND_BIGINT
+  if (isZodSchemaType(schema, 'ZodDate')) return KIND_DATE
+  if (isZodSchemaType(schema, 'ZodNull')) return KIND_NULL
+  if (isZodSchemaType(schema, 'ZodUndefined')) return KIND_UNDEFINED
+  if (typeName === 'ZodVoid') return KIND_UNDEFINED
+  if (typeName === 'ZodNaN') return KIND_NUMBER
 
   if (isZodSchemaType(schema, 'ZodEnum')) {
     const options = (schema as z.ZodEnum<[string, ...string[]]>).options
@@ -69,34 +89,34 @@ export function slimPrimitivesV3(schema: z.ZodTypeAny, depth = 0): Set<SlimPrimi
       if (typeof v === 'string') out.add('string')
       else if (typeof v === 'number') out.add('number')
     }
-    return out.size === 0 ? new Set(['string']) : out
+    return out.size === 0 ? KIND_STRING : out
   }
   if (isZodSchemaType(schema, 'ZodLiteral')) {
     const value = (schema as z.ZodLiteral<unknown>).value
     return new Set([slimKindOfRawV3(value)])
   }
   if (isZodSchemaType(schema, 'ZodObject') || typeName === 'ZodRecord') {
-    return new Set(['object'])
+    return KIND_OBJECT
   }
   if (isZodSchemaType(schema, 'ZodArray') || typeName === 'ZodTuple') {
-    return new Set(['array'])
+    return KIND_ARRAY
   }
   if (isZodSchemaType(schema, 'ZodSet')) {
-    return new Set(['set'])
+    return KIND_SET
   }
   if (isZodSchemaType(schema, 'ZodOptional')) {
     const inner = def?.innerType
-    const innerSet =
-      inner === undefined ? new Set<SlimPrimitiveKind>() : slimPrimitivesV3(inner, depth + 1)
-    innerSet.add('undefined')
-    return innerSet
+    const innerSet = inner === undefined ? EMPTY_KINDS : walk(inner, depth + 1)
+    const out = new Set<SlimPrimitiveKind>(innerSet)
+    out.add('undefined')
+    return out
   }
   if (isZodSchemaType(schema, 'ZodNullable')) {
     const inner = def?.innerType
-    const innerSet =
-      inner === undefined ? new Set<SlimPrimitiveKind>() : slimPrimitivesV3(inner, depth + 1)
-    innerSet.add('null')
-    return innerSet
+    const innerSet = inner === undefined ? EMPTY_KINDS : walk(inner, depth + 1)
+    const out = new Set<SlimPrimitiveKind>(innerSet)
+    out.add('null')
+    return out
   }
   if (
     isZodSchemaType(schema, 'ZodDefault') ||
@@ -105,46 +125,45 @@ export function slimPrimitivesV3(schema: z.ZodTypeAny, depth = 0): Set<SlimPrimi
     isZodSchemaType(schema, 'ZodBranded')
   ) {
     const inner = def?.innerType ?? def?.type
-    return inner === undefined ? new Set(PERMISSIVE_V3) : slimPrimitivesV3(inner, depth + 1)
+    return inner === undefined ? PERMISSIVE_V3 : walk(inner, depth + 1)
   }
   if (isZodSchemaType(schema, 'ZodEffects')) {
     // ZodEffects wraps refinements/transforms. Use the inner schema
     // type — writes are pre-transform values.
     const inner = def?.schema
-    return inner === undefined ? new Set(PERMISSIVE_V3) : slimPrimitivesV3(inner, depth + 1)
+    return inner === undefined ? PERMISSIVE_V3 : walk(inner, depth + 1)
   }
   if (isZodSchemaType(schema, 'ZodPipeline')) {
     // Pipeline: input side ('in').
     const inner = def?.in
-    return inner === undefined ? new Set(PERMISSIVE_V3) : slimPrimitivesV3(inner, depth + 1)
+    return inner === undefined ? PERMISSIVE_V3 : walk(inner, depth + 1)
   }
   if (typeName === 'ZodLazy') {
     const getter = def?.getter
-    if (typeof getter !== 'function') return new Set(PERMISSIVE_V3)
-    return slimPrimitivesV3(getter(), depth + 1)
+    if (typeof getter !== 'function') return PERMISSIVE_V3
+    return walk(getter(), depth + 1)
   }
   if (isZodSchemaType(schema, 'ZodUnion') || isZodSchemaType(schema, 'ZodDiscriminatedUnion')) {
     const options = def?.options ?? []
     const out = new Set<SlimPrimitiveKind>()
     for (const opt of options) {
-      for (const k of slimPrimitivesV3(opt, depth + 1)) out.add(k)
+      for (const k of walk(opt, depth + 1)) out.add(k)
     }
-    return out.size === 0 ? new Set(PERMISSIVE_V3) : out
+    return out.size === 0 ? PERMISSIVE_V3 : out
   }
   if (typeName === 'ZodIntersection') {
     const left = def?.left
     const right = def?.right
-    const leftSet = left === undefined ? new Set(PERMISSIVE_V3) : slimPrimitivesV3(left, depth + 1)
-    const rightSet =
-      right === undefined ? new Set(PERMISSIVE_V3) : slimPrimitivesV3(right, depth + 1)
+    const leftSet = left === undefined ? PERMISSIVE_V3 : walk(left, depth + 1)
+    const rightSet = right === undefined ? PERMISSIVE_V3 : walk(right, depth + 1)
     const out = new Set<SlimPrimitiveKind>()
     for (const k of leftSet) if (rightSet.has(k)) out.add(k)
     return out
   }
-  if (typeName === 'ZodNever') return new Set()
-  if (typeName === 'ZodAny' || typeName === 'ZodUnknown') return new Set(PERMISSIVE_V3)
+  if (typeName === 'ZodNever') return EMPTY_KINDS
+  if (typeName === 'ZodAny' || typeName === 'ZodUnknown') return PERMISSIVE_V3
 
-  return new Set(PERMISSIVE_V3)
+  return PERMISSIVE_V3
 }
 
 function slimKindOfRawV3(value: unknown): SlimPrimitiveKind {

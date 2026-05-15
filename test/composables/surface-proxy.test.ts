@@ -855,10 +855,11 @@ describe('surface materialisation — predictable representations + complex erro
 
     // Every schema-leaf carries the full FieldState surface — `value`
     // matches storage, `path` is the absolute path, `pristine` reflects
-    // the un-mutated initial state. Pre-interaction interaction flags
-    // (`focused`, `blurred`, `touched`) start as `null` (the sentinel
-    // for "no directive signal yet"); `updatedAt` is the construction
-    // timestamp until the first write.
+    // the un-mutated initial state. `focused` / `blurred` start as
+    // `null` (no DOM connected, so the DOM-state concepts don't apply
+    // yet); `touched` starts as `false` (interaction history is a
+    // boolean — no event yet means `false`, not "unknown");
+    // `updatedAt` is the construction timestamp until the first write.
     const expectedLeafShape = {
       value: expect.anything(),
       original: expect.anything(),
@@ -866,7 +867,7 @@ describe('surface materialisation — predictable representations + complex erro
       dirty: false,
       focused: null,
       blurred: null,
-      touched: null,
+      touched: false,
       connected: false,
       updatedAt: expect.anything(),
       errors: [],

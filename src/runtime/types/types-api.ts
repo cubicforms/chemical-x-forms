@@ -2427,21 +2427,25 @@ export type PathSetValuePayload<Leaf> =
 /**
  * Focus / blur / touched flags for a registered field.
  *
- * - `focused` — `true` while the user is interacting with the field;
- *   `false` after blur. `null` until the field has ever been focused.
- * - `blurred` — `true` after the field has lost focus at least once.
- *   `null` before any blur event.
- * - `touched` — flips to `true` on the first blur after a focus and
- *   stays `true` thereafter. Useful for "show errors only after the
- *   user has interacted" UX.
+ * - `focused` — `true` while the user is interacting with the field,
+ *   `false` after blur. `null` while no DOM element is connected for
+ *   this path (the DOM-state concept doesn't apply with no element).
+ * - `blurred` — strictly the inverse of `focused` when an element is
+ *   connected: `true` while not focused, `false` while focused. `null`
+ *   while no element is connected.
+ * - `touched` — interaction history. Plain `boolean`: `false` at
+ *   registration, flips to `true` on the first blur, stays `true`
+ *   thereafter, and is preserved across disconnects. Cleared only by
+ *   `form.reset()` / `form.resetField(path)`. Useful for "show errors
+ *   only after the user has interacted" UX.
  */
 export type DOMFieldState = {
-  /** `true` while focused; `false` after blur; `null` before first focus. */
+  /** `true` while focused; `false` while connected but not focused; `null` while no element is connected. */
   focused: boolean | null
-  /** `true` once the field has lost focus at least once; `null` before. */
+  /** Inverse of `focused` when connected; `null` while no element is connected. */
   blurred: boolean | null
-  /** Flips to `true` on the first blur after a focus and stays there. */
-  touched: boolean | null
+  /** `true` after the first blur; persists across disconnects until `reset()`. */
+  touched: boolean
 }
 /**
  * Per-field reactive shape returned by `form.fields.<leaf-path>` and
@@ -2464,7 +2468,7 @@ export type FieldState<Value = unknown> = {
   readonly dirty: boolean
   readonly focused: boolean | null
   readonly blurred: boolean | null
-  readonly touched: boolean | null
+  readonly touched: boolean
   readonly connected: boolean
   /**
    * The first DOM element bound to this path via `v-register`, or

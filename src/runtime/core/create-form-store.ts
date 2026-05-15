@@ -57,14 +57,29 @@ import {
  * hydration; otherwise the state is per-component-per-form.
  */
 
-/** Per-path field status. Replaced wholesale (not mutated in place) on every change. */
+/**
+ * Per-path field status. Replaced wholesale (not mutated in place) on
+ * every change. Three semantic groups:
+ *
+ *   - `connected` — is a DOM element registered for this path?
+ *   - `focused` / `blurred` — DOM-state flags. `null` while no element
+ *     is connected (no DOM means the concepts don't apply); plain
+ *     booleans once connected, with the invariant `blurred === !focused`
+ *     enforced by `markFocused`.
+ *   - `touched` — interaction history, not DOM state. Always a plain
+ *     boolean: `false` at registration, sticky `true` after first blur,
+ *     cleared only by `form.reset()` / `form.resetField(path)`. Persists
+ *     across disconnects so v-if'd-away fields don't lose their touched
+ *     state on rehide (wizard "show review of touched fields" patterns
+ *     rely on this).
+ */
 export type FieldRecord = {
   readonly path: Path
   readonly updatedAt: string | null
   readonly connected: boolean
   readonly focused: boolean | null
   readonly blurred: boolean | null
-  readonly touched: boolean | null
+  readonly touched: boolean
 }
 
 // Hydration shape guards — defend against rolling deploys / stale cache
@@ -83,7 +98,7 @@ function isHydratedFieldRecord(value: unknown): value is FieldRecord {
     typeof r.connected === 'boolean' &&
     (typeof r.focused === 'boolean' || r.focused === null) &&
     (typeof r.blurred === 'boolean' || r.blurred === null) &&
-    (typeof r.touched === 'boolean' || r.touched === null)
+    typeof r.touched === 'boolean'
   )
 }
 
@@ -1421,7 +1436,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
         connected: false,
         focused: null,
         blurred: null,
-        touched: null,
+        touched: false,
       })
     })
     // No hydration — seed schemaErrors from the construction-time
@@ -1477,9 +1492,16 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       path,
       updatedAt: patch.updatedAt ?? current?.updatedAt ?? null,
       connected: patch.connected ?? current?.connected ?? false,
-      focused: patch.focused ?? current?.focused ?? null,
-      blurred: patch.blurred ?? current?.blurred ?? null,
-      touched: patch.touched ?? current?.touched ?? null,
+      // focused/blurred use an explicit-undefined guard because
+      // patches legitimately carry `null` to mark a disconnect — the
+      // `??` operator would short-circuit on null and fall through to
+      // `current`, losing the intent. `!== undefined` honours an
+      // explicit null and preserves current only on absence.
+      focused: patch.focused !== undefined ? patch.focused : (current?.focused ?? null),
+      blurred: patch.blurred !== undefined ? patch.blurred : (current?.blurred ?? null),
+      // touched is plain `boolean`; `??` is equivalent to the explicit
+      // guard here because `false` is not nullish.
+      touched: patch.touched ?? current?.touched ?? false,
     })
   }
 
@@ -2365,7 +2387,17 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     }
     elementToFormInstance.set(element, formInstanceId)
     sortedRegistrationsCache = null
-    touchFieldRecord(key, path, { connected: true })
+    // Connect transition. Lift focused/blurred from `null`
+    // (no-element-meaningless) to optimistic booleans only when they
+    // are currently null; preserve existing booleans so a reconnect
+    // doesn't blow away DOM-truth from an autofocus event that landed
+    // before this directive's registration.
+    const current = fields.get(key)
+    touchFieldRecord(key, path, {
+      connected: true,
+      focused: current?.focused ?? false,
+      blurred: current?.blurred ?? true,
+    })
     return true
   }
 
@@ -2381,7 +2413,13 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     const remaining = record.elements.size
     if (remaining === 0) {
       elements.delete(key)
-      touchFieldRecord(key, path, { connected: false })
+      // Disconnect transition. `focused` / `blurred` are DOM-state
+      // properties — with no element to be focused or blurred, the
+      // concepts don't apply, so flip back to `null`. `touched` is
+      // interaction history and is preserved across disconnects
+      // (a v-if'd-away field that was previously blurred stays
+      // touched).
+      touchFieldRecord(key, path, { connected: false, focused: null, blurred: null })
     }
     return remaining
   }
@@ -2395,7 +2433,22 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     const { key } = canonicalizePath(path)
     const current = fields.get(key)
     if (current?.connected === true) return
-    touchFieldRecord(key, path, { connected: true })
+    // Lift focused/blurred from `null` to optimistic booleans alongside
+    // `connected: true`. Only when currently `null` — never clobber an
+    // existing boolean, since a prior `markFocused` may have landed
+    // ahead of the optimistic mark (uncommon but possible during SSR
+    // when a custom directive flips focus state up-front). Server-
+    // rendered FieldState then matches the post-hydration optimistic
+    // state (`focused: false, blurred: true`) without a flash from
+    // `null` on the first reactive tick after hydration; real focus
+    // state lands as soon as the browser fires a focus event
+    // (autofocus / programmatic / user) — the directive's listener
+    // catches it and flips the booleans.
+    touchFieldRecord(key, path, {
+      connected: true,
+      focused: current?.focused ?? false,
+      blurred: current?.blurred ?? true,
+    })
   }
 
   function markFocused(
@@ -2409,7 +2462,7 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
       blurred: !focused,
       // `touched` flips to true on blur and stays true thereafter; while
       // a field is currently focused we keep whatever value it held.
-      touched: focused ? (fields.get(key)?.touched ?? null) : true,
+      touched: focused ? (fields.get(key)?.touched ?? false) : true,
     })
     // On blur (focused → false), `validateOn: 'blur'` fires an
     // immediate (no-debounce) validation for this path. Ignored for
@@ -2662,18 +2715,20 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
     if (needsAsync) {
       queueMicrotask(() => scheduleFieldValidation([], true /* immediate */))
     }
-    // Blow away touched/focused/blurred per field. connected stays as-is
-    // (the DOM elements haven't detached — that's a separate concern from
-    // form state) and updatedAt stamps to now.
+    // Clear interaction history (`touched`) per field. `focused` /
+    // `blurred` reflect DOM-truth and stay as-is — `reset()` doesn't
+    // synthetically blur the currently-focused input, so the library
+    // shouldn't claim it did. `connected` is a separate concern from
+    // form state and is preserved. `updatedAt` stamps to now.
     const now = new Date().toISOString()
     for (const [pathKey, record] of fields) {
       fields.set(pathKey, {
         path: record.path,
         updatedAt: now,
         connected: record.connected,
-        focused: null,
-        blurred: null,
-        touched: null,
+        focused: record.focused,
+        blurred: record.blurred,
+        touched: false,
       })
     }
     // Clear submission lifecycle so a reset surface reports "nothing has
@@ -2819,13 +2874,17 @@ export function createFormStore<F extends GenericForm, G extends GenericForm = F
   function clearFieldRecordFlags(pathKey: PathKey): void {
     const record = fields.get(pathKey)
     if (record === undefined) return
+    // Mirrors `resetForm`'s field-loop: clear interaction history
+    // (`touched`), preserve DOM-truth (`focused` / `blurred`) and
+    // `connected`. The function name is historical — it now clears
+    // only the history flag, not all flags.
     fields.set(pathKey, {
       path: record.path,
       updatedAt: new Date().toISOString(),
       connected: record.connected,
-      focused: null,
-      blurred: null,
-      touched: null,
+      focused: record.focused,
+      blurred: record.blurred,
+      touched: false,
     })
   }
 

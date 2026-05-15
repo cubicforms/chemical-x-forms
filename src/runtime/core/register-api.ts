@@ -79,6 +79,22 @@ function attachFocusListeners<F extends GenericForm>(
   element.addEventListener('focus', handleFocus)
   element.addEventListener('blur', handleBlur)
   target[attaformListenersSymbol] = { handleFocus, handleBlur }
+  // Catch-up probe: the browser applies `autofocus` and dispatches the
+  // resulting `focus` event during HTML parse, BEFORE Vue's directive
+  // lifecycle runs and we attach the listeners above. Programmatic
+  // `.focus()` from a parent component's `onMounted` has the same race.
+  // In both cases, by the time we wire up, the focus event has come and
+  // gone and our handler never runs. Probe `document.activeElement`
+  // (ShadowRoot-aware, mirroring the lookup at directive.ts:881) once
+  // immediately after attaching, so the freshly-rendered field's
+  // FieldState reflects DOM truth instead of the optimistic
+  // `focused: false` seeded at registration.
+  const rootNode = element.getRootNode()
+  const activeElement =
+    rootNode instanceof Document || rootNode instanceof ShadowRoot ? rootNode.activeElement : null
+  if (activeElement === element) {
+    state.markFocused(segments, true, focusMeta)
+  }
 }
 
 function detachFocusListeners(element: HTMLElement): void {

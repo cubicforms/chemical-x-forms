@@ -327,7 +327,7 @@ describe('non-pattern: v-register on a non-form root WITHOUT useRegister/assignK
     const fs = mounted.api.fields.email
     expect(fs.focused).toBeNull()
     expect(fs.blurred).toBeNull()
-    expect(fs.touched).toBeNull()
+    expect(fs.touched).toBe(false)
   })
 })
 

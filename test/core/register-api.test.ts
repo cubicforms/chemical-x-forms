@@ -154,6 +154,62 @@ describe('buildRegister', () => {
       document.body.removeChild(input)
     })
 
+    it('catches autofocus that fired before the listener was attached', () => {
+      // The browser applies `<input autofocus>` during HTML parse and
+      // dispatches the resulting `focus` event BEFORE Vue's directive
+      // lifecycle runs. By the time `attachFocusListeners` wires up,
+      // the focus event has already come and gone. The probe inside
+      // `attachFocusListeners` exists to close that race: if the
+      // element is already `document.activeElement` at attach-time,
+      // call `markFocused(true)` synchronously so FieldState reflects
+      // DOM truth instead of the optimistic `focused: false` seeded
+      // at registration. Simulates the race by focusing the input
+      // BEFORE calling `registerElement` (the call order inside the
+      // directive `created` hook for an autofocused element).
+      const { state, register } = makeRegister()
+      const rv = register(['email'])
+      const input = document.createElement('input')
+      document.body.appendChild(input)
+      input.focus()
+      expect(document.activeElement).toBe(input)
+      // Sanity: the FormStore has not seen any focus signal yet — the
+      // listener isn't attached and `input.focus()` above only fired a
+      // native DOM event no one was listening to.
+      expect(state.getFieldRecord(['email'])?.focused).toBe(null)
+
+      rv.registerElement(input)
+      // After registration, the probe inside `attachFocusListeners`
+      // sees `document.activeElement === input` and flips focused.
+      expect(state.getFieldRecord(['email'])?.focused).toBe(true)
+      expect(state.getFieldRecord(['email'])?.blurred).toBe(false)
+      expect(state.getFieldRecord(['email'])?.connected).toBe(true)
+
+      document.body.removeChild(input)
+    })
+
+    it('does not flip focused when registering an element that is NOT the active one', () => {
+      // Negative case for the autofocus probe — pin that we don't
+      // false-positive when a sibling input happens to be focused.
+      const { state, register } = makeRegister()
+      const rv = register(['email'])
+      const sibling = document.createElement('input')
+      const target = document.createElement('input')
+      document.body.appendChild(sibling)
+      document.body.appendChild(target)
+      sibling.focus()
+      expect(document.activeElement).toBe(sibling)
+
+      rv.registerElement(target)
+      // `target` was not the active element at attach-time, so the
+      // probe leaves the optimistic `focused: false` in place.
+      expect(state.getFieldRecord(['email'])?.focused).toBe(false)
+      expect(state.getFieldRecord(['email'])?.blurred).toBe(true)
+      expect(state.getFieldRecord(['email'])?.connected).toBe(true)
+
+      document.body.removeChild(sibling)
+      document.body.removeChild(target)
+    })
+
     it('removes focus/blur listeners on deregister', () => {
       const { state, register } = makeRegister()
       const rv = register(['email'])
@@ -165,11 +221,14 @@ describe('buildRegister', () => {
       expect(state.getFieldRecord(['email'])?.focused).toBe(true)
 
       rv.deregisterElement(input)
-      // After deregister, re-dispatch: if a listener still fires, focused flips.
+      // After deregister, re-dispatch: if a listener still fires,
+      // `markFocused(blur)` would flip the record to `focused: false,
+      // blurred: true`. Instead the disconnect transition has set
+      // both flags to `null` (no element ⇒ DOM-state concepts don't
+      // apply) and the missing listener leaves them at `null`.
       input.dispatchEvent(new FocusEvent('blur'))
-      // markFocused isn't called post-deregister — the record still reflects
-      // the last value before deregister.
-      expect(state.getFieldRecord(['email'])?.focused).toBe(true)
+      expect(state.getFieldRecord(['email'])?.focused).toBe(null)
+      expect(state.getFieldRecord(['email'])?.blurred).toBe(null)
       expect(state.getFieldRecord(['email'])?.connected).toBe(false)
       document.body.removeChild(input)
     })

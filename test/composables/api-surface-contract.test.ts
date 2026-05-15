@@ -179,11 +179,12 @@ describe('API surface contract — actions on `api`, status on `api.meta`, histo
 
     expect(typeof emailField.dirty).toBe('boolean')
     expect(typeof emailField.valid).toBe('boolean')
-    expect(typeof emailField.touched === 'boolean' || emailField.touched === null).toBe(true)
+    expect(typeof emailField.touched).toBe('boolean')
     expect(typeof emailField.showErrors).toBe('boolean')
 
     expectTypeOf(emailField.dirty).toEqualTypeOf<boolean>()
     expectTypeOf(emailField.valid).toEqualTypeOf<boolean>()
+    expectTypeOf(emailField.touched).toEqualTypeOf<boolean>()
     expectTypeOf(emailField.showErrors).toEqualTypeOf<boolean>()
   })
 

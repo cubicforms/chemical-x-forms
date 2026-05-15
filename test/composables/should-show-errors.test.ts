@@ -59,7 +59,7 @@ type FieldStateLike = {
   readonly errors: readonly ValidationError[]
   readonly showErrors: boolean
   readonly firstError: ValidationError | undefined
-  readonly touched: boolean | null
+  readonly touched: boolean
   readonly dirty: boolean
 }
 
@@ -225,7 +225,7 @@ function describeOverrideTier(
       await form.handleSubmit(() => {})()
       await nextTick()
       expect(form.meta.submitCount).toBeGreaterThan(0)
-      // touched is still null (no DOM blur, no programmatic touch)
+      // touched is still false (no DOM blur, no programmatic touch)
       expect(form.fields('email').showErrors).toBe(false)
       form.touch('email')
       await nextTick()
@@ -476,7 +476,7 @@ describe('shouldShowErrors — type-level guards', () => {
 
     // Every other FieldState key still reaches through, so authors keep
     // full IDE access to touched / dirty / errors / path / etc.
-    expectTypeOf<Field['touched']>().toEqualTypeOf<boolean | null>()
+    expectTypeOf<Field['touched']>().toEqualTypeOf<boolean>()
     expectTypeOf<Field['dirty']>().toEqualTypeOf<boolean>()
     expectTypeOf<Meta['submitCount']>().toEqualTypeOf<number>()
   })

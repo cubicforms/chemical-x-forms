@@ -788,15 +788,15 @@ describe('Depth pressure — multi-step booking schema (shipment-demo shape)', (
   // Pinning a sampling here keeps the aggregation surface honest
   // alongside the leaf-value pin above.
   it('FieldState aggregation flags expose the typed surface at every depth', () => {
-    // `touched` carries `null` for never-focused fields; `dirty` /
-    // `valid` / `blank` are strict booleans. Aggregations at container
-    // paths are reachable through the callable form (the proxy at a
-    // container path returns a sub-proxy, not a FieldState).
-    expectTypeOf(formT.fields.reference.touched).toEqualTypeOf<boolean | null>()
+    // `touched` / `dirty` / `valid` / `blank` are all strict booleans.
+    // Aggregations at container paths are reachable through the
+    // callable form (the proxy at a container path returns a sub-proxy,
+    // not a FieldState).
+    expectTypeOf(formT.fields.reference.touched).toEqualTypeOf<boolean>()
     expectTypeOf(formT.fields.reference.dirty).toEqualTypeOf<boolean>()
     expectTypeOf(formT.fields.reference.valid).toEqualTypeOf<boolean>()
     expectTypeOf(formT.fields.reference.blank).toEqualTypeOf<boolean>()
-    expectTypeOf(formT.fields.pickup.city.touched).toEqualTypeOf<boolean | null>()
+    expectTypeOf(formT.fields.pickup.city.touched).toEqualTypeOf<boolean>()
     // Root no-arg call returns the root FieldState (aggregated across
     // every active-variant leaf).
     expectTypeOf(formT.fields().dirty).toEqualTypeOf<boolean>()

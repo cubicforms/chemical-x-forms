@@ -156,7 +156,7 @@ describe('hydration shape guard', () => {
       connected: true,
       focused: null,
       blurred: null,
-      touched: null,
+      touched: false,
     }
     const hydration = buildPayload({
       fields: [

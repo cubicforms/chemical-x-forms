@@ -62,12 +62,12 @@ describe('buildFieldStateAccessor', () => {
     expect(getFieldState(['email']).value.errors).toHaveLength(1)
   })
 
-  it('focused/blurred/touched default to null until focus events fire', () => {
+  it('focused/blurred default to null while no element is connected; touched defaults to false', () => {
     const { getFieldState } = makeAccessor()
     const s = getFieldState(['email']).value
     expect(s.focused).toBe(null)
     expect(s.blurred).toBe(null)
-    expect(s.touched).toBe(null)
+    expect(s.touched).toBe(false)
   })
 
   it('connected flips to true when an element registers, back to false when all deregister', () => {

@@ -68,7 +68,7 @@ describe('form.fields — top-level leaf reads', () => {
     expect(fs.dirty).toBe(false)
     expect(fs.pristine).toBe(true)
     expect(fs.errors).toEqual([])
-    expect(fs.touched).toBe(null)
+    expect(fs.touched).toBe(false)
   })
 
   it('reflects setValue mutations on subsequent reads', () => {

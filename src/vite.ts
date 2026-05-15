@@ -218,6 +218,128 @@ export function attaform(options: AttaformVitePluginOptions = {}): Plugin {
       }
       aliasTarget = detection.major === 4 ? ZOD_V4_SPECIFIER : ZOD_V3_SPECIFIER
     },
+    configureServer(server) {
+      // Dev-only middleware that serves the Nuxt DevTools overlay panel's
+      // iframe HTML at `/_attaform_devtools`. The middleware lives at the
+      // Vite layer so the route is intercepted BEFORE vue-router sees it —
+      // crucial for consumers using `app.vue`-only (no `pages/` directory).
+      // Earlier prototypes injected a Nuxt page via `extendPages`, which
+      // implicitly activates Nuxt's pages mode and broke app.vue-only
+      // setups by stranding `/` without a NuxtPage host.
+      //
+      // The HTML pulls Vue + the panel component via bare specifiers;
+      // `transformIndexHtml` rewrites them through Vite's resolver so the
+      // browser-side `<script type="module">` runs cleanly. Production
+      // builds skip the middleware entirely — `configureServer` only
+      // fires for the dev server.
+      server.middlewares.use(
+        '/_attaform_devtools',
+        // eslint-disable-next-line @typescript-eslint/no-misused-promises
+        async (req, res, next) => {
+          if (req.method !== 'GET') {
+            next()
+            return
+          }
+          // Brand mark served at `/_attaform_devtools/icon.svg` and
+          // referenced by the module's `addCustomTab({ icon })`. Data:
+          // URIs render unreliably across Nuxt DevTools versions; a real
+          // URL is the robust path.
+          if (req.url === '/icon.svg') {
+            const svg =
+              `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">` +
+              `<rect width="24" height="24" rx="5" fill="#6938ef"/>` +
+              `<g fill="none" stroke="#ffffff" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">` +
+              `<path d="M8 16 L12 8 L16 16"/>` +
+              `<path d="M9.5 13 L14.5 13"/>` +
+              `</g></svg>`
+            res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8')
+            res.setHeader('Cache-Control', 'public, max-age=3600')
+            res.end(svg)
+            return
+          }
+          try {
+            const rawHtml = `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Attaform DevTools</title>
+    <style>
+      html, body { height: 100%; margin: 0; background: #0f172a; }
+      @media (prefers-color-scheme: light) {
+        html, body { background: #ffffff; }
+      }
+      #atf-loading {
+        padding: 1rem;
+        color: #94a3b8;
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="atf-app"><div id="atf-loading">Loading Attaform DevTools…</div></div>
+    <script type="module">
+      import { createApp, h } from 'vue'
+      import AttaformDevtoolsPanel from 'attaform/devtools-panel'
+
+      // The panel runs inside Nuxt DevTools' overlay iframe, which itself
+      // is nested in the consumer's main page. \`window.parent\` only
+      // crosses one frame boundary — the overlay UI — which doesn't have
+      // the bridge attached. The bridge lives on the consumer's main
+      // page, which sits at the top of the frame hierarchy. Walk the
+      // chain checking each ancestor frame so the same code works whether
+      // the panel is opened in 0, 1, or 2+ iframe layers deep.
+      //
+      // Same-origin assumption holds (everything served from the dev
+      // server's origin) so cross-frame property access doesn't throw.
+      // If a future Nuxt DevTools build sandboxes the overlay iframe,
+      // the try/catch falls through to the empty-bridge path with a
+      // clear "not found" message.
+      function findBridge() {
+        let frame = window
+        for (let depth = 0; depth < 10; depth++) {
+          try {
+            const candidate = frame.__attaform_devtools__
+            if (candidate !== undefined) return candidate
+          } catch {
+            return undefined
+          }
+          if (frame.parent === frame) return undefined
+          frame = frame.parent
+        }
+        return undefined
+      }
+
+      const start = Date.now()
+      function bootstrap() {
+        const bridge = findBridge()
+        if (bridge !== undefined) {
+          const root = document.getElementById('atf-app')
+          root.innerHTML = ''
+          createApp({ render: () => h(AttaformDevtoolsPanel, { bridge }) }).mount(root)
+          return
+        }
+        if (Date.now() - start < 2000) {
+          setTimeout(bootstrap, 50)
+          return
+        }
+        document.getElementById('atf-loading').textContent =
+          'Attaform devtools bridge not found. The host app may not have the Nuxt module installed.'
+      }
+      bootstrap()
+    </script>
+  </body>
+</html>`
+            const html = await server.transformIndexHtml('/_attaform_devtools', rawHtml)
+            res.setHeader('Content-Type', 'text/html; charset=utf-8')
+            res.end(html)
+          } catch (err) {
+            next(err)
+          }
+        }
+      )
+    },
     async resolveId(source, importer) {
       // Intercept ONLY the exact unified specifier. Explicit subpaths
       // (`attaform/zod-v3`, `attaform/zod-v4`) and the root entry

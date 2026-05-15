@@ -172,6 +172,18 @@ export {
 } from './runtime/core/paths'
 export type { Path, PathKey, Segment } from './runtime/core/paths'
 
+// DevTools shared primitives — sensitive-name redaction policy and the
+// window-bridge contract the Nuxt overlay panel + iframe page consume
+// at runtime. Exposed so the panel components (shipped as `.vue` files
+// under `dist/runtime/`) can `import { … } from 'attaform'` without
+// brittle relative paths into the bundled chunk layout.
+export {
+  DEVTOOLS_WINDOW_KEY,
+  REDACTED,
+  redactSensitiveLeaves,
+} from './runtime/core/devtools-shared'
+export type { AttaformDevtoolsBridge } from './runtime/core/devtools-shared'
+
 // Error classes — every library-emitted error extends `AttaformError`, so
 // consumers can write a single polymorphic catch (`catch (e) { if (e
 // instanceof AttaformError) ... }`) instead of OR-chaining instanceof

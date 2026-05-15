@@ -218,7 +218,7 @@ export function attaform(options: AttaformVitePluginOptions = {}): Plugin {
       }
       aliasTarget = detection.major === 4 ? ZOD_V4_SPECIFIER : ZOD_V3_SPECIFIER
     },
-    resolveId(source) {
+    async resolveId(source, importer) {
       // Intercept ONLY the exact unified specifier. Explicit subpaths
       // (`attaform/zod-v3`, `attaform/zod-v4`) and the root entry
       // (`attaform`) pass through unchanged — that's the documented
@@ -226,7 +226,14 @@ export function attaform(options: AttaformVitePluginOptions = {}): Plugin {
       if (!resolveZodAlias) return null
       if (aliasTarget === null) return null
       if (source !== ZOD_UNIFIED_SPECIFIER) return null
-      return aliasTarget
+      // Returning the bare specifier directly would freeze it as the
+      // resolved id — Vite then ships `/@id/attaform/zod-v4` to the
+      // browser and 404s because no plugin loads that virtual URL.
+      // Re-run the new specifier through the resolver chain so the
+      // matching subpath export lands as a real file path.
+      // `skipSelf: true` is defensive — our filter rejects the rewritten
+      // target anyway, but keeps the hook reentrant under future edits.
+      return this.resolve(aliasTarget, importer, { skipSelf: true })
     },
   }
 }

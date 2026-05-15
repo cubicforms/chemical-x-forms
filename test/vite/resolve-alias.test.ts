@@ -86,26 +86,34 @@ async function callResolveId(
   // `{ handler, order }`. The plugin we authored uses the function
   // form, but support both shapes for forward-compat.
   const handler = typeof hook === 'function' ? hook : hook.handler
-  // The `this` context isn't strictly needed here — our hook reads
-  // closure state — but bind a stub so calls don't blow up if a
-  // future iteration uses `this.resolve`.
+  // The hook now calls `this.resolve(newSpec, importer, { skipSelf })`
+  // to forward the rewritten specifier through Vite's resolver chain.
+  // Stub `resolve` to echo back an `{ id }` object so the test can
+  // assert the chosen subpath without spinning a real Vite resolver.
+  const context = {
+    resolve: async (id: string) => ({ id, external: false }),
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (handler as any).call({}, source, importer)
+  return (handler as any).call(context, source, importer)
 }
 
 describe('attaform/vite — resolveId alias for `attaform/zod`', () => {
   it('rewrites `attaform/zod` to `attaform/zod-v4` when zod@4 is installed', async () => {
     const config = await resolveWithRoot([vue(), attaform()], zodV4Root)
     const plugin = findAttaformPlugin(config)
-    const resolved = await callResolveId(plugin, 'attaform/zod', undefined)
-    expect(resolved).toBe('attaform/zod-v4')
+    const resolved = (await callResolveId(plugin, 'attaform/zod', undefined)) as {
+      id: string
+    } | null
+    expect(resolved?.id).toBe('attaform/zod-v4')
   })
 
   it('rewrites `attaform/zod` to `attaform/zod-v3` when zod@3 is installed', async () => {
     const config = await resolveWithRoot([vue(), attaform()], zodV3Root)
     const plugin = findAttaformPlugin(config)
-    const resolved = await callResolveId(plugin, 'attaform/zod', undefined)
-    expect(resolved).toBe('attaform/zod-v3')
+    const resolved = (await callResolveId(plugin, 'attaform/zod', undefined)) as {
+      id: string
+    } | null
+    expect(resolved?.id).toBe('attaform/zod-v3')
   })
 
   it('throws at configResolved when zod is not installed', async () => {

@@ -68,6 +68,9 @@
       "types": "./dist/vite.d.mts",
       "import": "./dist/vite.mjs"
     },
+    "./devtools-panel": {
+      "default": "./dist/runtime/components/AttaformDevtoolsPanel.vue"
+    },
     "./transforms": {
       "types": "./dist/transforms.d.mts",
       "import": "./dist/transforms.mjs"

@@ -8,7 +8,6 @@ import {
   addVitePlugin,
   createResolver,
   defineNuxtModule,
-  extendPages,
 } from '@nuxt/kit'
 import type { AttaformDefaults } from './runtime/types/types-api'
 import { attaform as attaformVitePlugin } from './vite'
@@ -257,10 +256,12 @@ export { }`,
     })
 
     // Dev-only: register a Nuxt DevTools overlay tab pointing at an
-    // iframe page that mounts the Attaform inspector. The page route
-    // (`/_attaform_devtools`) is injected via `extendPages`, also
-    // dev-gated — production builds neither serve the route nor pull
-    // in `@nuxt/devtools-kit`.
+    // iframe that mounts the Attaform inspector. The iframe URL
+    // (`/_attaform_devtools`) is served by a Vite-layer middleware
+    // wired up in `attaform/vite` — by intercepting at the Vite layer
+    // rather than via `extendPages`, the route stays invisible to
+    // vue-router and works regardless of whether the consumer uses
+    // a `pages/` directory or `app.vue`-only mode.
     //
     // `@nuxt/devtools-kit` is NOT a transitive peer of `@nuxt/kit`; it
     // ships alongside `@nuxt/devtools`. Consumers who don't install
@@ -269,14 +270,6 @@ export { }`,
     // error. Mirrors the same try/import pattern used for
     // `@vue/devtools-api` in the runtime devtools wire-up.
     if (nuxt.options.dev) {
-      extendPages((pages) => {
-        pages.push({
-          name: '_attaform_devtools',
-          path: '/_attaform_devtools',
-          file: resolver.resolve('./runtime/pages/_attaform_devtools.vue'),
-        })
-      })
-
       nuxt.hook('ready', async () => {
         try {
           const { addCustomTab } = await import('@nuxt/devtools-kit')

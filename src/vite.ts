@@ -218,6 +218,90 @@ export function attaform(options: AttaformVitePluginOptions = {}): Plugin {
       }
       aliasTarget = detection.major === 4 ? ZOD_V4_SPECIFIER : ZOD_V3_SPECIFIER
     },
+    configureServer(server) {
+      // Dev-only middleware that serves the Nuxt DevTools overlay panel's
+      // iframe HTML at `/_attaform_devtools`. The middleware lives at the
+      // Vite layer so the route is intercepted BEFORE vue-router sees it —
+      // crucial for consumers using `app.vue`-only (no `pages/` directory).
+      // Earlier prototypes injected a Nuxt page via `extendPages`, which
+      // implicitly activates Nuxt's pages mode and broke app.vue-only
+      // setups by stranding `/` without a NuxtPage host.
+      //
+      // The HTML pulls Vue + the panel component via bare specifiers;
+      // `transformIndexHtml` rewrites them through Vite's resolver so the
+      // browser-side `<script type="module">` runs cleanly. Production
+      // builds skip the middleware entirely — `configureServer` only
+      // fires for the dev server.
+      server.middlewares.use(
+        '/_attaform_devtools',
+        // eslint-disable-next-line @typescript-eslint/no-misused-promises
+        async (req, res, next) => {
+          if (req.method !== 'GET') {
+            next()
+            return
+          }
+          try {
+            const rawHtml = `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Attaform DevTools</title>
+    <style>
+      html, body { height: 100%; margin: 0; background: #0f172a; }
+      @media (prefers-color-scheme: light) {
+        html, body { background: #ffffff; }
+      }
+      #atf-loading {
+        padding: 1rem;
+        color: #94a3b8;
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="atf-app"><div id="atf-loading">Loading Attaform DevTools…</div></div>
+    <script type="module">
+      import { createApp, h } from 'vue'
+      import AttaformDevtoolsPanel from 'attaform/devtools-panel'
+
+      // The panel runs inside Nuxt DevTools' iframe; the bridge lives on
+      // the parent frame (the consumer's main page). When the page is
+      // opened directly in a browser tab (debugging), parent === self
+      // and we fall back to the same-window bridge.
+      const start = Date.now()
+      function bootstrap() {
+        const owner = window.parent && window.parent !== window
+          ? window.parent
+          : window
+        const bridge = owner.__attaform_devtools__
+        if (bridge !== undefined) {
+          const root = document.getElementById('atf-app')
+          root.innerHTML = ''
+          createApp({ render: () => h(AttaformDevtoolsPanel, { bridge }) }).mount(root)
+          return
+        }
+        if (Date.now() - start < 2000) {
+          setTimeout(bootstrap, 50)
+          return
+        }
+        document.getElementById('atf-loading').textContent =
+          'Attaform devtools bridge not found. The host app may not have the Nuxt module installed.'
+      }
+      bootstrap()
+    </script>
+  </body>
+</html>`
+            const html = await server.transformIndexHtml('/_attaform_devtools', rawHtml)
+            res.setHeader('Content-Type', 'text/html; charset=utf-8')
+            res.end(html)
+          } catch (err) {
+            next(err)
+          }
+        }
+      )
+    },
     async resolveId(source, importer) {
       // Intercept ONLY the exact unified specifier. Explicit subpaths
       // (`attaform/zod-v3`, `attaform/zod-v4`) and the root entry

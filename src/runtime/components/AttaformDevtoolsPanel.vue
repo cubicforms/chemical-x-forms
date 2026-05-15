@@ -7,12 +7,7 @@
   // shared chunks (which mkdist doesn't co-locate). Type-only imports of
   // internal types stay relative — they're erased at compile time and
   // don't need to resolve at the consumer's runtime.
-  import {
-    type AttaformDevtoolsBridge,
-    canonicalizePath,
-    redactSensitiveLeaves,
-    type Segment,
-  } from 'attaform'
+  import { type AttaformDevtoolsBridge, canonicalizePath, type Segment } from 'attaform'
   import type { FormStore } from '../core/create-form-store'
   import type { GenericForm } from '../types/types-core'
   import type { FormKey } from '../types/types-api'
@@ -22,8 +17,31 @@
     bridge: AttaformDevtoolsBridge
   }>()
 
+  // Cross-iframe reactivity bridge. Vue's reactivity system is module-
+  // scoped — the host's `@vue/reactivity` instance and the panel's are
+  // different copies of the same module, each with its own targetMap.
+  // When the panel reads `host.form.value` in a `computed`, the proxy's
+  // get trap runs in the host's tracking context (the function lives
+  // there) but `getCurrentEffect()` returns nothing because the panel's
+  // active effect is in a different runtime. The dependency never
+  // registers, and the computed never re-evaluates on host mutations.
+  //
+  // Workaround: a tick ref that all data-fetching computeds depend on.
+  // We bump the tick on every host event we DO have a callback for
+  // (`onFormChange` / `onSubmitSuccess` / `onReset`), plus a 250ms
+  // polling fallback for state that changes outside those events (user
+  // errors via `setFieldErrors*`, submit-lifecycle flags). The panel's
+  // own reactivity then re-evaluates everything in one pass — cheap
+  // because the underlying reads are direct property accesses.
+  const updateTick = ref(0)
+
   const registry = computed(() => props.bridge.registry)
-  const formEntries = computed(() => Array.from(registry.value.forms.entries()))
+  const formEntries = computed(() => {
+    // Touch the tick so the form list refreshes when new forms register
+    // (the registry's reactive Map updates wouldn't notify us otherwise).
+    void updateTick.value
+    return Array.from(registry.value.forms.entries())
+  })
 
   // Explicit selection. `null` means "auto-pick first available form".
   const selectedFormKey = ref<FormKey | null>(null)
@@ -40,25 +58,32 @@
     return key !== null ? (registry.value.forms.get(key) ?? null) : null
   })
 
-  const redactedFormValue = computed(() => {
+  const formValueView = computed(() => {
+    void updateTick.value
     const form = activeForm.value
     if (form === null) return null
-    return redactSensitiveLeaves(form.form.value, form.segmentMatchesSensitive)
+    // Devtools is dev-only; render raw values. Consumers concerned about
+    // screen-share leaks should close the panel before sharing, the same
+    // way they'd hide their browser DevTools console.
+    return form.form.value
   })
 
   const schemaErrorRows = computed(() => {
+    void updateTick.value
     const form = activeForm.value
     if (form === null) return []
     return Array.from(form.schemaErrors.entries())
   })
 
   const userErrorRows = computed(() => {
+    void updateTick.value
     const form = activeForm.value
     if (form === null) return []
     return Array.from(form.userErrors.entries())
   })
 
   const aggregates = computed(() => {
+    void updateTick.value
     const form = activeForm.value
     if (form === null) return null
     return {
@@ -90,14 +115,25 @@
     return key
   }
 
-  function formatSubmitError(err: unknown): string {
-    if (err === null || err === undefined) return '—'
-    if (err instanceof Error) return `${err.name}: ${err.message}`
-    if (typeof err === 'string') return err
+  /**
+   * Render a JS value as a debug-friendly string with no masking —
+   * `null` / `undefined` show as their literal names, booleans and
+   * numbers as-is, strings bare (no surrounding quotes), everything
+   * else JSON-stringified. Devtools is for inspecting state, not for
+   * pretty-printing it; the user-author sees the actual runtime
+   * shape.
+   */
+  function fmt(v: unknown): string {
+    if (v === null) return 'null'
+    if (v === undefined) return 'undefined'
+    if (typeof v === 'string') return v
+    if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') {
+      return String(v)
+    }
     try {
-      return JSON.stringify(err)
+      return JSON.stringify(v)
     } catch {
-      return String(err)
+      return String(v)
     }
   }
 
@@ -113,16 +149,134 @@
    *   4. call setValueAtPath with the same write-meta the bound input
    *      would have produced
    */
+  // Field-state inspector. Click any key in the Form value tree to
+  // "select" that path; the Field state section below resolves
+  // `form.fields(path)` for it. Click the same key again to deselect.
+  const selectedPath = ref<ReadonlyArray<string | number> | null>(null)
+  const selectedKey = computed(() =>
+    selectedPath.value === null ? null : JSON.stringify(selectedPath.value)
+  )
+
+  function selectPath(path: ReadonlyArray<string | number>): void {
+    const key = JSON.stringify(path)
+    if (selectedKey.value === key) {
+      selectedPath.value = null
+    } else {
+      selectedPath.value = path
+    }
+  }
+
+  /**
+   * Raw field data at the selected path, composed from `FormStore`
+   * primitives. The callable `form.fields(path)` proxy lives on the
+   * public `useForm` return, not on `FormStore` — the bridge exposes
+   * the store, so we synthesise the same data from `fields.get(key)`
+   * + the error Maps + an inline value walk.
+   *
+   * Returns the raw `FieldRecord` (updatedAt / focused / blurred /
+   * touched / connected) rather than the wrapped `FieldState`
+   * surface. Sufficient for inspection — the full aggregated
+   * FieldState would require either lifting the surface-proxy into
+   * `FormStore` (architectural change) or rebuilding the aggregation
+   * walker in the panel (duplication).
+   */
+  const selectedFieldState = computed<{
+    record: {
+      updatedAt: string | null
+      connected: boolean
+      focused: boolean | null
+      blurred: boolean | null
+      touched: boolean | null
+    } | null
+    value: unknown
+    errors: ReadonlyArray<{ message: string; code: string }>
+    schemaErrorCount: number
+    userErrorCount: number
+  } | null>(() => {
+    void updateTick.value
+    const form = activeForm.value
+    const path = selectedPath.value
+    if (form === null || path === null) return null
+    try {
+      const { key: canonicalKey } = canonicalizePath(path as readonly Segment[])
+      const record =
+        (form.fields.get(canonicalKey) as
+          | {
+              updatedAt: string | null
+              connected: boolean
+              focused: boolean | null
+              blurred: boolean | null
+              touched: boolean | null
+            }
+          | undefined) ?? null
+
+      // Inline path walk (avoids importing path-walker through the
+      // bridge — it lives in the host's shared chunk).
+      let value: unknown = form.form.value
+      for (const seg of path) {
+        if (value === null || typeof value !== 'object') {
+          value = undefined
+          break
+        }
+        value = (value as Record<string | number, unknown>)[seg]
+      }
+
+      const schemaEntries =
+        (form.schemaErrors.get(canonicalKey) as
+          | ReadonlyArray<{ message: string; code: string }>
+          | undefined) ?? []
+      const userEntries =
+        (form.userErrors.get(canonicalKey) as
+          | ReadonlyArray<{ message: string; code: string }>
+          | undefined) ?? []
+
+      return {
+        record,
+        value,
+        errors: [...schemaEntries, ...userEntries],
+        schemaErrorCount: schemaEntries.length,
+        userErrorCount: userEntries.length,
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[attaform devtools] field-state lookup failed', { path, err })
+      return null
+    }
+  })
+
+  function humanizeSelectedPath(): string {
+    const path = selectedPath.value
+    if (path === null || path.length === 0) return '(root)'
+    return path.map((seg) => String(seg)).join('.')
+  }
+
+  function selectedValueView(): unknown {
+    const fs = selectedFieldState.value
+    if (fs === null) return null
+    return fs.value
+  }
+
   function handleEdit(rawPath: ReadonlyArray<string | number>, next: unknown): void {
     const form = activeForm.value
     if (form === null) return
-    const { segments: canonicalPath, key: canonicalKey } = canonicalizePath(
-      rawPath as readonly Segment[]
-    )
-    if (form.isSensitivePath([...canonicalPath])) return
-    form.setValueAtPath(canonicalPath, next, {
-      persist: form.persistOptIns.hasAnyOptInForPath(canonicalKey),
-    })
+    try {
+      const { segments: canonicalPath, key: canonicalKey } = canonicalizePath(
+        rawPath as readonly Segment[]
+      )
+      form.setValueAtPath(canonicalPath, next, {
+        persist: form.persistOptIns.hasAnyOptInForPath(canonicalKey),
+      })
+      // The host's setValueAtPath fires `onFormChange` listeners, which
+      // bumps our updateTick (see subscribeForm) — that refreshes the
+      // panel's view of the new value on the next microtask.
+    } catch (err) {
+      // Surface cross-iframe write failures (e.g., type-instance checks
+      // tripping over panel-vs-host Array constructors) so we don't
+      // silently swallow them. Devtools-only path, so console.error is
+      // appropriate.
+      // eslint-disable-next-line no-console
+      console.error('[attaform devtools] edit failed', { rawPath, next, err })
+    }
   }
 
   // Timeline log ----------------------------------------------------------
@@ -179,16 +333,34 @@
 
   function subscribeForm(key: FormKey, form: FormStore<GenericForm>): void {
     if (subscribers.has(key)) return
-    const captureValue = (): unknown =>
-      redactSensitiveLeaves(form.form.value, form.segmentMatchesSensitive)
+    // Deep-clone the form value at the moment of fire — FormStore
+    // mutates form data in place, so a stored reference would update
+    // every existing timeline entry whenever the form changed again
+    // ("type a, delete a, both timeline events show the empty value"
+    // bug). `structuredClone` also crosses the iframe-realm boundary,
+    // landing a panel-native plain object instead of the host's
+    // reactive proxy.
+    const captureValue = (): unknown => {
+      try {
+        return structuredClone(form.form.value)
+      } catch {
+        // Non-cloneable values (functions, Symbols, Vue refs, etc.) —
+        // fall back to the live reference. Worst case: that one entry
+        // still shows the current state, same as before this fix.
+        return form.form.value
+      }
+    }
     const unsubChange = form.onFormChange(() => {
       pushEvent({ type: 'form.change', formKey: key, time: Date.now(), value: captureValue() })
+      updateTick.value++
     })
     const unsubSubmit = form.onSubmitSuccess(() => {
       pushEvent({ type: 'submit.success', formKey: key, time: Date.now(), value: captureValue() })
+      updateTick.value++
     })
     const unsubReset = form.onReset(() => {
       pushEvent({ type: 'reset', formKey: key, time: Date.now(), value: captureValue() })
+      updateTick.value++
     })
     subscribers.set(key, () => {
       unsubChange()
@@ -214,7 +386,19 @@
     { immediate: true }
   )
 
+  // Polling fallback for state that changes outside the `onFormChange` /
+  // `onSubmitSuccess` / `onReset` event surface — user errors injected
+  // via `setFieldErrors*`, submit-lifecycle flags between events, or
+  // new forms registered in the host's registry. 120ms is faster than
+  // a human can notice between an input event and a visible panel
+  // refresh; gas-cost is negligible (one ref-bump every 120ms).
+  const POLL_INTERVAL_MS = 120
+  const pollHandle = window.setInterval(() => {
+    updateTick.value++
+  }, POLL_INTERVAL_MS)
+
   onUnmounted(() => {
+    window.clearInterval(pollHandle)
     for (const unsub of subscribers.values()) unsub()
     subscribers.clear()
   })
@@ -224,7 +408,24 @@
   <div class="atf-panel">
     <header class="atf-header">
       <div class="atf-brand">
-        <span class="atf-logo" aria-hidden="true">A</span>
+        <svg
+          class="atf-logo"
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          <rect width="24" height="24" rx="5" fill="#6938ef" />
+          <g
+            fill="none"
+            stroke="#ffffff"
+            stroke-width="2.25"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M8 16 L12 8 L16 16" />
+            <path d="M9.5 13 L14.5 13" />
+          </g>
+        </svg>
         <span class="atf-title">Attaform</span>
         <span class="atf-version">v{{ bridge.version }}</span>
       </div>
@@ -258,13 +459,64 @@
         <div v-if="activeForm === null" class="atf-empty-detail">Select a form on the left.</div>
         <template v-else>
           <section class="atf-section">
-            <h2 class="atf-section-title">Form value</h2>
+            <h2 class="atf-section-title">
+              Form value
+              <span class="atf-section-hint">click a key to inspect field state</span>
+            </h2>
             <div class="atf-section-body atf-tree">
               <DevtoolsValueTree
-                :value="redactedFormValue"
+                :value="formValueView"
                 :editable="true"
                 :on-edit="handleEdit"
+                :selected-key="selectedKey"
+                :on-select-path="selectPath"
               />
+            </div>
+          </section>
+
+          <section v-if="selectedFieldState !== null" class="atf-section">
+            <h2 class="atf-section-title">
+              Field state
+              <code class="atf-path">{{ humanizeSelectedPath() }}</code>
+              <button
+                type="button"
+                class="atf-clear-btn"
+                title="Deselect"
+                @click="selectedPath = null"
+              >
+                ×
+              </button>
+            </h2>
+            <div class="atf-section-body">
+              <dl class="atf-aggregates">
+                <dt>connected</dt>
+                <dd>{{ fmt(selectedFieldState.record?.connected) }}</dd>
+                <dt>touched</dt>
+                <dd>{{ fmt(selectedFieldState.record?.touched) }}</dd>
+                <dt>focused</dt>
+                <dd>{{ fmt(selectedFieldState.record?.focused) }}</dd>
+                <dt>blurred</dt>
+                <dd>{{ fmt(selectedFieldState.record?.blurred) }}</dd>
+                <dt>updatedAt</dt>
+                <dd>{{ fmt(selectedFieldState.record?.updatedAt) }}</dd>
+                <dt>schemaErrors</dt>
+                <dd>{{ fmt(selectedFieldState.schemaErrorCount) }}</dd>
+                <dt>userErrors</dt>
+                <dd>{{ fmt(selectedFieldState.userErrorCount) }}</dd>
+                <dt>errors</dt>
+                <dd>
+                  <span v-if="selectedFieldState.errors.length === 0">{{ fmt([]) }}</span>
+                  <ul v-else class="atf-error-messages">
+                    <li v-for="(e, i) in selectedFieldState.errors" :key="i">
+                      {{ e.message }} <small>({{ e.code }})</small>
+                    </li>
+                  </ul>
+                </dd>
+                <dt>value</dt>
+                <dd class="atf-tree">
+                  <DevtoolsValueTree :value="selectedValueView()" />
+                </dd>
+              </dl>
             </div>
           </section>
 
@@ -315,13 +567,13 @@
             <div class="atf-section-body">
               <dl class="atf-aggregates">
                 <dt>submitting</dt>
-                <dd>{{ aggregates.submitting }}</dd>
+                <dd>{{ fmt(aggregates.submitting) }}</dd>
                 <dt>submitCount</dt>
-                <dd>{{ aggregates.submitCount }}</dd>
+                <dd>{{ fmt(aggregates.submitCount) }}</dd>
                 <dt>submitError</dt>
-                <dd>{{ formatSubmitError(aggregates.submitError) }}</dd>
+                <dd>{{ fmt(aggregates.submitError) }}</dd>
                 <dt>activeValidations</dt>
-                <dd>{{ aggregates.activeValidations }}</dd>
+                <dd>{{ fmt(aggregates.activeValidations) }}</dd>
               </dl>
             </div>
           </section>
@@ -446,20 +698,13 @@
   }
   .atf-brand {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 0.5rem;
   }
   .atf-logo {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: 22px;
     height: 22px;
-    background: var(--atf-accent);
-    color: white;
-    font-weight: 700;
-    border-radius: 4px;
-    font-size: 12px;
+    display: block;
   }
   .atf-title {
     font-weight: 600;
@@ -649,6 +894,17 @@
     padding: 0.1rem 0.5rem;
     border-radius: 4px;
     cursor: pointer;
+  }
+  .atf-section-hint {
+    margin-left: auto;
+    color: var(--atf-fg-muted);
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 10px;
+  }
+  .atf-fg-muted {
+    color: var(--atf-fg-muted);
   }
   .atf-clear-btn:hover {
     border-color: var(--atf-border-strong);

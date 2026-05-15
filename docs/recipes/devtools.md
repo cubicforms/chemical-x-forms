@@ -77,12 +77,13 @@ The current form as an interactive JSON tree. **Editable from the
 panel** — your edit flows through `setValueAtPath` and drives the
 whole reactive pipeline (validation, persistence opt-in, history).
 
-Sensitive-named leaves (`password`, `token`, `secret`, etc.) render as
-`[redacted]` with a lock icon. Edits on these are refused at write time
-so a dev confirming the masked view can't overwrite the real value with
-the literal `[redacted]` string. Same heuristic that gates persistence
-writes and multi-tab broadcasts — configure once via `sensitiveNames`
-on `useForm` and every surface respects it.
+Values render verbatim. DevTools is dev-only, so the panel doesn't
+mask passwords / tokens / secrets — debugging a credential flow
+typically needs the actual value. The sensitive-name heuristic still
+applies elsewhere in the library (persistence writes, multi-tab
+broadcasts), it's just not applied to the dev surface. Close the
+panel before a screen share if a value would be sensitive on camera,
+same hygiene as the browser's own DevTools console.
 
 ### Schema Errors / User Errors
 
@@ -158,7 +159,7 @@ For a zero-overhead production build:
   entry in the extension. The Nuxt overlay panel reads from the most
   recent `createAttaform()` install — micro-frontend setups with
   parallel apps will only see one app's forms.
-- **Sensitive-path edits are blocked.** This is intentional: a dev
-  confirming a redacted cell would otherwise write the literal
-  `[redacted]` string over a real password. Edit those paths through
-  the bound input element on the page instead.
+- **Screen-share hygiene.** Since the panel renders raw values,
+  passwords / tokens / API keys are visible while it's open. Close
+  the panel before screen-sharing, the same way you'd close the
+  browser DevTools console.

@@ -276,10 +276,13 @@ export { }`,
           addCustomTab({
             name: 'attaform',
             title: 'Attaform',
-            // Lucide / Iconify spec — `i-` prefix is resolved by Nuxt
-            // DevTools' Iconify integration. Form-themed icon for the
-            // sidebar entry.
-            icon: 'i-lucide-clipboard-list',
+            // Brand mark — purple square with a white "A" silhouette,
+            // matching `apps/site/public/favicon.svg`. Served by the
+            // `attaform/vite` middleware at the same `/_attaform_devtools`
+            // route family (sibling to the panel HTML). A real URL
+            // renders reliably across Nuxt DevTools versions where
+            // `data:` URIs don't.
+            icon: '/_attaform_devtools/icon.svg',
             view: {
               type: 'iframe',
               src: '/_attaform_devtools',

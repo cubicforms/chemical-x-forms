@@ -1,9 +1,5 @@
 <script setup lang="ts">
   import { computed, nextTick, ref } from 'vue'
-  // Route through the public `attaform` entry — see the panel component
-  // for the full rationale (published .vue can't reach the rollup-shared
-  // chunks via relative path).
-  import { REDACTED } from 'attaform'
 
   const props = defineProps<{
     value: unknown
@@ -24,6 +20,20 @@
      */
     editable?: boolean
     onEdit?: (path: ReadonlyArray<string | number>, next: unknown) => void
+    /**
+     * Canonical JSON-array key of the currently-selected path (`null`
+     * for no selection). Compared against this node's own key so the
+     * key label can render in a highlighted state. Plumbed as a key
+     * rather than a path array because string equality is cheap and
+     * cross-renders consistently.
+     */
+    selectedKey?: string | null
+    /**
+     * Click handler for the key label. Called with the node's current
+     * path-from-root; the panel toggles selection on identical paths.
+     * When omitted, the key label is plain text (no selection UX).
+     */
+    onSelectPath?: (path: ReadonlyArray<string | number>) => void
   }>()
 
   // Top-level expanded by default; deeper nodes collapsed past 2 levels
@@ -33,20 +43,12 @@
   const path = computed<ReadonlyArray<string | number>>(() => props.path ?? [])
 
   const type = computed<
-    | 'null'
-    | 'undefined'
-    | 'array'
-    | 'object'
-    | 'string'
-    | 'number'
-    | 'boolean'
-    | 'redacted'
-    | 'other'
+    'null' | 'undefined' | 'array' | 'object' | 'string' | 'number' | 'boolean' | 'other'
   >(() => {
     const v = props.value
     if (v === null) return 'null'
     if (v === undefined) return 'undefined'
-    if (typeof v === 'string') return v === REDACTED ? 'redacted' : 'string'
+    if (typeof v === 'string') return 'string'
     if (typeof v === 'number') return 'number'
     if (typeof v === 'boolean') return 'boolean'
     if (Array.isArray(v)) return 'array'
@@ -69,7 +71,6 @@
     const v = props.value
     if (v === null) return 'null'
     if (v === undefined) return 'undefined'
-    if (type.value === 'redacted') return REDACTED
     if (typeof v === 'string') return `"${v}"`
     if (typeof v === 'boolean' || typeof v === 'number') return String(v)
     return String(v)
@@ -157,13 +158,35 @@
     if (!isEditableLeaf.value || props.onEdit === undefined) return
     props.onEdit(path.value, checked)
   }
+
+  // Selection (Field-state inspector hook). Canonical key uses JSON-
+  // serialised path-array form so two arrays with the same shape produce
+  // the same string — direct equality check.
+  const ownKey = computed(() => JSON.stringify(path.value))
+  const isSelected = computed(
+    () =>
+      props.selectedKey !== null &&
+      props.selectedKey !== undefined &&
+      props.selectedKey === ownKey.value
+  )
+
+  function selectThisPath(): void {
+    if (props.onSelectPath === undefined) return
+    props.onSelectPath(path.value)
+  }
 </script>
 
 <template>
   <div class="tree-node">
     <template v-if="isLeaf">
-      <div class="row" :class="{ 'edit-rejected': editRejected }">
-        <span v-if="label" class="key">{{ label }}:</span>
+      <div class="row" :class="{ 'edit-rejected': editRejected, 'row-selected': isSelected }">
+        <span
+          v-if="label"
+          class="key"
+          :class="{ 'key-selectable': onSelectPath !== undefined, 'key-selected': isSelected }"
+          @click.stop="selectThisPath"
+          >{{ label }}:</span
+        >
         <template v-if="editing && (type === 'string' || type === 'number')">
           <input
             ref="editInput"
@@ -193,16 +216,21 @@
             :title="isEditableLeaf ? 'Click to edit' : undefined"
             @click="isEditableLeaf ? startEdit() : null"
           >
-            <span v-if="type === 'redacted'" class="lock" aria-hidden="true">🔒</span>
             {{ formatted }}
           </span>
         </template>
       </div>
     </template>
     <template v-else>
-      <div class="row branch" @click="expanded = !expanded">
+      <div class="row branch" :class="{ 'row-selected': isSelected }" @click="expanded = !expanded">
         <span class="caret" :class="{ open: expanded }">›</span>
-        <span v-if="label" class="key">{{ label }}:</span>
+        <span
+          v-if="label"
+          class="key"
+          :class="{ 'key-selectable': onSelectPath !== undefined, 'key-selected': isSelected }"
+          @click.stop="selectThisPath"
+          >{{ label }}:</span
+        >
         <span class="branch-summary">{{ summary }}</span>
       </div>
       <div v-if="expanded" class="children">
@@ -215,6 +243,8 @@
           :path="childPath(k)"
           :editable="editable"
           :on-edit="onEdit"
+          :selected-key="selectedKey"
+          :on-select-path="onSelectPath"
         />
       </div>
     </template>
@@ -254,6 +284,24 @@
     color: var(--atf-key, #93c5fd);
     flex-shrink: 0;
   }
+  .key-selectable {
+    cursor: pointer;
+    border-bottom: 1px dotted transparent;
+  }
+  .key-selectable:hover {
+    border-bottom-color: var(--atf-key, #93c5fd);
+  }
+  .key-selected {
+    color: var(--atf-accent, #5b8def);
+    font-weight: 600;
+    border-bottom-color: var(--atf-accent, #5b8def);
+  }
+  .row-selected {
+    background: rgba(91, 141, 239, 0.08);
+    border-radius: 3px;
+    margin: 0 -0.4em;
+    padding: 1px 0.4em;
+  }
   .leaf-string {
     color: var(--atf-string, #86efac);
   }
@@ -267,13 +315,6 @@
   .leaf-undefined {
     color: var(--atf-muted, #64748b);
     font-style: italic;
-  }
-  .leaf-redacted {
-    color: var(--atf-redacted, #f87171);
-    font-style: italic;
-  }
-  .lock {
-    margin-right: 2px;
   }
   .branch-summary {
     color: var(--atf-muted, #64748b);

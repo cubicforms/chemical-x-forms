@@ -10,9 +10,9 @@ import { fakeSchema } from '../utils/fake-schema'
 /**
  * Component tests for the Nuxt DevTools overlay panel. Mounts the panel
  * with a synthetic registry / form pair, exercises the four sections +
- * the timeline + the edit path, and asserts the panel surfaces the same
- * data the Vue DevTools inspector does — same redaction, same sensitive-
- * path edit refusal, same setValueAtPath contract.
+ * the timeline + the edit path. Devtools is dev-only — values surface
+ * raw (no redaction) and sensitive paths edit like any other path; the
+ * panel's contract matches the Vue DevTools wire-up's same flip.
  */
 
 function mountPanel(bridge: AttaformDevtoolsBridge): {
@@ -77,7 +77,7 @@ describe('AttaformDevtoolsPanel — form display', () => {
     expect(sidebar.textContent).toContain('form-b')
   })
 
-  it('redacts sensitive leaves in the Form value section', () => {
+  it('renders raw values (no redaction) in the Form value section', () => {
     const registry = createRegistry({})
     const state = createFormStore<{ username: string; password: string }>({
       formKey: 'creds',
@@ -92,9 +92,11 @@ describe('AttaformDevtoolsPanel — form display', () => {
     const { root, app } = mountPanel({ registry, version: '0' })
     apps.push(app)
 
+    // Devtools is dev-only — both sensitive and non-sensitive values
+    // surface verbatim. Screen-share leak risk is the consumer's call.
     expect(root.textContent).toContain('alice')
-    expect(root.textContent).toContain('[redacted]')
-    expect(root.textContent).not.toContain('hunter2')
+    expect(root.textContent).toContain('hunter2')
+    expect(root.textContent).not.toContain('[redacted]')
   })
 
   it('renders schema and user errors when present', () => {
@@ -153,7 +155,7 @@ describe('AttaformDevtoolsPanel — edit path', () => {
     expect(state.form.value.username).toBe('new')
   })
 
-  it('refuses edits on sensitive-named leaves — clicking the cell does not enter edit mode', async () => {
+  it('allows edits at sensitive-named paths (no special-case refusal)', async () => {
     const registry = createRegistry({})
     const state = createFormStore<{ password: string }>({
       formKey: 'edit-2',
@@ -165,18 +167,21 @@ describe('AttaformDevtoolsPanel — edit path', () => {
     const { root, app } = mountPanel({ registry, version: '0' })
     apps.push(app)
 
-    // The password leaf renders as REDACTED — clicking it shouldn't promote
-    // to an input because redacted-typed leaves aren't in the editable set.
-    const allLeaves = Array.from(root.querySelectorAll<HTMLElement>('.leaf'))
-    const passwordCell = allLeaves.find((el) => el.textContent?.includes('[redacted]'))
-    expect(passwordCell, 'redacted password cell rendered').toBeTruthy()
+    // Sensitive paths render raw + are editable just like any other leaf.
+    const leafCells = Array.from(root.querySelectorAll<HTMLElement>('.leaf-editable'))
+    const passwordCell = leafCells.find((el) => el.textContent?.includes('"original"'))
+    expect(passwordCell, 'editable password leaf cell rendered').toBeTruthy()
     passwordCell!.click()
     await nextTick()
 
-    // No input element appeared — the cell stays as the redacted display.
-    expect(root.querySelector('.leaf-input')).toBeNull()
-    // And the underlying value is unchanged.
-    expect(state.form.value.password).toBe('original')
+    const input = root.querySelector<HTMLInputElement>('.leaf-input')
+    expect(input).toBeTruthy()
+    input!.value = 'rotated'
+    input!.dispatchEvent(new Event('input'))
+    input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    await nextTick()
+
+    expect(state.form.value.password).toBe('rotated')
   })
 })
 

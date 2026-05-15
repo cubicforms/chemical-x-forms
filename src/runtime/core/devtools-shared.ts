@@ -65,7 +65,17 @@ function redactImpl(
   // wholesale if we're already in a sensitive subtree; otherwise pass
   // through. DevTools rendering of these is already heuristic, so we
   // don't try to descend into them.
-  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+  //
+  // Use `Object.prototype.toString.call(value)` rather than a
+  // `getPrototypeOf` comparison because `Object.prototype` is
+  // realm-scoped — the Nuxt DevTools overlay panel runs in an iframe
+  // whose Vue runtime is separate from the host's, so the host's
+  // reactive proxies have a prototype that doesn't equal the panel's
+  // `Object.prototype`. The `toString` tag check is realm-aware via
+  // `@@toStringTag` and returns `'[object Object]'` for plain objects
+  // (including Vue reactive proxies of plain objects) regardless of
+  // which iframe they were created in.
+  if (Object.prototype.toString.call(value) !== '[object Object]') {
     return inSensitiveSubtree ? REDACTED : value
   }
   const out: Record<string, unknown> = {}

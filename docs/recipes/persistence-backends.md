@@ -23,6 +23,12 @@ clone algorithm, so those leaves round-trip cleanly.
 Only the backend you choose is bundled. Pick `'local'`, don't pay
 for the IndexedDB code.
 
+Write latency on a 100-leaf form: `'local'` and `'session'` land in
+**~3 µs**, `'indexeddb'` in **~62 µs**. Both are well under one
+frame; the gap matters only for backends doing async hydration —
+see [Async backends + the "flash of default state"](#async-backends--the-flash-of-default-state) below.
+The full bench is in [Performance](/docs/perf#measured-numbers).
+
 ## Full options
 
 ```ts

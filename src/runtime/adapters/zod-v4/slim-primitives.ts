@@ -23,22 +23,43 @@ import {
   unwrapPipe,
 } from './introspect'
 
-export const PERMISSIVE: ReadonlySet<SlimPrimitiveKind> = new Set<SlimPrimitiveKind>([
-  'string',
-  'number',
-  'boolean',
-  'bigint',
-  'date',
-  'null',
-  'undefined',
-  'object',
-  'array',
-  'symbol',
-  'function',
-  'map',
-  'set',
-  'file',
-])
+export const PERMISSIVE: ReadonlySet<SlimPrimitiveKind> =
+  /* @__PURE__ */ new Set<SlimPrimitiveKind>([
+    'string',
+    'number',
+    'boolean',
+    'bigint',
+    'date',
+    'null',
+    'undefined',
+    'object',
+    'array',
+    'symbol',
+    'function',
+    'map',
+    'set',
+    'file',
+  ])
+
+// Module-level frozen singletons for the leaf branches. Returning a
+// shared instance instead of `new Set([…])` per call cuts a hot
+// allocation when slim-primitives is reached through wrappers, and
+// collapses the inline literal Set constructions into shared
+// references for a small bundle-size win. `walk()` returns
+// `ReadonlySet`; callers that need to mutate (optional/nullable/union
+// branches, and the public `slimPrimitivesOf` boundary) clone first.
+const KIND_STRING: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['string'])
+const KIND_NUMBER: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['number'])
+const KIND_BOOLEAN: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['boolean'])
+const KIND_BIGINT: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['bigint'])
+const KIND_DATE: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['date'])
+const KIND_NULL: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['null'])
+const KIND_UNDEFINED: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['undefined'])
+const KIND_OBJECT: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['object'])
+const KIND_ARRAY: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['array'])
+const KIND_SET: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['set'])
+const KIND_FILE: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set(['file', 'null'])
+const EMPTY_KINDS: ReadonlySet<SlimPrimitiveKind> = /* @__PURE__ */ new Set()
 
 /**
  * Walk a schema, emitting the union of slim primitive kinds it
@@ -62,23 +83,29 @@ export function slimPrimitivesOf(
   schema: z.ZodType,
   maxRecursionDepth: number
 ): Set<SlimPrimitiveKind> {
-  return walk(schema, 0, maxRecursionDepth)
+  // Clone once at the public boundary so callers get a fresh mutable
+  // Set. The internal walk reuses frozen singletons for leaf kinds.
+  return new Set(walk(schema, 0, maxRecursionDepth))
 }
 
-function walk(schema: z.ZodType, lazyDepth: number, maxDepth: number): Set<SlimPrimitiveKind> {
+function walk(
+  schema: z.ZodType,
+  lazyDepth: number,
+  maxDepth: number
+): ReadonlySet<SlimPrimitiveKind> {
   const kind = kindOf(schema)
   switch (kind) {
     case 'string':
-      return new Set(['string'])
+      return KIND_STRING
     case 'number':
     case 'nan':
-      return new Set(['number'])
+      return KIND_NUMBER
     case 'boolean':
-      return new Set(['boolean'])
+      return KIND_BOOLEAN
     case 'bigint':
-      return new Set(['bigint'])
+      return KIND_BIGINT
     case 'date':
-      return new Set(['date'])
+      return KIND_DATE
     case 'file':
       // `z.file()` accepts `File` instances at write time. `null` is
       // also accepted at the slim-primitive level so the directive's
@@ -91,12 +118,12 @@ function walk(schema: z.ZodType, lazyDepth: number, maxDepth: number): Set<SlimP
       // / `set`) makes the path a leaf via `isLeafAtPath`, so
       // `form.fields.<file-path>` returns a FieldState rather than
       // descending into the File's own keys.
-      return new Set(['file', 'null'])
+      return KIND_FILE
     case 'null':
-      return new Set(['null'])
+      return KIND_NULL
     case 'undefined':
     case 'void':
-      return new Set(['undefined'])
+      return KIND_UNDEFINED
     case 'enum': {
       // Enums in v4 may be string- or number-valued; walk entries.
       const values = getEnumValues(schema)
@@ -105,53 +132,53 @@ function walk(schema: z.ZodType, lazyDepth: number, maxDepth: number): Set<SlimP
         if (typeof v === 'string') out.add('string')
         else if (typeof v === 'number') out.add('number')
       }
-      return out.size === 0 ? new Set(['string']) : out
+      return out.size === 0 ? KIND_STRING : out
     }
     case 'literal': {
       const values = getLiteralValues(schema)
       const out = new Set<SlimPrimitiveKind>()
       for (const v of values) out.add(slimKindOfRaw(v))
-      return out.size === 0 ? new Set(PERMISSIVE) : out
+      return out.size === 0 ? PERMISSIVE : out
     }
     case 'object':
     case 'record':
-      return new Set(['object'])
+      return KIND_OBJECT
     case 'array':
     case 'tuple':
-      return new Set(['array'])
+      return KIND_ARRAY
     case 'set':
-      return new Set(['set'])
+      return KIND_SET
     case 'optional': {
       const inner = unwrapInner(schema)
-      const innerSet =
-        inner === undefined ? new Set<SlimPrimitiveKind>() : walk(inner, lazyDepth, maxDepth)
-      innerSet.add('undefined')
-      return innerSet
+      const innerSet = inner === undefined ? EMPTY_KINDS : walk(inner, lazyDepth, maxDepth)
+      const out = new Set<SlimPrimitiveKind>(innerSet)
+      out.add('undefined')
+      return out
     }
     case 'nullable': {
       const inner = unwrapInner(schema)
-      const innerSet =
-        inner === undefined ? new Set<SlimPrimitiveKind>() : walk(inner, lazyDepth, maxDepth)
-      innerSet.add('null')
-      return innerSet
+      const innerSet = inner === undefined ? EMPTY_KINDS : walk(inner, lazyDepth, maxDepth)
+      const out = new Set<SlimPrimitiveKind>(innerSet)
+      out.add('null')
+      return out
     }
     case 'default':
     case 'readonly':
     case 'catch': {
       const inner = unwrapInner(schema)
-      return inner === undefined ? new Set(PERMISSIVE) : walk(inner, lazyDepth, maxDepth)
+      return inner === undefined ? PERMISSIVE : walk(inner, lazyDepth, maxDepth)
     }
     case 'pipe': {
       // Use the INPUT side: writes are pre-transform values.
       const inner = unwrapPipe(schema)
-      return inner === undefined ? new Set(PERMISSIVE) : walk(inner, lazyDepth, maxDepth)
+      return inner === undefined ? PERMISSIVE : walk(inner, lazyDepth, maxDepth)
     }
     case 'lazy': {
       // Bump on lazy crossing only; past the cap, fall back to
       // permissive so recursive paths beyond the cap aren't gated.
-      if (lazyDepth >= maxDepth) return new Set(PERMISSIVE)
+      if (lazyDepth >= maxDepth) return PERMISSIVE
       const inner = unwrapLazy(schema)
-      return inner === undefined ? new Set(PERMISSIVE) : walk(inner, lazyDepth + 1, maxDepth)
+      return inner === undefined ? PERMISSIVE : walk(inner, lazyDepth + 1, maxDepth)
     }
     case 'union':
     case 'discriminated-union': {
@@ -160,22 +187,22 @@ function walk(schema: z.ZodType, lazyDepth: number, maxDepth: number): Set<SlimP
       for (const opt of options) {
         for (const k of walk(opt as z.ZodType, lazyDepth, maxDepth)) out.add(k)
       }
-      return out.size === 0 ? new Set(PERMISSIVE) : out
+      return out.size === 0 ? PERMISSIVE : out
     }
     case 'intersection': {
       const left = getIntersectionLeft(schema)
       const right = getIntersectionRight(schema)
-      const leftSet = left === undefined ? new Set(PERMISSIVE) : walk(left, lazyDepth, maxDepth)
-      const rightSet = right === undefined ? new Set(PERMISSIVE) : walk(right, lazyDepth, maxDepth)
+      const leftSet = left === undefined ? PERMISSIVE : walk(left, lazyDepth, maxDepth)
+      const rightSet = right === undefined ? PERMISSIVE : walk(right, lazyDepth, maxDepth)
       const out = new Set<SlimPrimitiveKind>()
       for (const k of leftSet) if (rightSet.has(k)) out.add(k)
       return out
     }
     case 'never':
-      return new Set()
+      return EMPTY_KINDS
     case 'any':
     case 'unknown':
-      return new Set(PERMISSIVE)
+      return PERMISSIVE
     // Kinds we don't understand at the slim level: be permissive to
     // avoid false-rejecting legitimate writes against schema shapes
     // we haven't characterised.
@@ -183,9 +210,9 @@ function walk(schema: z.ZodType, lazyDepth: number, maxDepth: number): Set<SlimP
     case 'custom':
     case 'template-literal':
     case 'transform':
-      return new Set(PERMISSIVE)
+      return PERMISSIVE
     default:
-      return new Set(PERMISSIVE)
+      return PERMISSIVE
   }
 }
 

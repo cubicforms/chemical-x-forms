@@ -160,7 +160,16 @@ function defaultForKind(
       // is the authority for what the seed should be at the recursive
       // boundary anyway.
       if (lazyDepth >= maxDepth) return undefined
-      const inner = unwrapLazy(schema)
+      // `z.lazy()` runs a user-supplied getter; a getter that throws
+      // (cyclic reference resolved before its target is constructed,
+      // user bug, etc.) shouldn't crash form construction. Mirror the
+      // try/catch precedent in `introspect.ts:containsAsyncRefine`.
+      let inner: z.ZodType | undefined
+      try {
+        inner = unwrapLazy(schema)
+      } catch {
+        return undefined
+      }
       return inner === undefined
         ? undefined
         : defaultForKind(kindOf(inner), inner, useDefault, maxDepth, lazyDepth + 1)

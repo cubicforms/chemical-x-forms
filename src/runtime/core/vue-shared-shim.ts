@@ -30,10 +30,6 @@ export function isSet(value: unknown): value is Set<unknown> {
   return toTypeString(value) === '[object Set]'
 }
 
-export function isMap(value: unknown): value is Map<unknown, unknown> {
-  return toTypeString(value) === '[object Map]'
-}
-
 export function isDate(value: unknown): value is Date {
   return toTypeString(value) === '[object Date]'
 }

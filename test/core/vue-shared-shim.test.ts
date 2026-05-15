@@ -3,7 +3,6 @@ import {
   invokeArrayFns,
   isArray,
   isFunction,
-  isMap,
   isObject,
   isSet,
   isSymbol,
@@ -33,11 +32,6 @@ describe('vue-shared shim', () => {
       expect(isSet(new Set([1, 2]))).toBe(true)
       expect(isSet(new Map())).toBe(false)
       expect(isSet({})).toBe(false)
-    })
-
-    it('isMap distinguishes Map', () => {
-      expect(isMap(new Map())).toBe(true)
-      expect(isMap(new Set())).toBe(false)
     })
 
     it('isSymbol', () => {
